@@ -6,11 +6,6 @@ UPGRADE_TYPE ?= patch
 GIT_SHA := $(shell git rev-parse HEAD)
 AD_TAG ?= $(GIT_SHA)
 
-ABI_ARTIFACT_DIR := pkg/register/ABIs
-ABI_SRC_DIR := packages/libs/src/eth-contracts/ABIs
-ABI_SRCS := $(ABI_SRC_DIR)/ERC20Detailed.json $(ABI_SRC_DIR)/Registry.json $(ABI_SRC_DIR)/ServiceProviderFactory.json
-ABI_ARTIFACTS := $(ABI_ARTIFACT_DIR)/ERC20Detailed.json $(ABI_ARTIFACT_DIR)/Registry.json $(ABI_ARTIFACT_DIR)/ServiceProviderFactory.json
-
 SQL_SRCS := $(shell find pkg/core/db/sql -type f -name '*.sql') pkg/core/db/sqlc.yaml
 SQL_ARTIFACTS := $(wildcard pkg/core/db/*.sql.go)
 
@@ -22,7 +17,7 @@ TEMPL_ARTIFACTS := $(shell find pkg/core/console -type f -name "*_templ.go")
 
 VERSION_LDFLAG := -X github.com/AudiusProject/audius-protocol/core/config.Version=$(GIT_SHA)
 
-JSON_SRCS := $(wildcard pkg/core/config/genesis/*.json) $(ABI_ARTIFACTS)
+JSON_SRCS := $(wildcard pkg/core/config/genesis/*.json)
 JS_SRCS := $(shell find pkg/core -type f -name '*.js')
 GO_SRCS := $(shell find pkg cmd -type f -name '*.go')
 
@@ -128,6 +123,7 @@ install-deps:
 	@go install github.com/a-h/templ/cmd/templ@latest
 	@go install github.com/ethereum/go-ethereum/cmd/abigen@latest
 	@go install github.com/go-swagger/go-swagger/cmd/swagger@latest
+	@gookme init --all || echo "Gookme init failed, check if it's installed (https://lmaxence.github.io/gookme)"
 
 go.sum: go.mod
 go.mod: $(GO_SRCS)
@@ -137,15 +133,7 @@ go.mod: $(GO_SRCS)
 	@touch go.mod # in case there's nothing to tidy
 
 .PHONY: gen
-gen: regen-abi regen-templ regen-proto regen-sql regen-go
-
-.PHONY: regen-abi
-regen-abi: $(ABI_ARTIFACTS)
-$(ABI_ARTIFACTS): $(ABI_SRCS)
-	@echo Regenerating ABI contracts
-	@jq '.abi' $(ABI_SRC_DIR)/ERC20Detailed.json > $(ABI_ARTIFACT_DIR)/ERC20Detailed.json
-	@jq '.abi' $(ABI_SRC_DIR)/Registry.json > $(ABI_ARTIFACT_DIR)/Registry.json
-	@jq '.abi' $(ABI_SRC_DIR)/ServiceProviderFactory.json > $(ABI_ARTIFACT_DIR)/ServiceProviderFactory.json
+gen: regen-templ regen-proto regen-sql regen-go
 
 .PHONY: regen-templ
 regen-templ: $(TEMPL_ARTIFACTS)
@@ -185,6 +173,20 @@ mediorum-dev:
 	fi
 	go run cmd/mediorum/main.go
 
+.PHONY: mediorum-test
+mediorum-test:
+	@docker compose \
+    	--file='dev-tools/compose/docker-compose.test.yml' \
+        --project-name='audiusd-test' \
+        --project-directory='./' \
+        run --rm --build test-mediorum-unittests test
+	@echo 'Tests successful. Spinning down containers...'
+	@docker compose \
+    	--file='dev-tools/compose/docker-compose.test.yml' \
+        --project-name='audiusd-test' \
+        --project-directory='./' \
+		--profile=* \
+        down -v
 
 ##########
 ## CORE ##
@@ -205,8 +207,19 @@ core-dev: gen
 	audius-compose up audiusd-1 audiusd-2 audiusd-3 audiusd-4 eth-ganache ingress
 
 .PHONY: core-test
-core-test: gen
-	cd pkg/core && go test -count=1 -v ./... -timeout 60s
+core-test:
+	@docker compose \
+    	--file='dev-tools/compose/docker-compose.test.yml' \
+        --project-name='audiusd-test' \
+        --project-directory='./' \
+        run --rm --build test-core test
+	@echo 'Tests successful. Spinning down containers...'
+	@docker compose \
+    	--file='dev-tools/compose/docker-compose.test.yml' \
+        --project-name='audiusd-test' \
+        --project-directory='./' \
+		--profile=* \
+        down -v
 
 .PHONY: core-sandbox
 core-sandbox: core-build-amd64

@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "name": "validate-ci-config",
+      "command": "circleci config validate .circleci/config.yml"
+    }
+  ]
+}
