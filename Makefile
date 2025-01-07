@@ -123,7 +123,7 @@ install-deps:
 	@go install github.com/a-h/templ/cmd/templ@latest
 	@go install github.com/ethereum/go-ethereum/cmd/abigen@latest
 	@go install github.com/go-swagger/go-swagger/cmd/swagger@latest
-	@gookme init --all || echo "Gookme init failed, check if it's installed (https://lmaxence.github.io/gookme)"
+	@gookme init --types pre-commit,pre-push || echo "Gookme init failed, check if it's installed (https://lmaxence.github.io/gookme)"
 
 go.sum: go.mod
 go.mod: $(GO_SRCS)
@@ -159,6 +159,14 @@ $(SQL_ARTIFACTS): $(SQL_SRCS)
 regen-go:
 	cd pkg/core && go generate ./...
 
+.PHONY: test-down
+test-down:
+	@docker compose \
+    	--file='dev-tools/compose/docker-compose.test.yml' \
+        --project-name='audiusd-test' \
+        --project-directory='./' \
+		--profile=* \
+        down -v
 
 ##############
 ## MEDIORUM ##

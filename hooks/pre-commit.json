@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "name": "check secrets",
+      "command": "sh scripts/check-secrets.sh"
+    },
+    {
+      "name": "Recreate generated go files",
+      "command": "make gen"
+    }
+  ]
+}
+
