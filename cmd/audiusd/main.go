@@ -107,7 +107,7 @@ func main() {
 	logger.Info("Received termination signal, shutting down...")
 	cancel()
 	<-ctx.Done()
-	logger.Info("Shutdown complete")
+	logger.Info("Shutdown complete!")
 }
 
 func runWithRecover(name string, ctx context.Context, logger *common.Logger, f func() error) {
