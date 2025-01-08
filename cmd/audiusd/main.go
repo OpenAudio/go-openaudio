@@ -2,11 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"log"
 	"log/slog"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -216,21 +222,24 @@ func getEchoServerConfig(hostUrl *url.URL) serverConfig {
 	httpsPort := getEnvString("AUDIUSD_HTTPS_PORT", "443")
 	hostname := hostUrl.Hostname()
 
-	// TODO: Work out of the box for altego.net, but allow override
+	// TODO: this is all gross
 	if hostname == "altego.net" && httpPort == "80" && httpsPort == "443" {
 		httpPort = "5000"
 	}
 
-	// TODO: this is perhaps back to front,
-	// but the far greater majority of current nodes use auto-tls
-	// and we desired minimal default configuration
 	tlsEnabled := true
 	switch {
 	case os.Getenv("AUDIUSD_TLS_DISABLED") == "true":
 		tlsEnabled = false
-	case hasSuffix(hostname, []string{"localhost", "altego.net", "bdnodes.net", "staked.cloud"}):
+	case hasSuffix(hostname, []string{"altego.net", "bdnodes.net", "staked.cloud"}):
 		tlsEnabled = false
+	case hostname == "localhost":
+		tlsEnabled = true
+		if os.Getenv("AUDIUSD_TLS_SELF_SIGNED") == "" {
+			os.Setenv("AUDIUSD_TLS_SELF_SIGNED", "true")
+		}
 	}
+	// end gross
 
 	return serverConfig{
 		httpPort:   httpPort,
@@ -293,6 +302,49 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger) error {
 }
 
 func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, logger *common.Logger) error {
+	useSelfSigned := os.Getenv("AUDIUSD_TLS_SELF_SIGNED") == "true"
+
+	if useSelfSigned {
+		logger.Info("Using self-signed certificate")
+		cert, key, err := generateSelfSignedCert(hostUrl.Hostname())
+		if err != nil {
+			logger.Errorf("Failed to generate self-signed certificate: %v", err)
+			return fmt.Errorf("failed to generate self-signed certificate: %v", err)
+		}
+
+		certDir := getEnvString("audius_core_root_dir", "/audius-core") + "/echo/certs"
+		logger.Infof("Creating certificate directory: %s", certDir)
+		if err := os.MkdirAll(certDir, 0755); err != nil {
+			logger.Errorf("Failed to create certificate directory: %v", err)
+			return fmt.Errorf("failed to create certificate directory: %v", err)
+		}
+
+		certFile := certDir + "/cert.pem"
+		keyFile := certDir + "/key.pem"
+
+		logger.Infof("Writing certificate to: %s", certFile)
+		if err := os.WriteFile(certFile, cert, 0644); err != nil {
+			logger.Errorf("Failed to write cert file: %v", err)
+			return fmt.Errorf("failed to write cert file: %v", err)
+		}
+
+		logger.Infof("Writing private key to: %s", keyFile)
+		if err := os.WriteFile(keyFile, key, 0600); err != nil {
+			logger.Errorf("Failed to write key file: %v", err)
+			return fmt.Errorf("failed to write key file: %v", err)
+		}
+
+		logger.Infof("Starting HTTPS server on port %s", httpsPort)
+		go func() {
+			if err := e.StartTLS(":"+httpsPort, certFile, keyFile); err != nil && err != http.ErrServerClosed {
+				logger.Errorf("Failed to start HTTPS server: %v", err)
+			}
+		}()
+
+		logger.Infof("Starting HTTP server on port %s", httpPort)
+		return e.Start(":" + httpPort)
+	}
+
 	whitelist := []string{hostUrl.Hostname(), "localhost"}
 	addrs, _ := net.InterfaceAddrs()
 	for _, addr := range addrs {
@@ -310,6 +362,52 @@ func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, lo
 
 	go e.StartAutoTLS(":" + httpsPort)
 	return e.Start(":" + httpPort)
+}
+
+func generateSelfSignedCert(hostname string) ([]byte, []byte, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	notBefore := time.Now()
+	notAfter := notBefore.Add(365 * 24 * time.Hour) // Valid for 1 year
+
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"Audius Self-Signed Certificate"},
+			CommonName:   hostname,
+		},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{hostname, "localhost"},
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: derBytes,
+	})
+
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+	})
+
+	return certPEM, privateKeyPEM, nil
 }
 
 // TODO: I don't love this, but it is kinof the only way to make this work rn

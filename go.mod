@@ -55,7 +55,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.19.0
 	github.com/iancoleman/strcase v0.3.0
-	github.com/lib/pq v1.10.9
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/rubenv/sql-migrate v1.7.0
 	golang.org/x/crypto v0.30.0
@@ -180,6 +179,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
+	github.com/lib/pq v1.10.9 // indirect
 	github.com/linxGnu/grocksdb v1.9.3 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -251,7 +251,6 @@ require (
 require (
 	github.com/caseymrm/menuet v1.0.3
 	github.com/cometbft/cometbft-load-test v0.3.0
-	github.com/go-resty/resty/v2 v2.16.2
 	github.com/jaswdr/faker v1.19.1
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
 	github.com/minio/sha256-simd v1.0.0 // indirect
