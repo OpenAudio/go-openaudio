@@ -131,21 +131,18 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 
 	// consensus
 	// don't recheck mempool transactions, rely on CheckTx and Propose step
-	// set each phase to timeout at 100ms, this might be aggressive but simply put
-	// for blocks to stay around 1s all these steps must add up to less than that
-	// create empty blocks to continue heartbeat at the same interval
-	// empty blocks wait one second to propose since plays should be a steady stream
-	// of txs
 	cometConfig.Mempool.Recheck = false
 	cometConfig.Mempool.Broadcast = false
-	cometConfig.Consensus.TimeoutCommit = 200 * time.Millisecond
-	cometConfig.Consensus.TimeoutPropose = 200 * time.Millisecond
+	cometConfig.Consensus.TimeoutCommit = 400 * time.Millisecond
+	cometConfig.Consensus.TimeoutPropose = 400 * time.Millisecond
 	cometConfig.Consensus.TimeoutProposeDelta = 75 * time.Millisecond
-	cometConfig.Consensus.TimeoutPrevote = 150 * time.Millisecond
+	cometConfig.Consensus.TimeoutPrevote = 300 * time.Millisecond
 	cometConfig.Consensus.TimeoutPrevoteDelta = 75 * time.Millisecond
-	cometConfig.Consensus.TimeoutPrecommit = 150 * time.Millisecond
+	cometConfig.Consensus.TimeoutPrecommit = 300 * time.Millisecond
 	cometConfig.Consensus.TimeoutPrecommitDelta = 75 * time.Millisecond
+	// create empty blocks to continue heartbeat at the same interval
 	cometConfig.Consensus.CreateEmptyBlocks = true
+	// empty blocks wait one second to propose since plays should be a steady stream
 	cometConfig.Consensus.CreateEmptyBlocksInterval = 1 * time.Second
 
 	// peering
