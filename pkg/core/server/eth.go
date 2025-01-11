@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/AudiusProject/audius-protocol/pkg/core/contracts"
+	"github.com/labstack/echo/v4"
 )
 
 func (s *Server) startEthNodeManager() error {
@@ -78,4 +79,17 @@ func (s *Server) gatherEthNodes() error {
 
 func (s *Server) blacklistDuplicateEthNodes() error {
 	return nil
+}
+
+func (s *Server) getEthNodesHandler(c echo.Context) error {
+	s.ethNodeMU.RLock()
+	defer s.ethNodeMU.RUnlock()
+	res := struct {
+		Nodes          []*contracts.Node `json:"nodes"`
+		DuplicateNodes []*contracts.Node `json:"duplicateNodes"`
+	}{
+		Nodes:          s.ethNodes,
+		DuplicateNodes: s.duplicateEthNodes,
+	}
+	return c.JSON(200, res)
 }
