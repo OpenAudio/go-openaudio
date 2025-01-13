@@ -139,27 +139,23 @@ curl https://node.operator.xyz/health-check | jq .
 
 ## Auto-Update
 
-**TODO:** untested
-
 Use a simple [cron](https://en.wikipedia.org/wiki/Cron) job to automatically update your node to the latest [stable audiusd release](https://github.com/AudiusProject/audiusd/releases).
 
-```bash
-crontab -e
-...
+Copy and replace with your own values.
 
-$(shuf -i 0-59 -n 1) * * * * if ! docker pull audius/audiusd:current | grep -q "Status: Image is up to date"; then \
-  docker stop audiusd-cn1.operator.xyz && \
-  docker rm audiusd-cn1.operator.xyz && \
-  docker run -d \
-    --name audiusd-cn1.operator.xyz \
-    --restart unless-stopped \
-    -v /home/ubuntu/audiusd/config.yaml:/env/config.yaml \
-    -v /home/ubuntu/audiusd/data:/data \
-    -p 80:80 \
-    -p 443:443 \
-    -p 26656:26656 \
-    audius/audiusd:current; \
-fi
+```bash
+AUDIUSD_HOSTNAME="node.operator.xyz"
+OVERRIDE_ENV_PATH="/home/ubuntu/override.env"
+```
+
+Copy and paste this block.
+
+```bash
+RANDOM_MINUTE=$(shuf -i 0-59 -n 1)
+CRON_COMMAND="$RANDOM_MINUTE * * * * if ! docker pull audius/audiusd:current | grep -q 'Status: Image is up to date'; then docker stop audiusd-$AUDIUSD_HOSTNAME && docker rm audiusd-$AUDIUSD_HOSTNAME && docker run -d --name audiusd-$AUDIUSD_HOSTNAME --restart unless-stopped -v $OVERRIDE_ENV_PATH:/env/override.env -v /var/k8s:/data -p 80:80 -p 443:443 -p 26656:26656 audius/audiusd:current; fi >> /home/ubuntu/audiusd-auto-upgrade.log 2>&1; # audiusd auto-upgrade"
+
+# add a cron to check for updates on the same random minute of each our (staggers updates)
+(crontab -l | grep -v "# audiusd auto-upgrade"; echo "$CRON_COMMAND") | crontab -
 ```
 
 ---
