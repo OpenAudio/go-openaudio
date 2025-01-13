@@ -29,8 +29,14 @@ type ProtocolManageEntityLegacy struct {
 	// metadata
 	Metadata string `json:"metadata,omitempty"`
 
+	// nonce
+	Nonce string `json:"nonce,omitempty"`
+
 	// signature
 	Signature string `json:"signature,omitempty"`
+
+	// signer
+	Signer string `json:"signer,omitempty"`
 
 	// user Id
 	UserID string `json:"userId,omitempty"`

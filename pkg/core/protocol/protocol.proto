@@ -138,4 +138,6 @@ message ManageEntityLegacy {
   string action = 4;
   string metadata = 5;
   string signature = 6;
+  string signer = 7;
+  int64 nonce = 8;
 }

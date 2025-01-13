@@ -260,6 +260,13 @@
         },
         "signature": {
           "type": "string"
+        },
+        "signer": {
+          "type": "string"
+        },
+        "nonce": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
