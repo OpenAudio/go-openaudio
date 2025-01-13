@@ -1,0 +1,17 @@
+.git
+.gitignore
+
+.circleci/
+.github/
+
+Makefile
+Dockerfile*
+.dockerignore
+
+*.test
+*.md
+docs/
+
+.vscode/
+.DS_Store
+*.swp

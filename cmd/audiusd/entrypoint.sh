@@ -5,7 +5,6 @@ NETWORK="${NETWORK:-prod}"
 ENV_FILE="/env/${NETWORK}.env"
 OVERRIDE_ENV_FILE="/env/override.env"
 
-# Validate environment files exist
 if [ ! -f "$ENV_FILE" ]; then
     echo "Error: Network environment file not found at $ENV_FILE"
     exit 1
@@ -15,8 +14,8 @@ fi
 source_env_file() {
     local file=$1
     if [ ! -f "$file" ]; then
-        echo "Environment file $file not found"
-        return
+        echo "WARN Environment file $file not found"
+        return 0
     fi
 
     echo "Loading environment from $file"
@@ -34,8 +33,10 @@ source_env_file "$OVERRIDE_ENV_FILE"
 
 if [ -n "$creatorNodeEndpoint" ]; then
     POSTGRES_DB="audius_creator_node"
+    POSTGRES_DATA_DIR=${POSTGRES_DATA_DIR:-/data/creator-node-db-15}
 elif [ -n "$audius_discprov_url" ]; then
     POSTGRES_DB="audius_discovery"
+    POSTGRES_DATA_DIR=${POSTGRES_DATA_DIR:-/data/discovery-provider-db}
 else
     POSTGRES_DB="audiusd"
 fi
@@ -45,7 +46,7 @@ POSTGRES_PASSWORD="postgres"
 POSTGRES_DATA_DIR=${POSTGRES_DATA_DIR:-/data/postgres}
 export dbUrl="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?sslmode=disable"
 export uptimeDataDir=${uptimeDataDir:-/data/bolt}
-export audius_core_root_dir=${audius_core_root_dir:-/data/core}
+export audius_core_root_dir=${audius_core_root_dir:-/data/bolt}
 
 setup_postgres() {
     PG_BIN="/usr/lib/postgresql/15/bin"
@@ -97,9 +98,21 @@ setup_postgres() {
 
 if [ "${AUDIUSD_CORE_ONLY:-false}" = "true" ]; then
     echo "Running in core only mode, skipping PostgreSQL setup..."
+    echo "Starting audiusd..."
+    exec /bin/audiusd "$@"
+elif [ "${AUDIUSD_TEST_MODE:-false}" = "true" ]; then
+    setup_postgres
+    echo "Running in test mode, executing test database initialization..."
+    for sql_file in /app/audiusd/.initdb/*.sql; do
+        if [ -f "$sql_file" ]; then
+            echo "Executing $sql_file..."
+            su - postgres -c "psql -f $sql_file"
+        fi
+    done
+    echo "executing command: $@"
+    exec "$@"
 else
     setup_postgres
+    echo "Starting audiusd..."
+    exec /bin/audiusd "$@"
 fi
-
-echo "Starting audiusd..."
-exec /bin/audiusd "$@"

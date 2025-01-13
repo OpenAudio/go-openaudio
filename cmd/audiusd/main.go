@@ -424,6 +424,9 @@ func isStorageEnabled() bool {
 	if isCoreOnly() {
 		return false
 	}
+	if os.Getenv("audius_discprov_url") != "" {
+		return false
+	}
 	if os.Getenv("AUDIUSD_STORAGE_ENABLED") == "true" {
 		return true
 	}

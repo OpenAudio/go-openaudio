@@ -32,6 +32,10 @@ bin/audiusd-x86_64-linux: $(BUILD_SRCS)
 	@echo "Building x86 audiusd for linux..."
 	@bash scripts/build-audiusd.sh $@ amd64 linux
 
+bin/audiusd-arm64-linux: $(BUILD_SRCS)
+	@echo "Building arm audiusd for linux..."
+	@bash scripts/build-audiusd.sh $@ arm64 linux
+
 bin/audius-ctl-native: $(BUILD_SRCS)
 	@echo "Building audius-ctl for local platform and architecture..."
 	@bash scripts/build-audius-ctl.sh $@
@@ -79,10 +83,16 @@ build-push-wrapper:
 
 .PHONY: build-audiusd-local build-push-audiusd build-push-cpp
 build-audiusd-local:
-	docker build --build-arg GIT_SHA=$(AD_TAG) -t audius/audiusd:$(AD_TAG) -t audius/audiusd:local -f ./cmd/audiusd/Dockerfile ./
+	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target prod --build-arg GIT_SHA=$(AD_TAG) -t audius/audiusd:$(AD_TAG) -t audius/audiusd:local -f ./cmd/audiusd/Dockerfile ./
+build-audiusd-test:
+	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target test --build-arg GIT_SHA=$(AD_TAG) -t audius/audiusd:test-local -f ./cmd/audiusd/Dockerfile ./
 
 build-push-audiusd:
-	DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build --build-arg GIT_SHA=$(AD_TAG) --push -t audius/audiusd:$(AD_TAG) -f ./cmd/audiusd/Dockerfile ./
+	docker build \
+		--build-arg GIT_SHA=$(AD_TAG) \
+		-t audius/audiusd:$(AD_TAG) \
+		-f ./cmd/audiusd/Dockerfile ./
+	docker push audius/audiusd:$(AD_TAG)
 
 build-push-cpp:
 	docker buildx build --platform linux/amd64,linux/arm64 --push -t audius/cpp:bookworm -f ./cmd/audiusd/Dockerfile.deps ./
@@ -110,20 +120,22 @@ uninstall:
 clean:
 	rm -f bin/*
 
-.PHONY: install-deps
-install-deps:
+.PHONY: install-deps install-go-deps
+install-deps: install-go-deps
 	@brew install protobuf
 	@brew install crane
 	@brew install bufbuild/buf/buf
-	@go install github.com/onsi/ginkgo/v2/ginkgo@v2.19.0
-	@go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-	@go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-	@go install github.com/cortesi/modd/cmd/modd@latest
-	@go install github.com/a-h/templ/cmd/templ@latest
-	@go install github.com/ethereum/go-ethereum/cmd/abigen@latest
-	@go install github.com/go-swagger/go-swagger/cmd/swagger@latest
 	@gookme init --types pre-commit,pre-push || echo "Gookme init failed, check if it's installed (https://lmaxence.github.io/gookme)"
+
+install-go-deps:
+	go install -v github.com/onsi/ginkgo/v2/ginkgo@v2.19.0
+	go install -v github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+	go install -v google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	go install -v google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	go install -v github.com/cortesi/modd/cmd/modd@latest
+	go install -v github.com/a-h/templ/cmd/templ@latest
+	go install -v github.com/ethereum/go-ethereum/cmd/abigen@latest
+	go install -v github.com/go-swagger/go-swagger/cmd/swagger@latest
 
 go.sum: go.mod
 go.mod: $(GO_SRCS)
@@ -168,31 +180,36 @@ test-down:
         down -v
 
 ##############
-## MEDIORUM ##
+## AUDIUSD  ##
 ##############
 
-.PHONY: mediorum-dev
-mediorum-dev:
-	@if docker ps -q -f name=postgres; then \
-		echo "container 'postgres' is already running"; \
-	else \
-		docker run --rm --name postgres -v $$(pwd)/cmd/mediorum/.initdb:/docker-entrypoint-initdb.d -e POSTGRES_PASSWORD=example -p 5454:5432 -d postgres; \
-	fi
-	go run cmd/mediorum/main.go
+.PHONY: audiusd-dev
+audiusd-test:
+	@docker compose \
+		--file='compose/docker-compose.yml' \
+		--project-name='audiusd-test' \
+		--project-directory='./' \
+		--profile=* \
+		run --rm audiusd-dev
+
+##############
+## MEDIORUM ##
+##############
 
 .PHONY: mediorum-test
 mediorum-test:
 	@docker compose \
-    	--file='dev-tools/compose/docker-compose.test.yml' \
-        --project-name='audiusd-test' \
-        --project-directory='./' \
-        run --rm --build test-mediorum-unittests test
+		--file='compose/docker-compose.test.yml' \
+		--project-name='audiusd-test' \
+		--project-directory='./' \
+		--profile=mediorum-unittests \
+		run $(TTY_FLAG) --rm test-mediorum-unittests
 	@echo 'Tests successful. Spinning down containers...'
 	@docker compose \
-    	--file='dev-tools/compose/docker-compose.test.yml' \
+    	--file='compose/docker-compose.test.yml' \
         --project-name='audiusd-test' \
         --project-directory='./' \
-		--profile=* \
+		--profile=mediorum-unittests \
         down -v
 
 ##########
@@ -209,52 +226,20 @@ core-build-amd64: bin/core-amd64
 bin/core-amd64: $(BUILD_SRCS)
 	@GOOS=linux GOARCH=amd64 go build -ldflags "$(VERSION_LDFLAG)" -o bin/core-amd64 ./cmd/core/main.go
 
-.PHONY: core-dev
-core-dev: gen
-	audius-compose up audiusd-1 audiusd-2 audiusd-3 audiusd-4 eth-ganache ingress
-
 .PHONY: core-test
 core-test:
 	@docker compose \
-    	--file='dev-tools/compose/docker-compose.test.yml' \
-        --project-name='audiusd-test' \
-        --project-directory='./' \
-        run --rm --build test-core test
-	@echo 'Tests successful. Spinning down containers...'
+		--file='compose/docker-compose.test.yml' \
+		--project-name='audiusd-test' \
+		--project-directory='./' \
+		run $(TTY_FLAG) --rm test-core
+	@echo 'Tests complete. Spinning down containers...'
 	@docker compose \
-    	--file='dev-tools/compose/docker-compose.test.yml' \
-        --project-name='audiusd-test' \
-        --project-directory='./' \
-		--profile=* \
-        down -v
-
-.PHONY: core-sandbox
-core-sandbox: core-build-amd64
-	@scripts/add-sandbox-hosts.sh
-	@docker compose -f ./cmd/core/infra/docker-compose.yml --profile prod --profile stage --profile dev up --build -d
-
-.PHONY: core-down-sandbox
-core-down-sandbox:
-	@docker compose -f ./cmd/core/infra/docker-compose.yml --profile prod --profile stage --profile dev down
-
-.PHONY: core-prod-sandbox
-core-prod-sandbox: core-build-amd64
-	@scripts/add-sandbox-hosts.sh
-	@docker compose -f ./cmd/core/infra/docker-compose.yml --profile prod up --build -d
-
-.PHONY: core-stage-sandbox
-core-stage-sandbox: core-build-amd64
-	@scripts/add-sandbox-hosts.sh
-	@docker compose -f ./cmd/core/infra/docker-compose.yml --profile stage up --build -d
-
-.PHONY: core-dev-sandbox
-core-dev-sandbox: core-build-amd64
-	@scripts/add-sandbox-hosts.sh
-	@docker compose -f ./cmd/core/infra/docker-compose.yml --profile dev up --build -d
-
-.PHONY: core-livereload
-core-livereload:
-	modd
+		--file='compose/docker-compose.test.yml' \
+		--project-name='audiusd-test' \
+		--project-directory='./' \
+		--profile=core-tests \
+		down -v
 
 #############################
 ## Audio Analysis Backfill ##
