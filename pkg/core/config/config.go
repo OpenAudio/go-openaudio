@@ -178,7 +178,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	cfg.AddrBookStrict = true
 	switch cfg.Environment {
 	case "prod", "production", "mainnet":
-		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress ,ProdPersistentPeers, 3))
+		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress, ProdPersistentPeers, 3))
 		cfg.EthRegistryAddress = ProdRegistryAddress
 		if cfg.EthRPCUrl == "" {
 			cfg.EthRPCUrl = ProdEthRpc
@@ -189,7 +189,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		cfg.UseHttpsForSdk = true
 
 	case "stage", "staging", "testnet":
-		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress ,ProdPersistentPeers, 3))
+		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress, StagePersistentPeers, 3))
 		cfg.EthRegistryAddress = StageRegistryAddress
 		if cfg.EthRPCUrl == "" {
 			cfg.EthRPCUrl = StageEthRpc
