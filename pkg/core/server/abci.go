@@ -14,6 +14,7 @@ import (
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto/ed25519"
+	cmtflags "github.com/cometbft/cometbft/libs/cli/flags"
 	nm "github.com/cometbft/cometbft/node"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
@@ -57,6 +58,11 @@ func (s *Server) startABCI() error {
 		return fmt.Errorf("failed to load node's key: %v", err)
 	}
 
+	nodeLogger, err := cmtflags.ParseLogLevel(s.config.LogLevel, s.logger, "error")
+	if err != nil {
+		return fmt.Errorf("failed to parse log level: %v", err)
+	}
+
 	node, err := nm.NewNode(
 		context.Background(),
 		cometConfig,
@@ -66,7 +72,7 @@ func (s *Server) startABCI() error {
 		nm.DefaultGenesisDocProviderFunc(cometConfig),
 		cfg.DefaultDBProvider,
 		nm.DefaultMetricsProvider(cometConfig.Instrumentation),
-		s.logger.Child("chain"),
+		nodeLogger,
 	)
 
 	if err != nil {
@@ -165,8 +171,6 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 		}
 		proposalTxs = append(proposalTxs, txBytes)
 	}
-
-	s.logger.Infof("proposing %d txs", proposalTxs)
 	return &abcitypes.PrepareProposalResponse{Txs: proposalTxs}, nil
 }
 

@@ -251,6 +251,7 @@ func getEchoServerConfig(hostUrl *url.URL) serverConfig {
 
 func startEchoProxy(hostUrl *url.URL, logger *common.Logger) error {
 	e := echo.New()
+	e.HideBanner = true
 	e.Use(middleware.Logger(), middleware.Recover())
 
 	e.GET("/", func(c echo.Context) error {

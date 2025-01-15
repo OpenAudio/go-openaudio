@@ -119,6 +119,8 @@ func (s *Server) Start(ctx context.Context) error {
 	g.Go(s.startEthNodeManager)
 	g.Go(s.startCache)
 
+	s.logger.Info("services started")
+
 	return g.Wait()
 }
 
