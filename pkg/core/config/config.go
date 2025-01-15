@@ -133,8 +133,10 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	cfg.GRPCladdr = GetEnvWithDefault("grpcLaddr", "0.0.0.0:50051")
 	cfg.CoreServerAddr = GetEnvWithDefault("coreServerAddr", "0.0.0.0:26659")
 
-	cfg.MaxInboundPeers = getEnvIntWithDefault("maxInboundPeers", 200)
-	cfg.MaxOutboundPeers = getEnvIntWithDefault("maxOutboundPeers", 200)
+	// allow up to 100 inbound connections
+	cfg.MaxInboundPeers = getEnvIntWithDefault("maxInboundPeers", 100)
+	// actively connect to 50 peers
+	cfg.MaxOutboundPeers = getEnvIntWithDefault("maxOutboundPeers", 50)
 
 	// check if discovery specific key is set
 	isDiscovery := os.Getenv("audius_delegate_private_key") != ""
@@ -176,7 +178,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	cfg.AddrBookStrict = true
 	switch cfg.Environment {
 	case "prod", "production", "mainnet":
-		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", ProdPersistentPeers)
+		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress ,ProdPersistentPeers, 3))
 		cfg.EthRegistryAddress = ProdRegistryAddress
 		if cfg.EthRPCUrl == "" {
 			cfg.EthRPCUrl = ProdEthRpc
@@ -187,7 +189,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		cfg.UseHttpsForSdk = true
 
 	case "stage", "staging", "testnet":
-		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", StagePersistentPeers)
+		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress ,ProdPersistentPeers, 3))
 		cfg.EthRegistryAddress = StageRegistryAddress
 		if cfg.EthRPCUrl == "" {
 			cfg.EthRPCUrl = StageEthRpc

@@ -1,7 +1,10 @@
 package config
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"math/big"
+	"strings"
 	"time"
 
 	"github.com/AudiusProject/audius-protocol/pkg/core/common"
@@ -127,8 +130,6 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 	cometConfig.Mempool.MaxTxBytes = 307200
 	cometConfig.Mempool.Size = 30000
 
-	isDev := envConfig.Environment == "dev" || envConfig.Environment == "local"
-
 	// consensus
 	// don't recheck mempool transactions, rely on CheckTx and Propose step
 	cometConfig.Mempool.Recheck = false
@@ -145,11 +146,8 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 	// empty blocks wait one second to propose since plays should be a steady stream
 	cometConfig.Consensus.CreateEmptyBlocksInterval = 1 * time.Second
 
-	// peering
-	// pex reactor is off since nodes use persistent peer list at the moment
-	// turn back on for dynamic peer discovery if we don't implement it in
-	// another ethereum based way
-	cometConfig.P2P.PexReactor = isDev // turn off pex reactor in prod / stage
+
+	cometConfig.P2P.PexReactor = true
 	cometConfig.P2P.AddrBookStrict = envConfig.AddrBookStrict
 	if envConfig.PersistentPeers != "" {
 		cometConfig.P2P.PersistentPeers = envConfig.PersistentPeers
@@ -164,7 +162,7 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 	cometConfig.P2P.MaxNumOutboundPeers = envConfig.MaxOutboundPeers
 	cometConfig.P2P.MaxNumInboundPeers = envConfig.MaxInboundPeers
 	cometConfig.P2P.AllowDuplicateIP = true
-	cometConfig.P2P.FlushThrottleTimeout = 10 * time.Millisecond
+	cometConfig.P2P.FlushThrottleTimeout = 50 * time.Millisecond
 	cometConfig.P2P.SendRate = 5120000
 	cometConfig.P2P.RecvRate = 5120000
 	cometConfig.P2P.HandshakeTimeout = 3 * time.Second
@@ -180,4 +178,22 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 	}
 
 	return envConfig, cometConfig, nil
+}
+
+func moduloPersistentPeers(nodeAddress string, persistentPeers string, groupSize int) string {
+	peerList := strings.Split(persistentPeers, ",")
+	numPeers := len(peerList)
+
+	hash := sha256.Sum256([]byte(nodeAddress))
+	nodeHash := new(big.Int).SetBytes(hash[:])
+
+	startIndex := int(nodeHash.Mod(nodeHash, big.NewInt(int64(numPeers))).Int64())
+
+	var assignedPeers []string
+	for i := 0; i < groupSize; i++ {
+		index := (startIndex + i) % numPeers
+		assignedPeers = append(assignedPeers, peerList[index])
+	}
+
+	return strings.Join(assignedPeers, ",")
 }
