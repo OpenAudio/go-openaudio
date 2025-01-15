@@ -44,6 +44,23 @@ commands:
             ARCH=x86_64
             curl -sL "https://github.com/google/go-containerregistry/releases/download/${VERSION}/go-containerregistry_${OS}_${ARCH}.tar.gz" > go-containerregistry.tar.gz
             tar -zxvf go-containerregistry.tar.gz -C $HOME/bin/ crane
+  install-buf:
+    steps:
+      - run:
+          name: Install Buf
+          command: |
+            VERSION=1.49.0
+            OS=$(uname -s)
+            ARCH=$(uname -m)
+            
+            curl -sSL "https://github.com/bufbuild/buf/releases/download/v${VERSION}/buf-${OS}-${ARCH}" -o $HOME/bin/buf
+            
+            chmod +x $HOME/bin/buf
+
+            echo 'export PATH=$HOME/bin:$PATH' >> $BASH_ENV
+            source $BASH_ENV
+            
+            buf --version
 
 
 jobs:
@@ -78,6 +95,7 @@ jobs:
           key: go-mod-v1-{{ checksum "go.sum" }}
           paths:
             - /home/circleci/go/pkg/mod
+      - install-buf
       - run:
           name: Build audiusd binaries
           command: |
