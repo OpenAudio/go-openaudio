@@ -319,6 +319,9 @@
         },
         "manageEntity": {
           "$ref": "#/definitions/protocolManageEntityLegacy"
+        },
+        "validatorDeregistration": {
+          "$ref": "#/definitions/protocolValidatorDeregistration"
         }
       }
     },
@@ -405,6 +408,18 @@
         },
         "transaction": {
           "$ref": "#/definitions/protocolSignedTransaction"
+        }
+      }
+    },
+    "protocolValidatorDeregistration": {
+      "type": "object",
+      "properties": {
+        "cometAddress": {
+          "type": "string"
+        },
+        "pubKey": {
+          "type": "string",
+          "format": "byte"
         }
       }
     },

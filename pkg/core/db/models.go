@@ -71,6 +71,7 @@ type CoreValidator struct {
 	EthBlock     string
 	NodeType     string
 	SpID         string
+	CometPubKey  string
 }
 
 type EventAttribute struct {

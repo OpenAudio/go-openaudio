@@ -42,6 +42,7 @@ message SignedTransaction {
     ValidatorRegistration validator_registration = 1001;
     SlaRollup sla_rollup = 1002;
     ManageEntityLegacy manage_entity = 1003;
+    ValidatorDeregistration validator_deregistration = 1004;
   }
 }
 
@@ -101,6 +102,11 @@ message ValidatorRegistration {
   string sp_id = 5;
   bytes pub_key = 6;
   int64 power = 7;
+}
+
+message ValidatorDeregistration {
+  string comet_address = 1;
+  bytes pub_key = 2;
 }
 
 message TrackPlay {

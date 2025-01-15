@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DOMAINS=("prod-sandbox" "stage-sandbox" "dev-sandbox")
+DOMAINS=("prod-sandbox" "stage-sandbox" "dev-sandbox" "audiusd-test-1" "audiusd-test-2" "audiusd-test-3" "audiusd-test-4")
 IP="127.0.0.1"
 HOSTS_FILE="/etc/hosts"
 

@@ -3,8 +3,12 @@ insert into core_app_state (block_height, app_hash)
 values ($1, $2);
 
 -- name: InsertRegisteredNode :exec
-insert into core_validators(pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id)
-values ($1, $2, $3, $4, $5, $6, $7);
+insert into core_validators(pub_key, endpoint, eth_address, comet_address, comet_pub_key, eth_block, node_type, sp_id)
+values ($1, $2, $3, $4, $5, $6, $7, $8);
+
+-- name: DeleteRegisteredNode :exec
+delete from core_validators
+where comet_address = $1;
 
 -- name: UpsertSlaRollupReport :exec
 with updated as (

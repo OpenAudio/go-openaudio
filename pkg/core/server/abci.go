@@ -138,6 +138,14 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 			proposalTxs = append(proposalTxs, rollupTx)
 		}
 	}
+	for _, mb := range proposal.Misbehavior {
+		deregTx, err := s.createDeregisterTransaction(mb.Validator.Address)
+		if err != nil {
+			s.logger.Error("Failed to create deregistration transaction", "error", err)
+		} else {
+			proposalTxs = append(proposalTxs, deregTx)
+		}
+	}
 
 	// keep batch at 1000 even if sla rollup occurs
 	batch := 1000
@@ -163,7 +171,7 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 }
 
 func (s *Server) ProcessProposal(ctx context.Context, proposal *abcitypes.ProcessProposalRequest) (*abcitypes.ProcessProposalResponse, error) {
-	valid, err := s.validateBlockTxs(ctx, proposal.Time, proposal.Height, proposal.Txs)
+	valid, err := s.validateBlockTxs(ctx, proposal.Time, proposal.Height, proposal.Misbehavior, proposal.Txs)
 	if err != nil {
 		s.logger.Error("Reporting unknown proposal status due to validation error", "error", err)
 		return &abcitypes.ProcessProposalResponse{Status: abcitypes.PROCESS_PROPOSAL_STATUS_UNKNOWN}, err
@@ -177,8 +185,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 	logger := s.logger
 	state := s.abciState
 	var txs = make([]*abcitypes.ExecTxResult, len(req.Txs))
-	var validatorUpdates = abcitypes.ValidatorUpdates{}
-	var validatorUpdatesMap = map[string]bool{}
+	var validatorUpdatesMap = map[string]abcitypes.ValidatorUpdate{}
 
 	// open in progres pg transaction
 	s.startInProgressTx(ctx)
@@ -194,24 +201,28 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				txs[i] = &abcitypes.ExecTxResult{Code: 2}
 			}
 
-			finalizedTx, err := s.finalizeTransaction(ctx, signedTx, txhash)
+			finalizedTx, err := s.finalizeTransaction(ctx, signedTx, txhash, req.Misbehavior)
 			if err != nil {
 				s.logger.Errorf("error finalizing event: %v", err)
 				txs[i] = &abcitypes.ExecTxResult{Code: 2}
 			} else if vr := signedTx.GetValidatorRegistration(); vr != nil {
-				// Avoid error when duplicate validator update txs are in the same block
 				vrPubKey := ed25519.PubKey(vr.GetPubKey())
 				vrAddr := vrPubKey.Address().String()
 				if _, ok := validatorUpdatesMap[vrAddr]; !ok {
-					validatorUpdates = append(
-						validatorUpdates,
-						abcitypes.ValidatorUpdate{
-							Power:       vr.Power,
-							PubKeyBytes: vr.PubKey,
-							PubKeyType:  "ed25519",
-						},
-					)
-					validatorUpdatesMap[vrAddr] = true
+					validatorUpdatesMap[vrAddr] = abcitypes.ValidatorUpdate{
+						Power:       vr.Power,
+						PubKeyBytes: vr.PubKey,
+						PubKeyType:  "ed25519",
+					}
+				}
+			} else if vd := signedTx.GetValidatorDeregistration(); vd != nil {
+				vdPubKey := ed25519.PubKey(vd.GetPubKey())
+				vdAddr := vdPubKey.Address().String()
+				// intentionally override any existing updates
+				validatorUpdatesMap[vdAddr] = abcitypes.ValidatorUpdate{
+					Power:       int64(0),
+					PubKeyBytes: vd.PubKey,
+					PubKeyType:  "ed25519",
 				}
 			}
 
@@ -257,6 +268,10 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 		go s.mempl.RemoveExpiredTransactions(req.Height)
 	}
 
+	validatorUpdates := make(abcitypes.ValidatorUpdates, 0, len(validatorUpdatesMap))
+	for _, vu := range validatorUpdatesMap {
+		validatorUpdates = append(validatorUpdates, vu)
+	}
 	return &abcitypes.FinalizeBlockResponse{
 		TxResults:        txs,
 		AppHash:          nextAppHash,
@@ -353,7 +368,7 @@ func (s *Server) isValidSignedTransaction(tx []byte) (*core_proto.SignedTransact
 	return &msg, nil
 }
 
-func (s *Server) validateBlockTxs(ctx context.Context, blockTime time.Time, blockHeight int64, txs [][]byte) (bool, error) {
+func (s *Server) validateBlockTxs(ctx context.Context, blockTime time.Time, blockHeight int64, misbehavior []abcitypes.Misbehavior, txs [][]byte) (bool, error) {
 	alreadyContainsRollup := false
 	for _, tx := range txs {
 		signedTx, err := s.isValidSignedTransaction(tx)
@@ -367,6 +382,11 @@ func (s *Server) validateBlockTxs(ctx context.Context, blockTime time.Time, bloc
 		case *core_proto.SignedTransaction_ValidatorRegistration:
 			if err := s.isValidRegisterNodeTx(signedTx); err != nil {
 				s.logger.Error("Invalid block: invalid register node tx", "error", err)
+				return false, nil
+			}
+		case *core_proto.SignedTransaction_ValidatorDeregistration:
+			if err := s.isValidDeregisterNodeTx(signedTx, misbehavior); err != nil {
+				s.logger.Error("Invalid block: invalid deregister node tx", "error", err)
 				return false, nil
 			}
 		case *core_proto.SignedTransaction_SlaRollup:
@@ -386,7 +406,7 @@ func (s *Server) validateBlockTxs(ctx context.Context, blockTime time.Time, bloc
 	return true, nil
 }
 
-func (s *Server) finalizeTransaction(ctx context.Context, msg *core_proto.SignedTransaction, txHash string) (proto.Message, error) {
+func (s *Server) finalizeTransaction(ctx context.Context, msg *core_proto.SignedTransaction, txHash string, misbehavior []abcitypes.Misbehavior) (proto.Message, error) {
 	switch t := msg.Transaction.(type) {
 	case *core_proto.SignedTransaction_Plays:
 		return s.finalizePlayTransaction(ctx, msg)
@@ -394,6 +414,8 @@ func (s *Server) finalizeTransaction(ctx context.Context, msg *core_proto.Signed
 		return s.finalizeManageEntity(ctx, msg)
 	case *core_proto.SignedTransaction_ValidatorRegistration:
 		return s.finalizeRegisterNode(ctx, msg)
+	case *core_proto.SignedTransaction_ValidatorDeregistration:
+		return s.finalizeDeregisterNode(ctx, msg, misbehavior)
 	case *core_proto.SignedTransaction_SlaRollup:
 		return s.finalizeSlaRollup(ctx, msg, txHash)
 	default:

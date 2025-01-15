@@ -33,6 +33,9 @@ type ProtocolSignedTransaction struct {
 	// sla rollup
 	SLARollup *ProtocolSLARollup `json:"slaRollup,omitempty"`
 
+	// validator deregistration
+	ValidatorDeregistration *ProtocolValidatorDeregistration `json:"validatorDeregistration,omitempty"`
+
 	// validator registration
 	ValidatorRegistration *ProtocolValidatorRegistration `json:"validatorRegistration,omitempty"`
 }
@@ -50,6 +53,10 @@ func (m *ProtocolSignedTransaction) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateSLARollup(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateValidatorDeregistration(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -120,6 +127,25 @@ func (m *ProtocolSignedTransaction) validateSLARollup(formats strfmt.Registry) e
 	return nil
 }
 
+func (m *ProtocolSignedTransaction) validateValidatorDeregistration(formats strfmt.Registry) error {
+	if swag.IsZero(m.ValidatorDeregistration) { // not required
+		return nil
+	}
+
+	if m.ValidatorDeregistration != nil {
+		if err := m.ValidatorDeregistration.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("validatorDeregistration")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("validatorDeregistration")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (m *ProtocolSignedTransaction) validateValidatorRegistration(formats strfmt.Registry) error {
 	if swag.IsZero(m.ValidatorRegistration) { // not required
 		return nil
@@ -152,6 +178,10 @@ func (m *ProtocolSignedTransaction) ContextValidate(ctx context.Context, formats
 	}
 
 	if err := m.contextValidateSLARollup(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.contextValidateValidatorDeregistration(ctx, formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -220,6 +250,27 @@ func (m *ProtocolSignedTransaction) contextValidateSLARollup(ctx context.Context
 				return ve.ValidateName("slaRollup")
 			} else if ce, ok := err.(*errors.CompositeError); ok {
 				return ce.ValidateName("slaRollup")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *ProtocolSignedTransaction) contextValidateValidatorDeregistration(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.ValidatorDeregistration != nil {
+
+		if swag.IsZero(m.ValidatorDeregistration) { // not required
+			return nil
+		}
+
+		if err := m.ValidatorDeregistration.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("validatorDeregistration")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("validatorDeregistration")
 			}
 			return err
 		}

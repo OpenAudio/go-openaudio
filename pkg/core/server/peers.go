@@ -61,6 +61,7 @@ func (s *Server) onPeerTick() error {
 	var wg sync.WaitGroup
 	wg.Add(len(validators))
 
+	var localPeerMU sync.RWMutex
 	for _, validator := range validators {
 		go func() {
 			defer wg.Done()
@@ -70,7 +71,9 @@ func (s *Server) onPeerTick() error {
 				return
 			}
 
+			localPeerMU.RLock()
 			_, peered := peers[ethaddr]
+			localPeerMU.RUnlock()
 			if peered {
 				return
 			}
@@ -85,12 +88,14 @@ func (s *Server) onPeerTick() error {
 			// don't retry because ticker will handle it
 			sdk, err := sdk.NewSdk(sdk.WithOapiendpoint(oapiendpoint), sdk.WithRetries(0), sdk.WithUsehttps(s.config.UseHttpsForSdk))
 			if err != nil {
-				s.logger.Errorf("could not peer with %s", oapiendpoint)
+				s.logger.Errorf("could not peer with '%s', error: %v", oapiendpoint, err)
 				return
 			}
 
 			// add to peers copy
+			localPeerMU.Lock()
 			peers[ethaddr] = sdk
+			localPeerMU.Unlock()
 			if !addedNewPeer {
 				addedNewPeer = true
 			}

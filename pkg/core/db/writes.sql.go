@@ -62,9 +62,19 @@ func (q *Queries) CommitSlaRollup(ctx context.Context, arg CommitSlaRollupParams
 	return id, err
 }
 
+const deleteRegisteredNode = `-- name: DeleteRegisteredNode :exec
+delete from core_validators
+where comet_address = $1
+`
+
+func (q *Queries) DeleteRegisteredNode(ctx context.Context, cometAddress string) error {
+	_, err := q.db.Exec(ctx, deleteRegisteredNode, cometAddress)
+	return err
+}
+
 const insertRegisteredNode = `-- name: InsertRegisteredNode :exec
-insert into core_validators(pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id)
-values ($1, $2, $3, $4, $5, $6, $7)
+insert into core_validators(pub_key, endpoint, eth_address, comet_address, comet_pub_key, eth_block, node_type, sp_id)
+values ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 type InsertRegisteredNodeParams struct {
@@ -72,6 +82,7 @@ type InsertRegisteredNodeParams struct {
 	Endpoint     string
 	EthAddress   string
 	CometAddress string
+	CometPubKey  string
 	EthBlock     string
 	NodeType     string
 	SpID         string
@@ -83,6 +94,7 @@ func (q *Queries) InsertRegisteredNode(ctx context.Context, arg InsertRegistered
 		arg.Endpoint,
 		arg.EthAddress,
 		arg.CometAddress,
+		arg.CometPubKey,
 		arg.EthBlock,
 		arg.NodeType,
 		arg.SpID,

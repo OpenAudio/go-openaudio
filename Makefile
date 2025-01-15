@@ -157,7 +157,7 @@ $(TEMPL_ARTIFACTS): $(TEMPL_SRCS)
 regen-proto: $(PROTO_ARTIFACTS)
 $(PROTO_ARTIFACTS): $(PROTO_SRCS)
 	@echo Regenerating protobuf code
-	cd pkg/core && buf generate
+	cd pkg/core && buf --version && buf generate
 	cd pkg/core/gen/core_proto && swagger generate client -f protocol.swagger.json -t ../ --client-package=core_openapi
 
 .PHONY: regen-sql

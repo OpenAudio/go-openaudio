@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"math/big"
@@ -13,7 +14,10 @@ import (
 	"github.com/AudiusProject/audius-protocol/pkg/core/db"
 	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_proto"
 	"github.com/AudiusProject/audius-protocol/pkg/logger"
+	abcitypes "github.com/cometbft/cometbft/abci/types"
+	cometcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/ed25519"
+	"github.com/cometbft/cometbft/types"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	geth "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -178,14 +182,14 @@ func (s *Server) registerSelfOnComet(ethBlock, spID string) error {
 		Power:        int64(s.config.ValidatorVotingPower),
 	}
 
-	eventBytes, err := proto.Marshal(registrationTx)
+	txBytes, err := proto.Marshal(registrationTx)
 	if err != nil {
-		return fmt.Errorf("failure to marshal register event: %v", err)
+		return fmt.Errorf("failure to marshal register tx: %v", err)
 	}
 
-	sig, err := common.EthSign(s.config.EthereumKey, eventBytes)
+	sig, err := common.EthSign(s.config.EthereumKey, txBytes)
 	if err != nil {
-		return fmt.Errorf("could not sign register event: %v", err)
+		return fmt.Errorf("could not sign register tx: %v", err)
 	}
 
 	tx := &core_proto.SignedTransaction{
@@ -208,6 +212,45 @@ func (s *Server) registerSelfOnComet(ethBlock, spID string) error {
 	s.logger.Infof("registered node %s in tx %s", s.config.NodeEndpoint, txhash)
 
 	return nil
+}
+
+func (s *Server) createDeregisterTransaction(address types.Address) ([]byte, error) {
+	node, err := s.db.GetRegisteredNodeByCometAddress(context.Background(), address.String())
+	if err != nil {
+		return []byte{}, fmt.Errorf("not able to find registered node with address '%s': %v", address.String(), err)
+	}
+	pubkeyEnc, err := base64.StdEncoding.DecodeString(node.CometPubKey)
+	if err != nil {
+		return []byte{}, fmt.Errorf("could not decode public key '%s' as base64 encoded string: %v", node.CometPubKey, err)
+	}
+	deregistrationTx := &core_proto.ValidatorDeregistration{
+		PubKey:       pubkeyEnc,
+		CometAddress: address.String(),
+	}
+
+	txBytes, err := proto.Marshal(deregistrationTx)
+	if err != nil {
+		return []byte{}, fmt.Errorf("failure to marshal deregister tx: %v", err)
+	}
+
+	sig, err := common.EthSign(s.config.EthereumKey, txBytes)
+	if err != nil {
+		return []byte{}, fmt.Errorf("could not sign deregister tx: %v", err)
+	}
+
+	tx := core_proto.SignedTransaction{
+		Signature: sig,
+		RequestId: uuid.NewString(),
+		Transaction: &core_proto.SignedTransaction_ValidatorDeregistration{
+			ValidatorDeregistration: deregistrationTx,
+		},
+	}
+
+	signedTxBytes, err := proto.Marshal(&tx)
+	if err != nil {
+		return []byte{}, err
+	}
+	return signedTxBytes, nil
 }
 
 func (s *Server) awaitNodeCatchup(ctx context.Context) error {
@@ -257,6 +300,7 @@ func (s *Server) isSelfRegisteredOnEth() (bool, error) {
 }
 
 func (s *Server) registerSelfOnEth() error {
+	s.logger.Info("Attempting to register self on ethereum")
 	chainID, err := s.contracts.Rpc.ChainID(context.Background())
 	if err != nil {
 		return fmt.Errorf("could not get chain id: %v", err)
@@ -279,14 +323,23 @@ func (s *Server) registerSelfOnEth() error {
 
 	alreadyRegistered := false
 	addr := geth.HexToAddress(s.config.WalletAddress)
-	sp, err := spf.GetServiceProviderIdsFromAddress(nil, addr, contracts.ContentNode)
-	if err == nil && len(sp) > 0 {
-		alreadyRegistered = true
+	spIDs, err := spf.GetServiceProviderIdsFromAddress(nil, addr, contracts.DiscoveryNode)
+	if err != nil {
+		return fmt.Errorf("could not get spIDs from address: %v", err)
+	}
+	serviceType, err := contracts.ServiceType(s.config.NodeType)
+	if err != nil {
+		return fmt.Errorf("invalid node type: %v", err)
 	}
 
-	sp, err = spf.GetServiceProviderIdsFromAddress(nil, addr, contracts.DiscoveryNode)
-	if err == nil && len(sp) > 0 {
-		alreadyRegistered = true
+	for _, spID := range spIDs {
+		info, err := spf.GetServiceEndpointInfo(nil, serviceType, spID)
+		if err != nil {
+			return fmt.Errorf("could not get service endpoint info: %v", err)
+		}
+		if info.Endpoint == s.config.NodeEndpoint {
+			alreadyRegistered = true
+		}
 	}
 
 	if alreadyRegistered {
@@ -305,11 +358,6 @@ func (s *Server) registerSelfOnEth() error {
 	_, err = token.Approve(opts, stakingAddress, stake)
 	if err != nil {
 		return fmt.Errorf("could not approve tokens: %v", err)
-	}
-
-	serviceType, err := contracts.ServiceType(s.config.NodeType)
-	if err != nil {
-		return fmt.Errorf("invalid node type: %v", err)
 	}
 
 	endpoint := s.config.NodeEndpoint
@@ -407,6 +455,42 @@ func (s *Server) isValidRegisterNodeTx(tx *core_proto.SignedTransaction) error {
 	return nil
 }
 
+func (s *Server) isValidDeregisterNodeTx(tx *core_proto.SignedTransaction, misbehavior []abcitypes.Misbehavior) error {
+	sig := tx.GetSignature()
+	if sig == "" {
+		return fmt.Errorf("no signature provided for deregistration tx: %v", tx)
+	}
+
+	vd := tx.GetValidatorDeregistration()
+	if vd == nil {
+		return fmt.Errorf("unknown tx fell into isValidDeregisterNodeTx: %v", tx)
+	}
+
+	addr := vd.GetCometAddress()
+
+	_, err := s.db.GetRegisteredNodeByCometAddress(context.Background(), addr)
+	if err != nil {
+		return fmt.Errorf("not able to find registered node: %v", err)
+	}
+
+	if len(vd.GetPubKey()) == 0 {
+		return fmt.Errorf("Public Key missing from deregistration tx: %v", tx)
+	}
+	vdPubKey := ed25519.PubKey(vd.GetPubKey())
+	if vdPubKey.Address().String() != addr {
+		return fmt.Errorf("address does not match public key: %s %s", vdPubKey.Address(), addr)
+	}
+
+	for _, mb := range misbehavior {
+		validator := mb.GetValidator()
+		if addr == cometcrypto.Address(validator.GetAddress()).String() {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("No misbehavior found matching deregistration tx: %v", tx)
+}
+
 func (s *Server) isDuplicateDelegateOwnerWallet(delegateOwnerWallet string) error {
 	s.ethNodeMU.RLock()
 	defer s.ethNodeMU.RUnlock()
@@ -454,6 +538,7 @@ func (s *Server) finalizeRegisterNode(ctx context.Context, tx *core_proto.Signed
 			EthAddress:   address,
 			Endpoint:     registerNode.GetEndpoint(),
 			CometAddress: registerNode.GetCometAddress(),
+			CometPubKey:  base64.StdEncoding.EncodeToString(registerNode.GetPubKey()),
 			EthBlock:     registerNode.GetEthBlock(),
 			NodeType:     registerNode.GetNodeType(),
 			SpID:         registerNode.GetSpId(),
@@ -464,4 +549,19 @@ func (s *Server) finalizeRegisterNode(ctx context.Context, tx *core_proto.Signed
 	}
 
 	return vr, nil
+}
+
+func (s *Server) finalizeDeregisterNode(ctx context.Context, tx *core_proto.SignedTransaction, misbehavior []abcitypes.Misbehavior) (*core_proto.ValidatorDeregistration, error) {
+	if err := s.isValidDeregisterNodeTx(tx, misbehavior); err != nil {
+		return nil, fmt.Errorf("invalid deregister node tx: %v", err)
+	}
+
+	vd := tx.GetValidatorDeregistration()
+	qtx := s.getDb()
+	err := qtx.DeleteRegisteredNode(ctx, vd.GetCometAddress())
+	if err != nil {
+		return nil, fmt.Errorf("error deleting registered node: %v", err)
+	}
+
+	return vd, nil
 }
