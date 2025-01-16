@@ -1,10 +1,10 @@
 # Development
 
-## Local Development
+> Assumes development is done on macOS with apple silicon.
 
-**PREREQUISITES:**
+**Prerequisites:**
 
-1. Add the local x509 cert to your keychain so you can have green ssl in your browser (You can skip this, but you will get browser warnings).
+1. Add the local dev x509 cert to your keychain so you will have green ssl in your browser.
 
 ```bash
 sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain dev/tls/cert.pem
@@ -16,7 +16,7 @@ sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keyc
 echo "127.0.0.1       node1.audiusd.devnet node2.audiusd.devnet node3.audiusd.devnet node4.audiusd.devnet" | sudo tee -a /etc/hosts
 ```
 
-**BULD AND RUN**
+## Build and Run
 
 Build and run a local devnet with 4 nodes.
 
@@ -24,7 +24,7 @@ Build and run a local devnet with 4 nodes.
 make audiusd-dev
 ```
 
-Access the dev nodes:
+Access the dev nodes.
 
 ```bash
 # add -k if you don't have the cert in your keychain
@@ -33,35 +33,45 @@ curl https://node2.audiusd.devnet/health-check
 curl https://node3.audiusd.devnet/health-check
 curl https://node4.audiusd.devnet/health-check
 
-# view in browser (quit and re open if you get a cert error)
+# view in browser (quit and re-open if you added the cert and still get browser warnings)
 open https://node1.audiusd.devnet/console
 open https://node2.audiusd.devnet/console
 open https://node3.audiusd.devnet/console
 open https://node4.audiusd.devnet/console
 ```
 
-**CLEANUP**
+Cleanup.
 
 ```bash
 make audiusd-dev-down
 ```
 
-**HOT RELOADING**
+### Hot Reloading
 
-Per the mounts in `compose/docker-compose.yml`, hot reloading is enabled on `node1.devnet.audiusd`.
-Changes to code in `./cmd/` and `./pkg/` will be reflected after a quick rebuild handled by `air`.
+As per the volume mounts defined in `dev/docker-compose.yml`, hot reloading is enabled on `node1.devnet.audiusd`.
 
-### Dev against stage or prod
+Local changes to code in `./cmd/` and `./pkg/` will be reflected on `node1.devnet.audiusd` after a quick rebuild handled by `air`. The dev docker image prebuilds the `audiusd` binary so it is ready to run on a cold start.
+
+To propagate local changes to the other dev nodes, run `make audiusd-dev` again which will rebuild local images and restart the containers. Alternatively, you could add volume mounts to the other nodes in `dev/docker-compose.yml`. But this is likely unnecessary.
+
+
+### Develop against stage or prod
 
 ```bash
 # build a local node
 make build-audiusd-dev
 
-# peer with stage
-docker run --rm -it -p 80:80 -p 443:443 -e NETWORK=stage audius/audiusd:dev
-
 # peer with prod
 docker run --rm -it -p 80:80 -p 443:443 -e NETWORK=prod audius/audiusd:dev
+
+# peer with stage with hot reloading
+docker run --rm -it \
+  -p 80:80 \
+  -p 443:443 \
+  -e NETWORK="stage" \
+  -v $(pwd)/cmd:/app/cmd \
+  -v $(pwd)/pkg:/app/pkg \
+  audius/audiusd:dev
 ```
 
 ## Run tests

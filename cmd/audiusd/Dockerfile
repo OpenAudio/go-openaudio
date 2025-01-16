@@ -82,7 +82,7 @@ ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
 ENV GOPATH="/go"
 ENV GOROOT="/usr/local/go"
 
-RUN go install github.com/air-verse/air@latest
+RUN go install github.com/air-verse/air@v1.61.5
 
 WORKDIR /app
 COPY --from=builder /go/pkg/mod /go/pkg/mod
