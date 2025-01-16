@@ -3,8 +3,8 @@ package common
 import (
 	"fmt"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_proto"
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/models"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/models"
 	"github.com/go-openapi/strfmt"
 )
 

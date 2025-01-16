@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/httputil"
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/server"
+	"github.com/AudiusProject/audiusd/pkg/httputil"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
 )
 
 func NewGraphStaging() PeerProvider {

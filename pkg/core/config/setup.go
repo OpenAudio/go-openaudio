@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/common"
-	"github.com/AudiusProject/audius-protocol/pkg/core/config/genesis"
+	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/core/config/genesis"
 	cconfig "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"

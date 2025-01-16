@@ -100,9 +100,13 @@ if [ "${AUDIUSD_CORE_ONLY:-false}" = "true" ]; then
     echo "Running in core only mode, skipping PostgreSQL setup..."
     echo "Starting audiusd..."
     exec /bin/audiusd "$@"
+elif [ "${AUDIUSD_DEV_MODE:-false}" = "true" ]; then
+    setup_postgres
+    echo "Starting audiusd in dev mode with air..."
+    exec air
 elif [ "${AUDIUSD_TEST_MODE:-false}" = "true" ]; then
     setup_postgres
-    echo "Running in test mode, executing test database initialization..."
+    echo "Starting audiusd in test mode..."
     for sql_file in /app/audiusd/.initdb/*.sql; do
         if [ -f "$sql_file" ]; then
             echo "Executing $sql_file..."

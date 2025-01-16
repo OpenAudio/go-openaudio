@@ -4,7 +4,7 @@
 package main
 
 import (
-	"github.com/AudiusProject/audius-protocol/pkg/statusbar"
+	"github.com/AudiusProject/audiusd/pkg/statusbar"
 	"github.com/spf13/cobra"
 )
 

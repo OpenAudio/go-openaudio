@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/AudiusProject/audius-protocol/pkg/conf"
-	"github.com/AudiusProject/audius-protocol/pkg/logger"
-	"github.com/AudiusProject/audius-protocol/pkg/orchestration"
+	"github.com/AudiusProject/audiusd/pkg/conf"
+	"github.com/AudiusProject/audiusd/pkg/logger"
+	"github.com/AudiusProject/audiusd/pkg/orchestration"
 	"github.com/spf13/cobra"
 )
 

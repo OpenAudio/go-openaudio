@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/conf"
-	"github.com/AudiusProject/audius-protocol/pkg/logger"
+	"github.com/AudiusProject/audiusd/pkg/conf"
+	"github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"

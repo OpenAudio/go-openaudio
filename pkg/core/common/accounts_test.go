@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_proto"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )

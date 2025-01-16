@@ -3,4 +3,6 @@
 bin/*
 !bin/.gitkeep
 
+tmp
+
 .release_notes.md

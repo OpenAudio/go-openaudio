@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_proto"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 )
 
 func (s *Server) isValidPlayTransaction(_ context.Context, _ *core_proto.SignedTransaction) error {

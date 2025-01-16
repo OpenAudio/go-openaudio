@@ -1,9 +1,9 @@
 package pages
 
 import (
-	"github.com/AudiusProject/audius-protocol/pkg/core/config"
-	"github.com/AudiusProject/audius-protocol/pkg/core/console/views/components"
-	"github.com/AudiusProject/audius-protocol/pkg/core/console/views/layout"
+	"github.com/AudiusProject/audiusd/pkg/core/config"
+	"github.com/AudiusProject/audiusd/pkg/core/console/views/components"
+	"github.com/AudiusProject/audiusd/pkg/core/console/views/layout"
 )
 
 type Pages struct {

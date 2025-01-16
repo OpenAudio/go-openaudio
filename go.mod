@@ -1,4 +1,4 @@
-module github.com/AudiusProject/audius-protocol
+module github.com/AudiusProject/audiusd
 
 go 1.23.1
 

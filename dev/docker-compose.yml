@@ -1,0 +1,145 @@
+services:
+  ingress:
+    image: nginx
+    restart: unless-stopped
+    volumes:
+      - ./dev/nginx.conf:/etc/nginx/conf.d/vhost.conf:ro
+      - ./dev/tls/cert.pem:/etc/nginx/ssl/cert.pem:ro
+      - ./dev/tls/key.pem:/etc/nginx/ssl/key.pem:ro
+    extra_hosts:
+      - 'node1.audiusd.devnet:host-gateway'
+      - 'node2.audiusd.devnet:host-gateway'
+      - 'node3.audiusd.devnet:host-gateway'
+      - 'node4.audiusd.devnet:host-gateway'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://node1.audiusd.devnet/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    ports:
+      - 80:80
+      - 443:443
+    profiles:
+      - audiusd-dev
+      - core-tests
+
+  eth-ganache:
+    image: audius/eth-ganache:latest
+    restart: unless-stopped
+    command: bash /tmp/scripts/eth-ganache.sh
+    stop_grace_period: 0s
+    volumes:
+      - ./dev/scripts/eth-ganache.sh:/tmp/scripts/eth-ganache.sh
+    deploy:
+      mode: global
+    profiles:
+      - audiusd-dev
+      - core-tests
+
+  audiusd-1:
+    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
+    restart: unless-stopped
+    env_file:
+      - ./dev/env/audiusd-1.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://node1.audiusd.devnet/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    volumes:
+      - ./cmd:/app/cmd
+      - ./pkg:/app/pkg
+      - ./go.mod:/app/go.mod
+      - ./go.sum:/app/go.sum
+      - ./.air.toml:/app/.air.toml
+    profiles:
+      - audiusd-dev
+      - core-tests
+
+  audiusd-2:
+    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
+    restart: unless-stopped
+    env_file:
+      - ./dev/env/audiusd-2.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://node2.audiusd.devnet/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    profiles:
+      - audiusd-dev
+      - core-tests
+
+  audiusd-3:
+    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
+    restart: unless-stopped
+    env_file:
+      - ./dev/env/audiusd-3.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://node3.audiusd.devnet/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    profiles:
+      - audiusd-dev
+      - core-tests
+
+  audiusd-4:
+    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
+    restart: unless-stopped
+    env_file:
+      - ./dev/env/audiusd-4.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://node4.audiusd.devnet/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    profiles:
+      - audiusd-dev
+      - core-tests
+
+  test-core:
+    image: ${TEST_IMAGE:-audius/audiusd:test}
+    command: go test -v -count=1 -timeout=60s ./pkg/core/...
+    volumes:
+      - ./cmd:/app/cmd
+      - ./pkg:/app/pkg
+      - ./go.mod:/app/go.mod
+      - ./go.sum:/app/go.sum
+    env_file:
+      - ./dev/env/test-core.env
+    depends_on:
+      ingress:
+        condition: service_healthy
+      audiusd-1:
+        condition: service_started
+      audiusd-2:
+        condition: service_started
+      audiusd-3:
+        condition: service_started
+      audiusd-4:
+        condition: service_started
+      eth-ganache:
+        condition: service_healthy
+    profiles:
+      - core-tests
+
+  test-mediorum-unittests:
+    image: ${TEST_IMAGE:-audius/audiusd:test}
+    command: go test -v -count=1 -timeout=60s ./pkg/mediorum/...
+    volumes:
+      - ./cmd:/app/cmd
+      - ./pkg:/app/pkg
+      - ./go.mod:/app/go.mod
+      - ./go.sum:/app/go.sum
+    environment:
+      NETWORK: test
+      dbUrlTemplate: 'postgres://postgres:postgres@localhost:5432/m%d'
+      dbUrl: 'postgres://postgres:postgres@localhost:5432/mediorum_test'
+    profiles:
+      - mediorum-unittests

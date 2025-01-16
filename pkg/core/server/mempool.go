@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/common"
-	"github.com/AudiusProject/audius-protocol/pkg/core/config"
-	"github.com/AudiusProject/audius-protocol/pkg/core/db"
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_openapi/protocol"
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_proto"
-	"github.com/AudiusProject/audius-protocol/pkg/core/sdk"
+	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/core/config"
+	"github.com/AudiusProject/audiusd/pkg/core/db"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_openapi/protocol"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
+	"github.com/AudiusProject/audiusd/pkg/core/sdk"
 	"github.com/labstack/echo/v4"
 	"google.golang.org/protobuf/encoding/protojson"
 )

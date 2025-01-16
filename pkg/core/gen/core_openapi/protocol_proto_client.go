@@ -10,7 +10,7 @@ import (
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_openapi/protocol"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_openapi/protocol"
 )
 
 // Default protocol proto HTTP client.

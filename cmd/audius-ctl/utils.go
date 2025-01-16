@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/AudiusProject/audius-protocol/pkg/conf"
-	"github.com/AudiusProject/audius-protocol/pkg/logger"
+	"github.com/AudiusProject/audiusd/pkg/conf"
+	"github.com/AudiusProject/audiusd/pkg/logger"
 )
 
 func filterNodesFromContext(desired []string, ctx *conf.ContextConfig) (map[string]conf.NodeConfig, error) {

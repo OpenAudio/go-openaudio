@@ -3,8 +3,8 @@ package console
 import (
 	"strings"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/console/views/pages"
-	"github.com/AudiusProject/audius-protocol/pkg/core/db"
+	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
+	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/labstack/echo/v4"
 )
 

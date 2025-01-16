@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/server/signature"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
 	"gorm.io/gorm"
 
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/cidutil"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
 
 	"github.com/erni27/imcache"
 	"github.com/labstack/echo/v4"

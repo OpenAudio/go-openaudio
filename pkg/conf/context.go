@@ -6,7 +6,7 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"github.com/AudiusProject/audius-protocol/pkg/logger"
+	"github.com/AudiusProject/audiusd/pkg/logger"
 )
 
 const (

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/httputil"
+	"github.com/AudiusProject/audiusd/pkg/httputil"
 
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/server/signature"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
 	"github.com/oklog/ulid/v2"
 	"golang.org/x/exp/slog"
 	"gorm.io/gorm"

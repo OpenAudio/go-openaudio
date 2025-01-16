@@ -9,9 +9,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/AudiusProject/audius-protocol/pkg/conf"
-	"github.com/AudiusProject/audius-protocol/pkg/logger"
-	"github.com/AudiusProject/audius-protocol/pkg/register"
+	"github.com/AudiusProject/audiusd/pkg/conf"
+	"github.com/AudiusProject/audiusd/pkg/logger"
+	"github.com/AudiusProject/audiusd/pkg/register"
 	"github.com/joho/godotenv"
 )
 

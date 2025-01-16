@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/common"
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_proto"
+	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/cometbft/cometbft/abci/types"
 	gogo "github.com/cosmos/gogoproto/proto"
 	"github.com/iancoleman/strcase"

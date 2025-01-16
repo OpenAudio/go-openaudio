@@ -13,7 +13,7 @@ import (
 	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/strfmt"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/models"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/models"
 )
 
 // ProtocolPingReader is a Reader for the ProtocolPing structure.

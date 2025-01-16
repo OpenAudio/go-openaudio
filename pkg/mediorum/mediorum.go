@@ -12,11 +12,11 @@ import (
 
 	_ "embed"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/common"
-	"github.com/AudiusProject/audius-protocol/pkg/httputil"
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/ethcontracts"
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/server"
-	"github.com/AudiusProject/audius-protocol/pkg/registrar"
+	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/httputil"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
+	"github.com/AudiusProject/audiusd/pkg/registrar"
 	"golang.org/x/exp/slices"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sync/errgroup"

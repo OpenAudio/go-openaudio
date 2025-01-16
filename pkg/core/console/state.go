@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/common"
-	"github.com/AudiusProject/audius-protocol/pkg/core/config"
-	"github.com/AudiusProject/audius-protocol/pkg/core/console/views/pages"
-	"github.com/AudiusProject/audius-protocol/pkg/core/db"
-	"github.com/AudiusProject/audius-protocol/pkg/core/server"
+	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/core/config"
+	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
+	"github.com/AudiusProject/audiusd/pkg/core/db"
+	"github.com/AudiusProject/audiusd/pkg/core/server"
 	"github.com/cometbft/cometbft/rpc/client"
 )
 

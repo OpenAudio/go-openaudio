@@ -24,12 +24,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core"
-	"github.com/AudiusProject/audius-protocol/pkg/core/common"
-	"github.com/AudiusProject/audius-protocol/pkg/core/console"
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum"
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/server"
-	"github.com/AudiusProject/audius-protocol/pkg/uptime"
+	"github.com/AudiusProject/audiusd/pkg/core"
+	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/core/console"
+	"github.com/AudiusProject/audiusd/pkg/mediorum"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
+	"github.com/AudiusProject/audiusd/pkg/uptime"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/labstack/echo/v4"
@@ -255,7 +255,7 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger) error {
 	e.Use(middleware.Logger(), middleware.Recover())
 
 	e.GET("/", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"a": "440"})
+		return c.JSON(http.StatusOK, map[string]int{"a": 440})
 	})
 
 	e.GET("/health-check", func(c echo.Context) error {

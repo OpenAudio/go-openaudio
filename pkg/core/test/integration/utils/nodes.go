@@ -4,25 +4,25 @@ import (
 	"log"
 	"os"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/sdk"
+	"github.com/AudiusProject/audiusd/pkg/core/sdk"
 )
 
 var (
 	discoveryOneGrpc = getEnvWithDefault("discoveryOneGRPC", "0.0.0.0:6613")
 	discoveryOneJrpc = getEnvWithDefault("discoveryOneJRPC", "http://0.0.0.0:6612")
-	discoveryOneOapi = getEnvWithDefault("discoveryOneOAPI", "audiusd-test-1")
+	discoveryOneOapi = getEnvWithDefault("discoveryOneOAPI", "audiusd-1")
 
 	contentOneGrpc = getEnvWithDefault("contentOneGRPC", "0.0.0.0:6713")
 	contentOneJrpc = getEnvWithDefault("contentOneJRPC", "http://0.0.0.0:6712")
-	contentOneOapi = getEnvWithDefault("contentOneOAPI", "audiusd-test-2")
+	contentOneOapi = getEnvWithDefault("contentOneOAPI", "audiusd-2")
 
 	contentTwoGrpc = getEnvWithDefault("contentTwoGRPC", "0.0.0.0:6723")
 	contentTwoJrpc = getEnvWithDefault("contentTwoJRPC", "http://0.0.0.0:6722")
-	contentTwoOapi = getEnvWithDefault("contentTwoOAPI", "audiusd-test-3")
+	contentTwoOapi = getEnvWithDefault("contentTwoOAPI", "audiusd-3")
 
 	contentThreeGrpc = getEnvWithDefault("contentThreeGRPC", "0.0.0.0:6733")
 	contentThreeJrpc = getEnvWithDefault("contentThreeJRPC", "http://0.0.0.0:6732")
-	contentThreeOapi = getEnvWithDefault("contentThreeOAPI", "audiusd-test-4")
+	contentThreeOapi = getEnvWithDefault("contentThreeOAPI", "audiusd-4")
 
 	DiscoveryOne = newTestSdk(discoveryOneGrpc, discoveryOneJrpc, discoveryOneOapi)
 	ContentOne   = newTestSdk(contentOneGrpc, contentOneJrpc, contentOneOapi)

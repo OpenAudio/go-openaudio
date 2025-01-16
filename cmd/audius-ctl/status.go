@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/conf"
-	"github.com/AudiusProject/audius-protocol/pkg/health"
-	"github.com/AudiusProject/audius-protocol/pkg/logger"
+	"github.com/AudiusProject/audiusd/pkg/conf"
+	"github.com/AudiusProject/audiusd/pkg/health"
+	"github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/spf13/cobra"

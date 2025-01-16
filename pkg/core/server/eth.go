@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/contracts"
+	"github.com/AudiusProject/audiusd/pkg/core/contracts"
 	"github.com/labstack/echo/v4"
 )
 

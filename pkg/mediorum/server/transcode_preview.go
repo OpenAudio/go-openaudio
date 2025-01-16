@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/cidutil"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
 )
 
 // generateAudioPreviewForUpload exists for the initial preview impl

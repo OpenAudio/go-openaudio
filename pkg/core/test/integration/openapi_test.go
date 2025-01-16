@@ -3,9 +3,9 @@ package integration
 import (
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_openapi/protocol"
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/models"
-	"github.com/AudiusProject/audius-protocol/pkg/core/test/integration/utils"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_openapi/protocol"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/models"
+	"github.com/AudiusProject/audiusd/pkg/core/test/integration/utils"
 	"github.com/go-openapi/strfmt"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"

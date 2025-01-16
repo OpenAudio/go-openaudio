@@ -15,7 +15,7 @@ import (
 	cr "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/models"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/models"
 )
 
 // NewProtocolSendTransactionParams creates a new ProtocolSendTransactionParams object,

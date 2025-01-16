@@ -6,7 +6,7 @@ package statusbar
 import (
 	"sort"
 
-	"github.com/AudiusProject/audius-protocol/pkg/conf"
+	"github.com/AudiusProject/audiusd/pkg/conf"
 	"github.com/caseymrm/menuet"
 )
 

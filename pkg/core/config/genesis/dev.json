@@ -37,7 +37,7 @@
         "value": "6wdF9AgylXFnTfTdlEp98dzlgPNIooHOmfUT4qaWpmM="
       },
       "power": "25",
-      "name": "discovery-1"
+      "name": "node1"
     },
     {
       "address": "807D94EC3E918C7766B92125FCED72DF8FCB5902",
@@ -46,7 +46,7 @@
         "value": "YiY0RL2PAfpJu6QqKzLrvlgZzFDimSSuprUPOJ8XjvE="
       },
       "power": "25",
-      "name": "content-1"
+      "name": "node2"
     }
   ],
   "app_hash": ""

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/ethcontracts"
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/server/signature"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
 	"github.com/gowebpki/jcs"
 	"github.com/labstack/echo/v4"
 )

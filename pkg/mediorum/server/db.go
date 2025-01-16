@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/crudr"
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/ddl"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/crudr"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/ddl"
 	slogGorm "github.com/orandin/slog-gorm"
 	"golang.org/x/exp/slog"
 	"gorm.io/driver/postgres"

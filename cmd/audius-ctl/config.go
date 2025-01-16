@@ -6,8 +6,8 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/AudiusProject/audius-protocol/pkg/conf"
-	"github.com/AudiusProject/audius-protocol/pkg/logger"
+	"github.com/AudiusProject/audiusd/pkg/conf"
+	"github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/spf13/cobra"
 )
 

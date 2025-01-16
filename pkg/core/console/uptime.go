@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/console/views/pages"
-	"github.com/AudiusProject/audius-protocol/pkg/core/db"
+	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
+	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"

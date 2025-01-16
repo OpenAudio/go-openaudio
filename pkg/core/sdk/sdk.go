@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_openapi"
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_openapi/protocol"
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_proto"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_openapi"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_openapi/protocol"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/cometbft/cometbft/rpc/client/http"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"

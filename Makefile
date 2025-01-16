@@ -81,12 +81,13 @@ build-push-wrapper:
 	@echo "Building and pushing Docker images for all platforms..."
 	docker buildx build --platform linux/amd64,linux/arm64 --push -t audius/audius-d:$(WRAPPER_TAG) pkg/orchestration
 
-.PHONY: build-audiusd-local build-push-audiusd build-push-cpp
-build-audiusd-local:
-	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target prod --build-arg GIT_SHA=$(AD_TAG) -t audius/audiusd:$(AD_TAG) -t audius/audiusd:local -f ./cmd/audiusd/Dockerfile ./
+.PHONY: build-audiusd-test build-audiusd-dev
 build-audiusd-test:
 	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target test --build-arg GIT_SHA=$(AD_TAG) -t audius/audiusd:test-local -f ./cmd/audiusd/Dockerfile ./
+build-audiusd-dev:
+	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target dev --build-arg GIT_SHA=$(AD_TAG) -t audius/audiusd:dev -f ./cmd/audiusd/Dockerfile ./
 
+.PHONY: build-push-audiusd build-push-cpp
 build-push-audiusd:
 	docker build \
 		--build-arg GIT_SHA=$(AD_TAG) \
@@ -173,7 +174,7 @@ regen-go:
 .PHONY: test-down
 test-down:
 	@docker compose \
-    	--file='dev-tools/compose/docker-compose.test.yml' \
+    	--file='dev-tools/dev/docker-compose.yml' \
         --project-name='audiusd-test' \
         --project-directory='./' \
 		--profile=* \
@@ -184,13 +185,21 @@ test-down:
 ##############
 
 .PHONY: audiusd-dev
-audiusd-test:
+audiusd-dev: audiusd-dev-down build-audiusd-dev
 	@docker compose \
-		--file='compose/docker-compose.yml' \
-		--project-name='audiusd-test' \
+		--file='dev/docker-compose.yml' \
+		--project-name='audiusd' \
 		--project-directory='./' \
-		--profile=* \
-		run --rm audiusd-dev
+		--profile=audiusd-dev \
+		up -d
+
+audiusd-dev-down:
+	@docker compose \
+		--file='dev/docker-compose.yml' \
+		--project-name='audiusd' \
+		--project-directory='./' \
+		--profile=audiusd-dev \
+		down -v
 
 ##############
 ## MEDIORUM ##
@@ -199,14 +208,14 @@ audiusd-test:
 .PHONY: mediorum-test
 mediorum-test:
 	@docker compose \
-		--file='compose/docker-compose.test.yml' \
+		--file='dev/docker-compose.yml' \
 		--project-name='audiusd-test' \
 		--project-directory='./' \
 		--profile=mediorum-unittests \
 		run $(TTY_FLAG) --rm test-mediorum-unittests
 	@echo 'Tests successful. Spinning down containers...'
 	@docker compose \
-    	--file='compose/docker-compose.test.yml' \
+    	--file='dev/docker-compose.yml' \
         --project-name='audiusd-test' \
         --project-directory='./' \
 		--profile=mediorum-unittests \
@@ -229,13 +238,14 @@ bin/core-amd64: $(BUILD_SRCS)
 .PHONY: core-test
 core-test:
 	@docker compose \
-		--file='compose/docker-compose.test.yml' \
+		--file='dev/docker-compose.yml' \
 		--project-name='audiusd-test' \
 		--project-directory='./' \
+		--profile=core-tests \
 		run $(TTY_FLAG) --rm test-core
 	@echo 'Tests complete. Spinning down containers...'
 	@docker compose \
-		--file='compose/docker-compose.test.yml' \
+		--file='dev/docker-compose.yml' \
 		--project-name='audiusd-test' \
 		--project-directory='./' \
 		--profile=core-tests \

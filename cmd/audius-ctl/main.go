@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/AudiusProject/audius-protocol/pkg/logger"
+	"github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/google/go-github/v61/github"
 	"github.com/spf13/cobra"
 )

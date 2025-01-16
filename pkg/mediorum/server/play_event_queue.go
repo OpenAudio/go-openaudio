@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/gen/core_proto"
-	"github.com/AudiusProject/audius-protocol/pkg/mediorum/server/signature"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

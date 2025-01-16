@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/core/common"
-	"github.com/AudiusProject/audius-protocol/pkg/core/contracts"
-	"github.com/AudiusProject/audius-protocol/pkg/core/sdk"
+	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/core/contracts"
+	"github.com/AudiusProject/audiusd/pkg/core/sdk"
 	"github.com/labstack/echo/v4"
 )
 

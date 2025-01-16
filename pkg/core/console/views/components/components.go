@@ -1,6 +1,6 @@
 package components
 
-import "github.com/AudiusProject/audius-protocol/pkg/core/config"
+import "github.com/AudiusProject/audiusd/pkg/core/config"
 
 type Components struct {
 	config  *config.Config

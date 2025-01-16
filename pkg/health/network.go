@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AudiusProject/audius-protocol/pkg/conf"
-	"github.com/AudiusProject/audius-protocol/pkg/logger"
+	"github.com/AudiusProject/audiusd/pkg/conf"
+	"github.com/AudiusProject/audiusd/pkg/logger"
 	"nhooyr.io/websocket"
 )
 
