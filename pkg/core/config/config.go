@@ -62,7 +62,7 @@ const (
 	devnetValidatorVotingPower  = 25
 	mainnetRollupInterval       = 2048
 	testnetRollupInterval       = 512
-	devnetRollupInterval        = 200
+	devnetRollupInterval        = 16
 )
 
 const dbUrlLocalPattern string = `^postgresql:\/\/\w+:\w+@(db|localhost|postgres):.*`
