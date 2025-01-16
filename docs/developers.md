@@ -68,6 +68,11 @@ $ curl -s https://node1.audiusd.devnet/core/nodes | jq .
 open https://node1.audiusd.devnet/console/nodes
 ```
 
+Inspect Proof of Useful Work.
+```bash
+open https://node1.audiusd.devnet/console/uptime
+```
+
 Cleanup.
 
 ```bash
