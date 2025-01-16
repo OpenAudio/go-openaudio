@@ -1,6 +1,6 @@
 services:
-  ingress:
-    image: nginx
+  nginx:
+    image: nginx:latest
     restart: unless-stopped
     volumes:
       - ./dev/nginx.conf:/etc/nginx/conf.d/vhost.conf:ro
@@ -42,6 +42,11 @@ services:
     restart: unless-stopped
     env_file:
       - ./dev/env/audiusd-1.env
+    extra_hosts:
+      - 'node1.audiusd.devnet:host-gateway'
+      - 'node2.audiusd.devnet:host-gateway'
+      - 'node3.audiusd.devnet:host-gateway'
+      - 'node4.audiusd.devnet:host-gateway'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://node1.audiusd.devnet/"]
       interval: 10s
@@ -63,6 +68,11 @@ services:
     restart: unless-stopped
     env_file:
       - ./dev/env/audiusd-2.env
+    extra_hosts:
+      - 'node1.audiusd.devnet:host-gateway'
+      - 'node2.audiusd.devnet:host-gateway'
+      - 'node3.audiusd.devnet:host-gateway'
+      - 'node4.audiusd.devnet:host-gateway'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://node2.audiusd.devnet/"]
       interval: 10s
@@ -78,6 +88,11 @@ services:
     restart: unless-stopped
     env_file:
       - ./dev/env/audiusd-3.env
+    extra_hosts:
+      - 'node1.audiusd.devnet:host-gateway'
+      - 'node2.audiusd.devnet:host-gateway'
+      - 'node3.audiusd.devnet:host-gateway'
+      - 'node4.audiusd.devnet:host-gateway'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://node3.audiusd.devnet/"]
       interval: 10s
@@ -93,6 +108,11 @@ services:
     restart: unless-stopped
     env_file:
       - ./dev/env/audiusd-4.env
+    extra_hosts:
+      - 'node1.audiusd.devnet:host-gateway'
+      - 'node2.audiusd.devnet:host-gateway'
+      - 'node3.audiusd.devnet:host-gateway'
+      - 'node4.audiusd.devnet:host-gateway'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://node4.audiusd.devnet/"]
       interval: 10s
@@ -114,7 +134,7 @@ services:
     env_file:
       - ./dev/env/test-core.env
     depends_on:
-      ingress:
+      nginx:
         condition: service_healthy
       audiusd-1:
         condition: service_started

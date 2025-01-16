@@ -62,7 +62,7 @@ ENTRYPOINT ["/bin/entrypoint.sh"]
 
 FROM prod AS test
 
-COPY --from=golang:alpine /usr/local/go/ /usr/local/go/
+COPY --from=golang:alpine3.21 /usr/local/go/ /usr/local/go/
 ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH="/go"
 ENV GOROOT="/usr/local/go"
@@ -77,12 +77,17 @@ ENV AUDIUSD_TEST_MODE="true"
 
 FROM prod as dev
 
-COPY --from=golang:alpine /usr/local/go/ /usr/local/go/
+COPY --from=golang:alpine3.21 /usr/local/go/ /usr/local/go/
 ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
 ENV GOPATH="/go"
 ENV GOROOT="/usr/local/go"
 
 RUN go install github.com/air-verse/air@v1.61.5
+
+COPY ./dev/tls/cert.pem /usr/share/ca-certificates/devnet.crt
+RUN chmod 644 /usr/share/ca-certificates/devnet.crt && \
+    echo "devnet.crt" >> /etc/ca-certificates.conf && \
+    update-ca-certificates
 
 WORKDIR /app
 COPY --from=builder /go/pkg/mod /go/pkg/mod

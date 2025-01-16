@@ -176,6 +176,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	cfg.CometKey = key
 
 	cfg.AddrBookStrict = true
+	cfg.UseHttpsForSdk = true
 	switch cfg.Environment {
 	case "prod", "production", "mainnet":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress, ProdPersistentPeers, 3))
@@ -186,7 +187,6 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 
 		cfg.SlaRollupInterval = mainnetRollupInterval
 		cfg.ValidatorVotingPower = mainnetValidatorVotingPower
-		cfg.UseHttpsForSdk = true
 
 	case "stage", "staging", "testnet":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress, StagePersistentPeers, 3))
@@ -196,7 +196,6 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		}
 		cfg.SlaRollupInterval = testnetRollupInterval
 		cfg.ValidatorVotingPower = testnetValidatorVotingPower
-		cfg.UseHttpsForSdk = true
 
 	case "dev", "development", "devnet", "local", "sandbox":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", DevPersistentPeers)

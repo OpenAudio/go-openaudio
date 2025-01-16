@@ -374,7 +374,8 @@ func generateSelfSignedCert(hostname string) ([]byte, []byte, error) {
 	notBefore := time.Now()
 	notAfter := notBefore.Add(365 * 24 * time.Hour) // Valid for 1 year
 
-	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -56,25 +56,22 @@ func (s *Server) startRegistryBridge() error {
 		return err
 	}
 
-	retries := 60
-	delay := 10 * time.Second
+	delay := 2 * time.Second
+	maxTime := 120 * time.Minute
+	startTime := time.Now()
 
-	ticker := time.NewTicker(delay)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		if retries == 0 {
-			s.logger.Warn("exhausted registration retries")
-			return nil
-		}
-
+	for time.Since(startTime) < maxTime {
 		if err := s.RegisterSelf(); err != nil {
 			s.logger.Errorf("node registration failed, will try again: %v", err)
-			retries--
+			s.logger.Infof("Retrying registration in %s", delay)
+			time.Sleep(delay)
+			delay *= 2
 		} else {
 			return nil
 		}
 	}
+
+	s.logger.Warn("exhausted registration retries after 120 minutes")
 	return nil
 }
 

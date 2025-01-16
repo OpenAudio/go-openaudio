@@ -4,13 +4,20 @@
 
 **Prerequisites:**
 
-1. Add the local dev x509 cert to your keychain so you will have green ssl in your browser.
+1. Clone the repo
+
+```bash
+git clone git@github.com:AudiusProject/audiusd.git
+cd audiusd
+```
+
+2. Add the local dev x509 cert to your keychain so you will have green ssl in your browser.
 
 ```bash
 sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain dev/tls/cert.pem
 ```
 
-2. Add the devnet hosts to your `/etc/hosts` file:
+3. Add the devnet hosts to your `/etc/hosts` file:
 
 ```bash
 echo "127.0.0.1       node1.audiusd.devnet node2.audiusd.devnet node3.audiusd.devnet node4.audiusd.devnet" | sudo tee -a /etc/hosts
@@ -38,6 +45,27 @@ open https://node1.audiusd.devnet/console
 open https://node2.audiusd.devnet/console
 open https://node3.audiusd.devnet/console
 open https://node4.audiusd.devnet/console
+```
+
+Smoke test...
+
+```bash
+# after 5-10s there should be 4 nodes registered
+# this validates that the registry bridge is working,
+# as only nodes 1 and 2 are defined in the genesis file as validators
+
+$ curl -s https://node1.audiusd.devnet/core/nodes | jq .
+{
+  "data": [
+    "https://node2.audiusd.devnet",
+    "https://node1.audiusd.devnet",
+    "https://node3.audiusd.devnet",
+    "https://node4.audiusd.devnet"
+  ]
+}
+
+# also...
+open https://node1.audiusd.devnet/console/nodes
 ```
 
 Cleanup.
@@ -78,6 +106,10 @@ docker run --rm -it \
 
 ```bash
 make build-audiusd-test
+
+# "unit" tests
 make mediorum-test
+
+# "integration" tests
 make core-test
 ```

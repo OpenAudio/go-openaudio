@@ -123,7 +123,7 @@ curl https://node.operator.xyz/health-check | jq .
     "totalTransactions": 789012
   },
   "git": "abcdef0123456789abcdef0123456789abcdef01",
-  "hostname": "your-node.example.com", 
+  "hostname": "node.operator.xyz", 
   "storage": {
     # discovery nodes will have storage disabled
     "enabled": false,
