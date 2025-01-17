@@ -38,6 +38,7 @@ services:
       - core-tests
 
   audiusd-1:
+    container_name: audiusd-1
     image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
     restart: unless-stopped
     env_file:
@@ -64,6 +65,7 @@ services:
       - core-tests
 
   audiusd-2:
+    container_name: audiusd-2
     image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
     restart: unless-stopped
     env_file:
@@ -79,11 +81,18 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    volumes:
+      - ./cmd:/app/cmd
+      - ./pkg:/app/pkg
+      - ./go.mod:/app/go.mod
+      - ./go.sum:/app/go.sum
+      - ./.air.toml:/app/.air.toml
     profiles:
       - audiusd-dev
       - core-tests
 
   audiusd-3:
+    container_name: audiusd-3
     image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
     restart: unless-stopped
     env_file:
@@ -99,11 +108,18 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    volumes:
+      - ./cmd:/app/cmd
+      - ./pkg:/app/pkg
+      - ./go.mod:/app/go.mod
+      - ./go.sum:/app/go.sum
+      - ./.air.toml:/app/.air.toml
     profiles:
       - audiusd-dev
       - core-tests
 
   audiusd-4:
+    container_name: audiusd-4
     image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
     restart: unless-stopped
     env_file:
@@ -119,6 +135,12 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    volumes:
+      - ./cmd:/app/cmd
+      - ./pkg:/app/pkg
+      - ./go.mod:/app/go.mod
+      - ./go.sum:/app/go.sum
+      - ./.air.toml:/app/.air.toml
     profiles:
       - audiusd-dev
       - core-tests
