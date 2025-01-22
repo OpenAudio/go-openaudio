@@ -61,6 +61,13 @@ commands:
             source $BASH_ENV
             
             buf --version
+  push-buf:
+    steps:
+      - run:
+          name: Push Buf
+          command: |
+            echo ${BUF_TOKEN} | buf registry login --token-stdin
+            cd pkg/core && buf push --create --git-metadata
 
 
 jobs:
@@ -83,6 +90,8 @@ jobs:
             - go-mod-v1-
             - go-build-v1-{{ .Branch }}-{{ checksum "go.sum" }}
             - go-build-v1-{{ .Branch }}
+      - install-buf
+      - push-buf
       - run:
           command: |
             make install-go-deps
@@ -95,7 +104,6 @@ jobs:
           key: go-mod-v1-{{ checksum "go.sum" }}
           paths:
             - /home/circleci/go/pkg/mod
-      - install-buf
       - run:
           name: Build audiusd binaries
           command: |
