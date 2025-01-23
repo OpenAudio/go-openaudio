@@ -37,39 +37,8 @@ type Config struct {
 	ListenPort string
 	Dir        string
 
-	Env       string
-	NodeType  string
-	AudiusUrl string
-
-	EthNetworkId       string
-	EthTokenAddress    string
-	EthRegistryAddress string
-	EthProviderUrl     string
-	EthOwnerWallet     string
-
-	QueryProposalStartBlock string
-	GqlUri                  string
-	GqlBackupUri            string
-
-	EntityManagerAddress string
-
-	IdentityServiceEndpoint string
-
-	WormholeContractAddress          string
-	ClaimDistributionContractAddress string
-	SolanaClusterEndpoint            string
-	WAudioMintAddress                string
-	UsdcMintAddress                  string
-	SolanaTokenProgramAddress        string
-	ClaimableTokenPda                string
-	SolanaFeePayerAddress            string
-	ClaimableTokenProgramAddress     string
-	PaymentRouterProgramAddress      string
-	RewardsManagerProgramId          string
-	RewardsManagerProgramPda         string
-	RewardsManagerTokenPda           string
-	OptimizelySdkKey                 string
-	DDEXKey                          string
+	Env      string
+	NodeType string
 }
 
 type Uptime struct {
@@ -80,24 +49,21 @@ type Uptime struct {
 }
 
 func Run(ctx context.Context, logger *common.Logger) error {
-	discoveryEnv := os.Getenv("audius_discprov_env")
-	contentEnv := os.Getenv("MEDIORUM_ENV")
-	if discoveryEnv == "" && contentEnv == "" {
+	env := ""      // prod || stage
+	nodeType := "" // content || discovery
+	if os.Getenv("audius_discprov_url") != "" {
+		env = os.Getenv("audius_discprov_env")
+		nodeType = "discovery"
+	} else if os.Getenv("creatorNodeEndpoint") != "" {
+		env = os.Getenv("MEDIORUM_ENV")
+		nodeType = "content"
+	} else {
 		slog.Info("no envs set. sleeping forever...")
 		// block forever so container doesn't restart constantly
 		c := make(chan struct{})
 		<-c
 	}
-	env := ""      // prod || stage
-	nodeType := "" // content || discovery
-	if discoveryEnv != "" {
-		env = discoveryEnv
-		nodeType = "discovery"
-	} else {
-		env = contentEnv
-		nodeType = "content"
-	}
-	slog.Info("starting", "env", env)
+	slog.Info("starting", "env", env, "nodeType", nodeType)
 
 	switch env {
 	case "prod":
@@ -169,8 +135,6 @@ func (u *Uptime) Start() {
 	e.Use(middleware.CORS())
 
 	e.GET("/d_api/uptime", u.handleUptime)
-	e.GET("/d_api/env", u.handleGetEnv)
-
 	e.GET("/health_check", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"healthy": "true",
@@ -347,79 +311,6 @@ func (u *Uptime) recordNodeUptimeToDB(host string, wasUp bool) {
 	})
 }
 
-type EnvResponse struct {
-	Env       string `json:"env"`
-	NodeType  string `json:"nodeType"`
-	AudiusUrl string `json:"audiusUrl"`
-
-	EthNetworkId       string `json:"ethNetworkId"`
-	EthTokenAddress    string `json:"ethTokenAddress"`
-	EthRegistryAddress string `json:"ethRegistryAddress"`
-	EthProviderUrl     string `json:"ethProviderUrl"`
-	EthOwnerWallet     string `json:"ethOwnerWallet"`
-
-	QueryProposalStartBlock string `json:"queryProposalStartBlock"`
-	GqlUri                  string `json:"gqlUri"`
-	GqlBackupUri            string `json:"gqlBackupUri"`
-
-	EntityManagerAddress string `json:"entityManagerAddress"`
-
-	IdentityServiceEndpoint string `json:"identityServiceEndpoint"`
-
-	WormholeContractAddress          string `json:"wormholeContractAddress"`
-	ClaimDistributionContractAddress string `json:"claimDistributionContractAddress"`
-	SolanaClusterEndpoint            string `json:"solanaClusterEndpoint"`
-	WAudioMintAddress                string `json:"wAudioMintAddress"`
-	UsdcMintAddress                  string `json:"usdcMintAddress"`
-	SolanaTokenProgramAddress        string `json:"solanaTokenProgramAddress"`
-	ClaimableTokenPda                string `json:"claimableTokenPda"`
-	SolanaFeePayerAddress            string `json:"solanaFeePayerAddress"`
-	ClaimableTokenProgramAddress     string `json:"claimableTokenProgramAddress"`
-	RewardsManagerProgramId          string `json:"rewardsManagerProgramId"`
-	RewardsManagerProgramPda         string `json:"rewardsManagerProgramPda"`
-	RewardsManagerTokenPda           string `json:"rewardsManagerTokenPda"`
-	OptimizelySdkKey                 string `json:"optimizelySdkKey"`
-	DDEXKey                          string `json:"ddexKey"`
-}
-
-func (u *Uptime) handleGetEnv(c echo.Context) error {
-	resp := EnvResponse{
-		Env:       u.Config.Env,
-		NodeType:  u.Config.NodeType,
-		AudiusUrl: u.Config.AudiusUrl,
-
-		EthNetworkId:       u.Config.EthNetworkId,
-		EthTokenAddress:    u.Config.EthTokenAddress,
-		EthRegistryAddress: u.Config.EthRegistryAddress,
-		EthProviderUrl:     u.Config.EthProviderUrl,
-		EthOwnerWallet:     u.Config.EthOwnerWallet,
-
-		QueryProposalStartBlock: u.Config.QueryProposalStartBlock,
-		GqlUri:                  u.Config.GqlUri,
-		GqlBackupUri:            u.Config.GqlBackupUri,
-
-		EntityManagerAddress: u.Config.EntityManagerAddress,
-
-		IdentityServiceEndpoint: u.Config.IdentityServiceEndpoint,
-
-		WormholeContractAddress:          u.Config.WormholeContractAddress,
-		ClaimDistributionContractAddress: u.Config.ClaimDistributionContractAddress,
-		SolanaClusterEndpoint:            u.Config.SolanaClusterEndpoint,
-		WAudioMintAddress:                u.Config.WAudioMintAddress,
-		UsdcMintAddress:                  u.Config.UsdcMintAddress,
-		SolanaTokenProgramAddress:        u.Config.SolanaTokenProgramAddress,
-		ClaimableTokenPda:                u.Config.ClaimableTokenPda,
-		SolanaFeePayerAddress:            u.Config.SolanaFeePayerAddress,
-		ClaimableTokenProgramAddress:     u.Config.ClaimableTokenProgramAddress,
-		RewardsManagerProgramId:          u.Config.RewardsManagerProgramId,
-		RewardsManagerProgramPda:         u.Config.RewardsManagerProgramPda,
-		RewardsManagerTokenPda:           u.Config.RewardsManagerTokenPda,
-		OptimizelySdkKey:                 u.Config.OptimizelySdkKey,
-		DDEXKey:                          u.Config.DDEXKey,
-	}
-	return c.JSON(http.StatusOK, resp)
-}
-
 func apiPath(parts ...string) string {
 	host := parts[0]
 	parts[0] = ""
@@ -434,101 +325,11 @@ func apiPath(parts ...string) string {
 func startStagingOrProd(isProd bool, nodeType, env string) {
 	// must have either a CN or DN endpoint configured, along with other env vars
 	myEndpoint := ""
-	audiusUrl := ""
-
-	ethNetworkId := ""
-	ethTokenAddress := ""
-	ethRegistryAddress := ""
-	ethProviderUrl := ""
-	ethOwnerWallet := ""
-
-	queryProposalStartBlock := ""
-	gqlUri := ""
-	gqlBackupUri := ""
-
-	entityManagerAddress := ""
-
-	identityService := ""
-
-	wormholeContractAddress := ""
-	claimDistributionContractAddress := ""
-	solanaClusterEndpoint := ""
-	wAudioMintAddress := ""
-	usdcMintAddress := ""
-	solanaTokenProgramAddress := ""
-	claimableTokenPda := ""
-	solanaFeePayerAddress := ""
-	claimableTokenProgramAddress := ""
-	paymentRouterProgramAddress := ""
-	rewardsManagerProgramId := ""
-	rewardsManagerProgramPda := ""
-	rewardsManagerTokenPda := ""
-	optimizelySdkKey := ""
-	ddexKey := ""
 
 	if nodeType == "content" {
 		myEndpoint = mustGetenv("creatorNodeEndpoint")
-		audiusUrl = mustGetenv("audiusUrl")
-
-		ethNetworkId = mustGetenv("ethNetworkId")
-		ethTokenAddress = mustGetenv("ethTokenAddress")
-		ethRegistryAddress = mustGetenv("ethRegistryAddress")
-		ethProviderUrl = mustGetenv("ethProviderUrl")
-		ethOwnerWallet = os.Getenv("ethOwnerWallet")
-
-		queryProposalStartBlock = mustGetenv("queryProposalStartBlock")
-		gqlUri = mustGetenv("gqlUri")
-		gqlBackupUri = os.Getenv("gqlBackupUri")
-
-		entityManagerAddress = mustGetenv("entityManagerAddress")
-
-		identityService = mustGetenv("identityService")
-
-		wormholeContractAddress = mustGetenv("wormholeContractAddress")
-		claimDistributionContractAddress = mustGetenv("claimDistributionContractAddress")
-		solanaClusterEndpoint = mustGetenv("solanaClusterEndpoint")
-		wAudioMintAddress = mustGetenv("wAudioMintAddress")
-		usdcMintAddress = mustGetenv("usdcMintAddress")
-		solanaTokenProgramAddress = mustGetenv("solanaTokenProgramAddress")
-		claimableTokenPda = mustGetenv("claimableTokenPda")
-		solanaFeePayerAddress = mustGetenv("solanaFeePayerAddress")
-		claimableTokenProgramAddress = mustGetenv("claimableTokenProgramAddress")
-		rewardsManagerProgramId = mustGetenv("rewardsManagerProgramId")
-		rewardsManagerProgramPda = mustGetenv("rewardsManagerProgramPda")
-		rewardsManagerTokenPda = mustGetenv("rewardsManagerTokenPda")
 	} else if nodeType == "discovery" {
 		myEndpoint = mustGetenv("audius_discprov_url")
-		audiusUrl = mustGetenv("audius_url")
-
-		ethNetworkId = mustGetenv("audius_eth_network_id")
-		ethTokenAddress = mustGetenv("audius_eth_token_address")
-		ethRegistryAddress = mustGetenv("audius_eth_contracts_registry")
-		ethProviderUrl = mustGetenv("audius_web3_eth_provider_url")
-		ethOwnerWallet = os.Getenv("audius_eth_owner_wallet")
-
-		queryProposalStartBlock = mustGetenv("audius_query_proposal_start_block")
-		gqlUri = mustGetenv("audius_gql_uri")
-		gqlBackupUri = os.Getenv("audius_gql_backup_uri")
-
-		entityManagerAddress = mustGetenv("audius_contracts_entity_manager_address")
-
-		identityService = mustGetenv("audius_discprov_identity_service_url")
-
-		wormholeContractAddress = mustGetenv("audius_wormhole_contract_address")
-		claimDistributionContractAddress = mustGetenv("audius_solana_claim_distribution_contract_address")
-		solanaClusterEndpoint = mustGetenv("audius_solana_cluster_endpoint")
-		wAudioMintAddress = mustGetenv("audius_solana_waudio_mint")
-		usdcMintAddress = mustGetenv("audius_solana_usdc_mint")
-		solanaTokenProgramAddress = mustGetenv("audius_solana_token_program_address")
-		claimableTokenPda = mustGetenv("audius_solana_claimable_token_pda")
-		solanaFeePayerAddress = mustGetenv("audius_solana_fee_payer_address")
-		claimableTokenProgramAddress = mustGetenv("audius_solana_user_bank_program_address")
-		paymentRouterProgramAddress = mustGetenv("audius_solana_payment_router_program_address")
-		rewardsManagerProgramId = mustGetenv("audius_solana_rewards_manager_program_address")
-		rewardsManagerProgramPda = mustGetenv("audius_solana_rewards_manager_account")
-		rewardsManagerTokenPda = mustGetenv("audius_solana_rewards_manager_token_pda")
-		optimizelySdkKey = os.Getenv("OPTIMIZELY_SDK_KEY")
-		ddexKey = os.Getenv("DDEX_KEY")
 	}
 
 	logger := slog.With("endpoint", myEndpoint)
@@ -564,40 +365,8 @@ func startStagingOrProd(isProd bool, nodeType, env string) {
 		Peers:      peers,
 		ListenPort: "1996",
 		Dir:        getenvWithDefault("uptimeDataDir", "/bolt"),
-
-		Env:       env,
-		NodeType:  nodeType,
-		AudiusUrl: audiusUrl,
-
-		EthNetworkId:       ethNetworkId,
-		EthTokenAddress:    ethTokenAddress,
-		EthRegistryAddress: ethRegistryAddress,
-		EthProviderUrl:     ethProviderUrl,
-		EthOwnerWallet:     ethOwnerWallet,
-
-		QueryProposalStartBlock: queryProposalStartBlock,
-		GqlUri:                  gqlUri,
-		GqlBackupUri:            gqlBackupUri,
-
-		EntityManagerAddress: entityManagerAddress,
-
-		IdentityServiceEndpoint: identityService,
-
-		WormholeContractAddress:          wormholeContractAddress,
-		ClaimDistributionContractAddress: claimDistributionContractAddress,
-		SolanaClusterEndpoint:            solanaClusterEndpoint,
-		WAudioMintAddress:                wAudioMintAddress,
-		UsdcMintAddress:                  usdcMintAddress,
-		SolanaTokenProgramAddress:        solanaTokenProgramAddress,
-		ClaimableTokenPda:                claimableTokenPda,
-		SolanaFeePayerAddress:            solanaFeePayerAddress,
-		ClaimableTokenProgramAddress:     claimableTokenProgramAddress,
-		PaymentRouterProgramAddress:      paymentRouterProgramAddress,
-		RewardsManagerProgramId:          rewardsManagerProgramId,
-		RewardsManagerProgramPda:         rewardsManagerProgramPda,
-		RewardsManagerTokenPda:           rewardsManagerTokenPda,
-		OptimizelySdkKey:                 optimizelySdkKey,
-		DDEXKey:                          ddexKey,
+		Env:        env,
+		NodeType:   nodeType,
 	}
 
 	ph, err := New(config)
