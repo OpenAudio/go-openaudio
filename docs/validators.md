@@ -123,8 +123,8 @@ if [[ "$1" == "--force" ]]; then
     FORCE_UPDATE=true
 fi
 
-# Determine whether to update
-if $FORCE_UPDATE || ! docker pull audius/audiusd:current | grep -q 'Status: Image is up to date'; then
+PULL_STATUS=$(docker pull audius/audiusd:current | tee /dev/stderr)
+if $FORCE_UPDATE || ! echo "$PULL_STATUS" | grep -q 'Status: Image is up to date'; then
     echo "New version found or force update requested, updating container..."
     docker stop audiusd-${AUDIUSD_HOSTNAME}
     docker rm audiusd-${AUDIUSD_HOSTNAME}
@@ -173,7 +173,10 @@ Check the cron job was added successfully.
 
 ```bash
 crontab -l
-# output should look like...
+```
+
+The output should look something like...
+```bash
 54 * * * * /usr/local/bin/audiusd-update >> /home/ubuntu/audiusd-update.log 2>&1 # audiusd update
 ```
 
