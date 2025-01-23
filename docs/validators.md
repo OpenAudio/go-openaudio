@@ -73,37 +73,7 @@ mkdir ~/audiusd
 **TODO** test config setup from `/home/ubuntu/audiusd/config.yaml`
 
 ```bash
-# TODO: untested
-cat << 'EOF' > /home/ubuntu/audiusd/config.yaml
-host: "cn1.operator.xyz"
-wallet: "0x01234567890abcdef01234567890abcdef012345"
-privateKey: "01234567890abcdef01234567890abcdef01234567890abcdef01234567890ab"
-rewardsWallet: "0x01234567890abcdef01234567890abcdef012345"
-
-# uncomment if using s3 for blob storage
-#storage:
-  #storageUrl: "s3://cn1-operator-xyz"
-  #awsAccessKeyId: "XXXXXXXXXXXXXXXXXXXX"
-  #awsSecretAccessKey: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-  #awsRegion: "us-west-2"
-
-# uncomment if using gcs for blob storage
-#   you will need an additional mount for the credentials
-#   i.e. `-v google-application-credentials.json:/tmp/google-application-credentials.json`
-#storage:
-  #storageUrl: "gs://cn1-operator-xyz"
-  #googleApplicationCredentials: "/tmp/google-application-credentials.json"
-EOF
-
-docker run -d \
-  --name audiusd-cn1.operator.xyz \
-  --restart unless-stopped \
-  -v /home/ubuntu/audiusd/config.yaml:/env/config.yaml \
-  -v /home/ubuntu/audiusd/data:/data \
-  -p 80:80 \
-  -p 443:443 \
-  -p 26656:26656 \
-  audius/audiusd:current
+# TODO: add example config.yaml
 ```
 
 ## Health Check
@@ -137,29 +107,31 @@ curl https://node.operator.xyz/health-check | jq .
 }
 ```
 
-## Auto-Update
+## Autonomous Update
 
-Copy and replace with your own values:
-
-```bash
-AUDIUSD_HOSTNAME="node.operator.xyz"
-OVERRIDE_ENV_PATH="/home/ubuntu/override.env"
-```
-
-Create the update script, make it executable, and install it system-wide:
+To create the update script, copy and paste this.
 
 ```bash
-cat << 'EOF' > /home/ubuntu/audiusd_update.sh
+cat << 'EOF' > /home/ubuntu/audiusd-update.sh
 #!/bin/bash
 
-if ! docker pull audius/audiusd:current | grep -q 'Status: Image is up to date'; then
-    echo "New version found, updating container..."
-    docker stop audiusd-$AUDIUSD_HOSTNAME
-    docker rm audiusd-$AUDIUSD_HOSTNAME
+AUDIUSD_HOSTNAME="PLACEHOLDER_HOSTNAME"
+OVERRIDE_ENV_PATH="PLACEHOLDER_ENV_PATH"
+
+FORCE_UPDATE=false
+if [[ "$1" == "--force" ]]; then
+    FORCE_UPDATE=true
+fi
+
+# Determine whether to update
+if $FORCE_UPDATE || ! docker pull audius/audiusd:current | grep -q 'Status: Image is up to date'; then
+    echo "New version found or force update requested, updating container..."
+    docker stop audiusd-${AUDIUSD_HOSTNAME}
+    docker rm audiusd-${AUDIUSD_HOSTNAME}
     docker run -d \
-        --name audiusd-$AUDIUSD_HOSTNAME \
+        --name audiusd-${AUDIUSD_HOSTNAME} \
         --restart unless-stopped \
-        -v $OVERRIDE_ENV_PATH:/env/override.env \
+        -v ${OVERRIDE_ENV_PATH}:/env/override.env \
         -v /var/k8s:/data \
         -p 80:80 \
         -p 443:443 \
@@ -170,31 +142,47 @@ else
     echo "Already running latest version"
 fi
 EOF
+```
 
-chmod +x /home/ubuntu/audiusd_update.sh
-sudo mv /home/ubuntu/audiusd_update.sh /usr/local/bin/audiusd_update
+Copy the below command and replace `node.operator.xyz` with your actual node hostname.
+
+```bash
+sed -i "s/PLACEHOLDER_HOSTNAME/node.operator.xyz/" /home/ubuntu/audiusd-update.sh
+```
+
+Copy the below command and replace `/home/ubuntu/override.env` with the full path to your node's override.env file that you created earlier.
+
+```bash
+sed -i "s|PLACEHOLDER_ENV_PATH|/home/ubuntu/override.env|" /home/ubuntu/audiusd-update.sh
+```
+
+Make the script executable and install it system-wide.
+
+```bash
+chmod +x /home/ubuntu/audiusd-update.sh
+sudo mv /home/ubuntu/audiusd-update.sh /usr/local/bin/audiusd-update
 ```
 
 Add a cron to run the update script on a random minute of each hour (staggers updates across network):
 
 ```bash
-(crontab -l | grep -v "# audiusd auto-update"; echo "$(shuf -i 0-59 -n 1) * * * * /usr/local/bin/audiusd_update >> /home/ubuntu/audiusd-update.log 2>&1 # audiusd update") | crontab -
+(crontab -l | grep -v "# audiusd auto-update"; echo "$(shuf -i 0-59 -n 1) * * * * /usr/local/bin/audiusd-update >> /home/ubuntu/audiusd-update.log 2>&1 # audiusd auto-update") | crontab -
 ```
 
-Check the cron job was added successfully:
+Check the cron job was added successfully.
 
 ```bash
 crontab -l
 # output should look like...
-54 * * * * /usr/local/bin/audiusd_update >> /home/ubuntu/audiusd-update.log 2>&1 # audiusd update
+54 * * * * /usr/local/bin/audiusd-update >> /home/ubuntu/audiusd-update.log 2>&1 # audiusd update
 ```
 
-You can now:
+**Done!**
 
-Run the update script manually:
+Additionally, you can run the update script manually:
 
 ```bash
-audiusd_update
+audiusd-update [--force]
 ```
 
 Check the auto-update logs:

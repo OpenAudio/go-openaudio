@@ -38,7 +38,6 @@ services:
       - core-tests
 
   audiusd-1:
-    container_name: audiusd-1
     image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
     restart: unless-stopped
     env_file:
@@ -65,7 +64,6 @@ services:
       - core-tests
 
   audiusd-2:
-    container_name: audiusd-2
     image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
     restart: unless-stopped
     env_file:
@@ -92,7 +90,6 @@ services:
       - core-tests
 
   audiusd-3:
-    container_name: audiusd-3
     image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
     restart: unless-stopped
     env_file:
@@ -119,7 +116,6 @@ services:
       - core-tests
 
   audiusd-4:
-    container_name: audiusd-4
     image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
     restart: unless-stopped
     env_file:
@@ -146,7 +142,7 @@ services:
       - core-tests
 
   test-core:
-    image: ${TEST_IMAGE:-audius/audiusd:test}
+    image: ${AUDIUSD_TEST_IMAGE:-audius/audiusd:test}
     command: go test -v -count=1 -timeout=60s ./pkg/core/...
     volumes:
       - ./cmd:/app/cmd
@@ -156,8 +152,6 @@ services:
     env_file:
       - ./dev/env/test-core.env
     depends_on:
-      nginx:
-        condition: service_healthy
       audiusd-1:
         condition: service_started
       audiusd-2:
@@ -172,7 +166,7 @@ services:
       - core-tests
 
   test-mediorum-unittests:
-    image: ${TEST_IMAGE:-audius/audiusd:test}
+    image: ${AUDIUSD_TEST_IMAGE:-audius/audiusd:test}
     command: go test -v -count=1 -timeout=60s ./pkg/mediorum/...
     volumes:
       - ./cmd:/app/cmd

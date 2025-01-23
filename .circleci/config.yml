@@ -82,37 +82,18 @@ jobs:
       GOFLAGS: "-trimpath -mod=readonly -p=8"
     steps:
       - checkout
-      - restore_cache:
-          keys:
-            - go-deps-v1-{{ checksum "Makefile" }}
-            - go-deps-v1-
-            - go-mod-v1-{{ checksum "go.sum" }}
-            - go-mod-v1-
-            - go-build-v1-{{ .Branch }}-{{ checksum "go.sum" }}
-            - go-build-v1-{{ .Branch }}
       - install-buf
       - push-buf
       - run:
+          name: Install build dependencies
           command: |
             make install-go-deps
             go mod download
-      - save_cache:
-          key: go-deps-v1-{{ checksum "Makefile" }}
-          paths:
-            - /home/circleci/go/bin
-      - save_cache:
-          key: go-mod-v1-{{ checksum "go.sum" }}
-          paths:
-            - /home/circleci/go/pkg/mod
       - run:
           name: Build audiusd binaries
           command: |
             make bin/audiusd-x86_64-linux
             make bin/audiusd-arm64-linux
-      - save_cache:
-          key: go-build-v1-{{ .Branch }}-{{ checksum "go.sum" }}
-          paths:
-            - /home/circleci/.cache/go-build
       - persist_to_workspace:
           root: ./
           paths:
@@ -148,13 +129,13 @@ jobs:
           name: Run (unit) mediorum tests
           command: |
             AUDIUSD_IMAGE=audius/audiusd:${CIRCLE_SHA1}-amd64 \
-            TEST_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
+            AUDIUSD_TEST_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
             TTY_FLAG="--no-TTY" make mediorum-test
       - run:
           name: Run (integration) core tests
           command: |
             AUDIUSD_IMAGE=audius/audiusd:${CIRCLE_SHA1}-amd64 \
-            TEST_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
+            AUDIUSD_TEST_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
             TTY_FLAG="--no-TTY" make core-test
       - when:
           condition:

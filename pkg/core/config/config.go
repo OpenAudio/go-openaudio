@@ -142,17 +142,17 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	isDiscovery := os.Getenv("audius_delegate_private_key") != ""
 	var delegatePrivateKey string
 	if isDiscovery {
+		delegatePrivateKey = os.Getenv("audius_delegate_private_key")
 		cfg.NodeType = Discovery
 		cfg.Environment = os.Getenv("audius_discprov_env")
-		delegatePrivateKey = os.Getenv("audius_delegate_private_key")
-		cfg.PSQLConn = GetEnvWithDefault("audius_db_url", "postgresql://postgres:postgres@db:5432/audius_discovery")
-		cfg.EthRPCUrl = os.Getenv("audius_web3_eth_provider_url")
 		cfg.NodeEndpoint = os.Getenv("audius_discprov_url")
+		cfg.PSQLConn = GetEnvWithDefault("audius_db_url", "postgresql://postgres:postgres@localhost:5432/audius_discovery")
+		cfg.EthRPCUrl = os.Getenv("audius_web3_eth_provider_url")
 	} else {
+		delegatePrivateKey = os.Getenv("delegatePrivateKey")
 		cfg.NodeType = Content
 		cfg.Environment = os.Getenv("MEDIORUM_ENV")
-		delegatePrivateKey = os.Getenv("delegatePrivateKey")
-		cfg.PSQLConn = GetEnvWithDefault("dbUrl", "postgresql://postgres:postgres@postgres:5432/audius_creator_node")
+		cfg.PSQLConn = GetEnvWithDefault("dbUrl", "postgresql://postgres:postgres@localhost:5432/audius_creator_node")
 		cfg.EthRPCUrl = os.Getenv("ethProviderUrl")
 		cfg.NodeEndpoint = os.Getenv("creatorNodeEndpoint")
 	}

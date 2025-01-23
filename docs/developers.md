@@ -79,15 +79,6 @@ Cleanup.
 make audiusd-dev-down
 ```
 
-### Hot Reloading
-
-As per the volume mounts defined in `dev/docker-compose.yml`, hot reloading is enabled on `node1.devnet.audiusd`.
-
-Local changes to code in `./cmd/` and `./pkg/` will be reflected on `node1.devnet.audiusd` after a quick rebuild handled by `air`. The dev docker image prebuilds the `audiusd` binary so it is ready to run on a cold start.
-
-To propagate local changes to the other dev nodes, run `make audiusd-dev` again which will rebuild local images and restart the containers. Alternatively, you could add volume mounts to the other nodes in `dev/docker-compose.yml`. But this is likely unnecessary.
-
-
 ### Develop against stage or prod
 
 ```bash
@@ -110,8 +101,6 @@ docker run --rm -it \
 ## Run tests
 
 ```bash
-make build-audiusd-test
-
 # "unit" tests
 make mediorum-test
 

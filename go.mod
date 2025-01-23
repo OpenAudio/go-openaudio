@@ -103,7 +103,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.13.0 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4 // indirect
-	github.com/caseymrm/askm v1.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/cockroachdb/errors v1.11.3 // indirect
@@ -249,7 +248,6 @@ require (
 )
 
 require (
-	github.com/caseymrm/menuet v1.0.3
 	github.com/cometbft/cometbft-load-test v0.3.0
 	github.com/jaswdr/faker v1.19.1
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
