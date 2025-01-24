@@ -226,6 +226,16 @@ func New(config MediorumConfig) (*MediorumServer, error) {
 
 	// db
 	db := dbMustDial(config.PostgresDSN)
+	if config.Env == "dev" {
+		// air doesn't reset client connections so this explicitly sets the client encoding
+		sqlDB, err := db.DB()
+		if err == nil {
+			_, err = sqlDB.Exec("SET client_encoding TO 'UTF8';")
+			if err != nil {
+				panic(fmt.Sprintf("Failed to set client encoding: %v", err))
+			}
+		}
+	}
 
 	// pg pool
 	// config.PostgresDSN

@@ -54,7 +54,12 @@ func (ss *MediorumServer) serveInternalQmCsv(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return c.Stream(200, "text/plain", r)
+	defer r.Close()
+
+	if err := c.Stream(200, "text/plain", r); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (ss *MediorumServer) pullQmFromPeer(host string) error {
