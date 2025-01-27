@@ -466,6 +466,10 @@ func getHealthCheckResponse(hostUrl *url.URL) map[string]interface{} {
 		"hostname":  hostUrl.Hostname(),
 		"timestamp": time.Now().UTC(),
 		"uptime":    time.Since(startTime).String(),
+		// TODO: legacy version data for uptime health check
+		"data": map[string]interface{}{
+			"version": mediorum.GetVersionJson().Version,
+		},
 	}
 
 	storageResponse := map[string]interface{}{
