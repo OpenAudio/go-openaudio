@@ -22,7 +22,5 @@ func (s *Server) finalizePlayTransaction(ctx context.Context, stx *core_proto.Si
 		return nil, errors.New("invalid play tx")
 	}
 
-	s.logger.Infof("finalizing play tx: %v", tx)
-
 	return tx, nil
 }

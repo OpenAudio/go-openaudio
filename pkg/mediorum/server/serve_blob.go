@@ -264,7 +264,6 @@ func (ss *MediorumServer) findAndPullBlob(_ context.Context, key string) (string
 }
 
 func (ss *MediorumServer) logTrackListen(c echo.Context) {
-	ss.logger.Info("logging plays")
 	skipPlayCountQuery, _ := strconv.ParseBool(c.QueryParam("skip_play_count"))
 
 	identityConfigured := os.Getenv("identityService") == "" && ss.Config.Env != "dev"
@@ -306,8 +305,6 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 	}
 
 	endpoint := fmt.Sprintf("%s/tracks/%d/listen", solanaRelayService, sig.Data.TrackId)
-
-	ss.logger.Info("logging plays", "endpoint", endpoint)
 
 	signatureData, err := signature.GenerateListenTimestampAndSignature(ss.Config.privateKey)
 	if err != nil {
@@ -353,7 +350,6 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 			Country:   geoData.Country,
 			Region:    geoData.Region,
 		})
-		ss.logger.Info("pushed plays to queue")
 	}()
 
 	buf, err := json.Marshal(body)
