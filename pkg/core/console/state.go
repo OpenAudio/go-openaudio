@@ -18,7 +18,7 @@ type State struct {
 	db     *db.Queries
 
 	latestBlocks       []pages.BlockView
-	latestTransactions []db.CoreTxResult
+	latestTransactions []db.CoreTransaction
 
 	totalBlocks         int64
 	totalTransactions   int64
@@ -107,7 +107,7 @@ func (state *State) recalculateState() {
 
 		txs := [][]byte{}
 		for _, tx := range indexedTxs {
-			txs = append(txs, tx.TxResult)
+			txs = append(txs, tx.Transaction)
 		}
 
 		latestBlocks = append(latestBlocks, pages.BlockView{

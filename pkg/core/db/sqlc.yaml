@@ -8,6 +8,11 @@ sql:
         package: "db"
         out: "./"
         sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamp"
+            go_type:
+              import: "time"
+              type: "time.Time"
 
   - engine: "postgresql"
     queries: "sql/writes.sql"
@@ -17,6 +22,11 @@ sql:
         package: "db"
         out: "./"
         sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamp"
+            go_type:
+              import: "time"
+              type: "time.Time"
 
   - engine: "postgresql"
     queries: "sql/setup.sql"
@@ -26,3 +36,8 @@ sql:
         package: "db"
         out: "./"
         sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamp"
+            go_type:
+              import: "time"
+              type: "time.Time"

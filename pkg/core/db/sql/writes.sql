@@ -38,3 +38,11 @@ returning id;
 insert into core_tx_stats (tx_type, tx_hash, block_height, created_at)
 values ($1, $2, $3, $4)
 on conflict (tx_hash) do nothing;
+
+-- name: StoreBlock :exec
+insert into core_blocks (height, chain_id, hash, proposer, created_at)
+values ($1, $2, $3, $4, $5);
+
+-- name: StoreTransaction :exec
+insert into core_transactions (block_id, index, tx_hash, transaction, created_at)
+values ($1, $2, $3, $4, $5);

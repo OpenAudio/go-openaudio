@@ -4,8 +4,6 @@ import (
 	"strconv"
 
 	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
-	abci "github.com/cometbft/cometbft/abci/types"
-	gogo_proto "github.com/cosmos/gogoproto/proto"
 	"github.com/labstack/echo/v4"
 )
 
@@ -32,11 +30,7 @@ func (con *Console) blockPage(c echo.Context) error {
 
 	txs := [][]byte{}
 	for _, tx := range blockTxs {
-		var result abci.TxResult
-		if err := gogo_proto.Unmarshal(tx.TxResult, &result); err != nil {
-			return err
-		}
-		txs = append(txs, result.GetTx())
+		txs = append(txs, tx.Transaction)
 	}
 
 	data := &pages.BlockView{

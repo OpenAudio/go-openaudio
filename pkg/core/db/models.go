@@ -8,50 +8,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type BlockEvent struct {
-	BlockID      int64
-	Height       int64
-	ChainID      string
-	Type         string
-	Key          pgtype.Text
-	CompositeKey pgtype.Text
-	Value        pgtype.Text
-}
-
 type CoreAppState struct {
 	BlockHeight int64
 	AppHash     []byte
 	CreatedAt   pgtype.Timestamp
 }
 
-type CoreAttribute struct {
-	EventID      int64
-	Key          string
-	CompositeKey string
-	Value        pgtype.Text
-}
-
 type CoreBlock struct {
 	Rowid     int64
 	Height    int64
 	ChainID   string
-	CreatedAt pgtype.Timestamptz
+	Hash      string
+	Proposer  string
+	CreatedAt pgtype.Timestamp
 }
 
-type CoreEvent struct {
-	Rowid   int64
-	BlockID int64
-	TxID    pgtype.Int8
-	Type    string
-}
-
-type CoreTxResult struct {
-	Rowid     int64
-	BlockID   int64
-	Index     int32
-	CreatedAt pgtype.Timestamptz
-	TxHash    string
-	TxResult  []byte
+type CoreTransaction struct {
+	Rowid       int64
+	BlockID     int64
+	Index       int32
+	TxHash      string
+	Transaction []byte
+	CreatedAt   pgtype.Timestamp
 }
 
 type CoreTxStat struct {
@@ -74,15 +52,6 @@ type CoreValidator struct {
 	CometPubKey  string
 }
 
-type EventAttribute struct {
-	BlockID      int64
-	TxID         pgtype.Int8
-	Type         string
-	Key          pgtype.Text
-	CompositeKey pgtype.Text
-	Value        pgtype.Text
-}
-
 type SlaNodeReport struct {
 	ID             int32
 	Address        string
@@ -96,15 +65,4 @@ type SlaRollup struct {
 	BlockStart int64
 	BlockEnd   int64
 	Time       pgtype.Timestamp
-}
-
-type TxEvent struct {
-	Height       int64
-	Index        int32
-	ChainID      string
-	Type         string
-	Key          pgtype.Text
-	CompositeKey pgtype.Text
-	Value        pgtype.Text
-	CreatedAt    pgtype.Timestamptz
 }

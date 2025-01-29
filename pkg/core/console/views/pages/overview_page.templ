@@ -8,7 +8,7 @@ import (
 
 type OverviewPageView struct {
 	Blocks []BlockView
-	Txs    []db.CoreTxResult
+	Txs    []db.CoreTransaction
 }
 
 func (p *Pages) OverviewPageJSON() {}

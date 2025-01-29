@@ -1,8 +1,8 @@
 -- name: GetTx :one
-select * from core_tx_results where lower(tx_hash) = lower($1) limit 1;
+select * from core_transactions where lower(tx_hash) = lower($1) limit 1;
 
 -- name: TotalTxResults :one
-select count(tx_hash) from core_tx_results;
+select count(tx_hash) from core_transactions;
 
 -- name: GetLatestAppState :one
 select block_height, app_hash
@@ -116,13 +116,13 @@ select * from core_validators where comet_address = $1;
 select * from core_blocks order by created_at desc limit 10;
 
 -- name: GetRecentTxs :many
-select * from core_tx_results order by created_at desc limit 10;
+select * from core_transactions order by created_at desc limit 10;
 
 -- name: TotalBlocks :one
 select count(*) from core_blocks;
 
 -- name: TotalTransactions :one
-select count(*) from core_tx_results;
+select count(*) from core_transactions;
 
 -- name: TotalTransactionsByType :one
 select count(*) from core_tx_stats where tx_type = $1;
@@ -138,7 +138,7 @@ group by hour, tx_type
 order by hour asc;
 
 -- name: GetBlockTransactions :many
-select * from core_tx_results where block_id = $1 order by created_at desc;
+select * from core_transactions where block_id = $1 order by created_at desc;
 
 -- name: GetBlock :one
 select * from core_blocks where height = $1;

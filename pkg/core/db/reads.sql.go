@@ -102,7 +102,7 @@ func (q *Queries) GetAppStateAtHeight(ctx context.Context, blockHeight int64) (G
 }
 
 const getBlock = `-- name: GetBlock :one
-select rowid, height, chain_id, created_at from core_blocks where height = $1
+select rowid, height, chain_id, hash, proposer, created_at from core_blocks where height = $1
 `
 
 func (q *Queries) GetBlock(ctx context.Context, height int64) (CoreBlock, error) {
@@ -112,31 +112,33 @@ func (q *Queries) GetBlock(ctx context.Context, height int64) (CoreBlock, error)
 		&i.Rowid,
 		&i.Height,
 		&i.ChainID,
+		&i.Hash,
+		&i.Proposer,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getBlockTransactions = `-- name: GetBlockTransactions :many
-select rowid, block_id, index, created_at, tx_hash, tx_result from core_tx_results where block_id = $1 order by created_at desc
+select rowid, block_id, index, tx_hash, transaction, created_at from core_transactions where block_id = $1 order by created_at desc
 `
 
-func (q *Queries) GetBlockTransactions(ctx context.Context, blockID int64) ([]CoreTxResult, error) {
+func (q *Queries) GetBlockTransactions(ctx context.Context, blockID int64) ([]CoreTransaction, error) {
 	rows, err := q.db.Query(ctx, getBlockTransactions, blockID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CoreTxResult
+	var items []CoreTransaction
 	for rows.Next() {
-		var i CoreTxResult
+		var i CoreTransaction
 		if err := rows.Scan(
 			&i.Rowid,
 			&i.BlockID,
 			&i.Index,
-			&i.CreatedAt,
 			&i.TxHash,
-			&i.TxResult,
+			&i.Transaction,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -262,7 +264,7 @@ func (q *Queries) GetPreviousSlaRollupFromId(ctx context.Context, id int32) (Sla
 }
 
 const getRecentBlocks = `-- name: GetRecentBlocks :many
-select rowid, height, chain_id, created_at from core_blocks order by created_at desc limit 10
+select rowid, height, chain_id, hash, proposer, created_at from core_blocks order by created_at desc limit 10
 `
 
 func (q *Queries) GetRecentBlocks(ctx context.Context) ([]CoreBlock, error) {
@@ -278,6 +280,8 @@ func (q *Queries) GetRecentBlocks(ctx context.Context) ([]CoreBlock, error) {
 			&i.Rowid,
 			&i.Height,
 			&i.ChainID,
+			&i.Hash,
+			&i.Proposer,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -415,25 +419,25 @@ func (q *Queries) GetRecentRollupsForNode(ctx context.Context, address string) (
 }
 
 const getRecentTxs = `-- name: GetRecentTxs :many
-select rowid, block_id, index, created_at, tx_hash, tx_result from core_tx_results order by created_at desc limit 10
+select rowid, block_id, index, tx_hash, transaction, created_at from core_transactions order by created_at desc limit 10
 `
 
-func (q *Queries) GetRecentTxs(ctx context.Context) ([]CoreTxResult, error) {
+func (q *Queries) GetRecentTxs(ctx context.Context) ([]CoreTransaction, error) {
 	rows, err := q.db.Query(ctx, getRecentTxs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CoreTxResult
+	var items []CoreTransaction
 	for rows.Next() {
-		var i CoreTxResult
+		var i CoreTransaction
 		if err := rows.Scan(
 			&i.Rowid,
 			&i.BlockID,
 			&i.Index,
-			&i.CreatedAt,
 			&i.TxHash,
-			&i.TxResult,
+			&i.Transaction,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -594,19 +598,19 @@ func (q *Queries) GetSlaRollupWithId(ctx context.Context, id int32) (SlaRollup, 
 }
 
 const getTx = `-- name: GetTx :one
-select rowid, block_id, index, created_at, tx_hash, tx_result from core_tx_results where lower(tx_hash) = lower($1) limit 1
+select rowid, block_id, index, tx_hash, transaction, created_at from core_transactions where lower(tx_hash) = lower($1) limit 1
 `
 
-func (q *Queries) GetTx(ctx context.Context, lower string) (CoreTxResult, error) {
+func (q *Queries) GetTx(ctx context.Context, lower string) (CoreTransaction, error) {
 	row := q.db.QueryRow(ctx, getTx, lower)
-	var i CoreTxResult
+	var i CoreTransaction
 	err := row.Scan(
 		&i.Rowid,
 		&i.BlockID,
 		&i.Index,
-		&i.CreatedAt,
 		&i.TxHash,
-		&i.TxResult,
+		&i.Transaction,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -623,7 +627,7 @@ func (q *Queries) TotalBlocks(ctx context.Context) (int64, error) {
 }
 
 const totalTransactions = `-- name: TotalTransactions :one
-select count(*) from core_tx_results
+select count(*) from core_transactions
 `
 
 func (q *Queries) TotalTransactions(ctx context.Context) (int64, error) {
@@ -645,7 +649,7 @@ func (q *Queries) TotalTransactionsByType(ctx context.Context, txType string) (i
 }
 
 const totalTxResults = `-- name: TotalTxResults :one
-select count(tx_hash) from core_tx_results
+select count(tx_hash) from core_transactions
 `
 
 func (q *Queries) TotalTxResults(ctx context.Context) (int64, error) {

@@ -13,8 +13,6 @@ import (
 
 	"github.com/AudiusProject/audiusd/pkg/core/common"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
-	"github.com/cometbft/cometbft/abci/types"
-	gogo "github.com/cosmos/gogoproto/proto"
 	"github.com/iancoleman/strcase"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -125,14 +123,8 @@ func (s *Server) GetTransaction(ctx context.Context, req *core_proto.GetTransact
 		return nil, err
 	}
 
-	var txResult types.TxResult
-	err = gogo.Unmarshal(tx.TxResult, &txResult)
-	if err != nil {
-		return nil, err
-	}
-
 	var transaction core_proto.SignedTransaction
-	err = proto.Unmarshal(txResult.GetTx(), &transaction)
+	err = proto.Unmarshal(tx.Transaction, &transaction)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +147,7 @@ func (s *Server) GetBlock(ctx context.Context, req *core_proto.GetBlockRequest) 
 		}, nil
 	}
 
-	block, err := s.rpc.Block(ctx, &req.Height)
+	block, err := s.db.GetBlock(ctx, req.Height)
 	if err != nil {
 		blockInFutureMsg := "must be less than or equal to the current blockchain height"
 		if strings.Contains(err.Error(), blockInFutureMsg) {
@@ -170,10 +162,12 @@ func (s *Server) GetBlock(ctx context.Context, req *core_proto.GetBlockRequest) 
 		return nil, err
 	}
 
+	blockTxs, err := s.db.GetBlockTransactions(ctx, req.Height)
+
 	txs := []*core_proto.SignedTransaction{}
-	for _, tx := range block.Block.Txs {
+	for _, tx := range blockTxs {
 		var transaction core_proto.SignedTransaction
-		err = proto.Unmarshal(tx, &transaction)
+		err = proto.Unmarshal(tx.Transaction, &transaction)
 		if err != nil {
 			return nil, err
 		}
@@ -181,13 +175,13 @@ func (s *Server) GetBlock(ctx context.Context, req *core_proto.GetBlockRequest) 
 	}
 
 	res := &core_proto.BlockResponse{
-		Blockhash:     block.BlockID.Hash.String(),
+		Blockhash:     block.Hash,
 		Chainid:       s.config.GenesisFile.ChainID,
-		Proposer:      block.Block.ProposerAddress.String(),
-		Height:        block.Block.Height,
+		Proposer:      block.Proposer,
+		Height:        block.Height,
 		Transactions:  txs,
 		CurrentHeight: currentHeight,
-		Timestamp:     timestamppb.New(block.Block.Time),
+		Timestamp:     timestamppb.New(block.CreatedAt.Time),
 	}
 
 	return res, nil

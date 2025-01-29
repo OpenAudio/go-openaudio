@@ -125,6 +125,54 @@ func (q *Queries) InsertTxStat(ctx context.Context, arg InsertTxStatParams) erro
 	return err
 }
 
+const storeBlock = `-- name: StoreBlock :exec
+insert into core_blocks (height, chain_id, hash, proposer, created_at)
+values ($1, $2, $3, $4, $5)
+`
+
+type StoreBlockParams struct {
+	Height    int64
+	ChainID   string
+	Hash      string
+	Proposer  string
+	CreatedAt pgtype.Timestamp
+}
+
+func (q *Queries) StoreBlock(ctx context.Context, arg StoreBlockParams) error {
+	_, err := q.db.Exec(ctx, storeBlock,
+		arg.Height,
+		arg.ChainID,
+		arg.Hash,
+		arg.Proposer,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const storeTransaction = `-- name: StoreTransaction :exec
+insert into core_transactions (block_id, index, tx_hash, transaction, created_at)
+values ($1, $2, $3, $4, $5)
+`
+
+type StoreTransactionParams struct {
+	BlockID     int64
+	Index       int32
+	TxHash      string
+	Transaction []byte
+	CreatedAt   pgtype.Timestamp
+}
+
+func (q *Queries) StoreTransaction(ctx context.Context, arg StoreTransactionParams) error {
+	_, err := q.db.Exec(ctx, storeTransaction,
+		arg.BlockID,
+		arg.Index,
+		arg.TxHash,
+		arg.Transaction,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const upsertAppState = `-- name: UpsertAppState :exec
 insert into core_app_state (block_height, app_hash)
 values ($1, $2)

@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
-	abci "github.com/cometbft/cometbft/abci/types"
-	gogo_proto "github.com/cosmos/gogoproto/proto"
 	"github.com/labstack/echo/v4"
 )
 
@@ -20,16 +18,11 @@ func (con *Console) txPage(c echo.Context) error {
 		return err
 	}
 
-	var result abci.TxResult
-	if err := gogo_proto.Unmarshal(tx.TxResult, &result); err != nil {
-		return err
-	}
-
 	data := &pages.TxView{
 		Hash:      txhash,
 		Block:     fmt.Sprint(tx.BlockID),
 		Timestamp: tx.CreatedAt.Time,
-		Tx:        result.Tx,
+		Tx:        tx.Transaction,
 	}
 
 	return con.views.RenderTxView(c, data)

@@ -193,18 +193,24 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 
 	// open in progres pg transaction
 	s.startInProgressTx(ctx)
+
+	if err := s.getDb().StoreBlock(ctx, db.StoreBlockParams{
+		Height:    req.Height,
+		Hash:      hex.EncodeToString(req.Hash),
+		Proposer:  hex.EncodeToString(req.ProposerAddress),
+		ChainID:   s.config.GenesisFile.ChainID,
+		CreatedAt: s.db.ToPgxTimestamp(req.Time),
+	}); err != nil {
+		s.logger.Errorf("could not store block: %v", err)
+	}
+
 	for i, tx := range req.Txs {
 		signedTx, err := s.isValidSignedTransaction(tx)
 		if err == nil {
 			// set tx to ok and set to not okay later if error occurs
 			txs[i] = &abcitypes.ExecTxResult{Code: abcitypes.CodeTypeOK}
 
-			txhash, err := s.toTxHash(signedTx)
-			if err != nil {
-				s.logger.Errorf("error getting tx hash: %v", err)
-				txs[i] = &abcitypes.ExecTxResult{Code: 2}
-			}
-
+			txhash := s.toTxHash(signedTx)
 			finalizedTx, err := s.finalizeTransaction(ctx, signedTx, txhash, req.Misbehavior)
 			if err != nil {
 				s.logger.Errorf("error finalizing event: %v", err)
@@ -228,6 +234,16 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 					PubKeyBytes: vd.PubKey,
 					PubKeyType:  "ed25519",
 				}
+			}
+
+			if err := s.getDb().StoreTransaction(ctx, db.StoreTransactionParams{
+				BlockID:     req.Height,
+				Index:       int32(i),
+				TxHash:      txhash,
+				Transaction: tx,
+				CreatedAt:   s.db.ToPgxTimestamp(req.Time),
+			}); err != nil {
+				s.logger.Errorf("failed to store transaction: %v", err)
 			}
 
 			if err := s.persistTxStat(ctx, finalizedTx, txhash, req.Height, req.Time); err != nil {
@@ -455,6 +471,11 @@ func (s *Server) serializeAppState(prevHash []byte, txs [][]byte) []byte {
 	return newAppHashBytes[:]
 }
 
-func (s *Server) toTxHash(msg proto.Message) (string, error) {
-	return common.ToTxHash(msg)
+func (s *Server) toTxHash(msg proto.Message) string {
+	hash, err := common.ToTxHash(msg)
+	if err != nil {
+		s.logger.Errorf("could not get txhash of msg: %v %v", msg, err)
+		return ""
+	}
+	return hash
 }
