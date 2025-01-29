@@ -1,6 +1,6 @@
 # audiusd
 
-[![CircleCI](https://dl.circleci.com/status-badge/img/gh/AudiusProject/audiusd/tree/main.svg?style=shield)](https://dl.circleci.com/status-badge/redirect/gh/AudiusProject/audiusd/tree/main) [![releases](https://img.shields.io/github/v/release/AudiusProject/audiusd)](https://github.com/AudiusProject/audiusd/releases/latest) 
+[![license](https://img.shields.io/github/license/AudiusProject/audiusd)](https://github.com/AudiusProject/audiusd/blob/main/LICENSE) [![releases](https://img.shields.io/github/v/release/AudiusProject/audiusd)](https://github.com/AudiusProject/audiusd/releases/latest) 
 
 > A golang implementation of the audius protocol.
 
@@ -26,4 +26,5 @@ open https://localhost/console/overview
 Migrate an existing [content node](docs/validators.md#existing-content-nodes) or [discovery node](docs/validators.md#existing-discovery-nodes) to `audiusd`.
 
 ---
-[![license](https://img.shields.io/github/license/AudiusProject/audiusd)](https://github.com/AudiusProject/audiusd/blob/main/LICENSE)
+
+<img src="https://upload.wikimedia.org/wikipedia/en/a/a4/Flag_of_the_United_States.svg" alt="BUILT IN USA" width="60">
