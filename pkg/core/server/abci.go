@@ -475,6 +475,9 @@ func (s *Server) finalizeTransaction(ctx context.Context, msg *core_proto.Signed
 }
 
 func (s *Server) persistTxStat(ctx context.Context, tx proto.Message, txhash string, height int64, blockTime time.Time) error {
+	if tx == nil {
+		return nil
+	}
 	if err := s.getDb().InsertTxStat(ctx, db.InsertTxStatParams{
 		TxType:      GetProtoTypeName(tx),
 		TxHash:      txhash,
