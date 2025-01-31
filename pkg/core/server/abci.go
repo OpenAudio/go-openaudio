@@ -163,10 +163,17 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 
 	// TODO: parallelize
 	for _, tx := range txMemBatch {
-		// app.validateTx(tx)
 		txBytes, err := proto.Marshal(tx)
 		if err != nil {
 			s.logger.Errorf("tx made it into prepare but couldn't be marshalled: %v", err)
+			continue
+		}
+		valid, err := s.validateBlockTx(ctx, proposal.Time, proposal.Height, proposal.Misbehavior, txBytes)
+		if err != nil {
+			s.logger.Errorf("tx made it into prepare but couldn't be validated: %v", err)
+			continue
+		} else if !valid {
+			s.logger.Errorf("invalid tx made it into prepare: %v", tx)
 			continue
 		}
 		proposalTxs = append(proposalTxs, txBytes)
@@ -211,7 +218,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 			txs[i] = &abcitypes.ExecTxResult{Code: abcitypes.CodeTypeOK}
 
 			txhash := s.toTxHash(signedTx)
-			finalizedTx, err := s.finalizeTransaction(ctx, signedTx, txhash, req.Misbehavior)
+			finalizedTx, err := s.finalizeTransaction(ctx, signedTx, txhash, req.Height, req.Misbehavior)
 			if err != nil {
 				s.logger.Errorf("error finalizing event: %v", err)
 				txs[i] = &abcitypes.ExecTxResult{Code: 2}
@@ -258,6 +265,11 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 			logger.Errorf("Error: invalid transaction index %v", i)
 			txs[i] = &abcitypes.ExecTxResult{Code: 1}
 		}
+	}
+
+	// Handle proof of storage
+	if s.config.EnablePoS {
+		s.syncPoS(ctx, req.Hash, req.Height)
 	}
 
 	nextAppHash := s.serializeAppState([]byte{}, req.GetTxs())
@@ -389,44 +401,59 @@ func (s *Server) isValidSignedTransaction(tx []byte) (*core_proto.SignedTransact
 }
 
 func (s *Server) validateBlockTxs(ctx context.Context, blockTime time.Time, blockHeight int64, misbehavior []abcitypes.Misbehavior, txs [][]byte) (bool, error) {
-	alreadyContainsRollup := false
 	for _, tx := range txs {
-		signedTx, err := s.isValidSignedTransaction(tx)
+		valid, err := s.validateBlockTx(ctx, blockTime, blockHeight, misbehavior, tx)
 		if err != nil {
-			s.logger.Error("Invalid block: unrecognized transaction type")
+			return false, err
+		} else if !valid {
 			return false, nil
-		}
-
-		switch signedTx.Transaction.(type) {
-		case *core_proto.SignedTransaction_Plays:
-		case *core_proto.SignedTransaction_ValidatorRegistration:
-			if err := s.isValidRegisterNodeTx(signedTx); err != nil {
-				s.logger.Error("Invalid block: invalid register node tx", "error", err)
-				return false, nil
-			}
-		case *core_proto.SignedTransaction_ValidatorDeregistration:
-			if err := s.isValidDeregisterNodeTx(signedTx, misbehavior); err != nil {
-				s.logger.Error("Invalid block: invalid deregister node tx", "error", err)
-				return false, nil
-			}
-		case *core_proto.SignedTransaction_SlaRollup:
-			if alreadyContainsRollup {
-				s.logger.Error("Invalid block: block already contains rollup")
-				return false, nil
-			} else if valid, err := s.isValidRollup(ctx, blockTime, blockHeight, signedTx.GetSlaRollup()); err != nil {
-				s.logger.Error("Invalid block: error validating sla rollup", "error", err)
-				return false, err
-			} else if !valid {
-				s.logger.Error("Invalid block: invalid rollup")
-				return false, nil
-			}
-			alreadyContainsRollup = true
 		}
 	}
 	return true, nil
 }
 
-func (s *Server) finalizeTransaction(ctx context.Context, msg *core_proto.SignedTransaction, txHash string, misbehavior []abcitypes.Misbehavior) (proto.Message, error) {
+func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, blockHeight int64, misbehavior []abcitypes.Misbehavior, tx []byte) (bool, error) {
+	signedTx, err := s.isValidSignedTransaction(tx)
+	if err != nil {
+		s.logger.Error("Invalid block: unrecognized transaction type")
+		return false, nil
+	}
+
+	switch signedTx.Transaction.(type) {
+	case *core_proto.SignedTransaction_Plays:
+	case *core_proto.SignedTransaction_ValidatorRegistration:
+		if err := s.isValidRegisterNodeTx(signedTx); err != nil {
+			s.logger.Error("Invalid block: invalid register node tx", "error", err)
+			return false, nil
+		}
+	case *core_proto.SignedTransaction_ValidatorDeregistration:
+		if err := s.isValidDeregisterNodeTx(signedTx, misbehavior); err != nil {
+			s.logger.Error("Invalid block: invalid deregister node tx", "error", err)
+			return false, nil
+		}
+	case *core_proto.SignedTransaction_SlaRollup:
+		if valid, err := s.isValidRollup(ctx, blockTime, blockHeight, signedTx.GetSlaRollup()); err != nil {
+			s.logger.Error("Invalid block: error validating sla rollup", "error", err)
+			return false, err
+		} else if !valid {
+			s.logger.Error("Invalid block: invalid rollup")
+			return false, nil
+		}
+	case *core_proto.SignedTransaction_StorageProof:
+		if err := s.isValidStorageProofTx(ctx, signedTx, blockHeight, true); err != nil {
+			s.logger.Error("Invalid block: invalid storage proof tx", "error", err)
+			return false, nil
+		}
+	case *core_proto.SignedTransaction_StorageProofVerification:
+		if err := s.isValidStorageProofVerificationTx(ctx, signedTx, blockHeight); err != nil {
+			s.logger.Error("Invalid block: invalid storage proof verification tx", "error", err)
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (s *Server) finalizeTransaction(ctx context.Context, msg *core_proto.SignedTransaction, txHash string, blockHeight int64, misbehavior []abcitypes.Misbehavior) (proto.Message, error) {
 	switch t := msg.Transaction.(type) {
 	case *core_proto.SignedTransaction_Plays:
 		return s.finalizePlayTransaction(ctx, msg)
@@ -438,6 +465,10 @@ func (s *Server) finalizeTransaction(ctx context.Context, msg *core_proto.Signed
 		return s.finalizeDeregisterNode(ctx, msg, misbehavior)
 	case *core_proto.SignedTransaction_SlaRollup:
 		return s.finalizeSlaRollup(ctx, msg, txHash)
+	case *core_proto.SignedTransaction_StorageProof:
+		return s.finalizeStorageProof(ctx, msg, blockHeight)
+	case *core_proto.SignedTransaction_StorageProofVerification:
+		return s.finalizeStorageProofVerification(ctx, msg, blockHeight)
 	default:
 		return nil, fmt.Errorf("unhandled proto event: %v %T", msg, t)
 	}

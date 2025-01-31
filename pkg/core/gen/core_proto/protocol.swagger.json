@@ -322,6 +322,12 @@
         },
         "validatorDeregistration": {
           "$ref": "#/definitions/protocolValidatorDeregistration"
+        },
+        "storageProof": {
+          "$ref": "#/definitions/protocolStorageProof"
+        },
+        "storageProofVerification": {
+          "$ref": "#/definitions/protocolStorageProofVerification"
         }
       }
     },
@@ -358,6 +364,44 @@
             "type": "object",
             "$ref": "#/definitions/protocolSlaNodeReport"
           }
+        }
+      }
+    },
+    "protocolStorageProof": {
+      "type": "object",
+      "properties": {
+        "height": {
+          "type": "string",
+          "format": "int64"
+        },
+        "address": {
+          "type": "string"
+        },
+        "proverAddresses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cid": {
+          "type": "string"
+        },
+        "proofSignature": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "protocolStorageProofVerification": {
+      "type": "object",
+      "properties": {
+        "height": {
+          "type": "string",
+          "format": "int64"
+        },
+        "proof": {
+          "type": "string",
+          "format": "byte"
         }
       }
     },

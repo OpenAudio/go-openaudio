@@ -56,6 +56,24 @@ func SignedTxProtoIntoSignedTxOapi(tx *core_proto.SignedTransaction) *models.Pro
 			Power:        fmt.Sprint(innerTx.ValidatorRegistration.Power),
 			PubKey:       innerTx.ValidatorRegistration.PubKey,
 		}
+	case *core_proto.SignedTransaction_ValidatorDeregistration:
+		oapiTx.ValidatorDeregistration = &models.ProtocolValidatorDeregistration{
+			CometAddress: innerTx.ValidatorDeregistration.CometAddress,
+			PubKey:       innerTx.ValidatorDeregistration.PubKey,
+		}
+	case *core_proto.SignedTransaction_StorageProof:
+		oapiTx.StorageProof = &models.ProtocolStorageProof{
+			Height:          fmt.Sprint(innerTx.StorageProof.Height),
+			Address:         innerTx.StorageProof.Address,
+			Cid:             innerTx.StorageProof.Cid,
+			ProverAddresses: innerTx.StorageProof.ProverAddresses,
+			ProofSignature:  innerTx.StorageProof.ProofSignature,
+		}
+	case *core_proto.SignedTransaction_StorageProofVerification:
+		oapiTx.StorageProofVerification = &models.ProtocolStorageProofVerification{
+			Height: fmt.Sprint(innerTx.StorageProofVerification.Height),
+			Proof:  innerTx.StorageProofVerification.Proof,
+		}
 	}
 
 	return oapiTx

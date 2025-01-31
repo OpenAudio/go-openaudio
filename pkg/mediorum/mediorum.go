@@ -16,6 +16,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/httputil"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
+	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/AudiusProject/audiusd/pkg/registrar"
 	"golang.org/x/exp/slices"
 	"golang.org/x/exp/slog"
@@ -40,15 +41,15 @@ func init() {
 	slog.SetDefault(logger)
 }
 
-func Run(ctx context.Context, logger *common.Logger) error {
+func Run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest) error {
 	mediorumEnv := os.Getenv("MEDIORUM_ENV")
 	slog.Info("starting", "MEDIORUM_ENV", mediorumEnv)
 
-	startMediorum(mediorumEnv)
+	startMediorum(mediorumEnv, posChannel)
 	return nil
 }
 
-func startMediorum(mediorumEnv string) {
+func startMediorum(mediorumEnv string, posChannel chan pos.PoSRequest) {
 	logger := slog.With("creatorNodeEndpoint", os.Getenv("creatorNodeEndpoint"))
 
 	isProd := mediorumEnv == "prod"
@@ -185,7 +186,7 @@ func startMediorum(mediorumEnv string) {
 		CoreGRPCEndpoint:          coreGRPCEndpoint,
 	}
 
-	ss, err := server.New(config)
+	ss, err := server.New(config, posChannel)
 	if err != nil {
 		logger.Error("failed to create server", "err", err)
 		log.Fatal(err)

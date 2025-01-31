@@ -33,6 +33,12 @@ type ProtocolSignedTransaction struct {
 	// sla rollup
 	SLARollup *ProtocolSLARollup `json:"slaRollup,omitempty"`
 
+	// storage proof
+	StorageProof *ProtocolStorageProof `json:"storageProof,omitempty"`
+
+	// storage proof verification
+	StorageProofVerification *ProtocolStorageProofVerification `json:"storageProofVerification,omitempty"`
+
 	// validator deregistration
 	ValidatorDeregistration *ProtocolValidatorDeregistration `json:"validatorDeregistration,omitempty"`
 
@@ -53,6 +59,14 @@ func (m *ProtocolSignedTransaction) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateSLARollup(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateStorageProof(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateStorageProofVerification(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -127,6 +141,44 @@ func (m *ProtocolSignedTransaction) validateSLARollup(formats strfmt.Registry) e
 	return nil
 }
 
+func (m *ProtocolSignedTransaction) validateStorageProof(formats strfmt.Registry) error {
+	if swag.IsZero(m.StorageProof) { // not required
+		return nil
+	}
+
+	if m.StorageProof != nil {
+		if err := m.StorageProof.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("storageProof")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("storageProof")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *ProtocolSignedTransaction) validateStorageProofVerification(formats strfmt.Registry) error {
+	if swag.IsZero(m.StorageProofVerification) { // not required
+		return nil
+	}
+
+	if m.StorageProofVerification != nil {
+		if err := m.StorageProofVerification.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("storageProofVerification")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("storageProofVerification")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (m *ProtocolSignedTransaction) validateValidatorDeregistration(formats strfmt.Registry) error {
 	if swag.IsZero(m.ValidatorDeregistration) { // not required
 		return nil
@@ -178,6 +230,14 @@ func (m *ProtocolSignedTransaction) ContextValidate(ctx context.Context, formats
 	}
 
 	if err := m.contextValidateSLARollup(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.contextValidateStorageProof(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.contextValidateStorageProofVerification(ctx, formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -250,6 +310,48 @@ func (m *ProtocolSignedTransaction) contextValidateSLARollup(ctx context.Context
 				return ve.ValidateName("slaRollup")
 			} else if ce, ok := err.(*errors.CompositeError); ok {
 				return ce.ValidateName("slaRollup")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *ProtocolSignedTransaction) contextValidateStorageProof(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.StorageProof != nil {
+
+		if swag.IsZero(m.StorageProof) { // not required
+			return nil
+		}
+
+		if err := m.StorageProof.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("storageProof")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("storageProof")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *ProtocolSignedTransaction) contextValidateStorageProofVerification(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.StorageProofVerification != nil {
+
+		if swag.IsZero(m.StorageProofVerification) { // not required
+			return nil
+		}
+
+		if err := m.StorageProofVerification.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("storageProofVerification")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("storageProofVerification")
 			}
 			return err
 		}

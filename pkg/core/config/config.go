@@ -115,6 +115,9 @@ type Config struct {
 	DebugModule   bool
 	CometModule   bool
 	PprofModule   bool
+
+	/* Feature Flags */
+	EnablePoS bool
 }
 
 func ReadConfig(logger *common.Logger) (*Config, error) {
@@ -187,6 +190,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 
 		cfg.SlaRollupInterval = mainnetRollupInterval
 		cfg.ValidatorVotingPower = mainnetValidatorVotingPower
+		cfg.EnablePoS = false
 
 	case "stage", "staging", "testnet":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress, StagePersistentPeers, 3))
@@ -196,6 +200,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		}
 		cfg.SlaRollupInterval = testnetRollupInterval
 		cfg.ValidatorVotingPower = testnetValidatorVotingPower
+		cfg.EnablePoS = true
 
 	case "dev", "development", "devnet", "local", "sandbox":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", DevPersistentPeers)
@@ -209,6 +214,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		}
 		cfg.SlaRollupInterval = devnetRollupInterval
 		cfg.ValidatorVotingPower = devnetValidatorVotingPower
+		cfg.EnablePoS = true
 	}
 
 	// Disable ssl for local postgres db connection

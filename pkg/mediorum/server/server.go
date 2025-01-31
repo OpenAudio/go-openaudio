@@ -24,6 +24,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/mediorum/crudr"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/persistence"
+	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/erni27/imcache"
 	"github.com/imroc/req/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -117,6 +118,9 @@ type MediorumServer struct {
 
 	crudSweepMutex sync.Mutex
 
+	// handle communication between core and mediorum for Proof of Storage
+	posChannel chan pos.PoSRequest
+
 	coreSdk      *core.Sdk
 	coreSdkReady chan struct{}
 
@@ -139,7 +143,7 @@ var (
 
 const PercentSeededThreshold = 50
 
-func New(config MediorumConfig) (*MediorumServer, error) {
+func New(config MediorumConfig, posChannel chan pos.PoSRequest) (*MediorumServer, error) {
 	if env := os.Getenv("MEDIORUM_ENV"); env != "" {
 		config.Env = env
 	}
@@ -300,6 +304,7 @@ func New(config MediorumConfig) (*MediorumServer, error) {
 		isAudiusdManaged: isAudiusdManaged,
 		rendezvousHasher: rendezvousHasher,
 		transcodeWork:    make(chan *Upload),
+		posChannel:       posChannel,
 
 		peerHealths:        map[string]*PeerHealth{},
 		redirectCache:      imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
@@ -537,6 +542,8 @@ func (ss *MediorumServer) MustStart() {
 	go ss.monitorDiskAndDbStatus()
 
 	go ss.monitorPeerReachability()
+
+	go ss.startPoSHandler()
 
 	// signals
 	signal.Notify(ss.quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)

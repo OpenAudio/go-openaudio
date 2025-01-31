@@ -11,6 +11,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/AudiusProject/audiusd/pkg/core/sdk"
+	"github.com/AudiusProject/audiusd/pkg/pos"
 	cconfig "github.com/cometbft/cometbft/config"
 	nm "github.com/cometbft/cometbft/node"
 	"github.com/cometbft/cometbft/rpc/client/local"
@@ -26,10 +27,11 @@ type Server struct {
 	cometbftConfig *cconfig.Config
 	logger         *common.Logger
 
-	httpServer *echo.Echo
-	grpcServer *grpc.Server
-	pool       *pgxpool.Pool
-	contracts  *contracts.AudiusContracts
+	httpServer         *echo.Echo
+	grpcServer         *grpc.Server
+	pool               *pgxpool.Pool
+	contracts          *contracts.AudiusContracts
+	mediorumPoSChannel chan pos.PoSRequest
 
 	db    *db.Queries
 	eth   *ethclient.Client
@@ -57,7 +59,7 @@ type Server struct {
 	awaitEthNodesReady   chan struct{}
 }
 
-func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Logger, pool *pgxpool.Pool, eth *ethclient.Client) (*Server, error) {
+func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Logger, pool *pgxpool.Pool, eth *ethclient.Client, posChannel chan pos.PoSRequest) (*Server, error) {
 	// create mempool
 	mempl := NewMempool(logger, config, db.New(pool), cconfig.Mempool.Size)
 
@@ -81,8 +83,9 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 		cometbftConfig: cconfig,
 		logger:         logger.Child("server"),
 
-		pool:      pool,
-		contracts: c,
+		pool:               pool,
+		contracts:          c,
+		mediorumPoSChannel: posChannel,
 
 		db:        db.New(pool),
 		eth:       eth,

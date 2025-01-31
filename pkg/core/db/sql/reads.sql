@@ -31,6 +31,11 @@ from core_validators
 where endpoint = $1
 limit 1;
 
+-- name: GetNodesByEndpoints :many
+select *
+from core_validators
+where endpoint = any($1::text[]);
+
 -- name: GetRegisteredNodesByType :many
 select *
 from core_validators
@@ -80,8 +85,12 @@ left join sla_node_reports nr
 on rr.id = nr.sla_rollup_id
 order by rr.time;
 
+-- name: GetSlaRollupWithTimestamp :one
+select * from sla_rollups where time = $1;
+
 -- name: GetSlaRollupWithId :one
 select * from sla_rollups where id = $1;
+
 
 -- name: GetPreviousSlaRollupFromId :one
 select * from sla_rollups
@@ -142,3 +151,15 @@ select * from core_transactions where block_id = $1 order by created_at desc;
 
 -- name: GetBlock :one
 select * from core_blocks where height = $1;
+
+-- name: GetIncompletePoSChallenges :many
+select * from pos_challenges where status = 'incomplete';
+
+-- name: GetPoSChallenge :one
+select * from pos_challenges where block_height = $1;
+
+-- name: GetStorageProof :one
+select * from storage_proofs where block_height = $1 and address = $2;
+
+-- name: GetStorageProofs :many
+select * from storage_proofs where block_height = $1;

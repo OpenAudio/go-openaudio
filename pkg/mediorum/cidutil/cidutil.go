@@ -40,6 +40,19 @@ func ComputeFileCID(f io.ReadSeeker) (string, error) {
 	return cid.String(), nil
 }
 
+func ComputeRawDataCID(data []byte) (string, error) {
+	builder := cid.V1Builder{}
+	hash, err := multihash.Sum(data, multihash.SHA2_256, -1)
+	if err != nil {
+		return "", err
+	}
+	cid, err := builder.Sum(hash)
+	if err != nil {
+		return "", err
+	}
+	return cid.String(), nil
+}
+
 // note: any Qm CID will be invalid because its hash won't match the contents
 func ValidateCID(expectedCID string, f io.ReadSeeker) error {
 	computed, err := ComputeFileCID(f)

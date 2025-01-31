@@ -10,16 +10,17 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/console"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/core/server"
+	"github.com/AudiusProject/audiusd/pkg/pos"
 
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Run(ctx context.Context, logger *common.Logger) error {
-	return run(ctx, logger)
+func Run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest) error {
+	return run(ctx, logger, posChannel)
 }
 
-func run(ctx context.Context, logger *common.Logger) error {
+func run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest) error {
 	logger.Info("good morning!")
 
 	config, cometConfig, err := config.SetupNode(logger)
@@ -49,7 +50,7 @@ func run(ctx context.Context, logger *common.Logger) error {
 	}
 	defer ethrpc.Close()
 
-	s, err := server.NewServer(config, cometConfig, logger, pool, ethrpc)
+	s, err := server.NewServer(config, cometConfig, logger, pool, ethrpc, posChannel)
 	if err != nil {
 		return fmt.Errorf("server init error: %v", err)
 	}

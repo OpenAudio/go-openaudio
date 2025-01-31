@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -123,6 +124,19 @@ func (s *Server) shouldProposeNewRollup(ctx context.Context, height int64) bool 
 func (s *Server) finalizeSlaRollup(ctx context.Context, event *core_proto.SignedTransaction, txHash string) (*core_proto.SlaRollup, error) {
 	appDb := s.getDb()
 	rollup := event.GetSlaRollup()
+
+	if _, err := appDb.GetSlaRollupWithTimestamp(
+		ctx,
+		pgtype.Timestamp{
+			Time:  rollup.Timestamp.AsTime(),
+			Valid: true,
+		},
+	); err == nil {
+		s.logger.Errorf("Skipping duplicate sla rollup with timestamp '%v'", rollup.Timestamp.AsTime())
+		return rollup, nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("Failed to check for existing rollup: %v", err)
+	}
 
 	id, err := appDb.CommitSlaRollup(
 		ctx,

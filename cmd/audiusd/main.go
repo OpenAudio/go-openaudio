@@ -29,6 +29,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/console"
 	"github.com/AudiusProject/audiusd/pkg/mediorum"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
+	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/AudiusProject/audiusd/pkg/uptime"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -65,6 +66,7 @@ func main() {
 	logger := setupLogger()
 	hostUrl := setupHostUrl()
 	setupDelegateKeyPair(logger)
+	posChannel := make(chan pos.PoSRequest)
 
 	services := []struct {
 		name    string
@@ -78,12 +80,12 @@ func main() {
 		},
 		{
 			"core",
-			func() error { return core.Run(ctx, logger) },
+			func() error { return core.Run(ctx, logger, posChannel) },
 			true,
 		},
 		{
 			"mediorum",
-			func() error { return mediorum.Run(ctx, logger) },
+			func() error { return mediorum.Run(ctx, logger, posChannel) },
 			isStorageEnabled(),
 		},
 		{

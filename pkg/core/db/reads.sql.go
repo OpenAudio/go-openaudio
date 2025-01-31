@@ -181,6 +181,35 @@ func (q *Queries) GetInProgressRollupReports(ctx context.Context) ([]SlaNodeRepo
 	return items, nil
 }
 
+const getIncompletePoSChallenges = `-- name: GetIncompletePoSChallenges :many
+select id, block_height, prover_addresses, status from pos_challenges where status = 'incomplete'
+`
+
+func (q *Queries) GetIncompletePoSChallenges(ctx context.Context) ([]PosChallenge, error) {
+	rows, err := q.db.Query(ctx, getIncompletePoSChallenges)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PosChallenge
+	for rows.Next() {
+		var i PosChallenge
+		if err := rows.Scan(
+			&i.ID,
+			&i.BlockHeight,
+			&i.ProverAddresses,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getLatestAppState = `-- name: GetLatestAppState :one
 select block_height, app_hash
 from core_app_state
@@ -237,6 +266,58 @@ func (q *Queries) GetNodeByEndpoint(ctx context.Context, endpoint string) (CoreV
 		&i.NodeType,
 		&i.SpID,
 		&i.CometPubKey,
+	)
+	return i, err
+}
+
+const getNodesByEndpoints = `-- name: GetNodesByEndpoints :many
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key
+from core_validators
+where endpoint = any($1::text[])
+`
+
+func (q *Queries) GetNodesByEndpoints(ctx context.Context, dollar_1 []string) ([]CoreValidator, error) {
+	rows, err := q.db.Query(ctx, getNodesByEndpoints, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CoreValidator
+	for rows.Next() {
+		var i CoreValidator
+		if err := rows.Scan(
+			&i.Rowid,
+			&i.PubKey,
+			&i.Endpoint,
+			&i.EthAddress,
+			&i.CometAddress,
+			&i.EthBlock,
+			&i.NodeType,
+			&i.SpID,
+			&i.CometPubKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPoSChallenge = `-- name: GetPoSChallenge :one
+select id, block_height, prover_addresses, status from pos_challenges where block_height = $1
+`
+
+func (q *Queries) GetPoSChallenge(ctx context.Context, blockHeight int64) (PosChallenge, error) {
+	row := q.db.QueryRow(ctx, getPoSChallenge, blockHeight)
+	var i PosChallenge
+	err := row.Scan(
+		&i.ID,
+		&i.BlockHeight,
+		&i.ProverAddresses,
+		&i.Status,
 	)
 	return i, err
 }
@@ -595,6 +676,81 @@ func (q *Queries) GetSlaRollupWithId(ctx context.Context, id int32) (SlaRollup, 
 		&i.Time,
 	)
 	return i, err
+}
+
+const getSlaRollupWithTimestamp = `-- name: GetSlaRollupWithTimestamp :one
+select id, tx_hash, block_start, block_end, time from sla_rollups where time = $1
+`
+
+func (q *Queries) GetSlaRollupWithTimestamp(ctx context.Context, time pgtype.Timestamp) (SlaRollup, error) {
+	row := q.db.QueryRow(ctx, getSlaRollupWithTimestamp, time)
+	var i SlaRollup
+	err := row.Scan(
+		&i.ID,
+		&i.TxHash,
+		&i.BlockStart,
+		&i.BlockEnd,
+		&i.Time,
+	)
+	return i, err
+}
+
+const getStorageProof = `-- name: GetStorageProof :one
+select id, block_height, address, cid, proof_signature, proof, prover_addresses, status from storage_proofs where block_height = $1 and address = $2
+`
+
+type GetStorageProofParams struct {
+	BlockHeight int64
+	Address     string
+}
+
+func (q *Queries) GetStorageProof(ctx context.Context, arg GetStorageProofParams) (StorageProof, error) {
+	row := q.db.QueryRow(ctx, getStorageProof, arg.BlockHeight, arg.Address)
+	var i StorageProof
+	err := row.Scan(
+		&i.ID,
+		&i.BlockHeight,
+		&i.Address,
+		&i.Cid,
+		&i.ProofSignature,
+		&i.Proof,
+		&i.ProverAddresses,
+		&i.Status,
+	)
+	return i, err
+}
+
+const getStorageProofs = `-- name: GetStorageProofs :many
+select id, block_height, address, cid, proof_signature, proof, prover_addresses, status from storage_proofs where block_height = $1
+`
+
+func (q *Queries) GetStorageProofs(ctx context.Context, blockHeight int64) ([]StorageProof, error) {
+	rows, err := q.db.Query(ctx, getStorageProofs, blockHeight)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StorageProof
+	for rows.Next() {
+		var i StorageProof
+		if err := rows.Scan(
+			&i.ID,
+			&i.BlockHeight,
+			&i.Address,
+			&i.Cid,
+			&i.ProofSignature,
+			&i.Proof,
+			&i.ProverAddresses,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getTx = `-- name: GetTx :one
