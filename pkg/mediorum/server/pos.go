@@ -18,8 +18,10 @@ func (ss *MediorumServer) startPoSHandler() {
 		cid, err := ss.getStorageProofCIDFromBlockhash(posReq.Hash)
 		if err != nil {
 			ss.logger.Error("Could not get a CID to perform proof with")
+			continue
 		}
 		orderedHosts := ss.rendezvousHasher.Rank(cid)
+		ss.logger.Info("Retrieved artifacts for proof of storage challenge", "cid", cid, "provers", orderedHosts)
 		replicaSet := make([]string, 0, ss.Config.ReplicationFactor)
 		mustProve := false
 		for i, h := range orderedHosts {

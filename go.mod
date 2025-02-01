@@ -7,7 +7,7 @@ toolchain go1.23.4
 require (
 	github.com/a-h/templ v0.3.819
 	github.com/cometbft/cometbft v1.0.0
-	github.com/cosmos/gogoproto v1.7.0
+	github.com/cosmos/gogoproto v1.7.0 // indirect
 	github.com/disintegration/imaging v1.6.2
 	github.com/docker/cli v25.0.3+incompatible
 	github.com/docker/docker v25.0.3+incompatible
