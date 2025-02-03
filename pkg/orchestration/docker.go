@@ -102,6 +102,14 @@ func runNode(
 	containerConfig := &container.Config{
 		Image: fmt.Sprintf("audius/audius-d:%s", audiusdTag),
 	}
+
+	if len(config.AudiusDockerComposeConfig) > 0 {
+		containerConfig.Env = make([]string, 0, len(config.AudiusDockerComposeConfig))
+		for key, value := range config.AudiusDockerComposeConfig {
+			containerConfig.Env = append(containerConfig.Env, fmt.Sprintf("%s=%s", key, value))
+		}
+	}
+
 	hostConfig := &container.HostConfig{
 		Privileged: true,
 		Mounts: []mount.Mount{

@@ -69,6 +69,9 @@ type NodeConfig struct {
 	// (EXPERIMENTAL) Path on host machine to env file containing additional private configuration
 	RemoteConfigFile string `yaml:"remoteConfigFile,omitempty"`
 
+	// Environment variables for the audius-d wrapper container
+	AudiusDockerComposeConfig map[string]string `yaml:"audiusDockerComposeConfig,omitempty"`
+
 	PluginsConfig map[PluginName]map[string]string `yaml:"plugins,omitempty"`
 }
 
