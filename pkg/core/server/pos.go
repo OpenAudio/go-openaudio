@@ -50,7 +50,7 @@ func blockShouldTriggerNewPoSChallenge(blockHash []byte) bool {
 }
 
 func (s *Server) sendPoSChallengeToMediorum(blockHash []byte, blockHeight int64) {
-	respChannel := make(chan pos.PoSResponse)
+	respChannel := make(chan pos.PoSResponse, 1)
 	posReq := pos.PoSRequest{
 		Hash:     blockHash,
 		Height:   blockHeight,
