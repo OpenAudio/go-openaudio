@@ -14,6 +14,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/common"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/iancoleman/strcase"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -149,14 +150,9 @@ func (s *Server) GetBlock(ctx context.Context, req *core_proto.GetBlockRequest) 
 
 	block, err := s.db.GetBlock(ctx, req.Height)
 	if err != nil {
-		blockInFutureMsg := "must be less than or equal to the current blockchain height"
-		if strings.Contains(err.Error(), blockInFutureMsg) {
-			// return block with -1 to indicate it doesn't exist yet
-			return &core_proto.BlockResponse{
-				Chainid:       s.config.GenesisFile.ChainID,
-				Height:        -1,
-				CurrentHeight: currentHeight,
-			}, nil
+		if errors.Is(err, pgx.ErrNoRows) {
+			// fallback to rpc for now, remove after mainnet-alpha
+			return s.getBlockRpcFallback(ctx, req.Height)
 		}
 		s.logger.Errorf("error getting block: %v", err)
 		return nil, err
@@ -227,4 +223,45 @@ func (s *Server) startGRPC() error {
 		return err
 	}
 	return nil
+}
+
+// Utilities
+func (s *Server) getBlockRpcFallback(ctx context.Context, height int64) (*core_proto.BlockResponse, error) {
+	currentHeight := s.cache.currentHeight
+	block, err := s.rpc.Block(ctx, &height)
+	if err != nil {
+		blockInFutureMsg := "must be less than or equal to the current blockchain height"
+		if strings.Contains(err.Error(), blockInFutureMsg) {
+			// return block with -1 to indicate it doesn't exist yet
+			return &core_proto.BlockResponse{
+				Chainid:       s.config.GenesisFile.ChainID,
+				Height:        -1,
+				CurrentHeight: currentHeight,
+			}, nil
+		}
+		s.logger.Errorf("error getting block: %v", err)
+		return nil, err
+	}
+
+	txs := []*core_proto.SignedTransaction{}
+	for _, tx := range block.Block.Txs {
+		var transaction core_proto.SignedTransaction
+		err = proto.Unmarshal(tx, &transaction)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, &transaction)
+	}
+
+	res := &core_proto.BlockResponse{
+		Blockhash:     block.BlockID.Hash.String(),
+		Chainid:       s.config.GenesisFile.ChainID,
+		Proposer:      block.Block.ProposerAddress.String(),
+		Height:        block.Block.Height,
+		Transactions:  txs,
+		CurrentHeight: currentHeight,
+		Timestamp:     timestamppb.New(block.Block.Time),
+	}
+
+	return res, nil
 }
