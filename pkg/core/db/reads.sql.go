@@ -181,35 +181,6 @@ func (q *Queries) GetInProgressRollupReports(ctx context.Context) ([]SlaNodeRepo
 	return items, nil
 }
 
-const getIncompletePoSChallenges = `-- name: GetIncompletePoSChallenges :many
-select id, block_height, prover_addresses, status from pos_challenges where status = 'incomplete'
-`
-
-func (q *Queries) GetIncompletePoSChallenges(ctx context.Context) ([]PosChallenge, error) {
-	rows, err := q.db.Query(ctx, getIncompletePoSChallenges)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []PosChallenge
-	for rows.Next() {
-		var i PosChallenge
-		if err := rows.Scan(
-			&i.ID,
-			&i.BlockHeight,
-			&i.ProverAddresses,
-			&i.Status,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getLatestAppState = `-- name: GetLatestAppState :one
 select block_height, app_hash
 from core_app_state
@@ -304,22 +275,6 @@ func (q *Queries) GetNodesByEndpoints(ctx context.Context, dollar_1 []string) ([
 		return nil, err
 	}
 	return items, nil
-}
-
-const getPoSChallenge = `-- name: GetPoSChallenge :one
-select id, block_height, prover_addresses, status from pos_challenges where block_height = $1
-`
-
-func (q *Queries) GetPoSChallenge(ctx context.Context, blockHeight int64) (PosChallenge, error) {
-	row := q.db.QueryRow(ctx, getPoSChallenge, blockHeight)
-	var i PosChallenge
-	err := row.Scan(
-		&i.ID,
-		&i.BlockHeight,
-		&i.ProverAddresses,
-		&i.Status,
-	)
-	return i, err
 }
 
 const getPreviousSlaRollupFromId = `-- name: GetPreviousSlaRollupFromId :one
@@ -718,6 +673,17 @@ func (q *Queries) GetStorageProof(ctx context.Context, arg GetStorageProofParams
 		&i.Status,
 	)
 	return i, err
+}
+
+const getStorageProofPeers = `-- name: GetStorageProofPeers :one
+select prover_addresses from storage_proof_peers where block_height = $1
+`
+
+func (q *Queries) GetStorageProofPeers(ctx context.Context, blockHeight int64) ([]string, error) {
+	row := q.db.QueryRow(ctx, getStorageProofPeers, blockHeight)
+	var prover_addresses []string
+	err := row.Scan(&prover_addresses)
+	return prover_addresses, err
 }
 
 const getStorageProofs = `-- name: GetStorageProofs :many

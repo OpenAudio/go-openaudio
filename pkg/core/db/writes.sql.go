@@ -62,17 +62,6 @@ func (q *Queries) CommitSlaRollup(ctx context.Context, arg CommitSlaRollupParams
 	return id, err
 }
 
-const completePoSChallenge = `-- name: CompletePoSChallenge :exec
-update pos_challenges
-set status = 'complete'
-where block_height = $1
-`
-
-func (q *Queries) CompletePoSChallenge(ctx context.Context, blockHeight int64) error {
-	_, err := q.db.Exec(ctx, completePoSChallenge, blockHeight)
-	return err
-}
-
 const deleteRegisteredNode = `-- name: DeleteRegisteredNode :exec
 delete from core_validators
 where comet_address = $1
@@ -95,16 +84,6 @@ type InsertFailedStorageProofParams struct {
 
 func (q *Queries) InsertFailedStorageProof(ctx context.Context, arg InsertFailedStorageProofParams) error {
 	_, err := q.db.Exec(ctx, insertFailedStorageProof, arg.BlockHeight, arg.Address)
-	return err
-}
-
-const insertPoSChallenge = `-- name: InsertPoSChallenge :exec
-insert into pos_challenges (block_height)
-values ($1)
-`
-
-func (q *Queries) InsertPoSChallenge(ctx context.Context, blockHeight int64) error {
-	_, err := q.db.Exec(ctx, insertPoSChallenge, blockHeight)
 	return err
 }
 
@@ -159,6 +138,21 @@ func (q *Queries) InsertStorageProof(ctx context.Context, arg InsertStorageProof
 		arg.ProofSignature,
 		arg.ProverAddresses,
 	)
+	return err
+}
+
+const insertStorageProofPeers = `-- name: InsertStorageProofPeers :exec
+insert into storage_proof_peers (block_height, prover_addresses)
+values ($1, $2)
+`
+
+type InsertStorageProofPeersParams struct {
+	BlockHeight     int64
+	ProverAddresses []string
+}
+
+func (q *Queries) InsertStorageProofPeers(ctx context.Context, arg InsertStorageProofPeersParams) error {
+	_, err := q.db.Exec(ctx, insertStorageProofPeers, arg.BlockHeight, arg.ProverAddresses)
 	return err
 }
 
@@ -230,22 +224,6 @@ func (q *Queries) StoreTransaction(ctx context.Context, arg StoreTransactionPara
 		arg.Transaction,
 		arg.CreatedAt,
 	)
-	return err
-}
-
-const updatePoSChallengeProvers = `-- name: UpdatePoSChallengeProvers :exec
-update pos_challenges
-set prover_addresses = $1
-where block_height = $2
-`
-
-type UpdatePoSChallengeProversParams struct {
-	ProverAddresses []string
-	BlockHeight     int64
-}
-
-func (q *Queries) UpdatePoSChallengeProvers(ctx context.Context, arg UpdatePoSChallengeProversParams) error {
-	_, err := q.db.Exec(ctx, updatePoSChallengeProvers, arg.ProverAddresses, arg.BlockHeight)
 	return err
 }
 

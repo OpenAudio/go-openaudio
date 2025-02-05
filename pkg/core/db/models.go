@@ -11,48 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type ChallengeStatus string
-
-const (
-	ChallengeStatusUnresolved ChallengeStatus = "unresolved"
-	ChallengeStatusComplete   ChallengeStatus = "complete"
-)
-
-func (e *ChallengeStatus) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = ChallengeStatus(s)
-	case string:
-		*e = ChallengeStatus(s)
-	default:
-		return fmt.Errorf("unsupported scan type for ChallengeStatus: %T", src)
-	}
-	return nil
-}
-
-type NullChallengeStatus struct {
-	ChallengeStatus ChallengeStatus
-	Valid           bool // Valid is true if ChallengeStatus is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullChallengeStatus) Scan(value interface{}) error {
-	if value == nil {
-		ns.ChallengeStatus, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.ChallengeStatus.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullChallengeStatus) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.ChallengeStatus), nil
-}
-
 type ProofStatus string
 
 const (
@@ -140,13 +98,6 @@ type CoreValidator struct {
 	CometPubKey  string
 }
 
-type PosChallenge struct {
-	ID              int32
-	BlockHeight     int64
-	ProverAddresses []string
-	Status          ChallengeStatus
-}
-
 type SlaNodeReport struct {
 	ID             int32
 	Address        string
@@ -171,4 +122,10 @@ type StorageProof struct {
 	Proof           pgtype.Text
 	ProverAddresses []string
 	Status          ProofStatus
+}
+
+type StorageProofPeer struct {
+	ID              int32
+	BlockHeight     int64
+	ProverAddresses []string
 }

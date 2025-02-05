@@ -37,3 +37,5 @@ drop table if exists pos_challenges;
 drop table if exists storage_proofs;
 drop type if exists challenge_status;
 drop type if exists proof_status;
+drop index if exists idx_pos_challenges_block_height;
+drop index if exists idx_storage_proofs_block_height;

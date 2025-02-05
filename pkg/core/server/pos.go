@@ -31,11 +31,6 @@ const (
 func (s *Server) syncPoS(ctx context.Context, latestBlockHash []byte, latestBlockHeight int64) error {
 	if blockShouldTriggerNewPoSChallenge(latestBlockHash) {
 		s.logger.Info("PoS Challenge triggered", "height", latestBlockHeight, "hash", hex.EncodeToString(latestBlockHash))
-		qtx := s.getDb()
-		err := qtx.InsertPoSChallenge(ctx, latestBlockHeight)
-		if err != nil {
-			return fmt.Errorf("Could not insert PoS challenge to db at height %d: %v", latestBlockHeight, err)
-		}
 		// TODO: disable in block sync mode
 		go s.sendPoSChallengeToMediorum(latestBlockHash, latestBlockHeight)
 	}
@@ -68,22 +63,22 @@ func (s *Server) sendPoSChallengeToMediorum(blockHash []byte, blockHeight int64)
 		if err != nil {
 			s.logger.Error("Failed to get all registered comet nodes for endpoints", "endpoints", response.Replicas, "error", err)
 		}
-		prover_addresses := make([]string, 0, len(nodes))
+		proverAddresses := make([]string, 0, len(nodes))
 		for _, n := range nodes {
-			prover_addresses = append(prover_addresses, n.CometAddress)
+			proverAddresses = append(proverAddresses, n.CometAddress)
 		}
 
 		// Add provers
-		if err := s.db.UpdatePoSChallengeProvers(
+		if err := s.db.InsertStorageProofPeers(
 			ctx,
-			db.UpdatePoSChallengeProversParams{prover_addresses, blockHeight},
+			db.InsertStorageProofPeersParams{blockHeight, proverAddresses},
 		); err != nil {
 			s.logger.Error("Could not update existing PoS challenge", "hash", blockHash, "error", err)
 		}
 
 		// submit proof tx if we are part of the challenge
 		if len(response.Proof) > 0 {
-			err := s.submitStorageProofTx(blockHeight, blockHash, response.CID, prover_addresses, response.Proof)
+			err := s.submitStorageProofTx(blockHeight, blockHash, response.CID, proverAddresses, response.Proof)
 			if err != nil {
 				s.logger.Error("Could not submit storage proof tx", "hash", blockHash, "error", err)
 			}
@@ -215,15 +210,25 @@ func (s *Server) isValidStorageProofTx(ctx context.Context, tx *core_proto.Signe
 		return fmt.Errorf("Proof submitted at height '%d' for challenge at height '%d' which is past the deadline", currentBlockHeight, height)
 	}
 
-	// validate existing ongoing challenge
-	posChallenge, err := s.db.GetPoSChallenge(ctx, height)
+	// validate height corresponds to triggered challenge
+	block, err := s.db.GetBlock(ctx, height)
 	if err != nil {
-		return fmt.Errorf("Could not retrieve any ongoing pos challenges at height '%d': %v", height, err)
+		return fmt.Errorf("Failed to get block at height %d: %v", height, err)
 	}
-	if enforceReplicas && posChallenge.ProverAddresses != nil && !slices.Contains(posChallenge.ProverAddresses, sp.Address) {
-		// We think this proof does not belong to this challenge.
+	blockHashBytes, err := hex.DecodeString(block.Hash)
+	if err != nil {
+		return fmt.Errorf("Failed to decode blockhash at height %d: %v", height, err)
+	}
+	if !blockShouldTriggerNewPoSChallenge(blockHashBytes) {
+		return fmt.Errorf("Block at height %d with hash '%s' should not trigger a storage proof", height, block.Hash)
+	}
+
+	// validate proof comes from a replica peer
+	peer_addresses, err := s.db.GetStorageProofPeers(ctx, height)
+	if enforceReplicas && err == nil && !slices.Contains(peer_addresses, sp.Address) {
+		// We think this prover does not belong to this challenge.
 		// Note: this should not be enforced during the finalize step.
-		return fmt.Errorf("Prover at address '%s' does not belong to replicaset.", sp.Address)
+		return fmt.Errorf("Prover at address '%s' does not belong to replicaset for PoSt challenge at height %d.", sp.Address, height)
 	}
 
 	return nil
@@ -244,10 +249,17 @@ func (s *Server) isValidStorageProofVerificationTx(ctx context.Context, tx *core
 		return fmt.Errorf("Proof submitted at height '%d' for challenge at height '%d' which is before the deadline", currentBlockHeight, height)
 	}
 
-	// validate existing ongoing challenge
-	_, err := s.db.GetPoSChallenge(ctx, height)
+	// validate height corresponds to triggered challenge
+	block, err := s.db.GetBlock(ctx, height)
 	if err != nil {
-		return fmt.Errorf("Could not retrieve any ongoing pos challenges at height '%d': %v", height, err)
+		return fmt.Errorf("Failed to get block at height %d: %v", height, err)
+	}
+	blockHashBytes, err := hex.DecodeString(block.Hash)
+	if err != nil {
+		return fmt.Errorf("Failed to decode blockhash at height %d: %v", height, err)
+	}
+	if !blockShouldTriggerNewPoSChallenge(blockHashBytes) {
+		return fmt.Errorf("Block at height %d with hash '%s' should not trigger a storage proof", height, block.Hash)
 	}
 
 	return nil
@@ -293,22 +305,20 @@ func (s *Server) finalizeStorageProofVerification(ctx context.Context, tx *core_
 	spv := tx.GetStorageProofVerification()
 	qtx := s.getDb()
 
-	challenge, err := qtx.GetPoSChallenge(ctx, spv.Height)
-	if err != nil {
-		return nil, fmt.Errorf("Could not pos challenge: %v", err)
-	}
-	if challenge.Status == db.ChallengeStatusComplete {
-		// challenge already resolved, no-op
-		return spv, nil
-	}
-
 	proofs, err := qtx.GetStorageProofs(ctx, spv.Height)
 	if err != nil {
 		return nil, fmt.Errorf("Could not fetch storage proofs: %v", err)
 	}
+	if len(proofs) == 0 || proofs[0].Status != db.ProofStatusUnresolved {
+		// challenge already resolved, no-op
+		return spv, nil
+	}
 
 	consensusNodes := make([]string, 0, len(proofs))
 	consensusPeers := make(map[string]int)
+	// Check the plaintext proof against every StorageProof signature received from a prover.
+	// Even if the signature matches, we don't know that the prover has passed the challenge
+	// unless a majority of provers also match.
 	for _, p := range proofs {
 		node, err := qtx.GetRegisteredNodeByCometAddress(ctx, p.Address)
 		if err != nil {
@@ -325,9 +335,11 @@ func (s *Server) finalizeStorageProofVerification(ctx context.Context, tx *core_
 		}
 		pubKey := ed25519.PubKey(pubKeyBytes)
 		if pubKey.VerifySignature(spv.Proof, sigBytes) {
+			// Keep track of each prover whose signature matched the proof
 			consensusNodes = append(consensusNodes, p.Address)
 
-			// Track consensus on who the other provers were
+			// Also track consensus on who the other provers allegedly were. We will
+			// use this to mark unsubmitted proofs as failures later.
 			for _, peer := range p.ProverAddresses {
 				if _, ok := consensusPeers[peer]; ok {
 					consensusPeers[peer]++
@@ -338,10 +350,12 @@ func (s *Server) finalizeStorageProofVerification(ctx context.Context, tx *core_
 		}
 	}
 
+	// Check if a majority of provers' signatures matched. If we have a majority,
+	// we can resolve the challenge
 	if len(consensusNodes) > len(proofs)/2 {
-		// we have a majority, we can resolve the challenge
 		proofStr := hex.EncodeToString(spv.Proof)
 		for _, p := range proofs {
+			// Mark all matching provers as passed.
 			if slices.Contains(consensusNodes, p.Address) {
 				err := qtx.UpdateStorageProof(
 					ctx,
@@ -356,6 +370,7 @@ func (s *Server) finalizeStorageProofVerification(ctx context.Context, tx *core_
 					return nil, fmt.Errorf("Could not update storage proof for prover %s at height %d: %v", p.Address, spv.Height, err)
 				}
 			} else {
+				// Mark remaining provers as failed
 				err := qtx.UpdateStorageProof(
 					ctx,
 					db.UpdateStorageProofParams{
@@ -369,23 +384,21 @@ func (s *Server) finalizeStorageProofVerification(ctx context.Context, tx *core_
 					return nil, fmt.Errorf("Could not update storage proof for prover %s at height %d: %v", p.Address, spv.Height, err)
 				}
 			}
+			// This peer has now been handled. Remove it from consensusPeers in preparation for the
+			// next step.
 			delete(consensusPeers, p.Address)
 		}
 
-		// Add failed storage proofs for missing provers
+		// Some provers might not have submitted a proof. So, add failed storage proofs
+		// for the missing provers (based on who the correct provers claimed their peers were)
 		for peer, vote := range consensusPeers {
 			if vote > len(proofs)/2 {
-				// a majority said this node was also a prover, but it did not provide a proof
+				// A majority said this node was also a prover, but it did not provide a proof.
 				qtx.InsertFailedStorageProof(
 					ctx,
 					db.InsertFailedStorageProofParams{spv.Height, peer},
 				)
 			}
-		}
-
-		err := qtx.CompletePoSChallenge(ctx, spv.Height)
-		if err != nil {
-			return nil, fmt.Errorf("Could not complete pos challenge at height %d: %v", spv.Height, err)
 		}
 	}
 

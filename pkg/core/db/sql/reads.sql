@@ -152,11 +152,8 @@ select * from core_transactions where block_id = $1 order by created_at desc;
 -- name: GetBlock :one
 select * from core_blocks where height = $1;
 
--- name: GetIncompletePoSChallenges :many
-select * from pos_challenges where status = 'incomplete';
-
--- name: GetPoSChallenge :one
-select * from pos_challenges where block_height = $1;
+-- name: GetStorageProofPeers :one
+select prover_addresses from storage_proof_peers where block_height = $1;
 
 -- name: GetStorageProof :one
 select * from storage_proofs where block_height = $1 and address = $2;
