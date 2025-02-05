@@ -10,8 +10,6 @@ import (
 func NewMultiStaging() PeerProvider {
 	return multiProvider{
 		providers: []PeerProvider{
-			NewAudiusApiGatewayStaging(),
-			NewGraphStaging(),
 			NewEthChainProvider(),
 		},
 	}
@@ -21,8 +19,6 @@ func NewMultiStaging() PeerProvider {
 func NewMultiProd() PeerProvider {
 	return multiProvider{
 		providers: []PeerProvider{
-			NewAudiusApiGatewayProd(),
-			NewGraphProd(),
 			NewEthChainProvider(),
 		},
 	}
