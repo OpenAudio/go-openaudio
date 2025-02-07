@@ -18,6 +18,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+var legacyDiscoveryProviderProfile = []string{".audius.co", ".creatorseed.com", "dn1.monophonic.digital", ".figment.io", ".tikilabs.com"}
+
 type RegisteredNodeVerboseResponse struct {
 	Owner               string `json:"owner"`
 	Endpoint            string `json:"endpoint"`
@@ -179,6 +181,23 @@ func (s *Server) getRegisteredNodes(c echo.Context) error {
 			return fmt.Errorf("could not get discovery nodes: %v", err)
 		}
 		for _, node := range res {
+			isProd := s.config.Environment == "prod"
+			if isProd {
+				nodeFound := false
+				for _, nodeType := range legacyDiscoveryProviderProfile {
+					if nodeFound {
+						break
+					}
+					if strings.Contains(node.Endpoint, nodeType) {
+						nodeFound = true
+						break
+					}
+				}
+				if !nodeFound {
+					continue
+				}
+			}
+
 			spID, err := strconv.ParseUint(node.SpID, 10, 32)
 			if err != nil {
 				return fmt.Errorf("could not convert spid to int: %v", err)
@@ -189,8 +208,7 @@ func (s *Server) getRegisteredNodes(c echo.Context) error {
 				return fmt.Errorf("could not convert ethblock to int: %v", err)
 			}
 
-			nodes = append(nodes, &RegisteredNodeVerboseResponse{
-				// TODO: fix this
+			nodeResponse := &RegisteredNodeVerboseResponse{
 				Owner:               node.EthAddress,
 				Endpoint:            node.Endpoint,
 				SpID:                spID,
@@ -198,7 +216,9 @@ func (s *Server) getRegisteredNodes(c echo.Context) error {
 				BlockNumber:         ethBlock,
 				DelegateOwnerWallet: node.EthAddress,
 				CometAddress:        node.CometAddress,
-			})
+			}
+
+			nodes = append(nodes, nodeResponse)
 		}
 	}
 
