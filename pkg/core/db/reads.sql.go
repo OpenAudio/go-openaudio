@@ -686,12 +686,97 @@ func (q *Queries) GetStorageProofPeers(ctx context.Context, blockHeight int64) (
 	return prover_addresses, err
 }
 
+const getStorageProofRollups = `-- name: GetStorageProofRollups :many
+select 
+    address, 
+    count(*) filter (where status = 'fail') as failed_count,
+    count(*) as total_count
+from storage_proofs 
+where block_height >= $1 and block_height <= $2
+group by address
+`
+
+type GetStorageProofRollupsParams struct {
+	BlockHeight   int64
+	BlockHeight_2 int64
+}
+
+type GetStorageProofRollupsRow struct {
+	Address     string
+	FailedCount int64
+	TotalCount  int64
+}
+
+func (q *Queries) GetStorageProofRollups(ctx context.Context, arg GetStorageProofRollupsParams) ([]GetStorageProofRollupsRow, error) {
+	rows, err := q.db.Query(ctx, getStorageProofRollups, arg.BlockHeight, arg.BlockHeight_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetStorageProofRollupsRow
+	for rows.Next() {
+		var i GetStorageProofRollupsRow
+		if err := rows.Scan(&i.Address, &i.FailedCount, &i.TotalCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getStorageProofs = `-- name: GetStorageProofs :many
 select id, block_height, address, cid, proof_signature, proof, prover_addresses, status from storage_proofs where block_height = $1
 `
 
 func (q *Queries) GetStorageProofs(ctx context.Context, blockHeight int64) ([]StorageProof, error) {
 	rows, err := q.db.Query(ctx, getStorageProofs, blockHeight)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StorageProof
+	for rows.Next() {
+		var i StorageProof
+		if err := rows.Scan(
+			&i.ID,
+			&i.BlockHeight,
+			&i.Address,
+			&i.Cid,
+			&i.ProofSignature,
+			&i.Proof,
+			&i.ProverAddresses,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getStorageProofsForNodeInRange = `-- name: GetStorageProofsForNodeInRange :many
+select id, block_height, address, cid, proof_signature, proof, prover_addresses, status from storage_proofs
+where block_height in (
+    select block_height
+    from storage_proofs sp
+    where sp.block_height >= $1 and sp.block_height <= $2 and sp.address = $3 
+)
+`
+
+type GetStorageProofsForNodeInRangeParams struct {
+	BlockHeight   int64
+	BlockHeight_2 int64
+	Address       string
+}
+
+func (q *Queries) GetStorageProofsForNodeInRange(ctx context.Context, arg GetStorageProofsForNodeInRangeParams) ([]StorageProof, error) {
+	rows, err := q.db.Query(ctx, getStorageProofsForNodeInRange, arg.BlockHeight, arg.BlockHeight_2, arg.Address)
 	if err != nil {
 		return nil, err
 	}

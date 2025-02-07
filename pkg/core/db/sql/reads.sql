@@ -160,3 +160,20 @@ select * from storage_proofs where block_height = $1 and address = $2;
 
 -- name: GetStorageProofs :many
 select * from storage_proofs where block_height = $1;
+
+-- name: GetStorageProofRollups :many
+select 
+    address, 
+    count(*) filter (where status = 'fail') as failed_count,
+    count(*) as total_count
+from storage_proofs 
+where block_height >= $1 and block_height <= $2
+group by address;
+
+-- name: GetStorageProofsForNodeInRange :many
+select * from storage_proofs
+where block_height in (
+    select block_height
+    from storage_proofs sp
+    where sp.block_height >= $1 and sp.block_height <= $2 and sp.address = $3 
+);

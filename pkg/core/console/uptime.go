@@ -21,7 +21,7 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 	rollupId := c.Param("rollup")
 
 	// Get active report
-	activeReport, err := cs.getActiveProofOfWorkReport(ctx, rollupId)
+	activeReport, err := cs.getActiveSlaReport(ctx, rollupId)
 	if err != nil {
 		cs.logger.Error("Falled to get active Proof Of Work report", "error", err)
 		return err
@@ -31,7 +31,7 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 	myUptime := pages.NodeUptime{
 		Address:       cs.state.cometAddress,
 		ActiveReport:  activeReport,
-		ReportHistory: make([]pages.ProofOfWorkReport, 0, 30),
+		ReportHistory: make([]pages.SlaReport, 0, 30),
 	}
 
 	// Get avg block time
@@ -53,7 +53,7 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 			Endpoint:      v.Endpoint,
 			Address:       v.CometAddress,
 			IsValidator:   true,
-			ReportHistory: make([]pages.ProofOfWorkReport, 0, validatorReportHistoryLength),
+			ReportHistory: make([]pages.SlaReport, 0, validatorReportHistoryLength),
 		}
 	}
 	_, isValidator := validatorMap[cs.state.cometAddress]
@@ -72,7 +72,7 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 		}
 		myUptime.ReportHistory = append(
 			myUptime.ReportHistory,
-			pages.ProofOfWorkReport{
+			pages.SlaReport{
 				SlaRollupId:    rr.ID,
 				TxHash:         rr.TxHash,
 				BlockStart:     rr.BlockStart,
@@ -92,7 +92,7 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 			Limit: int32(validatorReportHistoryLength),
 		},
 	)
-	if err != nil && err != pgx.ErrNoRows {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		cs.logger.Error("Failure getting bulk recent reports", "error", err)
 		return err
 	}
@@ -102,7 +102,7 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 			if len(validatorMap) > 0 {
 				reportQuota = int32(rr.BlockEnd-rr.BlockStart) / int32(len(validators))
 			}
-			rep := pages.ProofOfWorkReport{
+			rep := pages.SlaReport{
 				SlaRollupId:    rr.ID,
 				TxHash:         rr.TxHash,
 				BlockStart:     rr.BlockStart,
@@ -115,6 +115,29 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 				valData.ActiveReport = rep
 			}
 			valData.ReportHistory = append(valData.ReportHistory, rep)
+		}
+	}
+
+	// Get proof of storage history
+	posRollups, err := cs.db.GetStorageProofRollups(
+		ctx,
+		db.GetStorageProofRollupsParams{
+			activeReport.BlockStart,
+			activeReport.BlockEnd,
+		},
+	)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		cs.logger.Error("Failure getting proof of storage rollups", "error", err)
+		return err
+	}
+	for _, posr := range posRollups {
+		if valData, ok := validatorMap[posr.Address]; ok {
+			valData.ActiveReport.PoSChallengesFailed = int32(posr.FailedCount)
+			valData.ActiveReport.PoSChallengesTotal = int32(posr.TotalCount)
+		}
+		if posr.Address == myUptime.Address {
+			myUptime.ActiveReport.PoSChallengesFailed = int32(posr.FailedCount)
+			myUptime.ActiveReport.PoSChallengesTotal = int32(posr.TotalCount)
 		}
 	}
 
@@ -135,8 +158,8 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 	})
 }
 
-func (cs *Console) getActiveProofOfWorkReport(ctx context.Context, rollupId string) (pages.ProofOfWorkReport, error) {
-	var report pages.ProofOfWorkReport
+func (cs *Console) getActiveSlaReport(ctx context.Context, rollupId string) (pages.SlaReport, error) {
+	var report pages.SlaReport
 
 	var rollup db.SlaRollup
 	var err error
@@ -174,7 +197,7 @@ func (cs *Console) getActiveProofOfWorkReport(ctx context.Context, rollupId stri
 	if numValidators > int64(0) {
 		quota = int32(rollup.BlockEnd-rollup.BlockStart) / int32(numValidators)
 	}
-	report = pages.ProofOfWorkReport{
+	report = pages.SlaReport{
 		SlaRollupId:    rollup.ID,
 		TxHash:         rollup.TxHash,
 		BlockStart:     rollup.BlockStart,
@@ -187,7 +210,7 @@ func (cs *Console) getActiveProofOfWorkReport(ctx context.Context, rollupId stri
 	return report, nil
 }
 
-func (cs *Console) getAverageBlockTimeForReport(ctx context.Context, report pages.ProofOfWorkReport) (int, error) {
+func (cs *Console) getAverageBlockTimeForReport(ctx context.Context, report pages.SlaReport) (int, error) {
 	var avgBlockTimeMs int = 0
 	previousRollup, err := cs.db.GetPreviousSlaRollupFromId(ctx, report.SlaRollupId)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {

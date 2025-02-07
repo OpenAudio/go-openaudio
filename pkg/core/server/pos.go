@@ -32,7 +32,7 @@ func (s *Server) syncPoS(ctx context.Context, latestBlockHash []byte, latestBloc
 	if blockShouldTriggerNewPoSChallenge(latestBlockHash) {
 		s.logger.Info("PoS Challenge triggered", "height", latestBlockHeight, "hash", hex.EncodeToString(latestBlockHash))
 		// TODO: disable in block sync mode
-		go s.sendPoSChallengeToMediorum(latestBlockHash, latestBlockHeight)
+		go s.sendPoSChallengeToStorage(latestBlockHash, latestBlockHeight)
 	}
 	return nil
 }
@@ -44,7 +44,7 @@ func blockShouldTriggerNewPoSChallenge(blockHash []byte) bool {
 	return bhLen > 0 && blockHash[bhLen-1]&0x0f == 0
 }
 
-func (s *Server) sendPoSChallengeToMediorum(blockHash []byte, blockHeight int64) {
+func (s *Server) sendPoSChallengeToStorage(blockHash []byte, blockHeight int64) {
 	respChannel := make(chan pos.PoSResponse, 1)
 	posReq := pos.PoSRequest{
 		Hash:     blockHash,

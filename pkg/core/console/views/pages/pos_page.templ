@@ -1,0 +1,77 @@
+package pages
+
+import (
+	"fmt"
+)
+
+type PoSPageView struct {
+    Address       string
+    BlockStart    int64
+    BlockEnd      int64
+    StorageProofs []StorageProof
+}
+
+type StorageProof struct {
+    BlockHeight int64
+    Endpoint string
+    Address string
+    CID string
+    Status string
+}
+
+templ staticStylesPoS() {
+    <style type="text/css">
+        table.posReports tr {
+            border-bottom: #dedede solid 1px
+        }
+
+        table.posReports th {
+            padding: 12px;
+        }
+
+        table.posReports td {
+            padding: 12px;
+        }
+
+    </style>
+}
+
+templ (c *Pages) PoSPageHTML(props *PoSPageView) {
+	@c.layout.SiteFrame() {
+        @staticStylesPoS()
+        <h1 class="text-xl">Proof of Storage Challenges</h1>
+        <h3 class="text-sm">
+            Prover: { props.Address } | Blocks: { fmt.Sprintf("%d - %d", props.BlockStart, props.BlockEnd) }
+        </h3>
+        <table class="bg-slate-50 p-2 rounded posReports text-left m-4">
+            <colgroup>
+                <col />
+                <col class="bg-white" />
+                <col />
+                <col class="bg-white" />
+            </colgroup>
+            <tr>
+                <th>Challenge Block</th>
+                <th>Prover</th>
+                <th>Status</th>
+                <th>CID</th>
+            </tr>
+            for _, sp := range props.StorageProofs {
+                @posRowReport(sp, props.BlockStart, props.BlockEnd)
+            }
+        </table>
+	}
+}
+
+templ posRowReport(sp StorageProof, start, end int64) {
+    <tr class={ templ.KV(slaMissBg(), sp.Status == "fail") }>
+        <td>{ fmt.Sprintf("%d", sp.BlockHeight) }</td>
+        <td>
+            <a href={ templ.URL(fmt.Sprintf("%s/console/pos?block_start=%d&block_end=%d", sp.Endpoint, start, end)) }>
+                { strippedEndpoint(sp.Endpoint) }
+            </a>
+        </td>
+        <td>{ sp.Status }</td>
+        <td>{ sp.CID }</td>
+    </tr>
+}
