@@ -28,14 +28,16 @@ import (
 
 // state that the abci specifically relies on
 type ABCIState struct {
-	onGoingBlock pgx.Tx
-	finalizedTxs []string
+	onGoingBlock     pgx.Tx
+	finalizedTxs     []string
+	lastRetainHeight int64
 }
 
-func NewABCIState() *ABCIState {
+func NewABCIState(initialRetainHeight int64) *ABCIState {
 	return &ABCIState{
-		onGoingBlock: nil,
-		finalizedTxs: []string{},
+		onGoingBlock:     nil,
+		finalizedTxs:     []string{},
+		lastRetainHeight: initialRetainHeight,
 	}
 }
 
@@ -304,11 +306,17 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 	for _, vu := range validatorUpdatesMap {
 		validatorUpdates = append(validatorUpdates, vu)
 	}
-	return &abcitypes.FinalizeBlockResponse{
-		TxResults:        txs,
-		AppHash:          nextAppHash,
-		ValidatorUpdates: validatorUpdates,
-	}, nil
+
+	resp := &abcitypes.FinalizeBlockResponse{
+		TxResults: txs,
+		AppHash:   nextAppHash,
+	}
+
+	if validatorUpdates.Len() > 0 {
+		resp.ValidatorUpdates = validatorUpdates
+	}
+
+	return resp, nil
 }
 
 func (s *Server) Commit(ctx context.Context, commit *abcitypes.CommitRequest) (*abcitypes.CommitResponse, error) {
@@ -328,7 +336,28 @@ func (s *Server) Commit(ctx context.Context, commit *abcitypes.CommitRequest) (*
 	// reset abci finalized txs
 	state.finalizedTxs = []string{}
 
-	return &abcitypes.CommitResponse{}, nil
+	resp := &abcitypes.CommitResponse{}
+	if !s.config.Archive {
+		latestBlock, err := s.db.GetLatestBlock(ctx)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return resp, nil
+			}
+			s.logger.Errorf("could not get latest block, can't prune: %v", err)
+			return resp, nil
+		}
+
+		latestBlockHeight := latestBlock.Height
+		lastRetainHeight := state.lastRetainHeight
+		retainHeight := s.config.RetainHeight
+
+		if latestBlockHeight-retainHeight > lastRetainHeight {
+			state.lastRetainHeight = latestBlockHeight
+			resp.RetainHeight = state.lastRetainHeight
+		}
+	}
+
+	return resp, nil
 }
 
 func (s *Server) ListSnapshots(_ context.Context, snapshots *abcitypes.ListSnapshotsRequest) (*abcitypes.ListSnapshotsResponse, error) {

@@ -93,7 +93,7 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 		peers:     make(map[string]*sdk.Sdk),
 		txPubsub:  txPubsub,
 		cache:     NewCache(),
-		abciState: NewABCIState(),
+		abciState: NewABCIState(config.RetainHeight),
 
 		httpServer: httpServer,
 		grpcServer: grpcServer,
@@ -121,6 +121,7 @@ func (s *Server) Start(ctx context.Context) error {
 	g.Go(s.startPeerManager)
 	g.Go(s.startEthNodeManager)
 	g.Go(s.startCache)
+	g.Go(s.startDataCompanion)
 
 	s.logger.Info("services started")
 

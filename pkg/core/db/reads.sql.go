@@ -200,6 +200,24 @@ func (q *Queries) GetLatestAppState(ctx context.Context) (GetLatestAppStateRow, 
 	return i, err
 }
 
+const getLatestBlock = `-- name: GetLatestBlock :one
+select rowid, height, chain_id, hash, proposer, created_at from core_blocks order by height desc limit 1
+`
+
+func (q *Queries) GetLatestBlock(ctx context.Context) (CoreBlock, error) {
+	row := q.db.QueryRow(ctx, getLatestBlock)
+	var i CoreBlock
+	err := row.Scan(
+		&i.Rowid,
+		&i.Height,
+		&i.ChainID,
+		&i.Hash,
+		&i.Proposer,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getLatestSlaRollup = `-- name: GetLatestSlaRollup :one
 select id, tx_hash, block_start, block_end, time from sla_rollups order by time desc limit 1
 `

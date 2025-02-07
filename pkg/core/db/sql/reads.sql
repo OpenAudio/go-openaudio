@@ -177,3 +177,6 @@ where block_height in (
     from storage_proofs sp
     where sp.block_height >= $1 and sp.block_height <= $2 and sp.address = $3 
 );
+
+-- name: GetLatestBlock :one
+select * from core_blocks order by height desc limit 1;

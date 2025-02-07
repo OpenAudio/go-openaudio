@@ -55,6 +55,10 @@ func run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequ
 		return fmt.Errorf("server init error: %v", err)
 	}
 
+	s.CompactStateDB()
+	s.CompactBlockstoreDB()
+	logger.Info("finished compacting db")
+
 	// console gets run from core(main).go since it is an isolated go module
 	// unlike the other modules that register themselves on the echo http server
 	if config.ConsoleModule {

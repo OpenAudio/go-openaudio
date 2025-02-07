@@ -14,6 +14,8 @@ import (
 	"github.com/cometbft/cometbft/privval"
 )
 
+const PrivilegedServiceSocket = "unix:///tmp/cometbft.privileged.sock"
+
 /*
 Reads in config, sets up comet files, and cleans up state
 based on setup configuration.
@@ -167,6 +169,23 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 	}
 	if envConfig.P2PLaddr != "" {
 		cometConfig.P2P.ListenAddress = envConfig.P2PLaddr
+	}
+
+	if !envConfig.Archive {
+		cometConfig.Storage.Compact = true
+		cometConfig.Storage.CompactionInterval = 1
+		cometConfig.Storage.DiscardABCIResponses = true
+		cometConfig.GRPC.Privileged = &cconfig.GRPCPrivilegedConfig{
+			ListenAddress: PrivilegedServiceSocket,
+			PruningService: &cconfig.GRPCPruningServiceConfig{
+				Enabled: true,
+			},
+		}
+		cometConfig.Storage.Pruning.DataCompanion = &cconfig.DataCompanionPruningConfig{
+			Enabled: true,
+		}
+	} else {
+		logger.Info("running in archive mode, node will not prune blocks")
 	}
 
 	return envConfig, cometConfig, nil
