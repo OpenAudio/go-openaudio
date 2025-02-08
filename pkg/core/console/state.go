@@ -64,11 +64,11 @@ func (state *State) recalculateState() {
 		state.totalTransactions = totalTxs
 	}
 
-	totalBlocks, err := state.db.TotalBlocks(ctx)
+	latestBlock, err := state.db.GetLatestBlock(ctx)
 	if err != nil {
 		logger.Errorf("could not get total blocks: %v", err)
 	} else {
-		state.totalBlocks = totalBlocks
+		state.totalBlocks = latestBlock.Height
 	}
 
 	totalPlays, err := state.db.TotalTransactionsByType(ctx, server.TrackPlaysProtoName)
@@ -131,13 +131,15 @@ func (state *State) Start() error {
 	for {
 		time.Sleep(5 * time.Second)
 
-		totalBlocks, err := state.db.TotalBlocks(context.Background())
+		
+
+		highestBlock, err := state.db.GetLatestBlock(context.Background())
 		if err != nil {
 			state.logger.Errorf("could not get total blocks: %v", err)
 			continue
 		}
 
-		if totalBlocks <= state.totalBlocks {
+		if highestBlock.Height <= state.totalBlocks {
 			// total blocks hasn't changed
 			continue
 		}

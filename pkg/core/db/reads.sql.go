@@ -852,7 +852,7 @@ func (q *Queries) TotalBlocks(ctx context.Context) (int64, error) {
 }
 
 const totalTransactions = `-- name: TotalTransactions :one
-select count(*) from core_transactions
+select count(*) from core_tx_stats
 `
 
 func (q *Queries) TotalTransactions(ctx context.Context) (int64, error) {

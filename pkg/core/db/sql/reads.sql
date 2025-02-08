@@ -131,7 +131,7 @@ select * from core_transactions order by created_at desc limit 10;
 select count(*) from core_blocks;
 
 -- name: TotalTransactions :one
-select count(*) from core_transactions;
+select count(*) from core_tx_stats;
 
 -- name: TotalTransactionsByType :one
 select count(*) from core_tx_stats where tx_type = $1;
