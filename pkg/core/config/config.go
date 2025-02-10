@@ -195,7 +195,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 
 		cfg.SlaRollupInterval = mainnetRollupInterval
 		cfg.ValidatorVotingPower = mainnetValidatorVotingPower
-		cfg.EnablePoS = false
+		cfg.EnablePoS = true
 
 	case "stage", "staging", "testnet":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress, StagePersistentPeers, 3))
