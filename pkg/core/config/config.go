@@ -184,7 +184,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	cfg.CometKey = key
 
 	cfg.AddrBookStrict = true
-	cfg.UseHttpsForSdk = true
+	cfg.UseHttpsForSdk = GetEnvWithDefault("useHttpsForSdk", "true") == "true"
 	switch cfg.Environment {
 	case "prod", "production", "mainnet":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", ProdPersistentPeers)

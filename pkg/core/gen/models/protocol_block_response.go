@@ -39,7 +39,10 @@ type ProtocolBlockResponse struct {
 	// Format: date-time
 	Timestamp strfmt.DateTime `json:"timestamp,omitempty"`
 
-	// transactions
+	// transaction responses
+	TransactionResponses []*ProtocolTransactionResponse `json:"transactionResponses"`
+
+	// TODO: deprecate in favor of txs
 	Transactions []*ProtocolSignedTransaction `json:"transactions"`
 }
 
@@ -48,6 +51,10 @@ func (m *ProtocolBlockResponse) Validate(formats strfmt.Registry) error {
 	var res []error
 
 	if err := m.validateTimestamp(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateTransactionResponses(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -68,6 +75,32 @@ func (m *ProtocolBlockResponse) validateTimestamp(formats strfmt.Registry) error
 
 	if err := validate.FormatOf("timestamp", "body", "date-time", m.Timestamp.String(), formats); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (m *ProtocolBlockResponse) validateTransactionResponses(formats strfmt.Registry) error {
+	if swag.IsZero(m.TransactionResponses) { // not required
+		return nil
+	}
+
+	for i := 0; i < len(m.TransactionResponses); i++ {
+		if swag.IsZero(m.TransactionResponses[i]) { // not required
+			continue
+		}
+
+		if m.TransactionResponses[i] != nil {
+			if err := m.TransactionResponses[i].Validate(formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("transactionResponses" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("transactionResponses" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
 	}
 
 	return nil
@@ -103,6 +136,10 @@ func (m *ProtocolBlockResponse) validateTransactions(formats strfmt.Registry) er
 func (m *ProtocolBlockResponse) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.contextValidateTransactionResponses(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateTransactions(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -110,6 +147,31 @@ func (m *ProtocolBlockResponse) ContextValidate(ctx context.Context, formats str
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *ProtocolBlockResponse) contextValidateTransactionResponses(ctx context.Context, formats strfmt.Registry) error {
+
+	for i := 0; i < len(m.TransactionResponses); i++ {
+
+		if m.TransactionResponses[i] != nil {
+
+			if swag.IsZero(m.TransactionResponses[i]) { // not required
+				return nil
+			}
+
+			if err := m.TransactionResponses[i].ContextValidate(ctx, formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("transactionResponses" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("transactionResponses" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 

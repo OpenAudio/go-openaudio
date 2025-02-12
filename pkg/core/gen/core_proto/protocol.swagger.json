@@ -223,7 +223,8 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/protocolSignedTransaction"
-          }
+          },
+          "title": "TODO: deprecate in favor of txs"
         },
         "currentHeight": {
           "type": "string",
@@ -232,6 +233,13 @@
         "timestamp": {
           "type": "string",
           "format": "date-time"
+        },
+        "transactionResponses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protocolTransactionResponse"
+          }
         }
       }
     },
@@ -265,8 +273,7 @@
           "type": "string"
         },
         "nonce": {
-          "type": "string",
-          "format": "int64"
+          "type": "string"
         }
       }
     },
@@ -452,6 +459,13 @@
         },
         "transaction": {
           "$ref": "#/definitions/protocolSignedTransaction"
+        },
+        "blockHeight": {
+          "type": "string",
+          "format": "int64"
+        },
+        "blockHash": {
+          "type": "string"
         }
       }
     },

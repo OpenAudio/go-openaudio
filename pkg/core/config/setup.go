@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
@@ -14,7 +15,17 @@ import (
 	"github.com/cometbft/cometbft/privval"
 )
 
-const PrivilegedServiceSocket = "unix:///tmp/cometbft.privileged.sock"
+const PrivilegedServiceSocket = "/tmp/cometbft.privileged.sock"
+
+func ensureSocketNotExists(socketPath string) error {
+	if _, err := os.Stat(socketPath); err == nil {
+		// File exists, remove it
+		if err := os.Remove(socketPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 /*
 Reads in config, sets up comet files, and cleans up state
@@ -172,11 +183,12 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 	}
 
 	if !envConfig.Archive {
+		ensureSocketNotExists(PrivilegedServiceSocket)
 		cometConfig.Storage.Compact = true
 		cometConfig.Storage.CompactionInterval = 1
 		cometConfig.Storage.DiscardABCIResponses = true
 		cometConfig.GRPC.Privileged = &cconfig.GRPCPrivilegedConfig{
-			ListenAddress: PrivilegedServiceSocket,
+			ListenAddress: "unix://" + PrivilegedServiceSocket,
 			PruningService: &cconfig.GRPCPruningServiceConfig{
 				Enabled: true,
 			},

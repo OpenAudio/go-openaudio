@@ -20,7 +20,7 @@ func (s *Server) startDataCompanion() error {
 
 	ctx := context.Background()
 
-	conn, err := privileged.New(ctx, config.PrivilegedServiceSocket, privileged.WithPruningServiceEnabled(true), privileged.WithInsecure())
+	conn, err := privileged.New(ctx, "unix://" + config.PrivilegedServiceSocket, privileged.WithPruningServiceEnabled(true), privileged.WithInsecure())
 	if err != nil {
 		return fmt.Errorf("dc could not create privileged rpc connection: %v", err)
 	}
@@ -37,6 +37,10 @@ func (s *Server) startDataCompanion() error {
 		}
 
 		s.logger.Infof("dc app retain height: %d block retain height: %d", blockRetainHeight.App, blockRetainHeight.PruningService)
+
+		if blockRetainHeight.App <= 1 {
+			continue
+		}
 
 		if err := conn.SetBlockRetainHeight(ctx, blockRetainHeight.App); err != nil {
 			s.logger.Errorf("dc could not set block retain height: %v", err)

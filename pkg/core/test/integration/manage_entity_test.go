@@ -26,7 +26,7 @@ var _ = Describe("EntityManager", func() {
 			Action:     "Create",
 			Metadata:   "some json",
 			Signature:  "eip712",
-			Nonce:      1,
+			Nonce:      "1",
 			Signer:     "0x123",
 		}
 

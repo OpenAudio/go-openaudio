@@ -18,6 +18,12 @@ import (
 // swagger:model protocolTransactionResponse
 type ProtocolTransactionResponse struct {
 
+	// block hash
+	BlockHash string `json:"blockHash,omitempty"`
+
+	// block height
+	BlockHeight string `json:"blockHeight,omitempty"`
+
 	// transaction
 	Transaction *ProtocolSignedTransaction `json:"transaction,omitempty"`
 
