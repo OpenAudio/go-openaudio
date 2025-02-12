@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	mediorumPoSRequestTimeout = 1 * time.Second
+	mediorumPoSRequestTimeout = 3 * time.Second
 	posChallengeDeadline      = 2
 	posVerificationDelay      = posChallengeDeadline * 3 * time.Second
 )
