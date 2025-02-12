@@ -362,9 +362,11 @@ func (ss *MediorumServer) repairCid(cid string, placementHosts []string, tracker
 	// by default retain blob if our rank < ReplicationFactor+2
 	// but nodes with more free disk space will use a higher threshold
 	// to accomidate "spill over" from nodes that might be full or down.
-	rankThreshold := ss.Config.ReplicationFactor + 2
 	diskPercentFree := float64(ss.mediorumPathFree) / float64(ss.mediorumPathSize)
-	if diskPercentFree > 0.4 {
+	rankThreshold := ss.Config.ReplicationFactor + 2
+	if !ss.diskHasSpace() {
+		rankThreshold = ss.Config.ReplicationFactor
+	} else if diskPercentFree > 0.4 {
 		rankThreshold = ss.Config.ReplicationFactor * 3
 	} else if diskPercentFree > 0.2 {
 		rankThreshold = ss.Config.ReplicationFactor * 2
