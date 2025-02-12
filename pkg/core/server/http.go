@@ -5,8 +5,16 @@ import (
 	"context"
 	"net/http"
 	"net/http/pprof"
+	"time"
 
+	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/99designs/gqlgen/graphql/handler/extension"
+	"github.com/99designs/gqlgen/graphql/handler/transport"
+	"github.com/99designs/gqlgen/graphql/playground"
+	"github.com/AudiusProject/audiusd/pkg/core/gen/core_gql"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
+	"github.com/AudiusProject/audiusd/pkg/core/gql"
+	"github.com/gorilla/websocket"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -29,10 +37,39 @@ func (s *Server) startEchoServer() error {
 		s.logger.Errorf("could not register protocol handler server: %v", err)
 	}
 
+	gqlResolver := gql.NewGraphQLServer(s.config, s.logger, s.db)
+	srv := handler.New(core_gql.NewExecutableSchema(core_gql.Config{Resolvers: gqlResolver}))
+	srv.Use(extension.Introspection{})
+	queryHandler := func(c echo.Context) error {
+		srv.ServeHTTP(c.Response(), c.Request())
+		return nil
+	}
+
+	// Add WebSocket support for subscriptions
+	srv.AddTransport(transport.Websocket{
+		Upgrader: websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+		},
+		KeepAlivePingInterval: 10 * time.Second,
+	})
+
+	// HTTP transport for queries and mutations
+	srv.AddTransport(transport.POST{})
+
+	gqlPlayground := playground.Handler("GraphQL playground", "/core/gql")
+	graphiqlHandler := func(c echo.Context) error {
+		gqlPlayground.ServeHTTP(c.Response(), c.Request())
+		return nil
+	}
+
 	g := s.httpServer.Group("/core")
 
 	/** /core routes **/
 	g.Any("/grpc/*", echo.WrapHandler(gwMux))
+	g.Any("/gql", queryHandler)
+	g.GET("/graphiql", graphiqlHandler)
 	g.GET("/nodes", s.getRegisteredNodes)
 	g.GET("/nodes/verbose", s.getRegisteredNodes)
 	g.GET("/nodes/discovery", s.getRegisteredNodes)

@@ -1,0 +1,17 @@
+type Block {
+  height: Int!
+  chainId: String!
+  hash: String!
+  proposer: String!
+  transactions: [Transaction]!
+}
+
+type Transaction {
+  index: Int!
+  hash: String!
+}
+
+type Query {
+  getBlock(height: Int): Block
+  getTransaction(hash: String): Transaction
+}
