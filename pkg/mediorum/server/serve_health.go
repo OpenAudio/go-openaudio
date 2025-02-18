@@ -60,6 +60,8 @@ type HealthCheckResponseData struct {
 	IsDbLocalhost             bool                       `json:"isDbLocalhost"`
 	DiskHasSpace              bool                       `json:"diskHasSpace"`
 	IsDiscoveryListensEnabled bool                       `json:"isDiscoveryListensEnabled"`
+	TranscodeQueueLength      int                        `json:"transcodeQueueLength"`
+	TranscodeStats            *TranscodeStats            `json:"transcodeStats"`
 }
 
 func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
@@ -123,6 +125,8 @@ func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
 		IsDbLocalhost:             ss.Config.PostgresDSN == "postgres://postgres:postgres@db:5432/audius_creator_node" || ss.Config.PostgresDSN == "postgresql://postgres:postgres@db:5432/audius_creator_node" || ss.Config.PostgresDSN == "localhost",
 		IsDiscoveryListensEnabled: ss.Config.discoveryListensEnabled(),
 		DiskHasSpace:              ss.diskHasSpace(),
+		TranscodeQueueLength:      len(ss.transcodeWork),
+		TranscodeStats:            ss.getTranscodeStats(),
 	}
 
 	dataBytes, err := json.Marshal(data)

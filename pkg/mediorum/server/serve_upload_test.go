@@ -42,6 +42,14 @@ func TestUploadFile(t *testing.T) {
 
 	assert.Equal(t, u2.TranscodeProgress, 1.0)
 	assert.Len(t, u2.TranscodedMirrors, s1.Config.ReplicationFactor)
+	assert.Equal(t, u2.TranscodedBy, s1.Config.Self.Host)
+
+	// check transcode stats
+	{
+		s1stats := s1.updateTranscodeStats()
+		assert.Equal(t, 1, s1stats.UploadCount)
+		assert.Greater(t, s1stats.MinTranscodeTime, 0.1)
+	}
 
 	// test preview
 

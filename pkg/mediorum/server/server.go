@@ -89,7 +89,9 @@ type MediorumServer struct {
 	rendezvousHasher *RendezvousHasher
 	transcodeWork    chan *Upload
 
-	// simplify
+	// stats
+	statsMutex       sync.RWMutex
+	transcodeStats   *TranscodeStats
 	mediorumPathUsed uint64
 	mediorumPathSize uint64
 	mediorumPathFree uint64
@@ -539,7 +541,7 @@ func (ss *MediorumServer) MustStart() {
 		}()
 	}
 
-	go ss.monitorDiskAndDbStatus()
+	go ss.monitorMetrics()
 
 	go ss.monitorPeerReachability()
 

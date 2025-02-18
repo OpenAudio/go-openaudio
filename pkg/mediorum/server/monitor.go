@@ -73,10 +73,11 @@ func (ss *MediorumServer) recordStorageAndDbSize() {
 	}
 }
 
-func (ss *MediorumServer) monitorDiskAndDbStatus() {
+func (ss *MediorumServer) monitorMetrics() {
 	// retry a few times to get initial status on startup
 	for i := 0; i < 3; i++ {
 		ss.updateDiskAndDbStatus()
+		ss.updateTranscodeStats()
 		time.Sleep(time.Minute)
 	}
 
@@ -86,6 +87,7 @@ func (ss *MediorumServer) monitorDiskAndDbStatus() {
 	ticker := time.NewTicker(10 * time.Minute)
 	for range ticker.C {
 		ss.updateDiskAndDbStatus()
+		ss.updateTranscodeStats()
 	}
 }
 
