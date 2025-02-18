@@ -60,7 +60,7 @@ func (s *Server) startABCI() error {
 		return fmt.Errorf("failed to load node's key: %v", err)
 	}
 
-	nodeLogger, err := cmtflags.ParseLogLevel(s.config.LogLevel, s.logger, "error")
+	nodeLogger, err := cmtflags.ParseLogLevel(s.config.CometLogLevel, s.logger, "error")
 	if err != nil {
 		return fmt.Errorf("failed to parse log level: %v", err)
 	}
