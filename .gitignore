@@ -4,5 +4,6 @@ bin/*
 !bin/.gitkeep
 
 tmp
+.obsidian
 
 .release_notes.md
