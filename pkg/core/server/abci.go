@@ -26,6 +26,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const (
+	week = 7*24*time.Hour
+)
+
 // state that the abci specifically relies on
 type ABCIState struct {
 	onGoingBlock     pgx.Tx
@@ -220,7 +224,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 			txs[i] = &abcitypes.ExecTxResult{Code: abcitypes.CodeTypeOK}
 
 			txhash := s.toTxHash(signedTx)
-			finalizedTx, err := s.finalizeTransaction(ctx, signedTx, txhash, req.Height, req.Misbehavior)
+			finalizedTx, err := s.finalizeTransaction(ctx, req, signedTx, txhash, req.Height)
 			if err != nil {
 				s.logger.Errorf("error finalizing event: %v", err)
 				txs[i] = &abcitypes.ExecTxResult{Code: 2}
@@ -482,14 +486,15 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 	return true, nil
 }
 
-func (s *Server) finalizeTransaction(ctx context.Context, msg *core_proto.SignedTransaction, txHash string, blockHeight int64, misbehavior []abcitypes.Misbehavior) (proto.Message, error) {
+func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.FinalizeBlockRequest, msg *core_proto.SignedTransaction, txHash string, blockHeight int64) (proto.Message, error) {
+	misbehavior := req.Misbehavior
 	switch t := msg.Transaction.(type) {
 	case *core_proto.SignedTransaction_Plays:
 		return s.finalizePlayTransaction(ctx, msg)
 	case *core_proto.SignedTransaction_ManageEntity:
 		return s.finalizeManageEntity(ctx, msg)
 	case *core_proto.SignedTransaction_ValidatorRegistration:
-		return s.finalizeRegisterNode(ctx, msg)
+		return s.finalizeRegisterNode(ctx, msg, req.Time)
 	case *core_proto.SignedTransaction_ValidatorDeregistration:
 		return s.finalizeDeregisterNode(ctx, msg, misbehavior)
 	case *core_proto.SignedTransaction_SlaRollup:

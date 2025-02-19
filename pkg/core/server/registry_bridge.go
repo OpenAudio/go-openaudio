@@ -503,9 +503,13 @@ func (s *Server) isDuplicateDelegateOwnerWallet(delegateOwnerWallet string) erro
 }
 
 // persists the register node request should it pass validation
-func (s *Server) finalizeRegisterNode(ctx context.Context, tx *core_proto.SignedTransaction) (*core_proto.ValidatorRegistration, error) {
-	if err := s.isValidRegisterNodeTx(tx); err != nil {
-		return nil, fmt.Errorf("invalid register node tx: %v", err)
+func (s *Server) finalizeRegisterNode(ctx context.Context, tx *core_proto.SignedTransaction, blockTime time.Time) (*core_proto.ValidatorRegistration, error) {
+	// TODO: remove logic after validator registration switches to attestations
+	oldBlock := time.Since(blockTime) >= week
+	if !oldBlock {
+		if err := s.isValidRegisterNodeTx(tx); err != nil {
+			return nil, fmt.Errorf("invalid register node tx: %v", err)
+		}
 	}
 
 	qtx := s.getDb()
