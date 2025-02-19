@@ -426,7 +426,7 @@ func (s *Server) isValidRegisterNodeTx(tx *core_proto.SignedTransaction) error {
 	vrPower := int(vr.GetPower())
 
 	if len(vr.GetPubKey()) == 0 {
-		return fmt.Errorf("Public Key missing from %s registration tx", vrEndpoint)
+		return fmt.Errorf("public Key missing from %s registration tx", vrEndpoint)
 	}
 	vrPubKey := ed25519.PubKey(vr.GetPubKey())
 
@@ -447,7 +447,7 @@ func (s *Server) isValidRegisterNodeTx(tx *core_proto.SignedTransaction) error {
 	}
 
 	if vrPower != s.config.ValidatorVotingPower {
-		return fmt.Errorf("Invalid voting power '%d'", vrPower)
+		return fmt.Errorf("invalid voting power '%d'", vrPower)
 	}
 
 	return nil
@@ -472,7 +472,7 @@ func (s *Server) isValidDeregisterNodeTx(tx *core_proto.SignedTransaction, misbe
 	}
 
 	if len(vd.GetPubKey()) == 0 {
-		return fmt.Errorf("Public Key missing from deregistration tx: %v", tx)
+		return fmt.Errorf("public Key missing from deregistration tx: %v", tx)
 	}
 	vdPubKey := ed25519.PubKey(vd.GetPubKey())
 	if vdPubKey.Address().String() != addr {
@@ -486,7 +486,7 @@ func (s *Server) isValidDeregisterNodeTx(tx *core_proto.SignedTransaction, misbe
 		}
 	}
 
-	return fmt.Errorf("No misbehavior found matching deregistration tx: %v", tx)
+	return fmt.Errorf("no misbehavior found matching deregistration tx: %v", tx)
 }
 
 func (s *Server) isDuplicateDelegateOwnerWallet(delegateOwnerWallet string) error {

@@ -83,7 +83,7 @@ type Config struct {
 	AddrBookStrict   bool
 	MaxInboundPeers  int
 	MaxOutboundPeers int
-	CometLogLevel         string
+	CometLogLevel    string
 	RetainHeight     int64
 
 	/* Audius Config */

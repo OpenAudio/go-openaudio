@@ -13,16 +13,16 @@ import (
 
 var _ core_gql.ResolverRoot = &GraphQLServer{}
 
-type GraphQLServer struct{
+type GraphQLServer struct {
 	config *config.Config
 	logger *common.Logger
-	db *db.Queries
+	db     *db.Queries
 }
 
-func NewGraphQLServer(config *config.Config, logger *common.Logger, db *db.Queries) *GraphQLServer{
+func NewGraphQLServer(config *config.Config, logger *common.Logger, db *db.Queries) *GraphQLServer {
 	return &GraphQLServer{
 		config: config,
 		logger: logger,
-		db: db,
+		db:     db,
 	}
 }

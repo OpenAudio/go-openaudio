@@ -20,7 +20,7 @@ func (s *Server) startDataCompanion() error {
 
 	ctx := context.Background()
 
-	conn, err := privileged.New(ctx, "unix://" + config.PrivilegedServiceSocket, privileged.WithPruningServiceEnabled(true), privileged.WithInsecure())
+	conn, err := privileged.New(ctx, "unix://"+config.PrivilegedServiceSocket, privileged.WithPruningServiceEnabled(true), privileged.WithInsecure())
 	if err != nil {
 		return fmt.Errorf("dc could not create privileged rpc connection: %v", err)
 	}

@@ -76,17 +76,17 @@ func (s *Server) SendTransaction(ctx context.Context, req *core_proto.SendTransa
 		if err != nil {
 			return nil, err
 		}
-	
+
 		block, err := s.db.GetBlock(ctx, tx.BlockID)
 		if err != nil {
 			return nil, err
 		}
-		
+
 		return &core_proto.TransactionResponse{
 			Txhash:      txhash,
 			Transaction: req.GetTransaction(),
 			BlockHeight: block.Height,
-			BlockHash: block.Hash,
+			BlockHash:   block.Hash,
 		}, nil
 	case <-time.After(30 * time.Second):
 		s.logger.Errorf("tx timeout waiting to be included %s", txhash)
@@ -151,7 +151,7 @@ func (s *Server) GetTransaction(ctx context.Context, req *core_proto.GetTransact
 		Txhash:      txhash,
 		Transaction: &transaction,
 		BlockHeight: block.Height,
-		BlockHash: block.Hash,
+		BlockHash:   block.Hash,
 	}
 
 	return res, nil
@@ -178,6 +178,9 @@ func (s *Server) GetBlock(ctx context.Context, req *core_proto.GetBlockRequest) 
 	}
 
 	blockTxs, err := s.db.GetBlockTransactions(ctx, req.Height)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
 
 	txs := []*core_proto.SignedTransaction{}
 	tx_responses := []*core_proto.TransactionResponse{}
@@ -189,20 +192,20 @@ func (s *Server) GetBlock(ctx context.Context, req *core_proto.GetBlockRequest) 
 		}
 		txs = append(txs, &transaction)
 		res := &core_proto.TransactionResponse{
-			Txhash: transaction.TxHash(),
-			Transaction:  &transaction,
+			Txhash:      transaction.TxHash(),
+			Transaction: &transaction,
 		}
 		tx_responses = append(tx_responses, res)
 	}
 
 	res := &core_proto.BlockResponse{
-		Blockhash:     block.Hash,
-		Chainid:       s.config.GenesisFile.ChainID,
-		Proposer:      block.Proposer,
-		Height:        block.Height,
-		Transactions:  txs,
-		CurrentHeight: currentHeight,
-		Timestamp:     timestamppb.New(block.CreatedAt.Time),
+		Blockhash:            block.Hash,
+		Chainid:              s.config.GenesisFile.ChainID,
+		Proposer:             block.Proposer,
+		Height:               block.Height,
+		Transactions:         txs,
+		CurrentHeight:        currentHeight,
+		Timestamp:            timestamppb.New(block.CreatedAt.Time),
 		TransactionResponses: tx_responses,
 	}
 

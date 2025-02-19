@@ -21,20 +21,20 @@ func (r *queryGraphQLServer) GetBlock(ctx context.Context, height *int) (*core_g
 	if err != nil {
 		return nil, err
 	}
-	
+
 	transactions := []*core_gql.Transaction{}
 	for _, tx := range txs {
 		transactions = append(transactions, &core_gql.Transaction{
 			Index: int(tx.Index),
-			Hash: tx.TxHash,
+			Hash:  tx.TxHash,
 		})
 	}
 
 	return &core_gql.Block{
-		Height: int(block.Height),
-		ChainID: block.ChainID,
-		Hash: block.Hash,
-		Proposer: block.Proposer,
+		Height:       int(block.Height),
+		ChainID:      block.ChainID,
+		Hash:         block.Hash,
+		Proposer:     block.Proposer,
 		Transactions: transactions,
 	}, nil
 }

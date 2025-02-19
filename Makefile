@@ -109,6 +109,7 @@ install-go-deps:
 	go install -v github.com/ethereum/go-ethereum/cmd/abigen@latest
 	go install -v github.com/go-swagger/go-swagger/cmd/swagger@latest
 	go install github.com/99designs/gqlgen@latest
+	go install honnef.co/go/tools/cmd/staticcheck@latest
 
 go.sum: go.mod
 go.mod: $(GO_SRCS)

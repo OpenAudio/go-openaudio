@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/cockroachdb/pebble"
 )
@@ -53,15 +52,5 @@ func (s *Server) compactDB(path string) error {
 		return err
 	}
 	s.logger.Info("manual pebble compaction succeeded")
-	return nil
-}
-
-func (s *Server) startPebbleCompactor() error {
-	ticker := time.NewTicker(10 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		s.logger.Info("stub compact")
-	}
 	return nil
 }

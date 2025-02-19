@@ -45,7 +45,7 @@ func (s *Server) startCache() error {
 	query := types.EventQueryNewBlock
 	subscription, err := eb.Subscribe(ctx, subscriberID, query)
 	if err != nil {
-		return fmt.Errorf("Failed to subscribe to NewBlock events: %v", err)
+		return fmt.Errorf("failed to subscribe to NewBlock events: %v", err)
 	}
 
 	for {

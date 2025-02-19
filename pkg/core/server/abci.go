@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	week = 7*24*time.Hour
+	week = 7 * 24 * time.Hour
 )
 
 // state that the abci specifically relies on

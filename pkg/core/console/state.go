@@ -131,8 +131,6 @@ func (state *State) Start() error {
 	for {
 		time.Sleep(5 * time.Second)
 
-		
-
 		highestBlock, err := state.db.GetLatestBlock(context.Background())
 		if err != nil {
 			state.logger.Errorf("could not get total blocks: %v", err)

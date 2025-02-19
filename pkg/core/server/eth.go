@@ -84,10 +84,6 @@ func (s *Server) gatherEthNodes() error {
 	return nil
 }
 
-func (s *Server) blacklistDuplicateEthNodes() error {
-	return nil
-}
-
 func (s *Server) getEthNodesHandler(c echo.Context) error {
 	s.ethNodeMU.RLock()
 	defer s.ethNodeMU.RUnlock()

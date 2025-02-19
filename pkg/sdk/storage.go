@@ -15,7 +15,7 @@ import (
 )
 
 type StorageSDK struct {
-	nodeURL string
+	nodeURL    string
 	httpClient *http.Client
 }
 
@@ -129,7 +129,6 @@ func (s *StorageSDK) UploadAudio(filePath string) ([]*server.Upload, error) {
 
 	return upload, nil
 }
-
 
 func (s *StorageSDK) GetAudio() (*server.Upload, error) {
 	return nil, nil

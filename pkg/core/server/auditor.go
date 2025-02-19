@@ -135,7 +135,7 @@ func (s *Server) finalizeSlaRollup(ctx context.Context, event *core_proto.Signed
 		s.logger.Errorf("Skipping duplicate sla rollup with timestamp '%v'", rollup.Timestamp.AsTime())
 		return rollup, nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("Failed to check for existing rollup: %v", err)
+		return nil, fmt.Errorf("failed to check for existing rollup: %v", err)
 	}
 
 	id, err := appDb.CommitSlaRollup(

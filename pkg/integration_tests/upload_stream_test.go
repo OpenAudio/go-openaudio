@@ -10,7 +10,7 @@ import (
 
 func TestStorageUpload(t *testing.T) {
 	sdk := sdk.NewAudiusdSDK(nil, sdk.NewStorageSDK("https://node2.audiusd.devnet"))
-	
+
 	health, err := sdk.Storage().GetHealth()
 	require.Nil(t, err)
 
