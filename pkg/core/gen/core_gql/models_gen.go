@@ -2,18 +2,94 @@
 
 package core_gql
 
+type Analytics struct {
+	TotalBlocks         int `json:"totalBlocks"`
+	TotalTransactions   int `json:"totalTransactions"`
+	TotalPlays          int `json:"totalPlays"`
+	TotalValidators     int `json:"totalValidators"`
+	TotalManageEntities int `json:"totalManageEntities"`
+}
+
 type Block struct {
 	Height       int            `json:"height"`
 	ChainID      string         `json:"chainId"`
 	Hash         string         `json:"hash"`
 	Proposer     string         `json:"proposer"`
 	Transactions []*Transaction `json:"transactions"`
+	Timestamp    string         `json:"timestamp"`
+}
+
+type Node struct {
+	Address      string  `json:"address"`
+	Endpoint     string  `json:"endpoint"`
+	EthAddress   string  `json:"ethAddress"`
+	CometAddress string  `json:"cometAddress"`
+	CometPubKey  *string `json:"cometPubKey,omitempty"`
+	NodeType     string  `json:"nodeType"`
+	SpID         *string `json:"spId,omitempty"`
+}
+
+type NodeUptime struct {
+	Address       string       `json:"address"`
+	Endpoint      *string      `json:"endpoint,omitempty"`
+	IsValidator   bool         `json:"isValidator"`
+	ActiveReport  *SLAReport   `json:"activeReport"`
+	ReportHistory []*SLAReport `json:"reportHistory"`
 }
 
 type Query struct {
 }
 
+type SLANodeReport struct {
+	Address             string `json:"address"`
+	BlocksProposed      int    `json:"blocksProposed"`
+	Quota               int    `json:"quota"`
+	PosChallengesFailed int    `json:"posChallengesFailed"`
+	PosChallengesTotal  int    `json:"posChallengesTotal"`
+}
+
+type SLAReport struct {
+	RollupID            int    `json:"rollupId"`
+	TxHash              string `json:"txHash"`
+	BlockStart          int    `json:"blockStart"`
+	BlockEnd            int    `json:"blockEnd"`
+	BlocksProposed      int    `json:"blocksProposed"`
+	Quota               int    `json:"quota"`
+	PosChallengesFailed int    `json:"posChallengesFailed"`
+	PosChallengesTotal  int    `json:"posChallengesTotal"`
+	Timestamp           string `json:"timestamp"`
+}
+
+type SLARollup struct {
+	ID          int              `json:"id"`
+	TxHash      string           `json:"txHash"`
+	BlockStart  int              `json:"blockStart"`
+	BlockEnd    int              `json:"blockEnd"`
+	Timestamp   string           `json:"timestamp"`
+	NodeReports []*SLANodeReport `json:"nodeReports"`
+}
+
+type StorageProof struct {
+	BlockHeight    int     `json:"blockHeight"`
+	ProverAddress  string  `json:"proverAddress"`
+	ProverEndpoint *string `json:"proverEndpoint,omitempty"`
+	Cid            string  `json:"cid"`
+	Status         string  `json:"status"`
+	ProofSignature *string `json:"proofSignature,omitempty"`
+	Proof          *string `json:"proof,omitempty"`
+}
+
 type Transaction struct {
-	Index int    `json:"index"`
-	Hash  string `json:"hash"`
+	Index       int     `json:"index"`
+	Hash        string  `json:"hash"`
+	BlockHeight int     `json:"blockHeight"`
+	Timestamp   string  `json:"timestamp"`
+	Data        string  `json:"data"`
+	Type        *string `json:"type,omitempty"`
+}
+
+type TransactionStat struct {
+	Hour    string `json:"hour"`
+	TxCount int    `json:"txCount"`
+	TxType  string `json:"txType"`
 }

@@ -8,7 +8,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_gql"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func (r *queryGraphQLServer) GetBlock(ctx context.Context, height *int) (*core_gql.Block, error) {
@@ -39,8 +41,500 @@ func (r *queryGraphQLServer) GetBlock(ctx context.Context, height *int) (*core_g
 	}, nil
 }
 
-func (r *queryGraphQLServer) GetTransaction(ctx context.Context, hash *string) (*core_gql.Transaction, error) {
-	return nil, fmt.Errorf("not implemented: GetTransaction - getTransaction")
+func (r *queryGraphQLServer) GetTransaction(ctx context.Context, hash string) (*core_gql.Transaction, error) {
+	tx, err := r.db.GetTx(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get block height from block ID
+	block, err := r.db.GetBlock(ctx, tx.BlockID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &core_gql.Transaction{
+		Index:       int(tx.Index),
+		Hash:        tx.TxHash,
+		BlockHeight: int(block.Height),
+		Data:        string(tx.Transaction),
+		Type:        nil, // TODO: Implement transaction type detection from tx data
+	}, nil
+}
+
+func (r *queryGraphQLServer) GetAnalytics(ctx context.Context) (*core_gql.Analytics, error) {
+	totalBlocks, err := r.db.TotalBlocks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	totalTxs, err := r.db.TotalTransactions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	totalPlays, err := r.db.TotalTransactionsByType(ctx, "TrackPlays")
+	if err != nil {
+		return nil, err
+	}
+
+	totalManageEntities, err := r.db.TotalTransactionsByType(ctx, "ManageEntity")
+	if err != nil {
+		return nil, err
+	}
+
+	totalValidators, err := r.db.TotalValidators(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &core_gql.Analytics{
+		TotalBlocks:         int(totalBlocks),
+		TotalTransactions:   int(totalTxs),
+		TotalPlays:          int(totalPlays),
+		TotalValidators:     int(totalValidators),
+		TotalManageEntities: int(totalManageEntities),
+	}, nil
+}
+
+func (r *queryGraphQLServer) GetAllNodes(ctx context.Context) ([]*core_gql.Node, error) {
+	nodes, err := r.db.GetAllRegisteredNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.Node{}
+	for _, node := range nodes {
+		result = append(result, &core_gql.Node{
+			Address:      node.CometAddress,
+			Endpoint:     node.Endpoint,
+			EthAddress:   node.EthAddress,
+			CometAddress: node.CometAddress,
+			CometPubKey:  &node.CometPubKey,
+			NodeType:     node.NodeType,
+			SpID:         &node.SpID,
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetAllValidatorUptimes(ctx context.Context, rollupID *int) ([]*core_gql.NodeUptime, error) {
+	// Get all nodes first
+	nodes, err := r.db.GetAllRegisteredNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get latest rollup if no ID specified
+	var rollup db.SlaRollup
+	if rollupID != nil {
+		rollup, err = r.db.GetSlaRollupWithId(ctx, int32(*rollupID))
+	} else {
+		rollup, err = r.db.GetLatestSlaRollup(ctx)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Get reports for this rollup
+	rollupIdParam := pgtype.Int4{Int32: rollup.ID, Valid: true}
+	reports, err := r.db.GetRollupReportsForId(ctx, rollupIdParam)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build map of reports by address
+	reportsByAddress := make(map[string]db.SlaNodeReport)
+	for _, report := range reports {
+		reportsByAddress[report.Address] = report
+	}
+
+	result := []*core_gql.NodeUptime{}
+	for _, node := range nodes {
+		if node.NodeType != "validator" {
+			continue
+		}
+
+		report, hasReport := reportsByAddress[node.CometAddress]
+		if !hasReport {
+			// Node has no report for this period
+			report = db.SlaNodeReport{
+				Address:        node.CometAddress,
+				BlocksProposed: 0,
+			}
+		}
+
+		result = append(result, &core_gql.NodeUptime{
+			Address:     node.CometAddress,
+			Endpoint:    &node.Endpoint,
+			IsValidator: true,
+			ActiveReport: &core_gql.SLAReport{
+				RollupID:            int(rollup.ID),
+				TxHash:              rollup.TxHash,
+				BlockStart:          int(rollup.BlockStart),
+				BlockEnd:            int(rollup.BlockEnd),
+				BlocksProposed:      int(report.BlocksProposed),
+				Quota:               0, // TODO: Implement quota calculation
+				PosChallengesFailed: 0, // TODO: Implement PoS challenge stats
+				PosChallengesTotal:  0, // TODO: Implement PoS challenge stats
+				Timestamp:           rollup.Time.Time.String(),
+			},
+			ReportHistory: []*core_gql.SLAReport{}, // TODO: Implement historical reports
+		})
+	}
+
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetLatestBlock(ctx context.Context) (*core_gql.Block, error) {
+	block, err := r.db.GetLatestBlock(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	txs, err := r.db.GetBlockTransactions(ctx, block.Height)
+	if err != nil {
+		return nil, err
+	}
+
+	transactions := []*core_gql.Transaction{}
+	for _, tx := range txs {
+		transactions = append(transactions, &core_gql.Transaction{
+			Index: int(tx.Index),
+			Hash:  tx.TxHash,
+		})
+	}
+
+	return &core_gql.Block{
+		Height:       int(block.Height),
+		ChainID:      block.ChainID,
+		Hash:         block.Hash,
+		Proposer:     block.Proposer,
+		Transactions: transactions,
+	}, nil
+}
+
+func (r *queryGraphQLServer) GetLatestBlocks(ctx context.Context, limit *int) ([]*core_gql.Block, error) {
+	// Default limit to 10 if not specified
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	blocks, err := r.db.GetRecentBlocks(ctx, l)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.Block{}
+	for _, block := range blocks {
+		txs, err := r.db.GetBlockTransactions(ctx, block.Height)
+		if err != nil {
+			return nil, err
+		}
+
+		transactions := []*core_gql.Transaction{}
+		for _, tx := range txs {
+			transactions = append(transactions, &core_gql.Transaction{
+				Index: int(tx.Index),
+				Hash:  tx.TxHash,
+			})
+		}
+
+		result = append(result, &core_gql.Block{
+			Height:       int(block.Height),
+			ChainID:      block.ChainID,
+			Hash:         block.Hash,
+			Proposer:     block.Proposer,
+			Transactions: transactions,
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetLatestSLARollup(ctx context.Context) (*core_gql.SLARollup, error) {
+	rollup, err := r.db.GetLatestSlaRollup(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	id := pgtype.Int4{Int32: rollup.ID, Valid: true}
+	reports, err := r.db.GetRollupReportsForId(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeReports := []*core_gql.SLANodeReport{}
+	for _, report := range reports {
+		nodeReports = append(nodeReports, &core_gql.SLANodeReport{
+			Address:             report.Address,
+			BlocksProposed:      int(report.BlocksProposed),
+			Quota:               0, // TODO: Implement quota calculation
+			PosChallengesFailed: 0, // TODO: Implement PoS challenge stats
+			PosChallengesTotal:  0, // TODO: Implement PoS challenge stats
+		})
+	}
+
+	return &core_gql.SLARollup{
+		ID:          int(rollup.ID),
+		TxHash:      rollup.TxHash,
+		BlockStart:  int(rollup.BlockStart),
+		BlockEnd:    int(rollup.BlockEnd),
+		Timestamp:   rollup.Time.Time.String(),
+		NodeReports: nodeReports,
+	}, nil
+}
+
+func (r *queryGraphQLServer) GetLatestTransactions(ctx context.Context, limit *int) ([]*core_gql.Transaction, error) {
+	// Default limit to 10 if not specified
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	txs, err := r.db.GetRecentTxs(ctx, l)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.Transaction{}
+	for _, tx := range txs {
+		// Get block height from block ID
+		block, err := r.db.GetBlock(ctx, tx.BlockID)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, &core_gql.Transaction{
+			Index:       int(tx.Index),
+			Hash:        tx.TxHash,
+			BlockHeight: int(block.Height),
+			Data:        string(tx.Transaction),
+			Type:        nil, // TODO: Implement transaction type detection from tx data
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetNode(ctx context.Context, address string) (*core_gql.Node, error) {
+	nodes, err := r.db.GetAllRegisteredNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the node with matching address
+	for _, node := range nodes {
+		if node.CometAddress == address {
+			return &core_gql.Node{
+				Address:      node.CometAddress,
+				Endpoint:     node.Endpoint,
+				EthAddress:   node.EthAddress,
+				CometAddress: node.CometAddress,
+				CometPubKey:  &node.CometPubKey,
+				NodeType:     node.NodeType,
+				SpID:         &node.SpID,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("node not found")
+}
+
+func (r *queryGraphQLServer) GetNodesByType(ctx context.Context, nodeType string) ([]*core_gql.Node, error) {
+	nodes, err := r.db.GetAllRegisteredNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.Node{}
+	for _, node := range nodes {
+		if node.NodeType == nodeType {
+			result = append(result, &core_gql.Node{
+				Address:      node.CometAddress,
+				Endpoint:     node.Endpoint,
+				EthAddress:   node.EthAddress,
+				CometAddress: node.CometAddress,
+				CometPubKey:  &node.CometPubKey,
+				NodeType:     node.NodeType,
+				SpID:         &node.SpID,
+			})
+		}
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetNodeUptime(ctx context.Context, address string, rollupID *int) (*core_gql.NodeUptime, error) {
+	// Get the node first
+	nodes, err := r.db.GetAllRegisteredNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var node *db.CoreValidator
+	for _, n := range nodes {
+		if n.CometAddress == address {
+			node = &n
+			break
+		}
+	}
+	if node == nil {
+		return nil, fmt.Errorf("node not found")
+	}
+
+	// Get rollup
+	var rollup db.SlaRollup
+	if rollupID != nil {
+		rollup, err = r.db.GetSlaRollupWithId(ctx, int32(*rollupID))
+	} else {
+		rollup, err = r.db.GetLatestSlaRollup(ctx)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Get report for this node
+	params := db.GetRollupReportForNodeAndIdParams{
+		Address:     address,
+		SlaRollupID: pgtype.Int4{Int32: rollup.ID, Valid: true},
+	}
+	report, err := r.db.GetRollupReportForNodeAndId(ctx, params)
+	if err != nil {
+		// If no report found, create empty one
+		report = db.SlaNodeReport{
+			Address:        address,
+			BlocksProposed: 0,
+		}
+	}
+
+	return &core_gql.NodeUptime{
+		Address:     address,
+		Endpoint:    &node.Endpoint,
+		IsValidator: node.NodeType == "validator",
+		ActiveReport: &core_gql.SLAReport{
+			RollupID:            int(rollup.ID),
+			TxHash:              rollup.TxHash,
+			BlockStart:          int(rollup.BlockStart),
+			BlockEnd:            int(rollup.BlockEnd),
+			BlocksProposed:      int(report.BlocksProposed),
+			Quota:               0, // TODO: Implement quota calculation
+			PosChallengesFailed: 0, // TODO: Implement PoS challenge stats
+			PosChallengesTotal:  0, // TODO: Implement PoS challenge stats
+			Timestamp:           rollup.Time.Time.String(),
+		},
+		ReportHistory: []*core_gql.SLAReport{}, // TODO: Implement historical reports
+	}, nil
+}
+
+func (r *queryGraphQLServer) GetSLARollup(ctx context.Context, id int) (*core_gql.SLARollup, error) {
+	rollup, err := r.db.GetSlaRollupWithId(ctx, int32(id))
+	if err != nil {
+		return nil, err
+	}
+
+	rollupId := pgtype.Int4{Int32: rollup.ID, Valid: true}
+	reports, err := r.db.GetRollupReportsForId(ctx, rollupId)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeReports := []*core_gql.SLANodeReport{}
+	for _, report := range reports {
+		nodeReports = append(nodeReports, &core_gql.SLANodeReport{
+			Address:             report.Address,
+			BlocksProposed:      int(report.BlocksProposed),
+			Quota:               0, // TODO: Implement quota calculation
+			PosChallengesFailed: 0, // TODO: Implement PoS challenge stats
+			PosChallengesTotal:  0, // TODO: Implement PoS challenge stats
+		})
+	}
+
+	return &core_gql.SLARollup{
+		ID:          int(rollup.ID),
+		TxHash:      rollup.TxHash,
+		BlockStart:  int(rollup.BlockStart),
+		BlockEnd:    int(rollup.BlockEnd),
+		Timestamp:   rollup.Time.Time.String(),
+		NodeReports: nodeReports,
+	}, nil
+}
+
+func (r *queryGraphQLServer) GetStorageProofs(ctx context.Context, startBlock int, endBlock int, address *string) ([]*core_gql.StorageProof, error) {
+	params := db.GetStorageProofsForNodeInRangeParams{
+		BlockHeight:   int64(startBlock),
+		BlockHeight_2: int64(endBlock),
+	}
+	if address != nil {
+		params.Address = *address
+	}
+
+	proofs, err := r.db.GetStorageProofsForNodeInRange(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.StorageProof{}
+	for _, proof := range proofs {
+		var proofSig *string
+		if proof.ProofSignature.Valid {
+			s := proof.ProofSignature.String
+			proofSig = &s
+		}
+
+		result = append(result, &core_gql.StorageProof{
+			BlockHeight:    int(proof.BlockHeight),
+			ProverAddress:  proof.Address,
+			Cid:            proof.Cid.String,
+			Status:         string(proof.Status),
+			ProofSignature: proofSig,
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetStorageProofsByBlock(ctx context.Context, height int) ([]*core_gql.StorageProof, error) {
+	params := db.GetStorageProofsForNodeInRangeParams{
+		BlockHeight:   int64(height),
+		BlockHeight_2: int64(height),
+	}
+
+	proofs, err := r.db.GetStorageProofsForNodeInRange(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.StorageProof{}
+	for _, proof := range proofs {
+		var proofSig *string
+		if proof.ProofSignature.Valid {
+			s := proof.ProofSignature.String
+			proofSig = &s
+		}
+
+		result = append(result, &core_gql.StorageProof{
+			BlockHeight:    int(proof.BlockHeight),
+			ProverAddress:  proof.Address,
+			Cid:            proof.Cid.String,
+			Status:         string(proof.Status),
+			ProofSignature: proofSig,
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetTransactionStats(ctx context.Context, hours *int) ([]*core_gql.TransactionStat, error) {
+	stats, err := r.db.TxsPerHour(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.TransactionStat{}
+	for _, stat := range stats {
+		result = append(result, &core_gql.TransactionStat{
+			Hour:    stat.Hour.Time.String(),
+			TxCount: int(stat.TxCount),
+			TxType:  stat.TxType,
+		})
+	}
+	return result, nil
 }
 
 func (r *GraphQLServer) Query() core_gql.QueryResolver { return &queryGraphQLServer{r} }

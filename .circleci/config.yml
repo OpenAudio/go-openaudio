@@ -44,30 +44,32 @@ commands:
             ARCH=x86_64
             curl -sL "https://github.com/google/go-containerregistry/releases/download/${VERSION}/go-containerregistry_${OS}_${ARCH}.tar.gz" > go-containerregistry.tar.gz
             tar -zxvf go-containerregistry.tar.gz -C $HOME/bin/ crane
-  install-buf:
-    steps:
-      - run:
-          name: Install Buf
-          command: |
-            VERSION=1.49.0
-            OS=$(uname -s)
-            ARCH=$(uname -m)
+  # TEMPORARY DISABLED BUF
+  # `Failure: invalid token provided for buf.build`
+  # install-buf:
+  #   steps:
+  #     - run:
+  #         name: Install Buf
+  #         command: |
+  #           VERSION=1.49.0
+  #           OS=$(uname -s)
+  #           ARCH=$(uname -m)
             
-            curl -sSL "https://github.com/bufbuild/buf/releases/download/v${VERSION}/buf-${OS}-${ARCH}" -o $HOME/bin/buf
+  #           curl -sSL "https://github.com/bufbuild/buf/releases/download/v${VERSION}/buf-${OS}-${ARCH}" -o $HOME/bin/buf
             
-            chmod +x $HOME/bin/buf
+  #           chmod +x $HOME/bin/buf
 
-            echo 'export PATH=$HOME/bin:$PATH' >> $BASH_ENV
-            source $BASH_ENV
+  #           echo 'export PATH=$HOME/bin:$PATH' >> $BASH_ENV
+  #           source $BASH_ENV
             
-            buf --version
-  push-buf:
-    steps:
-      - run:
-          name: Push Buf
-          command: |
-            echo ${BUF_TOKEN} | buf registry login --token-stdin
-            cd pkg/core && buf push --create --git-metadata
+  #           buf --version
+  # push-buf:
+  #   steps:
+  #     - run:
+  #         name: Push Buf
+  #         command: |
+  #           echo ${BUF_TOKEN} | buf registry login --token-stdin
+  #           cd pkg/core && buf push --create --git-metadata
 
 
 jobs:
@@ -82,8 +84,8 @@ jobs:
       GOFLAGS: "-trimpath -mod=readonly -p=8"
     steps:
       - checkout
-      - install-buf
-      - push-buf
+      # - install-buf
+      # - push-buf
       - run:
           name: Install build dependencies
           command: |

@@ -49,7 +49,8 @@ func (state *State) recalculateState() {
 	ctx := context.Background()
 	logger := state.logger
 
-	recentTransactions, err := state.db.GetRecentTxs(ctx)
+	// Get 10 most recent transactions
+	recentTransactions, err := state.db.GetRecentTxs(ctx, 10)
 	if err != nil {
 		logger.Errorf("could not get recent txs: %v", err)
 	} else {
@@ -94,7 +95,8 @@ func (state *State) recalculateState() {
 
 	latestBlocks := []pages.BlockView{}
 
-	latestIndexedBlocks, err := state.db.GetRecentBlocks(context.Background())
+	// Get 10 most recent blocks
+	latestIndexedBlocks, err := state.db.GetRecentBlocks(context.Background(), 10)
 	if err != nil {
 		state.logger.Errorf("failed to get latest blocks in db: %v", err)
 	}

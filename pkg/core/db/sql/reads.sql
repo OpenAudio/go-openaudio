@@ -122,10 +122,10 @@ select * from core_validators where eth_address = $1;
 select * from core_validators where comet_address = $1;
 
 -- name: GetRecentBlocks :many
-select * from core_blocks order by created_at desc limit 10;
+select * from core_blocks order by created_at desc limit $1;
 
 -- name: GetRecentTxs :many
-select * from core_transactions order by created_at desc limit 10;
+select * from core_transactions order by created_at desc limit $1;
 
 -- name: TotalBlocks :one
 select count(*) from core_blocks;
