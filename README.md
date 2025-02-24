@@ -24,7 +24,3 @@ open https://localhost/console/overview
 ### Node Operators
 
 Migrate an existing [content node](docs/validators.md#existing-content-nodes) or [discovery node](docs/validators.md#existing-discovery-nodes) to `audiusd`.
-
----
-
-<img src="https://upload.wikimedia.org/wikipedia/en/a/a4/Flag_of_the_United_States.svg" alt="BUILT IN USA" width="60">
