@@ -69,7 +69,6 @@ type MediorumConfig struct {
 	StoreAll                  bool
 	VersionJson               VersionJson
 	DiscoveryListensEndpoints []string
-	CoreGRPCEndpoint          string
 
 	// should have a basedir type of thing
 	// by default will put db + blobs there

@@ -148,7 +148,6 @@ func startMediorum(mediorumEnv string, posChannel chan pos.PoSRequest) {
 	dir := fmt.Sprintf("/tmp/mediorum_dev_%d", spID)
 	blobStoreDSN := ""
 	moveFromBlobStoreDSN := ""
-	coreGRPCEndpoint := "0.0.0.0:50051"
 
 	notDev := isProd || isStage
 	if notDev {
@@ -157,7 +156,6 @@ func startMediorum(mediorumEnv string, posChannel chan pos.PoSRequest) {
 		dir = "/tmp/mediorum"
 		blobStoreDSN = os.Getenv("AUDIUS_STORAGE_DRIVER_URL")
 		moveFromBlobStoreDSN = os.Getenv("AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM")
-		coreGRPCEndpoint = getenvWithDefault("coreGRPCEndpoint", "audiusd:50051")
 	}
 
 	config := server.MediorumConfig{
@@ -183,7 +181,6 @@ func startMediorum(mediorumEnv string, posChannel chan pos.PoSRequest) {
 		StoreAll:                  os.Getenv("STORE_ALL") == "true",
 		VersionJson:               GetVersionJson(),
 		DiscoveryListensEndpoints: discoveryListensEndpoints(),
-		CoreGRPCEndpoint:          coreGRPCEndpoint,
 	}
 
 	ss, err := server.New(config, posChannel)
