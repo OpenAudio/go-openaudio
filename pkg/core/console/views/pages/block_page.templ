@@ -11,18 +11,20 @@ import (
 )
 
 type BlockView struct {
-	Height    int64
-	Hash      string
-	Proposer  string
-	Timestamp time.Time
-	Txs       [][]byte
+	Height           int64
+	Hash             string
+	Proposer         string
+	ProposerEndpoint string
+	Timestamp        time.Time
+	Txs              [][]byte
 }
 
 type BlockPageJSONResponse struct {
-	Height   string                   `json:"block_height"`
-	Hash     string                   `json:"block_hash"`
-	Proposer string                   `json:"proposer"`
-	Txs      []map[string]interface{} `json:"transactions"`
+	Height           string                   `json:"block_height"`
+	Hash             string                   `json:"block_hash"`
+	Proposer         string                   `json:"proposer"`
+	ProposerEndpoint string                   `json:"proposer_endpoint"`
+	Txs              []map[string]interface{} `json:"transactions"`
 }
 
 func (p *Pages) BlockPageJSON(data *BlockView) (*BlockPageJSONResponse, error) {

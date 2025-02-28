@@ -19,18 +19,20 @@ import (
 )
 
 type BlockView struct {
-	Height    int64
-	Hash      string
-	Proposer  string
-	Timestamp time.Time
-	Txs       [][]byte
+	Height           int64
+	Hash             string
+	Proposer         string
+	ProposerEndpoint string
+	Timestamp        time.Time
+	Txs              [][]byte
 }
 
 type BlockPageJSONResponse struct {
-	Height   string                   `json:"block_height"`
-	Hash     string                   `json:"block_hash"`
-	Proposer string                   `json:"proposer"`
-	Txs      []map[string]interface{} `json:"transactions"`
+	Height           string                   `json:"block_height"`
+	Hash             string                   `json:"block_hash"`
+	Proposer         string                   `json:"proposer"`
+	ProposerEndpoint string                   `json:"proposer_endpoint"`
+	Txs              []map[string]interface{} `json:"transactions"`
 }
 
 func (p *Pages) BlockPageJSON(data *BlockView) (*BlockPageJSONResponse, error) {
@@ -161,7 +163,7 @@ func (p *Pages) BlockPageHTML(view *BlockView) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(view.Height))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 80, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 82, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -190,7 +192,7 @@ func (p *Pages) BlockPageHTML(view *BlockView) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(view.Height))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 95, Col: 44}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 97, Col: 44}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -213,7 +215,7 @@ func (p *Pages) BlockPageHTML(view *BlockView) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(humanize.Time(view.Timestamp))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 99, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 101, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -247,7 +249,7 @@ func (p *Pages) BlockPageHTML(view *BlockView) templ.Component {
 					var templ_7745c5c3_Var10 string
 					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(p.components.ToTxHash(tx))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 108, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 110, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 					if templ_7745c5c3_Err != nil {

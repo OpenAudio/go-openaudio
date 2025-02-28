@@ -11,7 +11,7 @@ import (
 func (con *Console) nodePage(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	nodeID := c.Param("node")
+	nodeID := strings.ToUpper(c.Param("node"))
 	node := db.CoreValidator{}
 
 	if strings.HasPrefix(nodeID, "0x") {

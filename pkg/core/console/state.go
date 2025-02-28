@@ -2,6 +2,8 @@ package console
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/core/common"
@@ -18,7 +20,7 @@ type State struct {
 	db     *db.Queries
 
 	latestBlocks       []pages.BlockView
-	latestTransactions []db.CoreTransaction
+	latestTransactions []pages.TxData
 
 	totalBlocks         int64
 	totalTransactions   int64
@@ -54,7 +56,11 @@ func (state *State) recalculateState() {
 	if err != nil {
 		logger.Errorf("could not get recent txs: %v", err)
 	} else {
-		state.latestTransactions = recentTransactions
+		recentTransactionData := []pages.TxData{}
+		for _, tx := range recentTransactions {
+			recentTransactionData = append(recentTransactionData, pages.NewTxData(tx))
+		}
+		state.latestTransactions = recentTransactionData
 	}
 
 	// on initial load
@@ -112,10 +118,22 @@ func (state *State) recalculateState() {
 			txs = append(txs, tx.Transaction)
 		}
 
+		proposer := block.Proposer
+		proposerEndpoint := ""
+		node, err := state.db.GetRegisteredNodeByCometAddress(ctx, strings.ToUpper(proposer))
+		if err != nil {
+			logger.Errorf("could not get node by proposer address: %v", err)
+		} else {
+			proposerEndpoint = fmt.Sprintf("%s (%s...)", node.Endpoint, node.CometAddress[:8])
+		}
+
 		latestBlocks = append(latestBlocks, pages.BlockView{
-			Height:    block.Height,
-			Timestamp: block.CreatedAt.Time,
-			Txs:       txs,
+			Height:           block.Height,
+			Timestamp:        block.CreatedAt.Time,
+			Txs:              txs,
+			Proposer:         proposer,
+			ProposerEndpoint: proposerEndpoint,
+			Hash:             block.Hash,
 		})
 	}
 

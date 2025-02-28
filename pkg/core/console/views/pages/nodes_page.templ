@@ -13,7 +13,7 @@ templ (p *Pages) NodesPageHTML(data *NodesView) {
 				<div class="uk-card">
 					<div class="uk-card-header">
 						<h2>
-							@p.components.ExternalLink("%s/%s", node.Endpoint, "/console") {
+							@p.components.ExternalLink("%s%s", node.Endpoint, "/console/overview") {
 								<div>{ node.Endpoint }</div>
 							}
 						</h2>
