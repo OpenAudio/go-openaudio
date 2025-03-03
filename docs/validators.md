@@ -30,7 +30,9 @@ EOF
 docker run -d \
   --name audiusd-cn1.operator.xyz \
   --restart unless-stopped \
-  -v /var/k8s:/data \
+  -v /var/k8s/creator-node-db-15:/data/creator-node-db-15 \
+  -v /var/k8s/bolt:/data/bolt \
+  -v /var/k8s/mediorum:/tmp/mediorum \
   -v /home/ubuntu/override.env:/env/override.env \
   -p 80:80 \
   -p 443:443 \
