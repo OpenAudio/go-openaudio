@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -280,11 +281,18 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger) error {
 		{"/core/*", "http://localhost:26659"},
 	}
 
-	// dashboard compatibility - country flags
+	// dashboard compatibility - country flags + version info
 	locationHandler := func(c echo.Context) error {
-		response := struct {
+		type ipInfoResponse struct {
 			Country string `json:"country"`
-			Version string `json:"version"`
+			Loc     string `json:"loc"`
+		}
+
+		response := struct {
+			Country   string  `json:"country"`
+			Version   string  `json:"version"`
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
 		}{
 			Version: mediorum.GetVersionJson().Version,
 		}
@@ -294,13 +302,24 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger) error {
 			defer resp.Body.Close()
 			body, err := io.ReadAll(resp.Body)
 			if err == nil {
-				json.Unmarshal(body, &response)
+				var ipInfo ipInfoResponse
+				if err := json.Unmarshal(body, &ipInfo); err == nil {
+					response.Country = ipInfo.Country
+					// parse lat long
+					if loc := strings.Split(ipInfo.Loc, ","); len(loc) == 2 {
+						response.Latitude, _ = strconv.ParseFloat(loc[0], 64)
+						response.Longitude, _ = strconv.ParseFloat(loc[1], 64)
+					}
+				}
 			}
 		}
-		return c.JSON(http.StatusOK, map[string]struct {
-			Country string `json:"country"`
-			Version string `json:"version"`
-		}{"data": response})
+		// dashboard expected format
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"data": response,
+			"version": map[string]string{
+				"version": mediorum.GetVersionJson().Version,
+			},
+		})
 	}
 
 	corsGroup := e.Group("", middleware.CORSWithConfig(middleware.CORSConfig{
@@ -310,6 +329,7 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger) error {
 
 	corsGroup.GET("/version", locationHandler)
 	corsGroup.GET("/location", locationHandler)
+	// end dashboard compatibility
 
 	if isUpTimeEnabled(hostUrl) {
 		proxies = append(proxies, proxyConfig{"/d_api/*", "http://localhost:1996"})
