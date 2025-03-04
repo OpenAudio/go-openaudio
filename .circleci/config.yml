@@ -272,18 +272,10 @@ workflows:
             branches:
               only:
                 - main
-      - deploy-audiusd-staging-trigger:
-          requires:
-            - push-audiusd-manifest
-          type: approval
-          filters:
-            branches:
-              only:
-                - main
       - deploy-audiusd-staging:
           context: DockerHub
           requires:
-            - deploy-audiusd-staging-trigger
+            - push-audiusd-manifest
           filters:
             branches:
               only:
