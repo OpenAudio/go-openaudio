@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"math/big"
@@ -278,6 +279,37 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger) error {
 		{"/console/*", "http://localhost:26659"},
 		{"/core/*", "http://localhost:26659"},
 	}
+
+	// dashboard compatibility - country flags
+	locationHandler := func(c echo.Context) error {
+		response := struct {
+			Country string `json:"country"`
+			Version string `json:"version"`
+		}{
+			Version: mediorum.GetVersionJson().Version,
+		}
+
+		resp, err := http.Get("https://ipinfo.io")
+		if err == nil && resp.StatusCode == http.StatusOK {
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err == nil {
+				json.Unmarshal(body, &response)
+			}
+		}
+		return c.JSON(http.StatusOK, map[string]struct {
+			Country string `json:"country"`
+			Version string `json:"version"`
+		}{"data": response})
+	}
+
+	corsGroup := e.Group("", middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{http.MethodGet},
+	}))
+
+	corsGroup.GET("/version", locationHandler)
+	corsGroup.GET("/location", locationHandler)
 
 	if isUpTimeEnabled(hostUrl) {
 		proxies = append(proxies, proxyConfig{"/d_api/*", "http://localhost:1996"})
