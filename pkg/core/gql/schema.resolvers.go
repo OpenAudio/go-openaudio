@@ -7,6 +7,7 @@ package gql
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_gql"
@@ -107,6 +108,97 @@ func (r *queryGraphQLServer) GetLatestBlocks(ctx context.Context, limit *int) ([
 	return result, nil
 }
 
+func (r *queryGraphQLServer) GetAvailableCities(ctx context.Context, filter *core_gql.LocationCityFilter, limit *int) ([]*core_gql.LocationCity, error) {
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	// Handle optional filters
+	country := ""
+	region := ""
+	if filter != nil {
+		if filter.Country != nil {
+			country = *filter.Country
+		}
+		if filter.Region != nil {
+			region = *filter.Region
+		}
+	}
+
+	cities, err := r.db.GetAvailableCities(ctx, db.GetAvailableCitiesParams{
+		Column1: country,
+		Column2: region,
+		Limit:   l,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.LocationCity{}
+	for _, city := range cities {
+		result = append(result, &core_gql.LocationCity{
+			City:      city.City.String,
+			Region:    city.Region.String,
+			Country:   city.Country.String,
+			PlayCount: int(city.PlayCount),
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetAvailableRegions(ctx context.Context, filter *core_gql.LocationRegionFilter, limit *int) ([]*core_gql.LocationRegion, error) {
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	// Handle optional filter
+	country := ""
+	if filter != nil && filter.Country != nil {
+		country = *filter.Country
+	}
+
+	regions, err := r.db.GetAvailableRegions(ctx, db.GetAvailableRegionsParams{
+		Column1: country,
+		Limit:   l,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.LocationRegion{}
+	for _, region := range regions {
+		result = append(result, &core_gql.LocationRegion{
+			Region:    region.Region.String,
+			Country:   region.Country.String,
+			PlayCount: int(region.PlayCount),
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetAvailableCountries(ctx context.Context, limit *int) ([]*core_gql.LocationCountry, error) {
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	countries, err := r.db.GetAvailableCountries(ctx, l)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.LocationCountry{}
+	for _, country := range countries {
+		result = append(result, &core_gql.LocationCountry{
+			Country:   country.Country.String,
+			PlayCount: int(country.PlayCount),
+		})
+	}
+	return result, nil
+}
+
 func (r *queryGraphQLServer) GetTransaction(ctx context.Context, hash string) (*core_gql.Transaction, error) {
 	tx, err := r.db.GetTx(ctx, hash)
 	if err != nil {
@@ -154,6 +246,275 @@ func (r *queryGraphQLServer) GetLatestTransactions(ctx context.Context, limit *i
 			BlockHeight: int(block.Height),
 			Data:        string(tx.Transaction),
 			Type:        nil, // TODO: Implement transaction type detection from tx data
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetDecodedTransaction(ctx context.Context, hash string) (*core_gql.DecodedTransaction, error) {
+	tx, err := r.db.GetDecodedTx(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+
+	return &core_gql.DecodedTransaction{
+		BlockHeight: int(tx.BlockHeight),
+		TxIndex:     int(tx.TxIndex),
+		TxHash:      tx.TxHash,
+		TxType:      tx.TxType,
+		TxData:      string(tx.TxData),
+		CreatedAt:   tx.CreatedAt.Time.String(),
+	}, nil
+}
+
+func (r *queryGraphQLServer) GetLatestDecodedTransactions(ctx context.Context, limit *int) ([]*core_gql.DecodedTransaction, error) {
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	txs, err := r.db.GetLatestDecodedTxs(ctx, l)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.DecodedTransaction{}
+	for _, tx := range txs {
+		result = append(result, &core_gql.DecodedTransaction{
+			BlockHeight: int(tx.BlockHeight),
+			TxIndex:     int(tx.TxIndex),
+			TxHash:      tx.TxHash,
+			TxType:      tx.TxType,
+			TxData:      string(tx.TxData),
+			CreatedAt:   tx.CreatedAt.Time.String(),
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetDecodedTransactionsByType(ctx context.Context, txType string, limit *int) ([]*core_gql.DecodedTransaction, error) {
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	txs, err := r.db.GetDecodedTxsByType(ctx, db.GetDecodedTxsByTypeParams{
+		TxType: txType,
+		Limit:  l,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.DecodedTransaction{}
+	for _, tx := range txs {
+		result = append(result, &core_gql.DecodedTransaction{
+			BlockHeight: int(tx.BlockHeight),
+			TxIndex:     int(tx.TxIndex),
+			TxHash:      tx.TxHash,
+			TxType:      tx.TxType,
+			TxData:      string(tx.TxData),
+			CreatedAt:   tx.CreatedAt.Time.String(),
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetDecodedTransactionsByBlock(ctx context.Context, height int) ([]*core_gql.DecodedTransaction, error) {
+	txs, err := r.db.GetDecodedTxsByBlock(ctx, int64(height))
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.DecodedTransaction{}
+	for _, tx := range txs {
+		result = append(result, &core_gql.DecodedTransaction{
+			BlockHeight: int(tx.BlockHeight),
+			TxIndex:     int(tx.TxIndex),
+			TxHash:      tx.TxHash,
+			TxType:      tx.TxType,
+			TxData:      string(tx.TxData),
+			CreatedAt:   tx.CreatedAt.Time.String(),
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetDecodedPlays(ctx context.Context, limit *int) ([]*core_gql.DecodedPlay, error) {
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	plays, err := r.db.GetDecodedPlays(ctx, l)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.DecodedPlay{}
+	for _, play := range plays {
+		result = append(result, &core_gql.DecodedPlay{
+			TxHash:    play.TxHash,
+			UserID:    play.UserID,
+			TrackID:   play.TrackID,
+			PlayedAt:  play.PlayedAt.Time.String(),
+			Signature: play.Signature,
+			City:      &play.City.String,
+			Region:    &play.Region.String,
+			Country:   &play.Country.String,
+			CreatedAt: play.CreatedAt.Time.String(),
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetDecodedPlaysByUser(ctx context.Context, userID string, limit *int) ([]*core_gql.DecodedPlay, error) {
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	plays, err := r.db.GetDecodedPlaysByUser(ctx, db.GetDecodedPlaysByUserParams{
+		UserID: userID,
+		Limit:  l,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.DecodedPlay{}
+	for _, play := range plays {
+		result = append(result, &core_gql.DecodedPlay{
+			TxHash:    play.TxHash,
+			UserID:    play.UserID,
+			TrackID:   play.TrackID,
+			PlayedAt:  play.PlayedAt.Time.String(),
+			Signature: play.Signature,
+			City:      &play.City.String,
+			Region:    &play.Region.String,
+			Country:   &play.Country.String,
+			CreatedAt: play.CreatedAt.Time.String(),
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetDecodedPlaysByTrack(ctx context.Context, trackID string, limit *int) ([]*core_gql.DecodedPlay, error) {
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	plays, err := r.db.GetDecodedPlaysByTrack(ctx, db.GetDecodedPlaysByTrackParams{
+		TrackID: trackID,
+		Limit:   l,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.DecodedPlay{}
+	for _, play := range plays {
+		result = append(result, &core_gql.DecodedPlay{
+			TxHash:    play.TxHash,
+			UserID:    play.UserID,
+			TrackID:   play.TrackID,
+			PlayedAt:  play.PlayedAt.Time.String(),
+			Signature: play.Signature,
+			City:      &play.City.String,
+			Region:    &play.Region.String,
+			Country:   &play.Country.String,
+			CreatedAt: play.CreatedAt.Time.String(),
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetDecodedPlaysByTimeRange(ctx context.Context, startTime string, endTime string, limit *int) ([]*core_gql.DecodedPlay, error) {
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	// Parse the time strings into time.Time
+	startTimestamp, err := time.Parse(time.RFC3339, startTime)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start time format: %v", err)
+	}
+
+	endTimestamp, err := time.Parse(time.RFC3339, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end time format: %v", err)
+	}
+
+	plays, err := r.db.GetDecodedPlaysByTimeRange(ctx, db.GetDecodedPlaysByTimeRangeParams{
+		PlayedAt:   pgtype.Timestamptz{Time: startTimestamp, Valid: true},
+		PlayedAt_2: pgtype.Timestamptz{Time: endTimestamp, Valid: true},
+		Limit:      l,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.DecodedPlay{}
+	for _, play := range plays {
+		result = append(result, &core_gql.DecodedPlay{
+			TxHash:    play.TxHash,
+			UserID:    play.UserID,
+			TrackID:   play.TrackID,
+			PlayedAt:  play.PlayedAt.Time.String(),
+			Signature: play.Signature,
+			City:      &play.City.String,
+			Region:    &play.Region.String,
+			Country:   &play.Country.String,
+			CreatedAt: play.CreatedAt.Time.String(),
+		})
+	}
+	return result, nil
+}
+
+func (r *queryGraphQLServer) GetDecodedPlaysByLocation(ctx context.Context, location core_gql.LocationFilter, limit *int) ([]*core_gql.DecodedPlay, error) {
+	l := int32(10)
+	if limit != nil {
+		l = int32(*limit)
+	}
+
+	// Convert optional string pointers to strings, empty string if nil
+	city := ""
+	if location.City != nil {
+		city = *location.City
+	}
+	region := ""
+	if location.Region != nil {
+		region = *location.Region
+	}
+	country := ""
+	if location.Country != nil {
+		country = *location.Country
+	}
+
+	plays, err := r.db.GetDecodedPlaysByLocation(ctx, db.GetDecodedPlaysByLocationParams{
+		Column1: city,
+		Column2: region,
+		Column3: country,
+		Limit:   l,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*core_gql.DecodedPlay{}
+	for _, play := range plays {
+		result = append(result, &core_gql.DecodedPlay{
+			TxHash:    play.TxHash,
+			UserID:    play.UserID,
+			TrackID:   play.TrackID,
+			PlayedAt:  play.PlayedAt.Time.String(),
+			Signature: play.Signature,
+			City:      &play.City.String,
+			Region:    &play.Region.String,
+			Country:   &play.Country.String,
+			CreatedAt: play.CreatedAt.Time.String(),
 		})
 	}
 	return result, nil

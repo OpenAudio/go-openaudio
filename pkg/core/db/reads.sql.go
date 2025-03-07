@@ -101,6 +101,130 @@ func (q *Queries) GetAppStateAtHeight(ctx context.Context, blockHeight int64) (G
 	return i, err
 }
 
+const getAvailableCities = `-- name: GetAvailableCities :many
+select city, region, country, count(*) as play_count
+from core_tx_decoded_plays
+where city is not null
+  and (nullif($1, '')::text is null or lower(country) = lower($1))
+  and (nullif($2, '')::text is null or lower(region) = lower($2))
+group by city, region, country
+order by count(*) desc
+limit $3
+`
+
+type GetAvailableCitiesParams struct {
+	Column1 interface{}
+	Column2 interface{}
+	Limit   int32
+}
+
+type GetAvailableCitiesRow struct {
+	City      pgtype.Text
+	Region    pgtype.Text
+	Country   pgtype.Text
+	PlayCount int64
+}
+
+func (q *Queries) GetAvailableCities(ctx context.Context, arg GetAvailableCitiesParams) ([]GetAvailableCitiesRow, error) {
+	rows, err := q.db.Query(ctx, getAvailableCities, arg.Column1, arg.Column2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAvailableCitiesRow
+	for rows.Next() {
+		var i GetAvailableCitiesRow
+		if err := rows.Scan(
+			&i.City,
+			&i.Region,
+			&i.Country,
+			&i.PlayCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAvailableCountries = `-- name: GetAvailableCountries :many
+select country, count(*) as play_count
+from core_tx_decoded_plays
+where country is not null
+group by country
+order by count(*) desc
+limit $1
+`
+
+type GetAvailableCountriesRow struct {
+	Country   pgtype.Text
+	PlayCount int64
+}
+
+func (q *Queries) GetAvailableCountries(ctx context.Context, limit int32) ([]GetAvailableCountriesRow, error) {
+	rows, err := q.db.Query(ctx, getAvailableCountries, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAvailableCountriesRow
+	for rows.Next() {
+		var i GetAvailableCountriesRow
+		if err := rows.Scan(&i.Country, &i.PlayCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAvailableRegions = `-- name: GetAvailableRegions :many
+select region, country, count(*) as play_count
+from core_tx_decoded_plays
+where region is not null
+  and (nullif($1, '')::text is null or lower(country) = lower($1))
+group by region, country
+order by count(*) desc
+limit $2
+`
+
+type GetAvailableRegionsParams struct {
+	Column1 interface{}
+	Limit   int32
+}
+
+type GetAvailableRegionsRow struct {
+	Region    pgtype.Text
+	Country   pgtype.Text
+	PlayCount int64
+}
+
+func (q *Queries) GetAvailableRegions(ctx context.Context, arg GetAvailableRegionsParams) ([]GetAvailableRegionsRow, error) {
+	rows, err := q.db.Query(ctx, getAvailableRegions, arg.Column1, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAvailableRegionsRow
+	for rows.Next() {
+		var i GetAvailableRegionsRow
+		if err := rows.Scan(&i.Region, &i.Country, &i.PlayCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getBlock = `-- name: GetBlock :one
 select rowid, height, chain_id, hash, proposer, created_at from core_blocks where height = $1
 `
@@ -138,6 +262,380 @@ func (q *Queries) GetBlockTransactions(ctx context.Context, blockID int64) ([]Co
 			&i.Index,
 			&i.TxHash,
 			&i.Transaction,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDecodedPlays = `-- name: GetDecodedPlays :many
+select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
+from core_tx_decoded_plays
+order by played_at desc
+limit $1
+`
+
+type GetDecodedPlaysRow struct {
+	TxHash    string
+	UserID    string
+	TrackID   string
+	PlayedAt  pgtype.Timestamptz
+	Signature string
+	City      pgtype.Text
+	Region    pgtype.Text
+	Country   pgtype.Text
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetDecodedPlays(ctx context.Context, limit int32) ([]GetDecodedPlaysRow, error) {
+	rows, err := q.db.Query(ctx, getDecodedPlays, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDecodedPlaysRow
+	for rows.Next() {
+		var i GetDecodedPlaysRow
+		if err := rows.Scan(
+			&i.TxHash,
+			&i.UserID,
+			&i.TrackID,
+			&i.PlayedAt,
+			&i.Signature,
+			&i.City,
+			&i.Region,
+			&i.Country,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDecodedPlaysByLocation = `-- name: GetDecodedPlaysByLocation :many
+select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
+from core_tx_decoded_plays
+where 
+    (nullif($1, '')::text is null or lower(city) = lower($1)) and
+    (nullif($2, '')::text is null or lower(region) = lower($2)) and
+    (nullif($3, '')::text is null or lower(country) = lower($3))
+order by played_at desc
+limit $4
+`
+
+type GetDecodedPlaysByLocationParams struct {
+	Column1 interface{}
+	Column2 interface{}
+	Column3 interface{}
+	Limit   int32
+}
+
+type GetDecodedPlaysByLocationRow struct {
+	TxHash    string
+	UserID    string
+	TrackID   string
+	PlayedAt  pgtype.Timestamptz
+	Signature string
+	City      pgtype.Text
+	Region    pgtype.Text
+	Country   pgtype.Text
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetDecodedPlaysByLocation(ctx context.Context, arg GetDecodedPlaysByLocationParams) ([]GetDecodedPlaysByLocationRow, error) {
+	rows, err := q.db.Query(ctx, getDecodedPlaysByLocation,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDecodedPlaysByLocationRow
+	for rows.Next() {
+		var i GetDecodedPlaysByLocationRow
+		if err := rows.Scan(
+			&i.TxHash,
+			&i.UserID,
+			&i.TrackID,
+			&i.PlayedAt,
+			&i.Signature,
+			&i.City,
+			&i.Region,
+			&i.Country,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDecodedPlaysByTimeRange = `-- name: GetDecodedPlaysByTimeRange :many
+select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
+from core_tx_decoded_plays
+where played_at between $1 and $2
+order by played_at desc
+limit $3
+`
+
+type GetDecodedPlaysByTimeRangeParams struct {
+	PlayedAt   pgtype.Timestamptz
+	PlayedAt_2 pgtype.Timestamptz
+	Limit      int32
+}
+
+type GetDecodedPlaysByTimeRangeRow struct {
+	TxHash    string
+	UserID    string
+	TrackID   string
+	PlayedAt  pgtype.Timestamptz
+	Signature string
+	City      pgtype.Text
+	Region    pgtype.Text
+	Country   pgtype.Text
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetDecodedPlaysByTimeRange(ctx context.Context, arg GetDecodedPlaysByTimeRangeParams) ([]GetDecodedPlaysByTimeRangeRow, error) {
+	rows, err := q.db.Query(ctx, getDecodedPlaysByTimeRange, arg.PlayedAt, arg.PlayedAt_2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDecodedPlaysByTimeRangeRow
+	for rows.Next() {
+		var i GetDecodedPlaysByTimeRangeRow
+		if err := rows.Scan(
+			&i.TxHash,
+			&i.UserID,
+			&i.TrackID,
+			&i.PlayedAt,
+			&i.Signature,
+			&i.City,
+			&i.Region,
+			&i.Country,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDecodedPlaysByTrack = `-- name: GetDecodedPlaysByTrack :many
+select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
+from core_tx_decoded_plays
+where track_id = $1
+order by played_at desc
+limit $2
+`
+
+type GetDecodedPlaysByTrackParams struct {
+	TrackID string
+	Limit   int32
+}
+
+type GetDecodedPlaysByTrackRow struct {
+	TxHash    string
+	UserID    string
+	TrackID   string
+	PlayedAt  pgtype.Timestamptz
+	Signature string
+	City      pgtype.Text
+	Region    pgtype.Text
+	Country   pgtype.Text
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetDecodedPlaysByTrack(ctx context.Context, arg GetDecodedPlaysByTrackParams) ([]GetDecodedPlaysByTrackRow, error) {
+	rows, err := q.db.Query(ctx, getDecodedPlaysByTrack, arg.TrackID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDecodedPlaysByTrackRow
+	for rows.Next() {
+		var i GetDecodedPlaysByTrackRow
+		if err := rows.Scan(
+			&i.TxHash,
+			&i.UserID,
+			&i.TrackID,
+			&i.PlayedAt,
+			&i.Signature,
+			&i.City,
+			&i.Region,
+			&i.Country,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDecodedPlaysByUser = `-- name: GetDecodedPlaysByUser :many
+select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
+from core_tx_decoded_plays
+where user_id = $1
+order by played_at desc
+limit $2
+`
+
+type GetDecodedPlaysByUserParams struct {
+	UserID string
+	Limit  int32
+}
+
+type GetDecodedPlaysByUserRow struct {
+	TxHash    string
+	UserID    string
+	TrackID   string
+	PlayedAt  pgtype.Timestamptz
+	Signature string
+	City      pgtype.Text
+	Region    pgtype.Text
+	Country   pgtype.Text
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetDecodedPlaysByUser(ctx context.Context, arg GetDecodedPlaysByUserParams) ([]GetDecodedPlaysByUserRow, error) {
+	rows, err := q.db.Query(ctx, getDecodedPlaysByUser, arg.UserID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDecodedPlaysByUserRow
+	for rows.Next() {
+		var i GetDecodedPlaysByUserRow
+		if err := rows.Scan(
+			&i.TxHash,
+			&i.UserID,
+			&i.TrackID,
+			&i.PlayedAt,
+			&i.Signature,
+			&i.City,
+			&i.Region,
+			&i.Country,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDecodedTx = `-- name: GetDecodedTx :one
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at from core_tx_decoded
+where tx_hash = $1 limit 1
+`
+
+func (q *Queries) GetDecodedTx(ctx context.Context, txHash string) (CoreTxDecoded, error) {
+	row := q.db.QueryRow(ctx, getDecodedTx, txHash)
+	var i CoreTxDecoded
+	err := row.Scan(
+		&i.ID,
+		&i.BlockHeight,
+		&i.TxIndex,
+		&i.TxHash,
+		&i.TxType,
+		&i.TxData,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getDecodedTxsByBlock = `-- name: GetDecodedTxsByBlock :many
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at from core_tx_decoded
+where block_height = $1
+order by tx_index asc
+`
+
+func (q *Queries) GetDecodedTxsByBlock(ctx context.Context, blockHeight int64) ([]CoreTxDecoded, error) {
+	rows, err := q.db.Query(ctx, getDecodedTxsByBlock, blockHeight)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CoreTxDecoded
+	for rows.Next() {
+		var i CoreTxDecoded
+		if err := rows.Scan(
+			&i.ID,
+			&i.BlockHeight,
+			&i.TxIndex,
+			&i.TxHash,
+			&i.TxType,
+			&i.TxData,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDecodedTxsByType = `-- name: GetDecodedTxsByType :many
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at from core_tx_decoded
+where tx_type = $1
+order by block_height desc, tx_index desc
+limit $2
+`
+
+type GetDecodedTxsByTypeParams struct {
+	TxType string
+	Limit  int32
+}
+
+func (q *Queries) GetDecodedTxsByType(ctx context.Context, arg GetDecodedTxsByTypeParams) ([]CoreTxDecoded, error) {
+	rows, err := q.db.Query(ctx, getDecodedTxsByType, arg.TxType, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CoreTxDecoded
+	for rows.Next() {
+		var i CoreTxDecoded
+		if err := rows.Scan(
+			&i.ID,
+			&i.BlockHeight,
+			&i.TxIndex,
+			&i.TxHash,
+			&i.TxType,
+			&i.TxData,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -216,6 +714,40 @@ func (q *Queries) GetLatestBlock(ctx context.Context) (CoreBlock, error) {
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getLatestDecodedTxs = `-- name: GetLatestDecodedTxs :many
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at from core_tx_decoded
+order by block_height desc, tx_index desc
+limit $1
+`
+
+func (q *Queries) GetLatestDecodedTxs(ctx context.Context, limit int32) ([]CoreTxDecoded, error) {
+	rows, err := q.db.Query(ctx, getLatestDecodedTxs, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CoreTxDecoded
+	for rows.Next() {
+		var i CoreTxDecoded
+		if err := rows.Scan(
+			&i.ID,
+			&i.BlockHeight,
+			&i.TxIndex,
+			&i.TxHash,
+			&i.TxType,
+			&i.TxData,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getLatestSlaRollup = `-- name: GetLatestSlaRollup :one

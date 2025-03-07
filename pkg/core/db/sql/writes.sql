@@ -63,3 +63,28 @@ where block_height = $3 and address = $4;
 -- name: InsertFailedStorageProof :exec
 insert into storage_proofs (block_height, address, status)
 values ($1, $2, 'fail');
+
+-- name: InsertDecodedTx :exec
+insert into core_tx_decoded (
+    block_height,
+    tx_index,
+    tx_hash,
+    tx_type,
+    tx_data,
+    created_at
+) values ($1, $2, $3, $4, $5, $6)
+on conflict (tx_hash) do nothing;
+
+-- name: InsertDecodedPlay :exec
+insert into core_tx_decoded_plays (
+    tx_hash,
+    user_id,
+    track_id,
+    played_at,
+    signature,
+    city,
+    region,
+    country,
+    created_at
+) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+on conflict (tx_hash, user_id, track_id) do nothing;

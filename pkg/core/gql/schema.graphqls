@@ -87,15 +87,87 @@ type SLAReport {
   timestamp: String!
 }
 
+type DecodedTransaction {
+  blockHeight: Int!
+  txIndex: Int!
+  txHash: String!
+  txType: String!
+  txData: String! # JSON string of decoded transaction data
+  createdAt: String!
+}
+
+type DecodedPlay {
+  txHash: String!
+  userId: String!
+  trackId: String!
+  playedAt: String!
+  signature: String!
+  city: String
+  region: String
+  country: String
+  createdAt: String!
+}
+
+input LocationFilter {
+  city: String
+  region: String
+  country: String
+}
+
+input LocationCityFilter {
+  country: String
+  region: String
+}
+
+input LocationRegionFilter {
+  country: String
+}
+
+type LocationCity {
+  city: String!
+  region: String!
+  country: String!
+  playCount: Int!
+}
+
+type LocationRegion {
+  region: String!
+  country: String!
+  playCount: Int!
+}
+
+type LocationCountry {
+  country: String!
+  playCount: Int!
+}
+
 type Query {
   # Block queries
   getBlock(height: Int): Block
   getLatestBlock: Block
   getLatestBlocks(limit: Int = 10): [Block!]!
   
+  # Location queries
+  getAvailableCities(filter: LocationCityFilter, limit: Int = 10): [LocationCity!]!
+  getAvailableRegions(filter: LocationRegionFilter, limit: Int = 10): [LocationRegion!]!
+  getAvailableCountries(limit: Int = 10): [LocationCountry!]!
+  
   # Transaction queries
   getTransaction(hash: String!): Transaction
   getLatestTransactions(limit: Int = 10): [Transaction!]!
+  
+  # Decoded Transaction queries
+  getDecodedTransaction(hash: String!): DecodedTransaction
+  getLatestDecodedTransactions(limit: Int = 10): [DecodedTransaction!]!
+  getDecodedTransactionsByType(txType: String!, limit: Int = 10): [DecodedTransaction!]!
+  getDecodedTransactionsByBlock(height: Int!): [DecodedTransaction!]!
+  
+  # Decoded Play queries
+  getDecodedPlays(limit: Int = 10): [DecodedPlay!]!
+  getDecodedPlaysByUser(userId: String!, limit: Int = 10): [DecodedPlay!]!
+  getDecodedPlaysByTrack(trackId: String!, limit: Int = 10): [DecodedPlay!]!
+  getDecodedPlaysByTimeRange(startTime: String!, endTime: String!, limit: Int = 10): [DecodedPlay!]!
+  getDecodedPlaysByLocation(location: LocationFilter!, limit: Int = 10): [DecodedPlay!]!
   
   # Analytics queries
   getAnalytics: Analytics!

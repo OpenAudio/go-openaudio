@@ -72,6 +72,81 @@ func (q *Queries) DeleteRegisteredNode(ctx context.Context, cometAddress string)
 	return err
 }
 
+const insertDecodedPlay = `-- name: InsertDecodedPlay :exec
+insert into core_tx_decoded_plays (
+    tx_hash,
+    user_id,
+    track_id,
+    played_at,
+    signature,
+    city,
+    region,
+    country,
+    created_at
+) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+on conflict (tx_hash, user_id, track_id) do nothing
+`
+
+type InsertDecodedPlayParams struct {
+	TxHash    string
+	UserID    string
+	TrackID   string
+	PlayedAt  pgtype.Timestamptz
+	Signature string
+	City      pgtype.Text
+	Region    pgtype.Text
+	Country   pgtype.Text
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) InsertDecodedPlay(ctx context.Context, arg InsertDecodedPlayParams) error {
+	_, err := q.db.Exec(ctx, insertDecodedPlay,
+		arg.TxHash,
+		arg.UserID,
+		arg.TrackID,
+		arg.PlayedAt,
+		arg.Signature,
+		arg.City,
+		arg.Region,
+		arg.Country,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertDecodedTx = `-- name: InsertDecodedTx :exec
+insert into core_tx_decoded (
+    block_height,
+    tx_index,
+    tx_hash,
+    tx_type,
+    tx_data,
+    created_at
+) values ($1, $2, $3, $4, $5, $6)
+on conflict (tx_hash) do nothing
+`
+
+type InsertDecodedTxParams struct {
+	BlockHeight int64
+	TxIndex     int32
+	TxHash      string
+	TxType      string
+	TxData      []byte
+	CreatedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) InsertDecodedTx(ctx context.Context, arg InsertDecodedTxParams) error {
+	_, err := q.db.Exec(ctx, insertDecodedTx,
+		arg.BlockHeight,
+		arg.TxIndex,
+		arg.TxHash,
+		arg.TxType,
+		arg.TxData,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const insertFailedStorageProof = `-- name: InsertFailedStorageProof :exec
 insert into storage_proofs (block_height, address, status)
 values ($1, $2, 'fail')

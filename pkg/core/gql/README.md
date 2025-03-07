@@ -89,6 +89,222 @@ query {
 }
 ```
 
+## Decoded Transactions
+
+### Get Decoded Transaction by Hash
+```graphql
+query {
+  getDecodedTransaction(hash: "0x123...") {
+    blockHeight
+    txIndex
+    txHash
+    txType
+    txData
+    createdAt
+  }
+}
+```
+
+### Get Latest Decoded Transactions
+```graphql
+query {
+  getLatestDecodedTransactions(limit: 10) {
+    blockHeight
+    txIndex
+    txHash
+    txType
+    txData
+    createdAt
+  }
+}
+```
+
+### Get Decoded Transactions by Type
+```graphql
+query {
+  getDecodedTransactionsByType(txType: "Plays", limit: 10) {
+    blockHeight
+    txIndex
+    txHash
+    txType
+    txData
+    createdAt
+  }
+}
+```
+
+### Get Decoded Transactions by Block Height
+```graphql
+query {
+  getDecodedTransactionsByBlock(height: 100) {
+    blockHeight
+    txIndex
+    txHash
+    txType
+    txData
+    createdAt
+  }
+}
+```
+
+### Get Decoded Plays
+```graphql
+query {
+  getDecodedPlays(limit: 10) {
+    txHash
+    userId
+    trackId
+    playedAt
+    signature
+    city
+    region
+    country
+    createdAt
+  }
+}
+```
+
+### Get Decoded Plays by User
+```graphql
+query {
+  getDecodedPlaysByUser(userId: "123", limit: 10) {
+    txHash
+    userId
+    trackId
+    playedAt
+    signature
+    city
+    region
+    country
+    createdAt
+  }
+}
+```
+
+### Get Decoded Plays by Track
+```graphql
+query {
+  getDecodedPlaysByTrack(trackId: "456", limit: 10) {
+    txHash
+    userId
+    trackId
+    playedAt
+    signature
+    city
+    region
+    country
+    createdAt
+  }
+}
+```
+
+### Get Decoded Plays by Time Range
+```graphql
+query {
+  getDecodedPlaysByTimeRange(
+    startTime: "2024-01-01T00:00:00Z"
+    endTime: "2024-01-02T00:00:00Z"
+    limit: 10
+  ) {
+    txHash
+    userId
+    trackId
+    playedAt
+    signature
+    city
+    region
+    country
+    createdAt
+  }
+}
+```
+
+### Get Decoded Plays by Location
+```graphql
+query {
+  getDecodedPlaysByLocation(
+    location: {
+      city: "San Francisco"      # Optional
+      region: "California"       # Optional
+      country: "United States"   # Optional
+    }
+    limit: 10
+  ) {
+    txHash
+    userId
+    trackId
+    playedAt
+    signature
+    city
+    region
+    country
+    createdAt
+  }
+}
+```
+
+### Get Available Cities
+```graphql
+query {
+  # Get cities with custom limit
+  getAvailableCities(limit: 1000) {
+    city
+    region
+    country
+    playCount
+  }
+
+  # Get cities with filters
+  getAvailableCitiesWithFilters: getAvailableCities(
+    filter: {
+      country: "United States"  # Optional: Filter cities by country
+      region: "California"      # Optional: Filter cities by region
+    },
+    limit: 1000                 # Optional: Increase limit to get more results (no unlimited option)
+  ) {
+    city
+    region
+    country
+    playCount
+  }
+}
+```
+
+### Get Available Regions
+```graphql
+query {
+  # Get regions with custom limit
+  getAvailableRegions(limit: 1000) {
+    region
+    country
+    playCount
+  }
+
+  # Get regions with filters
+  getAvailableRegionsWithFilters: getAvailableRegions(
+    filter: {
+      country: "United States"  # Optional: Filter regions by country
+    },
+    limit: 1000                 # Optional: Increase limit to get more results (no unlimited option)
+  ) {
+    region
+    country
+    playCount
+  }
+}
+```
+
+### Get Available Countries
+```graphql
+query {
+  # Get countries with custom limit
+  getAvailableCountries(limit: 1000) {
+    country
+    playCount
+  }
+}
+```
+
 ## Analytics
 
 ### Get Protocol Analytics
