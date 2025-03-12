@@ -90,7 +90,7 @@ func (s *Server) onPeerTick() error {
 			// don't retry because ticker will handle it
 			sdk, err := sdk.NewSdk(sdk.WithOapiendpoint(oapiendpoint), sdk.WithRetries(0), sdk.WithUsehttps(s.config.UseHttpsForSdk))
 			if err != nil {
-				s.logger.Errorf("could not init sdk for peer %s: %v", oapiendpoint, err)
+				s.logger.Debugf("could not init sdk for peer %s: %v", oapiendpoint, err)
 				return
 			}
 
