@@ -182,7 +182,6 @@ func (s *Server) GetBlock(ctx context.Context, req *core_proto.GetBlockRequest) 
 		return nil, err
 	}
 
-	txs := []*core_proto.SignedTransaction{}
 	tx_responses := []*core_proto.TransactionResponse{}
 	for _, tx := range blockTxs {
 		var transaction core_proto.SignedTransaction
@@ -190,7 +189,6 @@ func (s *Server) GetBlock(ctx context.Context, req *core_proto.GetBlockRequest) 
 		if err != nil {
 			return nil, err
 		}
-		txs = append(txs, &transaction)
 		res := &core_proto.TransactionResponse{
 			Txhash:      transaction.TxHash(),
 			Transaction: &transaction,
@@ -203,10 +201,10 @@ func (s *Server) GetBlock(ctx context.Context, req *core_proto.GetBlockRequest) 
 		Chainid:              s.config.GenesisFile.ChainID,
 		Proposer:             block.Proposer,
 		Height:               block.Height,
-		Transactions:         txs,
+		Transactions:         []*core_proto.SignedTransaction{},
 		CurrentHeight:        currentHeight,
 		Timestamp:            timestamppb.New(block.CreatedAt.Time),
-		TransactionResponses: tx_responses,
+		TransactionResponses: sortTransactionResponse(tx_responses),
 	}
 
 	return res, nil
