@@ -18,8 +18,10 @@ func TestSignAndRecover(t *testing.T) {
 	require.Nil(t, err)
 
 	registerEvent := &core_proto.ValidatorRegistration{
-		Endpoint:     "http://road-to-uninode.audius.co",
-		CometAddress: "12345",
+		CometAddress:   "12345",
+		DelegateWallet: "0xabcdef",
+		EthBlock:       20202,
+		Power:          10,
 	}
 
 	eventBytes, err := proto.Marshal(registerEvent)
