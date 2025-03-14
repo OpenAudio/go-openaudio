@@ -27,10 +27,11 @@ const (
 	ModuleDebug   = "debug"
 	ModulePprof   = "pprof"
 	ModuleComet   = "comet"
+	ModuleGraphQL = "graphql"
 )
 
 // once completely released, remove debug and comet
-var defaultModules = []string{ModuleConsole, ModuleDebug, ModulePprof, ModuleComet}
+var defaultModules = []string{ModuleConsole, ModuleDebug, ModulePprof, ModuleComet, ModuleGraphQL}
 
 type RollupInterval struct {
 	BlockInterval int
@@ -116,6 +117,7 @@ type Config struct {
 	DebugModule   bool
 	CometModule   bool
 	PprofModule   bool
+	GraphQLModule bool
 
 	/* Attestation Thresholds */
 	AttRegistrationMin       int   // minimum number of attestations needed to register a new node
@@ -123,9 +125,6 @@ type Config struct {
 	AttDeregistrationMin     int   // minimum number of attestations needed to deregister a node
 	AttDeregistrationRSize   int   // rendezvous size for deregistration attestations (should be >= to AttDeregistrationMin)
 	LegacyRegistrationCutoff int64 // Blocks after this height cannot register using the legacy tx (remove after next chain rollover)
-
-	/* Feature Flags */
-	EnablePoS bool
 }
 
 func ReadConfig(logger *common.Logger) (*Config, error) {
@@ -207,7 +206,6 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 
 		cfg.SlaRollupInterval = mainnetRollupInterval
 		cfg.ValidatorVotingPower = mainnetValidatorVotingPower
-		cfg.EnablePoS = true
 		cfg.LegacyRegistrationCutoff = 3000000 // delete after chain rollover
 
 	case "stage", "staging", "testnet":
@@ -218,7 +216,6 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		}
 		cfg.SlaRollupInterval = testnetRollupInterval
 		cfg.ValidatorVotingPower = testnetValidatorVotingPower
-		cfg.EnablePoS = true
 		cfg.LegacyRegistrationCutoff = 5000000 // delete after chain rollover
 
 	case "dev", "development", "devnet", "local", "sandbox":
@@ -233,7 +230,6 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		}
 		cfg.SlaRollupInterval = devnetRollupInterval
 		cfg.ValidatorVotingPower = devnetValidatorVotingPower
-		cfg.EnablePoS = true
 		cfg.LegacyRegistrationCutoff = 0
 	}
 
@@ -260,6 +256,8 @@ func enableModules(config *Config) {
 			config.PprofModule = true
 		case ModuleConsole:
 			config.ConsoleModule = true
+		case ModuleGraphQL:
+			config.GraphQLModule = GetEnvWithDefault("AUDIUSD_ENABLE_GRAPHQL", "false") == "true"
 		}
 	}
 }
