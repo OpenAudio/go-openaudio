@@ -11,31 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getAllEthAddressesOfRegisteredNodes = `-- name: GetAllEthAddressesOfRegisteredNodes :many
-select eth_address
-from core_validators
-`
-
-func (q *Queries) GetAllEthAddressesOfRegisteredNodes(ctx context.Context) ([]string, error) {
-	rows, err := q.db.Query(ctx, getAllEthAddressesOfRegisteredNodes)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var eth_address string
-		if err := rows.Scan(&eth_address); err != nil {
-			return nil, err
-		}
-		items = append(items, eth_address)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getAllRegisteredNodes = `-- name: GetAllRegisteredNodes :many
 select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key
 from core_validators

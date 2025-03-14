@@ -19,14 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Protocol_SendTransaction_FullMethodName              = "/protocol.Protocol/SendTransaction"
-	Protocol_ForwardTransaction_FullMethodName           = "/protocol.Protocol/ForwardTransaction"
-	Protocol_GetTransaction_FullMethodName               = "/protocol.Protocol/GetTransaction"
-	Protocol_GetBlock_FullMethodName                     = "/protocol.Protocol/GetBlock"
-	Protocol_GetNodeInfo_FullMethodName                  = "/protocol.Protocol/GetNodeInfo"
-	Protocol_Ping_FullMethodName                         = "/protocol.Protocol/Ping"
-	Protocol_GetRegistrationAttestation_FullMethodName   = "/protocol.Protocol/GetRegistrationAttestation"
-	Protocol_GetDeregistrationAttestation_FullMethodName = "/protocol.Protocol/GetDeregistrationAttestation"
+	Protocol_SendTransaction_FullMethodName    = "/protocol.Protocol/SendTransaction"
+	Protocol_ForwardTransaction_FullMethodName = "/protocol.Protocol/ForwardTransaction"
+	Protocol_GetTransaction_FullMethodName     = "/protocol.Protocol/GetTransaction"
+	Protocol_GetBlock_FullMethodName           = "/protocol.Protocol/GetBlock"
+	Protocol_GetNodeInfo_FullMethodName        = "/protocol.Protocol/GetNodeInfo"
+	Protocol_Ping_FullMethodName               = "/protocol.Protocol/Ping"
 )
 
 // ProtocolClient is the client API for Protocol service.
@@ -39,8 +37,6 @@ type ProtocolClient interface {
 	GetBlock(ctx context.Context, in *GetBlockRequest, opts ...grpc.CallOption) (*BlockResponse, error)
 	GetNodeInfo(ctx context.Context, in *GetNodeInfoRequest, opts ...grpc.CallOption) (*NodeInfoResponse, error)
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
-	GetRegistrationAttestation(ctx context.Context, in *RegistrationAttestationRequest, opts ...grpc.CallOption) (*RegistrationAttestationResponse, error)
-	GetDeregistrationAttestation(ctx context.Context, in *DeregistrationAttestationRequest, opts ...grpc.CallOption) (*DeregistrationAttestationResponse, error)
 }
 
 type protocolClient struct {
@@ -105,24 +101,6 @@ func (c *protocolClient) Ping(ctx context.Context, in *PingRequest, opts ...grpc
 	return out, nil
 }
 
-func (c *protocolClient) GetRegistrationAttestation(ctx context.Context, in *RegistrationAttestationRequest, opts ...grpc.CallOption) (*RegistrationAttestationResponse, error) {
-	out := new(RegistrationAttestationResponse)
-	err := c.cc.Invoke(ctx, Protocol_GetRegistrationAttestation_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *protocolClient) GetDeregistrationAttestation(ctx context.Context, in *DeregistrationAttestationRequest, opts ...grpc.CallOption) (*DeregistrationAttestationResponse, error) {
-	out := new(DeregistrationAttestationResponse)
-	err := c.cc.Invoke(ctx, Protocol_GetDeregistrationAttestation_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // ProtocolServer is the server API for Protocol service.
 // All implementations must embed UnimplementedProtocolServer
 // for forward compatibility
@@ -133,8 +111,6 @@ type ProtocolServer interface {
 	GetBlock(context.Context, *GetBlockRequest) (*BlockResponse, error)
 	GetNodeInfo(context.Context, *GetNodeInfoRequest) (*NodeInfoResponse, error)
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
-	GetRegistrationAttestation(context.Context, *RegistrationAttestationRequest) (*RegistrationAttestationResponse, error)
-	GetDeregistrationAttestation(context.Context, *DeregistrationAttestationRequest) (*DeregistrationAttestationResponse, error)
 	mustEmbedUnimplementedProtocolServer()
 }
 
@@ -159,12 +135,6 @@ func (UnimplementedProtocolServer) GetNodeInfo(context.Context, *GetNodeInfoRequ
 }
 func (UnimplementedProtocolServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Ping not implemented")
-}
-func (UnimplementedProtocolServer) GetRegistrationAttestation(context.Context, *RegistrationAttestationRequest) (*RegistrationAttestationResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetRegistrationAttestation not implemented")
-}
-func (UnimplementedProtocolServer) GetDeregistrationAttestation(context.Context, *DeregistrationAttestationRequest) (*DeregistrationAttestationResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetDeregistrationAttestation not implemented")
 }
 func (UnimplementedProtocolServer) mustEmbedUnimplementedProtocolServer() {}
 
@@ -287,42 +257,6 @@ func _Protocol_Ping_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Protocol_GetRegistrationAttestation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RegistrationAttestationRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProtocolServer).GetRegistrationAttestation(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Protocol_GetRegistrationAttestation_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProtocolServer).GetRegistrationAttestation(ctx, req.(*RegistrationAttestationRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Protocol_GetDeregistrationAttestation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeregistrationAttestationRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProtocolServer).GetDeregistrationAttestation(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Protocol_GetDeregistrationAttestation_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProtocolServer).GetDeregistrationAttestation(ctx, req.(*DeregistrationAttestationRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // Protocol_ServiceDesc is the grpc.ServiceDesc for Protocol service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -353,14 +287,6 @@ var Protocol_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Ping",
 			Handler:    _Protocol_Ping_Handler,
-		},
-		{
-			MethodName: "GetRegistrationAttestation",
-			Handler:    _Protocol_GetRegistrationAttestation_Handler,
-		},
-		{
-			MethodName: "GetDeregistrationAttestation",
-			Handler:    _Protocol_GetDeregistrationAttestation_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

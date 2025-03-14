@@ -29,8 +29,9 @@ const (
 
 // Called during FinalizeBlock. Keeps Proof of Storage subsystem up to date with current block.
 func (s *Server) syncPoS(_ context.Context, latestBlockHash []byte, latestBlockHeight int64) error {
-	if !s.cache.catchingUp.Load() && blockShouldTriggerNewPoSChallenge(latestBlockHash) {
+	if blockShouldTriggerNewPoSChallenge(latestBlockHash) {
 		s.logger.Info("PoS Challenge triggered", "height", latestBlockHeight, "hash", hex.EncodeToString(latestBlockHash))
+		// TODO: disable in block sync mode
 		go s.sendPoSChallengeToStorage(latestBlockHash, latestBlockHeight)
 	}
 	return nil

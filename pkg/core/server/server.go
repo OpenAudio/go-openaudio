@@ -51,7 +51,6 @@ type Server struct {
 
 	ethNodes          []*contracts.Node
 	duplicateEthNodes []*contracts.Node
-	missingEthNodes   []string
 	ethNodeMU         sync.RWMutex
 
 	awaitHttpServerReady chan struct{}
@@ -101,7 +100,6 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 
 		ethNodes:          ethNodes,
 		duplicateEthNodes: duplicateEthNodes,
-		missingEthNodes:   []string{},
 
 		awaitHttpServerReady: make(chan struct{}),
 		awaitGrpcServerReady: make(chan struct{}),

@@ -12,15 +12,11 @@ import (
 // a simple in memory cache of frequently queried things
 // maybe upgrade to something like bigcache later
 type Cache struct {
-	currentHeight atomic.Int64
-	catchingUp    atomic.Bool
+	currentHeight int64
 }
 
 func NewCache() *Cache {
-	c := &Cache{}
-	c.currentHeight.Store(0)
-	c.catchingUp.Store(true) // assume syncing on startup
-	return c
+	return &Cache{}
 }
 
 // maybe put a separate errgroup in here for things that
@@ -33,7 +29,7 @@ func (s *Server) startCache() error {
 		return fmt.Errorf("could not get initial status: %v", err)
 	}
 
-	s.cache.currentHeight.Store(status.SyncInfo.LatestBlockHeight)
+	atomic.StoreInt64(&s.cache.currentHeight, status.SyncInfo.LatestBlockHeight)
 
 	node := s.node
 	eb := node.EventBus()
@@ -60,7 +56,7 @@ func (s *Server) startCache() error {
 		case msg := <-subscription.Out():
 			blockEvent := msg.Data().(types.EventDataNewBlock)
 			blockHeight := blockEvent.Block.Height
-			s.cache.currentHeight.Store(blockHeight)
+			atomic.StoreInt64(&s.cache.currentHeight, blockHeight)
 		case err := <-subscription.Canceled():
 			s.logger.Errorf("Subscription cancelled: %v", err)
 			return nil

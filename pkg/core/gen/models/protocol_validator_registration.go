@@ -20,12 +20,6 @@ type ProtocolValidatorRegistration struct {
 	// comet address
 	CometAddress string `json:"cometAddress,omitempty"`
 
-	// deadline
-	Deadline string `json:"deadline,omitempty"`
-
-	// delegate wallet
-	DelegateWallet string `json:"delegateWallet,omitempty"`
-
 	// endpoint
 	Endpoint string `json:"endpoint,omitempty"`
 

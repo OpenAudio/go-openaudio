@@ -25,10 +25,6 @@ select *
 from core_validators
 order by comet_address;
 
--- name: GetAllEthAddressesOfRegisteredNodes :many
-select eth_address
-from core_validators;
-
 -- name: GetNodeByEndpoint :one
 select *
 from core_validators

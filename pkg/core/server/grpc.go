@@ -5,15 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"net"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/core/common"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/iancoleman/strcase"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
@@ -159,7 +158,7 @@ func (s *Server) GetTransaction(ctx context.Context, req *core_proto.GetTransact
 }
 
 func (s *Server) GetBlock(ctx context.Context, req *core_proto.GetBlockRequest) (*core_proto.BlockResponse, error) {
-	currentHeight := s.cache.currentHeight.Load()
+	currentHeight := atomic.LoadInt64(&s.cache.currentHeight)
 	if req.Height > currentHeight {
 		return &core_proto.BlockResponse{
 			Chainid:       s.config.GenesisFile.ChainID,
@@ -255,7 +254,7 @@ func (s *Server) startGRPC() error {
 
 // Utilities
 func (s *Server) getBlockRpcFallback(ctx context.Context, height int64) (*core_proto.BlockResponse, error) {
-	currentHeight := s.cache.currentHeight.Load()
+	currentHeight := s.cache.currentHeight
 	block, err := s.rpc.Block(ctx, &height)
 	if err != nil {
 		blockInFutureMsg := "must be less than or equal to the current blockchain height"
@@ -292,98 +291,4 @@ func (s *Server) getBlockRpcFallback(ctx context.Context, height int64) (*core_p
 	}
 
 	return res, nil
-}
-
-func (s *Server) GetRegistrationAttestation(ctx context.Context, req *core_proto.RegistrationAttestationRequest) (*core_proto.RegistrationAttestationResponse, error) {
-	reg := req.GetRegistration()
-	if reg == nil {
-		return nil, errors.New("empty registration attestation")
-	}
-
-	if reg.Deadline < s.cache.currentHeight.Load() || reg.Deadline > s.cache.currentHeight.Load()+maxRegistrationAttestationValidity {
-		return nil, fmt.Errorf("Cannot sign registration request with deadline %d (current height is %d)", reg.Deadline, s.cache.currentHeight.Load())
-	}
-
-	if !s.isNodeRegisteredOnEthereum(
-		ethcommon.HexToAddress(reg.DelegateWallet),
-		reg.Endpoint,
-		big.NewInt(reg.EthBlock),
-	) {
-		s.logger.Error(
-			"Could not attest to node eth registration",
-			"delegate",
-			reg.DelegateWallet,
-			"endpoint",
-			reg.Endpoint,
-			"eth block",
-			reg.EthBlock,
-		)
-		return nil, errors.New("node is not registered on ethereum")
-	}
-
-	regBytes, err := proto.Marshal(reg)
-	if err != nil {
-		s.logger.Error("could not marshal registration", "error", err)
-		return nil, err
-	}
-	sig, err := common.EthSign(s.config.EthereumKey, regBytes)
-	if err != nil {
-		s.logger.Error("could not sign registration", "error", err)
-		return nil, err
-	}
-
-	return &core_proto.RegistrationAttestationResponse{
-		Signature:    sig,
-		Registration: reg,
-	}, nil
-}
-
-func (s *Server) GetDeregistrationAttestation(ctx context.Context, req *core_proto.DeregistrationAttestationRequest) (*core_proto.DeregistrationAttestationResponse, error) {
-	dereg := req.GetDeregistration()
-	if dereg == nil {
-		return nil, errors.New("empty deregistration attestation")
-	}
-
-	node, err := s.db.GetRegisteredNodeByCometAddress(ctx, dereg.CometAddress)
-	if err != nil {
-		return nil, fmt.Errorf("Could not attest deregistration for '%s': %v", dereg.CometAddress, err)
-	}
-
-	ethBlock := new(big.Int)
-	ethBlock, ok := ethBlock.SetString(node.EthBlock, 10)
-	if !ok {
-		return nil, fmt.Errorf("Could not format eth block '%s' for node '%s'", node.EthBlock, node.Endpoint)
-	}
-
-	if s.isNodeRegisteredOnEthereum(
-		ethcommon.HexToAddress(node.EthAddress),
-		node.Endpoint,
-		ethBlock,
-	) {
-		s.logger.Error("Could not attest to node eth deregistration: node is still registered",
-			"cometAddress",
-			dereg.CometAddress,
-			"ethAddress",
-			node.EthAddress,
-			"endpoint",
-			node.Endpoint,
-		)
-		return nil, errors.New("node is still registered on ethereum")
-	}
-
-	deregBytes, err := proto.Marshal(dereg)
-	if err != nil {
-		s.logger.Error("could not marshal deregistration", "error", err)
-		return nil, err
-	}
-	sig, err := common.EthSign(s.config.EthereumKey, deregBytes)
-	if err != nil {
-		s.logger.Error("could not sign deregistration", "error", err)
-		return nil, err
-	}
-
-	return &core_proto.DeregistrationAttestationResponse{
-		Signature:      sig,
-		Deregistration: dereg,
-	}, nil
 }

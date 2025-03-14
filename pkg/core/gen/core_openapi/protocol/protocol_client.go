@@ -58,11 +58,7 @@ type ClientService interface {
 
 	ProtocolGetBlock(params *ProtocolGetBlockParams, opts ...ClientOption) (*ProtocolGetBlockOK, error)
 
-	ProtocolGetDeregistrationAttestation(params *ProtocolGetDeregistrationAttestationParams, opts ...ClientOption) (*ProtocolGetDeregistrationAttestationOK, error)
-
 	ProtocolGetNodeInfo(params *ProtocolGetNodeInfoParams, opts ...ClientOption) (*ProtocolGetNodeInfoOK, error)
-
-	ProtocolGetRegistrationAttestation(params *ProtocolGetRegistrationAttestationParams, opts ...ClientOption) (*ProtocolGetRegistrationAttestationOK, error)
 
 	ProtocolGetTransaction(params *ProtocolGetTransactionParams, opts ...ClientOption) (*ProtocolGetTransactionOK, error)
 
@@ -148,43 +144,6 @@ func (a *Client) ProtocolGetBlock(params *ProtocolGetBlockParams, opts ...Client
 }
 
 /*
-ProtocolGetDeregistrationAttestation protocol get deregistration attestation API
-*/
-func (a *Client) ProtocolGetDeregistrationAttestation(params *ProtocolGetDeregistrationAttestationParams, opts ...ClientOption) (*ProtocolGetDeregistrationAttestationOK, error) {
-	// TODO: Validate the params before sending
-	if params == nil {
-		params = NewProtocolGetDeregistrationAttestationParams()
-	}
-	op := &runtime.ClientOperation{
-		ID:                 "Protocol_GetDeregistrationAttestation",
-		Method:             "POST",
-		PathPattern:        "/core/grpc/attest/deregistration",
-		ProducesMediaTypes: []string{"application/json"},
-		ConsumesMediaTypes: []string{"application/json"},
-		Schemes:            []string{"http"},
-		Params:             params,
-		Reader:             &ProtocolGetDeregistrationAttestationReader{formats: a.formats},
-		Context:            params.Context,
-		Client:             params.HTTPClient,
-	}
-	for _, opt := range opts {
-		opt(op)
-	}
-
-	result, err := a.transport.Submit(op)
-	if err != nil {
-		return nil, err
-	}
-	success, ok := result.(*ProtocolGetDeregistrationAttestationOK)
-	if ok {
-		return success, nil
-	}
-	// unexpected success response
-	unexpectedSuccess := result.(*ProtocolGetDeregistrationAttestationDefault)
-	return nil, runtime.NewAPIError("unexpected success response: content available as default response in error", unexpectedSuccess, unexpectedSuccess.Code())
-}
-
-/*
 ProtocolGetNodeInfo protocol get node info API
 */
 func (a *Client) ProtocolGetNodeInfo(params *ProtocolGetNodeInfoParams, opts ...ClientOption) (*ProtocolGetNodeInfoOK, error) {
@@ -218,43 +177,6 @@ func (a *Client) ProtocolGetNodeInfo(params *ProtocolGetNodeInfoParams, opts ...
 	}
 	// unexpected success response
 	unexpectedSuccess := result.(*ProtocolGetNodeInfoDefault)
-	return nil, runtime.NewAPIError("unexpected success response: content available as default response in error", unexpectedSuccess, unexpectedSuccess.Code())
-}
-
-/*
-ProtocolGetRegistrationAttestation protocol get registration attestation API
-*/
-func (a *Client) ProtocolGetRegistrationAttestation(params *ProtocolGetRegistrationAttestationParams, opts ...ClientOption) (*ProtocolGetRegistrationAttestationOK, error) {
-	// TODO: Validate the params before sending
-	if params == nil {
-		params = NewProtocolGetRegistrationAttestationParams()
-	}
-	op := &runtime.ClientOperation{
-		ID:                 "Protocol_GetRegistrationAttestation",
-		Method:             "POST",
-		PathPattern:        "/core/grpc/attest/registration",
-		ProducesMediaTypes: []string{"application/json"},
-		ConsumesMediaTypes: []string{"application/json"},
-		Schemes:            []string{"http"},
-		Params:             params,
-		Reader:             &ProtocolGetRegistrationAttestationReader{formats: a.formats},
-		Context:            params.Context,
-		Client:             params.HTTPClient,
-	}
-	for _, opt := range opts {
-		opt(op)
-	}
-
-	result, err := a.transport.Submit(op)
-	if err != nil {
-		return nil, err
-	}
-	success, ok := result.(*ProtocolGetRegistrationAttestationOK)
-	if ok {
-		return success, nil
-	}
-	// unexpected success response
-	unexpectedSuccess := result.(*ProtocolGetRegistrationAttestationDefault)
 	return nil, runtime.NewAPIError("unexpected success response: content available as default response in error", unexpectedSuccess, unexpectedSuccess.Code())
 }
 
