@@ -39,7 +39,10 @@ func (s *Server) onSyncTick() error {
 	}
 
 	if status.SyncInfo.CatchingUp {
+		s.cache.catchingUp.Store(true)
 		return ErrRpcNotSynced
+	} else {
+		s.cache.catchingUp.Store(false)
 	}
 
 	return nil

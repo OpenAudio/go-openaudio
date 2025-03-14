@@ -12,19 +12,13 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// ProtocolValidatorRegistration protocol validator registration
+// ProtocolValidatorRegistrationLegacy protocol validator registration legacy
 //
-// swagger:model protocolValidatorRegistration
-type ProtocolValidatorRegistration struct {
+// swagger:model protocolValidatorRegistrationLegacy
+type ProtocolValidatorRegistrationLegacy struct {
 
 	// comet address
 	CometAddress string `json:"cometAddress,omitempty"`
-
-	// deadline
-	Deadline string `json:"deadline,omitempty"`
-
-	// delegate wallet
-	DelegateWallet string `json:"delegateWallet,omitempty"`
 
 	// endpoint
 	Endpoint string `json:"endpoint,omitempty"`
@@ -46,18 +40,18 @@ type ProtocolValidatorRegistration struct {
 	SpID string `json:"spId,omitempty"`
 }
 
-// Validate validates this protocol validator registration
-func (m *ProtocolValidatorRegistration) Validate(formats strfmt.Registry) error {
+// Validate validates this protocol validator registration legacy
+func (m *ProtocolValidatorRegistrationLegacy) Validate(formats strfmt.Registry) error {
 	return nil
 }
 
-// ContextValidate validates this protocol validator registration based on context it is used
-func (m *ProtocolValidatorRegistration) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+// ContextValidate validates this protocol validator registration legacy based on context it is used
+func (m *ProtocolValidatorRegistrationLegacy) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	return nil
 }
 
 // MarshalBinary interface implementation
-func (m *ProtocolValidatorRegistration) MarshalBinary() ([]byte, error) {
+func (m *ProtocolValidatorRegistrationLegacy) MarshalBinary() ([]byte, error) {
 	if m == nil {
 		return nil, nil
 	}
@@ -65,8 +59,8 @@ func (m *ProtocolValidatorRegistration) MarshalBinary() ([]byte, error) {
 }
 
 // UnmarshalBinary interface implementation
-func (m *ProtocolValidatorRegistration) UnmarshalBinary(b []byte) error {
-	var res ProtocolValidatorRegistration
+func (m *ProtocolValidatorRegistrationLegacy) UnmarshalBinary(b []byte) error {
+	var res ProtocolValidatorRegistrationLegacy
 	if err := swag.ReadJSON(b, &res); err != nil {
 		return err
 	}

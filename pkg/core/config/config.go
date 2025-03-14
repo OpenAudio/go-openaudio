@@ -27,10 +27,11 @@ const (
 	ModuleDebug   = "debug"
 	ModulePprof   = "pprof"
 	ModuleComet   = "comet"
+	ModuleGraphQL = "graphql"
 )
 
 // once completely released, remove debug and comet
-var defaultModules = []string{ModuleConsole, ModuleDebug, ModulePprof, ModuleComet}
+var defaultModules = []string{ModuleConsole, ModuleDebug, ModulePprof, ModuleComet, ModuleGraphQL}
 
 type RollupInterval struct {
 	BlockInterval int
@@ -116,9 +117,13 @@ type Config struct {
 	DebugModule   bool
 	CometModule   bool
 	PprofModule   bool
+	GraphQLModule bool
 
-	/* Feature Flags */
-	EnablePoS bool
+	/* Attestation Thresholds */
+	AttRegistrationMin     int // minimum number of attestations needed to register a new node
+	AttRegistrationRSize   int // rendezvous size for registration attestations (should be >= to AttRegistrationMin)
+	AttDeregistrationMin   int // minimum number of attestations needed to deregister a node
+	AttDeregistrationRSize int // rendezvous size for deregistration attestations (should be >= to AttDeregistrationMin)
 }
 
 func ReadConfig(logger *common.Logger) (*Config, error) {
@@ -145,6 +150,11 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	// (default) approximately one week of blocks
 	cfg.RetainHeight = int64(getEnvIntWithDefault("retainHeight", 604800))
 	cfg.Archive = GetEnvWithDefault("archive", "false") == "true"
+
+	cfg.AttRegistrationMin = 5
+	cfg.AttRegistrationRSize = 10
+	cfg.AttDeregistrationMin = 5
+	cfg.AttDeregistrationRSize = 10
 
 	// check if discovery specific key is set
 	isDiscovery := os.Getenv("audius_delegate_private_key") != ""
@@ -195,7 +205,6 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 
 		cfg.SlaRollupInterval = mainnetRollupInterval
 		cfg.ValidatorVotingPower = mainnetValidatorVotingPower
-		cfg.EnablePoS = true
 
 	case "stage", "staging", "testnet":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress, StagePersistentPeers, 3))
@@ -205,7 +214,6 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		}
 		cfg.SlaRollupInterval = testnetRollupInterval
 		cfg.ValidatorVotingPower = testnetValidatorVotingPower
-		cfg.EnablePoS = true
 
 	case "dev", "development", "devnet", "local", "sandbox":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", DevPersistentPeers)
@@ -219,7 +227,6 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		}
 		cfg.SlaRollupInterval = devnetRollupInterval
 		cfg.ValidatorVotingPower = devnetValidatorVotingPower
-		cfg.EnablePoS = true
 	}
 
 	// Disable ssl for local postgres db connection
@@ -245,6 +252,8 @@ func enableModules(config *Config) {
 			config.PprofModule = true
 		case ModuleConsole:
 			config.ConsoleModule = true
+		case ModuleGraphQL:
+			config.GraphQLModule = GetEnvWithDefault("AUDIUSD_ENABLE_GRAPHQL", "false") == "true"
 		}
 	}
 }

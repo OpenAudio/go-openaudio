@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2024-09-05T00:00:00.0000Z",
-  "chain_id": "audius-mainnet-alpha",
+  "genesis_time": "2025-03-14T00:00:00.0000Z",
+  "chain_id": "audius-mainnet-alpha-beta",
   "initial_height": "0",
   "consensus_params": {
     "block": {
@@ -94,13 +94,22 @@
       "name": "dn1.monophonic.digital"
     },
     {
-      "address": "D494895A1AF5760D68566E4FEBF6D98DE62CD575",
+      "address": "25A80EB8F8755D73AB9B4E0E5CF31DCC0B757AAB",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "AEHT8oCDyODTu3iczFD+gLv7OX1zifYEbCEWj2gZjFo="
+        "value": "QVs6XaJzIhDyizD4fLLFmOMzXO/m0ER9DpI9dwiuUkY="
       },
       "power": "10",
-      "name": "dn2.monophonic.digital"
+      "name": "audius-cn1.tikilabs.com"
+    },
+    {
+      "address": "2C176C34A2FA881B72ACFEDC1E3815710C4F1BD5",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "Jj5c4uWxl1j9F+vYVllaJwLeLqqeDHEbwDFoE4sQO2k="
+      },
+      "power": "10",
+      "name": "audius-dn1.tikilabs.com"
     }
   ],
   "app_hash": ""

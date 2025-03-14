@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -229,7 +228,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 			if err != nil {
 				s.logger.Errorf("error finalizing event: %v", err)
 				txs[i] = &abcitypes.ExecTxResult{Code: 2}
-			} else if vr := signedTx.GetValidatorRegistration(); vr != nil {
+			} else if vr := signedTx.GetValidatorRegistration(); vr != nil { // TODO: delete legacy registration after chain rollover
 				vrPubKey := ed25519.PubKey(vr.GetPubKey())
 				vrAddr := vrPubKey.Address().String()
 				if _, ok := validatorUpdatesMap[vrAddr]; !ok {
@@ -238,6 +237,27 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 						PubKeyBytes: vr.PubKey,
 						PubKeyType:  "ed25519",
 					}
+				}
+			} else if att := signedTx.GetAttestation(); att != nil && att.GetValidatorRegistration() != nil {
+				vr := att.GetValidatorRegistration()
+				vrPubKey := ed25519.PubKey(vr.GetPubKey())
+				vrAddr := vrPubKey.Address().String()
+				if _, ok := validatorUpdatesMap[vrAddr]; !ok {
+					validatorUpdatesMap[vrAddr] = abcitypes.ValidatorUpdate{
+						Power:       vr.Power,
+						PubKeyBytes: vr.PubKey,
+						PubKeyType:  "ed25519",
+					}
+				}
+			} else if att := signedTx.GetAttestation(); att != nil && att.GetValidatorDeregistration() != nil {
+				vr := att.GetValidatorDeregistration()
+				vrPubKey := ed25519.PubKey(vr.GetPubKey())
+				vrAddr := vrPubKey.Address().String()
+				// intentionally override any existing updates
+				validatorUpdatesMap[vrAddr] = abcitypes.ValidatorUpdate{
+					Power:       int64(0),
+					PubKeyBytes: vr.PubKey,
+					PubKeyType:  "ed25519",
 				}
 			} else if vd := signedTx.GetValidatorDeregistration(); vd != nil {
 				vdPubKey := ed25519.PubKey(vd.GetPubKey())
@@ -260,63 +280,6 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				s.logger.Errorf("failed to store transaction: %v", err)
 			}
 
-			var txType string
-			switch signedTx.GetTransaction().(type) {
-			case *core_proto.SignedTransaction_Plays:
-				txType = "Plays"
-			case *core_proto.SignedTransaction_ValidatorRegistration:
-				txType = "ValidatorRegistration"
-			case *core_proto.SignedTransaction_ValidatorDeregistration:
-				txType = "ValidatorDeregistration"
-			case *core_proto.SignedTransaction_SlaRollup:
-				txType = "SlaRollup"
-			case *core_proto.SignedTransaction_StorageProof:
-				txType = "StorageProof"
-			case *core_proto.SignedTransaction_StorageProofVerification:
-				txType = "StorageProofVerification"
-			case *core_proto.SignedTransaction_ManageEntity:
-				txType = "ManageEntity"
-			default:
-				txType = "Unknown"
-			}
-
-			if err := s.getDb().InsertDecodedTx(ctx, db.InsertDecodedTxParams{
-				BlockHeight: req.Height,
-				TxIndex:     int32(i),
-				TxHash:      txhash,
-				TxType:      txType,
-				TxData: func() []byte {
-					jsonBytes, err := json.Marshal(signedTx)
-					if err != nil {
-						s.logger.Errorf("failed to marshal tx to json: %v", err)
-						return []byte("{}")
-					}
-					return jsonBytes
-				}(),
-				CreatedAt: pgtype.Timestamptz{Time: req.Time, Valid: true},
-			}); err != nil {
-				s.logger.Errorf("failed to write decoded transaction: %v", err)
-			}
-
-			if plays := signedTx.GetPlays(); plays != nil {
-				for _, play := range plays.Plays {
-					if err := s.getDb().InsertDecodedPlay(ctx, db.InsertDecodedPlayParams{
-						TxHash:    txhash,
-						UserID:    play.UserId,
-						TrackID:   play.TrackId,
-						PlayedAt:  pgtype.Timestamptz{Time: play.Timestamp.AsTime(), Valid: true},
-						Signature: play.Signature,
-						City:      pgtype.Text{String: play.City, Valid: play.City != ""},
-						Region:    pgtype.Text{String: play.Region, Valid: play.Region != ""},
-						Country:   pgtype.Text{String: play.Country, Valid: play.Country != ""},
-						CreatedAt: pgtype.Timestamptz{Time: req.Time, Valid: true},
-					}); err != nil {
-						s.logger.Errorf("failed to insert play record: %v", err)
-						continue
-					}
-				}
-			}
-
 			if err := s.persistTxStat(ctx, finalizedTx, txhash, req.Height, req.Time); err != nil {
 				// don't halt consensus on this
 				s.logger.Errorf("failed to persist tx stat: %v", err)
@@ -331,10 +294,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 		}
 	}
 
-	// Handle proof of storage
-	if s.config.EnablePoS {
-		s.syncPoS(ctx, req.Hash, req.Height)
-	}
+	s.syncPoS(ctx, req.Hash, req.Height)
 
 	nextAppHash := s.serializeAppState([]byte{}, req.GetTxs())
 
@@ -512,13 +472,13 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 
 	switch signedTx.Transaction.(type) {
 	case *core_proto.SignedTransaction_Plays:
-	case *core_proto.SignedTransaction_ValidatorRegistration:
-		if err := s.isValidRegisterNodeTx(signedTx); err != nil {
-			s.logger.Error("Invalid block: invalid register node tx", "error", err)
+	case *core_proto.SignedTransaction_Attestation:
+		if err := s.isValidAttestation(ctx, signedTx, blockHeight); err != nil {
+			s.logger.Error("Invalid block: invalid attestation tx", "error", err)
 			return false, nil
 		}
 	case *core_proto.SignedTransaction_ValidatorDeregistration:
-		if err := s.isValidDeregisterNodeTx(signedTx, misbehavior); err != nil {
+		if err := s.isValidDeregisterMisbehavingNodeTx(signedTx, misbehavior); err != nil {
 			s.logger.Error("Invalid block: invalid deregister node tx", "error", err)
 			return false, nil
 		}
@@ -551,10 +511,12 @@ func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.Finaliz
 		return s.finalizePlayTransaction(ctx, msg)
 	case *core_proto.SignedTransaction_ManageEntity:
 		return s.finalizeManageEntity(ctx, msg)
+	case *core_proto.SignedTransaction_Attestation:
+		return s.finalizeAttestation(ctx, msg, req.Height)
 	case *core_proto.SignedTransaction_ValidatorRegistration:
-		return s.finalizeRegisterNode(ctx, msg, req.Time)
+		return s.finalizeLegacyRegisterNode(ctx, msg, blockHeight)
 	case *core_proto.SignedTransaction_ValidatorDeregistration:
-		return s.finalizeDeregisterNode(ctx, msg, misbehavior)
+		return s.finalizeDeregisterMisbehavingNode(ctx, msg, misbehavior)
 	case *core_proto.SignedTransaction_SlaRollup:
 		return s.finalizeSlaRollup(ctx, msg, txHash)
 	case *core_proto.SignedTransaction_StorageProof:

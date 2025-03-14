@@ -18,6 +18,9 @@ import (
 // swagger:model protocolSignedTransaction
 type ProtocolSignedTransaction struct {
 
+	// attestation
+	Attestation *ProtocolAttestation `json:"attestation,omitempty"`
+
 	// manage entity
 	ManageEntity *ProtocolManageEntityLegacy `json:"manageEntity,omitempty"`
 
@@ -40,15 +43,19 @@ type ProtocolSignedTransaction struct {
 	StorageProofVerification *ProtocolStorageProofVerification `json:"storageProofVerification,omitempty"`
 
 	// validator deregistration
-	ValidatorDeregistration *ProtocolValidatorDeregistration `json:"validatorDeregistration,omitempty"`
+	ValidatorDeregistration *ProtocolValidatorMisbehaviorDeregistration `json:"validatorDeregistration,omitempty"`
 
 	// validator registration
-	ValidatorRegistration *ProtocolValidatorRegistration `json:"validatorRegistration,omitempty"`
+	ValidatorRegistration *ProtocolValidatorRegistrationLegacy `json:"validatorRegistration,omitempty"`
 }
 
 // Validate validates this protocol signed transaction
 func (m *ProtocolSignedTransaction) Validate(formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.validateAttestation(formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.validateManageEntity(formats); err != nil {
 		res = append(res, err)
@@ -81,6 +88,25 @@ func (m *ProtocolSignedTransaction) Validate(formats strfmt.Registry) error {
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *ProtocolSignedTransaction) validateAttestation(formats strfmt.Registry) error {
+	if swag.IsZero(m.Attestation) { // not required
+		return nil
+	}
+
+	if m.Attestation != nil {
+		if err := m.Attestation.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("attestation")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("attestation")
+			}
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -221,6 +247,10 @@ func (m *ProtocolSignedTransaction) validateValidatorRegistration(formats strfmt
 func (m *ProtocolSignedTransaction) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.contextValidateAttestation(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateManageEntity(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -252,6 +282,27 @@ func (m *ProtocolSignedTransaction) ContextValidate(ctx context.Context, formats
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *ProtocolSignedTransaction) contextValidateAttestation(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.Attestation != nil {
+
+		if swag.IsZero(m.Attestation) { // not required
+			return nil
+		}
+
+		if err := m.Attestation.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("attestation")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("attestation")
+			}
+			return err
+		}
+	}
+
 	return nil
 }
 
