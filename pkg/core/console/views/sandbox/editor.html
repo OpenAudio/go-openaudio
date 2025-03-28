@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Audius SDK Sandbox</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: system-ui, sans-serif;
+    }
+
+    #container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      padding: 12px;
+      gap: 10px;
+    }
+
+    #editor {
+      flex: 1;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    #buttons {
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      padding: 8px 16px;
+      font-size: 16px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      background-color: #007acc;
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    button:hover {
+      background-color: #005fa3;
+    }
+
+    #output {
+      height: 30vh;
+      padding: 12px;
+      border-radius: 6px;
+      overflow-y: auto;
+      background-color: #1e1e1e;
+      color: #dcdcdc;
+      font-family: "Fira Code", Consolas, monospace;
+      font-size: 14px;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+
+    @media (prefers-color-scheme: light) {
+      #output {
+        background-color: #f3f3f3;
+        color: #111;
+      }
+    }
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/@audius/sdk@latest/dist/sdk.min.js"></script>
+  <script type="module">
+    import * as viem from 'https://esm.sh/viem@2';
+    window.viem = viem;
+  </script>
+
+  <!-- Inject environment variables -->
+  <script>
+    window.AppEnv = {
+      environment: "{{ .Environment }}",
+      rpcUrl: "{{ .RPCUrl }}",
+      chainId: "{{ .ChainID }}"
+    };
+  </script>
+</head>
+
+<body>
+  <div id="container">
+    <div id="editor"></div>
+    <div id="buttons">
+      <button id="run">Run (⌘/Ctrl + S)</button>
+      <button id="clear">Clear (⌘/Ctrl + K)</button>
+    </div>
+    <div id="output"></div>
+  </div>
+
+  <script>
+    window.MonacoEnvironment = {
+      getWorkerUrl: function (_moduleId, label) {
+        return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
+          self.MonacoEnvironment = { baseUrl: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/' };
+          importScripts('https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/base/worker/workerMain.js');
+        `)}`;
+      }
+    };
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
+  <script>
+    let editor;
+
+    const defaultCode = `
+// Uses environment: ${window.AppEnv.environment}
+// RPC URL: ${window.AppEnv.rpcUrl}
+// Chain ID: ${window.AppEnv.chainId}
+
+export {};
+
+const { createWalletClient, custom } = window.viem;
+
+const metamask = window.ethereum?.providers?.find(p => p.isMetaMask) || window.ethereum;
+if (!metamask) {
+  alert('MetaMask not found');
+  throw new Error('MetaMask required');
+}
+
+const [address] = await metamask.request({ method: 'eth_requestAccounts' });
+console.log('🦊 Connected address:', address);
+
+const audiusChain = {
+  id: ${window.AppEnv.chainId},
+  name: 'Audius ${window.AppEnv.environment}',
+  nativeCurrency: { name: '-', symbol: '-', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['${window.AppEnv.rpcUrl}'] }
+  }
+};
+
+const walletClient = createWalletClient({
+  account: address,
+  chain: audiusChain,
+  transport: custom(metamask),
+});
+await walletClient.addChain({ chain: audiusChain })
+await walletClient.switchChain({ id: audiusChain.id }) 
+
+const sdk = window.audiusSdk({
+  appName: 'MonacoApp',
+  environment: window.AppEnv.environment,
+  services: { audiusWalletClient: walletClient }
+});
+
+console.log('✅ Audius SDK ready:', sdk);
+
+const userId = (
+  await audiusSdk.users.getUserByHandle({
+    handle: 'Your Audius handle goes here',
+  })
+).data?.id
+
+const res = await sdk.users.updateProfile({
+  userId,
+  metadata: {
+    bio: 'from the Audius SDK Sandbox 😎',
+  },
+  onProgress: (p) => console.log('⏳ Progress:', p),
+});
+
+console.log('🎉 Profile updated:', res);
+
+`;
+
+    function initializeMonaco() {
+      require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs' } });
+      require(['vs/editor/editor.main'], function () {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        monaco.editor.setTheme(prefersDark ? 'vs-dark' : 'vs');
+
+        monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+          target: monaco.languages.typescript.ScriptTarget.ES2020,
+          module: monaco.languages.typescript.ModuleKind.ESNext,
+          moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+          allowJs: true,
+          allowNonTsExtensions: true,
+          esModuleInterop: true,
+          noEmit: true,
+        });
+
+        editor = monaco.editor.create(document.getElementById('editor'), {
+          value: defaultCode,
+          language: 'typescript',
+          theme: prefersDark ? 'vs-dark' : 'vs',
+          automaticLayout: true,
+          fontFamily: '"Fira Code", Consolas, monospace',
+          fontSize: 14,
+          padding: { top: 12, bottom: 12 }
+        });
+
+        const output = document.getElementById('output');
+        const runButton = document.getElementById('run');
+        const clearButton = document.getElementById('clear');
+
+        async function runCode() {
+          output.innerHTML = '';
+          const logs = [];
+
+          const writeToOutput = (label, args, color = 'limegreen') => {
+            const formatted = args.map(arg => {
+              try {
+                return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg);
+              } catch {
+                return '[Unserializable]';
+              }
+            }).join(' ');
+            logs.push(`<span style="color:${color};">${label}: ${formatted}</span>`);
+            output.innerHTML = logs.join('<br>');
+          };
+
+          ['log', 'info', 'warn', 'error'].forEach(method => {
+            console[`${method}Original`] = console[method];
+            console[method] = (...args) => {
+              const color =
+                method === 'error' ? 'red' :
+                  method === 'warn' ? 'orange' :
+                    'limegreen';
+              writeToOutput(method, args, color);
+              console[`${method}Original`](...args);
+            };
+          });
+
+          console.logJSON = function (label, obj) {
+            try {
+              const json = JSON.stringify(obj, null, 2);
+              logs.push(`<span style="color:deepskyblue;">${label}:</span><pre>${json}</pre>`);
+              output.innerHTML = logs.join('<br>');
+            } catch (e) {
+              console.error('Failed to stringify object', e);
+            }
+          };
+
+          try {
+            const code = editor.getValue();
+            const blob = new Blob([code], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+            await import(url);
+            URL.revokeObjectURL(url);
+          } catch (e) {
+            console.error('Execution error:', e);
+          }
+
+          ['log', 'info', 'warn', 'error'].forEach(method => {
+            console[method] = console[`${method}Original`];
+          });
+        }
+
+        runButton.addEventListener('click', runCode);
+        clearButton.addEventListener('click', () => {
+          output.innerHTML = '';
+        });
+
+        window.addEventListener('keydown', (e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+            e.preventDefault();
+            runCode();
+          }
+          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+            e.preventDefault();
+            output.innerHTML = '';
+          }
+        });
+      });
+    }
+
+    initializeMonaco();
+  </script>
+</body>
+
+</html>
