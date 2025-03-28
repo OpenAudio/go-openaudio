@@ -45,6 +45,7 @@ const (
 	slaMissThreshold  = 0.4
 	slaGreen          = "#9ef19e"
 	slaRed            = "#f5bbbb"
+	slaDead           = "#442222"
 	slaExempt         = "#a9a9a9"
 )
 
@@ -62,6 +63,10 @@ func meetsPoSSla(report SlaReport) bool {
 		faultRatio = 1.0 - (float64(report.PoSChallengesFailed) / float64(report.PoSChallengesTotal))
 	}
 	return faultRatio >= slaMeetsThreshold
+}
+
+func nodeIsDead(report SlaReport) bool {
+	return report.BlocksProposed == 0
 }
 
 func meetsSla(report SlaReport) bool {
@@ -90,6 +95,36 @@ func strippedEndpoint(endpoint string) string {
 	res := strings.TrimPrefix(endpoint, "https://")
 	res = strings.TrimPrefix(res, "http://")
 	return res
+}
+
+func getOverallSlaClass(report SlaReport) templ.CSSClass {
+	if nodeIsDead(report) {
+		return slaDeadClass()
+	}
+	if !meetsSla(report) {
+		return slaMissClass()
+	} else {
+		return templ.Class("")
+	}
+}
+
+func getPoWSlaClass(report SlaReport) templ.CSSClass {
+	if nodeIsDead(report) {
+		return slaDeadClass()
+	}
+	if !meetsPoWSla(report) {
+		return slaMissClass()
+	} else {
+		return templ.Class("")
+	}
+}
+
+func getPoSSlaClass(report SlaReport) templ.CSSClass {
+	if !meetsPoSSla(report) {
+		return slaMissClass()
+	} else {
+		return templ.Class("")
+	}
 }
 
 func uptimeBar(report SlaReport, exempt bool) templ.CSSClass {
@@ -123,10 +158,21 @@ func uptimeBarMini(report SlaReport) templ.CSSClass {
 	}
 }
 
-func slaMissBg() templ.CSSClass {
+func slaMissClass() templ.CSSClass {
 	templ_7745c5c3_CSSBuilder := templruntime.GetBuilder()
 	templ_7745c5c3_CSSBuilder.WriteString(string(templ.SanitizeCSS(`background-color`, templ.SafeCSSProperty(slaRed))))
-	templ_7745c5c3_CSSID := templ.CSSID(`slaMissBg`, templ_7745c5c3_CSSBuilder.String())
+	templ_7745c5c3_CSSID := templ.CSSID(`slaMissClass`, templ_7745c5c3_CSSBuilder.String())
+	return templ.ComponentCSSClass{
+		ID:    templ_7745c5c3_CSSID,
+		Class: templ.SafeCSS(`.` + templ_7745c5c3_CSSID + `{` + templ_7745c5c3_CSSBuilder.String() + `}`),
+	}
+}
+
+func slaDeadClass() templ.CSSClass {
+	templ_7745c5c3_CSSBuilder := templruntime.GetBuilder()
+	templ_7745c5c3_CSSBuilder.WriteString(string(templ.SanitizeCSS(`background-color`, templ.SafeCSSProperty(slaDead))))
+	templ_7745c5c3_CSSBuilder.WriteString(`color:white;`)
+	templ_7745c5c3_CSSID := templ.CSSID(`slaDeadClass`, templ_7745c5c3_CSSBuilder.String())
 	return templ.ComponentCSSClass{
 		ID:    templ_7745c5c3_CSSID,
 		Class: templ.SafeCSS(`.` + templ_7745c5c3_CSSID + `{` + templ_7745c5c3_CSSBuilder.String() + `}`),
@@ -238,7 +284,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(r.Time.Format("06-01-02 15:04:05 MST"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 161, Col: 91}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 202, Col: 91}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -266,7 +312,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.ActiveNodeUptime.ActiveReport.SlaRollupId))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 170, Col: 96}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 211, Col: 96}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -279,7 +325,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d - %d", props.ActiveNodeUptime.ActiveReport.BlockStart, props.ActiveNodeUptime.ActiveReport.BlockEnd))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 170, Col: 228}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 211, Col: 228}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -301,7 +347,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(props.ActiveNodeUptime.ActiveReport.TxHash)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 173, Col: 161}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 214, Col: 161}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -314,7 +360,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(props.ActiveNodeUptime.ActiveReport.Time.Format("06-01-02"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 179, Col: 85}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 220, Col: 85}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -327,7 +373,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(props.ActiveNodeUptime.ActiveReport.Time.Format("15:04:05 MST"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 181, Col: 89}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 222, Col: 89}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -340,7 +386,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1fs", float64(props.AvgBlockTimeMs)/1000.0))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 187, Col: 101}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 228, Col: 101}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -353,7 +399,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", (props.ActiveNodeUptime.ActiveReport.BlockEnd-props.ActiveNodeUptime.ActiveReport.BlockStart)+1))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 192, Col: 161}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 233, Col: 161}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -366,7 +412,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.ActiveNodeUptime.ActiveReport.Quota))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 199, Col: 103}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 240, Col: 103}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -376,7 +422,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var17 = []any{"basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissBg(), props.ActiveNodeUptime.IsValidator && !meetsPoWSla(props.ActiveNodeUptime.ActiveReport))}
+				var templ_7745c5c3_Var17 = []any{"basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissClass(), props.ActiveNodeUptime.IsValidator && !meetsPoWSla(props.ActiveNodeUptime.ActiveReport))}
 				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var17...)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -411,7 +457,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 					var templ_7745c5c3_Var19 string
 					templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.ActiveNodeUptime.ActiveReport.BlocksProposed))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 207, Col: 116}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 248, Col: 116}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 					if templ_7745c5c3_Err != nil {
@@ -429,7 +475,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.ActiveNodeUptime.ActiveReport.PoSChallengesTotal))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 213, Col: 116}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 254, Col: 116}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -439,7 +485,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var21 = []any{"basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissBg(), props.ActiveNodeUptime.IsValidator && !meetsPoSSla(props.ActiveNodeUptime.ActiveReport))}
+				var templ_7745c5c3_Var21 = []any{"basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissClass(), props.ActiveNodeUptime.IsValidator && !meetsPoSSla(props.ActiveNodeUptime.ActiveReport))}
 				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var21...)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -489,7 +535,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 					var templ_7745c5c3_Var24 string
 					templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.ActiveNodeUptime.ActiveReport.PoSChallengesFailed))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 230, Col: 125}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 271, Col: 125}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 					if templ_7745c5c3_Err != nil {
@@ -550,7 +596,7 @@ func validatorRowReport(up *NodeUptime) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var26 = []any{templ.KV(slaMissBg(), !meetsSla(up.ActiveReport))}
+		var templ_7745c5c3_Var26 = []any{getOverallSlaClass(up.ActiveReport)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var26...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -584,7 +630,7 @@ func validatorRowReport(up *NodeUptime) templ.Component {
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(strippedEndpoint(up.Endpoint))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 278, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 319, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 		if templ_7745c5c3_Err != nil {
@@ -597,7 +643,7 @@ func validatorRowReport(up *NodeUptime) templ.Component {
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", up.ActiveReport.Quota))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 281, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 322, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -607,7 +653,7 @@ func validatorRowReport(up *NodeUptime) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var31 = []any{templ.KV(slaMissBg(), !meetsPoWSla(up.ActiveReport))}
+		var templ_7745c5c3_Var31 = []any{getPoWSlaClass(up.ActiveReport)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var31...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -632,7 +678,7 @@ func validatorRowReport(up *NodeUptime) templ.Component {
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", up.ActiveReport.BlocksProposed))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 283, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 324, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
@@ -645,7 +691,7 @@ func validatorRowReport(up *NodeUptime) templ.Component {
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", up.ActiveReport.PoSChallengesTotal))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 286, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 327, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
@@ -655,7 +701,7 @@ func validatorRowReport(up *NodeUptime) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var35 = []any{templ.KV(slaMissBg(), !meetsPoSSla(up.ActiveReport))}
+		var templ_7745c5c3_Var35 = []any{getPoSSlaClass(up.ActiveReport)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var35...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -680,7 +726,7 @@ func validatorRowReport(up *NodeUptime) templ.Component {
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", up.ActiveReport.PoSChallengesFailed))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 288, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 329, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -690,7 +736,7 @@ func validatorRowReport(up *NodeUptime) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var38 = []any{templ.KV(slaMissBg(), !meetsSla(up.ActiveReport))}
+		var templ_7745c5c3_Var38 = []any{getOverallSlaClass(up.ActiveReport)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var38...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -715,7 +761,7 @@ func validatorRowReport(up *NodeUptime) templ.Component {
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(meetsSlaText(up.ActiveReport))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 292, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 333, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 		if templ_7745c5c3_Err != nil {

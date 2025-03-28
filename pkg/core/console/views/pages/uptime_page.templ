@@ -37,6 +37,7 @@ const (
     slaMissThreshold = 0.4
     slaGreen = "#9ef19e"
     slaRed = "#f5bbbb"
+    slaDead = "#442222"
     slaExempt = "#a9a9a9"
 )
 
@@ -54,6 +55,10 @@ func meetsPoSSla(report SlaReport) bool {
         faultRatio = 1.0 - (float64(report.PoSChallengesFailed) / float64(report.PoSChallengesTotal))
     }
     return faultRatio >= slaMeetsThreshold
+}
+
+func nodeIsDead(report SlaReport) bool {
+    return report.BlocksProposed == 0
 }
 
 func meetsSla(report SlaReport) bool {
@@ -84,6 +89,37 @@ func strippedEndpoint(endpoint string) string {
     return res
 }
 
+func getOverallSlaClass(report SlaReport) templ.CSSClass {
+    if nodeIsDead(report) {
+        return slaDeadClass()
+    }
+    if !meetsSla(report) {
+        return slaMissClass()
+    } else {
+        return templ.Class("")
+    }
+}
+
+func getPoWSlaClass(report SlaReport) templ.CSSClass {
+    if nodeIsDead(report) {
+        return slaDeadClass()
+    }
+    if !meetsPoWSla(report) {
+        return slaMissClass()
+    } else {
+        return templ.Class("")
+    }
+}
+
+func getPoSSlaClass(report SlaReport) templ.CSSClass {
+    if !meetsPoSSla(report) {
+        return slaMissClass()
+    } else {
+        return templ.Class("")
+    }
+}
+
+
 css uptimeBar(report SlaReport, exempt bool) {
     width: 16px;
     height: 80px;
@@ -103,8 +139,13 @@ css uptimeBarMini(report SlaReport) {
     vertical-align: middle;
 }
 
-css slaMissBg() {
+css slaMissClass() {
     background-color: { templ.SafeCSSProperty(slaRed) };
+}
+
+css slaDeadClass() {
+    background-color: { templ.SafeCSSProperty(slaDead) };
+    color: white;
 }
 
 
@@ -200,7 +241,7 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                     <dd class="text-sm">Block Quota</dd>
                 </div>
 
-                <div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissBg(), props.ActiveNodeUptime.IsValidator && !meetsPoWSla(props.ActiveNodeUptime.ActiveReport)) }>
+                <div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissClass(), props.ActiveNodeUptime.IsValidator && !meetsPoWSla(props.ActiveNodeUptime.ActiveReport)) }>
                     if !props.ActiveNodeUptime.IsValidator {
                         <dt class="text-4xl">N/A</dt>
                     } else {
@@ -214,7 +255,7 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                     <dd class="text-sm">Challenges Received</dd>
                 </div>
 
-                <div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissBg(), props.ActiveNodeUptime.IsValidator && !meetsPoSSla(props.ActiveNodeUptime.ActiveReport)) }>
+                <div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissClass(), props.ActiveNodeUptime.IsValidator && !meetsPoSSla(props.ActiveNodeUptime.ActiveReport)) }>
                     <a href={ 
                         templ.URL(
                             fmt.Sprintf(
@@ -273,22 +314,22 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
 
 templ validatorRowReport(up *NodeUptime) {
     <tr>
-        <td class={ templ.KV(slaMissBg(), !meetsSla(up.ActiveReport)) }>
+        <td class={ getOverallSlaClass(up.ActiveReport) }>
             <a href={ templ.URL(fmt.Sprintf("%s/console/uptime/%d", up.Endpoint, up.ActiveReport.SlaRollupId)) }>
                 { strippedEndpoint(up.Endpoint) }
             </a>
         </td>
         <td>{ fmt.Sprintf("%d", up.ActiveReport.Quota) }</td>
-        <td class={ templ.KV(slaMissBg(), !meetsPoWSla(up.ActiveReport)) }>
+        <td class={ getPoWSlaClass(up.ActiveReport) }>
             { fmt.Sprintf("%d", up.ActiveReport.BlocksProposed) }
         </td>
 
         <td>{ fmt.Sprintf("%d", up.ActiveReport.PoSChallengesTotal) }</td>
-        <td class={ templ.KV(slaMissBg(), !meetsPoSSla(up.ActiveReport)) }>
+        <td class={ getPoSSlaClass(up.ActiveReport) }>
             { fmt.Sprintf("%d", up.ActiveReport.PoSChallengesFailed) }
         </td>
 
-        <td class={ templ.KV(slaMissBg(), !meetsSla(up.ActiveReport)) }>
+        <td class={ getOverallSlaClass(up.ActiveReport) }>
             { meetsSlaText(up.ActiveReport) }
         </td>
         <td class="bg-white">

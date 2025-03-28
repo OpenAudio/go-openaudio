@@ -164,7 +164,7 @@ func posRowReport(sp StorageProof, start, end int64) templ.Component {
 			templ_7745c5c3_Var6 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var7 = []any{templ.KV(slaMissBg(), sp.Status == "fail")}
+		var templ_7745c5c3_Var7 = []any{templ.KV(slaMissClass(), sp.Status == "fail")}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var7...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err

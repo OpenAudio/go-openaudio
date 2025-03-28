@@ -64,7 +64,7 @@ templ (c *Pages) PoSPageHTML(props *PoSPageView) {
 }
 
 templ posRowReport(sp StorageProof, start, end int64) {
-    <tr class={ templ.KV(slaMissBg(), sp.Status == "fail") }>
+    <tr class={ templ.KV(slaMissClass(), sp.Status == "fail") }>
         <td>{ fmt.Sprintf("%d", sp.BlockHeight) }</td>
         <td>
             <a href={ templ.URL(fmt.Sprintf("%s/console/pos?block_start=%d&block_end=%d", sp.Endpoint, start, end)) }>
