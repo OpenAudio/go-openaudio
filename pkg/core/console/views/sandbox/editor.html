@@ -158,7 +158,7 @@ const sdk = window.audiusSdk({
 console.log('✅ Audius SDK ready:', sdk);
 
 const userId = (
-  await audiusSdk.users.getUserByHandle({
+  await sdk.users.getUserByHandle({
     handle: 'Your Audius handle goes here',
   })
 ).data?.id
