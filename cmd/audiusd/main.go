@@ -29,6 +29,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core"
 	"github.com/AudiusProject/audiusd/pkg/core/common"
 	"github.com/AudiusProject/audiusd/pkg/core/console"
+	"github.com/AudiusProject/audiusd/pkg/etl"
 	"github.com/AudiusProject/audiusd/pkg/mediorum"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
 	"github.com/AudiusProject/audiusd/pkg/pos"
@@ -94,6 +95,11 @@ func main() {
 			"uptime",
 			func() error { return uptime.Run(ctx, logger) },
 			isUpTimeEnabled(hostUrl),
+		},
+		{
+			"etl",
+			func() error { return etl.Run(ctx, logger) },
+			os.Getenv("AUDIUSD_ETL_ENABLED") == "true",
 		},
 	}
 

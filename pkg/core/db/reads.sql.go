@@ -128,7 +128,7 @@ func (q *Queries) GetAppStateAtHeight(ctx context.Context, blockHeight int64) (G
 
 const getAvailableCities = `-- name: GetAvailableCities :many
 select city, region, country, count(*) as play_count
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where city is not null
   and (nullif($1, '')::text is null or lower(country) = lower($1))
   and (nullif($2, '')::text is null or lower(region) = lower($2))
@@ -177,7 +177,7 @@ func (q *Queries) GetAvailableCities(ctx context.Context, arg GetAvailableCities
 
 const getAvailableCountries = `-- name: GetAvailableCountries :many
 select country, count(*) as play_count
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where country is not null
 group by country
 order by count(*) desc
@@ -211,7 +211,7 @@ func (q *Queries) GetAvailableCountries(ctx context.Context, limit int32) ([]Get
 
 const getAvailableRegions = `-- name: GetAvailableRegions :many
 select region, country, count(*) as play_count
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where region is not null
   and (nullif($1, '')::text is null or lower(country) = lower($1))
 group by region, country
@@ -301,7 +301,7 @@ func (q *Queries) GetBlockTransactions(ctx context.Context, blockID int64) ([]Co
 
 const getDecodedPlays = `-- name: GetDecodedPlays :many
 select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
-from core_tx_decoded_plays
+from core_etl_tx_plays
 order by played_at desc
 limit $1
 `
@@ -350,7 +350,7 @@ func (q *Queries) GetDecodedPlays(ctx context.Context, limit int32) ([]GetDecode
 
 const getDecodedPlaysByLocation = `-- name: GetDecodedPlaysByLocation :many
 select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where 
     (nullif($1, '')::text is null or lower(city) = lower($1)) and
     (nullif($2, '')::text is null or lower(region) = lower($2)) and
@@ -415,7 +415,7 @@ func (q *Queries) GetDecodedPlaysByLocation(ctx context.Context, arg GetDecodedP
 
 const getDecodedPlaysByTimeRange = `-- name: GetDecodedPlaysByTimeRange :many
 select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where played_at between $1 and $2
 order by played_at desc
 limit $3
@@ -471,7 +471,7 @@ func (q *Queries) GetDecodedPlaysByTimeRange(ctx context.Context, arg GetDecoded
 
 const getDecodedPlaysByTrack = `-- name: GetDecodedPlaysByTrack :many
 select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where track_id = $1
 order by played_at desc
 limit $2
@@ -526,7 +526,7 @@ func (q *Queries) GetDecodedPlaysByTrack(ctx context.Context, arg GetDecodedPlay
 
 const getDecodedPlaysByUser = `-- name: GetDecodedPlaysByUser :many
 select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where user_id = $1
 order by played_at desc
 limit $2
@@ -580,13 +580,14 @@ func (q *Queries) GetDecodedPlaysByUser(ctx context.Context, arg GetDecodedPlays
 }
 
 const getDecodedTx = `-- name: GetDecodedTx :one
-select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at from core_tx_decoded
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+from core_etl_tx
 where tx_hash = $1 limit 1
 `
 
-func (q *Queries) GetDecodedTx(ctx context.Context, txHash string) (CoreTxDecoded, error) {
+func (q *Queries) GetDecodedTx(ctx context.Context, txHash string) (CoreEtlTx, error) {
 	row := q.db.QueryRow(ctx, getDecodedTx, txHash)
-	var i CoreTxDecoded
+	var i CoreEtlTx
 	err := row.Scan(
 		&i.ID,
 		&i.BlockHeight,
@@ -600,20 +601,21 @@ func (q *Queries) GetDecodedTx(ctx context.Context, txHash string) (CoreTxDecode
 }
 
 const getDecodedTxsByBlock = `-- name: GetDecodedTxsByBlock :many
-select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at from core_tx_decoded
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+from core_etl_tx
 where block_height = $1
 order by tx_index asc
 `
 
-func (q *Queries) GetDecodedTxsByBlock(ctx context.Context, blockHeight int64) ([]CoreTxDecoded, error) {
+func (q *Queries) GetDecodedTxsByBlock(ctx context.Context, blockHeight int64) ([]CoreEtlTx, error) {
 	rows, err := q.db.Query(ctx, getDecodedTxsByBlock, blockHeight)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CoreTxDecoded
+	var items []CoreEtlTx
 	for rows.Next() {
-		var i CoreTxDecoded
+		var i CoreEtlTx
 		if err := rows.Scan(
 			&i.ID,
 			&i.BlockHeight,
@@ -634,9 +636,10 @@ func (q *Queries) GetDecodedTxsByBlock(ctx context.Context, blockHeight int64) (
 }
 
 const getDecodedTxsByType = `-- name: GetDecodedTxsByType :many
-select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at from core_tx_decoded
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+from core_etl_tx
 where tx_type = $1
-order by block_height desc, tx_index desc
+order by created_at desc
 limit $2
 `
 
@@ -645,15 +648,15 @@ type GetDecodedTxsByTypeParams struct {
 	Limit  int32
 }
 
-func (q *Queries) GetDecodedTxsByType(ctx context.Context, arg GetDecodedTxsByTypeParams) ([]CoreTxDecoded, error) {
+func (q *Queries) GetDecodedTxsByType(ctx context.Context, arg GetDecodedTxsByTypeParams) ([]CoreEtlTx, error) {
 	rows, err := q.db.Query(ctx, getDecodedTxsByType, arg.TxType, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CoreTxDecoded
+	var items []CoreEtlTx
 	for rows.Next() {
-		var i CoreTxDecoded
+		var i CoreEtlTx
 		if err := rows.Scan(
 			&i.ID,
 			&i.BlockHeight,
@@ -742,20 +745,21 @@ func (q *Queries) GetLatestBlock(ctx context.Context) (CoreBlock, error) {
 }
 
 const getLatestDecodedTxs = `-- name: GetLatestDecodedTxs :many
-select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at from core_tx_decoded
-order by block_height desc, tx_index desc
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+from core_etl_tx
+order by created_at desc
 limit $1
 `
 
-func (q *Queries) GetLatestDecodedTxs(ctx context.Context, limit int32) ([]CoreTxDecoded, error) {
+func (q *Queries) GetLatestDecodedTxs(ctx context.Context, limit int32) ([]CoreEtlTx, error) {
 	rows, err := q.db.Query(ctx, getLatestDecodedTxs, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CoreTxDecoded
+	var items []CoreEtlTx
 	for rows.Next() {
-		var i CoreTxDecoded
+		var i CoreEtlTx
 		if err := rows.Scan(
 			&i.ID,
 			&i.BlockHeight,

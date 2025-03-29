@@ -186,55 +186,59 @@ where block_height in (
 select * from core_blocks order by height desc limit 1;
 
 -- name: GetDecodedTx :one
-select * from core_tx_decoded
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+from core_etl_tx
 where tx_hash = $1 limit 1;
 
 -- name: GetLatestDecodedTxs :many
-select * from core_tx_decoded
-order by block_height desc, tx_index desc
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+from core_etl_tx
+order by created_at desc
 limit $1;
 
 -- name: GetDecodedTxsByType :many
-select * from core_tx_decoded
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+from core_etl_tx
 where tx_type = $1
-order by block_height desc, tx_index desc
+order by created_at desc
 limit $2;
 
 -- name: GetDecodedTxsByBlock :many
-select * from core_tx_decoded
+select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+from core_etl_tx
 where block_height = $1
 order by tx_index asc;
 
 -- name: GetDecodedPlays :many
 select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
-from core_tx_decoded_plays
+from core_etl_tx_plays
 order by played_at desc
 limit $1;
 
 -- name: GetDecodedPlaysByUser :many
 select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where user_id = $1
 order by played_at desc
 limit $2;
 
 -- name: GetDecodedPlaysByTrack :many
 select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where track_id = $1
 order by played_at desc
 limit $2;
 
 -- name: GetDecodedPlaysByTimeRange :many
 select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where played_at between $1 and $2
 order by played_at desc
 limit $3;
 
 -- name: GetDecodedPlaysByLocation :many
 select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where 
     (nullif($1, '')::text is null or lower(city) = lower($1)) and
     (nullif($2, '')::text is null or lower(region) = lower($2)) and
@@ -244,7 +248,7 @@ limit $4;
 
 -- name: GetAvailableCities :many
 select city, region, country, count(*) as play_count
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where city is not null
   and (nullif($1, '')::text is null or lower(country) = lower($1))
   and (nullif($2, '')::text is null or lower(region) = lower($2))
@@ -254,7 +258,7 @@ limit $3;
 
 -- name: GetAvailableRegions :many
 select region, country, count(*) as play_count
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where region is not null
   and (nullif($1, '')::text is null or lower(country) = lower($1))
 group by region, country
@@ -263,7 +267,7 @@ limit $2;
 
 -- name: GetAvailableCountries :many
 select country, count(*) as play_count
-from core_tx_decoded_plays
+from core_etl_tx_plays
 where country is not null
 group by country
 order by count(*) desc

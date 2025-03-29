@@ -72,19 +72,80 @@ func (q *Queries) DeleteRegisteredNode(ctx context.Context, cometAddress string)
 	return err
 }
 
+const insertDecodedManageEntity = `-- name: InsertDecodedManageEntity :exec
+with duplicate_check as (
+    insert into core_etl_tx_manage_entity (
+        tx_hash,
+        user_id,
+        entity_type,
+        entity_id,
+        action,
+        metadata,
+        signature,
+        signer,
+        nonce,
+        created_at
+    ) values (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    ) on conflict (tx_hash) do nothing
+    returning tx_hash
+)
+insert into core_etl_tx_duplicates (tx_hash, table_name, duplicate_type)
+select $1, 'core_etl_tx_manage_entity', 'tx'
+where not exists (select 1 from duplicate_check)
+on conflict (tx_hash, table_name) do nothing
+`
+
+type InsertDecodedManageEntityParams struct {
+	TxHash     string
+	UserID     int64
+	EntityType string
+	EntityID   int64
+	Action     string
+	Metadata   string
+	Signature  string
+	Signer     string
+	Nonce      string
+	CreatedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) InsertDecodedManageEntity(ctx context.Context, arg InsertDecodedManageEntityParams) error {
+	_, err := q.db.Exec(ctx, insertDecodedManageEntity,
+		arg.TxHash,
+		arg.UserID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.Action,
+		arg.Metadata,
+		arg.Signature,
+		arg.Signer,
+		arg.Nonce,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const insertDecodedPlay = `-- name: InsertDecodedPlay :exec
-insert into core_tx_decoded_plays (
-    tx_hash,
-    user_id,
-    track_id,
-    played_at,
-    signature,
-    city,
-    region,
-    country,
-    created_at
-) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-on conflict (tx_hash, user_id, track_id) do nothing
+with duplicate_check as (
+    insert into core_etl_tx_plays (
+        tx_hash,
+        user_id,
+        track_id,
+        played_at,
+        signature,
+        city,
+        region,
+        country,
+        created_at
+    ) values (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9
+    ) on conflict (tx_hash, user_id, track_id) do nothing
+    returning tx_hash
+)
+insert into core_etl_tx_duplicates (tx_hash, table_name, duplicate_type)
+select $1, 'core_etl_tx_plays', 'tx_user_track'
+where not exists (select 1 from duplicate_check)
+on conflict (tx_hash, table_name) do nothing
 `
 
 type InsertDecodedPlayParams struct {
@@ -114,19 +175,232 @@ func (q *Queries) InsertDecodedPlay(ctx context.Context, arg InsertDecodedPlayPa
 	return err
 }
 
-const insertDecodedTx = `-- name: InsertDecodedTx :exec
-insert into core_tx_decoded (
-    block_height,
-    tx_index,
-    tx_hash,
-    tx_type,
-    tx_data,
-    created_at
-) values ($1, $2, $3, $4, $5, $6)
+const insertDecodedSlaRollup = `-- name: InsertDecodedSlaRollup :exec
+with duplicate_check as (
+    insert into core_etl_tx_sla_rollup (
+        tx_hash,
+        block_start,
+        block_end,
+        timestamp,
+        created_at
+    ) values (
+        $1, $2, $3, $4, $5
+    ) on conflict (tx_hash) do nothing
+    returning tx_hash
+)
+insert into core_etl_tx_duplicates (tx_hash, table_name, duplicate_type)
+select $1, 'core_etl_tx_sla_rollup', 'tx'
+where not exists (select 1 from duplicate_check)
+on conflict (tx_hash, table_name) do nothing
+`
+
+type InsertDecodedSlaRollupParams struct {
+	TxHash     string
+	BlockStart int64
+	BlockEnd   int64
+	Timestamp  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) InsertDecodedSlaRollup(ctx context.Context, arg InsertDecodedSlaRollupParams) error {
+	_, err := q.db.Exec(ctx, insertDecodedSlaRollup,
+		arg.TxHash,
+		arg.BlockStart,
+		arg.BlockEnd,
+		arg.Timestamp,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertDecodedStorageProof = `-- name: InsertDecodedStorageProof :exec
+with duplicate_check as (
+    insert into core_etl_tx_storage_proof (
+        tx_hash,
+        height,
+        address,
+        cid,
+        proof_signature,
+        prover_addresses,
+        created_at
+    ) values (
+        $1, $2, $3, $4, $5, $6, $7
+    ) on conflict (tx_hash) do nothing
+    returning tx_hash
+)
+insert into core_etl_tx_duplicates (tx_hash, table_name, duplicate_type)
+select $1, 'core_etl_tx_storage_proof', 'tx'
+where not exists (select 1 from duplicate_check)
+on conflict (tx_hash, table_name) do nothing
+`
+
+type InsertDecodedStorageProofParams struct {
+	TxHash          string
+	Height          int64
+	Address         string
+	Cid             pgtype.Text
+	ProofSignature  []byte
+	ProverAddresses []string
+	CreatedAt       pgtype.Timestamptz
+}
+
+func (q *Queries) InsertDecodedStorageProof(ctx context.Context, arg InsertDecodedStorageProofParams) error {
+	_, err := q.db.Exec(ctx, insertDecodedStorageProof,
+		arg.TxHash,
+		arg.Height,
+		arg.Address,
+		arg.Cid,
+		arg.ProofSignature,
+		arg.ProverAddresses,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertDecodedStorageProofVerification = `-- name: InsertDecodedStorageProofVerification :exec
+with duplicate_check as (
+    insert into core_etl_tx_storage_proof_verification (
+        tx_hash,
+        height,
+        proof,
+        created_at
+    ) values (
+        $1, $2, $3, $4
+    ) on conflict (tx_hash) do nothing
+    returning tx_hash
+)
+insert into core_etl_tx_duplicates (tx_hash, table_name, duplicate_type)
+select $1, 'core_etl_tx_storage_proof_verification', 'tx'
+where not exists (select 1 from duplicate_check)
+on conflict (tx_hash, table_name) do nothing
+`
+
+type InsertDecodedStorageProofVerificationParams struct {
+	TxHash    string
+	Height    int64
+	Proof     []byte
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) InsertDecodedStorageProofVerification(ctx context.Context, arg InsertDecodedStorageProofVerificationParams) error {
+	_, err := q.db.Exec(ctx, insertDecodedStorageProofVerification,
+		arg.TxHash,
+		arg.Height,
+		arg.Proof,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertDecodedValidatorDeregistration = `-- name: InsertDecodedValidatorDeregistration :exec
+with duplicate_check as (
+    insert into core_etl_tx_validator_deregistration (
+        tx_hash,
+        comet_address,
+        pub_key,
+        created_at
+    ) values (
+        $1, $2, $3, $4
+    ) on conflict (tx_hash) do nothing
+    returning tx_hash
+)
+insert into core_etl_tx_duplicates (tx_hash, table_name, duplicate_type)
+select $1, 'core_etl_tx_validator_deregistration', 'tx'
+where not exists (select 1 from duplicate_check)
+on conflict (tx_hash, table_name) do nothing
+`
+
+type InsertDecodedValidatorDeregistrationParams struct {
+	TxHash       string
+	CometAddress string
+	PubKey       []byte
+	CreatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) InsertDecodedValidatorDeregistration(ctx context.Context, arg InsertDecodedValidatorDeregistrationParams) error {
+	_, err := q.db.Exec(ctx, insertDecodedValidatorDeregistration,
+		arg.TxHash,
+		arg.CometAddress,
+		arg.PubKey,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertDecodedValidatorRegistration = `-- name: InsertDecodedValidatorRegistration :exec
+with duplicate_check as (
+    insert into core_etl_tx_validator_registration (
+        tx_hash,
+        endpoint,
+        comet_address,
+        eth_block,
+        node_type,
+        sp_id,
+        pub_key,
+        power,
+        created_at
+    ) values (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9
+    ) on conflict (tx_hash) do nothing
+    returning tx_hash
+)
+insert into core_etl_tx_duplicates (tx_hash, table_name, duplicate_type)
+select $1, 'core_etl_tx_validator_registration', 'tx'
+where not exists (select 1 from duplicate_check)
+on conflict (tx_hash, table_name) do nothing
+`
+
+type InsertDecodedValidatorRegistrationParams struct {
+	TxHash       string
+	Endpoint     string
+	CometAddress string
+	EthBlock     string
+	NodeType     string
+	SpID         string
+	PubKey       []byte
+	Power        int64
+	CreatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) InsertDecodedValidatorRegistration(ctx context.Context, arg InsertDecodedValidatorRegistrationParams) error {
+	_, err := q.db.Exec(ctx, insertDecodedValidatorRegistration,
+		arg.TxHash,
+		arg.Endpoint,
+		arg.CometAddress,
+		arg.EthBlock,
+		arg.NodeType,
+		arg.SpID,
+		arg.PubKey,
+		arg.Power,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertEtlDuplicate = `-- name: InsertEtlDuplicate :exec
+insert into core_etl_tx_duplicates (tx_hash, table_name, duplicate_type)
+values ($1, $2, $3)
+on conflict (tx_hash, table_name) do nothing
+`
+
+type InsertEtlDuplicateParams struct {
+	TxHash        string
+	TableName     string
+	DuplicateType string
+}
+
+func (q *Queries) InsertEtlDuplicate(ctx context.Context, arg InsertEtlDuplicateParams) error {
+	_, err := q.db.Exec(ctx, insertEtlDuplicate, arg.TxHash, arg.TableName, arg.DuplicateType)
+	return err
+}
+
+const insertEtlTx = `-- name: InsertEtlTx :exec
+insert into core_etl_tx (block_height, tx_index, tx_hash, tx_type, tx_data, created_at)
+values ($1, $2, $3, $4, $5, $6)
 on conflict (tx_hash) do nothing
 `
 
-type InsertDecodedTxParams struct {
+type InsertEtlTxParams struct {
 	BlockHeight int64
 	TxIndex     int32
 	TxHash      string
@@ -135,8 +409,8 @@ type InsertDecodedTxParams struct {
 	CreatedAt   pgtype.Timestamptz
 }
 
-func (q *Queries) InsertDecodedTx(ctx context.Context, arg InsertDecodedTxParams) error {
-	_, err := q.db.Exec(ctx, insertDecodedTx,
+func (q *Queries) InsertEtlTx(ctx context.Context, arg InsertEtlTxParams) error {
+	_, err := q.db.Exec(ctx, insertEtlTx,
 		arg.BlockHeight,
 		arg.TxIndex,
 		arg.TxHash,
