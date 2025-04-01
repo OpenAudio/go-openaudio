@@ -1,0 +1,394 @@
+package pages
+
+templ (p *Pages) UploadPage() {
+	@p.layout.SiteFrame() {
+		<section
+			class="max-w-6xl mx-auto mt-12 px-4"
+			x-data="uploadForm"
+			x-init="init()"
+		>
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+				<!-- Left: Artwork + Audio Drop Zones -->
+				<div class="space-y-6 text-center" x-on:dragover.prevent="dragging = true" x-on:dragleave.prevent="dragging = false" x-on:drop="dropFile">
+					<!-- Artwork -->
+					<div
+						class="rounded-xl border border-dashed p-4 cursor-pointer transition-all aspect-square flex items-center justify-center bg-gray-50 overflow-hidden"
+						x-bind:class="{ 'border-blue-500 bg-blue-100': dragging }"
+						x-on:click="$refs.artworkInput.click()"
+					>
+						<input type="file" accept="image/*" name="artwork" x-ref="artworkInput" class="hidden" x-on:change="selectArtwork"/>
+						<template x-if="!artURL">
+							<p class="text-gray-500">Click or Drop Artwork</p>
+						</template>
+						<template x-if="artURL">
+							<img :src="artURL" alt="Artwork preview" class="object-cover w-full h-full rounded-xl"/>
+						</template>
+					</div>
+					<!-- Audio -->
+					<div
+						class="border-2 border-dashed rounded-xl p-4 cursor-pointer transition-all"
+						x-bind:class="{ 'border-blue-500 bg-blue-50': dragging }"
+						x-on:click="$refs.fileInput.click()"
+					>
+						<input type="file" accept="audio/*" name="files" x-ref="fileInput" class="hidden" x-on:change="selectFile"/>
+						<template x-if="!file">
+							<div>
+								<p class="font-semibold">Click or Drop Audio File</p>
+								<p class="text-sm text-gray-500 mt-1">MP3, WAV, etc.</p>
+							</div>
+						</template>
+						<template x-if="file">
+							<div class="mt-2">
+								<p class="font-medium">Selected: <span x-text="file.name"></span></p>
+								<audio class="mt-3 w-full" x-bind:src="audioURL" controls></audio>
+							</div>
+						</template>
+					</div>
+				</div>
+				<!-- Right: Metadata Form -->
+				<form
+					id="upload-form"
+					class="space-y-5"
+					x-on:submit.prevent="signAndUpload($event)"
+				>
+					<h2 class="text-2xl font-bold mb-4">Track Info</h2>
+					<!-- Title -->
+					<div>
+						<label class="block text-sm font-medium mb-1" for="title">Track Title</label>
+						<input type="text" name="title" id="title" required class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-blue-500"/>
+					</div>
+					<!-- Artist Wallet -->
+					<div>
+						<label class="block text-sm font-medium mb-1">Artist Wallet</label>
+						<div class="flex items-center gap-2">
+							<input
+								type="text"
+								name="artist"
+								:value="ethAddress"
+								readonly
+								required
+								class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-100 text-black focus:outline-none"
+							/>
+							<template x-if="ethAddress">
+								<button type="button" class="fr-btn px-3 py-1 text-sm" @click="connectWallet">Switch Wallet</button>
+							</template>
+						</div>
+						<template x-if="!ethAddress">
+							<button type="button" class="fr-btn mt-2" @click="connectWallet">Connect Wallet</button>
+						</template>
+					</div>
+					<!-- Genre -->
+					<div>
+						<label class="block text-sm font-medium mb-1" for="genre">Genre</label>
+						<select
+							name="genre"
+							id="genre"
+							required
+							class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-blue-500"
+						>
+							<option value="">Select Genre</option>
+							<option>All Genres</option>
+							<option>Electronic</option>
+							<option>Rock</option>
+							<option>Metal</option>
+							<option>Alternative</option>
+							<option>Hip-Hop/Rap</option>
+							<option>Experimental</option>
+							<option>Punk</option>
+							<option>Folk</option>
+							<option>Pop</option>
+							<option>Ambient</option>
+							<option>Soundtrack</option>
+							<option>World</option>
+							<option>Jazz</option>
+							<option>Acoustic</option>
+							<option>Funk</option>
+							<option>R&B/Soul</option>
+							<option>Devotional</option>
+							<option>Classical</option>
+							<option>Reggae</option>
+							<option>Podcasts</option>
+							<option>Country</option>
+							<option>Spoken Word</option>
+							<option>Comedy</option>
+							<option>Blues</option>
+							<option>Kids</option>
+							<option>Audiobooks</option>
+							<option>Latin</option>
+							<option>Lo-Fi</option>
+							<option>Hyperpop</option>
+							<option>Dancehall</option>
+							<optgroup label="Electronic Subgenres">
+								<option>Techno</option>
+								<option>Trap</option>
+								<option>House</option>
+								<option>Tech House</option>
+								<option>Deep House</option>
+								<option>Disco</option>
+								<option>Electro</option>
+								<option>Jungle</option>
+								<option>Progressive House</option>
+								<option>Hardstyle</option>
+								<option>Glitch Hop</option>
+								<option>Trance</option>
+								<option>Future Bass</option>
+								<option>Future House</option>
+								<option>Tropical House</option>
+								<option>Downtempo</option>
+								<option>Drum & Bass</option>
+								<option>Dubstep</option>
+								<option>Jersey Club</option>
+								<option>Vaporwave</option>
+								<option>Moombahton</option>
+							</optgroup>
+						</select>
+					</div>
+					<!-- Mood -->
+					<div>
+						<label class="block text-sm font-medium mb-1" for="mood">Mood</label>
+						<select
+							name="mood"
+							id="mood"
+							class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-blue-500"
+						>
+							<option value="">Select Mood</option>
+							<option>Peaceful</option>
+							<option>Romantic</option>
+							<option>Sentimental</option>
+							<option>Tender</option>
+							<option>Easygoing</option>
+							<option>Yearning</option>
+							<option>Sophisticated</option>
+							<option>Sensual</option>
+							<option>Cool</option>
+							<option>Gritty</option>
+							<option>Melancholy</option>
+							<option>Serious</option>
+							<option>Brooding</option>
+							<option>Fiery</option>
+							<option>Defiant</option>
+							<option>Aggressive</option>
+							<option>Rowdy</option>
+							<option>Excited</option>
+							<option>Energizing</option>
+							<option>Empowering</option>
+							<option>Stirring</option>
+							<option>Upbeat</option>
+							<option>Other</option>
+						</select>
+					</div>
+					<!-- Tags -->
+					<div>
+						<label class="block text-sm font-medium mb-1" for="tags">Tags</label>
+						<input type="text" x-model="tagInput" @blur="addTagsFromInput" @keydown.enter.prevent="addTagsFromInput" placeholder="e.g. vaporwave, chill" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-blue-500"/>
+						<div class="flex flex-wrap gap-2 mt-2">
+							<template x-for="(tag, index) in tags" :key="index">
+								<span class="inline-flex items-center bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full">
+									<span x-text="tag"></span>
+									<button type="button" class="ml-1 text-blue-500 hover:text-red-500" @click="removeTag(tag)">×</button>
+								</span>
+							</template>
+						</div>
+					</div>
+					<!-- Description -->
+					<div>
+						<label class="block text-sm font-medium mb-1" for="description">Description</label>
+						<textarea x-model="description" name="description" id="description" rows="4" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-blue-500"></textarea>
+					</div>
+				</form>
+			</div>
+			<!-- Upload Button -->
+			<div class="mt-10 text-center">
+				<button type="submit" form="upload-form" class="fr-btn px-6 py-3 text-lg font-semibold" x-bind:disabled="uploading">
+					<span x-show="!uploading">Upload</span>
+					<span x-show="uploading">Uploading...</span>
+				</button>
+				<div class="mt-4" x-show="success">
+					<div class="fr-alert fr-alert-success">Upload successful!</div>
+				</div>
+				<div class="mt-4" x-show="error">
+					<div class="fr-alert fr-alert-error" x-text="error"></div>
+				</div>
+			</div>
+		</section>
+		<script>
+		const uploadForm = {
+			uploading: false,
+			success: false,
+			error: '',
+			file: null,
+			artwork: null,
+			audioURL: '',
+			artURL: '',
+			tagInput: '',
+			tags: [],
+			description: '',
+			ethAddress: '',
+			signature: '',
+			dragging: false,
+
+			async init() {
+				if (window.ethereum && window.ethereum.selectedAddress) {
+					this.ethAddress = window.ethereum.selectedAddress;
+				}
+			},
+
+			async connectWallet() {
+				if (!window.ethereum) {
+					this.error = "MetaMask is not installed.";
+					return;
+				}
+				try {
+					await window.ethereum.request({
+						method: 'wallet_requestPermissions',
+						params: [{ eth_accounts: {} }],
+					});
+					const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+					this.ethAddress = accounts[0];
+				} catch (err) {
+					console.error("Wallet connection error:", err);
+					this.error = "Wallet access denied.";
+				}
+			},
+
+			selectFile(e) {
+				this.file = e.target.files[0];
+				this.audioURL = URL.createObjectURL(this.file);
+			},
+			dropFile(e) {
+				e.preventDefault();
+				this.file = e.dataTransfer.files[0];
+				this.audioURL = URL.createObjectURL(this.file);
+				this.dragging = false;
+			},
+			selectArtwork(e) {
+				this.artwork = e.target.files[0];
+				this.artURL = URL.createObjectURL(this.artwork);
+			},
+			addTagsFromInput() {
+				if (this.tagInput.trim() !== '') {
+					this.tagInput.split(',').forEach(t => {
+						const tag = t.trim();
+						if (tag && !this.tags.includes(tag)) {
+							this.tags.push(tag);
+						}
+					});
+					this.tagInput = '';
+				}
+			},
+			removeTag(tag) {
+				this.tags = this.tags.filter(t => t !== tag);
+			},
+			reset() {
+				this.file = null;
+				this.artwork = null;
+				this.audioURL = '';
+				this.artURL = '';
+				this.tags = [];
+				this.tagInput = '';
+				this.description = '';
+				this.signature = '';
+				this.$refs.fileInput.value = '';
+				this.$refs.artworkInput.value = '';
+			},
+
+			async signAndUpload(e) {
+				if (!this.file) {
+					this.error = 'Please select an audio file.';
+					return;
+				}
+				if (!this.ethAddress) {
+					await this.connectWallet();
+					if (!this.ethAddress) {
+						this.error = 'Wallet connection required.';
+						return;
+					}
+				}
+
+				this.uploading = true;
+				this.error = '';
+				this.success = false;
+
+				const metadata = {
+					title: e.target.title.value,
+					artist: this.ethAddress,
+					genre: e.target.genre.value,
+					mood: e.target.mood.value,
+					tags: this.tags,
+					description: this.description,
+					timestamp: Date.now(),
+				};
+
+				const payload = JSON.stringify(metadata);
+
+				try {
+					const signature = await ethereum.request({
+						method: 'personal_sign',
+						params: [payload, this.ethAddress],
+					});
+					this.signature = signature;
+				} catch (err) {
+					console.error("Signature failed:", err);
+					this.error = 'Signature rejected.';
+					this.uploading = false;
+					return;
+				}
+
+				// 1️⃣ Upload artwork first
+				if (this.artwork) {
+					const artForm = new FormData();
+					artForm.append('files', this.artwork);
+					artForm.append('template', 'img_square');
+					const artURL = `/uploads?signature=${encodeURIComponent(this.signature)}`;
+					try {
+						const res = await fetch(artURL, {
+							method: 'POST',
+							headers: {
+								'X-User-Wallet-Addr': this.ethAddress,
+							},
+							body: artForm,
+						});
+						const artRes = await res.json();
+						console.log("Artwork upload response:", artRes);
+					} catch (err) {
+						console.error("Artwork upload error:", err);
+						this.error = 'Artwork upload failed.';
+						this.uploading = false;
+						return;
+					}
+				}
+
+				// 2️⃣ Upload audio with metadata
+				const formData = new FormData(e.target);
+				formData.append('files', this.file);
+				formData.append('template', 'audio');
+				formData.append('tags', this.tags.join(','));
+				formData.append('description', this.description);
+				formData.append('address', this.ethAddress);
+				formData.append('signed_payload', payload);
+
+				try {
+					const res = await fetch(`/uploads?signature=${encodeURIComponent(this.signature)}`, {
+						method: 'POST',
+						headers: {
+							'X-User-Wallet-Addr': this.ethAddress,
+						},
+						body: formData,
+					});
+					if (!res.ok) throw new Error('Upload failed');
+					const trackRes = await res.json();
+					console.log("Audio upload response:", trackRes);
+					this.success = true;
+					this.reset();
+					e.target.reset();
+				} catch (err) {
+					console.error("Audio upload error:", err);
+					this.error = err.message;
+				} finally {
+					this.uploading = false;
+				}
+			}
+		}
+		</script>
+	}
+}

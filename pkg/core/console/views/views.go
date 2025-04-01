@@ -63,6 +63,10 @@ func (v *Views) RenderGenesisView(c echo.Context, g map[string]interface{}) erro
 	return v.pages.GenesisHTML(g).Render(c.Request().Context(), c.Response().Writer)
 }
 
+func (v *Views) RenderUploadPageView(c echo.Context) error {
+	return v.pages.UploadPage().Render(c.Request().Context(), c.Response().Writer)
+}
+
 func (v *Views) RenderBlockView(c echo.Context, view *pages.BlockView) error {
 	if v.shouldRenderJSON(c) {
 		res, err := v.pages.BlockPageJSON(view)
