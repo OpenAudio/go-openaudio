@@ -69,6 +69,13 @@ setup_postgres() {
                 s|#logging_collector = on|logging_collector = off|" \
                 "$POSTGRES_DATA_DIR/postgresql.conf"
 
+        if [ "${AUDIUSD_PGALL:-false}" = "true" ]; then
+            # WARNING: use only with `-p "127.0.0.1:5432:5432"`
+            echo "WARNING: AUDIUSD_PGALL is set to true, this will allow all connections from any host"
+            echo "host all all 0.0.0.0/0 trust" >> "$POSTGRES_DATA_DIR/pg_hba.conf"
+            sed -i "s|#listen_addresses = 'localhost'|listen_addresses = '*'|" "$POSTGRES_DATA_DIR/postgresql.conf"
+        fi
+
         # Only set up database and user on fresh initialization
         echo "Setting up PostgreSQL user and database..."
         # Start PostgreSQL temporarily to create user and database
