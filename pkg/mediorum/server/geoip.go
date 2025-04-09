@@ -10,7 +10,7 @@ import (
 	"github.com/oschwald/maxminddb-golang"
 )
 
-//go:embed embeds/GeoLite2-City.mmdb
+//go:embed embeds/GeoLite2-City_20250408.mmdb
 var geoLiteDB []byte
 
 type GeoLocation struct {
