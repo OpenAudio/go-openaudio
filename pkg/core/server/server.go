@@ -10,6 +10,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/contracts"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
+	"github.com/AudiusProject/audiusd/pkg/core/rewards"
 	"github.com/AudiusProject/audiusd/pkg/core/sdk"
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	cconfig "github.com/cometbft/cometbft/config"
@@ -46,6 +47,8 @@ type Server struct {
 
 	cache     *Cache
 	abciState *ABCIState
+
+	rewards *rewards.RewardService
 
 	core_proto.UnimplementedProtocolServer
 
@@ -102,6 +105,8 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 		ethNodes:          ethNodes,
 		duplicateEthNodes: duplicateEthNodes,
 		missingEthNodes:   []string{},
+
+		rewards: rewards.NewRewardService(config),
 
 		awaitHttpServerReady: make(chan struct{}),
 		awaitGrpcServerReady: make(chan struct{}),

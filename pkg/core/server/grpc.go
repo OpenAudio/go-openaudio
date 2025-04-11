@@ -301,7 +301,7 @@ func (s *Server) GetRegistrationAttestation(ctx context.Context, req *core_proto
 	}
 
 	if reg.Deadline < s.cache.currentHeight.Load() || reg.Deadline > s.cache.currentHeight.Load()+maxRegistrationAttestationValidity {
-		return nil, fmt.Errorf("Cannot sign registration request with deadline %d (current height is %d)", reg.Deadline, s.cache.currentHeight.Load())
+		return nil, fmt.Errorf("cannot sign registration request with deadline %d (current height is %d)", reg.Deadline, s.cache.currentHeight.Load())
 	}
 
 	if !s.isNodeRegisteredOnEthereum(
@@ -346,13 +346,13 @@ func (s *Server) GetDeregistrationAttestation(ctx context.Context, req *core_pro
 
 	node, err := s.db.GetRegisteredNodeByCometAddress(ctx, dereg.CometAddress)
 	if err != nil {
-		return nil, fmt.Errorf("Could not attest deregistration for '%s': %v", dereg.CometAddress, err)
+		return nil, fmt.Errorf("could not attest deregistration for '%s': %v", dereg.CometAddress, err)
 	}
 
 	ethBlock := new(big.Int)
 	ethBlock, ok := ethBlock.SetString(node.EthBlock, 10)
 	if !ok {
-		return nil, fmt.Errorf("Could not format eth block '%s' for node '%s'", node.EthBlock, node.Endpoint)
+		return nil, fmt.Errorf("could not format eth block '%s' for node '%s'", node.EthBlock, node.Endpoint)
 	}
 
 	if s.isNodeRegisteredOnEthereum(
