@@ -8,21 +8,21 @@ import (
 )
 
 var (
-	discoveryOneGrpc = getEnvWithDefault("discoveryOneGRPC", "0.0.0.0:6613")
-	discoveryOneJrpc = getEnvWithDefault("discoveryOneJRPC", "http://0.0.0.0:6612")
-	discoveryOneOapi = getEnvWithDefault("discoveryOneOAPI", "audiusd-1")
+	discoveryOneGrpc = getEnvWithDefault("discoveryOneGRPC", "")
+	discoveryOneJrpc = getEnvWithDefault("discoveryOneJRPC", "")
+	discoveryOneOapi = getEnvWithDefault("discoveryOneOAPI", "")
 
-	contentOneGrpc = getEnvWithDefault("contentOneGRPC", "0.0.0.0:6713")
-	contentOneJrpc = getEnvWithDefault("contentOneJRPC", "http://0.0.0.0:6712")
-	contentOneOapi = getEnvWithDefault("contentOneOAPI", "audiusd-2")
+	contentOneGrpc = getEnvWithDefault("contentOneGRPC", "")
+	contentOneJrpc = getEnvWithDefault("contentOneJRPC", "")
+	contentOneOapi = getEnvWithDefault("contentOneOAPI", "")
 
-	contentTwoGrpc = getEnvWithDefault("contentTwoGRPC", "0.0.0.0:6723")
-	contentTwoJrpc = getEnvWithDefault("contentTwoJRPC", "http://0.0.0.0:6722")
-	contentTwoOapi = getEnvWithDefault("contentTwoOAPI", "audiusd-3")
+	contentTwoGrpc = getEnvWithDefault("contentTwoGRPC", "")
+	contentTwoJrpc = getEnvWithDefault("contentTwoJRPC", "")
+	contentTwoOapi = getEnvWithDefault("contentTwoOAPI", "")
 
-	contentThreeGrpc = getEnvWithDefault("contentThreeGRPC", "0.0.0.0:6733")
-	contentThreeJrpc = getEnvWithDefault("contentThreeJRPC", "http://0.0.0.0:6732")
-	contentThreeOapi = getEnvWithDefault("contentThreeOAPI", "audiusd-4")
+	contentThreeGrpc = getEnvWithDefault("contentThreeGRPC", "")
+	contentThreeJrpc = getEnvWithDefault("contentThreeJRPC", "")
+	contentThreeOapi = getEnvWithDefault("contentThreeOAPI", "")
 
 	DiscoveryOne = newTestSdk(discoveryOneGrpc, discoveryOneJrpc, discoveryOneOapi)
 	ContentOne   = newTestSdk(contentOneGrpc, contentOneJrpc, contentOneOapi)
@@ -39,6 +39,9 @@ func getEnvWithDefault(key, defaultValue string) string {
 }
 
 func newTestSdk(grpc, jrpc, oapi string) *sdk.Sdk {
+	if grpc == "" || jrpc == "" || oapi == "" {
+		return nil
+	}
 	node, err := sdk.NewSdk(sdk.WithGrpcendpoint(grpc), sdk.WithJrpcendpoint(jrpc), sdk.WithOapiendpoint(oapi))
 	if err != nil {
 		log.Panicf("node init error %s %s: %v", grpc, jrpc, err)

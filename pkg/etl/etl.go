@@ -14,6 +14,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+type Etl struct {
+	//db *db.Queries
+}
+
 func Run(ctx context.Context, logger *common.Logger) error {
 	logger.Info("Starting ETL service...")
 

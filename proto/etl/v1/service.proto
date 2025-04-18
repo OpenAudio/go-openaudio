@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package etl.v1;
+
+import "etl/v1/types.proto";
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/etl/v1";
+
+service ETLService {
+  rpc Ping(PingRequest) returns (PingResponse) {}
+  rpc GetHealth(GetHealthRequest) returns (GetHealthResponse) {}
+  rpc GetPlays(GetPlaysRequest) returns (GetPlaysResponse) {}
+}

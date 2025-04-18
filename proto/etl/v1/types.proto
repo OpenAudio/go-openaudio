@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package etl.v1;
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/etl/v1";
+
+message PingRequest {}
+
+message PingResponse {
+  string message = 1;
+}
+
+message GetHealthRequest {}
+
+message GetHealthResponse {}
+
+message GetPlaysRequest {
+  Pagination pagination = 1;
+  Order order = 2;
+  string user_id = 3;
+  string track_id = 4;
+}
+
+message GetPlaysResponse {
+  repeated GetPlayResponse plays = 1;
+}
+
+message GetPlayResponse {
+  string user_id = 1;
+  string track_id = 2;
+  int64 timestamp = 3;
+  string city = 4;
+  string country = 5;
+  string region = 6;
+  int64 block_height = 7;
+  string tx_hash = 8;
+}
+
+message Pagination {
+  int64 limit = 1;
+  int64 offset = 2;
+}
+
+enum Order {
+  ORDER_UNSPECIFIED = 0;
+  ORDER_ASC = 1;
+  ORDER_DESC = 2;
+}

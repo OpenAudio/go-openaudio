@@ -1,3 +1,5 @@
+include proto.mk
+
 NETWORK ?= stage
 WRAPPER_TAG ?= default
 # One of patch, minor, or major

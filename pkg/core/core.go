@@ -16,11 +16,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest) error {
-	return run(ctx, logger, posChannel)
+func Run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService) error {
+	return run(ctx, logger, posChannel, coreService)
 }
 
-func run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest) error {
+func run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService) error {
 	logger.Info("good morning!")
 
 	config, cometConfig, err := config.SetupNode(logger)
@@ -76,6 +76,9 @@ func run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequ
 			}
 		}()
 	}
+
+	// create core service
+	coreService.SetCore(s)
 
 	if err := s.Start(ctx); err != nil {
 		logger.Errorf("something crashed: %v", err)

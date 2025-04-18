@@ -29,16 +29,25 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core"
 	"github.com/AudiusProject/audiusd/pkg/core/common"
 	"github.com/AudiusProject/audiusd/pkg/core/console"
+	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	"github.com/AudiusProject/audiusd/pkg/etl"
 	"github.com/AudiusProject/audiusd/pkg/mediorum"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
 	"github.com/AudiusProject/audiusd/pkg/pos"
+	"github.com/AudiusProject/audiusd/pkg/system"
 	"github.com/AudiusProject/audiusd/pkg/uptime"
 
+	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
+	etlv1connect "github.com/AudiusProject/audiusd/pkg/api/etl/v1/v1connect"
+	storagev1connect "github.com/AudiusProject/audiusd/pkg/api/storage/v1/v1connect"
+	systemv1connect "github.com/AudiusProject/audiusd/pkg/api/system/v1/v1connect"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -71,6 +80,11 @@ func main() {
 	setupDelegateKeyPair(logger)
 	posChannel := make(chan pos.PoSRequest)
 
+	coreService := coreServer.NewCoreService()
+	storageService := server.NewStorageService()
+	etlService := etl.NewETLService()
+	systemService := system.NewSystemService(coreService, storageService, etlService)
+
 	services := []struct {
 		name    string
 		fn      func() error
@@ -78,17 +92,19 @@ func main() {
 	}{
 		{
 			"audiusd-echo-server",
-			func() error { return startEchoProxy(hostUrl, logger) },
+			func() error {
+				return startEchoProxy(hostUrl, logger, coreService, storageService, etlService, systemService)
+			},
 			true,
 		},
 		{
 			"core",
-			func() error { return core.Run(ctx, logger, posChannel) },
+			func() error { return core.Run(ctx, logger, posChannel, coreService) },
 			true,
 		},
 		{
 			"mediorum",
-			func() error { return mediorum.Run(ctx, logger, posChannel) },
+			func() error { return mediorum.Run(ctx, logger, posChannel, storageService) },
 			isStorageEnabled(),
 		},
 		{
@@ -259,10 +275,23 @@ func getEchoServerConfig(hostUrl *url.URL) serverConfig {
 	}
 }
 
-func startEchoProxy(hostUrl *url.URL, logger *common.Logger) error {
+func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreServer.CoreService, storageService *server.StorageService, etlService *etl.ETLService, systemService *system.SystemService) error {
 	e := echo.New()
 	e.HideBanner = true
 	e.Use(middleware.Logger(), middleware.Recover())
+
+	rpcGroup := e.Group("")
+	corePath, coreHandler := corev1connect.NewCoreServiceHandler(coreService)
+	rpcGroup.Any(corePath+"*", echo.WrapHandler(coreHandler))
+
+	storagePath, storageHandler := storagev1connect.NewStorageServiceHandler(storageService)
+	rpcGroup.Any(storagePath+"*", echo.WrapHandler(storageHandler))
+
+	etlPath, etlHandler := etlv1connect.NewETLServiceHandler(etlService)
+	rpcGroup.Any(etlPath+"*", echo.WrapHandler(etlHandler))
+
+	systemPath, systemHandler := systemv1connect.NewSystemServiceHandler(systemService)
+	rpcGroup.Any(systemPath+"*", echo.WrapHandler(systemHandler))
 
 	e.GET("/", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]int{"a": 440})
@@ -479,8 +508,22 @@ func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, lo
 	e.AutoTLSManager.Cache = autocert.DirCache(getEnvString("audius_core_root_dir", "/audius-core") + "/echo/cache")
 	e.Pre(middleware.HTTPSRedirect())
 
-	go e.StartAutoTLS(":" + httpsPort)
-	return e.Start(":" + httpPort)
+	eg := errgroup.Group{}
+
+	eg.Go(func() error {
+		return e.StartAutoTLS(":" + httpsPort)
+	})
+
+	eg.Go(func() error {
+		h2s := &http2.Server{}
+		h1s := &http.Server{
+			Addr:    ":" + httpPort,
+			Handler: h2c.NewHandler(e, h2s),
+		}
+		return h1s.ListenAndServe()
+	})
+
+	return eg.Wait()
 }
 
 func generateSelfSignedCert(hostname string) ([]byte, []byte, error) {

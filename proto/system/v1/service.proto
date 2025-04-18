@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package system.v1;
+
+import "system/v1/types.proto";
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/system/v1";
+
+service SystemService {
+  rpc Ping(PingRequest) returns (PingResponse) {}
+  rpc GetHealth(GetHealthRequest) returns (GetHealthResponse) {}
+}

@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package storage.v1;
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/storage/v1";
+
+message PingRequest {}
+
+message PingResponse {
+  string message = 1;
+}
+
+message GetHealthRequest {}
+
+message GetHealthResponse {}
+
+message GetUploadsRequest {
+  Pagination pagination = 1;
+  Order order = 2;
+}
+
+message GetUploadsResponse {
+  repeated Upload uploads = 1;
+}
+
+message GetUploadRequest {
+  string id = 1;
+}
+
+message GetUploadResponse {
+  Upload upload = 1;
+}
+
+message StreamTrackRequest {
+  string id = 1;
+}
+
+message StreamTrackResponse {
+  bytes data = 1;
+}
+
+message StreamImageRequest {
+  string id = 1;
+}
+
+message StreamImageResponse {
+  bytes data = 1;
+}
+
+message Pagination {
+  int64 limit = 1;
+  int64 offset = 2;
+}
+
+enum Order {
+  ORDER_UNSPECIFIED = 0;
+  ORDER_ASC = 1;
+  ORDER_DESC = 2;
+}
+
+message Upload {
+  string id = 1;
+  string user_id = 2;
+  string track_id = 3;
+  string file_name = 4;
+  string file_type = 5;
+  string file_size = 6;
+}
