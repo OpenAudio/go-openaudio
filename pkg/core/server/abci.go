@@ -23,6 +23,7 @@ import (
 	cometbfttypes "github.com/cometbft/cometbft/types"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -337,6 +338,8 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 	if validatorUpdates.Len() > 0 {
 		resp.ValidatorUpdates = validatorUpdates
 	}
+
+	s.z.Info("block finalized", zap.Int64("height", req.Height), zap.Int("txs", len(req.Txs)))
 
 	return resp, nil
 }

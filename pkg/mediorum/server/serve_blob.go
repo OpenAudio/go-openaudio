@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
@@ -350,6 +351,8 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 			Country:   geoData.Country,
 			Region:    geoData.Region,
 		})
+
+		ss.z.Info("play logged", zap.String("user_id", userId), zap.String("track_id", trackID))
 	}()
 
 	buf, err := json.Marshal(body)

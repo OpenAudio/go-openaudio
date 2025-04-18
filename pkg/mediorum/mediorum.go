@@ -181,6 +181,7 @@ func startMediorum(mediorumEnv string, posChannel chan pos.PoSRequest) {
 		StoreAll:                  os.Getenv("STORE_ALL") == "true",
 		VersionJson:               GetVersionJson(),
 		DiscoveryListensEndpoints: discoveryListensEndpoints(),
+		LogLevel:                  getenvWithDefault("AUDIUSD_LOG_LEVEL", "info"),
 	}
 
 	ss, err := server.New(config, posChannel)

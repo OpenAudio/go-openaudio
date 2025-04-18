@@ -20,6 +20,7 @@ import (
 	_ "net/http/pprof"
 
 	core "github.com/AudiusProject/audiusd/pkg/core/sdk"
+	aLogger "github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/crudr"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
@@ -31,6 +32,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/oschwald/maxminddb-golang"
+	"go.uber.org/zap"
 	"gocloud.dev/blob"
 	"golang.org/x/exp/slog"
 
@@ -69,6 +71,7 @@ type MediorumConfig struct {
 	StoreAll                  bool
 	VersionJson               VersionJson
 	DiscoveryListensEndpoints []string
+	LogLevel                  string
 
 	// should have a basedir type of thing
 	// by default will put db + blobs there
@@ -80,6 +83,7 @@ type MediorumServer struct {
 	echo             *echo.Echo
 	bucket           *blob.Bucket
 	logger           *slog.Logger
+	z                *zap.Logger
 	crud             *crudr.Crudr
 	pgPool           *pgxpool.Pool
 	quit             chan os.Signal
@@ -190,6 +194,13 @@ func New(config MediorumConfig, posChannel chan pos.PoSRequest) (*MediorumServer
 	}
 
 	logger := slog.With("self", config.Self.Host)
+	baseLogger, err := aLogger.CreateLogger(config.Env, config.LogLevel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zap logger: %v", err)
+	}
+
+	z := baseLogger.With(zap.String("service", "storage"), zap.String("node", config.Self.Host))
+	z.Info("storage server starting")
 
 	if config.discoveryListensEnabled() {
 		logger.Info("discovery listens enabled")
@@ -299,6 +310,7 @@ func New(config MediorumConfig, posChannel chan pos.PoSRequest) (*MediorumServer
 		pgPool:           pgPool,
 		reqClient:        reqClient,
 		logger:           logger,
+		z:                z,
 		quit:             make(chan os.Signal, 1),
 		trustedNotifier:  &trustedNotifier,
 		isSeeding:        config.Env == "stage" || config.Env == "prod",
@@ -531,6 +543,15 @@ func (ss *MediorumServer) MustStart() {
 		go ss.startUploadScroller()
 
 		go ss.startPlayEventQueue()
+
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+
+			for range ticker.C {
+				ss.z.Sync()
+			}
+		}()
 
 	} else {
 		go func() {

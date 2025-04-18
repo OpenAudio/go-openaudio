@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/core/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
@@ -12,6 +13,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/AudiusProject/audiusd/pkg/core/rewards"
 	"github.com/AudiusProject/audiusd/pkg/core/sdk"
+	aLogger "github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	cconfig "github.com/cometbft/cometbft/config"
 	nm "github.com/cometbft/cometbft/node"
@@ -19,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 )
@@ -27,6 +30,7 @@ type Server struct {
 	config         *config.Config
 	cometbftConfig *cconfig.Config
 	logger         *common.Logger
+	z              *zap.Logger
 
 	httpServer         *echo.Echo
 	grpcServer         *grpc.Server
@@ -82,10 +86,19 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 	ethNodes := []*contracts.Node{}
 	duplicateEthNodes := []*contracts.Node{}
 
+	baseLogger, err := aLogger.CreateLogger(config.Environment, config.LogLevel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zap logger: %v", err)
+	}
+
+	z := baseLogger.With(zap.String("service", "core"), zap.String("node", config.NodeEndpoint))
+	z.Info("core server starting")
+
 	s := &Server{
 		config:         config,
 		cometbftConfig: cconfig,
 		logger:         logger.Child("server"),
+		z:              z,
 
 		pool:               pool,
 		contracts:          c,
@@ -129,10 +142,21 @@ func (s *Server) Start(ctx context.Context) error {
 	g.Go(s.startEthNodeManager)
 	g.Go(s.startCache)
 	g.Go(s.startDataCompanion)
+	g.Go(s.syncLogs)
 
-	s.logger.Info("services started")
+	s.z.Info("routines started")
 
 	return g.Wait()
+}
+
+func (s *Server) syncLogs() error {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s.z.Sync()
+	}
+	return nil
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {

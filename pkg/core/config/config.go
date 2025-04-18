@@ -95,6 +95,7 @@ type Config struct {
 	CoreServerAddr  string
 	NodeEndpoint    string
 	Archive         bool
+	LogLevel        string
 
 	/* Ethereum Config */
 	EthRPCUrl          string
@@ -155,6 +156,8 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	cfg.AttRegistrationRSize = 10
 	cfg.AttDeregistrationMin = 5
 	cfg.AttDeregistrationRSize = 10
+
+	cfg.LogLevel = GetEnvWithDefault("AUDIUSD_LOG_LEVEL", "info")
 
 	// check if discovery specific key is set
 	isDiscovery := os.Getenv("audius_delegate_private_key") != ""
