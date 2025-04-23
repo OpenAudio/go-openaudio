@@ -75,8 +75,8 @@ func (s *Server) startEchoServer() error {
 		g.GET("/graphiql", graphiqlHandler)
 	}
 
-	g.GET("/rewards", s.rewards.GetRewards)
-	g.GET("/rewards/attestation", s.rewards.AttestReward)
+	g.GET("/rewards", s.getRewards)
+	g.GET("/rewards/attestation", s.getRewardAttestation)
 	g.GET("/nodes", s.getRegisteredNodes)
 	g.GET("/nodes/verbose", s.getRegisteredNodes)
 	g.GET("/nodes/discovery", s.getRegisteredNodes)
