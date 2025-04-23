@@ -6,15 +6,17 @@ package server
 import (
 	"context"
 	"fmt"
-	"net/url"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"connectrpc.com/connect"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
 	"github.com/AudiusProject/audiusd/pkg/core/common"
 	"github.com/AudiusProject/audiusd/pkg/core/contracts"
-	"github.com/AudiusProject/audiusd/pkg/core/sdk"
 	"github.com/labstack/echo/v4"
 )
 
@@ -80,23 +82,18 @@ func (s *Server) onPeerTick() error {
 				return
 			}
 
-			parsedURL, err := url.Parse(validator.Endpoint)
+			rpc := corev1connect.NewCoreServiceClient(http.DefaultClient, validator.Endpoint)
+			_, err = rpc.Ping(context.Background(), connect.NewRequest(&v1.PingRequest{}))
 			if err != nil {
-				s.logger.Errorf("could not parse url for %s: %v", validator.Endpoint, err)
+				s.logger.Errorf("could not ping peer %s: %v", validator.Endpoint, err)
 				return
-			}
-
-			oapiendpoint := parsedURL.Host
-			// don't retry because ticker will handle it
-			sdk, err := sdk.NewSdk(sdk.WithOapiendpoint(oapiendpoint), sdk.WithRetries(0), sdk.WithUsehttps(s.config.UseHttpsForSdk))
-			if err != nil {
-				s.logger.Debugf("could not init sdk for peer %s: %v", oapiendpoint, err)
-				return
+			} else {
+				s.logger.Infof("pinged peer %s", validator.Endpoint)
 			}
 
 			// add to peers copy
 			localPeerMU.Lock()
-			peers[ethaddr] = sdk
+			peers[ethaddr] = rpc
 			localPeerMU.Unlock()
 			if !addedNewPeer {
 				addedNewPeer = true
@@ -114,18 +111,18 @@ func (s *Server) onPeerTick() error {
 }
 
 // UpdatePeers updates the peers map
-func (s *Server) UpdatePeers(newPeers map[string]*sdk.Sdk) {
+func (s *Server) UpdatePeers(newPeers map[string]corev1connect.CoreServiceClient) {
 	s.peersMU.Lock()
 	defer s.peersMU.Unlock()
 	s.peers = newPeers
 }
 
 // GetPeers retrieves a snapshot of the current peers map
-func (s *Server) GetPeers() map[string]*sdk.Sdk {
+func (s *Server) GetPeers() map[string]corev1connect.CoreServiceClient {
 	s.peersMU.RLock()
 	defer s.peersMU.RUnlock()
 	// Return a copy to avoid race conditions
-	peersCopy := make(map[string]*sdk.Sdk, len(s.peers))
+	peersCopy := make(map[string]corev1connect.CoreServiceClient, len(s.peers))
 	for k, v := range s.peers {
 		peersCopy[k] = v
 	}

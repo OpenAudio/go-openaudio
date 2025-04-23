@@ -2,59 +2,58 @@ package integration_test
 
 import (
 	"context"
+	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/core/common"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/AudiusProject/audiusd/pkg/core/test/integration/utils"
 	"github.com/google/uuid"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 )
 
-var _ = Describe("EntityManager", func() {
-	It("sends and retrieves an entity manager transaction", func() {
-		ctx := context.Background()
+func TestEntityManager(t *testing.T) {
+	ctx := context.Background()
 
-		sdk := utils.DiscoveryOne
+	sdk := utils.DiscoveryOne
 
-		manageEntity := &core_proto.ManageEntityLegacy{
-			UserId:     1,
-			EntityType: "User",
-			EntityId:   1,
-			Action:     "Create",
-			Metadata:   "some json",
-			Signature:  "eip712",
-			Nonce:      "1",
-			Signer:     "0x123",
-		}
+	manageEntity := &corev1.ManageEntityLegacy{
+		UserId:     1,
+		EntityType: "User",
+		EntityId:   1,
+		Action:     "Create",
+		Metadata:   "some json",
+		Signature:  "eip712",
+		Nonce:      "1",
+		Signer:     "0x123",
+	}
 
-		signedManageEntity := &core_proto.SignedTransaction{
-			RequestId: uuid.NewString(),
-			Transaction: &core_proto.SignedTransaction_ManageEntity{
-				ManageEntity: manageEntity,
-			},
-		}
+	signedManageEntity := &corev1.SignedTransaction{
+		RequestId: uuid.NewString(),
+		Transaction: &corev1.SignedTransaction_ManageEntity{
+			ManageEntity: manageEntity,
+		},
+	}
 
-		expectedTxHash, err := common.ToTxHash(signedManageEntity)
-		Expect(err).To(BeNil())
+	expectedTxHash, err := common.ToTxHash(signedManageEntity)
+	assert.NoError(t, err)
 
-		req := &core_proto.SendTransactionRequest{
-			Transaction: signedManageEntity,
-		}
+	req := &corev1.SendTransactionRequest{
+		Transaction: signedManageEntity,
+	}
 
-		submitRes, err := sdk.SendTransaction(ctx, req)
-		Expect(err).To(BeNil())
+	submitRes, err := sdk.Core.SendTransaction(ctx, connect.NewRequest(req))
+	assert.NoError(t, err)
 
-		txhash := submitRes.GetTxhash()
-		Expect(expectedTxHash).To(Equal(txhash))
+	txhash := submitRes.Msg.Transaction.Hash
+	assert.Equal(t, expectedTxHash, txhash)
 
-		time.Sleep(time.Second * 1)
+	time.Sleep(time.Second * 1)
 
-		manageEntityRes, err := sdk.GetTransaction(ctx, &core_proto.GetTransactionRequest{Txhash: txhash})
-		Expect(err).To(BeNil())
+	manageEntityRes, err := sdk.Core.GetTransaction(ctx, connect.NewRequest(&corev1.GetTransactionRequest{TxHash: txhash}))
+	assert.NoError(t, err)
 
-		Expect(proto.Equal(signedManageEntity, manageEntityRes.GetTransaction())).To(BeTrue())
-	})
-})
+	assert.True(t, proto.Equal(signedManageEntity, manageEntityRes.Msg.Transaction.Transaction))
+}

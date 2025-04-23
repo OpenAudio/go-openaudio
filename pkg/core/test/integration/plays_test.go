@@ -2,80 +2,87 @@ package integration_test
 
 import (
 	"context"
+	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/core/common"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/AudiusProject/audiusd/pkg/core/test/integration/utils"
 	"github.com/google/uuid"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	protob "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-var _ = Describe("Plays", func() {
-	It("submits and reads back a play through grpc", func() {
-		ctx := context.Background()
+func TestSubmitAndReadPlayThroughGRPC(t *testing.T) {
+	ctx := context.Background()
+	sdk := utils.DiscoveryOne
 
-		sdk := utils.DiscoveryOne
+	listens := []*corev1.TrackPlay{
+		{
+			UserId:    uuid.NewString(),
+			TrackId:   uuid.NewString(),
+			Timestamp: timestamppb.New(time.Now()),
+			Signature: "todo: impl",
+			City:      uuid.NewString(),
+			Region:    uuid.NewString(),
+			Country:   uuid.NewString(),
+		},
+		{
+			UserId:    uuid.NewString(),
+			TrackId:   uuid.NewString(),
+			Timestamp: timestamppb.New(time.Now()),
+			Signature: "todo: impl",
+			City:      uuid.NewString(),
+			Region:    uuid.NewString(),
+			Country:   uuid.NewString(),
+		},
+		{
+			UserId:    uuid.NewString(),
+			TrackId:   uuid.NewString(),
+			Timestamp: timestamppb.New(time.Now()),
+			Signature: "todo: impl",
+			City:      uuid.NewString(),
+			Region:    uuid.NewString(),
+			Country:   uuid.NewString(),
+		},
+	}
 
-		listens := []*core_proto.TrackPlay{
-			{
-				UserId:    uuid.NewString(),
-				TrackId:   uuid.NewString(),
-				Timestamp: timestamppb.New(time.Now()),
-				Signature: "todo: impl",
-				City:      uuid.NewString(),
-				Region:    uuid.NewString(),
-				Country:   uuid.NewString(),
+	playEvent := &corev1.SignedTransaction{
+		Transaction: &corev1.SignedTransaction_Plays{
+			Plays: &corev1.TrackPlays{
+				Plays: listens,
 			},
-			{
-				UserId:    uuid.NewString(),
-				TrackId:   uuid.NewString(),
-				Timestamp: timestamppb.New(time.Now()),
-				Signature: "todo: impl",
-				City:      uuid.NewString(),
-				Region:    uuid.NewString(),
-				Country:   uuid.NewString(),
-			},
-			{
-				UserId:    uuid.NewString(),
-				TrackId:   uuid.NewString(),
-				Timestamp: timestamppb.New(time.Now()),
-				Signature: "todo: impl",
-				City:      uuid.NewString(),
-				Region:    uuid.NewString(),
-				Country:   uuid.NewString(),
-			},
-		}
+		},
+	}
 
-		playEvent := &core_proto.SignedTransaction{
-			Transaction: &core_proto.SignedTransaction_Plays{
-				Plays: &core_proto.TrackPlays{
-					Plays: listens,
-				},
-			},
-		}
+	expectedTxHash, err := common.ToTxHash(playEvent)
+	if err != nil {
+		t.Fatalf("Failed to get transaction hash: %v", err)
+	}
 
-		expectedTxHash, err := common.ToTxHash(playEvent)
-		Expect(err).To(BeNil())
+	req := &corev1.SendTransactionRequest{
+		Transaction: playEvent,
+	}
 
-		req := &core_proto.SendTransactionRequest{
-			Transaction: playEvent,
-		}
+	submitRes, err := sdk.Core.SendTransaction(ctx, connect.NewRequest(req))
+	if err != nil {
+		t.Fatalf("Failed to send transaction: %v", err)
+	}
 
-		submitRes, err := sdk.SendTransaction(ctx, req)
-		Expect(err).To(BeNil())
+	txhash := submitRes.Msg.Transaction.Hash
+	if expectedTxHash != txhash {
+		t.Errorf("Expected transaction hash %s, got %s", expectedTxHash, txhash)
+	}
 
-		txhash := submitRes.GetTxhash()
-		Expect(expectedTxHash).To(Equal(txhash))
+	time.Sleep(time.Second * 1)
 
-		time.Sleep(time.Second * 1)
+	playEventRes, err := sdk.Core.GetTransaction(ctx, connect.NewRequest(&corev1.GetTransactionRequest{TxHash: txhash}))
+	if err != nil {
+		t.Fatalf("Failed to get transaction: %v", err)
+	}
 
-		playEventRes, err := sdk.GetTransaction(ctx, &core_proto.GetTransactionRequest{Txhash: txhash})
-		Expect(err).To(BeNil())
-
-		Expect(protob.Equal(playEvent, playEventRes.GetTransaction())).To(BeTrue())
-	})
-})
+	if !protob.Equal(playEvent, playEventRes.Msg.Transaction.Transaction) {
+		t.Error("Retrieved transaction does not match submitted transaction")
+	}
+}

@@ -27,10 +27,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const (
-	week = 7 * 24 * time.Hour
-)
-
 // state that the abci specifically relies on
 type ABCIState struct {
 	onGoingBlock     pgx.Tx

@@ -13,6 +13,7 @@ import (
 	_ "embed"
 
 	"github.com/AudiusProject/audiusd/pkg/core/common"
+	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	"github.com/AudiusProject/audiusd/pkg/httputil"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
@@ -41,15 +42,15 @@ func init() {
 	slog.SetDefault(logger)
 }
 
-func Run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest, storageService *server.StorageService) error {
+func Run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService) error {
 	mediorumEnv := os.Getenv("MEDIORUM_ENV")
 	slog.Info("starting", "MEDIORUM_ENV", mediorumEnv)
 
-	startMediorum(mediorumEnv, posChannel, storageService)
+	startMediorum(mediorumEnv, posChannel, storageService, core)
 	return nil
 }
 
-func startMediorum(mediorumEnv string, posChannel chan pos.PoSRequest, storageService *server.StorageService) {
+func startMediorum(mediorumEnv string, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService) {
 	logger := slog.With("creatorNodeEndpoint", os.Getenv("creatorNodeEndpoint"))
 
 	isProd := mediorumEnv == "prod"
@@ -184,7 +185,7 @@ func startMediorum(mediorumEnv string, posChannel chan pos.PoSRequest, storageSe
 		LogLevel:                  getenvWithDefault("AUDIUSD_LOG_LEVEL", "info"),
 	}
 
-	ss, err := server.New(config, posChannel)
+	ss, err := server.New(config, posChannel, core)
 	if err != nil {
 		logger.Error("failed to create server", "err", err)
 		log.Fatal(err)

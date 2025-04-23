@@ -2,60 +2,55 @@ package integration_test
 
 import (
 	"context"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"connectrpc.com/connect"
+	"github.com/stretchr/testify/assert"
 
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
+	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/core/test/integration/utils"
 )
 
-var _ = Describe("Block", func() {
-	It("walks up created blocks", func() {
-		ctx := context.Background()
+func TestBlockCreation(t *testing.T) {
+	ctx := context.Background()
+	sdk := utils.DiscoveryOne
 
-		sdk := utils.ContentOne
+	_, err := sdk.Core.Ping(ctx, connect.NewRequest(&corev1.PingRequest{}))
+	assert.NoError(t, err)
 
-		infoRes, err := sdk.GetNodeInfo(ctx, &core_proto.GetNodeInfoRequest{})
-		Expect(err).To(BeNil())
+	var blockOne *corev1.Block
+	var blockTwo *corev1.Block
+	var blockThree *corev1.Block
 
-		var blockOne *core_proto.BlockResponse
-		var blockTwo *core_proto.BlockResponse
-		var blockThree *core_proto.BlockResponse
-
-		// index first three blocks
-		// we return a success response with -1 if block does not exist
-		for {
-			blockOneRes, err := sdk.GetBlock(ctx, &core_proto.GetBlockRequest{Height: 1})
-			Expect(err).To(BeNil())
-			if blockOneRes.Height > 0 {
-				blockOne = blockOneRes
-			}
-
-			blockTwoRes, err := sdk.GetBlock(ctx, &core_proto.GetBlockRequest{Height: 2})
-			Expect(err).To(BeNil())
-			if blockOneRes.Height > 0 {
-				blockTwo = blockTwoRes
-			}
-
-			blockThreeRes, err := sdk.GetBlock(ctx, &core_proto.GetBlockRequest{Height: 3})
-			Expect(err).To(BeNil())
-			if blockOneRes.Height > 0 {
-				blockThree = blockThreeRes
-			}
-
-			if blockOne != nil && blockTwo != nil && blockThree != nil {
-				break
-			}
+	// index first three blocks
+	// we return a success response with -1 if block does not exist
+	for {
+		blockOneRes, err := sdk.Core.GetBlock(ctx, connect.NewRequest(&corev1.GetBlockRequest{Height: 1}))
+		assert.NoError(t, err)
+		if blockOneRes.Msg.Block != nil {
+			blockOne = blockOneRes.Msg.Block
 		}
 
-		Expect(blockOne.Chainid).To(Equal(infoRes.Chainid))
-		Expect(blockOne.Height).To(Equal(int64(1)))
+		blockTwoRes, err := sdk.Core.GetBlock(ctx, connect.NewRequest(&corev1.GetBlockRequest{Height: 2}))
+		assert.NoError(t, err)
+		if blockTwoRes.Msg.Block != nil {
+			blockTwo = blockTwoRes.Msg.Block
+		}
 
-		Expect(blockTwo.Chainid).To(Equal(infoRes.Chainid))
-		Expect(blockTwo.Height).To(Equal(int64(2)))
+		blockThreeRes, err := sdk.Core.GetBlock(ctx, connect.NewRequest(&corev1.GetBlockRequest{Height: 3}))
+		assert.NoError(t, err)
+		if blockThreeRes.Msg.Block != nil {
+			blockThree = blockThreeRes.Msg.Block
+		}
 
-		Expect(blockThree.Chainid).To(Equal(infoRes.Chainid))
-		Expect(blockThree.Height).To(Equal(int64(3)))
-	})
-})
+		if blockOne != nil && blockTwo != nil && blockThree != nil {
+			break
+		}
+	}
+
+	assert.Equal(t, int64(1), blockOne.Height)
+	assert.Equal(t, blockOne.ChainId, blockTwo.ChainId)
+	assert.Equal(t, int64(2), blockTwo.Height)
+	assert.Equal(t, blockOne.ChainId, blockThree.ChainId)
+	assert.Equal(t, int64(3), blockThree.Height)
+}

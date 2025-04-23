@@ -19,7 +19,7 @@ import (
 	_ "embed"
 	_ "net/http/pprof"
 
-	core "github.com/AudiusProject/audiusd/pkg/core/sdk"
+	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	aLogger "github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/crudr"
@@ -126,8 +126,7 @@ type MediorumServer struct {
 	// handle communication between core and mediorum for Proof of Storage
 	posChannel chan pos.PoSRequest
 
-	coreSdk      *core.Sdk
-	coreSdkReady chan struct{}
+	core *coreServer.CoreService
 
 	geoIPdb      *maxminddb.Reader
 	geoIPdbReady chan struct{}
@@ -148,7 +147,7 @@ var (
 
 const PercentSeededThreshold = 50
 
-func New(config MediorumConfig, posChannel chan pos.PoSRequest) (*MediorumServer, error) {
+func New(config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer.CoreService) (*MediorumServer, error) {
 	if env := os.Getenv("MEDIORUM_ENV"); env != "" {
 		config.Env = env
 	}
@@ -326,8 +325,9 @@ func New(config MediorumConfig, posChannel chan pos.PoSRequest) (*MediorumServer
 
 		StartedAt:    time.Now().UTC(),
 		Config:       config,
-		coreSdkReady: make(chan struct{}),
 		geoIPdbReady: make(chan struct{}),
+
+		core: core,
 
 		playEventQueue: NewPlayEventQueue(),
 	}
@@ -438,7 +438,6 @@ func New(config MediorumConfig, posChannel chan pos.PoSRequest) (*MediorumServer
 	internalApi.GET("/proxy_health_check", ss.proxyHealthCheck)
 
 	go ss.loadGeoIPDatabase()
-	go ss.initCoreSdk()
 
 	return ss, nil
 

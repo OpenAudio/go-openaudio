@@ -9,6 +9,8 @@ import (
 	"math/big"
 	"time"
 
+	"connectrpc.com/connect"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/core/common"
 	"github.com/AudiusProject/audiusd/pkg/core/contracts"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_openapi/protocol"
@@ -145,7 +147,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 	}
 
 	if s.cache.catchingUp.Load() {
-		return errors.New("Aborting comet registration because node is still syncing.")
+		return errors.New("aborting comet registration because node is still syncing")
 	}
 
 	genValidators := s.config.GenesisFile.Validators
@@ -161,7 +163,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 	noPeers := len(peers) == 0
 
 	if !isGenValidator && noPeers {
-		return fmt.Errorf("not in genesis and no peers, retrying to register on comet later")
+		return errors.New("not in genesis and no peers, retrying to register on comet later")
 	}
 
 	serviceType, err := contracts.ServiceType(s.config.NodeType)
@@ -193,18 +195,30 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 	params.SetRegistration(common.ValidatorRegistrationIntoOapi(reg))
 	for addr, _ := range rendezvous {
 		if peer, ok := peers[addr]; ok {
-			resp, err := peer.ProtocolGetRegistrationAttestation(params)
+			resp, err := peer.GetRegistrationAttestation(ctx, connect.NewRequest(&v1.GetRegistrationAttestationRequest{
+				Registration: &v1.ValidatorRegistration{
+					CometAddress:   s.config.ProposerAddress,
+					PubKey:         s.config.CometKey.PubKey().Bytes(),
+					Power:          int64(s.config.ValidatorVotingPower),
+					DelegateWallet: delegateOwnerWallet.Hex(),
+					Endpoint:       s.config.NodeEndpoint,
+					NodeType:       common.HexToUtf8(serviceType),
+					EthBlock:       ethBlock.Int64(),
+					SpId:           spID,
+					Deadline:       s.cache.currentHeight.Load() + 120,
+				},
+			}))
 			if err != nil {
-				s.logger.Error("failed to get registration attestation from %s: %v", peer.OAPIEndpoint, err)
+				s.logger.Error("failed to get registration attestation from %s: %v", addr, err)
 				continue
 			}
-			attestations = append(attestations, resp.Payload.Signature)
+			attestations = append(attestations, resp.Msg.Signature)
 		}
 	}
 
 	registrationAtt := &core_proto.Attestation{
 		Signatures: attestations,
-		Body:       &core_proto.Attestation_ValidatorRegistration{reg},
+		Body:       &core_proto.Attestation_ValidatorRegistration{ValidatorRegistration: reg},
 	}
 
 	txBytes, err := proto.Marshal(registrationAtt)
@@ -409,18 +423,24 @@ func (s *Server) deregisterMissingNode(ctx context.Context, ethAddress string) {
 	params.SetDeregistration(common.ValidatorDeregistrationIntoOapi(dereg))
 	for addr, _ := range rendezvous {
 		if peer, ok := peers[addr]; ok {
-			resp, err := peer.ProtocolGetDeregistrationAttestation(params)
+			resp, err := peer.GetDeregistrationAttestation(ctx, connect.NewRequest(&v1.GetDeregistrationAttestationRequest{
+				Deregistration: &v1.ValidatorDeregistration{
+					CometAddress: s.config.ProposerAddress,
+					PubKey:       s.config.CometKey.PubKey().Bytes(),
+					Deadline:     s.cache.currentHeight.Load() + 120,
+				},
+			}))
 			if err != nil {
-				s.logger.Error("failed to get deregistration attestation from %s: %v", peer.OAPIEndpoint, err)
+				s.logger.Error("failed to get deregistration attestation from %s: %v", addr, err)
 				continue
 			}
-			attestations = append(attestations, resp.Payload.Signature)
+			attestations = append(attestations, resp.Msg.Signature)
 		}
 	}
 
 	deregistrationAtt := &core_proto.Attestation{
 		Signatures: attestations,
-		Body:       &core_proto.Attestation_ValidatorDeregistration{dereg},
+		Body:       &core_proto.Attestation_ValidatorDeregistration{ValidatorDeregistration: dereg},
 	}
 
 	txBytes, err := proto.Marshal(deregistrationAtt)

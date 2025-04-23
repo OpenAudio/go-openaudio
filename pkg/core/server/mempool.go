@@ -4,17 +4,18 @@ package server
 
 import (
 	"container/list"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 
+	"connectrpc.com/connect"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
 	"github.com/AudiusProject/audiusd/pkg/core/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_openapi/protocol"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
-	"github.com/AudiusProject/audiusd/pkg/core/sdk"
 	"github.com/labstack/echo/v4"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -40,7 +41,7 @@ type Mempool struct {
 // deadline - the block MUST be included in a block prior to the deadline
 type MempoolTransaction struct {
 	Deadline int64
-	Tx       *core_proto.SignedTransaction
+	Tx       *v1.SignedTransaction
 }
 
 func NewMempool(logger *common.Logger, config *config.Config, db *db.Queries, maxTransactions int) *Mempool {
@@ -55,11 +56,11 @@ func NewMempool(logger *common.Logger, config *config.Config, db *db.Queries, ma
 }
 
 // gathers a batch of transactions skipping those that have expired
-func (m *Mempool) GetBatch(batchSize int, currentBlock int64) []*core_proto.SignedTransaction {
+func (m *Mempool) GetBatch(batchSize int, currentBlock int64) []*v1.SignedTransaction {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	batch := []*core_proto.SignedTransaction{}
+	batch := []*v1.SignedTransaction{}
 	count := 0
 
 	for e := m.deque.Front(); e != nil && count < batchSize; e = e.Next() {
@@ -79,11 +80,11 @@ func (m *Mempool) GetBatch(batchSize int, currentBlock int64) []*core_proto.Sign
 	return batch
 }
 
-func (m *Mempool) GetAll() []*core_proto.SignedTransaction {
+func (m *Mempool) GetAll() []*v1.SignedTransaction {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	batch := []*core_proto.SignedTransaction{}
+	batch := []*v1.SignedTransaction{}
 
 	for {
 		e := m.deque.Front()
@@ -167,16 +168,16 @@ func (s *Server) addMempoolTransaction(key string, tx *MempoolTransaction, broad
 func (s *Server) broadcastMempoolTransaction(key string, tx *MempoolTransaction) {
 	// only broadcast certain types of txs, don't broadcast these ones
 	switch tx.Tx.Transaction.(type) {
-	case *core_proto.SignedTransaction_SlaRollup:
+	case *v1.SignedTransaction_SlaRollup:
 		return
 	}
 
 	peers := s.GetPeers()
 	for _, peer := range peers {
-		go func(logger *common.Logger, peer *sdk.Sdk) {
-			params := protocol.NewProtocolForwardTransactionParams()
-			params.SetTransaction(common.SignedTxProtoIntoSignedTxOapi(tx.Tx))
-			_, err := peer.ProtocolForwardTransaction(params)
+		go func(logger *common.Logger, peer corev1connect.CoreServiceClient) {
+			_, err := peer.ForwardTransaction(context.Background(), connect.NewRequest(&v1.ForwardTransactionRequest{
+				Transaction: tx.Tx,
+			}))
 			if err != nil {
 				logger.Errorf("could not broadcast tx %s: %v", key, err)
 				return

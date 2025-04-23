@@ -102,7 +102,6 @@ install-deps: install-go-deps
 	@gookme init --types pre-commit,pre-push || echo "Gookme init failed, check if it's installed (https://lmaxence.github.io/gookme)"
 
 install-go-deps:
-	go install -v github.com/onsi/ginkgo/v2/ginkgo@v2.19.0
 	go install -v github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 	go install -v google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install -v google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest

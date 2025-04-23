@@ -104,7 +104,7 @@ func main() {
 		},
 		{
 			"mediorum",
-			func() error { return mediorum.Run(ctx, logger, posChannel, storageService) },
+			func() error { return mediorum.Run(ctx, logger, posChannel, storageService, coreService) },
 			isStorageEnabled(),
 		},
 		{

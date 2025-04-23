@@ -52,8 +52,12 @@ func (s *Server) SendTransaction(ctx context.Context, req *core_proto.SendTransa
 	}
 
 	deadline := status.SyncInfo.LatestBlockHeight + 10
+	tx, err := convertSignedTransactionToV1Transaction(req.GetTransaction())
+	if err != nil {
+		return nil, fmt.Errorf("could not convert signed transaction to v1 transaction: %v", err)
+	}
 	mempoolTx := &MempoolTransaction{
-		Tx:       req.GetTransaction(),
+		Tx:       tx,
 		Deadline: deadline,
 	}
 
@@ -114,8 +118,12 @@ func (s *Server) ForwardTransaction(ctx context.Context, req *core_proto.Forward
 	}
 
 	deadline := status.SyncInfo.LatestBlockHeight + 10
+	tx, err := convertSignedTransactionToV1Transaction(req.GetTransaction())
+	if err != nil {
+		return nil, fmt.Errorf("could not convert signed transaction to v1 transaction: %v", err)
+	}
 	mempoolTx := &MempoolTransaction{
-		Tx:       req.GetTransaction(),
+		Tx:       tx,
 		Deadline: deadline,
 	}
 

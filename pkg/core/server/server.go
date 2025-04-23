@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
+	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
 	"github.com/AudiusProject/audiusd/pkg/core/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/contracts"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
-	"github.com/AudiusProject/audiusd/pkg/core/sdk"
 	aLogger "github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/AudiusProject/audiusd/pkg/rewards"
@@ -44,7 +44,7 @@ type Server struct {
 	rpc   *local.Local
 	mempl *Mempool
 
-	peers   map[string]*sdk.Sdk
+	peers   map[string]corev1connect.CoreServiceClient
 	peersMU sync.RWMutex
 
 	txPubsub *TransactionHashPubsub
@@ -107,7 +107,7 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 		db:        db.New(pool),
 		eth:       eth,
 		mempl:     mempl,
-		peers:     make(map[string]*sdk.Sdk),
+		peers:     make(map[string]corev1connect.CoreServiceClient),
 		txPubsub:  txPubsub,
 		cache:     NewCache(),
 		abciState: NewABCIState(config.RetainHeight),

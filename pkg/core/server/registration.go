@@ -67,7 +67,7 @@ func (s *Server) isValidRegisterNodeAttestation(ctx context.Context, tx *core_pr
 
 	// validate age of request
 	if vr.Deadline < blockHeight || vr.Deadline > blockHeight+maxRegistrationAttestationValidity {
-		return fmt.Errorf("Registration request for '%s' with deadline %d is too new/old (current height is %d)", vr.GetEndpoint(), vr.Deadline, blockHeight)
+		return fmt.Errorf("registration request for '%s' with deadline %d is too new/old (current height is %d)", vr.GetEndpoint(), vr.Deadline, blockHeight)
 	}
 
 	// validate signers
@@ -75,9 +75,9 @@ func (s *Server) isValidRegisterNodeAttestation(ctx context.Context, tx *core_pr
 	binary.BigEndian.PutUint64(keyBytes, uint64(vr.GetEthBlock()))
 	enough, err := s.attestationHasEnoughSigners(ctx, signers, keyBytes, s.config.AttRegistrationRSize, s.config.AttRegistrationMin)
 	if err != nil {
-		return fmt.Errorf("Error checking attestors against validators: %v", err)
+		return fmt.Errorf("error checking attestors against validators: %v", err)
 	} else if !enough {
-		return fmt.Errorf("Not enough attestations provided to register validator at '%s'", vr.GetEndpoint())
+		return fmt.Errorf("not enough attestations provided to register validator at '%s'", vr.GetEndpoint())
 	}
 
 	return nil
@@ -142,15 +142,15 @@ func (s *Server) isValidDeregisterNodeAttestation(ctx context.Context, tx *core_
 
 	// validate age of request
 	if dereg.Deadline < blockHeight || dereg.Deadline > blockHeight+maxDeregistrationAttestationValidity {
-		return fmt.Errorf("Registration request for '%s' with deadline %d is too new/old (current height is %d)", addr, dereg.Deadline, blockHeight)
+		return fmt.Errorf("fegistration request for '%s' with deadline %d is too new/old (current height is %d)", addr, dereg.Deadline, blockHeight)
 	}
 
 	// validate signers
 	enough, err := s.attestationHasEnoughSigners(ctx, signers, vdPubKey.Bytes(), s.config.AttDeregistrationRSize, s.config.AttDeregistrationMin)
 	if err != nil {
-		return fmt.Errorf("Error checking attestors against validators: %v", err)
+		return fmt.Errorf("error checking attestors against validators: %v", err)
 	} else if !enough {
-		return fmt.Errorf("Not enough attestations provided to deregister validator '%s'", addr)
+		return fmt.Errorf("not enough attestations provided to deregister validator '%s'", addr)
 	}
 
 	return nil

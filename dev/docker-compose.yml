@@ -12,7 +12,7 @@ services:
       - 'node3.audiusd.devnet:host-gateway'
       - 'node4.audiusd.devnet:host-gateway'
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://node1.audiusd.devnet/"]
+      test: [ "CMD", "curl", "-f", "http://node1.audiusd.devnet/" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -48,7 +48,7 @@ services:
       - 'node3.audiusd.devnet:host-gateway'
       - 'node4.audiusd.devnet:host-gateway'
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://node1.audiusd.devnet/"]
+      test: [ "CMD", "curl", "-f", "http://node1.audiusd.devnet/" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -58,7 +58,6 @@ services:
       - ./pkg:/app/pkg
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
-      - ./.air.toml:/app/.air.toml
     profiles:
       - audiusd-dev
       - core-tests
@@ -74,7 +73,7 @@ services:
       - 'node3.audiusd.devnet:host-gateway'
       - 'node4.audiusd.devnet:host-gateway'
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://node2.audiusd.devnet/"]
+      test: [ "CMD", "curl", "-f", "http://node2.audiusd.devnet/" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -84,7 +83,6 @@ services:
       - ./pkg:/app/pkg
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
-      - ./.air.toml:/app/.air.toml
     profiles:
       - audiusd-dev
       - core-tests
@@ -100,7 +98,7 @@ services:
       - 'node3.audiusd.devnet:host-gateway'
       - 'node4.audiusd.devnet:host-gateway'
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://node3.audiusd.devnet/"]
+      test: [ "CMD", "curl", "-f", "http://node3.audiusd.devnet/" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -110,7 +108,6 @@ services:
       - ./pkg:/app/pkg
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
-      - ./.air.toml:/app/.air.toml
     profiles:
       - audiusd-dev
       - core-tests
@@ -126,7 +123,7 @@ services:
       - 'node3.audiusd.devnet:host-gateway'
       - 'node4.audiusd.devnet:host-gateway'
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://node4.audiusd.devnet/"]
+      test: [ "CMD", "curl", "-f", "http://node4.audiusd.devnet/" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -136,7 +133,6 @@ services:
       - ./pkg:/app/pkg
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
-      - ./.air.toml:/app/.air.toml
     profiles:
       - audiusd-dev
       - core-tests

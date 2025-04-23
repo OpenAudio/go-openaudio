@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	"github.com/AudiusProject/audiusd/pkg/pos"
 )
 
@@ -47,7 +48,7 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 			},
 		}
 		posChannel := make(chan pos.PoSRequest)
-		server, err := New(config, posChannel)
+		server, err := New(config, posChannel, &coreServer.CoreService{})
 		if err != nil {
 			panic(err)
 		}
