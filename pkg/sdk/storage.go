@@ -2,21 +2,29 @@ package sdk
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/gowebpki/jcs"
 )
 
 type StorageSDK struct {
 	nodeURL    string
 	httpClient *http.Client
+	privKey    *ecdsa.PrivateKey
 }
 
 func NewStorageSDK(nodeURL string) *StorageSDK {
@@ -26,6 +34,15 @@ func NewStorageSDK(nodeURL string) *StorageSDK {
 			Timeout: 10 * time.Second,
 		},
 	}
+}
+
+func (s *StorageSDK) LoadPrivateKey(path string) error {
+	key, err := common.LoadPrivateKey(path)
+	if err != nil {
+		return err
+	}
+	s.privKey = key
+	return nil
 }
 
 func (s *StorageSDK) GetNodeURL() string {
@@ -130,6 +147,74 @@ func (s *StorageSDK) UploadAudio(filePath string) ([]*server.Upload, error) {
 	return upload, nil
 }
 
-func (s *StorageSDK) GetAudio() (*server.Upload, error) {
-	return nil, nil
+func (s *StorageSDK) DownloadTrack(trackId, outputPath string) error {
+	if s.privKey == nil {
+		return errors.New("No private key set, cannot download track")
+	}
+
+	dataObj := map[string]interface{}{
+		"upload_id":   trackId,
+		"cid":         "",
+		"shouldCache": 0,
+		"timestamp":   time.Now().Unix(),
+		"trackId":     0,
+		"userId":      0,
+	}
+
+	jsonBytes, err := json.Marshal(dataObj)
+	if err != nil {
+		return fmt.Errorf("failed to marshal: %w", err)
+	}
+	canonicalJSON, err := jcs.Transform(jsonBytes)
+	if err != nil {
+		return fmt.Errorf("failed to canonicalize: %w", err)
+	}
+
+	// Hash and sign
+	hash := crypto.Keccak256Hash(canonicalJSON)
+	sig, err := crypto.Sign(hash[:], s.privKey)
+	if err != nil {
+		return fmt.Errorf("failed to sign: %w", err)
+	}
+	sigHex := "0x" + hex.EncodeToString(sig)
+
+	// Wrap in envelope
+	envelope := map[string]string{
+		"Data":      string(jsonBytes),
+		"Signature": sigHex,
+	}
+	envelopeBytes, err := json.Marshal(envelope)
+	if err != nil {
+		return fmt.Errorf("failed to marshal envelope: %w", err)
+	}
+	query := url.Values{}
+
+	query.Set("signature", string(envelopeBytes))
+
+	fullURL := fmt.Sprintf("%s/tracks/stream/%s?%s", s.nodeURL, trackId, query.Encode())
+	fmt.Printf("Downloading from: %s\n", fullURL)
+
+	resp, err := http.Get(fullURL)
+	if err != nil {
+		return fmt.Errorf("failed to make GET request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("download failed: status %d - %s", resp.StatusCode, string(body))
+	}
+
+	outFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outFile.Close()
+
+	_, err = io.Copy(outFile, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to write to file: %w", err)
+	}
+
+	return nil
 }

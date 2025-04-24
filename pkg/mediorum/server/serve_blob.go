@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -504,4 +505,85 @@ func (ss *MediorumServer) serveLegacyBlobAnalysis(c echo.Context) error {
 		return echo.NewHTTPError(404, err.Error())
 	}
 	return c.JSON(200, analysis)
+}
+
+func (ss *MediorumServer) serveTrack(c echo.Context) error {
+	if ss.Config.Env != "dev" {
+		return c.String(404, "not found")
+	}
+
+	trackId := c.Param("trackId")
+	ctx := c.Request().Context()
+	sig, err := signature.ParseFromQueryString(c.QueryParam("signature"))
+	if err != nil {
+		return c.JSON(401, map[string]string{
+			"error":  "invalid signature",
+			"detail": err.Error(),
+		})
+	}
+
+	// check it is for this upload
+	if sig.Data.UploadID != trackId {
+		return c.JSON(401, map[string]string{
+			"error":  "signature contains incorrect track ID",
+			"detail": fmt.Sprintf("url: %s, signature %s", trackId, sig.Data.UploadID),
+		})
+	}
+
+	var cid string
+	ss.crud.DB.Raw("SELECT cid FROM sound_recordings WHERE track_id = ?", trackId).Scan(&cid)
+	if cid == "" {
+		return c.JSON(404, "track not found")
+	}
+
+	var count int
+	ss.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND pub_key = ?", trackId, base64.StdEncoding.EncodeToString(sig.SignerPubkey)).Scan(&count)
+	if count == 0 {
+		ss.logger.Debug("sig no match", "signed by", sig.SignerWallet)
+		return c.JSON(401, map[string]string{
+			"error":  "signer not authorized to access",
+			"detail": "signed by: " + sig.SignerWallet,
+		})
+	}
+
+	key := cidutil.ShardCID(cid)
+
+	// if the client provided a filename, set it in the header to be auto-populated in download prompt
+	filenameForDownload := c.QueryParam("filename")
+	if filenameForDownload != "" {
+		contentDisposition := mime.QEncoding.Encode("utf-8", filenameForDownload)
+		c.Response().Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, contentDisposition))
+	}
+
+	blob, err := ss.bucket.NewReader(ctx, key, nil)
+	// If our bucket doesn't have the file, find a different node
+	if err != nil {
+		if gcerrors.Code(err) == gcerrors.NotFound {
+			// redirect to it
+			host := ss.findNodeToServeBlob(ctx, cid)
+			if host == "" {
+				return c.String(404, "blob not found")
+			}
+			dest := ss.replaceHost(c, host)
+			query := dest.Query()
+			dest.RawQuery = query.Encode()
+			return c.Redirect(302, dest.String())
+		}
+		return err
+	}
+
+	defer func() {
+		if blob != nil {
+			blob.Close()
+		}
+	}()
+
+	// track metrics in separate threads
+	go ss.logTrackListen(c)
+	setTimingHeader(c)
+	go ss.recordMetric(StreamTrack)
+
+	// stream audio
+	http.ServeContent(c.Response(), c.Request(), cid, blob.ModTime(), blob)
+	return nil
 }

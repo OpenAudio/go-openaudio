@@ -27,6 +27,9 @@ type ProtocolSignedTransaction struct {
 	// plays
 	Plays *ProtocolTrackPlays `json:"plays,omitempty"`
 
+	// release
+	Release *V1beta1NewReleaseMessage `json:"release,omitempty"`
+
 	// request Id
 	RequestID string `json:"requestId,omitempty"`
 
@@ -62,6 +65,10 @@ func (m *ProtocolSignedTransaction) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validatePlays(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateRelease(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -140,6 +147,25 @@ func (m *ProtocolSignedTransaction) validatePlays(formats strfmt.Registry) error
 				return ve.ValidateName("plays")
 			} else if ce, ok := err.(*errors.CompositeError); ok {
 				return ce.ValidateName("plays")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *ProtocolSignedTransaction) validateRelease(formats strfmt.Registry) error {
+	if swag.IsZero(m.Release) { // not required
+		return nil
+	}
+
+	if m.Release != nil {
+		if err := m.Release.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("release")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("release")
 			}
 			return err
 		}
@@ -259,6 +285,10 @@ func (m *ProtocolSignedTransaction) ContextValidate(ctx context.Context, formats
 		res = append(res, err)
 	}
 
+	if err := m.contextValidateRelease(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateSLARollup(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -340,6 +370,27 @@ func (m *ProtocolSignedTransaction) contextValidatePlays(ctx context.Context, fo
 				return ve.ValidateName("plays")
 			} else if ce, ok := err.(*errors.CompositeError); ok {
 				return ce.ValidateName("plays")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *ProtocolSignedTransaction) contextValidateRelease(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.Release != nil {
+
+		if swag.IsZero(m.Release) { // not required
+			return nil
+		}
+
+		if err := m.Release.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("release")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("release")
 			}
 			return err
 		}

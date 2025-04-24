@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -59,22 +60,43 @@ func EthRecover(signatureStr string, data []byte) (*ecdsa.PublicKey, string, err
 	return pubKey, address, nil
 }
 
-func SerializePublicKey(pubKey *ecdsa.PublicKey) (string, error) {
+func SerializePublicKeyHex(pubKey *ecdsa.PublicKey) string {
 	bytes := crypto.CompressPubkey(pubKey)
-	encoded := hex.EncodeToString(bytes)
-	return encoded, nil
+	return hex.EncodeToString(bytes)
 }
 
-func DeserializePublicKey(encoded string) (*ecdsa.PublicKey, error) {
-	bytes, err := hex.DecodeString(encoded)
-	if err != nil {
-		return nil, err
-	}
+func PrivKeyToAddress(privateKey *ecdsa.PrivateKey) string {
+	publicKey := privateKey.Public().(*ecdsa.PublicKey)
+	address := crypto.PubkeyToAddress(*publicKey).Hex()
+	return address
+}
 
-	pubKey, err := crypto.DecompressPubkey(bytes)
-	if err != nil {
-		return nil, err
-	}
+// for parity with the web3.js web3.utils.utf8ToHex() call
+func Utf8ToHex(s string) [32]byte {
+	hex := [32]byte{}
+	copy(hex[:], s)
+	return hex
+}
 
-	return pubKey, nil
+// reverse of Utf8ToHex
+func HexToUtf8(hex [32]byte) string {
+	var end int
+	for end = range hex {
+		if hex[end] == 0 {
+			break
+		}
+	}
+	return string(hex[:end])
+}
+
+func LoadPrivateKey(path string) (*ecdsa.PrivateKey, error) {
+	keyBytes, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("could not read private key file: %w", err)
+	}
+	key, err := crypto.HexToECDSA(string(keyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("invalid private key: %w", err)
+	}
+	return key, nil
 }

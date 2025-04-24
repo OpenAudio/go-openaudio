@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/jackc/pgx/v5"
@@ -29,11 +29,7 @@ func (s *Server) finalizeLegacyRegisterNode(ctx context.Context, tx *core_proto.
 		return nil, fmt.Errorf("could not recover signer: %v", err)
 	}
 
-	serializedPubKey, err := common.SerializePublicKey(pubKey)
-	if err != nil {
-		return nil, fmt.Errorf("could not serialize pubkey: %v", err)
-	}
-
+	serializedPubKey := common.SerializePublicKeyHex(pubKey)
 	registerNode := tx.GetValidatorRegistration()
 
 	// Do not reinsert duplicate registrations

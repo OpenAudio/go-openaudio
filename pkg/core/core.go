@@ -5,7 +5,7 @@ import (
 	"fmt"
 	_ "net/http/pprof"
 
-	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/console"
 	"github.com/AudiusProject/audiusd/pkg/core/db"

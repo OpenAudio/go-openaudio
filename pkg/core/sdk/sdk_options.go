@@ -26,9 +26,9 @@ func WithUsehttps(useHttps bool) SdkOption {
 	}
 }
 
-func WithPrivkey(privKey string) SdkOption {
+func WithPrivKeyPath(privKeyPath string) SdkOption {
 	return func(s *Sdk) {
-		s.privKey = privKey
+		s.privKeyPath = privKeyPath
 	}
 }
 

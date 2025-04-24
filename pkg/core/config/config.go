@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/rewards"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cometbft/cometbft/types"
@@ -127,6 +127,9 @@ type Config struct {
 	AttRegistrationRSize   int // rendezvous size for registration attestations (should be >= to AttRegistrationMin)
 	AttDeregistrationMin   int // minimum number of attestations needed to deregister a node
 	AttDeregistrationRSize int // rendezvous size for deregistration attestations (should be >= to AttDeregistrationMin)
+
+	/* Feature flags */
+	ERNAccessControlEnabled bool
 }
 
 func ReadConfig(logger *common.Logger) (*Config, error) {
@@ -186,10 +189,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	}
 	cfg.EthereumKey = ethKey
 
-	ethAddress, err := common.PrivKeyToAddress(ethKey)
-	if err != nil {
-		return nil, fmt.Errorf("could not get address from priv key: %v", err)
-	}
+	ethAddress := common.PrivKeyToAddress(ethKey)
 	cfg.WalletAddress = ethAddress
 
 	key, err := common.EthToCometKey(cfg.EthereumKey)
@@ -211,6 +211,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		cfg.SlaRollupInterval = mainnetRollupInterval
 		cfg.ValidatorVotingPower = mainnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(ProdClaimAuthorities, ProdRewardExtensions)
+		cfg.ERNAccessControlEnabled = false
 
 	case "stage", "staging", "testnet":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress, StagePersistentPeers, 3))
@@ -221,6 +222,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		cfg.SlaRollupInterval = testnetRollupInterval
 		cfg.ValidatorVotingPower = testnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(StageClaimAuthorities, StageRewardExtensions)
+		cfg.ERNAccessControlEnabled = false
 
 	case "dev", "development", "devnet", "local", "sandbox":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", DevPersistentPeers)
@@ -235,6 +237,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		cfg.SlaRollupInterval = devnetRollupInterval
 		cfg.ValidatorVotingPower = devnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(DevClaimAuthorities, DevRewardExtensions)
+		cfg.ERNAccessControlEnabled = true
 	}
 
 	// Disable ssl for local postgres db connection

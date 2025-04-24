@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/test/integration/utils"
 	"github.com/google/uuid"
 	protob "google.golang.org/protobuf/proto"

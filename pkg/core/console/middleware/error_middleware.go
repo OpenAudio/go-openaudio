@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/console/views"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"

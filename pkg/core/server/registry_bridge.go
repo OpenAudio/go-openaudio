@@ -11,7 +11,8 @@ import (
 
 	"connectrpc.com/connect"
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/common"
+	ccommon "github.com/AudiusProject/audiusd/pkg/core/common"
 	"github.com/AudiusProject/audiusd/pkg/core/contracts"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_openapi/protocol"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
@@ -192,7 +193,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 		Deadline:       s.cache.currentHeight.Load() + 120,
 	}
 	params := protocol.NewProtocolGetRegistrationAttestationParams()
-	params.SetRegistration(common.ValidatorRegistrationIntoOapi(reg))
+	params.SetRegistration(ccommon.ValidatorRegistrationIntoOapi(reg))
 	for addr, _ := range rendezvous {
 		if peer, ok := peers[addr]; ok {
 			resp, err := peer.GetRegistrationAttestation(ctx, connect.NewRequest(&v1.GetRegistrationAttestationRequest{
@@ -420,7 +421,7 @@ func (s *Server) deregisterMissingNode(ctx context.Context, ethAddress string) {
 
 	peers := s.GetPeers()
 	params := protocol.NewProtocolGetDeregistrationAttestationParams()
-	params.SetDeregistration(common.ValidatorDeregistrationIntoOapi(dereg))
+	params.SetDeregistration(ccommon.ValidatorDeregistrationIntoOapi(dereg))
 	for addr, _ := range rendezvous {
 		if peer, ok := peers[addr]; ok {
 			resp, err := peer.GetDeregistrationAttestation(ctx, connect.NewRequest(&v1.GetDeregistrationAttestationRequest{

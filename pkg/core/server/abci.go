@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
@@ -499,6 +499,11 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 			s.logger.Error("Invalid block: invalid storage proof verification tx", "error", err)
 			return false, nil
 		}
+	case *core_proto.SignedTransaction_Release:
+		if err := s.isValidReleaseTx(ctx, signedTx); err != nil {
+			s.logger.Error("Invalid block: invalid release tx", "error", err)
+			return false, nil
+		}
 	}
 	return true, nil
 }
@@ -522,6 +527,8 @@ func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.Finaliz
 		return s.finalizeStorageProof(ctx, msg, blockHeight)
 	case *core_proto.SignedTransaction_StorageProofVerification:
 		return s.finalizeStorageProofVerification(ctx, msg, blockHeight)
+	case *core_proto.SignedTransaction_Release:
+		return s.finalizeRelease(ctx, msg, txHash)
 	default:
 		return nil, fmt.Errorf("unhandled proto event: %v %T", msg, t)
 	}

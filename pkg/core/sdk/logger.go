@@ -1,6 +1,6 @@
 package sdk
 
-import "github.com/AudiusProject/audiusd/pkg/core/common"
+import "github.com/AudiusProject/audiusd/pkg/common"
 
 type Logger interface {
 	Debug(msg string, args ...interface{})

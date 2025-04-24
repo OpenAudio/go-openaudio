@@ -13,7 +13,7 @@ import (
 	"connectrpc.com/connect"
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
-	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/labstack/echo/v4"

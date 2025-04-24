@@ -7,7 +7,7 @@ import (
 	"time"
 
 	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
-	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/contracts"
 	"github.com/AudiusProject/audiusd/pkg/core/db"

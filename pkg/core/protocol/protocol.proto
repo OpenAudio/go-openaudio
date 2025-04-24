@@ -4,8 +4,9 @@ package protocol;
 
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
+import "audiusddex/v1beta1/release.proto";
 
-option go_package = "./core_proto;core_proto";
+option go_package = "github.com/AudiusProject/audiusd/pkg/core/gen/core_proto;core_proto";
 
 service Protocol {
   rpc SendTransaction(SendTransactionRequest) returns (TransactionResponse) {
@@ -58,6 +59,7 @@ message SignedTransaction {
     StorageProof storage_proof = 1005;
     StorageProofVerification storage_proof_verification = 1006;
     Attestation attestation = 1007;
+    audiusddex.v1beta1.NewReleaseMessage release = 1008;
   }
 }
 

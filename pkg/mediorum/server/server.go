@@ -363,6 +363,7 @@ func New(config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer
 	routes.GET("/content/:cid", ss.serveBlob, ss.requireHealthy, ss.ensureNotDelisted)
 	routes.HEAD("/tracks/cidstream/:cid", ss.serveBlob, ss.requireHealthy, ss.ensureNotDelisted, ss.requireRegisteredSignature)
 	routes.GET("/tracks/cidstream/:cid", ss.serveBlob, ss.requireHealthy, ss.ensureNotDelisted, ss.requireRegisteredSignature)
+	routes.GET("/tracks/stream/:trackId", ss.serveTrack)
 
 	// serve image
 	routes.HEAD("/ipfs/:jobID/:variant", ss.serveImage, ss.requireHealthy)

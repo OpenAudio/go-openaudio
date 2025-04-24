@@ -10,8 +10,8 @@ GIT_SHA := $(shell git rev-parse HEAD)
 SQL_SRCS := $(shell find pkg/core/db/sql -type f -name '*.sql') pkg/core/db/sqlc.yaml
 SQL_ARTIFACTS := $(wildcard pkg/core/db/*.sql.go)
 
-PROTO_SRCS := pkg/core/protocol/protocol.proto
-PROTO_ARTIFACTS := $(wildcard pkg/core/gen/core_proto/*.pb.go)
+PROTO_SRCS := pkg/core/protocol/protocol.proto pkg/core/protocol/audiusddex/v1beta1/release.proto
+PROTO_ARTIFACTS := $(shell find pkg/core/gen/core_proto -type f -name "*.pb.go")
 
 TEMPL_SRCS := $(shell find pkg/core/console -type f -name "*.templ")
 TEMPL_ARTIFACTS := $(shell find pkg/core/console -type f -name "*_templ.go")
@@ -58,6 +58,10 @@ bin/audius-ctl-arm64-darwin: $(BUILD_SRCS)
 bin/audius-ctl-x86_64-darwin: $(BUILD_SRCS)
 	@echo "Building macos x86 audius-ctl..."
 	@bash scripts/build-audius-ctl.sh $@ amd64 darwin
+
+bin/aupl: $(BUILD_SRCS)
+	@echo "Building aupl for native platform and architecture..."
+	@CGO_ENABLED=0 go build -o $@ ./cmd/aupl
 
 .PHONY: release-audius-ctl audius-ctl-production-build
 release-audius-ctl:

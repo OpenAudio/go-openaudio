@@ -272,3 +272,13 @@ where country is not null
 group by country
 order by count(*) desc
 limit $1;
+
+-- name: HasAccessToTrackRelease :one
+select exists (
+    select 1
+    from access_keys
+    where track_id = $1 and pub_key = $2
+);
+
+-- name: GetRecordingsForTrack :many
+select * from sound_recordings where track_id = $1;

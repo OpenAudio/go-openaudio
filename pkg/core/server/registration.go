@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
@@ -96,10 +96,7 @@ func (s *Server) finalizeRegisterNodeAttestation(ctx context.Context, tx *core_p
 		return fmt.Errorf("could not recover signer: %v", err)
 	}
 
-	serializedPubKey, err := common.SerializePublicKey(pubKey)
-	if err != nil {
-		return fmt.Errorf("could not serialize pubkey: %v", err)
-	}
+	serializedPubKey := common.SerializePublicKeyHex(pubKey)
 
 	// Do not reinsert duplicate registrations
 	if _, err = qtx.GetRegisteredNodeByEthAddress(ctx, vr.GetDelegateWallet()); errors.Is(err, pgx.ErrNoRows) {

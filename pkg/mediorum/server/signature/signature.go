@@ -4,11 +4,12 @@ import (
 	"crypto/ecdsa"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/gowebpki/jcs"
 	"github.com/storyicon/sigverify"
@@ -31,9 +32,10 @@ type SignatureData struct {
 }
 
 type RecoveredSignature struct {
-	DataHash     common.Hash
+	DataHash     ethcommon.Hash
 	Data         SignatureData
 	SignerWallet string
+	SignerPubkey []byte
 }
 
 type ListenTSSignature struct {
@@ -61,16 +63,29 @@ func ParseFromQueryString(queryStringValue string) (*RecoveredSignature, error) 
 	}
 
 	hash := crypto.Keccak256Hash(inner)
+	// TextHash will prepend Ethereum signed message prefix to the hash
+	// and hash that again
+	hash2 := accounts.TextHash(hash.Bytes())
 
 	signatureBytes, err := hex.DecodeString(envelope.Signature[2:])
 	if err != nil {
 		return nil, err
 	}
 
-	recoveredAddress, err := sigverify.EcRecoverEx(hash.Bytes(), signatureBytes)
+	// Normalize v
+	if len(signatureBytes) < 65 {
+		return nil, errors.New("Invalid signature length")
+	}
+	if signatureBytes[64] >= 27 {
+		signatureBytes[64] -= 27
+	}
+
+	recoveredPubkey, err := crypto.SigToPub(hash2, signatureBytes)
 	if err != nil {
 		return nil, err
 	}
+	recoveredAddress := crypto.PubkeyToAddress(*recoveredPubkey)
+	pubkeyBytes := crypto.CompressPubkey(recoveredPubkey)
 
 	var data SignatureData
 	err = json.Unmarshal([]byte(envelope.Data), &data)
@@ -82,6 +97,7 @@ func ParseFromQueryString(queryStringValue string) (*RecoveredSignature, error) 
 		DataHash:     hash,
 		Data:         data,
 		SignerWallet: recoveredAddress.String(),
+		SignerPubkey: pubkeyBytes,
 	}
 
 	return recovered, nil
@@ -126,7 +142,7 @@ func SignBytes(input []byte, privateKey *ecdsa.PrivateKey) ([]byte, error) {
 }
 
 // From https://github.com/AudiusProject/sig/blob/main/go/index.go
-func recoverSigner(input string, signature []byte) (common.Address, error) {
+func recoverSigner(input string, signature []byte) (ethcommon.Address, error) {
 	hash := crypto.Keccak256Hash([]byte(input))
 	return sigverify.EcRecoverEx(hash.Bytes(), signature)
 }

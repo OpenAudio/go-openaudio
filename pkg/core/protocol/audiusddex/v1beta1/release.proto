@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package protocol.audiusddex.v1beta1;
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/core/gen/core_proto/audiusddex/v1beta1;audiusddex_v1beta1";
+
+message NewReleaseMessage {
+  ReleaseHeader release_header = 1;
+  repeated Resource resource_list = 2;
+  repeated Release release_list = 3;
+}
+
+message ReleaseHeader {
+  string message_id = 1;
+  Party sender = 2;
+  Party sent_on_behalf_of = 3;
+}
+
+message Party {
+  string party_id = 1;
+  bytes pub_key = 2;
+}
+
+message Resource {
+  string resource_reference = 1;
+  oneof resource {
+    SoundRecording sound_recording = 2;
+    Image image = 3;
+  }
+}
+
+message SoundRecording {
+  SoundRecordingId id = 1;
+  string filename = 2;
+  string cid = 3;
+}
+
+message SoundRecordingId {
+  string isrc = 1;
+}
+
+message Image {
+  ImageId id = 1;
+  string cid = 2;
+}
+
+message ImageId {
+  string proprietary_id = 1;
+  string namespace = 2;
+}
+
+message Release {
+  oneof release {
+    TrackRelease track_release = 1;
+    AlbumRelease album_release = 2;
+  }
+}
+
+message TrackRelease {
+  ReleaseId release_id = 1;
+  string release_resource_reference = 2;
+  string linked_release_resource_reference = 3;
+  string title = 4;
+  string genre = 5;
+  string artist = 6;
+}
+
+message AlbumRelease {
+  ReleaseId release_id = 1;
+  string title = 2;
+  string genre = 3;
+  string artist = 4;
+}
+
+message ReleaseId {
+  string isrc = 1;
+  string icpn = 2;
+  string grid = 3;
+  string catalogue_number = 4;
+  string namespace = 5;
+}

@@ -212,3 +212,16 @@ insert into core_etl_tx_duplicates (tx_hash, table_name, duplicate_type)
 select $1, 'core_etl_tx_manage_entity', 'tx'
 where not exists (select 1 from duplicate_check)
 on conflict (tx_hash, table_name) do nothing;
+
+-- name: InsertTrackId :exec
+insert into track_releases (track_id) values ($1);
+
+-- name: InsertSoundRecording :exec
+insert into sound_recordings (sound_recording_id, track_id, cid, encoding_details) 
+values ($1, $2, $3, $4);
+
+-- name: InsertAccessKey :exec
+insert into access_keys (track_id, pub_key) values ($1, $2);
+
+-- name: InsertManagementKey :exec
+insert into management_keys (track_id, pub_key) values ($1, $2);

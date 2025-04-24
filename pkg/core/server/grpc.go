@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/core/common"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/iancoleman/strcase"

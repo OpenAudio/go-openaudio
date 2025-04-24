@@ -441,6 +441,9 @@
         },
         "attestation": {
           "$ref": "#/definitions/protocolAttestation"
+        },
+        "release": {
+          "$ref": "#/definitions/v1beta1NewReleaseMessage"
         }
       }
     },
@@ -683,6 +686,183 @@
             "type": "object",
             "$ref": "#/definitions/protobufAny"
           }
+        }
+      }
+    },
+    "v1beta1AlbumRelease": {
+      "type": "object",
+      "properties": {
+        "releaseId": {
+          "$ref": "#/definitions/v1beta1ReleaseId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "genre": {
+          "type": "string"
+        },
+        "artist": {
+          "type": "string"
+        }
+      }
+    },
+    "v1beta1Image": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/v1beta1ImageId"
+        },
+        "cid": {
+          "type": "string"
+        }
+      }
+    },
+    "v1beta1ImageId": {
+      "type": "object",
+      "properties": {
+        "proprietaryId": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        }
+      }
+    },
+    "v1beta1NewReleaseMessage": {
+      "type": "object",
+      "properties": {
+        "releaseHeader": {
+          "$ref": "#/definitions/v1beta1ReleaseHeader"
+        },
+        "resourceList": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1beta1Resource"
+          }
+        },
+        "releaseList": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1beta1Release"
+          }
+        }
+      }
+    },
+    "v1beta1Party": {
+      "type": "object",
+      "properties": {
+        "partyId": {
+          "type": "string"
+        },
+        "pubKey": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "v1beta1Release": {
+      "type": "object",
+      "properties": {
+        "trackRelease": {
+          "$ref": "#/definitions/v1beta1TrackRelease"
+        },
+        "albumRelease": {
+          "$ref": "#/definitions/v1beta1AlbumRelease"
+        }
+      }
+    },
+    "v1beta1ReleaseHeader": {
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string"
+        },
+        "sender": {
+          "$ref": "#/definitions/v1beta1Party"
+        },
+        "sentOnBehalfOf": {
+          "$ref": "#/definitions/v1beta1Party"
+        }
+      }
+    },
+    "v1beta1ReleaseId": {
+      "type": "object",
+      "properties": {
+        "isrc": {
+          "type": "string"
+        },
+        "icpn": {
+          "type": "string"
+        },
+        "grid": {
+          "type": "string"
+        },
+        "catalogueNumber": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        }
+      }
+    },
+    "v1beta1Resource": {
+      "type": "object",
+      "properties": {
+        "resourceReference": {
+          "type": "string"
+        },
+        "soundRecording": {
+          "$ref": "#/definitions/v1beta1SoundRecording"
+        },
+        "image": {
+          "$ref": "#/definitions/v1beta1Image"
+        }
+      }
+    },
+    "v1beta1SoundRecording": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/v1beta1SoundRecordingId"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "cid": {
+          "type": "string"
+        }
+      }
+    },
+    "v1beta1SoundRecordingId": {
+      "type": "object",
+      "properties": {
+        "isrc": {
+          "type": "string"
+        }
+      }
+    },
+    "v1beta1TrackRelease": {
+      "type": "object",
+      "properties": {
+        "releaseId": {
+          "$ref": "#/definitions/v1beta1ReleaseId"
+        },
+        "releaseResourceReference": {
+          "type": "string"
+        },
+        "linkedReleaseResourceReference": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "genre": {
+          "type": "string"
+        },
+        "artist": {
+          "type": "string"
         }
       }
     }

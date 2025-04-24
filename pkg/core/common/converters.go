@@ -84,6 +84,70 @@ func SignedTxProtoIntoSignedTxOapi(tx *core_proto.SignedTransaction) *models.Pro
 			Height: fmt.Sprint(innerTx.StorageProofVerification.Height),
 			Proof:  innerTx.StorageProofVerification.Proof,
 		}
+	case *core_proto.SignedTransaction_Release:
+		oapiTx.Release = &models.V1beta1NewReleaseMessage{
+			ReleaseHeader: &models.V1beta1ReleaseHeader{
+				MessageID: innerTx.Release.ReleaseHeader.MessageId,
+				Sender: &models.V1beta1Party{
+					PartyID: innerTx.Release.ReleaseHeader.Sender.PartyId,
+					PubKey:  innerTx.Release.ReleaseHeader.Sender.PubKey,
+				},
+			},
+			ResourceList: make([]*models.V1beta1Resource, len(innerTx.Release.ResourceList)),
+			ReleaseList:  make([]*models.V1beta1Release, len(innerTx.Release.ReleaseList)),
+		}
+		if behalf := innerTx.Release.ReleaseHeader.GetSentOnBehalfOf(); behalf != nil {
+			oapiTx.Release.ReleaseHeader.SentOnBehalfOf = &models.V1beta1Party{
+				PartyID: behalf.PartyId,
+				PubKey:  behalf.PubKey,
+			}
+		}
+		for i, resource := range innerTx.Release.ResourceList {
+			if img := resource.GetImage(); img != nil {
+				oapiTx.Release.ResourceList[i] = &models.V1beta1Resource{
+					ResourceReference: resource.ResourceReference,
+					Image: &models.V1beta1Image{
+						Cid: img.Cid,
+						ID: &models.V1beta1ImageID{
+							Namespace:     img.Id.Namespace,
+							ProprietaryID: img.Id.ProprietaryId,
+						},
+					},
+				}
+			}
+			if snd := resource.GetSoundRecording(); snd != nil {
+				oapiTx.Release.ResourceList[i] = &models.V1beta1Resource{
+					ResourceReference: resource.ResourceReference,
+					SoundRecording: &models.V1beta1SoundRecording{
+						Cid: snd.Cid,
+						ID: &models.V1beta1SoundRecordingID{
+							Isrc: snd.Id.Isrc,
+						},
+						Filename: snd.Filename,
+					},
+				}
+			}
+		}
+		for i, release := range innerTx.Release.ReleaseList {
+			if tr := release.GetTrackRelease(); tr != nil {
+				oapiTx.Release.ReleaseList[i] = &models.V1beta1Release{
+					TrackRelease: &models.V1beta1TrackRelease{
+						Title:                          tr.Title,
+						Artist:                         tr.Artist,
+						Genre:                          tr.Genre,
+						LinkedReleaseResourceReference: tr.LinkedReleaseResourceReference,
+						ReleaseResourceReference:       tr.ReleaseResourceReference,
+						ReleaseID: &models.V1beta1ReleaseID{
+							CatalogueNumber: tr.ReleaseId.CatalogueNumber,
+							Grid:            tr.ReleaseId.Grid,
+							Icpn:            tr.ReleaseId.Icpn,
+							Isrc:            tr.ReleaseId.Isrc,
+							Namespace:       tr.ReleaseId.Namespace,
+						},
+					},
+				}
+			}
+		}
 	}
 
 	return oapiTx
