@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )
@@ -17,7 +17,7 @@ func TestSignAndRecover(t *testing.T) {
 	privKey, err := EthToEthKey(privKeyHex)
 	require.Nil(t, err)
 
-	registerEvent := &core_proto.ValidatorRegistration{
+	registerEvent := &v1.ValidatorRegistration{
 		CometAddress:   "12345",
 		DelegateWallet: "0xabcdef",
 		EthBlock:       20202,

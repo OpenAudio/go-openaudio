@@ -1,17 +1,19 @@
 package integrationtests
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
 	"testing"
 
-	core_sdk "github.com/AudiusProject/audiusd/pkg/core/sdk"
 	"github.com/AudiusProject/audiusd/pkg/sdk"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTrackReleaseWorkflow(t *testing.T) {
+	ctx := context.Background()
+
 	serverAddr := "node3.audiusd.devnet"
 	privKeyPath := "./assets/demo_key.txt"
 	privKeyPath2 := "./assets/demo_key2.txt"
@@ -37,9 +39,11 @@ func TestTrackReleaseWorkflow(t *testing.T) {
 	require.Equal(t, upload.OrigFileName, "anxiety-upgrade.mp3")
 
 	// release the track
-	coreSdk, err := core_sdk.NewSdk(core_sdk.WithOapiendpoint(serverAddr), core_sdk.WithPrivKeyPath(privKeyPath), core_sdk.WithUsehttps(true))
-	require.Nil(t, err, "failed to initialize core sdk")
-	res, err := coreSdk.ReleaseTrack(upload.OrigFileCID, title, genre)
+	sdk := sdk.NewAudiusdSDK(serverAddr)
+	if err := sdk.ReadPrivKey(privKeyPath); err != nil {
+		require.Nil(t, err, "failed to read private key: %w", err)
+	}
+	res, err := sdk.ReleaseTrack(ctx, upload.OrigFileCID, title, genre)
 	require.Nil(t, err, "failed to release track")
 
 	// Now try to access the file

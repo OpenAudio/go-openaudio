@@ -120,7 +120,6 @@ type Config struct {
 	DebugModule   bool
 	CometModule   bool
 	PprofModule   bool
-	GraphQLModule bool
 
 	/* Attestation Thresholds */
 	AttRegistrationMin     int // minimum number of attestations needed to register a new node
@@ -263,8 +262,6 @@ func enableModules(config *Config) {
 			config.PprofModule = true
 		case ModuleConsole:
 			config.ConsoleModule = true
-		case ModuleGraphQL:
-			config.GraphQLModule = GetEnvWithDefault("AUDIUSD_ENABLE_GRAPHQL", "false") == "true"
 		}
 	}
 }

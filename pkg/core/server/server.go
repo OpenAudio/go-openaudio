@@ -11,7 +11,6 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/contracts"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	aLogger "github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/AudiusProject/audiusd/pkg/rewards"
@@ -31,6 +30,7 @@ type Server struct {
 	cometbftConfig *cconfig.Config
 	logger         *common.Logger
 	z              *zap.Logger
+	self           corev1connect.CoreServiceClient
 
 	httpServer         *echo.Echo
 	grpcServer         *grpc.Server
@@ -54,15 +54,12 @@ type Server struct {
 
 	rewards *rewards.RewardAttester
 
-	core_proto.UnimplementedProtocolServer
-
 	ethNodes          []*contracts.Node
 	duplicateEthNodes []*contracts.Node
 	missingEthNodes   []string
 	ethNodeMU         sync.RWMutex
 
 	awaitHttpServerReady chan struct{}
-	awaitGrpcServerReady chan struct{}
 	awaitRpcReady        chan struct{}
 	awaitEthNodesReady   chan struct{}
 }
@@ -122,7 +119,6 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 		rewards: rewards.NewRewardAttester(config.EthereumKey, config.Rewards),
 
 		awaitHttpServerReady: make(chan struct{}),
-		awaitGrpcServerReady: make(chan struct{}),
 		awaitRpcReady:        make(chan struct{}),
 		awaitEthNodesReady:   make(chan struct{}),
 	}
@@ -134,7 +130,6 @@ func (s *Server) Start(ctx context.Context) error {
 	g, _ := errgroup.WithContext(ctx)
 
 	g.Go(s.startABCI)
-	g.Go(s.startGRPC)
 	g.Go(s.startRegistryBridge)
 	g.Go(s.startEchoServer)
 	g.Go(s.startSyncTasks)
@@ -147,6 +142,10 @@ func (s *Server) Start(ctx context.Context) error {
 	s.z.Info("routines started")
 
 	return g.Wait()
+}
+
+func (s *Server) setSelf(self corev1connect.CoreServiceClient) {
+	s.self = self
 }
 
 func (s *Server) syncLogs() error {

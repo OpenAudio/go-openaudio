@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Server) validateManageEntity(_ context.Context, stx *core_proto.SignedTransaction) (proto.Message, error) {
+func (s *Server) validateManageEntity(_ context.Context, stx *v1.SignedTransaction) (proto.Message, error) {
 	manageEntity := stx.GetManageEntity()
 	if manageEntity == nil {
 		return nil, errors.New("not manage entity")
@@ -17,13 +17,13 @@ func (s *Server) validateManageEntity(_ context.Context, stx *core_proto.SignedT
 	return manageEntity, nil
 }
 
-func (s *Server) finalizeManageEntity(ctx context.Context, stx *core_proto.SignedTransaction) (proto.Message, error) {
+func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransaction) (proto.Message, error) {
 	tx, err := s.validateManageEntity(ctx, stx)
 	if err != nil {
 		return nil, fmt.Errorf("invalid manage entity: %v", err)
 	}
 
-	manageEntity := tx.(*core_proto.ManageEntityLegacy)
+	manageEntity := tx.(*v1.ManageEntityLegacy)
 
 	return manageEntity, nil
 }

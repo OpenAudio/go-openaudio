@@ -5,14 +5,14 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 )
 
-func (s *Server) isValidPlayTransaction(_ context.Context, _ *core_proto.SignedTransaction) error {
+func (s *Server) isValidPlayTransaction(_ context.Context, _ *v1.SignedTransaction) error {
 	return nil
 }
 
-func (s *Server) finalizePlayTransaction(ctx context.Context, stx *core_proto.SignedTransaction) (*core_proto.TrackPlays, error) {
+func (s *Server) finalizePlayTransaction(ctx context.Context, stx *v1.SignedTransaction) (*v1.TrackPlays, error) {
 	if err := s.isValidPlayTransaction(ctx, stx); err != nil {
 		return nil, fmt.Errorf("invalid play tx: %v", err)
 	}

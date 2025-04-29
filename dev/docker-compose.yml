@@ -137,6 +137,22 @@ services:
       - audiusd-dev
       - core-tests
 
+  adminer:
+    image: adminer
+    container_name: adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dev/adminer/plugins-enabled/login-servers.php:/var/www/html/plugins-enabled/login-servers.php
+    extra_hosts:
+      - 'node1.audiusd.devnet:host-gateway'
+      - 'node2.audiusd.devnet:host-gateway'
+      - 'node3.audiusd.devnet:host-gateway'
+      - 'node4.audiusd.devnet:host-gateway'
+    profiles:
+      - audiusd-dev
+
   test-core:
     image: ${AUDIUSD_TEST_IMAGE:-audius/audiusd:test}
     command: go test -v -count=1 -timeout=60s ./pkg/core/...

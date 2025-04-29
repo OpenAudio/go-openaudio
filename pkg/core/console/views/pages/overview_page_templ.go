@@ -10,8 +10,8 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"fmt"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/dustin/go-humanize"
 	"google.golang.org/protobuf/proto"
 )
@@ -23,7 +23,7 @@ type TxData struct {
 
 func NewTxData(tx db.CoreTransaction) TxData {
 	txType := "Unknown"
-	var stx core_proto.SignedTransaction
+	var stx v1.SignedTransaction
 	if err := proto.Unmarshal(tx.Transaction, &stx); err == nil {
 		if stx.GetPlays() != nil {
 			txType = "Plays"
@@ -51,8 +51,6 @@ type OverviewPageView struct {
 	Blocks []BlockView
 	Txs    []TxData
 }
-
-func (p *Pages) OverviewPageJSON() {}
 
 func (p *Pages) OverviewPageHTML(data *OverviewPageView) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -115,7 +113,7 @@ func (p *Pages) OverviewPageHTML(data *OverviewPageView) templ.Component {
 					var templ_7745c5c3_Var4 string
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(block.Hash)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 60, Col: 33}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 58, Col: 33}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 					if templ_7745c5c3_Err != nil {
@@ -154,7 +152,7 @@ func (p *Pages) OverviewPageHTML(data *OverviewPageView) templ.Component {
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(block.ProposerEndpoint)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 65, Col: 49}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 63, Col: 49}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
@@ -193,7 +191,7 @@ func (p *Pages) OverviewPageHTML(data *OverviewPageView) templ.Component {
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(block.Height))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 70, Col: 49}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 68, Col: 49}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
@@ -216,7 +214,7 @@ func (p *Pages) OverviewPageHTML(data *OverviewPageView) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(len(block.Txs)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 74, Col: 51}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 72, Col: 51}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -229,7 +227,7 @@ func (p *Pages) OverviewPageHTML(data *OverviewPageView) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(humanize.Time(block.Timestamp))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 77, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 75, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -261,7 +259,7 @@ func (p *Pages) OverviewPageHTML(data *OverviewPageView) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(tx.TxHash)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 91, Col: 90}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 89, Col: 90}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -283,7 +281,7 @@ func (p *Pages) OverviewPageHTML(data *OverviewPageView) templ.Component {
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(tx.BlockID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 93, Col: 118}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 91, Col: 118}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -296,7 +294,7 @@ func (p *Pages) OverviewPageHTML(data *OverviewPageView) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(tx.TxType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 95, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 93, Col: 26}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -309,7 +307,7 @@ func (p *Pages) OverviewPageHTML(data *OverviewPageView) templ.Component {
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(humanize.Time(tx.CreatedAt.Time))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 97, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/overview_page.templ`, Line: 95, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {

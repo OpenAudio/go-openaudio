@@ -9,12 +9,8 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
-	"encoding/json"
 	"fmt"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/dustin/go-humanize"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 	"time"
 )
 
@@ -25,54 +21,6 @@ type BlockView struct {
 	ProposerEndpoint string
 	Timestamp        time.Time
 	Txs              [][]byte
-}
-
-type BlockPageJSONResponse struct {
-	Height           string                   `json:"block_height"`
-	Hash             string                   `json:"block_hash"`
-	Proposer         string                   `json:"proposer"`
-	ProposerEndpoint string                   `json:"proposer_endpoint"`
-	Txs              []map[string]interface{} `json:"transactions"`
-}
-
-func (p *Pages) BlockPageJSON(data *BlockView) (*BlockPageJSONResponse, error) {
-	txs := data.Txs
-
-	jsonDataArray := [][]byte{}
-
-	for _, tx := range txs {
-		var transaction core_proto.SignedTransaction
-		err := proto.Unmarshal(tx, &transaction)
-		if err != nil {
-			return nil, fmt.Errorf("could not marshal tx into signed tx: %v", err)
-		}
-
-		jsonData, err := protojson.Marshal(&transaction)
-		if err != nil {
-			return nil, fmt.Errorf("could not marshal proto into json: %v", err)
-		}
-		jsonDataArray = append(jsonDataArray, jsonData)
-	}
-
-	var result []map[string]interface{}
-
-	// Parse each byte array into a map and append to the result slice
-	for _, jsonData := range jsonDataArray {
-		var obj map[string]interface{}
-		if err := json.Unmarshal(jsonData, &obj); err != nil {
-			return nil, fmt.Errorf("invalid json")
-		}
-		result = append(result, obj)
-	}
-
-	resTxs := CamelCaseKeys(result)
-
-	return &BlockPageJSONResponse{
-		Height:   fmt.Sprint(data.Height),
-		Hash:     data.Hash,
-		Proposer: data.Proposer,
-		Txs:      resTxs,
-	}, nil
 }
 
 func (p *Pages) BlockPageHTML(view *BlockView) templ.Component {
@@ -163,7 +111,7 @@ func (p *Pages) BlockPageHTML(view *BlockView) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(view.Height))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 82, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 30, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -192,7 +140,7 @@ func (p *Pages) BlockPageHTML(view *BlockView) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(view.Height))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 97, Col: 44}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 45, Col: 44}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -215,7 +163,7 @@ func (p *Pages) BlockPageHTML(view *BlockView) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(humanize.Time(view.Timestamp))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 101, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 49, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -249,7 +197,7 @@ func (p *Pages) BlockPageHTML(view *BlockView) templ.Component {
 					var templ_7745c5c3_Var10 string
 					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(p.components.ToTxHash(tx))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 110, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/block_page.templ`, Line: 58, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 					if templ_7745c5c3_Err != nil {

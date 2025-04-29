@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"sync"
 
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Server) isValidAttestation(ctx context.Context, tx *core_proto.SignedTransaction, blockHeight int64) error {
+func (s *Server) isValidAttestation(ctx context.Context, tx *v1.SignedTransaction, blockHeight int64) error {
 	att := tx.GetAttestation()
 	if att == nil {
 		return errors.New("empty attestation tx")
@@ -28,31 +28,31 @@ func (s *Server) isValidAttestation(ctx context.Context, tx *core_proto.SignedTr
 	}
 
 	switch t := att.Body.(type) {
-	case *core_proto.Attestation_ValidatorRegistration:
+	case *v1.Attestation_ValidatorRegistration:
 		return s.isValidRegisterNodeAttestation(ctx, tx, signerAddrs, blockHeight)
-	case *core_proto.Attestation_ValidatorDeregistration:
+	case *v1.Attestation_ValidatorDeregistration:
 		return s.isValidDeregisterNodeAttestation(ctx, tx, signerAddrs, blockHeight)
 	default:
 		return fmt.Errorf("unhandled attestation: %v %T", tx, t)
 	}
 }
 
-func (s *Server) finalizeAttestation(ctx context.Context, tx *core_proto.SignedTransaction, blockHeight int64) (*core_proto.SignedTransaction, error) {
+func (s *Server) finalizeAttestation(ctx context.Context, tx *v1.SignedTransaction, blockHeight int64) (*v1.SignedTransaction, error) {
 	if err := s.isValidAttestation(ctx, tx, blockHeight); err != nil {
 		return nil, fmt.Errorf("invalid attestation during finalize step: %v", err)
 	}
 
 	switch t := tx.GetAttestation().Body.(type) {
-	case *core_proto.Attestation_ValidatorRegistration:
+	case *v1.Attestation_ValidatorRegistration:
 		return tx, s.finalizeRegisterNodeAttestation(ctx, tx, blockHeight)
 	default:
 		return nil, fmt.Errorf("unhandled attestation: %v %T", tx, t)
 	}
 }
 
-func getAttestationBodyBytes(att *core_proto.Attestation) ([]byte, error) {
+func getAttestationBodyBytes(att *v1.Attestation) ([]byte, error) {
 	switch t := att.Body.(type) {
-	case *core_proto.Attestation_ValidatorRegistration:
+	case *v1.Attestation_ValidatorRegistration:
 		return proto.Marshal(att.GetValidatorRegistration())
 	default:
 		return nil, fmt.Errorf("unhandled attestation: %v %T", att, t)

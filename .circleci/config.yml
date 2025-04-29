@@ -67,7 +67,7 @@ commands:
           name: Push Buf
           command: |
             echo ${BUF_TOKEN} | buf registry login --token-stdin
-            cd pkg/core && buf push --create --git-metadata
+            buf push --create --git-metadata
 
 
 jobs:

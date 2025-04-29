@@ -7,16 +7,16 @@ import (
 	"errors"
 	"fmt"
 
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	adx "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
-	adx "github.com/AudiusProject/audiusd/pkg/core/gen/core_proto/audiusddex/v1beta1"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Server) isValidReleaseTx(ctx context.Context, tx *core_proto.SignedTransaction) error {
+func (s *Server) isValidReleaseTx(ctx context.Context, tx *v1.SignedTransaction) error {
 	if !s.config.ERNAccessControlEnabled {
 		return errors.New("ERN feature disabled")
 	}
@@ -86,7 +86,7 @@ func (s *Server) isValidReleaseTx(ctx context.Context, tx *core_proto.SignedTran
 	return nil
 }
 
-func (s *Server) finalizeRelease(ctx context.Context, tx *core_proto.SignedTransaction, txHash string) (*core_proto.SignedTransaction, error) {
+func (s *Server) finalizeRelease(ctx context.Context, tx *v1.SignedTransaction, txHash string) (*v1.SignedTransaction, error) {
 	if err := s.isValidReleaseTx(ctx, tx); err != nil {
 		return nil, err
 	}

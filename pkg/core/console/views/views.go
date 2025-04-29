@@ -68,27 +68,9 @@ func (v *Views) RenderUploadPageView(c echo.Context) error {
 }
 
 func (v *Views) RenderBlockView(c echo.Context, view *pages.BlockView) error {
-	if v.shouldRenderJSON(c) {
-		res, err := v.pages.BlockPageJSON(view)
-		if err != nil {
-			return err
-		}
-		return c.JSON(200, res)
-	}
 	return v.pages.BlockPageHTML(view).Render(c.Request().Context(), c.Response().Writer)
 }
 
 func (v *Views) RenderTxView(c echo.Context, view *pages.TxView) error {
-	if v.shouldRenderJSON(c) {
-		res, err := v.pages.TxPageJSON(view)
-		if err != nil {
-			return err
-		}
-		return c.JSON(200, res)
-	}
 	return v.pages.TxPageHTML(view).Render(c.Request().Context(), c.Response().Writer)
-}
-
-func (v *Views) shouldRenderJSON(c echo.Context) bool {
-	return c.Request().Header.Get(echo.HeaderAccept) == echo.MIMEApplicationJSON
 }

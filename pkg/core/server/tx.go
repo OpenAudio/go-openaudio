@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 )
 
 // stringToUint32 generates a deterministic uint32 hash from a string
@@ -26,7 +26,7 @@ func isCreateAction(action string) bool {
 }
 
 // getTransactionType categorizes the transaction
-func getTransactionType(tx *core_proto.SignedTransaction) string {
+func getTransactionType(tx *v1.SignedTransaction) string {
 	switch {
 	case tx.GetManageEntity() != nil:
 		return "manage"
@@ -38,7 +38,7 @@ func getTransactionType(tx *core_proto.SignedTransaction) string {
 }
 
 // sortTransactionResponse sorts transactions with a defined priority
-func sortTransactionResponse(txs []*core_proto.TransactionResponse) []*core_proto.TransactionResponse {
+func sortTransactionResponse(txs []*v1.Transaction) []*v1.Transaction {
 	sort.SliceStable(txs, func(i, j int) bool {
 		one, two := txs[i].GetTransaction(), txs[j].GetTransaction()
 

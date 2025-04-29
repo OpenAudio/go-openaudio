@@ -2,6 +2,7 @@ package utils
 
 import (
 	"os"
+	"strings"
 
 	"github.com/AudiusProject/audiusd/pkg/sdk"
 )
@@ -31,4 +32,11 @@ func getEnvWithDefault(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+func EnsureProtocol(endpoint string) string {
+	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		return "http://" + endpoint
+	}
+	return endpoint
 }

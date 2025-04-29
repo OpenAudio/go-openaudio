@@ -10,7 +10,7 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"encoding/json"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/dustin/go-humanize"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -24,26 +24,10 @@ type TxView struct {
 	Tx        []byte
 }
 
-type TxPageJSONResponse struct {
-	Hash  string                 `json:"txhash"`
-	Block string                 `json:"block_height"`
-	Tx    map[string]interface{} `json:"tx"`
-}
-
-func (p *Pages) TxPageJSON(data *TxView) (*TxPageJSONResponse, error) {
-	obj := p.toJSON(data.Tx)
-
-	return &TxPageJSONResponse{
-		Hash:  data.Hash,
-		Block: data.Block,
-		Tx:    obj,
-	}, nil
-}
-
 func (p *Pages) toJSON(tx []byte) map[string]interface{} {
 	empty := make(map[string]interface{})
 
-	var transaction core_proto.SignedTransaction
+	var transaction v1.SignedTransaction
 	err := proto.Unmarshal(tx, &transaction)
 	if err != nil {
 		//  fmt.Errorf("could not marshal tx into signed tx: %v", err)
@@ -129,7 +113,7 @@ func (p *Pages) TxPageHTML(view *TxView) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(view.Hash)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 79, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 63, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -168,7 +152,7 @@ func (p *Pages) TxPageHTML(view *TxView) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(view.Block)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 84, Col: 30}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 68, Col: 30}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -191,7 +175,7 @@ func (p *Pages) TxPageHTML(view *TxView) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(humanize.Time(view.Timestamp))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 88, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 72, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -204,7 +188,7 @@ func (p *Pages) TxPageHTML(view *TxView) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(p.renderJSON(p.toJSON(view.Tx)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 91, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 75, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {

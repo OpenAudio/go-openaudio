@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"strconv"
 
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cometcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/ed25519"
@@ -23,7 +23,7 @@ import (
 const maxRegistrationAttestationValidity = 24 * 60 * 60   // Registration attestations are only valid for approx 24 hours
 const maxDeregistrationAttestationValidity = 24 * 60 * 60 // Deregistration attestations are only valid for approx 24 hours
 
-func (s *Server) isValidRegisterNodeAttestation(ctx context.Context, tx *core_proto.SignedTransaction, signers []string, blockHeight int64) error {
+func (s *Server) isValidRegisterNodeAttestation(ctx context.Context, tx *v1.SignedTransaction, signers []string, blockHeight int64) error {
 	vr := tx.GetAttestation().GetValidatorRegistration()
 	if vr == nil {
 		return fmt.Errorf("unknown tx fell into isValidRegisterNodeAttestation: %v", tx)
@@ -83,7 +83,7 @@ func (s *Server) isValidRegisterNodeAttestation(ctx context.Context, tx *core_pr
 	return nil
 }
 
-func (s *Server) finalizeRegisterNodeAttestation(ctx context.Context, tx *core_proto.SignedTransaction, blockHeight int64) error {
+func (s *Server) finalizeRegisterNodeAttestation(ctx context.Context, tx *v1.SignedTransaction, blockHeight int64) error {
 	qtx := s.getDb()
 	vr := tx.GetAttestation().GetValidatorRegistration()
 
@@ -117,7 +117,7 @@ func (s *Server) finalizeRegisterNodeAttestation(ctx context.Context, tx *core_p
 	return nil
 }
 
-func (s *Server) isValidDeregisterNodeAttestation(ctx context.Context, tx *core_proto.SignedTransaction, signers []string, blockHeight int64) error {
+func (s *Server) isValidDeregisterNodeAttestation(ctx context.Context, tx *v1.SignedTransaction, signers []string, blockHeight int64) error {
 	att := tx.GetAttestation()
 	if att == nil {
 		return fmt.Errorf("unknown attestation fell into isValidDeregisterNodeAttestation: %v", tx)
@@ -153,7 +153,7 @@ func (s *Server) isValidDeregisterNodeAttestation(ctx context.Context, tx *core_
 	return nil
 }
 
-func (s *Server) finalizeDeregisterValidatorAttestation(ctx context.Context, tx *core_proto.SignedTransaction, misbehavior []abcitypes.Misbehavior) error {
+func (s *Server) finalizeDeregisterValidatorAttestation(ctx context.Context, tx *v1.SignedTransaction, misbehavior []abcitypes.Misbehavior) error {
 	dereg := tx.GetAttestation().GetValidatorDeregistration()
 	if dereg == nil {
 		return fmt.Errorf("unknown attestation fell into isValidDeregisterNodeAttestation: %v", tx)
@@ -167,7 +167,7 @@ func (s *Server) finalizeDeregisterValidatorAttestation(ctx context.Context, tx 
 	return nil
 }
 
-func (s *Server) isValidDeregisterMisbehavingNodeTx(tx *core_proto.SignedTransaction, misbehavior []abcitypes.Misbehavior) error {
+func (s *Server) isValidDeregisterMisbehavingNodeTx(tx *v1.SignedTransaction, misbehavior []abcitypes.Misbehavior) error {
 	sig := tx.GetSignature()
 	if sig == "" {
 		return fmt.Errorf("no signature provided for deregistration tx: %v", tx)
@@ -203,7 +203,7 @@ func (s *Server) isValidDeregisterMisbehavingNodeTx(tx *core_proto.SignedTransac
 	return fmt.Errorf("no misbehavior found matching deregistration tx: %v", tx)
 }
 
-func (s *Server) finalizeDeregisterMisbehavingNode(ctx context.Context, tx *core_proto.SignedTransaction, misbehavior []abcitypes.Misbehavior) (*core_proto.ValidatorMisbehaviorDeregistration, error) {
+func (s *Server) finalizeDeregisterMisbehavingNode(ctx context.Context, tx *v1.SignedTransaction, misbehavior []abcitypes.Misbehavior) (*v1.ValidatorMisbehaviorDeregistration, error) {
 	if err := s.isValidDeregisterMisbehavingNodeTx(tx, misbehavior); err != nil {
 		return nil, fmt.Errorf("invalid deregister node tx: %v", err)
 	}
@@ -227,7 +227,7 @@ func (s *Server) createDeregisterTransaction(address types.Address) ([]byte, err
 	if err != nil {
 		return []byte{}, fmt.Errorf("could not decode public key '%s' as base64 encoded string: %v", node.CometPubKey, err)
 	}
-	deregistrationTx := &core_proto.ValidatorMisbehaviorDeregistration{
+	deregistrationTx := &v1.ValidatorMisbehaviorDeregistration{
 		PubKey:       pubkeyEnc,
 		CometAddress: address.String(),
 	}
@@ -242,10 +242,10 @@ func (s *Server) createDeregisterTransaction(address types.Address) ([]byte, err
 		return []byte{}, fmt.Errorf("could not sign deregister tx: %v", err)
 	}
 
-	tx := core_proto.SignedTransaction{
+	tx := v1.SignedTransaction{
 		Signature: sig,
 		RequestId: uuid.NewString(),
-		Transaction: &core_proto.SignedTransaction_ValidatorDeregistration{
+		Transaction: &v1.SignedTransaction_ValidatorDeregistration{
 			ValidatorDeregistration: deregistrationTx,
 		},
 	}

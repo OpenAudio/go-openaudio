@@ -30,7 +30,6 @@ func (s *Server) startSyncTasks() error {
 }
 
 func (s *Server) onSyncTick() error {
-	<-s.awaitGrpcServerReady
 	<-s.awaitRpcReady
 
 	status, _ := s.rpc.Status(context.Background())

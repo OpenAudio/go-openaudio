@@ -5,7 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	core_sdk "github.com/AudiusProject/audiusd/pkg/core/sdk"
 	"github.com/AudiusProject/audiusd/pkg/sdk"
 )
 
@@ -23,6 +22,8 @@ var uploadCmd = &cobra.Command{
 	Use:   "upload",
 	Short: "Upload a file with metadata and signature",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+
 		// upload audio file
 		storageSdk := sdk.NewStorageSDK(fmt.Sprintf("https://%s", serverAddr))
 		uploadRes, err := storageSdk.UploadAudio(filePath)
@@ -31,12 +32,13 @@ var uploadCmd = &cobra.Command{
 		}
 		upload := uploadRes[0]
 
-		// release audio file
-		coreSdk, err := core_sdk.NewSdk(core_sdk.WithOapiendpoint(serverAddr), core_sdk.WithPrivKeyPath(privKeyPath))
-		if err != nil {
-			return fmt.Errorf("failed to connect to gRPC server: %w", err)
+		sdk := sdk.NewAudiusdSDK(serverAddr)
+		if err := sdk.ReadPrivKey(privKeyPath); err != nil {
+			return fmt.Errorf("failed to read private key: %w", err)
 		}
-		res, err := coreSdk.ReleaseTrack(upload.OrigFileCID, title, genre)
+
+		// release audio file
+		res, err := sdk.ReleaseTrack(ctx, upload.OrigFileCID, title, genre)
 		if err != nil {
 			return fmt.Errorf("failed to release track: %w", err)
 		}
@@ -52,11 +54,11 @@ var downloadCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		storageSdk := sdk.NewStorageSDK(fmt.Sprintf("https://%s", serverAddr))
 		if err := storageSdk.LoadPrivateKey(privKeyPath); err != nil {
-			return fmt.Errorf("Failed to load private key: %w", err)
+			return fmt.Errorf("failed to load private key: %w", err)
 		}
 
 		if err := storageSdk.DownloadTrack(trackId, outputPath); err != nil {
-			return fmt.Errorf("Failed to download track: %w", err)
+			return fmt.Errorf("failed to download track: %w", err)
 		}
 
 		fmt.Printf("Download successful: saved to %s\n", outputPath)

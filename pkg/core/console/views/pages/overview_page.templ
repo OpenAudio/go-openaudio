@@ -2,8 +2,8 @@ package pages
 
 import (
 	"fmt"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/dustin/go-humanize"
 	"google.golang.org/protobuf/proto"
 )
@@ -15,7 +15,7 @@ type TxData struct {
 
 func NewTxData(tx db.CoreTransaction) TxData {
 	txType := "Unknown"
-	var stx core_proto.SignedTransaction
+	var stx v1.SignedTransaction
 	if err := proto.Unmarshal(tx.Transaction, &stx); err == nil {
 		if stx.GetPlays() != nil {
 			txType = "Plays"
@@ -43,8 +43,6 @@ type OverviewPageView struct {
 	Blocks []BlockView
 	Txs    []TxData
 }
-
-func (p *Pages) OverviewPageJSON() {}
 
 templ (p *Pages) OverviewPageHTML(data *OverviewPageView) {
 	@p.layout.SiteFrame() {

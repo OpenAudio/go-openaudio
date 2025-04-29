@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/google/uuid"
@@ -93,7 +94,7 @@ func (s *Server) submitStorageProofTx(height int64, _ []byte, cid string, replic
 	if err != nil {
 		return fmt.Errorf("could not sign storage proof: %v", err)
 	}
-	proofTx := &core_proto.StorageProof{
+	proofTx := &v1.StorageProof{
 		Height:          height,
 		Cid:             cid,
 		Address:         s.config.ProposerAddress,
@@ -111,19 +112,19 @@ func (s *Server) submitStorageProofTx(height int64, _ []byte, cid string, replic
 		return fmt.Errorf("could not sign proof tx: %v", err)
 	}
 
-	tx := &core_proto.SignedTransaction{
+	tx := &v1.SignedTransaction{
 		Signature: sig,
 		RequestId: uuid.NewString(),
-		Transaction: &core_proto.SignedTransaction_StorageProof{
+		Transaction: &v1.SignedTransaction_StorageProof{
 			StorageProof: proofTx,
 		},
 	}
 
-	req := &core_proto.SendTransactionRequest{
+	req := &v1.SendTransactionRequest{
 		Transaction: tx,
 	}
 
-	txhash, err := s.SendTransaction(context.Background(), req)
+	txhash, err := s.self.SendTransaction(context.Background(), connect.NewRequest(req))
 	if err != nil {
 		return fmt.Errorf("send storage proof tx failed: %v", err)
 	}
@@ -139,7 +140,7 @@ func (s *Server) submitStorageProofTx(height int64, _ []byte, cid string, replic
 }
 
 func (s *Server) submitStorageProofVerificationTx(height int64, proof []byte) error {
-	verificationTx := &core_proto.StorageProofVerification{
+	verificationTx := &v1.StorageProofVerification{
 		Height: height,
 		Proof:  proof,
 	}
@@ -154,19 +155,19 @@ func (s *Server) submitStorageProofVerificationTx(height int64, proof []byte) er
 		return fmt.Errorf("could not sign proof tx: %v", err)
 	}
 
-	tx := &core_proto.SignedTransaction{
+	tx := &v1.SignedTransaction{
 		Signature: sig,
 		RequestId: uuid.NewString(),
-		Transaction: &core_proto.SignedTransaction_StorageProofVerification{
+		Transaction: &v1.SignedTransaction_StorageProofVerification{
 			StorageProofVerification: verificationTx,
 		},
 	}
 
-	req := &core_proto.SendTransactionRequest{
+	req := &v1.SendTransactionRequest{
 		Transaction: tx,
 	}
 
-	txhash, err := s.SendTransaction(context.Background(), req)
+	txhash, err := s.self.SendTransaction(context.Background(), connect.NewRequest(req))
 	if err != nil {
 		return fmt.Errorf("send storage proof verification tx failed: %v", err)
 	}
@@ -174,7 +175,7 @@ func (s *Server) submitStorageProofVerificationTx(height int64, proof []byte) er
 	return nil
 }
 
-func (s *Server) isValidStorageProofTx(ctx context.Context, tx *core_proto.SignedTransaction, currentBlockHeight int64, enforceReplicas bool) error {
+func (s *Server) isValidStorageProofTx(ctx context.Context, tx *v1.SignedTransaction, currentBlockHeight int64, enforceReplicas bool) error {
 	// validate signer == prover
 	sig := tx.GetSignature()
 	if sig == "" {
@@ -233,7 +234,7 @@ func (s *Server) isValidStorageProofTx(ctx context.Context, tx *core_proto.Signe
 	return nil
 }
 
-func (s *Server) isValidStorageProofVerificationTx(ctx context.Context, tx *core_proto.SignedTransaction, currentBlockHeight int64) error {
+func (s *Server) isValidStorageProofVerificationTx(ctx context.Context, tx *v1.SignedTransaction, currentBlockHeight int64) error {
 	spv := tx.GetStorageProofVerification()
 	if spv == nil {
 		return fmt.Errorf("unknown tx fell into isValidStorageProofVerficationTx: %v", tx)
@@ -264,7 +265,7 @@ func (s *Server) isValidStorageProofVerificationTx(ctx context.Context, tx *core
 	return nil
 }
 
-func (s *Server) finalizeStorageProof(ctx context.Context, tx *core_proto.SignedTransaction, blockHeight int64) (*core_proto.StorageProof, error) {
+func (s *Server) finalizeStorageProof(ctx context.Context, tx *v1.SignedTransaction, blockHeight int64) (*v1.StorageProof, error) {
 	if err := s.isValidStorageProofTx(ctx, tx, blockHeight, false); err != nil {
 		return nil, err
 	}
@@ -296,7 +297,7 @@ func (s *Server) finalizeStorageProof(ctx context.Context, tx *core_proto.Signed
 	return sp, nil
 }
 
-func (s *Server) finalizeStorageProofVerification(ctx context.Context, tx *core_proto.SignedTransaction, currentBlockHeight int64) (*core_proto.StorageProofVerification, error) {
+func (s *Server) finalizeStorageProofVerification(ctx context.Context, tx *v1.SignedTransaction, currentBlockHeight int64) (*v1.StorageProofVerification, error) {
 	if err := s.isValidStorageProofVerificationTx(ctx, tx, currentBlockHeight); err != nil {
 		return nil, err
 	}

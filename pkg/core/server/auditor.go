@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"time"
 
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/proto"
@@ -20,8 +20,8 @@ func (s *Server) createRollupTx(ctx context.Context, ts time.Time, height int64)
 	if err != nil {
 		return []byte{}, err
 	}
-	e := core_proto.SignedTransaction{
-		Transaction: &core_proto.SignedTransaction_SlaRollup{
+	e := v1.SignedTransaction{
+		Transaction: &v1.SignedTransaction_SlaRollup{
 			SlaRollup: rollup,
 		},
 	}
@@ -32,8 +32,8 @@ func (s *Server) createRollupTx(ctx context.Context, ts time.Time, height int64)
 	return rollupTx, nil
 }
 
-func (s *Server) createRollup(ctx context.Context, timestamp time.Time, height int64) (*core_proto.SlaRollup, error) {
-	var rollup *core_proto.SlaRollup
+func (s *Server) createRollup(ctx context.Context, timestamp time.Time, height int64) (*v1.SlaRollup, error) {
+	var rollup *v1.SlaRollup
 	var start int64 = 0
 	latestRollup, err := s.db.GetLatestSlaRollup(ctx)
 	if err == nil {
@@ -57,22 +57,22 @@ func (s *Server) createRollup(ctx context.Context, timestamp time.Time, height i
 		return rollup, err
 	}
 
-	rollup = &core_proto.SlaRollup{
+	rollup = &v1.SlaRollup{
 		Timestamp:  timestamppb.New(timestamp),
 		BlockStart: start,
 		BlockEnd:   height - 1, // exclude current block
-		Reports:    make([]*core_proto.SlaNodeReport, 0, len(validators)),
+		Reports:    make([]*v1.SlaNodeReport, 0, len(validators)),
 	}
 
 	for _, v := range validators {
-		var proto_rep core_proto.SlaNodeReport
+		var proto_rep v1.SlaNodeReport
 		if r, ok := reportMap[v.CometAddress]; ok {
-			proto_rep = core_proto.SlaNodeReport{
+			proto_rep = v1.SlaNodeReport{
 				Address:           r.Address,
 				NumBlocksProposed: r.BlocksProposed,
 			}
 		} else {
-			proto_rep = core_proto.SlaNodeReport{
+			proto_rep = v1.SlaNodeReport{
 				Address:           v.CometAddress,
 				NumBlocksProposed: 0,
 			}
@@ -84,7 +84,7 @@ func (s *Server) createRollup(ctx context.Context, timestamp time.Time, height i
 }
 
 // Checks if the given sla rollup matches our local tallies
-func (s *Server) isValidRollup(ctx context.Context, timestamp time.Time, height int64, rollup *core_proto.SlaRollup) (bool, error) {
+func (s *Server) isValidRollup(ctx context.Context, timestamp time.Time, height int64, rollup *v1.SlaRollup) (bool, error) {
 	if !s.shouldProposeNewRollup(ctx, height) {
 		return false, nil
 	}
@@ -121,7 +121,7 @@ func (s *Server) shouldProposeNewRollup(ctx context.Context, height int64) bool 
 	return height-previousHeight >= int64(s.config.SlaRollupInterval)
 }
 
-func (s *Server) finalizeSlaRollup(ctx context.Context, event *core_proto.SignedTransaction, txHash string) (*core_proto.SlaRollup, error) {
+func (s *Server) finalizeSlaRollup(ctx context.Context, event *v1.SignedTransaction, txHash string) (*v1.SlaRollup, error) {
 	appDb := s.getDb()
 	rollup := event.GetSlaRollup()
 

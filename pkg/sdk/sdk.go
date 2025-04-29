@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"crypto/ecdsa"
 	"net/http"
 	"strings"
 
@@ -11,6 +12,8 @@ import (
 )
 
 type AudiusdSDK struct {
+	privKey *ecdsa.PrivateKey
+
 	Core    corev1connect.CoreServiceClient
 	Storage storagev1connect.StorageServiceClient
 	ETL     etlv1connect.ETLServiceClient

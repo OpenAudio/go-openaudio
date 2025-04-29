@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -111,7 +111,7 @@ func Run(ctx context.Context, logger *common.Logger) error {
 }
 
 func processTransaction(ctx context.Context, logger *common.Logger, queries *db.Queries, tx db.CoreTransaction, blockHeight int64) error {
-	var signedTx core_proto.SignedTransaction
+	var signedTx v1.SignedTransaction
 	if err := proto.Unmarshal(tx.Transaction, &signedTx); err != nil {
 		return fmt.Errorf("error unmarshaling transaction: %v", err)
 	}
@@ -119,21 +119,21 @@ func processTransaction(ctx context.Context, logger *common.Logger, queries *db.
 	// Insert into core_etl_tx first
 	var txType string
 	switch signedTx.GetTransaction().(type) {
-	case *core_proto.SignedTransaction_Plays:
+	case *v1.SignedTransaction_Plays:
 		txType = "plays"
-	case *core_proto.SignedTransaction_ValidatorRegistration:
+	case *v1.SignedTransaction_ValidatorRegistration:
 		txType = "validator_registration"
-	case *core_proto.SignedTransaction_ValidatorDeregistration:
+	case *v1.SignedTransaction_ValidatorDeregistration:
 		txType = "validator_deregistration"
-	case *core_proto.SignedTransaction_SlaRollup:
+	case *v1.SignedTransaction_SlaRollup:
 		txType = "sla_rollup"
-	case *core_proto.SignedTransaction_StorageProof:
+	case *v1.SignedTransaction_StorageProof:
 		txType = "storage_proof"
-	case *core_proto.SignedTransaction_StorageProofVerification:
+	case *v1.SignedTransaction_StorageProofVerification:
 		txType = "storage_proof_verification"
-	case *core_proto.SignedTransaction_ManageEntity:
+	case *v1.SignedTransaction_ManageEntity:
 		txType = "manage_entity"
-	case *core_proto.SignedTransaction_Attestation:
+	case *v1.SignedTransaction_Attestation:
 		txType = "attestation"
 	}
 
@@ -155,7 +155,7 @@ func processTransaction(ctx context.Context, logger *common.Logger, queries *db.
 	}
 
 	switch t := signedTx.GetTransaction().(type) {
-	case *core_proto.SignedTransaction_Plays:
+	case *v1.SignedTransaction_Plays:
 		for _, play := range t.Plays.Plays {
 			if err := queries.InsertDecodedPlay(ctx, db.InsertDecodedPlayParams{
 				TxHash:    tx.TxHash,
@@ -173,7 +173,7 @@ func processTransaction(ctx context.Context, logger *common.Logger, queries *db.
 			}
 		}
 
-	case *core_proto.SignedTransaction_ValidatorRegistration:
+	case *v1.SignedTransaction_ValidatorRegistration:
 		if err := queries.InsertDecodedValidatorRegistration(ctx, db.InsertDecodedValidatorRegistrationParams{
 			TxHash:       tx.TxHash,
 			Endpoint:     t.ValidatorRegistration.Endpoint,
@@ -188,7 +188,7 @@ func processTransaction(ctx context.Context, logger *common.Logger, queries *db.
 			logger.Errorf("failed to insert validator registration: %v", err)
 		}
 
-	case *core_proto.SignedTransaction_ValidatorDeregistration:
+	case *v1.SignedTransaction_ValidatorDeregistration:
 		if err := queries.InsertDecodedValidatorDeregistration(ctx, db.InsertDecodedValidatorDeregistrationParams{
 			TxHash:       tx.TxHash,
 			CometAddress: t.ValidatorDeregistration.CometAddress,
@@ -198,7 +198,7 @@ func processTransaction(ctx context.Context, logger *common.Logger, queries *db.
 			logger.Errorf("failed to insert validator deregistration: %v", err)
 		}
 
-	case *core_proto.SignedTransaction_SlaRollup:
+	case *v1.SignedTransaction_SlaRollup:
 		if err := queries.InsertDecodedSlaRollup(ctx, db.InsertDecodedSlaRollupParams{
 			TxHash:     tx.TxHash,
 			BlockStart: t.SlaRollup.BlockStart,
@@ -209,7 +209,7 @@ func processTransaction(ctx context.Context, logger *common.Logger, queries *db.
 			logger.Errorf("failed to insert SLA rollup: %v", err)
 		}
 
-	case *core_proto.SignedTransaction_StorageProof:
+	case *v1.SignedTransaction_StorageProof:
 		if err := queries.InsertDecodedStorageProof(ctx, db.InsertDecodedStorageProofParams{
 			TxHash:          tx.TxHash,
 			Height:          t.StorageProof.Height,
@@ -222,7 +222,7 @@ func processTransaction(ctx context.Context, logger *common.Logger, queries *db.
 			logger.Errorf("failed to insert storage proof: %v", err)
 		}
 
-	case *core_proto.SignedTransaction_StorageProofVerification:
+	case *v1.SignedTransaction_StorageProofVerification:
 		if err := queries.InsertDecodedStorageProofVerification(ctx, db.InsertDecodedStorageProofVerificationParams{
 			TxHash:    tx.TxHash,
 			Height:    t.StorageProofVerification.Height,
@@ -232,7 +232,7 @@ func processTransaction(ctx context.Context, logger *common.Logger, queries *db.
 			logger.Errorf("failed to insert storage proof verification: %v", err)
 		}
 
-	case *core_proto.SignedTransaction_ManageEntity:
+	case *v1.SignedTransaction_ManageEntity:
 		if err := queries.InsertDecodedManageEntity(ctx, db.InsertDecodedManageEntityParams{
 			TxHash:     tx.TxHash,
 			UserID:     t.ManageEntity.UserId,
@@ -248,9 +248,9 @@ func processTransaction(ctx context.Context, logger *common.Logger, queries *db.
 			logger.Errorf("failed to insert manage entity: %v", err)
 		}
 
-	case *core_proto.SignedTransaction_Attestation:
+	case *v1.SignedTransaction_Attestation:
 		switch t := t.Attestation.GetBody().(type) {
-		case *core_proto.Attestation_ValidatorRegistration:
+		case *v1.Attestation_ValidatorRegistration:
 			if err := queries.InsertDecodedValidatorRegistration(ctx, db.InsertDecodedValidatorRegistrationParams{
 				TxHash:       tx.TxHash,
 				Endpoint:     t.ValidatorRegistration.Endpoint,
@@ -264,7 +264,7 @@ func processTransaction(ctx context.Context, logger *common.Logger, queries *db.
 			}); err != nil {
 				logger.Errorf("failed to insert validator registration: %v", err)
 			}
-		case *core_proto.Attestation_ValidatorDeregistration:
+		case *v1.Attestation_ValidatorDeregistration:
 			if err := queries.InsertDecodedValidatorDeregistration(ctx, db.InsertDecodedValidatorDeregistrationParams{
 				TxHash:       tx.TxHash,
 				CometAddress: t.ValidatorDeregistration.CometAddress,

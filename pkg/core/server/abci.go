@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/AudiusProject/audiusd/pkg/core/gen/core_proto"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto/ed25519"
@@ -441,8 +441,8 @@ func (s *Server) commitInProgressTx(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) isValidSignedTransaction(tx []byte) (*core_proto.SignedTransaction, error) {
-	var msg core_proto.SignedTransaction
+func (s *Server) isValidSignedTransaction(tx []byte) (*v1.SignedTransaction, error) {
+	var msg v1.SignedTransaction
 	err := proto.Unmarshal(tx, &msg)
 	if err != nil {
 		return nil, err
@@ -470,18 +470,18 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 	}
 
 	switch signedTx.Transaction.(type) {
-	case *core_proto.SignedTransaction_Plays:
-	case *core_proto.SignedTransaction_Attestation:
+	case *v1.SignedTransaction_Plays:
+	case *v1.SignedTransaction_Attestation:
 		if err := s.isValidAttestation(ctx, signedTx, blockHeight); err != nil {
 			s.logger.Error("Invalid block: invalid attestation tx", "error", err)
 			return false, nil
 		}
-	case *core_proto.SignedTransaction_ValidatorDeregistration:
+	case *v1.SignedTransaction_ValidatorDeregistration:
 		if err := s.isValidDeregisterMisbehavingNodeTx(signedTx, misbehavior); err != nil {
 			s.logger.Error("Invalid block: invalid deregister node tx", "error", err)
 			return false, nil
 		}
-	case *core_proto.SignedTransaction_SlaRollup:
+	case *v1.SignedTransaction_SlaRollup:
 		if valid, err := s.isValidRollup(ctx, blockTime, blockHeight, signedTx.GetSlaRollup()); err != nil {
 			s.logger.Error("Invalid block: error validating sla rollup", "error", err)
 			return false, err
@@ -489,17 +489,17 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 			s.logger.Error("Invalid block: invalid rollup")
 			return false, nil
 		}
-	case *core_proto.SignedTransaction_StorageProof:
+	case *v1.SignedTransaction_StorageProof:
 		if err := s.isValidStorageProofTx(ctx, signedTx, blockHeight, true); err != nil {
 			s.logger.Error("Invalid block: invalid storage proof tx", "error", err)
 			return false, nil
 		}
-	case *core_proto.SignedTransaction_StorageProofVerification:
+	case *v1.SignedTransaction_StorageProofVerification:
 		if err := s.isValidStorageProofVerificationTx(ctx, signedTx, blockHeight); err != nil {
 			s.logger.Error("Invalid block: invalid storage proof verification tx", "error", err)
 			return false, nil
 		}
-	case *core_proto.SignedTransaction_Release:
+	case *v1.SignedTransaction_Release:
 		if err := s.isValidReleaseTx(ctx, signedTx); err != nil {
 			s.logger.Error("Invalid block: invalid release tx", "error", err)
 			return false, nil
@@ -508,26 +508,26 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 	return true, nil
 }
 
-func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.FinalizeBlockRequest, msg *core_proto.SignedTransaction, txHash string, blockHeight int64) (proto.Message, error) {
+func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.FinalizeBlockRequest, msg *v1.SignedTransaction, txHash string, blockHeight int64) (proto.Message, error) {
 	misbehavior := req.Misbehavior
 	switch t := msg.Transaction.(type) {
-	case *core_proto.SignedTransaction_Plays:
+	case *v1.SignedTransaction_Plays:
 		return s.finalizePlayTransaction(ctx, msg)
-	case *core_proto.SignedTransaction_ManageEntity:
+	case *v1.SignedTransaction_ManageEntity:
 		return s.finalizeManageEntity(ctx, msg)
-	case *core_proto.SignedTransaction_Attestation:
+	case *v1.SignedTransaction_Attestation:
 		return s.finalizeAttestation(ctx, msg, req.Height)
-	case *core_proto.SignedTransaction_ValidatorRegistration:
+	case *v1.SignedTransaction_ValidatorRegistration:
 		return s.finalizeLegacyRegisterNode(ctx, msg, blockHeight)
-	case *core_proto.SignedTransaction_ValidatorDeregistration:
+	case *v1.SignedTransaction_ValidatorDeregistration:
 		return s.finalizeDeregisterMisbehavingNode(ctx, msg, misbehavior)
-	case *core_proto.SignedTransaction_SlaRollup:
+	case *v1.SignedTransaction_SlaRollup:
 		return s.finalizeSlaRollup(ctx, msg, txHash)
-	case *core_proto.SignedTransaction_StorageProof:
+	case *v1.SignedTransaction_StorageProof:
 		return s.finalizeStorageProof(ctx, msg, blockHeight)
-	case *core_proto.SignedTransaction_StorageProofVerification:
+	case *v1.SignedTransaction_StorageProofVerification:
 		return s.finalizeStorageProofVerification(ctx, msg, blockHeight)
-	case *core_proto.SignedTransaction_Release:
+	case *v1.SignedTransaction_Release:
 		return s.finalizeRelease(ctx, msg, txHash)
 	default:
 		return nil, fmt.Errorf("unhandled proto event: %v %T", msg, t)
