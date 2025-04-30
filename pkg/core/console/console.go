@@ -1,5 +1,3 @@
-//go:generate templ generate
-
 package console
 
 import (

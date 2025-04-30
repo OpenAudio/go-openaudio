@@ -70,16 +70,16 @@ ignore-code-gen:
 	@touch $(SQL_ARTIFACTS) $(TEMPL_ARTIFACTS) $(PROTO_ARTIFACTS) go.mod
 
 .PHONY: build-wrapper-local build-push-wrapper
-build-wrapper-local:
+docker-wrapper-local:
 	@echo "Building Docker image for local platform..."
 	docker buildx build --load -t audius/audius-d:$(WRAPPER_TAG) pkg/orchestration
 
-build-push-wrapper:
+docker-push-wrapper:
 	@echo "Building and pushing Docker images for all platforms..."
 	docker buildx build --platform linux/amd64,linux/arm64 --push -t audius/audius-d:$(WRAPPER_TAG) pkg/orchestration
 
 .PHONY: build-push-cpp
-build-push-cpp:
+docker-push-cpp:
 	docker buildx build --platform linux/amd64,linux/arm64 --push -t audius/cpp:bookworm -f ./cmd/audiusd/Dockerfile.deps ./
 
 .PHONY: install uninstall
@@ -117,16 +117,17 @@ go.mod: $(GO_SRCS)
 	@touch go.mod # in case there's nothing to tidy
 
 .PHONY: gen
-gen: regen-templ regen-proto regen-sql regen-go
+gen: regen-templ regen-proto regen-sql
 
 .PHONY: regen-templ
 regen-templ: $(TEMPL_ARTIFACTS)
 $(TEMPL_ARTIFACTS): $(TEMPL_SRCS)
 	@echo Regenerating templ code
-	cd pkg/core/console && go generate ./...
+	cd pkg/core/console && templ generate -log-level error
 
 .PHONY: regen-proto
-regen-proto: $(PROTO_SRCS)
+regen-proto: $(PROTO_ARTIFACTS)
+$(PROTO_ARTIFACTS): $(PROTO_SRCS)
 	@echo Regenerating protobuf code
 	buf --version
 	buf generate
@@ -137,22 +138,23 @@ $(SQL_ARTIFACTS): $(SQL_SRCS)
 	@echo Regenerating sql code
 	cd pkg/core/db && sqlc generate
 
-.PHONY: regen-go
-regen-go:
-	cd pkg/core && go generate ./...
+.PHONY: regen-contracts
+regen-contracts:
+	@echo Regenerating contracts
+	cd pkg/core && sh -c "./generate_contract.sh"
 
-.PHONY: build-audiusd-test build-audiusd-dev build-audiusd-local
-build-audiusd-test:
+.PHONY: docker-test docker-dev docker-local
+docker-test:
 	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target test --build-arg GIT_SHA=$(GIT_SHA) -t audius/audiusd:test -f ./cmd/audiusd/Dockerfile ./
 
-build-audiusd-dev:
+docker-dev:
 	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target dev --build-arg GIT_SHA=$(GIT_SHA) -t audius/audiusd:dev -f ./cmd/audiusd/Dockerfile ./
 
-build-audiusd-local:
+docker-local:
 	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target prod --build-arg GIT_SHA=$(GIT_SHA) -t audius/audiusd:local -f ./cmd/audiusd/Dockerfile ./
 
-.PHONY: audiusd-dev audiusd-dev-down
-audiusd-dev: audiusd-dev-down build-audiusd-dev build-audiusd-test
+.PHONY: up down
+up: down build-dev build-test
 	@docker compose \
 		--file='dev/docker-compose.yml' \
 		--project-name='dev' \
@@ -160,7 +162,7 @@ audiusd-dev: audiusd-dev-down build-audiusd-dev build-audiusd-test
 		--profile=audiusd-dev \
 		up -d
 
-audiusd-dev-down:
+down:
 	@docker compose \
 		--file='dev/docker-compose.yml' \
 		--project-name='dev' \
@@ -168,10 +170,13 @@ audiusd-dev-down:
 		--profile=audiusd-dev \
 		down -v
 
+.PHONY: test
+test: mediorum-test core-test
+
 .PHONY: mediorum-test
 mediorum-test:
 	@if [ -z "$(AUDIUSD_TEST_IMAGE)" ]; then \
-		make build-audiusd-test; \
+		make docker-test; \
 	fi
 	@docker compose \
 		--file='dev/docker-compose.yml' \
@@ -190,7 +195,7 @@ mediorum-test:
 .PHONY: core-test
 core-test:
 	@if [ -z "$(AUDIUSD_TEST_IMAGE)" ]; then \
-		make build-audiusd-test; \
+		make docker-test; \
 	fi
 	docker compose \
 		--file='dev/docker-compose.yml' \

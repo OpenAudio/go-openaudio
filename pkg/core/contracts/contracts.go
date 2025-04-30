@@ -1,4 +1,3 @@
-//go:generate sh -c "chmod +x ./generate_contract.sh && ./generate_contract.sh"
 package contracts
 
 import (

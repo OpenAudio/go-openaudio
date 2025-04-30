@@ -6,7 +6,7 @@
     },
     {
       "name": "Recreate generated go files",
-      "command": "make gen"
+      "command": "make gen | grep 'Nothing to be done' || (echo 'uncommitted generated changes!! Run `make gen` before committing'  && false)"
     }
   ]
 }

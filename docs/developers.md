@@ -28,7 +28,7 @@ echo "127.0.0.1       node1.audiusd.devnet node2.audiusd.devnet node3.audiusd.de
 Build and run a local devnet with 4 nodes.
 
 ```bash
-make audiusd-dev
+make up
 ```
 
 Access the dev nodes.
@@ -76,14 +76,14 @@ open https://node1.audiusd.devnet/console/uptime
 Cleanup.
 
 ```bash
-make audiusd-dev-down
+make down
 ```
 
 ### Develop against stage or prod
 
 ```bash
 # build a local node
-make build-audiusd-dev
+make docker-dev
 
 # peer with prod
 docker run --rm -it -p 80:80 -p 443:443 -e NETWORK=prod audius/audiusd:dev
