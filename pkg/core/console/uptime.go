@@ -122,8 +122,8 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 	posRollups, err := cs.db.GetStorageProofRollups(
 		ctx,
 		db.GetStorageProofRollupsParams{
-			activeReport.BlockStart,
-			activeReport.BlockEnd,
+			BlockHeight:   activeReport.BlockStart,
+			BlockHeight_2: activeReport.BlockEnd,
 		},
 	)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -211,7 +211,7 @@ func (cs *Console) getActiveSlaReport(ctx context.Context, rollupId string) (pag
 }
 
 func (cs *Console) getAverageBlockTimeForReport(ctx context.Context, report pages.SlaReport) (int, error) {
-	var avgBlockTimeMs int = 0
+	var avgBlockTimeMs = 0
 	previousRollup, err := cs.db.GetPreviousSlaRollupFromId(ctx, report.SlaRollupId)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		err = fmt.Errorf("Failure reading previous SlaRollup from db: %v", err)

@@ -90,6 +90,10 @@ jobs:
             make install-go-deps
             go mod download
       - run:
+          name: Lint
+          command: |
+            make lint || true
+      - run:
           name: Build audiusd binaries
           command: |
             make bin/audiusd-x86_64-linux

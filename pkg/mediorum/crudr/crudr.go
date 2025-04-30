@@ -316,7 +316,7 @@ func (c *Crudr) GetOutboxSizes() map[string]int {
 
 func (c *Crudr) GetPercentNodesSeeded() float64 {
 	var nCaughtUp int
-	var nPeers int = len(c.peerClients)
+	var nPeers = len(c.peerClients)
 	for _, p := range c.peerClients {
 		if p.Seeded {
 			nCaughtUp++

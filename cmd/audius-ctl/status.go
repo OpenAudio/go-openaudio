@@ -264,7 +264,7 @@ func writeResultsToTable(results []hcResult) error {
 			usedBytes: res.HealthSummary.DiskSpaceUsedBytes,
 			sizeBytes: res.HealthSummary.DiskSpaceSizeBytes,
 		}
-		row[uptimeCol] = time.Now().Sub(res.HealthSummary.BootTime)
+		row[uptimeCol] = time.Since(res.HealthSummary.BootTime)
 		if res.HealthSummary.IPCheck {
 			row[ipCol] = "matched"
 		} else {

@@ -107,7 +107,15 @@ install-go-deps:
 	go install -v github.com/cortesi/modd/cmd/modd@latest
 	go install -v github.com/a-h/templ/cmd/templ@latest
 	go install -v github.com/ethereum/go-ethereum/cmd/abigen@latest
-	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+.PHONY: lint
+lint:
+	golangci-lint run
+
+.PHONY: lint-fix
+lint-fix:
+	golangci-lint run --fix
 
 go.sum: go.mod
 go.mod: $(GO_SRCS)

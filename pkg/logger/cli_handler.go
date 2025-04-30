@@ -6,8 +6,6 @@ import (
 	"os"
 )
 
-var ()
-
 // Log handler specifically for CLI usage.
 type CliHandler struct {
 	handler slog.Handler

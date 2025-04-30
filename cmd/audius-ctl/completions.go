@@ -32,7 +32,7 @@ func getAvailableHostsWithPrefix(prefix string) ([]string, error) {
 		return nil, logger.Error("Could not get current context:", err)
 	}
 	hosts := make([]string, 0)
-	for host, _ := range ctx.Nodes {
+	for host := range ctx.Nodes {
 		if strings.HasPrefix(host, prefix) {
 			hosts = append(hosts, host)
 		}

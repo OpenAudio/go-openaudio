@@ -1,0 +1,28 @@
+run:
+  timeout: 2m
+  tests: true
+
+linters:
+  enable:
+    - staticcheck
+    - gofmt
+    - goimports
+    - govet
+    - revive
+    - unused
+    - ineffassign
+    - gosimple
+    - stylecheck
+    - dupl
+
+linters-settings:
+  gofmt:
+    simplify: true
+  revive:
+    ignore-generated-header: true
+    severity: warning
+
+issues:
+  exclude-use-default: false
+  max-same-issues: 10
+  max-issues-per-linter: 0

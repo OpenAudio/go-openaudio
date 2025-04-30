@@ -2,8 +2,6 @@ module github.com/AudiusProject/audiusd
 
 go 1.23.8
 
-toolchain go1.24.2
-
 require (
 	github.com/a-h/templ v0.3.819
 	github.com/cometbft/cometbft v1.0.0

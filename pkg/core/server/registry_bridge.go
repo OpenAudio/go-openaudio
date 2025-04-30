@@ -189,7 +189,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 		SpId:           spID,
 		Deadline:       s.cache.currentHeight.Load() + 120,
 	}
-	for addr, _ := range rendezvous {
+	for addr := range rendezvous {
 		if peer, ok := peers[addr]; ok {
 			resp, err := peer.GetRegistrationAttestation(ctx, connect.NewRequest(&v1.GetRegistrationAttestationRequest{
 				Registration: &v1.ValidatorRegistration{
@@ -415,7 +415,7 @@ func (s *Server) deregisterMissingNode(ctx context.Context, ethAddress string) {
 	}
 
 	peers := s.GetPeers()
-	for addr, _ := range rendezvous {
+	for addr := range rendezvous {
 		if peer, ok := peers[addr]; ok {
 			resp, err := peer.GetDeregistrationAttestation(ctx, connect.NewRequest(&v1.GetDeregistrationAttestationRequest{
 				Deregistration: &v1.ValidatorDeregistration{
