@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 
@@ -41,7 +39,13 @@ func (s *Server) isValidReleaseTx(ctx context.Context, tx *v1.SignedTransaction)
 	if ern.ReleaseHeader.Sender == nil {
 		return errors.New("Empty release sender")
 	}
-	if !bytes.Equal(crypto.CompressPubkey(pubkey), ern.ReleaseHeader.Sender.PubKey) {
+
+	if ern.ReleaseHeader.Sender.Address == "" {
+		return errors.New("Empty release sender address")
+	}
+
+	recoveredAddress := crypto.PubkeyToAddress(*pubkey)
+	if recoveredAddress.Hex() != ern.ReleaseHeader.Sender.Address {
 		return errors.New("Sender and signer do not match")
 	}
 
@@ -126,7 +130,7 @@ func (s *Server) finalizeRelease(ctx context.Context, tx *v1.SignedTransaction, 
 
 			if err := qtx.InsertManagementKey(ctx, db.InsertManagementKeyParams{
 				TrackID: id,
-				PubKey:  base64.StdEncoding.EncodeToString(ern.ReleaseHeader.Sender.PubKey),
+				Address: ern.ReleaseHeader.Sender.Address,
 			}); err != nil {
 				return nil, fmt.Errorf("Could not insert management key: %v", err)
 			}
@@ -134,7 +138,7 @@ func (s *Server) finalizeRelease(ctx context.Context, tx *v1.SignedTransaction, 
 			if ern.ReleaseHeader.SentOnBehalfOf != nil {
 				if err := qtx.InsertManagementKey(ctx, db.InsertManagementKeyParams{
 					TrackID: id,
-					PubKey:  base64.StdEncoding.EncodeToString(ern.ReleaseHeader.SentOnBehalfOf.PubKey),
+					Address: ern.ReleaseHeader.SentOnBehalfOf.Address,
 				}); err != nil {
 					return nil, fmt.Errorf("Could not insert management key: %v", err)
 				}

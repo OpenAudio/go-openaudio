@@ -224,4 +224,4 @@ values ($1, $2, $3, $4);
 insert into access_keys (track_id, pub_key) values ($1, $2);
 
 -- name: InsertManagementKey :exec
-insert into management_keys (track_id, pub_key) values ($1, $2);
+insert into management_keys (track_id, address) values ($1, $2);

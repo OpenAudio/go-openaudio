@@ -125,6 +125,10 @@ func (ss *MediorumServer) processPlayRecordBatch() error {
 		res, err = ss.core.SendTransaction(ctx, connect.NewRequest(&v1.SendTransactionRequest{
 			Transaction: signedTx,
 		}))
+
+		if err != nil {
+			ss.logger.Error("core error submitting plays event", "err", err)
+		}
 	}()
 
 	if err != nil {

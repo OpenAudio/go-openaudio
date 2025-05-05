@@ -162,7 +162,7 @@ docker-local:
 	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target prod --build-arg GIT_SHA=$(GIT_SHA) -t audius/audiusd:local -f ./cmd/audiusd/Dockerfile ./
 
 .PHONY: up down
-up: down build-dev build-test
+up: down docker-dev docker-test
 	@docker compose \
 		--file='dev/docker-compose.yml' \
 		--project-name='dev' \

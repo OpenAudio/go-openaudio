@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package storage.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/AudiusProject/audiusd/pkg/api/storage/v1";
 
 message PingRequest {}
@@ -14,17 +16,28 @@ message GetHealthRequest {}
 
 message GetHealthResponse {}
 
-message GetUploadsRequest {
-  Pagination pagination = 1;
-  Order order = 2;
+message UploadFilesRequest {
+  string signature = 1;
+  string user_wallet = 2;
+  string template = 3;
+  string preview_start = 4;
+  repeated string placement_hosts = 5;
+  repeated File files = 6;
 }
 
-message GetUploadsResponse {
+message File {
+  string filename = 1;
+  bytes data = 2;
+}
+
+message UploadFilesResponse {
   repeated Upload uploads = 1;
 }
 
 message GetUploadRequest {
   string id = 1;
+  bool fix = 2;
+  bool analyze = 3;
 }
 
 message GetUploadResponse {
@@ -32,37 +45,69 @@ message GetUploadResponse {
 }
 
 message StreamTrackRequest {
-  string id = 1;
+  StreamTrackSignature signature = 1;
+  int64 chunk_size = 2;
 }
 
 message StreamTrackResponse {
   bytes data = 1;
 }
 
-message StreamImageRequest {
-  string id = 1;
+message StreamTrackSignatureData {
+  string track_id = 1;
+  int64 timestamp = 2;
 }
 
-message StreamImageResponse {
-  bytes data = 1;
-}
-
-message Pagination {
-  int64 limit = 1;
-  int64 offset = 2;
-}
-
-enum Order {
-  ORDER_UNSPECIFIED = 0;
-  ORDER_ASC = 1;
-  ORDER_DESC = 2;
+message StreamTrackSignature {
+  // hex encoded signature of the data_hash
+  string signature = 1;
+  // sha256 hash of the data
+  bytes data_hash = 2;
+  StreamTrackSignatureData data = 3;
 }
 
 message Upload {
   string id = 1;
-  string user_id = 2;
-  string track_id = 3;
-  string file_name = 4;
-  string file_type = 5;
-  string file_size = 6;
+  string user_wallet = 2;
+  string template = 3;
+  string orig_filename = 4;
+  string orig_file_cid = 5;
+  string selected_preview = 6;
+  FFProbeResult probe = 7;
+  string error = 8;
+  int32 error_count = 9;
+  repeated string mirrors = 10;
+  repeated string transcoded_mirrors = 11;
+  string status = 12;
+  repeated string placement_hosts = 13;
+  string created_by = 14;
+  google.protobuf.Timestamp created_at = 15;
+  google.protobuf.Timestamp updated_at = 16;
+  string transcoded_by = 17;
+  double transcode_progress = 18;
+  google.protobuf.Timestamp transcoded_at = 19;
+  map<string, string> transcode_results = 20;
+  string audio_analysis_status = 21;
+  string audio_analysis_error = 22;
+  int32 audio_analysis_error_count = 23;
+  string audio_analyzed_by = 24;
+  google.protobuf.Timestamp audio_analyzed_at = 25;
+  AudioAnalysisResult audio_analysis_results = 26;
+}
+
+message FFProbeResult {
+  message Format {
+    string filename = 1;
+    string format_name = 2;
+    string format_long_name = 3;
+    string duration = 4;
+    string size = 5;
+    string bit_rate = 6;
+  }
+  Format format = 1;
+}
+
+message AudioAnalysisResult {
+  double bpm = 1;
+  string key = 2;
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/AudiusProject/audiusd/pkg/common"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 func (s *AudiusdSDK) ReadPrivKey(path string) error {
@@ -41,4 +42,22 @@ func (s *AudiusdSDK) RecoverSigner(msg []byte, signature string) (string, error)
 	}
 
 	return address, nil
+}
+
+func (s *AudiusdSDK) Address() string {
+	if s.privKey == nil {
+		return ""
+	}
+	return crypto.PubkeyToAddress(s.privKey.PublicKey).Hex()
+}
+
+func (s *AudiusdSDK) PrivKey() *ecdsa.PrivateKey {
+	return s.privKey
+}
+
+func (s *AudiusdSDK) Pubkey() *ecdsa.PublicKey {
+	if s.privKey == nil {
+		return nil
+	}
+	return &s.privKey.PublicKey
 }

@@ -201,7 +201,7 @@ type CoreValidator struct {
 type ManagementKey struct {
 	ID      int32
 	TrackID string
-	PubKey  string
+	Address string
 }
 
 type SlaNodeReport struct {

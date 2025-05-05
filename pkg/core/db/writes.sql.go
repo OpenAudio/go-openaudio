@@ -451,16 +451,16 @@ func (q *Queries) InsertFailedStorageProof(ctx context.Context, arg InsertFailed
 }
 
 const insertManagementKey = `-- name: InsertManagementKey :exec
-insert into management_keys (track_id, pub_key) values ($1, $2)
+insert into management_keys (track_id, address) values ($1, $2)
 `
 
 type InsertManagementKeyParams struct {
 	TrackID string
-	PubKey  string
+	Address string
 }
 
 func (q *Queries) InsertManagementKey(ctx context.Context, arg InsertManagementKeyParams) error {
-	_, err := q.db.Exec(ctx, insertManagementKey, arg.TrackID, arg.PubKey)
+	_, err := q.db.Exec(ctx, insertManagementKey, arg.TrackID, arg.Address)
 	return err
 }
 

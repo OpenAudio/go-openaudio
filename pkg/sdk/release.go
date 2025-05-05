@@ -8,7 +8,6 @@ import (
 	"connectrpc.com/connect"
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	adx "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
@@ -27,7 +26,7 @@ func (s *AudiusdSDK) ReleaseTrack(ctx context.Context, cid, title, genre string)
 		ReleaseHeader: &adx.ReleaseHeader{
 			Sender: &adx.Party{
 				PartyId: "audius_sdk",
-				PubKey:  crypto.CompressPubkey(&s.privKey.PublicKey),
+				Address: s.Address(),
 			},
 		},
 		ResourceList: []*adx.Resource{

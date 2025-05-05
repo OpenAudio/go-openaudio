@@ -12,7 +12,6 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/gowebpki/jcs"
-	"github.com/storyicon/sigverify"
 	"google.golang.org/protobuf/proto"
 	protob "google.golang.org/protobuf/proto"
 )
@@ -139,12 +138,6 @@ func SignBytes(input []byte, privateKey *ecdsa.PrivateKey) ([]byte, error) {
 		return nil, err
 	}
 	return signature, nil
-}
-
-// From https://github.com/AudiusProject/sig/blob/main/go/index.go
-func recoverSigner(input string, signature []byte) (ethcommon.Address, error) {
-	hash := crypto.Keccak256Hash([]byte(input))
-	return sigverify.EcRecoverEx(hash.Bytes(), signature)
 }
 
 func SignCoreBytes(input proto.Message, privateKey *ecdsa.PrivateKey) (string, error) {
