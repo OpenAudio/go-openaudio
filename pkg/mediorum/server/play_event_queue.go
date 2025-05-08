@@ -35,11 +35,7 @@ func (p *PlayEventQueue) popPlayEventBatch() []*PlayEvent {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	batchSize := playBatch
-	if len(p.plays) < playBatch {
-		batchSize = len(p.plays)
-	}
-
+	batchSize := min(len(p.plays), playBatch)
 	batch := p.plays[:batchSize]
 	p.plays = p.plays[batchSize:]
 
@@ -49,14 +45,15 @@ func (p *PlayEventQueue) popPlayEventBatch() []*PlayEvent {
 var playQueueInterval = 20 * time.Second
 
 type PlayEvent struct {
-	RowID     int
-	UserID    string
-	TrackID   string
-	PlayTime  time.Time
-	Signature string
-	City      string
-	Region    string
-	Country   string
+	RowID            int
+	UserID           string
+	TrackID          string
+	PlayTime         time.Time
+	Signature        string
+	City             string
+	Region           string
+	Country          string
+	RequestSignature string
 }
 
 func (ss *MediorumServer) startPlayEventQueue() {
@@ -81,9 +78,10 @@ func (ss *MediorumServer) processPlayRecordBatch() error {
 		return nil
 	}
 
-	corePlays := []*v1.TrackPlay{}
+	uniquePlays := make(map[string]*v1.TrackPlay)
 	for _, play := range plays {
-		corePlays = append(corePlays, &v1.TrackPlay{
+		// use incoming request signature to deduplicate plays
+		uniquePlays[play.RequestSignature] = &v1.TrackPlay{
 			UserId:    play.UserID,
 			TrackId:   play.TrackID,
 			Timestamp: timestamppb.New(play.PlayTime),
@@ -91,7 +89,13 @@ func (ss *MediorumServer) processPlayRecordBatch() error {
 			City:      play.City,
 			Country:   play.Country,
 			Region:    play.Region,
-		})
+		}
+	}
+
+	// Convert map values back to array
+	corePlays := make([]*v1.TrackPlay, 0, len(uniquePlays))
+	for _, play := range uniquePlays {
+		corePlays = append(corePlays, play)
 	}
 
 	playsTx := &v1.TrackPlays{

@@ -49,8 +49,6 @@ func (s *MediorumServer) streamTrackGRPC(ctx context.Context, req *v1storage.Str
 		return connect.NewError(connect.CodePermissionDenied, errors.New("signer not authorized to access"))
 	}
 
-	s.logger.Info("streamTrackGRPC", "ethAddress", ethAddress, "count", count, "trackId", trackId, "cid", cid)
-
 	key := cidutil.ShardCID(cid)
 
 	blob, err := s.bucket.NewReader(ctx, key, nil)
@@ -94,13 +92,14 @@ func (s *MediorumServer) streamTrackGRPC(ctx context.Context, req *v1storage.Str
 		}
 
 		s.playEventQueue.pushPlayEvent(&PlayEvent{
-			UserID:    ethAddress,
-			TrackID:   reqSig.Data.TrackId,
-			PlayTime:  parsedTime,
-			Signature: signatureData.Signature,
-			City:      geoData.City,
-			Country:   geoData.Country,
-			Region:    geoData.Region,
+			UserID:           ethAddress,
+			TrackID:          reqSig.Data.TrackId,
+			PlayTime:         parsedTime,
+			Signature:        signatureData.Signature,
+			City:             geoData.City,
+			Country:          geoData.Country,
+			Region:           geoData.Region,
+			RequestSignature: reqSig.Signature,
 		})
 	}()
 

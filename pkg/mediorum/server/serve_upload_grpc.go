@@ -1,18 +1,24 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	"github.com/gabriel-vasile/mimetype"
 
 	"github.com/oklog/ulid/v2"
 	"golang.org/x/exp/slices"
@@ -63,7 +69,7 @@ type FileReader interface {
 	Open() (io.ReadCloser, error)
 }
 
-func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalletHeader string, ftemplate string, previewStart string, fPlacementHosts string, files []FileReader) ([]*Upload, error) {
+func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalletHeader string, ftemplate string, previewStart string, fPlacementHosts string, files []*multipart.FileHeader) ([]*Upload, error) {
 	if !ss.diskHasSpace() {
 		ss.logger.Warn("disk is too full to accept new uploads")
 		return nil, ErrDiskFull
@@ -144,9 +150,11 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 
 		idx := idx
 		formFile := formFile
+		ss.logger.Info("formFile", "contentType", formFile.Header.Get("Content-Type"))
+
 		wg.Go(func() error {
 			now := time.Now().UTC()
-			filename := formFile.Filename()
+			filename := formFile.Filename
 			upload := &Upload{
 				ID:               ulid.Make().String(),
 				UserWallet:       userWallet,
@@ -162,7 +170,7 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 			}
 			uploads[idx] = upload
 
-			tmpFile, err := copyTempFile(formFile)
+			tmpFile, err := copyUploadToTempFile(formFile)
 			if err != nil {
 				upload.Error = err.Error()
 				return err
@@ -190,6 +198,7 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 
 			// replicate to my bucket + others
 			ss.replicateToMyBucket(formFileCID, tmpFile)
+			ss.logger.Info("replicating to my bucket", "name", tmpFile.Name(), "cid", formFileCID)
 			upload.Mirrors, err = ss.replicateFileParallel(formFileCID, tmpFile.Name(), placementHosts)
 			if err != nil {
 				upload.Error = err.Error()
@@ -214,30 +223,66 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 
 	if err := wg.Wait(); err != nil {
 		ss.logger.Error("failed to process new upload", "err", err)
-		return nil, ErrUploadProcessFailed
+		return nil, fmt.Errorf("failed to process new upload: %w", err)
 	}
 
 	return uploads, nil
 }
 
-func copyTempFile(file FileReader) (*os.File, error) {
-	temp, err := os.CreateTemp("", "mediorumUpload")
+func (ss *MediorumServer) createMultipartFileHeader(filename string, data []byte) (*multipart.FileHeader, error) {
+	// Infer MIME type from first 512 bytes
+	mtype := mimetype.Detect(data)
+	ct := mtype.String()
+
+	// Fallback to extension-based MIME if detection failed or is too generic
+	if ct == "application/octet-stream" {
+		ext := filepath.Ext(filename)
+		mimeByExt := mime.TypeByExtension(ext)
+		if mimeByExt != "" {
+			ct = mimeByExt
+		}
+	}
+
+	// Create a buffer to write the multipart data into
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+
+	// Create a form file part
+	part, err := w.CreateFormFile("file", filename)
 	if err != nil {
 		return nil, err
 	}
 
-	r, err := file.Open()
-	if err != nil {
+	// Write the file data into the multipart part
+	if _, err := part.Write(data); err != nil {
 		return nil, err
 	}
-	defer r.Close()
 
-	_, err = io.Copy(temp, r)
-	if err != nil {
+	// Close the writer to finalize the form
+	if err := w.Close(); err != nil {
 		return nil, err
 	}
-	temp.Sync()
-	temp.Seek(0, 0)
 
-	return temp, nil
+	// Now parse the multipart data as if it came from an HTTP request
+	req := &http.Request{
+		Header: make(http.Header),
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Body = io.NopCloser(bytes.NewReader(b.Bytes()))
+	req.ContentLength = int64(b.Len())
+
+	if err := req.ParseMultipartForm(int64(b.Len())); err != nil {
+		return nil, err
+	}
+
+	// Grab the file header
+	fileHeaders := req.MultipartForm.File["file"]
+	if len(fileHeaders) == 0 {
+		return nil, fmt.Errorf("no file found in multipart form")
+	}
+
+	// Set content-type in the header explicitly since multipart doesn't infer it
+	fileHeaders[0].Header.Set("Content-Type", ct)
+
+	return fileHeaders[0], nil
 }

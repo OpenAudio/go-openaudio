@@ -4,7 +4,9 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSignature(t *testing.T) {
@@ -16,4 +18,40 @@ func TestSignature(t *testing.T) {
 	assert.NoError(t, err)
 	// fmt.Printf("%+v \n", data)
 	assert.Equal(t, data.SignerWallet, "0x5E98cBEEAA2aCEDEc0833AC3D1634E2A7aE0f3c2")
+}
+
+func TestSignatureRoundTrip(t *testing.T) {
+	// Generate a test private key
+	privKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+
+	// Create a sample SignatureData
+	original := &SignatureData{
+		UserID:    42,
+		UploadID:  "upload_xyz",
+		Timestamp: 1650000000,
+	}
+
+	// Create query string
+	queryString, err := GenerateQueryStringFromSignatureData(original, privKey)
+	require.NoError(t, err)
+	require.NotEmpty(t, queryString)
+
+	// Parse back into RecoveredSignature
+	recovered, err := ParseFromQueryString(queryString)
+	require.NoError(t, err)
+	require.NotNil(t, recovered)
+
+	// Check the address matches the expected one
+	expectedAddr := crypto.PubkeyToAddress(privKey.PublicKey).Hex()
+	require.Equal(t, expectedAddr, recovered.SignerWallet)
+
+	// Check the recovered public key matches the original
+	expectedPubKeyBytes := crypto.CompressPubkey(&privKey.PublicKey)
+	require.Equal(t, expectedPubKeyBytes, recovered.SignerPubkey)
+
+	// Check the data matches
+	require.Equal(t, original.UserID, recovered.Data.UserID)
+	require.Equal(t, original.UploadID, recovered.Data.UploadID)
+	require.Equal(t, original.Timestamp, recovered.Data.Timestamp)
 }
