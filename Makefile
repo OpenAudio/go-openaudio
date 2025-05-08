@@ -14,6 +14,13 @@ PROTO_ARTIFACTS := $(shell find pkg/api -type f -name '*.pb.go')
 TEMPL_SRCS := $(shell find pkg/core/console -type f -name "*.templ")
 TEMPL_ARTIFACTS := $(shell find pkg/core/console -type f -name "*_templ.go")
 
+CONTRACT_SRCS := contracts/ProportionalRewards.sol
+CONTRACT_ARTIFACTS := contracts/build/ProportionalRewards.abi \
+                     contracts/build/ProportionalRewards.bin
+
+CONTRACT_GO_SRCS := $(CONTRACT_ARTIFACTS)
+CONTRACT_GO_ARTIFACTS := pkg/core/contracts/gen/proportional_rewards.go
+
 VERSION_LDFLAG := -X github.com/AudiusProject/audius-protocol/core/config.Version=$(GIT_SHA)
 
 JSON_SRCS := $(wildcard pkg/core/config/genesis/*.json)
@@ -92,12 +99,15 @@ uninstall:
 .PHONY: clean
 clean:
 	rm -f bin/*
+	rm -f contracts/build/*.abi contracts/build/*.bin
+	rm -f pkg/core/contracts/gen/*.go
 
 .PHONY: install-deps install-go-deps
 install-deps: install-go-deps
 	@brew install protobuf
 	@brew install crane
 	@brew install bufbuild/buf/buf
+	@brew install solidity
 	@gookme init --types pre-commit,pre-push || echo "Gookme init failed, check if it's installed (https://lmaxence.github.io/gookme)"
 
 install-go-deps:
@@ -125,7 +135,7 @@ go.mod: $(GO_SRCS)
 	@touch go.mod # in case there's nothing to tidy
 
 .PHONY: gen
-gen: regen-templ regen-proto regen-sql
+gen: regen-templ regen-proto regen-sql gen-contracts
 
 .PHONY: regen-templ
 regen-templ: $(TEMPL_ARTIFACTS)
@@ -150,6 +160,21 @@ $(SQL_ARTIFACTS): $(SQL_SRCS)
 regen-contracts:
 	@echo Regenerating contracts
 	cd pkg/core && sh -c "./generate_contract.sh"
+
+.PHONY: gen-contracts
+gen-contracts: $(CONTRACT_GO_ARTIFACTS)
+$(CONTRACT_GO_ARTIFACTS): $(CONTRACT_SRCS)
+	@echo "Building and generating contracts"
+	@mkdir -p contracts/build
+	@mkdir -p pkg/core/contracts/gen
+	solc --abi --bin --overwrite -o contracts/build contracts/ProportionalRewards.sol
+	abigen \
+		--abi contracts/build/ProportionalRewards.abi \
+		--bin contracts/build/ProportionalRewards.bin \
+		--pkg gen \
+		--type ProportionalRewards \
+		--out pkg/core/contracts/gen/proportional_rewards.go
+
 
 .PHONY: docker-test docker-dev docker-local
 docker-test:

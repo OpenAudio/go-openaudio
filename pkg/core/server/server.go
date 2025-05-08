@@ -138,7 +138,7 @@ func (s *Server) Start(ctx context.Context) error {
 	g.Go(s.startCache)
 	g.Go(s.startDataCompanion)
 	g.Go(s.syncLogs)
-
+	g.Go(s.startProportionalRewards)
 	s.z.Info("routines started")
 
 	return g.Wait()
