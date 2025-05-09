@@ -279,7 +279,7 @@ func getEchoServerConfig(hostUrl *url.URL) serverConfig {
 func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreServer.CoreService, storageService *server.StorageService, etlService *etl.ETLService, systemService *system.SystemService) error {
 	e := echo.New()
 	e.HideBanner = true
-	e.Use(middleware.Logger(), middleware.Recover(), common.InjectRealIP())
+	e.Use(common.CORS(), middleware.Logger(), middleware.Recover(), common.InjectRealIP())
 
 	rpcGroup := e.Group("")
 	corePath, coreHandler := corev1connect.NewCoreServiceHandler(coreService)
