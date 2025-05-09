@@ -102,54 +102,6 @@ func ParseFromQueryString(queryStringValue string) (*RecoveredSignature, error) 
 	return recovered, nil
 }
 
-func GenerateQueryStringFromSignatureData(data *SignatureData, privKey *ecdsa.PrivateKey) (string, error) {
-	// Step 1: Marshal SignatureData to JSON
-	dataBytes, err := json.Marshal(data)
-	if err != nil {
-		return "", fmt.Errorf("marshal SignatureData: %w", err)
-	}
-
-	// Step 2: Apply JCS transformation for canonical JSON
-	canonicalJSON, err := jcs.Transform(dataBytes)
-	if err != nil {
-		return "", fmt.Errorf("jcs.Transform: %w", err)
-	}
-
-	// Step 3: Hash the canonical JSON
-	hash := crypto.Keccak256Hash(canonicalJSON)
-
-	// Step 4: Ethereum-style text hash
-	hash2 := accounts.TextHash(hash.Bytes())
-
-	// Step 5: Sign the hash
-	sigBytes, err := crypto.Sign(hash2, privKey)
-	if err != nil {
-		return "", fmt.Errorf("crypto.Sign: %w", err)
-	}
-
-	// Step 6: Normalize v to Ethereum style (i.e. +27)
-	if len(sigBytes) == 65 {
-		sigBytes[64] += 27
-	}
-
-	// Step 7: Encode to hex with 0x prefix
-	signatureHex := "0x" + hex.EncodeToString(sigBytes)
-
-	// Step 8: Construct the envelope
-	envelope := &SignatureEnvelope{
-		Data:      string(dataBytes), // original, not canonical
-		Signature: signatureHex,
-	}
-
-	// Step 9: Marshal the envelope to JSON string
-	envelopeBytes, err := json.Marshal(envelope)
-	if err != nil {
-		return "", fmt.Errorf("marshal envelope: %w", err)
-	}
-
-	return string(envelopeBytes), nil
-}
-
 func GenerateListenTimestampAndSignature(privateKey *ecdsa.PrivateKey) (*ListenTSSignature, error) {
 	// based on: https://github.com/AudiusProject/audius-protocol/blob/main/creator-node/src/apiSigning.ts
 	// '{"data":"listen","timestamp":"2023-05-24T15:37:57.051Z"}'

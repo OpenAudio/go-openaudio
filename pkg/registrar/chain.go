@@ -1,7 +1,6 @@
 package registrar
 
 import (
-	"os"
 	"strings"
 
 	"github.com/AudiusProject/audiusd/pkg/httputil"
@@ -36,13 +35,6 @@ func (p *ethChainProvider) Signers() ([]server.Peer, error) {
 	serviceProviders, err := ethcontracts.GetServiceProviderList("discovery-node")
 	if err != nil {
 		return nil, err
-	}
-	if os.Getenv("MEDIORUM_ENV") == "dev" {
-		additionalServiceProviders, err := ethcontracts.GetServiceProviderList("content-node")
-		if err != nil {
-			return nil, err
-		}
-		serviceProviders = append(serviceProviders, additionalServiceProviders...)
 	}
 	signers := make([]server.Peer, len(serviceProviders))
 	for i, sp := range serviceProviders {

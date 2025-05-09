@@ -1052,132 +1052,6 @@ func (x *AudioAnalysisResult) GetKey() string {
 	return ""
 }
 
-type GetStreamURLRequest struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	UploadId    string `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
-	Cid         string `protobuf:"bytes,2,opt,name=cid,proto3" json:"cid,omitempty"`
-	ShouldCache int64  `protobuf:"varint,3,opt,name=should_cache,json=shouldCache,proto3" json:"should_cache,omitempty"`
-	TrackId     int64  `protobuf:"varint,4,opt,name=track_id,json=trackId,proto3" json:"track_id,omitempty"`
-	UserId      int64  `protobuf:"varint,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-}
-
-func (x *GetStreamURLRequest) Reset() {
-	*x = GetStreamURLRequest{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_storage_v1_types_proto_msgTypes[16]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *GetStreamURLRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetStreamURLRequest) ProtoMessage() {}
-
-func (x *GetStreamURLRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_v1_types_proto_msgTypes[16]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetStreamURLRequest.ProtoReflect.Descriptor instead.
-func (*GetStreamURLRequest) Descriptor() ([]byte, []int) {
-	return file_storage_v1_types_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *GetStreamURLRequest) GetUploadId() string {
-	if x != nil {
-		return x.UploadId
-	}
-	return ""
-}
-
-func (x *GetStreamURLRequest) GetCid() string {
-	if x != nil {
-		return x.Cid
-	}
-	return ""
-}
-
-func (x *GetStreamURLRequest) GetShouldCache() int64 {
-	if x != nil {
-		return x.ShouldCache
-	}
-	return 0
-}
-
-func (x *GetStreamURLRequest) GetTrackId() int64 {
-	if x != nil {
-		return x.TrackId
-	}
-	return 0
-}
-
-func (x *GetStreamURLRequest) GetUserId() int64 {
-	if x != nil {
-		return x.UserId
-	}
-	return 0
-}
-
-type GetStreamURLResponse struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Urls []string `protobuf:"bytes,1,rep,name=urls,proto3" json:"urls,omitempty"`
-}
-
-func (x *GetStreamURLResponse) Reset() {
-	*x = GetStreamURLResponse{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_storage_v1_types_proto_msgTypes[17]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *GetStreamURLResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetStreamURLResponse) ProtoMessage() {}
-
-func (x *GetStreamURLResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_v1_types_proto_msgTypes[17]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetStreamURLResponse.ProtoReflect.Descriptor instead.
-func (*GetStreamURLResponse) Descriptor() ([]byte, []int) {
-	return file_storage_v1_types_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *GetStreamURLResponse) GetUrls() []string {
-	if x != nil {
-		return x.Urls
-	}
-	return nil
-}
-
 type FFProbeResult_Format struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -1194,7 +1068,7 @@ type FFProbeResult_Format struct {
 func (x *FFProbeResult_Format) Reset() {
 	*x = FFProbeResult_Format{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_storage_v1_types_proto_msgTypes[19]
+		mi := &file_storage_v1_types_proto_msgTypes[17]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1207,7 +1081,7 @@ func (x *FFProbeResult_Format) String() string {
 func (*FFProbeResult_Format) ProtoMessage() {}
 
 func (x *FFProbeResult_Format) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_v1_types_proto_msgTypes[19]
+	mi := &file_storage_v1_types_proto_msgTypes[17]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1433,23 +1307,11 @@ var file_storage_v1_types_proto_rawDesc = []byte{
 	0x75, 0x64, 0x69, 0x6f, 0x41, 0x6e, 0x61, 0x6c, 0x79, 0x73, 0x69, 0x73, 0x52, 0x65, 0x73, 0x75,
 	0x6c, 0x74, 0x12, 0x10, 0x0a, 0x03, 0x62, 0x70, 0x6d, 0x18, 0x01, 0x20, 0x01, 0x28, 0x01, 0x52,
 	0x03, 0x62, 0x70, 0x6d, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x02, 0x20, 0x01, 0x28,
-	0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x22, 0x9b, 0x01, 0x0a, 0x13, 0x47, 0x65, 0x74, 0x53, 0x74,
-	0x72, 0x65, 0x61, 0x6d, 0x55, 0x52, 0x4c, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x1b,
-	0x0a, 0x09, 0x75, 0x70, 0x6c, 0x6f, 0x61, 0x64, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x09, 0x52, 0x08, 0x75, 0x70, 0x6c, 0x6f, 0x61, 0x64, 0x49, 0x64, 0x12, 0x10, 0x0a, 0x03, 0x63,
-	0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x63, 0x69, 0x64, 0x12, 0x21, 0x0a,
-	0x0c, 0x73, 0x68, 0x6f, 0x75, 0x6c, 0x64, 0x5f, 0x63, 0x61, 0x63, 0x68, 0x65, 0x18, 0x03, 0x20,
-	0x01, 0x28, 0x03, 0x52, 0x0b, 0x73, 0x68, 0x6f, 0x75, 0x6c, 0x64, 0x43, 0x61, 0x63, 0x68, 0x65,
-	0x12, 0x19, 0x0a, 0x08, 0x74, 0x72, 0x61, 0x63, 0x6b, 0x5f, 0x69, 0x64, 0x18, 0x04, 0x20, 0x01,
-	0x28, 0x03, 0x52, 0x07, 0x74, 0x72, 0x61, 0x63, 0x6b, 0x49, 0x64, 0x12, 0x17, 0x0a, 0x07, 0x75,
-	0x73, 0x65, 0x72, 0x5f, 0x69, 0x64, 0x18, 0x05, 0x20, 0x01, 0x28, 0x03, 0x52, 0x06, 0x75, 0x73,
-	0x65, 0x72, 0x49, 0x64, 0x22, 0x2a, 0x0a, 0x14, 0x47, 0x65, 0x74, 0x53, 0x74, 0x72, 0x65, 0x61,
-	0x6d, 0x55, 0x52, 0x4c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x12, 0x0a, 0x04,
-	0x75, 0x72, 0x6c, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x04, 0x75, 0x72, 0x6c, 0x73,
-	0x42, 0x35, 0x5a, 0x33, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41,
-	0x75, 0x64, 0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x2f, 0x61, 0x75, 0x64,
-	0x69, 0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f,
-	0x72, 0x61, 0x67, 0x65, 0x2f, 0x76, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x42, 0x35, 0x5a, 0x33, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62,
+	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41, 0x75, 0x64, 0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65,
+	0x63, 0x74, 0x2f, 0x61, 0x75, 0x64, 0x69, 0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61,
+	0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x2f, 0x76, 0x31, 0x62, 0x06, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1464,7 +1326,7 @@ func file_storage_v1_types_proto_rawDescGZIP() []byte {
 	return file_storage_v1_types_proto_rawDescData
 }
 
-var file_storage_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_storage_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_storage_v1_types_proto_goTypes = []interface{}{
 	(*PingRequest)(nil),              // 0: storage.v1.PingRequest
 	(*PingResponse)(nil),             // 1: storage.v1.PingResponse
@@ -1482,11 +1344,9 @@ var file_storage_v1_types_proto_goTypes = []interface{}{
 	(*Upload)(nil),                   // 13: storage.v1.Upload
 	(*FFProbeResult)(nil),            // 14: storage.v1.FFProbeResult
 	(*AudioAnalysisResult)(nil),      // 15: storage.v1.AudioAnalysisResult
-	(*GetStreamURLRequest)(nil),      // 16: storage.v1.GetStreamURLRequest
-	(*GetStreamURLResponse)(nil),     // 17: storage.v1.GetStreamURLResponse
-	nil,                              // 18: storage.v1.Upload.TranscodeResultsEntry
-	(*FFProbeResult_Format)(nil),     // 19: storage.v1.FFProbeResult.Format
-	(*timestamppb.Timestamp)(nil),    // 20: google.protobuf.Timestamp
+	nil,                              // 16: storage.v1.Upload.TranscodeResultsEntry
+	(*FFProbeResult_Format)(nil),     // 17: storage.v1.FFProbeResult.Format
+	(*timestamppb.Timestamp)(nil),    // 18: google.protobuf.Timestamp
 }
 var file_storage_v1_types_proto_depIdxs = []int32{
 	5,  // 0: storage.v1.UploadFilesRequest.files:type_name -> storage.v1.File
@@ -1495,13 +1355,13 @@ var file_storage_v1_types_proto_depIdxs = []int32{
 	12, // 3: storage.v1.StreamTrackRequest.signature:type_name -> storage.v1.StreamTrackSignature
 	11, // 4: storage.v1.StreamTrackSignature.data:type_name -> storage.v1.StreamTrackSignatureData
 	14, // 5: storage.v1.Upload.probe:type_name -> storage.v1.FFProbeResult
-	20, // 6: storage.v1.Upload.created_at:type_name -> google.protobuf.Timestamp
-	20, // 7: storage.v1.Upload.updated_at:type_name -> google.protobuf.Timestamp
-	20, // 8: storage.v1.Upload.transcoded_at:type_name -> google.protobuf.Timestamp
-	18, // 9: storage.v1.Upload.transcode_results:type_name -> storage.v1.Upload.TranscodeResultsEntry
-	20, // 10: storage.v1.Upload.audio_analyzed_at:type_name -> google.protobuf.Timestamp
+	18, // 6: storage.v1.Upload.created_at:type_name -> google.protobuf.Timestamp
+	18, // 7: storage.v1.Upload.updated_at:type_name -> google.protobuf.Timestamp
+	18, // 8: storage.v1.Upload.transcoded_at:type_name -> google.protobuf.Timestamp
+	16, // 9: storage.v1.Upload.transcode_results:type_name -> storage.v1.Upload.TranscodeResultsEntry
+	18, // 10: storage.v1.Upload.audio_analyzed_at:type_name -> google.protobuf.Timestamp
 	15, // 11: storage.v1.Upload.audio_analysis_results:type_name -> storage.v1.AudioAnalysisResult
-	19, // 12: storage.v1.FFProbeResult.format:type_name -> storage.v1.FFProbeResult.Format
+	17, // 12: storage.v1.FFProbeResult.format:type_name -> storage.v1.FFProbeResult.Format
 	13, // [13:13] is the sub-list for method output_type
 	13, // [13:13] is the sub-list for method input_type
 	13, // [13:13] is the sub-list for extension type_name
@@ -1707,31 +1567,7 @@ func file_storage_v1_types_proto_init() {
 				return nil
 			}
 		}
-		file_storage_v1_types_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*GetStreamURLRequest); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
 		file_storage_v1_types_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*GetStreamURLResponse); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_storage_v1_types_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*FFProbeResult_Format); i {
 			case 0:
 				return &v.state
@@ -1750,7 +1586,7 @@ func file_storage_v1_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_storage_v1_types_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

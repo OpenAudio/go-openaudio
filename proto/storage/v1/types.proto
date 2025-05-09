@@ -111,15 +111,3 @@ message AudioAnalysisResult {
   double bpm = 1;
   string key = 2;
 }
-
-message GetStreamURLRequest {
-  string upload_id = 1;
-  string cid = 2;
-  int64 should_cache = 3;
-  int64 track_id = 4;
-  int64 user_id = 5;
-}
-
-message GetStreamURLResponse {
-  repeated string urls = 1;
-}

@@ -130,42 +130,4 @@ func TestTrackReleaseWorkflow(t *testing.T) {
 	}
 	require.Nil(t, err)
 	require.NotNil(t, stream2.Err(), "could not stream file")
-
-	// get stream url
-	streamURLRes, err := sdk.Storage.GetStreamURL(ctx, &connect.Request[v1storage.GetStreamURLRequest]{
-		Msg: &v1storage.GetStreamURLRequest{
-			Cid:         upload.OrigFileCid,
-			ShouldCache: 1,
-			TrackId:     1,
-			UserId:      1,
-		},
-	})
-	require.Nil(t, err, "failed to get stream url")
-	require.EqualValues(t, 3, len(streamURLRes.Msg.Urls), "failed to get stream url")
-
-	// stream via grpc a few more times
-	for range 3 {
-		// stream the file from the same node
-		stream, err := sdk.Storage.StreamTrack(ctx, &connect.Request[v1storage.StreamTrackRequest]{
-			Msg: &v1storage.StreamTrackRequest{
-				Signature: &v1storage.StreamTrackSignature{
-					Signature: sig,
-					DataHash:  sigData,
-					Data:      data,
-				},
-			},
-		})
-		require.Nil(t, err, "failed to stream file")
-
-		var fileData bytes.Buffer
-		for stream.Receive() {
-			res := stream.Msg()
-			if len(res.Data) > 0 {
-				fileData.Write(res.Data)
-			}
-		}
-		if err := stream.Err(); err != nil {
-			log.Fatalf("stream error: %v", err)
-		}
-	}
 }

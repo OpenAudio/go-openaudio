@@ -1,13 +1,17 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"mime"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -155,10 +159,9 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 			return c.String(401, "mp3 streaming is blocked. Please use Discovery /v1/tracks/:encodedId/stream")
 		}
 		// track metrics in separate threads
-		go ss.recordMetric(StreamTrack)
-		// synchronously write track listen to event queue
-		ss.logTrackListen(c)
+		go ss.logTrackListen(c)
 		setTimingHeader(c)
+		go ss.recordMetric(StreamTrack)
 
 		// stream audio
 		http.ServeContent(c.Response(), c.Request(), cid, blob.ModTime(), blob)
@@ -263,9 +266,24 @@ func (ss *MediorumServer) findAndPullBlob(_ context.Context, key string) (string
 }
 
 func (ss *MediorumServer) logTrackListen(c echo.Context) {
-	skipPlayCount, _ := strconv.ParseBool(c.QueryParam("skip_play_count"))
+	skipPlayCountQuery, _ := strconv.ParseBool(c.QueryParam("skip_play_count"))
+
+	identityConfigured := os.Getenv("identityService") == "" && ss.Config.Env != "dev"
+	rangePresent := !rangeIsFirstByte(c.Request().Header.Get("Range"))
+	methodNotGET := c.Request().Method != "GET"
+	refererMatches := strings.Contains(c.Request().Header.Get("Referer"), c.Request().URL.String())
+
+	skipPlayCount := skipPlayCountQuery || identityConfigured || rangePresent || methodNotGET || refererMatches
+	ss.logger.Info("skip plays", "skipPlayCountQuery", skipPlayCountQuery, "identity", identityConfigured, "range", rangePresent, "methodNotGet", methodNotGET, "referrer", refererMatches)
+
 	if skipPlayCount {
+		// todo: skip count for trusted notifier requests should be inferred
+		// by the requesting entity and not some query param
 		return
+	}
+
+	httpClient := http.Client{
+		Timeout: 1 * time.Minute, // identity svc slow
 	}
 
 	sig, err := signature.ParseFromQueryString(c.QueryParam("signature"))
@@ -280,39 +298,90 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 		userId = strconv.Itoa(sig.Data.UserID)
 	}
 
+	// default to identity
+	solanaRelayService := os.Getenv("identityService")
+	if ss.Config.discoveryListensEnabled() {
+		// pick random discovery node and append '/solana' for the relay plugin
+		endpoint := ss.Config.DiscoveryListensEndpoints[rand.Intn(len(ss.Config.DiscoveryListensEndpoints))]
+		solanaRelayService = fmt.Sprintf("%s/solana", endpoint)
+	}
+
+	endpoint := fmt.Sprintf("%s/tracks/%d/listen", solanaRelayService, sig.Data.TrackId)
+
 	signatureData, err := signature.GenerateListenTimestampAndSignature(ss.Config.privateKey)
 	if err != nil {
 		ss.logger.Error("unable to build request", "err", err)
 		return
 	}
 
-	// parse out time as proto object from legacy listen sig
-	parsedTime, err := time.Parse(time.RFC3339, signatureData.Timestamp)
+	body := map[string]interface{}{
+		"userId":       userId,
+		"solanaListen": false,
+		"timestamp":    signatureData.Timestamp,
+		"signature":    signatureData.Signature,
+	}
+
+	// fire and forget core play record
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				ss.logger.Error("core panic recovered in goroutine", "err", r)
+			}
+		}()
+		// parse out time as proto object from legacy listen sig
+		parsedTime, err := time.Parse(time.RFC3339, signatureData.Timestamp)
+		if err != nil {
+			ss.logger.Error("core error parsing time:", "err", err)
+			return
+		}
+
+		geoData, err := ss.getGeoFromIP(c.RealIP())
+		if err != nil {
+			ss.logger.Error("core plays bad ip: %v", err)
+			return
+		}
+
+		trackID := fmt.Sprint(sig.Data.TrackId)
+
+		ss.playEventQueue.pushPlayEvent(&PlayEvent{
+			UserID:    userId,
+			TrackID:   trackID,
+			PlayTime:  parsedTime,
+			Signature: signatureData.Signature,
+			City:      geoData.City,
+			Country:   geoData.Country,
+			Region:    geoData.Region,
+		})
+
+		ss.z.Info("play logged", zap.String("user_id", userId), zap.String("track_id", trackID))
+	}()
+
+	buf, err := json.Marshal(body)
 	if err != nil {
-		ss.logger.Error("core error parsing time:", "err", err)
+		ss.logger.Error("unable to build request", "err", err)
 		return
 	}
 
-	geoData, err := ss.getGeoFromIP(c.RealIP())
+	req, err := signature.SignedPost(endpoint, "application/json", bytes.NewReader(buf), ss.Config.privateKey, ss.Config.Self.Host)
 	if err != nil {
-		ss.logger.Error("core plays bad ip: %v", err)
+		ss.logger.Error("unable to build request", "err", err)
 		return
 	}
+	req.Header.Add("x-forwarded-for", c.RealIP())
 
-	trackID := fmt.Sprint(sig.Data.TrackId)
+	res, err := httpClient.Do(req)
+	if err != nil {
+		ss.logger.Error("unable to POST to listen service", "err", err)
+		return
+	}
+	defer res.Body.Close()
 
-	ss.playEventQueue.pushPlayEvent(&PlayEvent{
-		UserID:           userId,
-		TrackID:          trackID,
-		PlayTime:         parsedTime,
-		Signature:        signatureData.Signature,
-		City:             geoData.City,
-		Country:          geoData.Country,
-		Region:           geoData.Region,
-		RequestSignature: c.QueryParam("signature"),
-	})
-
-	ss.z.Info("play logged", zap.String("user_id", userId), zap.String("track_id", trackID))
+	if res.StatusCode != 200 {
+		resBody, err := io.ReadAll(res.Body)
+		if err != nil {
+			ss.logger.Warn(fmt.Sprintf("unsuccessful POST [%d] %s", res.StatusCode, resBody))
+		}
+	}
 }
 
 // checks signature from discovery node
@@ -333,16 +402,11 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 			isRegistered := slices.ContainsFunc(s.Config.Signers, func(peer Peer) bool {
 				return strings.EqualFold(peer.Wallet, sig.SignerWallet)
 			})
-			wallets := make([]string, len(s.Config.Signers))
-			for i, peer := range s.Config.Signers {
-				wallets[i] = peer.Wallet
-			}
 			if !isRegistered {
 				s.logger.Debug("sig no match", "signed by", sig.SignerWallet)
 				return c.JSON(401, map[string]string{
-					"error":         "signer not in list of registered nodes",
-					"detail":        "signed by: " + sig.SignerWallet,
-					"valid_signers": strings.Join(wallets, ","),
+					"error":  "signer not in list of registered nodes",
+					"detail": "signed by: " + sig.SignerWallet,
 				})
 			}
 
