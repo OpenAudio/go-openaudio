@@ -133,7 +133,7 @@ func (c *CoreService) GetBlock(ctx context.Context, req *connect.Request[v1.GetB
 		ChainId:      c.core.config.GenesisFile.ChainID,
 		Proposer:     block.Proposer,
 		Height:       block.Height,
-		Transactions: txResponses,
+		Transactions: sortTransactionResponse(txResponses),
 		Timestamp:    timestamppb.New(block.CreatedAt.Time),
 	}
 
