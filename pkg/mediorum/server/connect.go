@@ -1,14 +1,18 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"io"
+	"errors"
+	"fmt"
+	"mime/multipart"
+	"net/url"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	v1 "github.com/AudiusProject/audiusd/pkg/api/storage/v1"
 	"github.com/AudiusProject/audiusd/pkg/api/storage/v1/v1connect"
+	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -101,32 +105,21 @@ func (s *StorageService) GetUpload(ctx context.Context, req *connect.Request[v1.
 	}), nil
 }
 
-type fileReader struct {
-	filename string
-	data     []byte
-}
-
-func (f *fileReader) Filename() string {
-	return f.filename
-}
-
-func (f *fileReader) Open() (io.ReadCloser, error) {
-	return io.NopCloser(bytes.NewReader(f.data)), nil
-}
-
 // UploadFiles implements v1connect.StorageServiceHandler.
 func (s *StorageService) UploadFiles(ctx context.Context, req *connect.Request[v1.UploadFilesRequest]) (*connect.Response[v1.UploadFilesResponse], error) {
 	placeHosts := strings.Join(req.Msg.PlacementHosts, ",")
-	files := make([]FileReader, len(req.Msg.Files))
+	files := make([]*multipart.FileHeader, len(req.Msg.Files))
 	for i, file := range req.Msg.Files {
-		files[i] = &fileReader{
-			filename: file.Filename,
-			data:     file.Data,
+		formFile, err := s.mediorum.createMultipartFileHeader(file.Filename, file.Data)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("failed to prepare file %s: %w", file.Filename, err))
 		}
+		files[i] = formFile
 	}
+
 	uploads, err := s.mediorum.uploadFile(ctx, req.Msg.Signature, req.Msg.UserWallet, req.Msg.Template, req.Msg.PreviewStart, placeHosts, files)
 	if err != nil {
-		return nil, err
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to upload file: %w", err))
 	}
 
 	res := make([]*v1.Upload, len(uploads))
@@ -190,4 +183,35 @@ func (s *StorageService) UploadFiles(ctx context.Context, req *connect.Request[v
 // StreamTrack implements v1connect.StorageServiceHandler.
 func (s *StorageService) StreamTrack(ctx context.Context, req *connect.Request[v1.StreamTrackRequest], stream *connect.ServerStream[v1.StreamTrackResponse]) error {
 	return s.mediorum.streamTrackGRPC(ctx, req.Msg, stream)
+}
+
+// GetStreamURL implements v1connect.StorageServiceHandler.
+func (s *StorageService) GetStreamURL(ctx context.Context, req *connect.Request[v1.GetStreamURLRequest]) (*connect.Response[v1.GetStreamURLResponse], error) {
+	if s.mediorum.Config.Env != "dev" {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not allowed"))
+	}
+
+	sig, err := signature.GenerateQueryStringFromSignatureData(&signature.SignatureData{
+		UploadID:    req.Msg.UploadId,
+		Cid:         req.Msg.Cid,
+		ShouldCache: int(req.Msg.ShouldCache),
+		TrackId:     req.Msg.TrackId,
+		UserID:      int(req.Msg.UserId),
+		Timestamp:   time.Now().UnixMilli(),
+	}, s.mediorum.Config.privateKey)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	hosts, ok := s.mediorum.rendezvousAllHosts(req.Msg.Cid)
+	if !ok {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no hosts found"))
+	}
+
+	urls := make([]string, len(hosts))
+	for i, host := range hosts {
+		urls[i] = fmt.Sprintf("%s/tracks/cidstream/%s?id=%s&signature=%s", host, req.Msg.Cid, url.QueryEscape(req.Msg.UploadId), url.QueryEscape(sig))
+	}
+
+	return connect.NewResponse(&v1.GetStreamURLResponse{Urls: urls}), nil
 }
