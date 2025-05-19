@@ -43,6 +43,16 @@ func RunMigrations(logger *common.Logger, pgConnectionString string, downFirst b
 }
 
 func runMigrations(logger *common.Logger, db *sql.DB, downFirst bool) error {
+	// Debug: List all embedded files
+	entries, err := migrationsFS.ReadDir("sql/migrations")
+	if err != nil {
+		return fmt.Errorf("error reading migrations dir: %v", err)
+	}
+	logger.Infof("Core embedded migrations:")
+	for _, entry := range entries {
+		logger.Infof("  - %s", entry.Name())
+	}
+
 	migrations := migrate.EmbedFileSystemMigrationSource{
 		FileSystem: migrationsFS,
 		Root:       "sql/migrations",

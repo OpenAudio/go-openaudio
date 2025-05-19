@@ -8,6 +8,9 @@ GIT_SHA := $(shell git rev-parse HEAD)
 SQL_SRCS := $(shell find pkg/core/db/sql -type f -name '*.sql') pkg/core/db/sqlc.yaml
 SQL_ARTIFACTS := $(wildcard pkg/core/db/*.sql.go)
 
+ETL_SQL_SRCS := $(shell find pkg/etl/db/sql -type f -name '*.sql') pkg/etl/db/sqlc.yaml
+ETL_SQL_ARTIFACTS := $(wildcard pkg/etl/db/*.sql.go)
+
 PROTO_SRCS := $(shell find proto -type f -name '*.proto')
 PROTO_ARTIFACTS := $(shell find pkg/api -type f -name '*.pb.go')
 
@@ -135,7 +138,7 @@ go.mod: $(GO_SRCS)
 	@touch go.mod # in case there's nothing to tidy
 
 .PHONY: gen
-gen: regen-templ regen-proto regen-sql gen-contracts
+gen: regen-templ regen-proto regen-sql regen-etl-sql gen-contracts
 
 .PHONY: regen-templ
 regen-templ: $(TEMPL_ARTIFACTS)
@@ -155,6 +158,12 @@ regen-sql: $(SQL_ARTIFACTS)
 $(SQL_ARTIFACTS): $(SQL_SRCS)
 	@echo Regenerating sql code
 	cd pkg/core/db && sqlc generate
+
+.PHONY: regen-etl-sql
+regen-etl-sql: $(ETL_SQL_ARTIFACTS)
+$(ETL_SQL_ARTIFACTS): $(ETL_SQL_SRCS)
+	@echo Regenerating etl sql code
+	cd pkg/etl/db && sqlc generate
 
 .PHONY: regen-contracts
 regen-contracts:

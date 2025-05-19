@@ -351,8 +351,9 @@ func (c *CoreService) getBlockRpcFallback(ctx context.Context, height int64) (*c
 			// return block with -1 to indicate it doesn't exist yet
 			return connect.NewResponse(&v1.GetBlockResponse{
 				Block: &v1.Block{
-					ChainId: c.core.config.GenesisFile.ChainID,
-					Height:  -1,
+					ChainId:   c.core.config.GenesisFile.ChainID,
+					Height:    -1,
+					Timestamp: timestamppb.New(time.Now()),
 				},
 			}), nil
 		}

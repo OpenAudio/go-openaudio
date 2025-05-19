@@ -9,5 +9,10 @@ option go_package = "github.com/AudiusProject/audiusd/pkg/api/etl/v1";
 service ETLService {
   rpc Ping(PingRequest) returns (PingResponse) {}
   rpc GetHealth(GetHealthRequest) returns (GetHealthResponse) {}
+  rpc GetBlocks(GetBlocksRequest) returns (GetBlocksResponse) {}
+  rpc GetTransactions(GetTransactionsRequest) returns (GetTransactionsResponse) {}
   rpc GetPlays(GetPlaysRequest) returns (GetPlaysResponse) {}
+  rpc GetManageEntities(GetManageEntitiesRequest) returns (GetManageEntitiesResponse) {}
+  rpc GetValidators(GetValidatorsRequest) returns (GetValidatorsResponse) {}
+  rpc GetLocation(GetLocationRequest) returns (GetLocationResponse) {}
 }

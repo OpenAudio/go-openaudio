@@ -83,7 +83,7 @@ func main() {
 
 	coreService := coreServer.NewCoreService()
 	storageService := server.NewStorageService()
-	etlService := etl.NewETLService()
+	etlService := etl.NewETLService(coreService, logger)
 	systemService := system.NewSystemService(coreService, storageService, etlService)
 
 	services := []struct {
@@ -115,7 +115,11 @@ func main() {
 		},
 		{
 			"etl",
-			func() error { return etl.Run(ctx, logger) },
+			func() error {
+				etlService.SetDBURL(os.Getenv("dbUrl"))
+				etlService.SetRunDownMigrations(os.Getenv("AUDIUSD_ETL_RUN_DOWN_MIGRATIONS") == "true")
+				return etlService.Run()
+			},
 			os.Getenv("AUDIUSD_ETL_ENABLED") == "true",
 		},
 	}

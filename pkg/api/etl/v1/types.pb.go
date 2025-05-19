@@ -9,6 +9,7 @@ package v1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 )
@@ -19,55 +20,6 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
-
-type Order int32
-
-const (
-	Order_ORDER_UNSPECIFIED Order = 0
-	Order_ORDER_ASC         Order = 1
-	Order_ORDER_DESC        Order = 2
-)
-
-// Enum value maps for Order.
-var (
-	Order_name = map[int32]string{
-		0: "ORDER_UNSPECIFIED",
-		1: "ORDER_ASC",
-		2: "ORDER_DESC",
-	}
-	Order_value = map[string]int32{
-		"ORDER_UNSPECIFIED": 0,
-		"ORDER_ASC":         1,
-		"ORDER_DESC":        2,
-	}
-)
-
-func (x Order) Enum() *Order {
-	p := new(Order)
-	*p = x
-	return p
-}
-
-func (x Order) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (Order) Descriptor() protoreflect.EnumDescriptor {
-	return file_etl_v1_types_proto_enumTypes[0].Descriptor()
-}
-
-func (Order) Type() protoreflect.EnumType {
-	return &file_etl_v1_types_proto_enumTypes[0]
-}
-
-func (x Order) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use Order.Descriptor instead.
-func (Order) EnumDescriptor() ([]byte, []int) {
-	return file_etl_v1_types_proto_rawDescGZIP(), []int{0}
-}
 
 type PingRequest struct {
 	state         protoimpl.MessageState
@@ -230,21 +182,177 @@ func (*GetHealthResponse) Descriptor() ([]byte, []int) {
 	return file_etl_v1_types_proto_rawDescGZIP(), []int{3}
 }
 
+type GetBlocksRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetBlocksRequest) Reset() {
+	*x = GetBlocksRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[4]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetBlocksRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBlocksRequest) ProtoMessage() {}
+
+func (x *GetBlocksRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[4]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBlocksRequest.ProtoReflect.Descriptor instead.
+func (*GetBlocksRequest) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{4}
+}
+
+type GetBlocksResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetBlocksResponse) Reset() {
+	*x = GetBlocksResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[5]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetBlocksResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBlocksResponse) ProtoMessage() {}
+
+func (x *GetBlocksResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[5]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBlocksResponse.ProtoReflect.Descriptor instead.
+func (*GetBlocksResponse) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{5}
+}
+
+type GetTransactionsRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetTransactionsRequest) Reset() {
+	*x = GetTransactionsRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[6]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetTransactionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTransactionsRequest) ProtoMessage() {}
+
+func (x *GetTransactionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[6]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTransactionsRequest.ProtoReflect.Descriptor instead.
+func (*GetTransactionsRequest) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{6}
+}
+
+type GetTransactionsResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetTransactionsResponse) Reset() {
+	*x = GetTransactionsResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[7]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetTransactionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTransactionsResponse) ProtoMessage() {}
+
+func (x *GetTransactionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[7]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTransactionsResponse.ProtoReflect.Descriptor instead.
+func (*GetTransactionsResponse) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{7}
+}
+
 type GetPlaysRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Pagination *Pagination `protobuf:"bytes,1,opt,name=pagination,proto3" json:"pagination,omitempty"`
-	Order      Order       `protobuf:"varint,2,opt,name=order,proto3,enum=etl.v1.Order" json:"order,omitempty"`
-	UserId     string      `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	TrackId    string      `protobuf:"bytes,4,opt,name=track_id,json=trackId,proto3" json:"track_id,omitempty"`
+	// Types that are assignable to Query:
+	//
+	//	*GetPlaysRequest_GetPlays
+	//	*GetPlaysRequest_GetPlaysByAddress
+	//	*GetPlaysRequest_GetPlaysByUser
+	//	*GetPlaysRequest_GetPlaysByTimeRange
+	//	*GetPlaysRequest_GetPlaysByLocation
+	Query isGetPlaysRequest_Query `protobuf_oneof:"query"`
 }
 
 func (x *GetPlaysRequest) Reset() {
 	*x = GetPlaysRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_etl_v1_types_proto_msgTypes[4]
+		mi := &file_etl_v1_types_proto_msgTypes[8]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -257,7 +365,7 @@ func (x *GetPlaysRequest) String() string {
 func (*GetPlaysRequest) ProtoMessage() {}
 
 func (x *GetPlaysRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_etl_v1_types_proto_msgTypes[4]
+	mi := &file_etl_v1_types_proto_msgTypes[8]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -270,35 +378,311 @@ func (x *GetPlaysRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlaysRequest.ProtoReflect.Descriptor instead.
 func (*GetPlaysRequest) Descriptor() ([]byte, []int) {
-	return file_etl_v1_types_proto_rawDescGZIP(), []int{4}
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *GetPlaysRequest) GetPagination() *Pagination {
-	if x != nil {
-		return x.Pagination
+func (m *GetPlaysRequest) GetQuery() isGetPlaysRequest_Query {
+	if m != nil {
+		return m.Query
 	}
 	return nil
 }
 
-func (x *GetPlaysRequest) GetOrder() Order {
-	if x != nil {
-		return x.Order
+func (x *GetPlaysRequest) GetGetPlays() *GetPlays {
+	if x, ok := x.GetQuery().(*GetPlaysRequest_GetPlays); ok {
+		return x.GetPlays
 	}
-	return Order_ORDER_UNSPECIFIED
+	return nil
 }
 
-func (x *GetPlaysRequest) GetUserId() string {
-	if x != nil {
-		return x.UserId
+func (x *GetPlaysRequest) GetGetPlaysByAddress() *GetPlaysByAddress {
+	if x, ok := x.GetQuery().(*GetPlaysRequest_GetPlaysByAddress); ok {
+		return x.GetPlaysByAddress
 	}
-	return ""
+	return nil
 }
 
-func (x *GetPlaysRequest) GetTrackId() string {
-	if x != nil {
-		return x.TrackId
+func (x *GetPlaysRequest) GetGetPlaysByUser() *GetPlaysByUser {
+	if x, ok := x.GetQuery().(*GetPlaysRequest_GetPlaysByUser); ok {
+		return x.GetPlaysByUser
 	}
-	return ""
+	return nil
+}
+
+func (x *GetPlaysRequest) GetGetPlaysByTimeRange() *GetPlaysByTimeRange {
+	if x, ok := x.GetQuery().(*GetPlaysRequest_GetPlaysByTimeRange); ok {
+		return x.GetPlaysByTimeRange
+	}
+	return nil
+}
+
+func (x *GetPlaysRequest) GetGetPlaysByLocation() *GetPlaysByLocation {
+	if x, ok := x.GetQuery().(*GetPlaysRequest_GetPlaysByLocation); ok {
+		return x.GetPlaysByLocation
+	}
+	return nil
+}
+
+type isGetPlaysRequest_Query interface {
+	isGetPlaysRequest_Query()
+}
+
+type GetPlaysRequest_GetPlays struct {
+	GetPlays *GetPlays `protobuf:"bytes,1,opt,name=get_plays,json=getPlays,proto3,oneof"`
+}
+
+type GetPlaysRequest_GetPlaysByAddress struct {
+	GetPlaysByAddress *GetPlaysByAddress `protobuf:"bytes,2,opt,name=get_plays_by_address,json=getPlaysByAddress,proto3,oneof"`
+}
+
+type GetPlaysRequest_GetPlaysByUser struct {
+	GetPlaysByUser *GetPlaysByUser `protobuf:"bytes,3,opt,name=get_plays_by_user,json=getPlaysByUser,proto3,oneof"`
+}
+
+type GetPlaysRequest_GetPlaysByTimeRange struct {
+	GetPlaysByTimeRange *GetPlaysByTimeRange `protobuf:"bytes,4,opt,name=get_plays_by_time_range,json=getPlaysByTimeRange,proto3,oneof"`
+}
+
+type GetPlaysRequest_GetPlaysByLocation struct {
+	GetPlaysByLocation *GetPlaysByLocation `protobuf:"bytes,5,opt,name=get_plays_by_location,json=getPlaysByLocation,proto3,oneof"`
+}
+
+func (*GetPlaysRequest_GetPlays) isGetPlaysRequest_Query() {}
+
+func (*GetPlaysRequest_GetPlaysByAddress) isGetPlaysRequest_Query() {}
+
+func (*GetPlaysRequest_GetPlaysByUser) isGetPlaysRequest_Query() {}
+
+func (*GetPlaysRequest_GetPlaysByTimeRange) isGetPlaysRequest_Query() {}
+
+func (*GetPlaysRequest_GetPlaysByLocation) isGetPlaysRequest_Query() {}
+
+type GetPlays struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetPlays) Reset() {
+	*x = GetPlays{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[9]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetPlays) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPlays) ProtoMessage() {}
+
+func (x *GetPlays) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[9]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPlays.ProtoReflect.Descriptor instead.
+func (*GetPlays) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{9}
+}
+
+type GetPlaysByAddress struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetPlaysByAddress) Reset() {
+	*x = GetPlaysByAddress{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[10]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetPlaysByAddress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPlaysByAddress) ProtoMessage() {}
+
+func (x *GetPlaysByAddress) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[10]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPlaysByAddress.ProtoReflect.Descriptor instead.
+func (*GetPlaysByAddress) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{10}
+}
+
+type GetPlaysByUser struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetPlaysByUser) Reset() {
+	*x = GetPlaysByUser{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[11]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetPlaysByUser) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPlaysByUser) ProtoMessage() {}
+
+func (x *GetPlaysByUser) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[11]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPlaysByUser.ProtoReflect.Descriptor instead.
+func (*GetPlaysByUser) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{11}
+}
+
+type GetPlaysByTrack struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetPlaysByTrack) Reset() {
+	*x = GetPlaysByTrack{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[12]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetPlaysByTrack) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPlaysByTrack) ProtoMessage() {}
+
+func (x *GetPlaysByTrack) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[12]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPlaysByTrack.ProtoReflect.Descriptor instead.
+func (*GetPlaysByTrack) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{12}
+}
+
+type GetPlaysByTimeRange struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetPlaysByTimeRange) Reset() {
+	*x = GetPlaysByTimeRange{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[13]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetPlaysByTimeRange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPlaysByTimeRange) ProtoMessage() {}
+
+func (x *GetPlaysByTimeRange) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[13]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPlaysByTimeRange.ProtoReflect.Descriptor instead.
+func (*GetPlaysByTimeRange) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{13}
+}
+
+type GetPlaysByLocation struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetPlaysByLocation) Reset() {
+	*x = GetPlaysByLocation{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[14]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetPlaysByLocation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPlaysByLocation) ProtoMessage() {}
+
+func (x *GetPlaysByLocation) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[14]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPlaysByLocation.ProtoReflect.Descriptor instead.
+func (*GetPlaysByLocation) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{14}
 }
 
 type GetPlaysResponse struct {
@@ -312,7 +696,7 @@ type GetPlaysResponse struct {
 func (x *GetPlaysResponse) Reset() {
 	*x = GetPlaysResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_etl_v1_types_proto_msgTypes[5]
+		mi := &file_etl_v1_types_proto_msgTypes[15]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -325,7 +709,7 @@ func (x *GetPlaysResponse) String() string {
 func (*GetPlaysResponse) ProtoMessage() {}
 
 func (x *GetPlaysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_etl_v1_types_proto_msgTypes[5]
+	mi := &file_etl_v1_types_proto_msgTypes[15]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -338,7 +722,7 @@ func (x *GetPlaysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlaysResponse.ProtoReflect.Descriptor instead.
 func (*GetPlaysResponse) Descriptor() ([]byte, []int) {
-	return file_etl_v1_types_proto_rawDescGZIP(), []int{5}
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetPlaysResponse) GetPlays() []*GetPlayResponse {
@@ -353,7 +737,7 @@ type GetPlayResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	UserId      string `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Address     string `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	TrackId     string `protobuf:"bytes,2,opt,name=track_id,json=trackId,proto3" json:"track_id,omitempty"`
 	Timestamp   int64  `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	City        string `protobuf:"bytes,4,opt,name=city,proto3" json:"city,omitempty"`
@@ -366,7 +750,7 @@ type GetPlayResponse struct {
 func (x *GetPlayResponse) Reset() {
 	*x = GetPlayResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_etl_v1_types_proto_msgTypes[6]
+		mi := &file_etl_v1_types_proto_msgTypes[16]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -379,7 +763,7 @@ func (x *GetPlayResponse) String() string {
 func (*GetPlayResponse) ProtoMessage() {}
 
 func (x *GetPlayResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_etl_v1_types_proto_msgTypes[6]
+	mi := &file_etl_v1_types_proto_msgTypes[16]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -392,12 +776,12 @@ func (x *GetPlayResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlayResponse.ProtoReflect.Descriptor instead.
 func (*GetPlayResponse) Descriptor() ([]byte, []int) {
-	return file_etl_v1_types_proto_rawDescGZIP(), []int{6}
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{16}
 }
 
-func (x *GetPlayResponse) GetUserId() string {
+func (x *GetPlayResponse) GetAddress() string {
 	if x != nil {
-		return x.UserId
+		return x.Address
 	}
 	return ""
 }
@@ -451,32 +835,29 @@ func (x *GetPlayResponse) GetTxHash() string {
 	return ""
 }
 
-type Pagination struct {
+type GetManageEntitiesRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
-
-	Limit  int64 `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
-	Offset int64 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
 }
 
-func (x *Pagination) Reset() {
-	*x = Pagination{}
+func (x *GetManageEntitiesRequest) Reset() {
+	*x = GetManageEntitiesRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_etl_v1_types_proto_msgTypes[7]
+		mi := &file_etl_v1_types_proto_msgTypes[17]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
 }
 
-func (x *Pagination) String() string {
+func (x *GetManageEntitiesRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Pagination) ProtoMessage() {}
+func (*GetManageEntitiesRequest) ProtoMessage() {}
 
-func (x *Pagination) ProtoReflect() protoreflect.Message {
-	mi := &file_etl_v1_types_proto_msgTypes[7]
+func (x *GetManageEntitiesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[17]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -487,76 +868,915 @@ func (x *Pagination) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Pagination.ProtoReflect.Descriptor instead.
-func (*Pagination) Descriptor() ([]byte, []int) {
-	return file_etl_v1_types_proto_rawDescGZIP(), []int{7}
+// Deprecated: Use GetManageEntitiesRequest.ProtoReflect.Descriptor instead.
+func (*GetManageEntitiesRequest) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *Pagination) GetLimit() int64 {
+type GetManageEntitiesResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ManageEntities []*GetManageEntityResponse `protobuf:"bytes,1,rep,name=manage_entities,json=manageEntities,proto3" json:"manage_entities,omitempty"`
+}
+
+func (x *GetManageEntitiesResponse) Reset() {
+	*x = GetManageEntitiesResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[18]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetManageEntitiesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetManageEntitiesResponse) ProtoMessage() {}
+
+func (x *GetManageEntitiesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[18]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetManageEntitiesResponse.ProtoReflect.Descriptor instead.
+func (*GetManageEntitiesResponse) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *GetManageEntitiesResponse) GetManageEntities() []*GetManageEntityResponse {
 	if x != nil {
-		return x.Limit
+		return x.ManageEntities
+	}
+	return nil
+}
+
+type GetManageEntityResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Address    string `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	EntityType string `protobuf:"bytes,2,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`
+	EntityId   int64  `protobuf:"varint,3,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
+	Action     string `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
+	Metadata   string `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Signature  string `protobuf:"bytes,6,opt,name=signature,proto3" json:"signature,omitempty"`
+	Signer     string `protobuf:"bytes,7,opt,name=signer,proto3" json:"signer,omitempty"`
+	Nonce      string `protobuf:"bytes,8,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Block      int64  `protobuf:"varint,9,opt,name=block,proto3" json:"block,omitempty"`
+	TxHash     string `protobuf:"bytes,10,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+}
+
+func (x *GetManageEntityResponse) Reset() {
+	*x = GetManageEntityResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[19]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetManageEntityResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetManageEntityResponse) ProtoMessage() {}
+
+func (x *GetManageEntityResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[19]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetManageEntityResponse.ProtoReflect.Descriptor instead.
+func (*GetManageEntityResponse) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *GetManageEntityResponse) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *GetManageEntityResponse) GetEntityType() string {
+	if x != nil {
+		return x.EntityType
+	}
+	return ""
+}
+
+func (x *GetManageEntityResponse) GetEntityId() int64 {
+	if x != nil {
+		return x.EntityId
 	}
 	return 0
 }
 
-func (x *Pagination) GetOffset() int64 {
+func (x *GetManageEntityResponse) GetAction() string {
 	if x != nil {
-		return x.Offset
+		return x.Action
+	}
+	return ""
+}
+
+func (x *GetManageEntityResponse) GetMetadata() string {
+	if x != nil {
+		return x.Metadata
+	}
+	return ""
+}
+
+func (x *GetManageEntityResponse) GetSignature() string {
+	if x != nil {
+		return x.Signature
+	}
+	return ""
+}
+
+func (x *GetManageEntityResponse) GetSigner() string {
+	if x != nil {
+		return x.Signer
+	}
+	return ""
+}
+
+func (x *GetManageEntityResponse) GetNonce() string {
+	if x != nil {
+		return x.Nonce
+	}
+	return ""
+}
+
+func (x *GetManageEntityResponse) GetBlock() int64 {
+	if x != nil {
+		return x.Block
 	}
 	return 0
+}
+
+func (x *GetManageEntityResponse) GetTxHash() string {
+	if x != nil {
+		return x.TxHash
+	}
+	return ""
+}
+
+type GetValidatorsRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Types that are assignable to Query:
+	//
+	//	*GetValidatorsRequest_GetRegisteredValidators
+	//	*GetValidatorsRequest_GetValidatorRegistrations
+	//	*GetValidatorsRequest_GetValidatorDeregistrations
+	Query isGetValidatorsRequest_Query `protobuf_oneof:"query"`
+}
+
+func (x *GetValidatorsRequest) Reset() {
+	*x = GetValidatorsRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[20]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetValidatorsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetValidatorsRequest) ProtoMessage() {}
+
+func (x *GetValidatorsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[20]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetValidatorsRequest.ProtoReflect.Descriptor instead.
+func (*GetValidatorsRequest) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{20}
+}
+
+func (m *GetValidatorsRequest) GetQuery() isGetValidatorsRequest_Query {
+	if m != nil {
+		return m.Query
+	}
+	return nil
+}
+
+func (x *GetValidatorsRequest) GetGetRegisteredValidators() *GetRegisteredValidators {
+	if x, ok := x.GetQuery().(*GetValidatorsRequest_GetRegisteredValidators); ok {
+		return x.GetRegisteredValidators
+	}
+	return nil
+}
+
+func (x *GetValidatorsRequest) GetGetValidatorRegistrations() *GetValidatorRegistrations {
+	if x, ok := x.GetQuery().(*GetValidatorsRequest_GetValidatorRegistrations); ok {
+		return x.GetValidatorRegistrations
+	}
+	return nil
+}
+
+func (x *GetValidatorsRequest) GetGetValidatorDeregistrations() *GetValidatorDeregistrations {
+	if x, ok := x.GetQuery().(*GetValidatorsRequest_GetValidatorDeregistrations); ok {
+		return x.GetValidatorDeregistrations
+	}
+	return nil
+}
+
+type isGetValidatorsRequest_Query interface {
+	isGetValidatorsRequest_Query()
+}
+
+type GetValidatorsRequest_GetRegisteredValidators struct {
+	GetRegisteredValidators *GetRegisteredValidators `protobuf:"bytes,1,opt,name=get_registered_validators,json=getRegisteredValidators,proto3,oneof"`
+}
+
+type GetValidatorsRequest_GetValidatorRegistrations struct {
+	GetValidatorRegistrations *GetValidatorRegistrations `protobuf:"bytes,2,opt,name=get_validator_registrations,json=getValidatorRegistrations,proto3,oneof"`
+}
+
+type GetValidatorsRequest_GetValidatorDeregistrations struct {
+	GetValidatorDeregistrations *GetValidatorDeregistrations `protobuf:"bytes,3,opt,name=get_validator_deregistrations,json=getValidatorDeregistrations,proto3,oneof"`
+}
+
+func (*GetValidatorsRequest_GetRegisteredValidators) isGetValidatorsRequest_Query() {}
+
+func (*GetValidatorsRequest_GetValidatorRegistrations) isGetValidatorsRequest_Query() {}
+
+func (*GetValidatorsRequest_GetValidatorDeregistrations) isGetValidatorsRequest_Query() {}
+
+type GetRegisteredValidators struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetRegisteredValidators) Reset() {
+	*x = GetRegisteredValidators{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[21]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetRegisteredValidators) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRegisteredValidators) ProtoMessage() {}
+
+func (x *GetRegisteredValidators) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[21]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRegisteredValidators.ProtoReflect.Descriptor instead.
+func (*GetRegisteredValidators) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{21}
+}
+
+type GetValidatorRegistrations struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetValidatorRegistrations) Reset() {
+	*x = GetValidatorRegistrations{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[22]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetValidatorRegistrations) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetValidatorRegistrations) ProtoMessage() {}
+
+func (x *GetValidatorRegistrations) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[22]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetValidatorRegistrations.ProtoReflect.Descriptor instead.
+func (*GetValidatorRegistrations) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{22}
+}
+
+type GetValidatorDeregistrations struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetValidatorDeregistrations) Reset() {
+	*x = GetValidatorDeregistrations{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[23]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetValidatorDeregistrations) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetValidatorDeregistrations) ProtoMessage() {}
+
+func (x *GetValidatorDeregistrations) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[23]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetValidatorDeregistrations.ProtoReflect.Descriptor instead.
+func (*GetValidatorDeregistrations) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{23}
+}
+
+type GetValidatorsResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetValidatorsResponse) Reset() {
+	*x = GetValidatorsResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[24]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetValidatorsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetValidatorsResponse) ProtoMessage() {}
+
+func (x *GetValidatorsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[24]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetValidatorsResponse.ProtoReflect.Descriptor instead.
+func (*GetValidatorsResponse) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{24}
+}
+
+type GetValidatorResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Address          string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	ValidatorAddress string                 `protobuf:"bytes,2,opt,name=validator_address,json=validatorAddress,proto3" json:"validator_address,omitempty"`
+	BlockHeight      int64                  `protobuf:"varint,3,opt,name=block_height,json=blockHeight,proto3" json:"block_height,omitempty"`
+	TxHash           string                 `protobuf:"bytes,4,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	Timestamp        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+}
+
+func (x *GetValidatorResponse) Reset() {
+	*x = GetValidatorResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[25]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetValidatorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetValidatorResponse) ProtoMessage() {}
+
+func (x *GetValidatorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[25]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetValidatorResponse.ProtoReflect.Descriptor instead.
+func (*GetValidatorResponse) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *GetValidatorResponse) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *GetValidatorResponse) GetValidatorAddress() string {
+	if x != nil {
+		return x.ValidatorAddress
+	}
+	return ""
+}
+
+func (x *GetValidatorResponse) GetBlockHeight() int64 {
+	if x != nil {
+		return x.BlockHeight
+	}
+	return 0
+}
+
+func (x *GetValidatorResponse) GetTxHash() string {
+	if x != nil {
+		return x.TxHash
+	}
+	return ""
+}
+
+func (x *GetValidatorResponse) GetTimestamp() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Timestamp
+	}
+	return nil
+}
+
+type GetLocationRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Types that are assignable to Query:
+	//
+	//	*GetLocationRequest_GetAvailableCities
+	//	*GetLocationRequest_GetAvailableRegions
+	//	*GetLocationRequest_GetAvailableCountries
+	Query isGetLocationRequest_Query `protobuf_oneof:"query"`
+}
+
+func (x *GetLocationRequest) Reset() {
+	*x = GetLocationRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[26]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetLocationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLocationRequest) ProtoMessage() {}
+
+func (x *GetLocationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[26]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLocationRequest.ProtoReflect.Descriptor instead.
+func (*GetLocationRequest) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{26}
+}
+
+func (m *GetLocationRequest) GetQuery() isGetLocationRequest_Query {
+	if m != nil {
+		return m.Query
+	}
+	return nil
+}
+
+func (x *GetLocationRequest) GetGetAvailableCities() *GetAvailableCities {
+	if x, ok := x.GetQuery().(*GetLocationRequest_GetAvailableCities); ok {
+		return x.GetAvailableCities
+	}
+	return nil
+}
+
+func (x *GetLocationRequest) GetGetAvailableRegions() *GetAvailableRegions {
+	if x, ok := x.GetQuery().(*GetLocationRequest_GetAvailableRegions); ok {
+		return x.GetAvailableRegions
+	}
+	return nil
+}
+
+func (x *GetLocationRequest) GetGetAvailableCountries() *GetAvailableCountries {
+	if x, ok := x.GetQuery().(*GetLocationRequest_GetAvailableCountries); ok {
+		return x.GetAvailableCountries
+	}
+	return nil
+}
+
+type isGetLocationRequest_Query interface {
+	isGetLocationRequest_Query()
+}
+
+type GetLocationRequest_GetAvailableCities struct {
+	GetAvailableCities *GetAvailableCities `protobuf:"bytes,1,opt,name=get_available_cities,json=getAvailableCities,proto3,oneof"`
+}
+
+type GetLocationRequest_GetAvailableRegions struct {
+	GetAvailableRegions *GetAvailableRegions `protobuf:"bytes,2,opt,name=get_available_regions,json=getAvailableRegions,proto3,oneof"`
+}
+
+type GetLocationRequest_GetAvailableCountries struct {
+	GetAvailableCountries *GetAvailableCountries `protobuf:"bytes,3,opt,name=get_available_countries,json=getAvailableCountries,proto3,oneof"`
+}
+
+func (*GetLocationRequest_GetAvailableCities) isGetLocationRequest_Query() {}
+
+func (*GetLocationRequest_GetAvailableRegions) isGetLocationRequest_Query() {}
+
+func (*GetLocationRequest_GetAvailableCountries) isGetLocationRequest_Query() {}
+
+type GetAvailableCities struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetAvailableCities) Reset() {
+	*x = GetAvailableCities{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[27]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetAvailableCities) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAvailableCities) ProtoMessage() {}
+
+func (x *GetAvailableCities) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[27]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAvailableCities.ProtoReflect.Descriptor instead.
+func (*GetAvailableCities) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{27}
+}
+
+type GetAvailableRegions struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetAvailableRegions) Reset() {
+	*x = GetAvailableRegions{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[28]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetAvailableRegions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAvailableRegions) ProtoMessage() {}
+
+func (x *GetAvailableRegions) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[28]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAvailableRegions.ProtoReflect.Descriptor instead.
+func (*GetAvailableRegions) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{28}
+}
+
+type GetAvailableCountries struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetAvailableCountries) Reset() {
+	*x = GetAvailableCountries{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[29]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetAvailableCountries) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAvailableCountries) ProtoMessage() {}
+
+func (x *GetAvailableCountries) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[29]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAvailableCountries.ProtoReflect.Descriptor instead.
+func (*GetAvailableCountries) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{29}
+}
+
+type GetLocationResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetLocationResponse) Reset() {
+	*x = GetLocationResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_etl_v1_types_proto_msgTypes[30]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetLocationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLocationResponse) ProtoMessage() {}
+
+func (x *GetLocationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_etl_v1_types_proto_msgTypes[30]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLocationResponse.ProtoReflect.Descriptor instead.
+func (*GetLocationResponse) Descriptor() ([]byte, []int) {
+	return file_etl_v1_types_proto_rawDescGZIP(), []int{30}
 }
 
 var File_etl_v1_types_proto protoreflect.FileDescriptor
 
 var file_etl_v1_types_proto_rawDesc = []byte{
 	0x0a, 0x12, 0x65, 0x74, 0x6c, 0x2f, 0x76, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x70,
-	0x72, 0x6f, 0x74, 0x6f, 0x12, 0x06, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x22, 0x0d, 0x0a, 0x0b,
-	0x50, 0x69, 0x6e, 0x67, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x28, 0x0a, 0x0c, 0x50,
-	0x69, 0x6e, 0x67, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x18, 0x0a, 0x07, 0x6d,
-	0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6d, 0x65,
-	0x73, 0x73, 0x61, 0x67, 0x65, 0x22, 0x12, 0x0a, 0x10, 0x47, 0x65, 0x74, 0x48, 0x65, 0x61, 0x6c,
-	0x74, 0x68, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x13, 0x0a, 0x11, 0x47, 0x65, 0x74,
-	0x48, 0x65, 0x61, 0x6c, 0x74, 0x68, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x9e,
-	0x01, 0x0a, 0x0f, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65,
-	0x73, 0x74, 0x12, 0x32, 0x0a, 0x0a, 0x70, 0x61, 0x67, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e,
-	0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x12, 0x2e, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e,
-	0x50, 0x61, 0x67, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x0a, 0x70, 0x61, 0x67, 0x69,
-	0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x23, 0x0a, 0x05, 0x6f, 0x72, 0x64, 0x65, 0x72, 0x18,
-	0x02, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x0d, 0x2e, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4f,
-	0x72, 0x64, 0x65, 0x72, 0x52, 0x05, 0x6f, 0x72, 0x64, 0x65, 0x72, 0x12, 0x17, 0x0a, 0x07, 0x75,
-	0x73, 0x65, 0x72, 0x5f, 0x69, 0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x75, 0x73,
-	0x65, 0x72, 0x49, 0x64, 0x12, 0x19, 0x0a, 0x08, 0x74, 0x72, 0x61, 0x63, 0x6b, 0x5f, 0x69, 0x64,
-	0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x74, 0x72, 0x61, 0x63, 0x6b, 0x49, 0x64, 0x22,
-	0x41, 0x0a, 0x10, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f,
-	0x6e, 0x73, 0x65, 0x12, 0x2d, 0x0a, 0x05, 0x70, 0x6c, 0x61, 0x79, 0x73, 0x18, 0x01, 0x20, 0x03,
-	0x28, 0x0b, 0x32, 0x17, 0x2e, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x50,
-	0x6c, 0x61, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x05, 0x70, 0x6c, 0x61,
-	0x79, 0x73, 0x22, 0xe5, 0x01, 0x0a, 0x0f, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x52, 0x65,
-	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x17, 0x0a, 0x07, 0x75, 0x73, 0x65, 0x72, 0x5f, 0x69,
-	0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x75, 0x73, 0x65, 0x72, 0x49, 0x64, 0x12,
-	0x19, 0x0a, 0x08, 0x74, 0x72, 0x61, 0x63, 0x6b, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28,
-	0x09, 0x52, 0x07, 0x74, 0x72, 0x61, 0x63, 0x6b, 0x49, 0x64, 0x12, 0x1c, 0x0a, 0x09, 0x74, 0x69,
-	0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x18, 0x03, 0x20, 0x01, 0x28, 0x03, 0x52, 0x09, 0x74,
-	0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x12, 0x12, 0x0a, 0x04, 0x63, 0x69, 0x74, 0x79,
-	0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x63, 0x69, 0x74, 0x79, 0x12, 0x18, 0x0a, 0x07,
-	0x63, 0x6f, 0x75, 0x6e, 0x74, 0x72, 0x79, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x63,
-	0x6f, 0x75, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x16, 0x0a, 0x06, 0x72, 0x65, 0x67, 0x69, 0x6f, 0x6e,
-	0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x72, 0x65, 0x67, 0x69, 0x6f, 0x6e, 0x12, 0x21,
-	0x0a, 0x0c, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x07,
-	0x20, 0x01, 0x28, 0x03, 0x52, 0x0b, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x48, 0x65, 0x69, 0x67, 0x68,
-	0x74, 0x12, 0x17, 0x0a, 0x07, 0x74, 0x78, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x08, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x06, 0x74, 0x78, 0x48, 0x61, 0x73, 0x68, 0x22, 0x3a, 0x0a, 0x0a, 0x50, 0x61,
-	0x67, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x14, 0x0a, 0x05, 0x6c, 0x69, 0x6d, 0x69,
-	0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x52, 0x05, 0x6c, 0x69, 0x6d, 0x69, 0x74, 0x12, 0x16,
-	0x0a, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x52, 0x06,
-	0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x2a, 0x3d, 0x0a, 0x05, 0x4f, 0x72, 0x64, 0x65, 0x72, 0x12,
-	0x15, 0x0a, 0x11, 0x4f, 0x52, 0x44, 0x45, 0x52, 0x5f, 0x55, 0x4e, 0x53, 0x50, 0x45, 0x43, 0x49,
-	0x46, 0x49, 0x45, 0x44, 0x10, 0x00, 0x12, 0x0d, 0x0a, 0x09, 0x4f, 0x52, 0x44, 0x45, 0x52, 0x5f,
-	0x41, 0x53, 0x43, 0x10, 0x01, 0x12, 0x0e, 0x0a, 0x0a, 0x4f, 0x52, 0x44, 0x45, 0x52, 0x5f, 0x44,
-	0x45, 0x53, 0x43, 0x10, 0x02, 0x42, 0x31, 0x5a, 0x2f, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e,
-	0x63, 0x6f, 0x6d, 0x2f, 0x41, 0x75, 0x64, 0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63,
-	0x74, 0x2f, 0x61, 0x75, 0x64, 0x69, 0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x70,
-	0x69, 0x2f, 0x65, 0x74, 0x6c, 0x2f, 0x76, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x72, 0x6f, 0x74, 0x6f, 0x12, 0x06, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x1a, 0x1f, 0x67, 0x6f,
+	0x6f, 0x67, 0x6c, 0x65, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2f, 0x74, 0x69,
+	0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x0d, 0x0a,
+	0x0b, 0x50, 0x69, 0x6e, 0x67, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x28, 0x0a, 0x0c,
+	0x50, 0x69, 0x6e, 0x67, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x18, 0x0a, 0x07,
+	0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6d,
+	0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x22, 0x12, 0x0a, 0x10, 0x47, 0x65, 0x74, 0x48, 0x65, 0x61,
+	0x6c, 0x74, 0x68, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x13, 0x0a, 0x11, 0x47, 0x65,
+	0x74, 0x48, 0x65, 0x61, 0x6c, 0x74, 0x68, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22,
+	0x12, 0x0a, 0x10, 0x47, 0x65, 0x74, 0x42, 0x6c, 0x6f, 0x63, 0x6b, 0x73, 0x52, 0x65, 0x71, 0x75,
+	0x65, 0x73, 0x74, 0x22, 0x13, 0x0a, 0x11, 0x47, 0x65, 0x74, 0x42, 0x6c, 0x6f, 0x63, 0x6b, 0x73,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x18, 0x0a, 0x16, 0x47, 0x65, 0x74, 0x54,
+	0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x22, 0x19, 0x0a, 0x17, 0x47, 0x65, 0x74, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63,
+	0x74, 0x69, 0x6f, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x84, 0x03,
+	0x0a, 0x0f, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x12, 0x2f, 0x0a, 0x09, 0x67, 0x65, 0x74, 0x5f, 0x70, 0x6c, 0x61, 0x79, 0x73, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x0b, 0x32, 0x10, 0x2e, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65,
+	0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x48, 0x00, 0x52, 0x08, 0x67, 0x65, 0x74, 0x50, 0x6c, 0x61,
+	0x79, 0x73, 0x12, 0x4c, 0x0a, 0x14, 0x67, 0x65, 0x74, 0x5f, 0x70, 0x6c, 0x61, 0x79, 0x73, 0x5f,
+	0x62, 0x79, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x19, 0x2e, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61,
+	0x79, 0x73, 0x42, 0x79, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x48, 0x00, 0x52, 0x11, 0x67,
+	0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x42, 0x79, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73,
+	0x12, 0x43, 0x0a, 0x11, 0x67, 0x65, 0x74, 0x5f, 0x70, 0x6c, 0x61, 0x79, 0x73, 0x5f, 0x62, 0x79,
+	0x5f, 0x75, 0x73, 0x65, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x65, 0x74,
+	0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x42, 0x79, 0x55,
+	0x73, 0x65, 0x72, 0x48, 0x00, 0x52, 0x0e, 0x67, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x42,
+	0x79, 0x55, 0x73, 0x65, 0x72, 0x12, 0x53, 0x0a, 0x17, 0x67, 0x65, 0x74, 0x5f, 0x70, 0x6c, 0x61,
+	0x79, 0x73, 0x5f, 0x62, 0x79, 0x5f, 0x74, 0x69, 0x6d, 0x65, 0x5f, 0x72, 0x61, 0x6e, 0x67, 0x65,
+	0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1b, 0x2e, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e,
+	0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x42, 0x79, 0x54, 0x69, 0x6d, 0x65, 0x52, 0x61,
+	0x6e, 0x67, 0x65, 0x48, 0x00, 0x52, 0x13, 0x67, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x42,
+	0x79, 0x54, 0x69, 0x6d, 0x65, 0x52, 0x61, 0x6e, 0x67, 0x65, 0x12, 0x4f, 0x0a, 0x15, 0x67, 0x65,
+	0x74, 0x5f, 0x70, 0x6c, 0x61, 0x79, 0x73, 0x5f, 0x62, 0x79, 0x5f, 0x6c, 0x6f, 0x63, 0x61, 0x74,
+	0x69, 0x6f, 0x6e, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x65, 0x74, 0x6c, 0x2e,
+	0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x42, 0x79, 0x4c, 0x6f, 0x63,
+	0x61, 0x74, 0x69, 0x6f, 0x6e, 0x48, 0x00, 0x52, 0x12, 0x67, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79,
+	0x73, 0x42, 0x79, 0x4c, 0x6f, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x42, 0x07, 0x0a, 0x05, 0x71,
+	0x75, 0x65, 0x72, 0x79, 0x22, 0x0a, 0x0a, 0x08, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73,
+	0x22, 0x13, 0x0a, 0x11, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x42, 0x79, 0x41, 0x64,
+	0x64, 0x72, 0x65, 0x73, 0x73, 0x22, 0x10, 0x0a, 0x0e, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79,
+	0x73, 0x42, 0x79, 0x55, 0x73, 0x65, 0x72, 0x22, 0x11, 0x0a, 0x0f, 0x47, 0x65, 0x74, 0x50, 0x6c,
+	0x61, 0x79, 0x73, 0x42, 0x79, 0x54, 0x72, 0x61, 0x63, 0x6b, 0x22, 0x15, 0x0a, 0x13, 0x47, 0x65,
+	0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x42, 0x79, 0x54, 0x69, 0x6d, 0x65, 0x52, 0x61, 0x6e, 0x67,
+	0x65, 0x22, 0x14, 0x0a, 0x12, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x73, 0x42, 0x79, 0x4c,
+	0x6f, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x22, 0x41, 0x0a, 0x10, 0x47, 0x65, 0x74, 0x50, 0x6c,
+	0x61, 0x79, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x2d, 0x0a, 0x05, 0x70,
+	0x6c, 0x61, 0x79, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x17, 0x2e, 0x65, 0x74, 0x6c,
+	0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f,
+	0x6e, 0x73, 0x65, 0x52, 0x05, 0x70, 0x6c, 0x61, 0x79, 0x73, 0x22, 0xe6, 0x01, 0x0a, 0x0f, 0x47,
+	0x65, 0x74, 0x50, 0x6c, 0x61, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x18,
+	0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x19, 0x0a, 0x08, 0x74, 0x72, 0x61, 0x63,
+	0x6b, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x74, 0x72, 0x61, 0x63,
+	0x6b, 0x49, 0x64, 0x12, 0x1c, 0x0a, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70,
+	0x18, 0x03, 0x20, 0x01, 0x28, 0x03, 0x52, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d,
+	0x70, 0x12, 0x12, 0x0a, 0x04, 0x63, 0x69, 0x74, 0x79, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x04, 0x63, 0x69, 0x74, 0x79, 0x12, 0x18, 0x0a, 0x07, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x72, 0x79,
+	0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x72, 0x79, 0x12,
+	0x16, 0x0a, 0x06, 0x72, 0x65, 0x67, 0x69, 0x6f, 0x6e, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x06, 0x72, 0x65, 0x67, 0x69, 0x6f, 0x6e, 0x12, 0x21, 0x0a, 0x0c, 0x62, 0x6c, 0x6f, 0x63, 0x6b,
+	0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x07, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0b, 0x62,
+	0x6c, 0x6f, 0x63, 0x6b, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x17, 0x0a, 0x07, 0x74, 0x78,
+	0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x08, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x74, 0x78, 0x48,
+	0x61, 0x73, 0x68, 0x22, 0x1a, 0x0a, 0x18, 0x47, 0x65, 0x74, 0x4d, 0x61, 0x6e, 0x61, 0x67, 0x65,
+	0x45, 0x6e, 0x74, 0x69, 0x74, 0x69, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22,
+	0x65, 0x0a, 0x19, 0x47, 0x65, 0x74, 0x4d, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x45, 0x6e, 0x74, 0x69,
+	0x74, 0x69, 0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x48, 0x0a, 0x0f,
+	0x6d, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x5f, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x69, 0x65, 0x73, 0x18,
+	0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x47,
+	0x65, 0x74, 0x4d, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x52, 0x65,
+	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x0e, 0x6d, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x45, 0x6e,
+	0x74, 0x69, 0x74, 0x69, 0x65, 0x73, 0x22, 0xa0, 0x02, 0x0a, 0x17, 0x47, 0x65, 0x74, 0x4d, 0x61,
+	0x6e, 0x61, 0x67, 0x65, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
+	0x73, 0x65, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x1f, 0x0a, 0x0b,
+	0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x0a, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54, 0x79, 0x70, 0x65, 0x12, 0x1b, 0x0a,
+	0x09, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x5f, 0x69, 0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x03,
+	0x52, 0x08, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x49, 0x64, 0x12, 0x16, 0x0a, 0x06, 0x61, 0x63,
+	0x74, 0x69, 0x6f, 0x6e, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x61, 0x63, 0x74, 0x69,
+	0x6f, 0x6e, 0x12, 0x1a, 0x0a, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x18, 0x05,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x12, 0x1c,
+	0x0a, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x18, 0x06, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x12, 0x16, 0x0a, 0x06,
+	0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x18, 0x07, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x69,
+	0x67, 0x6e, 0x65, 0x72, 0x12, 0x14, 0x0a, 0x05, 0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x18, 0x08, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x05, 0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x12, 0x14, 0x0a, 0x05, 0x62, 0x6c,
+	0x6f, 0x63, 0x6b, 0x18, 0x09, 0x20, 0x01, 0x28, 0x03, 0x52, 0x05, 0x62, 0x6c, 0x6f, 0x63, 0x6b,
+	0x12, 0x17, 0x0a, 0x07, 0x74, 0x78, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x0a, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x06, 0x74, 0x78, 0x48, 0x61, 0x73, 0x68, 0x22, 0xce, 0x02, 0x0a, 0x14, 0x47, 0x65,
+	0x74, 0x56, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x12, 0x5d, 0x0a, 0x19, 0x67, 0x65, 0x74, 0x5f, 0x72, 0x65, 0x67, 0x69, 0x73, 0x74,
+	0x65, 0x72, 0x65, 0x64, 0x5f, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72, 0x73, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x47,
+	0x65, 0x74, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x65, 0x72, 0x65, 0x64, 0x56, 0x61, 0x6c, 0x69,
+	0x64, 0x61, 0x74, 0x6f, 0x72, 0x73, 0x48, 0x00, 0x52, 0x17, 0x67, 0x65, 0x74, 0x52, 0x65, 0x67,
+	0x69, 0x73, 0x74, 0x65, 0x72, 0x65, 0x64, 0x56, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72,
+	0x73, 0x12, 0x63, 0x0a, 0x1b, 0x67, 0x65, 0x74, 0x5f, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74,
+	0x6f, 0x72, 0x5f, 0x72, 0x65, 0x67, 0x69, 0x73, 0x74, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x73,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x21, 0x2e, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e,
+	0x47, 0x65, 0x74, 0x56, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72, 0x52, 0x65, 0x67, 0x69,
+	0x73, 0x74, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x48, 0x00, 0x52, 0x19, 0x67, 0x65, 0x74,
+	0x56, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x72,
+	0x61, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x12, 0x69, 0x0a, 0x1d, 0x67, 0x65, 0x74, 0x5f, 0x76, 0x61,
+	0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72, 0x5f, 0x64, 0x65, 0x72, 0x65, 0x67, 0x69, 0x73, 0x74,
+	0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x23, 0x2e,
+	0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x56, 0x61, 0x6c, 0x69, 0x64, 0x61,
+	0x74, 0x6f, 0x72, 0x44, 0x65, 0x72, 0x65, 0x67, 0x69, 0x73, 0x74, 0x72, 0x61, 0x74, 0x69, 0x6f,
+	0x6e, 0x73, 0x48, 0x00, 0x52, 0x1b, 0x67, 0x65, 0x74, 0x56, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74,
+	0x6f, 0x72, 0x44, 0x65, 0x72, 0x65, 0x67, 0x69, 0x73, 0x74, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+	0x73, 0x42, 0x07, 0x0a, 0x05, 0x71, 0x75, 0x65, 0x72, 0x79, 0x22, 0x19, 0x0a, 0x17, 0x47, 0x65,
+	0x74, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x65, 0x72, 0x65, 0x64, 0x56, 0x61, 0x6c, 0x69, 0x64,
+	0x61, 0x74, 0x6f, 0x72, 0x73, 0x22, 0x1b, 0x0a, 0x19, 0x47, 0x65, 0x74, 0x56, 0x61, 0x6c, 0x69,
+	0x64, 0x61, 0x74, 0x6f, 0x72, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x72, 0x61, 0x74, 0x69, 0x6f,
+	0x6e, 0x73, 0x22, 0x1d, 0x0a, 0x1b, 0x47, 0x65, 0x74, 0x56, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74,
+	0x6f, 0x72, 0x44, 0x65, 0x72, 0x65, 0x67, 0x69, 0x73, 0x74, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+	0x73, 0x22, 0x17, 0x0a, 0x15, 0x47, 0x65, 0x74, 0x56, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f,
+	0x72, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0xd3, 0x01, 0x0a, 0x14, 0x47,
+	0x65, 0x74, 0x56, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72, 0x52, 0x65, 0x73, 0x70, 0x6f,
+	0x6e, 0x73, 0x65, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x2b, 0x0a,
+	0x11, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65,
+	0x73, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x61,
+	0x74, 0x6f, 0x72, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x21, 0x0a, 0x0c, 0x62, 0x6c,
+	0x6f, 0x63, 0x6b, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x03,
+	0x52, 0x0b, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x17, 0x0a,
+	0x07, 0x74, 0x78, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06,
+	0x74, 0x78, 0x48, 0x61, 0x73, 0x68, 0x12, 0x38, 0x0a, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74,
+	0x61, 0x6d, 0x70, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x6f, 0x6f, 0x67,
+	0x6c, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2e, 0x54, 0x69, 0x6d, 0x65,
+	0x73, 0x74, 0x61, 0x6d, 0x70, 0x52, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70,
+	0x22, 0x99, 0x02, 0x0a, 0x12, 0x47, 0x65, 0x74, 0x4c, 0x6f, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x4e, 0x0a, 0x14, 0x67, 0x65, 0x74, 0x5f, 0x61,
+	0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c, 0x65, 0x5f, 0x63, 0x69, 0x74, 0x69, 0x65, 0x73, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x47,
+	0x65, 0x74, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c, 0x65, 0x43, 0x69, 0x74, 0x69, 0x65,
+	0x73, 0x48, 0x00, 0x52, 0x12, 0x67, 0x65, 0x74, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c,
+	0x65, 0x43, 0x69, 0x74, 0x69, 0x65, 0x73, 0x12, 0x51, 0x0a, 0x15, 0x67, 0x65, 0x74, 0x5f, 0x61,
+	0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c, 0x65, 0x5f, 0x72, 0x65, 0x67, 0x69, 0x6f, 0x6e, 0x73,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1b, 0x2e, 0x65, 0x74, 0x6c, 0x2e, 0x76, 0x31, 0x2e,
+	0x47, 0x65, 0x74, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c, 0x65, 0x52, 0x65, 0x67, 0x69,
+	0x6f, 0x6e, 0x73, 0x48, 0x00, 0x52, 0x13, 0x67, 0x65, 0x74, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61,
+	0x62, 0x6c, 0x65, 0x52, 0x65, 0x67, 0x69, 0x6f, 0x6e, 0x73, 0x12, 0x57, 0x0a, 0x17, 0x67, 0x65,
+	0x74, 0x5f, 0x61, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c, 0x65, 0x5f, 0x63, 0x6f, 0x75, 0x6e,
+	0x74, 0x72, 0x69, 0x65, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1d, 0x2e, 0x65, 0x74,
+	0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c,
+	0x65, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x72, 0x69, 0x65, 0x73, 0x48, 0x00, 0x52, 0x15, 0x67, 0x65,
+	0x74, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c, 0x65, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x72,
+	0x69, 0x65, 0x73, 0x42, 0x07, 0x0a, 0x05, 0x71, 0x75, 0x65, 0x72, 0x79, 0x22, 0x14, 0x0a, 0x12,
+	0x47, 0x65, 0x74, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c, 0x65, 0x43, 0x69, 0x74, 0x69,
+	0x65, 0x73, 0x22, 0x15, 0x0a, 0x13, 0x47, 0x65, 0x74, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62,
+	0x6c, 0x65, 0x52, 0x65, 0x67, 0x69, 0x6f, 0x6e, 0x73, 0x22, 0x17, 0x0a, 0x15, 0x47, 0x65, 0x74,
+	0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c, 0x65, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x72, 0x69,
+	0x65, 0x73, 0x22, 0x15, 0x0a, 0x13, 0x47, 0x65, 0x74, 0x4c, 0x6f, 0x63, 0x61, 0x74, 0x69, 0x6f,
+	0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x31, 0x5a, 0x2f, 0x67, 0x69, 0x74,
+	0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41, 0x75, 0x64, 0x69, 0x75, 0x73, 0x50, 0x72,
+	0x6f, 0x6a, 0x65, 0x63, 0x74, 0x2f, 0x61, 0x75, 0x64, 0x69, 0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b,
+	0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x65, 0x74, 0x6c, 0x2f, 0x76, 0x31, 0x62, 0x06, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -571,28 +1791,61 @@ func file_etl_v1_types_proto_rawDescGZIP() []byte {
 	return file_etl_v1_types_proto_rawDescData
 }
 
-var file_etl_v1_types_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_etl_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_etl_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_etl_v1_types_proto_goTypes = []interface{}{
-	(Order)(0),                // 0: etl.v1.Order
-	(*PingRequest)(nil),       // 1: etl.v1.PingRequest
-	(*PingResponse)(nil),      // 2: etl.v1.PingResponse
-	(*GetHealthRequest)(nil),  // 3: etl.v1.GetHealthRequest
-	(*GetHealthResponse)(nil), // 4: etl.v1.GetHealthResponse
-	(*GetPlaysRequest)(nil),   // 5: etl.v1.GetPlaysRequest
-	(*GetPlaysResponse)(nil),  // 6: etl.v1.GetPlaysResponse
-	(*GetPlayResponse)(nil),   // 7: etl.v1.GetPlayResponse
-	(*Pagination)(nil),        // 8: etl.v1.Pagination
+	(*PingRequest)(nil),                 // 0: etl.v1.PingRequest
+	(*PingResponse)(nil),                // 1: etl.v1.PingResponse
+	(*GetHealthRequest)(nil),            // 2: etl.v1.GetHealthRequest
+	(*GetHealthResponse)(nil),           // 3: etl.v1.GetHealthResponse
+	(*GetBlocksRequest)(nil),            // 4: etl.v1.GetBlocksRequest
+	(*GetBlocksResponse)(nil),           // 5: etl.v1.GetBlocksResponse
+	(*GetTransactionsRequest)(nil),      // 6: etl.v1.GetTransactionsRequest
+	(*GetTransactionsResponse)(nil),     // 7: etl.v1.GetTransactionsResponse
+	(*GetPlaysRequest)(nil),             // 8: etl.v1.GetPlaysRequest
+	(*GetPlays)(nil),                    // 9: etl.v1.GetPlays
+	(*GetPlaysByAddress)(nil),           // 10: etl.v1.GetPlaysByAddress
+	(*GetPlaysByUser)(nil),              // 11: etl.v1.GetPlaysByUser
+	(*GetPlaysByTrack)(nil),             // 12: etl.v1.GetPlaysByTrack
+	(*GetPlaysByTimeRange)(nil),         // 13: etl.v1.GetPlaysByTimeRange
+	(*GetPlaysByLocation)(nil),          // 14: etl.v1.GetPlaysByLocation
+	(*GetPlaysResponse)(nil),            // 15: etl.v1.GetPlaysResponse
+	(*GetPlayResponse)(nil),             // 16: etl.v1.GetPlayResponse
+	(*GetManageEntitiesRequest)(nil),    // 17: etl.v1.GetManageEntitiesRequest
+	(*GetManageEntitiesResponse)(nil),   // 18: etl.v1.GetManageEntitiesResponse
+	(*GetManageEntityResponse)(nil),     // 19: etl.v1.GetManageEntityResponse
+	(*GetValidatorsRequest)(nil),        // 20: etl.v1.GetValidatorsRequest
+	(*GetRegisteredValidators)(nil),     // 21: etl.v1.GetRegisteredValidators
+	(*GetValidatorRegistrations)(nil),   // 22: etl.v1.GetValidatorRegistrations
+	(*GetValidatorDeregistrations)(nil), // 23: etl.v1.GetValidatorDeregistrations
+	(*GetValidatorsResponse)(nil),       // 24: etl.v1.GetValidatorsResponse
+	(*GetValidatorResponse)(nil),        // 25: etl.v1.GetValidatorResponse
+	(*GetLocationRequest)(nil),          // 26: etl.v1.GetLocationRequest
+	(*GetAvailableCities)(nil),          // 27: etl.v1.GetAvailableCities
+	(*GetAvailableRegions)(nil),         // 28: etl.v1.GetAvailableRegions
+	(*GetAvailableCountries)(nil),       // 29: etl.v1.GetAvailableCountries
+	(*GetLocationResponse)(nil),         // 30: etl.v1.GetLocationResponse
+	(*timestamppb.Timestamp)(nil),       // 31: google.protobuf.Timestamp
 }
 var file_etl_v1_types_proto_depIdxs = []int32{
-	8, // 0: etl.v1.GetPlaysRequest.pagination:type_name -> etl.v1.Pagination
-	0, // 1: etl.v1.GetPlaysRequest.order:type_name -> etl.v1.Order
-	7, // 2: etl.v1.GetPlaysResponse.plays:type_name -> etl.v1.GetPlayResponse
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	9,  // 0: etl.v1.GetPlaysRequest.get_plays:type_name -> etl.v1.GetPlays
+	10, // 1: etl.v1.GetPlaysRequest.get_plays_by_address:type_name -> etl.v1.GetPlaysByAddress
+	11, // 2: etl.v1.GetPlaysRequest.get_plays_by_user:type_name -> etl.v1.GetPlaysByUser
+	13, // 3: etl.v1.GetPlaysRequest.get_plays_by_time_range:type_name -> etl.v1.GetPlaysByTimeRange
+	14, // 4: etl.v1.GetPlaysRequest.get_plays_by_location:type_name -> etl.v1.GetPlaysByLocation
+	16, // 5: etl.v1.GetPlaysResponse.plays:type_name -> etl.v1.GetPlayResponse
+	19, // 6: etl.v1.GetManageEntitiesResponse.manage_entities:type_name -> etl.v1.GetManageEntityResponse
+	21, // 7: etl.v1.GetValidatorsRequest.get_registered_validators:type_name -> etl.v1.GetRegisteredValidators
+	22, // 8: etl.v1.GetValidatorsRequest.get_validator_registrations:type_name -> etl.v1.GetValidatorRegistrations
+	23, // 9: etl.v1.GetValidatorsRequest.get_validator_deregistrations:type_name -> etl.v1.GetValidatorDeregistrations
+	31, // 10: etl.v1.GetValidatorResponse.timestamp:type_name -> google.protobuf.Timestamp
+	27, // 11: etl.v1.GetLocationRequest.get_available_cities:type_name -> etl.v1.GetAvailableCities
+	28, // 12: etl.v1.GetLocationRequest.get_available_regions:type_name -> etl.v1.GetAvailableRegions
+	29, // 13: etl.v1.GetLocationRequest.get_available_countries:type_name -> etl.v1.GetAvailableCountries
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_etl_v1_types_proto_init() }
@@ -650,7 +1903,7 @@ func file_etl_v1_types_proto_init() {
 			}
 		}
 		file_etl_v1_types_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*GetPlaysRequest); i {
+			switch v := v.(*GetBlocksRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -662,7 +1915,7 @@ func file_etl_v1_types_proto_init() {
 			}
 		}
 		file_etl_v1_types_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*GetPlaysResponse); i {
+			switch v := v.(*GetBlocksResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -674,7 +1927,7 @@ func file_etl_v1_types_proto_init() {
 			}
 		}
 		file_etl_v1_types_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*GetPlayResponse); i {
+			switch v := v.(*GetTransactionsRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -686,7 +1939,283 @@ func file_etl_v1_types_proto_init() {
 			}
 		}
 		file_etl_v1_types_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Pagination); i {
+			switch v := v.(*GetTransactionsResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetPlaysRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetPlays); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetPlaysByAddress); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetPlaysByUser); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetPlaysByTrack); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetPlaysByTimeRange); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetPlaysByLocation); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetPlaysResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetPlayResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetManageEntitiesRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[18].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetManageEntitiesResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetManageEntityResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetValidatorsRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[21].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetRegisteredValidators); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[22].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetValidatorRegistrations); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[23].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetValidatorDeregistrations); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[24].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetValidatorsResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[25].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetValidatorResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[26].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetLocationRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[27].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetAvailableCities); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[28].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetAvailableRegions); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[29].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetAvailableCountries); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_etl_v1_types_proto_msgTypes[30].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetLocationResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -698,19 +2227,35 @@ func file_etl_v1_types_proto_init() {
 			}
 		}
 	}
+	file_etl_v1_types_proto_msgTypes[8].OneofWrappers = []interface{}{
+		(*GetPlaysRequest_GetPlays)(nil),
+		(*GetPlaysRequest_GetPlaysByAddress)(nil),
+		(*GetPlaysRequest_GetPlaysByUser)(nil),
+		(*GetPlaysRequest_GetPlaysByTimeRange)(nil),
+		(*GetPlaysRequest_GetPlaysByLocation)(nil),
+	}
+	file_etl_v1_types_proto_msgTypes[20].OneofWrappers = []interface{}{
+		(*GetValidatorsRequest_GetRegisteredValidators)(nil),
+		(*GetValidatorsRequest_GetValidatorRegistrations)(nil),
+		(*GetValidatorsRequest_GetValidatorDeregistrations)(nil),
+	}
+	file_etl_v1_types_proto_msgTypes[26].OneofWrappers = []interface{}{
+		(*GetLocationRequest_GetAvailableCities)(nil),
+		(*GetLocationRequest_GetAvailableRegions)(nil),
+		(*GetLocationRequest_GetAvailableCountries)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_etl_v1_types_proto_rawDesc,
-			NumEnums:      1,
-			NumMessages:   8,
+			NumEnums:      0,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_etl_v1_types_proto_goTypes,
 		DependencyIndexes: file_etl_v1_types_proto_depIdxs,
-		EnumInfos:         file_etl_v1_types_proto_enumTypes,
 		MessageInfos:      file_etl_v1_types_proto_msgTypes,
 	}.Build()
 	File_etl_v1_types_proto = out.File
