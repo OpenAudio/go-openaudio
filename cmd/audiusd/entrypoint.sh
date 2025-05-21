@@ -1,16 +1,13 @@
 #!/bin/bash
 
-# Set default network to prod if not specified
 NETWORK="${NETWORK:-prod}"
 ENV_FILE="/env/${NETWORK}.env"
-OVERRIDE_ENV_FILE="/env/override.env"
 
 if [ ! -f "$ENV_FILE" ]; then
     echo "Error: Network environment file not found at $ENV_FILE"
     exit 1
 fi
 
-# Source environment variables and allow overwriting
 source_env_file() {
     local file=$1
     if [ ! -f "$file" ]; then
@@ -24,34 +21,33 @@ source_env_file() {
         [[ -z "$key" ]] && continue
         val="${value%\"}"
         val="${val#\"}"
-        export "$key"="$val"
+        [ -z "${!key}" ] && export "$key"="$val"
     done < "$file"
 }
 
 source_env_file "$ENV_FILE"
-source_env_file "$OVERRIDE_ENV_FILE"
 
 if [ -n "$creatorNodeEndpoint" ]; then
     POSTGRES_DB="audius_creator_node"
-    POSTGRES_DATA_DIR=${POSTGRES_DATA_DIR:-/data/creator-node-db-15}
+    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/creator-node-db-15}"
 elif [ -n "$audius_discprov_url" ]; then
     POSTGRES_DB="audius_discovery"
-    POSTGRES_DATA_DIR=${POSTGRES_DATA_DIR:-/data/discovery-provider-db}
+    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/discovery-provider-db}"
 else
-    POSTGRES_DB="audiusd"
+    POSTGRES_DB="${POSTGRES_DB:-audiusd}"
+    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/postgres}"
 fi
 
-POSTGRES_USER="postgres"
-POSTGRES_PASSWORD="postgres"
-POSTGRES_DATA_DIR=${POSTGRES_DATA_DIR:-/data/postgres}
-export dbUrl="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?sslmode=disable"
-export uptimeDataDir=${uptimeDataDir:-/data/bolt}
-export audius_core_root_dir=${audius_core_root_dir:-/data/bolt}
+POSTGRES_USER="${POSTGRES_USER:-postgres}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"
+dbUrl="${dbUrl:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?sslmode=disable}"
+uptimeDataDir="${uptimeDataDir:-/data/bolt}"
+audius_core_root_dir="${audius_core_root_dir:-/data/bolt}"
+
+export POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DATA_DIR dbUrl uptimeDataDir audius_core_root_dir
 
 setup_postgres() {
     PG_BIN="/usr/lib/postgresql/15/bin"
-    
-    # Ensure directories exist with correct permissions
     mkdir -p /data
     mkdir -p "$POSTGRES_DATA_DIR"
     chown -R postgres:postgres /data
@@ -91,12 +87,8 @@ setup_postgres() {
         # Stop PostgreSQL to restart it properly
         su - postgres -c "$PG_BIN/pg_ctl -D $POSTGRES_DATA_DIR stop"
     fi
-
-    # Always start PostgreSQL
     echo "Starting PostgreSQL service..."
     su - postgres -c "$PG_BIN/pg_ctl -D $POSTGRES_DATA_DIR start"
-
-    # Wait for PostgreSQL to be ready
     until su - postgres -c "$PG_BIN/pg_isready -q"; do
         echo "Waiting for PostgreSQL to start..."
         sleep 2

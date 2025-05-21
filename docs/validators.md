@@ -30,10 +30,10 @@ EOF
 docker run -d \
   --name audiusd-cn1.operator.xyz \
   --restart unless-stopped \
+  --env-file /home/ubuntu/override.env \
   -v /var/k8s/creator-node-db-15:/data/creator-node-db-15 \
   -v /var/k8s/bolt:/data/bolt \
   -v /var/k8s/mediorum:/tmp/mediorum \
-  -v /home/ubuntu/override.env:/env/override.env \
   -p 80:80 \
   -p 443:443 \
   -p 26656:26656 \
@@ -55,8 +55,8 @@ EOF
 docker run -d \
   --name audiusd-dn1.operator.xyz \
   --restart unless-stopped \
+  --env-file /home/ubuntu/override.env \
   -v /var/k8s:/data \
-  -v /home/ubuntu/override.env:/env/override.env \
   -p 80:80 \
   -p 443:443 \
   -p 26656:26656 \
@@ -133,7 +133,7 @@ if $FORCE_UPDATE || ! echo "$PULL_STATUS" | grep -q 'Status: Image is up to date
     docker run -d \
         --name audiusd-${AUDIUSD_HOSTNAME} \
         --restart unless-stopped \
-        -v ${OVERRIDE_ENV_PATH}:/env/override.env \
+        --env-file ${OVERRIDE_ENV_PATH} \
         -v /var/k8s:/data \
         -p 80:80 \
         -p 443:443 \
