@@ -382,19 +382,91 @@ func (s *Server) Commit(ctx context.Context, commit *abcitypes.CommitRequest) (*
 }
 
 func (s *Server) ListSnapshots(_ context.Context, snapshots *abcitypes.ListSnapshotsRequest) (*abcitypes.ListSnapshotsResponse, error) {
-	return &abcitypes.ListSnapshotsResponse{}, nil
-}
+	storedSnapshots, err := s.getStoredSnapshots()
+	if err != nil {
+		return nil, err
+	}
 
-func (s *Server) OfferSnapshot(_ context.Context, snapshot *abcitypes.OfferSnapshotRequest) (*abcitypes.OfferSnapshotResponse, error) {
-	return &abcitypes.OfferSnapshotResponse{}, nil
+	availableSnapshots := make([]*abcitypes.Snapshot, len(storedSnapshots))
+	for i, snapshot := range storedSnapshots {
+		availableSnapshots[i] = &abcitypes.Snapshot{
+			Height:   snapshot.Height,
+			Hash:     snapshot.Hash,
+			Format:   snapshot.Format,
+			Chunks:   snapshot.Chunks,
+			Metadata: snapshot.Metadata,
+		}
+	}
+
+	return &abcitypes.ListSnapshotsResponse{Snapshots: availableSnapshots}, nil
 }
 
 func (s *Server) LoadSnapshotChunk(_ context.Context, chunk *abcitypes.LoadSnapshotChunkRequest) (*abcitypes.LoadSnapshotChunkResponse, error) {
-	return &abcitypes.LoadSnapshotChunkResponse{}, nil
+	chunkData, err := s.GetChunkByHeight(int64(chunk.Height), int(chunk.Chunk))
+	if err != nil {
+		return nil, err
+	}
+
+	return &abcitypes.LoadSnapshotChunkResponse{Chunk: chunkData}, nil
 }
 
-func (s *Server) ApplySnapshotChunk(_ context.Context, chunk *abcitypes.ApplySnapshotChunkRequest) (*abcitypes.ApplySnapshotChunkResponse, error) {
-	return &abcitypes.ApplySnapshotChunkResponse{Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_ACCEPT}, nil
+func (s *Server) OfferSnapshot(_ context.Context, req *abcitypes.OfferSnapshotRequest) (*abcitypes.OfferSnapshotResponse, error) {
+	s.logger.Info("offered snapshot", "height", req.Snapshot.Height, "format", req.Snapshot.Format, "chunks", req.Snapshot.Chunks, "hash", req.Snapshot.Hash)
+	err := s.StoreOfferedSnapshot(req.Snapshot)
+	if err != nil {
+		return &abcitypes.OfferSnapshotResponse{
+			Result: abcitypes.OFFER_SNAPSHOT_RESULT_REJECT,
+		}, nil
+	}
+
+	return &abcitypes.OfferSnapshotResponse{
+		Result: abcitypes.OFFER_SNAPSHOT_RESULT_ACCEPT,
+	}, nil
+}
+
+func (s *Server) ApplySnapshotChunk(_ context.Context, req *abcitypes.ApplySnapshotChunkRequest) (*abcitypes.ApplySnapshotChunkResponse, error) {
+	offeredSnapshot, err := s.GetOfferedSnapshot()
+	if err != nil {
+		return &abcitypes.ApplySnapshotChunkResponse{
+			Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
+		}, nil
+	}
+
+	height := int64(offeredSnapshot.Height)
+	totalChunks := int(offeredSnapshot.Chunks)
+	chunkIndex := int(req.Index)
+
+	// Store the chunk on disk
+	err = s.StoreChunkForReconstruction(height, chunkIndex, req.Chunk)
+	if err != nil {
+		s.logger.Error("failed to store chunk", "index", chunkIndex, "err", err)
+		return &abcitypes.ApplySnapshotChunkResponse{
+			Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
+		}, nil
+	}
+
+	// Check if all chunks are now present on disk
+	if s.haveAllChunks(uint64(height), totalChunks) {
+		s.logger.Info("all snapshot chunks received, beginning reassembly and restore", "height", height)
+
+		if err := s.ReassemblePgDump(height); err != nil {
+			s.logger.Error("failed to reassemble pg_dump", "err", err)
+			return &abcitypes.ApplySnapshotChunkResponse{
+				Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
+			}, nil
+		}
+
+		if err := s.RestoreDatabase(height); err != nil {
+			s.logger.Error("failed to restore database", "err", err)
+			return &abcitypes.ApplySnapshotChunkResponse{
+				Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
+			}, nil
+		}
+	}
+
+	return &abcitypes.ApplySnapshotChunkResponse{
+		Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_ACCEPT,
+	}, nil
 }
 
 func (s *Server) ExtendVote(_ context.Context, extend *abcitypes.ExtendVoteRequest) (*abcitypes.ExtendVoteResponse, error) {

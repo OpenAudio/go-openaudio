@@ -56,6 +56,9 @@ const (
 	// CoreServiceGetDeregistrationAttestationProcedure is the fully-qualified name of the CoreService's
 	// GetDeregistrationAttestation RPC.
 	CoreServiceGetDeregistrationAttestationProcedure = "/core.v1.CoreService/GetDeregistrationAttestation"
+	// CoreServiceGetStoredSnapshotsProcedure is the fully-qualified name of the CoreService's
+	// GetStoredSnapshots RPC.
+	CoreServiceGetStoredSnapshotsProcedure = "/core.v1.CoreService/GetStoredSnapshots"
 )
 
 // CoreServiceClient is a client for the core.v1.CoreService service.
@@ -69,6 +72,7 @@ type CoreServiceClient interface {
 	ForwardTransaction(context.Context, *connect.Request[v1.ForwardTransactionRequest]) (*connect.Response[v1.ForwardTransactionResponse], error)
 	GetRegistrationAttestation(context.Context, *connect.Request[v1.GetRegistrationAttestationRequest]) (*connect.Response[v1.GetRegistrationAttestationResponse], error)
 	GetDeregistrationAttestation(context.Context, *connect.Request[v1.GetDeregistrationAttestationRequest]) (*connect.Response[v1.GetDeregistrationAttestationResponse], error)
+	GetStoredSnapshots(context.Context, *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the core.v1.CoreService service. By default, it uses
@@ -136,6 +140,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("GetDeregistrationAttestation")),
 			connect.WithClientOptions(opts...),
 		),
+		getStoredSnapshots: connect.NewClient[v1.GetStoredSnapshotsRequest, v1.GetStoredSnapshotsResponse](
+			httpClient,
+			baseURL+CoreServiceGetStoredSnapshotsProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetStoredSnapshots")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -150,6 +160,7 @@ type coreServiceClient struct {
 	forwardTransaction           *connect.Client[v1.ForwardTransactionRequest, v1.ForwardTransactionResponse]
 	getRegistrationAttestation   *connect.Client[v1.GetRegistrationAttestationRequest, v1.GetRegistrationAttestationResponse]
 	getDeregistrationAttestation *connect.Client[v1.GetDeregistrationAttestationRequest, v1.GetDeregistrationAttestationResponse]
+	getStoredSnapshots           *connect.Client[v1.GetStoredSnapshotsRequest, v1.GetStoredSnapshotsResponse]
 }
 
 // Ping calls core.v1.CoreService.Ping.
@@ -197,6 +208,11 @@ func (c *coreServiceClient) GetDeregistrationAttestation(ctx context.Context, re
 	return c.getDeregistrationAttestation.CallUnary(ctx, req)
 }
 
+// GetStoredSnapshots calls core.v1.CoreService.GetStoredSnapshots.
+func (c *coreServiceClient) GetStoredSnapshots(ctx context.Context, req *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error) {
+	return c.getStoredSnapshots.CallUnary(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the core.v1.CoreService service.
 type CoreServiceHandler interface {
 	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error)
@@ -208,6 +224,7 @@ type CoreServiceHandler interface {
 	ForwardTransaction(context.Context, *connect.Request[v1.ForwardTransactionRequest]) (*connect.Response[v1.ForwardTransactionResponse], error)
 	GetRegistrationAttestation(context.Context, *connect.Request[v1.GetRegistrationAttestationRequest]) (*connect.Response[v1.GetRegistrationAttestationResponse], error)
 	GetDeregistrationAttestation(context.Context, *connect.Request[v1.GetDeregistrationAttestationRequest]) (*connect.Response[v1.GetDeregistrationAttestationResponse], error)
+	GetStoredSnapshots(context.Context, *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -271,6 +288,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("GetDeregistrationAttestation")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceGetStoredSnapshotsHandler := connect.NewUnaryHandler(
+		CoreServiceGetStoredSnapshotsProcedure,
+		svc.GetStoredSnapshots,
+		connect.WithSchema(coreServiceMethods.ByName("GetStoredSnapshots")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/core.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServicePingProcedure:
@@ -291,6 +314,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceGetRegistrationAttestationHandler.ServeHTTP(w, r)
 		case CoreServiceGetDeregistrationAttestationProcedure:
 			coreServiceGetDeregistrationAttestationHandler.ServeHTTP(w, r)
+		case CoreServiceGetStoredSnapshotsProcedure:
+			coreServiceGetStoredSnapshotsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -334,4 +359,8 @@ func (UnimplementedCoreServiceHandler) GetRegistrationAttestation(context.Contex
 
 func (UnimplementedCoreServiceHandler) GetDeregistrationAttestation(context.Context, *connect.Request[v1.GetDeregistrationAttestationRequest]) (*connect.Response[v1.GetDeregistrationAttestationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetDeregistrationAttestation is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetStoredSnapshots(context.Context, *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetStoredSnapshots is not implemented"))
 }

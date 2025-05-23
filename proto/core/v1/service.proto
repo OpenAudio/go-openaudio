@@ -15,4 +15,5 @@ service CoreService {
   rpc ForwardTransaction(ForwardTransactionRequest) returns (ForwardTransactionResponse) {}
   rpc GetRegistrationAttestation(GetRegistrationAttestationRequest) returns (GetRegistrationAttestationResponse) {}
   rpc GetDeregistrationAttestation(GetDeregistrationAttestationRequest) returns (GetDeregistrationAttestationResponse) {}
+  rpc GetStoredSnapshots(GetStoredSnapshotsRequest) returns (GetStoredSnapshotsResponse) {}
 }

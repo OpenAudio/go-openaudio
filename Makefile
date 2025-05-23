@@ -204,7 +204,25 @@ up: down docker-dev docker-test
 		--profile=audiusd-dev \
 		up -d
 
-down:
+.PHONY: ss
+ss:
+	@docker compose \
+		--file='dev/docker-compose.yml' \
+		--project-name='dev' \
+		--project-directory='./' \
+		--profile=state-sync-tests \
+		up -d
+
+.PHONY: ss-down
+ss-down:
+	@docker compose \
+		--file='dev/docker-compose.yml' \
+		--project-name='dev' \
+		--project-directory='./' \
+		--profile=state-sync-tests \
+		down -v
+
+down: ss-down
 	@docker compose \
 		--file='dev/docker-compose.yml' \
 		--project-name='dev' \

@@ -108,6 +108,8 @@ type Config struct {
 	ValidatorVotingPower int
 	UseHttpsForSdk       bool
 
+	StateSync *StateSyncConfig
+
 	/* Derived Config */
 	GenesisFile *types.GenesisDoc
 	EthereumKey *ecdsa.PrivateKey
@@ -129,6 +131,19 @@ type Config struct {
 
 	/* Feature flags */
 	ERNAccessControlEnabled bool
+}
+
+type StateSyncConfig struct {
+	// will periodically save pg_dumps to disk and serve them to other nodes
+	ServeSnapshots bool
+	// will download pg_dumps from other nodes on initial sync
+	Enable bool
+	// list of rpc endpoints to download pg_dumps from
+	RPCServers []string
+	// number of snapshots to keep on disk
+	Keep int
+	// interval to save snapshots in blocks
+	BlockInterval int64
 }
 
 func ReadConfig(logger *common.Logger) (*Config, error) {
@@ -162,6 +177,14 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	cfg.AttDeregistrationRSize = 10
 
 	cfg.LogLevel = GetEnvWithDefault("AUDIUSD_LOG_LEVEL", "info")
+
+	cfg.StateSync = &StateSyncConfig{
+		ServeSnapshots: GetEnvWithDefault("stateSyncServeSnapshots", "false") == "true",
+		Enable:         GetEnvWithDefault("stateSyncEnable", "false") == "true",
+		Keep:           getEnvIntWithDefault("stateSyncKeep", 6),
+		BlockInterval:  int64(getEnvIntWithDefault("stateSyncBlockInterval", 100)),
+		RPCServers:     strings.Split(GetEnvWithDefault("stateSyncRPCServers", ""), ","),
+	}
 
 	// check if discovery specific key is set
 	isDiscovery := os.Getenv("audius_delegate_private_key") != ""

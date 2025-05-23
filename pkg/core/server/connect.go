@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -389,6 +390,33 @@ func (c *CoreService) getBlockRpcFallback(ctx context.Context, height int64) (*c
 			Transactions: txs,
 			Timestamp:    timestamppb.New(block.Block.Time),
 		},
+	}
+
+	return connect.NewResponse(res), nil
+}
+
+// GetStoredSnapshots implements v1connect.CoreServiceHandler.
+func (c *CoreService) GetStoredSnapshots(context.Context, *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error) {
+	snapshots, err := c.core.getStoredSnapshots()
+	if err != nil {
+		c.core.logger.Errorf("error getting stored snapshots: %v", err)
+		return connect.NewResponse(&v1.GetStoredSnapshotsResponse{
+			Snapshots: []*v1.SnapshotMetadata{},
+		}), nil
+	}
+
+	snapshotResponses := make([]*v1.SnapshotMetadata, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		snapshotResponses = append(snapshotResponses, &v1.SnapshotMetadata{
+			Height:     int64(snapshot.Height),
+			Hash:       hex.EncodeToString(snapshot.Hash),
+			ChunkCount: int64(snapshot.Chunks),
+			ChainId:    string(snapshot.Metadata),
+		})
+	}
+
+	res := &v1.GetStoredSnapshotsResponse{
+		Snapshots: snapshotResponses,
 	}
 
 	return connect.NewResponse(res), nil

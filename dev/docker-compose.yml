@@ -137,6 +137,32 @@ services:
       - audiusd-dev
       - core-tests
 
+  audiusd-ss:
+    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
+    restart: unless-stopped
+    env_file:
+      - ./dev/env/audiusd-ss.env
+    extra_hosts:
+      - 'node1.audiusd.devnet:host-gateway'
+      - 'node2.audiusd.devnet:host-gateway'
+      - 'node3.audiusd.devnet:host-gateway'
+      - 'node4.audiusd.devnet:host-gateway'
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://audiusd-ss:26656/" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    ports:
+      - 26660:80
+    volumes:
+      - ./cmd:/app/cmd
+      - ./pkg:/app/pkg
+      - ./go.mod:/app/go.mod
+      - ./go.sum:/app/go.sum
+    profiles:
+      - state-sync-tests
+
   adminer:
     image: adminer
     container_name: adminer

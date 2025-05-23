@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"math/big"
@@ -13,6 +14,7 @@ import (
 	cconfig "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
+	"github.com/cometbft/cometbft/rpc/client/http"
 )
 
 const PrivilegedServiceSocket = "/tmp/cometbft.privileged.sock"
@@ -133,6 +135,22 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 	cometConfig.Mempool.MaxTxBytes = 307200
 	cometConfig.Mempool.Size = 30000
 
+	if envConfig.StateSync.Enable {
+		cometConfig.StateSync.Enable = true
+		rpcServers := envConfig.StateSync.RPCServers
+		if len(rpcServers) == 0 {
+			return nil, nil, fmt.Errorf("no rpc servers provided for state sync")
+		}
+		logger.Info("state sync enabled, using rpc servers", "rpcServers", rpcServers)
+		cometConfig.StateSync.RPCServers = rpcServers
+		latestBlockHeight, latestBlockHash, err := stateSyncLatestBlock(logger, rpcServers)
+		if err != nil {
+			return nil, nil, fmt.Errorf("getting latest block for state sync: %v", err)
+		}
+		cometConfig.StateSync.TrustHeight = latestBlockHeight
+		cometConfig.StateSync.TrustHash = latestBlockHash
+	}
+
 	// consensus
 	// don't recheck mempool transactions, rely on CheckTx and Propose step
 	cometConfig.Mempool.Recheck = false
@@ -219,4 +237,25 @@ func moduloPersistentPeers(nodeAddress string, persistentPeers string, groupSize
 	}
 
 	return strings.Join(assignedPeers, ",")
+}
+
+func stateSyncLatestBlock(logger *common.Logger, rpcServers []string) (latestBlockHeight int64, latestBlockHash string, err error) {
+	for _, rpcServer := range rpcServers {
+		client, err := http.New(rpcServer)
+		if err != nil {
+			logger.Error("error creating rpc client", "rpcServer", rpcServer, "err", err)
+			continue
+		}
+		latestBlock, err := client.Block(context.Background(), nil)
+		if err != nil {
+			logger.Error("error getting latest block", "rpcServer", rpcServer, "err", err)
+			continue
+		}
+
+		latestBlockHeight = latestBlock.Block.Height
+		latestBlockHash = latestBlock.Block.Hash().String()
+		return latestBlockHeight, latestBlockHash, nil
+	}
+
+	return 0, "", fmt.Errorf("no rpc servers available")
 }

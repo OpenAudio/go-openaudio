@@ -200,3 +200,16 @@ message ValidatorDeregistration {
   bytes pub_key = 2;
   int64 deadline = 3;
 }
+
+message GetStoredSnapshotsRequest {}
+
+message GetStoredSnapshotsResponse {
+  repeated SnapshotMetadata snapshots = 1;
+}
+
+message SnapshotMetadata {
+  int64 height = 1;
+  string hash = 2;
+  int64 chunk_count = 3;
+  string chain_id = 4;
+}

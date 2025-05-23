@@ -29,5 +29,12 @@ return new AdminerLoginServers([
         "username" => "postgres",
         "password" => "postgres",
         "db" => "postgres"
+    ],
+    "[Node State Sync] audiusd-ss" => [
+        "driver" => "pgsql",
+        "server" => "audiusd-ss",
+        "username" => "postgres",
+        "password" => "postgres",
+        "db" => "postgres"
     ]
 ]);
