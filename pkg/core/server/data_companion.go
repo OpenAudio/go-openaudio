@@ -36,8 +36,6 @@ func (s *Server) startDataCompanion() error {
 			continue
 		}
 
-		s.logger.Infof("dc app retain height: %d block retain height: %d", blockRetainHeight.App, blockRetainHeight.PruningService)
-
 		if blockRetainHeight.App <= 1 {
 			continue
 		}

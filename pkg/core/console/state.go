@@ -73,7 +73,7 @@ func (state *State) recalculateState() {
 
 	latestBlock, err := state.db.GetLatestBlock(ctx)
 	if err != nil {
-		logger.Errorf("could not get total blocks: %v", err)
+		logger.Debugf("could not get latest block: %v", err)
 	} else {
 		state.totalBlocks = latestBlock.Height
 	}
@@ -153,7 +153,6 @@ func (state *State) Start() error {
 
 		highestBlock, err := state.db.GetLatestBlock(context.Background())
 		if err != nil {
-			state.logger.Errorf("could not get total blocks: %v", err)
 			continue
 		}
 

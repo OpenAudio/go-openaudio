@@ -144,6 +144,8 @@ type StateSyncConfig struct {
 	Keep int
 	// interval to save snapshots in blocks
 	BlockInterval int64
+	// number of chunk fetchers to use
+	ChunkFetchers int32
 }
 
 func ReadConfig(logger *common.Logger) (*Config, error) {
@@ -154,7 +156,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 
 	var cfg Config
 	// comet config
-	cfg.CometLogLevel = GetEnvWithDefault("audius_comet_log_level", "p2p:none,mempool:none,rpc:none,*:error")
+	cfg.CometLogLevel = GetEnvWithDefault("audius_comet_log_level", "statesync:info,p2p:none,mempool:none,rpc:none,*:error")
 	cfg.RootDir = GetEnvWithDefault("audius_core_root_dir", homeDir+"/.audiusd")
 	cfg.RPCladdr = GetEnvWithDefault("rpcLaddr", "tcp://0.0.0.0:26657")
 	cfg.P2PLaddr = GetEnvWithDefault("p2pLaddr", "tcp://0.0.0.0:26656")
@@ -183,6 +185,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		Enable:         GetEnvWithDefault("stateSyncEnable", "false") == "true",
 		Keep:           getEnvIntWithDefault("stateSyncKeep", 6),
 		BlockInterval:  int64(getEnvIntWithDefault("stateSyncBlockInterval", 100)),
+		ChunkFetchers:  int32(getEnvIntWithDefault("stateSyncChunkFetchers", 10)),
 		RPCServers:     strings.Split(GetEnvWithDefault("stateSyncRPCServers", ""), ","),
 	}
 
@@ -236,7 +239,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		cfg.ERNAccessControlEnabled = false
 
 	case "stage", "staging", "testnet":
-		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", moduloPersistentPeers(ethAddress, StagePersistentPeers, 3))
+		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", StagePersistentPeers)
 		cfg.EthRegistryAddress = StageRegistryAddress
 		if cfg.EthRPCUrl == "" {
 			cfg.EthRPCUrl = StageEthRpc

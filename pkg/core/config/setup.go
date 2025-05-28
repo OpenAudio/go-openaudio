@@ -9,8 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config/genesis"
+	"github.com/AudiusProject/audiusd/pkg/sdk"
 	cconfig "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
@@ -149,6 +152,7 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 		}
 		cometConfig.StateSync.TrustHeight = latestBlockHeight
 		cometConfig.StateSync.TrustHash = latestBlockHash
+		cometConfig.StateSync.ChunkFetchers = envConfig.StateSync.ChunkFetchers
 	}
 
 	// consensus
@@ -239,23 +243,38 @@ func moduloPersistentPeers(nodeAddress string, persistentPeers string, groupSize
 	return strings.Join(assignedPeers, ",")
 }
 
-func stateSyncLatestBlock(logger *common.Logger, rpcServers []string) (latestBlockHeight int64, latestBlockHash string, err error) {
+func stateSyncLatestBlock(logger *common.Logger, rpcServers []string) (trustHeight int64, trustHash string, err error) {
 	for _, rpcServer := range rpcServers {
+		audsRpc := strings.TrimSuffix(rpcServer, "/core/crpc")
+		auds := sdk.NewAudiusdSDK(audsRpc)
+		snapshots, err := auds.Core.GetStoredSnapshots(context.Background(), connect.NewRequest(&v1.GetStoredSnapshotsRequest{}))
+		if err != nil {
+			logger.Error("error getting stored snapshots", "rpcServer", rpcServer, "err", err)
+			continue
+		}
+
+		// get last snapshot in list, this is the latest snapshot
+		lastSnapshot := snapshots.Msg.Snapshots[len(snapshots.Msg.Snapshots)-1]
+		trustBuffer := 10 // number of blocks to step back
+		safeHeight := lastSnapshot.Height - int64(trustBuffer)
+
 		client, err := http.New(rpcServer)
 		if err != nil {
 			logger.Error("error creating rpc client", "rpcServer", rpcServer, "err", err)
 			continue
 		}
-		latestBlock, err := client.Block(context.Background(), nil)
+
+		block, err := client.Block(context.Background(), &safeHeight)
 		if err != nil {
 			logger.Error("error getting latest block", "rpcServer", rpcServer, "err", err)
 			continue
 		}
 
-		latestBlockHeight = latestBlock.Block.Height
-		latestBlockHash = latestBlock.Block.Hash().String()
-		return latestBlockHeight, latestBlockHash, nil
+		trustHeight = block.Block.Height
+		trustHash = block.Block.Hash().String()
+
+		return trustHeight, trustHash, nil
 	}
 
-	return 0, "", fmt.Errorf("no rpc servers available")
+	return 0, "", fmt.Errorf("no usable block found for state sync")
 }

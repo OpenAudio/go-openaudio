@@ -19,6 +19,56 @@ import (
 	"github.com/cometbft/cometbft/types"
 )
 
+var (
+	// snapshotDirPattern is the format string for creating snapshot directory names.
+	// It takes a chain ID as a parameter and creates a directory like "snapshots_<chainID>".
+	snapshotDirPattern = "snapshots_%s"
+
+	// heightDirPattern is the format string for creating height-specific directory names.
+	// It takes a block height as a parameter and creates a directory like "height_0000000123".
+	// The %010d format ensures the height is padded with zeros to 10 digits.
+	heightDirPattern = "height_%010d"
+
+	// chunkFilePattern is the format string for creating chunk file names.
+	// It takes a chunk index as a parameter and creates a file like "chunk_000001.gz".
+	// The %06d format ensures the chunk index is padded with zeros to 6 digits,
+	// allowing for up to 1 million chunks (11.7TB with 12MB chunks).
+	chunkFilePattern = "chunk_%06d.gz"
+
+	// metadataFileName is the name of the metadata JSON file that contains snapshot information.
+	// This file is stored in each snapshot directory and contains details about the snapshot.
+	metadataFileName = "metadata.json"
+
+	// pgDumpFileName is the name of the PostgreSQL dump file.
+	// This is the binary format dump file created by pg_dump and used for database restoration.
+	pgDumpFileName = "data.dump"
+
+	// tmpReconstructionDir is the name of the temporary directory used during snapshot reconstruction.
+	// This directory is used to store chunks and metadata while reconstructing a snapshot.
+	tmpReconstructionDir = "tmp_reconstruction"
+)
+
+// Helper functions for common filepath patterns
+func getSnapshotDir(rootDir, chainID string) string {
+	return filepath.Join(rootDir, fmt.Sprintf(snapshotDirPattern, chainID))
+}
+
+func getHeightDir(baseDir string, height int64) string {
+	return filepath.Join(baseDir, fmt.Sprintf(heightDirPattern, height))
+}
+
+func getChunkPath(baseDir string, chunkIndex int) string {
+	return filepath.Join(baseDir, fmt.Sprintf(chunkFilePattern, chunkIndex))
+}
+
+func getMetadataPath(baseDir string) string {
+	return filepath.Join(baseDir, metadataFileName)
+}
+
+func getPgDumpPath(baseDir string) string {
+	return filepath.Join(baseDir, pgDumpFileName)
+}
+
 func (s *Server) startStateSync() error {
 	<-s.awaitRpcReady
 	logger := s.logger.Child("state_sync")
@@ -73,7 +123,7 @@ func (s *Server) startStateSync() error {
 
 func (s *Server) createSnapshot(logger *common.Logger, height int64) error {
 	// create snapshot directory if it doesn't exist
-	snapshotDir := filepath.Join(s.config.RootDir, fmt.Sprintf("snapshots_%s", s.config.GenesisFile.ChainID))
+	snapshotDir := getSnapshotDir(s.config.RootDir, s.config.GenesisFile.ChainID)
 	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
 		return fmt.Errorf("error creating snapshot directory: %v", err)
 	}
@@ -101,8 +151,7 @@ func (s *Server) createSnapshot(logger *common.Logger, height int64) error {
 	blockHeight := height
 	blockHash := block.BlockID.Hash
 
-	latestSnapshotDirName := fmt.Sprintf("height_%010d", blockHeight)
-	latestSnapshotDir := filepath.Join(snapshotDir, latestSnapshotDirName)
+	latestSnapshotDir := getHeightDir(snapshotDir, blockHeight)
 	if err := os.MkdirAll(latestSnapshotDir, 0755); err != nil {
 		return fmt.Errorf("error creating latest snapshot directory: %v", err)
 	}
@@ -136,7 +185,7 @@ func (s *Server) createSnapshot(logger *common.Logger, height int64) error {
 		Metadata: []byte(s.config.GenesisFile.ChainID),
 	}
 
-	snapshotMetadataFile := filepath.Join(latestSnapshotDir, "metadata.json")
+	snapshotMetadataFile := getMetadataPath(latestSnapshotDir)
 	jsonBytes, err := json.Marshal(snapshotMetadata)
 	if err != nil {
 		return fmt.Errorf("error marshalling snapshot metadata: %v", err)
@@ -154,7 +203,7 @@ func (s *Server) createSnapshot(logger *common.Logger, height int64) error {
 // createPgDump creates a pg_dump of the database and writes it to the latest snapshot directory
 func (s *Server) createPgDump(logger *common.Logger, latestSnapshotDir string) error {
 	pgString := s.config.PSQLConn
-	dumpPath := filepath.Join(latestSnapshotDir, "data.dump")
+	dumpPath := getPgDumpPath(latestSnapshotDir)
 
 	// You can customize this slice with the tables you want to dump
 	tables := []string{
@@ -196,8 +245,8 @@ func (s *Server) createPgDump(logger *common.Logger, latestSnapshotDir string) e
 
 // chunkPgDump splits the pg_dump into 16MB gzip-compressed chunks and returns the number of chunks created
 func (s *Server) chunkPgDump(logger *common.Logger, latestSnapshotDir string) (int, error) {
-	const chunkSize = 16 * 1024 * 1024 // 16MB
-	dumpPath := filepath.Join(latestSnapshotDir, "data.dump")
+	const chunkSize = 12 * 1024 * 1024 // 12MB
+	dumpPath := getPgDumpPath(latestSnapshotDir)
 
 	dumpFile, err := os.Open(dumpPath)
 	if err != nil {
@@ -218,8 +267,7 @@ func (s *Server) chunkPgDump(logger *common.Logger, latestSnapshotDir string) (i
 			break
 		}
 
-		chunkName := fmt.Sprintf("chunk_%04d.gz", chunkIndex)
-		chunkPath := filepath.Join(latestSnapshotDir, chunkName)
+		chunkPath := getChunkPath(latestSnapshotDir, chunkIndex)
 		chunkFile, err := os.Create(chunkPath)
 		if err != nil {
 			return chunkIndex, fmt.Errorf("failed to create chunk: %w", err)
@@ -246,7 +294,7 @@ func (s *Server) chunkPgDump(logger *common.Logger, latestSnapshotDir string) (i
 }
 
 func (s *Server) deletePgDump(logger *common.Logger, latestSnapshotDir string) error {
-	dumpPath := filepath.Join(latestSnapshotDir, "data.dump")
+	dumpPath := getPgDumpPath(latestSnapshotDir)
 	if err := os.Remove(dumpPath); err != nil {
 		return fmt.Errorf("error deleting pg_dump: %w", err)
 	}
@@ -257,7 +305,7 @@ func (s *Server) deletePgDump(logger *common.Logger, latestSnapshotDir string) e
 // Prunes snapshots by deleting the oldest ones while retaining the most recent ones
 // based on the configured retention count
 func (s *Server) pruneSnapshots(logger *common.Logger) error {
-	snapshotDir := filepath.Join(s.config.RootDir, fmt.Sprintf("snapshots_%s", s.config.GenesisFile.ChainID))
+	snapshotDir := getSnapshotDir(s.config.RootDir, s.config.GenesisFile.ChainID)
 	keep := s.config.StateSync.Keep
 
 	files, err := os.ReadDir(snapshotDir)
@@ -282,7 +330,7 @@ func (s *Server) pruneSnapshots(logger *common.Logger) error {
 }
 
 func (s *Server) getStoredSnapshots() ([]v1.Snapshot, error) {
-	snapshotDir := filepath.Join(s.config.RootDir, fmt.Sprintf("snapshots_%s", s.config.GenesisFile.ChainID))
+	snapshotDir := getSnapshotDir(s.config.RootDir, s.config.GenesisFile.ChainID)
 
 	dirs, err := os.ReadDir(snapshotDir)
 	if err != nil {
@@ -295,7 +343,7 @@ func (s *Server) getStoredSnapshots() ([]v1.Snapshot, error) {
 			continue
 		}
 
-		metadataPath := filepath.Join(snapshotDir, entry.Name(), "metadata.json")
+		metadataPath := getMetadataPath(filepath.Join(snapshotDir, entry.Name()))
 		info, err := os.Stat(metadataPath)
 		if err != nil || info.IsDir() {
 			continue
@@ -324,9 +372,8 @@ func (s *Server) getStoredSnapshots() ([]v1.Snapshot, error) {
 
 // GetChunkByHeight retrieves a specific chunk for a given block height
 func (s *Server) GetChunkByHeight(height int64, chunk int) ([]byte, error) {
-	snapshotDir := filepath.Join(s.config.RootDir, fmt.Sprintf("snapshots_%s", s.config.GenesisFile.ChainID))
-	latestSnapshotDirName := fmt.Sprintf("height_%010d", height)
-	latestSnapshotDir := filepath.Join(snapshotDir, latestSnapshotDirName)
+	snapshotDir := getSnapshotDir(s.config.RootDir, s.config.GenesisFile.ChainID)
+	latestSnapshotDir := getHeightDir(snapshotDir, height)
 
 	// Check if snapshot directory exists
 	if _, err := os.Stat(latestSnapshotDir); os.IsNotExist(err) {
@@ -334,7 +381,7 @@ func (s *Server) GetChunkByHeight(height int64, chunk int) ([]byte, error) {
 	}
 
 	// Read metadata to get chunk count
-	metadataPath := filepath.Join(latestSnapshotDir, "metadata.json")
+	metadataPath := getMetadataPath(latestSnapshotDir)
 	metadataBytes, err := os.ReadFile(metadataPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading metadata file: %v", err)
@@ -345,8 +392,9 @@ func (s *Server) GetChunkByHeight(height int64, chunk int) ([]byte, error) {
 		return nil, fmt.Errorf("error unmarshalling metadata: %v", err)
 	}
 
-	// Read the first chunk (chunk_0000.gz)
-	chunkPath := filepath.Join(latestSnapshotDir, fmt.Sprintf("chunk_%04d.gz", chunk))
+	// Read the chunk file
+	chunkPath := getChunkPath(latestSnapshotDir, chunk)
+
 	chunkData, err := os.ReadFile(chunkPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading chunk file: %v", err)
@@ -356,12 +404,12 @@ func (s *Server) GetChunkByHeight(height int64, chunk int) ([]byte, error) {
 }
 
 func (s *Server) StoreOfferedSnapshot(snapshot *v1.Snapshot) error {
-	snapshotDir := filepath.Join(s.config.RootDir, "tmp_reconstruction")
+	snapshotDir := filepath.Join(s.config.RootDir, tmpReconstructionDir)
 	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
 		return fmt.Errorf("failed to create snapshot directory: %v", err)
 	}
 
-	metadataPath := filepath.Join(snapshotDir, "metadata.json")
+	metadataPath := getMetadataPath(snapshotDir)
 	metadataBytes, err := json.Marshal(snapshot)
 	if err != nil {
 		return fmt.Errorf("failed to marshal snapshot: %v", err)
@@ -375,8 +423,8 @@ func (s *Server) StoreOfferedSnapshot(snapshot *v1.Snapshot) error {
 }
 
 func (s *Server) GetOfferedSnapshot() (*v1.Snapshot, error) {
-	snapshotDir := filepath.Join(s.config.RootDir, "tmp_reconstruction")
-	metadataPath := filepath.Join(snapshotDir, "metadata.json")
+	snapshotDir := filepath.Join(s.config.RootDir, tmpReconstructionDir)
+	metadataPath := getMetadataPath(snapshotDir)
 	metadataBytes, err := os.ReadFile(metadataPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read metadata file: %v", err)
@@ -393,19 +441,19 @@ func (s *Server) GetOfferedSnapshot() (*v1.Snapshot, error) {
 // StoreChunkForReconstruction stores a single chunk in a temporary directory for later reconstruction
 func (s *Server) StoreChunkForReconstruction(height int64, chunkIndex int, chunkData []byte) error {
 	// Create a temporary directory for reconstruction if it doesn't exist
-	tmpDir := filepath.Join(s.config.RootDir, "tmp_reconstruction")
+	tmpDir := filepath.Join(s.config.RootDir, tmpReconstructionDir)
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		return fmt.Errorf("failed to create temporary directory: %v", err)
 	}
 
 	// Create a directory for this specific height if it doesn't exist
-	heightDir := filepath.Join(tmpDir, fmt.Sprintf("height_%010d", height))
+	heightDir := getHeightDir(tmpDir, height)
 	if err := os.MkdirAll(heightDir, 0755); err != nil {
 		return fmt.Errorf("failed to create height directory: %v", err)
 	}
 
 	// Write the chunk to a file
-	chunkPath := filepath.Join(heightDir, fmt.Sprintf("chunk_%04d.gz", chunkIndex))
+	chunkPath := getChunkPath(heightDir, chunkIndex)
 	if err := os.WriteFile(chunkPath, chunkData, 0644); err != nil {
 		return fmt.Errorf("failed to write chunk file: %v", err)
 	}
@@ -414,31 +462,43 @@ func (s *Server) StoreChunkForReconstruction(height int64, chunkIndex int, chunk
 }
 
 func (s *Server) haveAllChunks(height uint64, total int) bool {
-	heightDir := filepath.Join(s.config.RootDir, "tmp_reconstruction", fmt.Sprintf("height_%010d", height))
+	heightDir := getHeightDir(filepath.Join(s.config.RootDir, tmpReconstructionDir), int64(height))
 
+	// Use a map to track which chunks we have
+	chunks := make(map[int]bool, total)
+
+	// Read directory once
 	files, err := os.ReadDir(heightDir)
 	if err != nil {
-		s.logger.Warn("failed to read chunk directory", "err", err)
 		return false
 	}
 
-	chunkCount := 0
-	for _, f := range files {
-		if strings.HasPrefix(f.Name(), "chunk_") && strings.HasSuffix(f.Name(), ".gz") {
-			chunkCount++
+	// Track chunks by their index
+	for _, file := range files {
+		if !strings.HasSuffix(file.Name(), ".gz") {
+			continue
+		}
+		// Extract chunk number from filename (e.g., "chunk_000001.gz" -> 1)
+		var chunkNum int
+		if _, err := fmt.Sscanf(file.Name(), "chunk_%d.gz", &chunkNum); err != nil {
+			continue
+		}
+		if chunkNum >= 0 && chunkNum < total {
+			chunks[chunkNum] = true
 		}
 	}
 
-	return chunkCount == total
+	// Check if we have exactly the right number of chunks
+	return len(chunks) == total
 }
 
 // ReassemblePgDump reconstructs and decompresses a binary pg_dump file from multiple gzipped chunks
 func (s *Server) ReassemblePgDump(height int64) error {
-	tmpDir := filepath.Join(s.config.RootDir, "tmp_reconstruction")
-	heightDir := filepath.Join(tmpDir, fmt.Sprintf("height_%010d", height))
+	tmpDir := filepath.Join(s.config.RootDir, tmpReconstructionDir)
+	heightDir := getHeightDir(tmpDir, height)
 
 	// Create the output pg_dump file in binary format
-	outputPath := filepath.Join(heightDir, "pg_dump.dump")
+	outputPath := getPgDumpPath(heightDir)
 	outputFile, err := os.Create(outputPath)
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %v", err)
@@ -485,9 +545,9 @@ func (s *Server) ReassemblePgDump(height int64) error {
 
 // RestoreDatabase restores the PostgreSQL database using the reassembled pg_dump binary file
 func (s *Server) RestoreDatabase(height int64) error {
-	tmpDir := filepath.Join(s.config.RootDir, "tmp_reconstruction")
-	heightDir := filepath.Join(tmpDir, fmt.Sprintf("height_%010d", height))
-	dumpPath := filepath.Join(heightDir, "pg_dump.dump")
+	tmpDir := filepath.Join(s.config.RootDir, tmpReconstructionDir)
+	heightDir := getHeightDir(tmpDir, height)
+	dumpPath := getPgDumpPath(heightDir)
 
 	cmd := exec.Command("pg_restore",
 		"--dbname="+s.config.PSQLConn,
@@ -509,9 +569,13 @@ func (s *Server) RestoreDatabase(height int64) error {
 		return fmt.Errorf("error restoring database: %w", err)
 	}
 
-	if err := os.RemoveAll(heightDir); err != nil {
+	return nil
+}
+
+func (s *Server) CleanupStateSync() error {
+	snapshotDir := filepath.Join(s.config.RootDir, tmpReconstructionDir)
+	if err := os.RemoveAll(snapshotDir); err != nil {
 		return fmt.Errorf("error cleaning up temporary files: %w", err)
 	}
-
 	return nil
 }

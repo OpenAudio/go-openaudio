@@ -260,7 +260,6 @@ func (s *Server) awaitNodeCatchup(ctx context.Context) error {
 		}
 
 		if res.SyncInfo.CatchingUp {
-			s.logger.Infof("comet catching up: latest seen block %d", res.SyncInfo.LatestBlockHeight)
 			time.Sleep(10 * time.Second)
 			continue
 		}
