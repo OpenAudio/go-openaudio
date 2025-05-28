@@ -4,29 +4,35 @@ This guide provides migration instructions for existing nodes that are currently
 
 ### Existing Content Nodes
 
+Create an `override.env` file.
+
 ```bash
-cat << 'EOF' > /home/ubuntu/override.env
-creatorNodeEndpoint="https://cn1.operator.xyz"
-delegateOwnerWallet="0x01234567890abcdef01234567890abcdef012345"
-delegatePrivateKey="01234567890abcdef01234567890abcdef01234567890abcdef01234567890ab"
-spOwnerWallet="0x01234567890abcdef01234567890abcdef012345"
+# /home/ubuntu/override.env
+
+creatorNodeEndpoint=https://cn1.operator.xyz
+delegateOwnerWallet=0x01234567890abcdef01234567890abcdef012345
+delegatePrivateKey=01234567890abcdef01234567890abcdef01234567890abcdef01234567890ab
+spOwnerWallet=0x01234567890abcdef01234567890abcdef012345
 
 # uncomment if using s3 for blob storage
-#AUDIUS_STORAGE_DRIVER_URL="s3://my-s3-bucket"
-#AWS_REGION="us-west-2"
-#AWS_ACCESS_KEY_ID="XXXXXXXXXXXXXXXXXXXX"
-#AWS_SECRET_ACCESS_KEY="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+#AUDIUS_STORAGE_DRIVER_URL=s3://my-s3-bucket
+#AWS_REGION=us-west-2
+#AWS_ACCESS_KEY_ID=XXXXXXXXXXXXXXXXXXXX
+#AWS_SECRET_ACCESS_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 # uncomment if using gcs for blob storage
 #   you will need an additional mount for the credentials
 #   i.e. `-v google-application-credentials.json:/tmp/google-application-credentials.json`
-#AUDIUS_STORAGE_DRIVER_URL="gs://my-gcs-bucket"
-#GOOGLE_APPLICATION_CREDENTIALS="/tmp/google-application-credentials.json"
+#AUDIUS_STORAGE_DRIVER_URL=gs://my-gcs-bucket
+#GOOGLE_APPLICATION_CREDENTIALS=/tmp/google-application-credentials.json
 
 # uncomment if using cloudflare proxy
-#AUDIUSD_TLS_SELF_SIGNED="true"
-EOF
+#AUDIUSD_TLS_SELF_SIGNED=true
+```
 
+Run your node.
+
+```bash
 docker run -d \
   --name audiusd-cn1.operator.xyz \
   --restart unless-stopped \
@@ -43,15 +49,19 @@ docker run -d \
 ### Existing Discovery Nodes
 
 ```bash
-cat << 'EOF' > /home/ubuntu/override.env
-audius_discprov_url="https://dn1.operator.xyz"
-audius_delegate_owner_wallet="0x01234567890abcdef01234567890abcdef012345"
-audius_delegate_private_key="01234567890abcdef01234567890abcdef01234567890abcdef01234567890ab"
+# /home/ubuntu/override.env
+
+audius_discprov_url=https://dn1.operator.xyz
+audius_delegate_owner_wallet=0x01234567890abcdef01234567890abcdef012345
+audius_delegate_private_key=01234567890abcdef01234567890abcdef01234567890abcdef01234567890ab
 
 # uncomment if using cloudflare proxy
-#AUDIUSD_TLS_SELF_SIGNED="true"
-EOF
+#AUDIUSD_TLS_SELF_SIGNED=true
+```
 
+Run your node.
+
+```bash
 docker run -d \
   --name audiusd-dn1.operator.xyz \
   --restart unless-stopped \
@@ -61,21 +71,6 @@ docker run -d \
   -p 443:443 \
   -p 26656:26656 \
   audius/audiusd:current
-```
-
-## New Nodes
-
-Create a directory on your node for persistent data and configuration.
-
-```bash
-ssh user@node.ip.addr.ess
-mkdir ~/audiusd
-```
-
-**TODO** test config setup from `/home/ubuntu/audiusd/config.yaml`
-
-```bash
-# TODO: add example config.yaml
 ```
 
 ## Health Check
