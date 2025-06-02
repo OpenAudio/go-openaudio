@@ -53,8 +53,8 @@ const (
 )
 
 const (
-	ProdPersistentPeers  = "edf0b62f900c6319fdb482b0379b91b8a3c0d773@35.223.56.100:26656,f0d79ce5eb91847db0a1b9ad4c8a15824710f9c3@34.121.217.14:26656,326d405aba6eab9df677ddf62d1331638e99da91@34.45.240.197:26656,53a2506dcf34b267c3e04bb63e0ee4f563c7850d@34.67.133.214:26656,a3a9659fdd6e25e41324764adc8029b486814533@34.46.116.59:26656,25a80eb8f8755d73ab9b4e0e5cf31dcc0b757aab@35.222.113.66:26656,2c176c34a2fa881b72acfedc1e3815710c4f1bd5@34.28.164.31:26656"
-	StagePersistentPeers = "0f4be2aaa70e9570eee3485d8fa54502cf1a9fc0@34.67.210.7:26656,2f13439b2ee4c34bafe643f89575f40b7863a079@34.136.137.33:26656,c9b1ed3d3040e0c2ac70e3215f0ea9b16b401bca@34.68.24.207:26656,1eec5742f64fb243d22594e4143e14e77a38f232@34.71.167.168:26656,2da43f6e1b5614ea8fc8b7e89909863033ca6a27@35.208.173.168:26656"
+	ProdPersistentPeers  = "326d405aba6eab9df677ddf62d1331638e99da91@34.71.91.82:26656,edf0b62f900c6319fdb482b0379b91b8a3c0d773@104.154.119.194:26656,35207ecb279b19ab53e0172f0e3ae47ac930d147@34.173.190.5:26656,f0d79ce5eb91847db0a1b9ad4c8a15824710f9c3@34.121.217.14:26656,53a2506dcf34b267c3e04bb63e0ee4f563c7850d@34.67.133.214:26656,a3a9659fdd6e25e41324764adc8029b486814533@34.46.116.59:26656,25a80eb8f8755d73ab9b4e0e5cf31dcc0b757aab@35.222.113.66:26656,2c176c34a2fa881b72acfedc1e3815710c4f1bd5@34.28.164.31:26656"
+	StagePersistentPeers = "f277f58522627a5cb890aececed8f08e7f13e097@35.193.20.31:26656,6a5d8207ed912eaa60cdfb8181fa97587d41dd1c@34.121.162.132:26656,8f27745ad44e08f449728960fa67827eb9477cf2@34.30.203.99:26656,96bba6b462e35f83866fbac271bfcee0a96d68e8@34.9.143.36:26656,1eec5742f64fb243d22594e4143e14e77a38f232@34.28.231.197:26656,2da43f6e1b5614ea8fc8b7e89909863033ca6a27@34.123.76.111:26656"
 	DevPersistentPeers   = "ffad25668e060a357bbe534c8b7e5b4e1274368b@audiusd-1:26656"
 )
 
@@ -225,6 +225,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 
 	cfg.AddrBookStrict = true
 	cfg.UseHttpsForSdk = GetEnvWithDefault("useHttpsForSdk", "true") == "true"
+	cfg.ExternalAddress = os.Getenv("externalAddress")
 	switch cfg.Environment {
 	case "prod", "production", "mainnet":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", ProdPersistentPeers)
@@ -251,7 +252,6 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 
 	case "dev", "development", "devnet", "local", "sandbox":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", DevPersistentPeers)
-		cfg.ExternalAddress = os.Getenv("externalAddress")
 		cfg.AddrBookStrict = false
 		if cfg.EthRPCUrl == "" {
 			cfg.EthRPCUrl = DevEthRpc
