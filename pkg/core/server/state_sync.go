@@ -48,6 +48,11 @@ var (
 	tmpReconstructionDir = "tmp_reconstruction"
 )
 
+type Metadata struct {
+	Sender  string `json:"sender"`
+	ChainID string `json:"chain_id"`
+}
+
 // Helper functions for common filepath patterns
 func getSnapshotDir(rootDir, chainID string) string {
 	return filepath.Join(rootDir, fmt.Sprintf(snapshotDirPattern, chainID))
@@ -177,12 +182,20 @@ func (s *Server) createSnapshot(logger *common.Logger, height int64) error {
 
 	logger.Info("Writing snapshot metadata", "height", blockHeight)
 
+	b, err := json.Marshal(Metadata{
+		Sender:  s.config.ProposerAddress,
+		ChainID: s.config.GenesisFile.ChainID,
+	})
+	if err != nil {
+		return fmt.Errorf("error marshalling metadata: %v", err)
+	}
+
 	snapshotMetadata := v1.Snapshot{
 		Height:   uint64(blockHeight),
 		Format:   1,
 		Chunks:   uint32(chunkCount),
 		Hash:     blockHash,
-		Metadata: []byte(s.config.GenesisFile.ChainID),
+		Metadata: b,
 	}
 
 	snapshotMetadataFile := getMetadataPath(latestSnapshotDir)
@@ -357,6 +370,10 @@ func (s *Server) getStoredSnapshots() ([]v1.Snapshot, error) {
 		var meta v1.Snapshot
 		if err := json.Unmarshal(data, &meta); err != nil {
 			return nil, fmt.Errorf("error unmarshalling metadata at %s: %w", metadataPath, err)
+		}
+
+		if meta.Height == 0 {
+			continue
 		}
 
 		snapshots = append(snapshots, meta)
@@ -553,6 +570,8 @@ func (s *Server) RestoreDatabase(height int64) error {
 		"--dbname="+s.config.PSQLConn,
 		"--clean",
 		"--if-exists",
+		"--no-owner",
+		"--no-privileges",
 		dumpPath)
 
 	var stdout, stderr bytes.Buffer

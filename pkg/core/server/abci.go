@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
@@ -429,6 +431,27 @@ func (s *Server) ApplySnapshotChunk(_ context.Context, req *abcitypes.ApplySnaps
 	if err != nil {
 		return &abcitypes.ApplySnapshotChunkResponse{
 			Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
+		}, nil
+	}
+
+	offeredMetadata := &Metadata{}
+	if err := json.Unmarshal(offeredSnapshot.Metadata, offeredMetadata); err != nil {
+		return &abcitypes.ApplySnapshotChunkResponse{
+			Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_REJECT_SNAPSHOT,
+		}, nil
+	}
+
+	if offeredMetadata.ChainID != s.config.GenesisFile.ChainID {
+		return &abcitypes.ApplySnapshotChunkResponse{
+			Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_REJECT_SNAPSHOT,
+		}, nil
+	}
+
+	// if sender is not the same as the offered snapshot, reject
+	if !strings.EqualFold(offeredMetadata.Sender, req.Sender) {
+		return &abcitypes.ApplySnapshotChunkResponse{
+			Result:        abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
+			RejectSenders: []string{req.Sender},
 		}, nil
 	}
 
