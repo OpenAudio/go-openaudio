@@ -421,3 +421,46 @@ func (c *CoreService) GetStoredSnapshots(context.Context, *connect.Request[v1.Ge
 
 	return connect.NewResponse(res), nil
 }
+
+// GetStatus implements v1connect.CoreServiceHandler.
+func (c *CoreService) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
+	live := true
+	ready := false
+
+	res := &v1.GetStatusResponse{
+		Live:  live,
+		Ready: ready,
+	}
+
+	if c.core == nil {
+		return connect.NewResponse(res), nil
+	}
+
+	nodeInfo, _ := c.core.cache.nodeInfo.Get(NodeInfoKey)
+	peers, _ := c.core.cache.peers.Get(PeersKey)
+	chainInfo, _ := c.core.cache.chainInfo.Get(ChainInfoKey)
+	syncInfo, _ := c.core.cache.syncInfo.Get(SyncInfoKey)
+	pruningInfo, _ := c.core.cache.pruningInfo.Get(PruningInfoKey)
+	resourceInfo, _ := c.core.cache.resourceInfo.Get(ResourceInfoKey)
+	mempoolInfo, _ := c.core.cache.mempoolInfo.Get(MempoolInfoKey)
+	snapshotInfo, _ := c.core.cache.snapshotInfo.Get(SnapshotInfoKey)
+
+	peersOk := len(peers.P2P) > 0 && len(peers.Rpc) > 0
+	syncInfoOk := syncInfo.Synced
+	diskOk := resourceInfo.DiskFree > 0
+	memOk := resourceInfo.MemUsage < resourceInfo.MemSize
+	cpuOk := resourceInfo.CpuUsage < 100
+	ready = peersOk && syncInfoOk && diskOk && memOk && cpuOk
+
+	res.Ready = ready
+	res.NodeInfo = nodeInfo
+	res.Peers = peers
+	res.ChainInfo = chainInfo
+	res.SyncInfo = syncInfo
+	res.PruningInfo = pruningInfo
+	res.ResourceInfo = resourceInfo
+	res.MempoolInfo = mempoolInfo
+	res.SnapshotInfo = snapshotInfo
+
+	return connect.NewResponse(res), nil
+}

@@ -299,6 +299,17 @@ func (q *Queries) GetBlockTransactions(ctx context.Context, blockID int64) ([]Co
 	return items, nil
 }
 
+const getDBSize = `-- name: GetDBSize :one
+select pg_database_size(current_database())::bigint as size
+`
+
+func (q *Queries) GetDBSize(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, getDBSize)
+	var size int64
+	err := row.Scan(&size)
+	return size, err
+}
+
 const getDecodedPlays = `-- name: GetDecodedPlays :many
 select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
 from core_etl_tx_plays
@@ -1134,6 +1145,74 @@ func (q *Queries) GetRegisteredNodeByEthAddress(ctx context.Context, ethAddress 
 		&i.CometPubKey,
 	)
 	return i, err
+}
+
+const getRegisteredNodesByCometAddresses = `-- name: GetRegisteredNodesByCometAddresses :many
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key from core_validators where comet_address = any($1::text[])
+`
+
+func (q *Queries) GetRegisteredNodesByCometAddresses(ctx context.Context, dollar_1 []string) ([]CoreValidator, error) {
+	rows, err := q.db.Query(ctx, getRegisteredNodesByCometAddresses, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CoreValidator
+	for rows.Next() {
+		var i CoreValidator
+		if err := rows.Scan(
+			&i.Rowid,
+			&i.PubKey,
+			&i.Endpoint,
+			&i.EthAddress,
+			&i.CometAddress,
+			&i.EthBlock,
+			&i.NodeType,
+			&i.SpID,
+			&i.CometPubKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRegisteredNodesByEthAddresses = `-- name: GetRegisteredNodesByEthAddresses :many
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key from core_validators where eth_address = any($1::text[])
+`
+
+func (q *Queries) GetRegisteredNodesByEthAddresses(ctx context.Context, dollar_1 []string) ([]CoreValidator, error) {
+	rows, err := q.db.Query(ctx, getRegisteredNodesByEthAddresses, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CoreValidator
+	for rows.Next() {
+		var i CoreValidator
+		if err := rows.Scan(
+			&i.Rowid,
+			&i.PubKey,
+			&i.Endpoint,
+			&i.EthAddress,
+			&i.CometAddress,
+			&i.EthBlock,
+			&i.NodeType,
+			&i.SpID,
+			&i.CometPubKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getRegisteredNodesByType = `-- name: GetRegisteredNodesByType :many

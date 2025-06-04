@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	v1 "github.com/cometbft/cometbft/api/cometbft/abci/v1"
 	"github.com/cometbft/cometbft/types"
@@ -596,5 +598,27 @@ func (s *Server) CleanupStateSync() error {
 	if err := os.RemoveAll(snapshotDir); err != nil {
 		return fmt.Errorf("error cleaning up temporary files: %w", err)
 	}
+	return nil
+}
+
+func (s *Server) cacheSnapshots() error {
+	snapshots, err := s.getStoredSnapshots()
+	if err != nil {
+		return fmt.Errorf("error getting stored snapshots: %w", err)
+	}
+
+	for _, snapshot := range snapshots {
+		upsertCache(s.cache.snapshotInfo, SnapshotInfoKey, func(snapshotInfo *corev1.GetStatusResponse_SnapshotInfo) *corev1.GetStatusResponse_SnapshotInfo {
+			snapshotInfo.Enabled = s.config.StateSync.ServeSnapshots
+			snapshotInfo.Snapshots = append(snapshotInfo.Snapshots, &corev1.SnapshotMetadata{
+				Height:     int64(snapshot.Height),
+				Hash:       hex.EncodeToString(snapshot.Hash),
+				ChunkCount: int64(snapshot.Chunks),
+				ChainId:    s.config.GenesisFile.ChainID,
+			})
+			return snapshotInfo
+		})
+	}
+
 	return nil
 }

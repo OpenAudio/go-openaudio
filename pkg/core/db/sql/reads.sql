@@ -122,8 +122,14 @@ where address = $1 and sla_rollup_id = $2;
 -- name: GetRegisteredNodeByEthAddress :one
 select * from core_validators where eth_address = $1;
 
+-- name: GetRegisteredNodesByEthAddresses :many
+select * from core_validators where eth_address = any($1::text[]);
+
 -- name: GetRegisteredNodeByCometAddress :one
 select * from core_validators where comet_address = $1;
+
+-- name: GetRegisteredNodesByCometAddresses :many
+select * from core_validators where comet_address = any($1::text[]);
 
 -- name: GetRecentBlocks :many
 select * from core_blocks order by created_at desc limit $1;
@@ -282,3 +288,7 @@ select exists (
 
 -- name: GetRecordingsForTrack :many
 select * from sound_recordings where track_id = $1;
+
+-- name: GetDBSize :one
+select pg_database_size(current_database())::bigint as size;
+

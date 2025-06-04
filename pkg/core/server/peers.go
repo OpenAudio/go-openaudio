@@ -41,6 +41,9 @@ type RegisteredNodesEndpointResponse struct {
 }
 
 func (s *Server) startPeerManager() error {
+	<-s.awaitRpcReady
+	go s.updatePeersCache()
+
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -105,6 +108,68 @@ func (s *Server) onPeerTick() error {
 	if addedNewPeer {
 		s.UpdatePeers(peers)
 	}
+
+	if err := s.updatePeersCache(); err != nil {
+		return fmt.Errorf("could not update peers cache: %v", err)
+	}
+
+	return nil
+}
+
+func (s *Server) updatePeersCache() error {
+	rpcPeers := s.GetPeers()
+
+	ethAddresses := []string{}
+	for ethAddress, _ := range rpcPeers {
+		ethAddresses = append(ethAddresses, ethAddress)
+	}
+
+	cometAddresses := []string{}
+	netInfo, err := s.rpc.NetInfo(context.Background())
+	if err != nil {
+		return fmt.Errorf("could not get net info: %v", err)
+	}
+
+	for _, peer := range netInfo.Peers {
+		cometAddresses = append(cometAddresses, strings.ToUpper(string(peer.NodeInfo.ID())))
+	}
+
+	rpcNodes, err := s.db.GetRegisteredNodesByEthAddresses(context.Background(), ethAddresses)
+	if err != nil {
+		return fmt.Errorf("could not get registered nodes by eth addresses: %v", err)
+	}
+
+	p2pNodes, err := s.db.GetRegisteredNodesByCometAddresses(context.Background(), cometAddresses)
+	if err != nil {
+		return fmt.Errorf("could not get registered nodes by comet addresses: %v", err)
+	}
+
+	peersP2P := make([]*v1.GetStatusResponse_NodeInfo, 0, len(p2pNodes))
+	peersRPC := make([]*v1.GetStatusResponse_NodeInfo, 0, len(rpcNodes))
+
+	for _, node := range rpcNodes {
+		peersRPC = append(peersRPC, &v1.GetStatusResponse_NodeInfo{
+			Endpoint:     node.Endpoint,
+			EthAddress:   node.EthAddress,
+			CometAddress: strings.ToLower(node.CometAddress),
+			NodeType:     node.NodeType,
+		})
+	}
+
+	for _, node := range p2pNodes {
+		peersP2P = append(peersP2P, &v1.GetStatusResponse_NodeInfo{
+			Endpoint:     node.Endpoint,
+			EthAddress:   node.EthAddress,
+			CometAddress: strings.ToLower(node.CometAddress),
+			NodeType:     node.NodeType,
+		})
+	}
+
+	upsertCache(s.cache.peers, PeersKey, func(peerInfo *v1.GetStatusResponse_PeerInfo) *v1.GetStatusResponse_PeerInfo {
+		peerInfo.P2P = peersP2P
+		peerInfo.Rpc = peersRPC
+		return peerInfo
+	})
 
 	return nil
 }

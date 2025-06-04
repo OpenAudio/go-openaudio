@@ -106,7 +106,7 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 		mempl:     mempl,
 		peers:     make(map[string]corev1connect.CoreServiceClient),
 		txPubsub:  txPubsub,
-		cache:     NewCache(),
+		cache:     NewCache(config),
 		abciState: NewABCIState(config.RetainHeight),
 
 		httpServer: httpServer,

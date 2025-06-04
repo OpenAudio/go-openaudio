@@ -21,6 +21,7 @@ func (s *Server) startEchoServer() error {
 
 	g := s.httpServer.Group("/core")
 
+	// TODO: add into connectrpc
 	g.GET("/rewards", s.getRewards)
 	g.GET("/rewards/attestation", s.getRewardAttestation)
 	g.GET("/nodes", s.getRegisteredNodes)
@@ -30,6 +31,8 @@ func (s *Server) startEchoServer() error {
 	g.GET("/nodes/content", s.getRegisteredNodes)
 	g.GET("/nodes/content/verbose", s.getRegisteredNodes)
 	g.GET("/nodes/eth", s.getEthNodesHandler)
+
+	// proxy cometbft requests
 	g.Any("/crpc*", s.proxyCometRequest)
 
 	// kind of weird pattern

@@ -17,6 +17,129 @@ message GetHealthRequest {}
 
 message GetHealthResponse {}
 
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  message ProcessInfo {
+    enum ProcessState {
+      PROCESS_STATE_UNSPECIFIED = 0;
+      PROCESS_STATE_STARTING = 1;
+      PROCESS_STATE_RUNNING = 2;
+      PROCESS_STATE_SLEEPING = 3;
+      PROCESS_STATE_COMPLETED = 4;
+      PROCESS_STATE_ERROR = 5;
+    }
+
+    message ProcessStateInfo {
+      ProcessState state = 1;
+      google.protobuf.Timestamp started_at = 2;
+      google.protobuf.Timestamp completed_at = 3;
+      string error = 4;
+    }
+
+    ProcessStateInfo abci = 1;
+    ProcessStateInfo registry_bridge = 2;
+    ProcessStateInfo echo_server = 3;
+    ProcessStateInfo sync_tasks = 4;
+    ProcessStateInfo peer_manager = 5;
+    ProcessStateInfo eth_node_manager = 6;
+    ProcessStateInfo cache = 7;
+  }
+
+  message NodeInfo {
+    string endpoint = 1;
+    string comet_address = 2;
+    string eth_address = 3;
+    string node_type = 4;
+  }
+
+  message ChainInfo {
+    string chain_id = 1;
+    int64 current_height = 2;
+    string current_block_hash = 3;
+  }
+
+  message SyncInfo {
+    bool synced = 1;
+    oneof sync_mode {
+      StateSyncInfo state_sync = 2;
+      BlockSyncInfo block_sync = 3;
+    }
+
+    message StateSyncInfo {
+      enum Phase {
+        PHASE_UNSPECIFIED = 0;
+        PHASE_STARTING = 1;
+        PHASE_DOWNLOADING_CHUNKS = 2;
+        PHASE_RECONSTRUCTING_CHUNKS = 3;
+        PHASE_RESTORING_PG_DUMP = 4;
+        PHASE_BLOCK_SYNC = 5;
+        PHASE_COMPLETED = 6;
+      }
+
+      Phase phase = 1;
+      SnapshotMetadata snapshot = 2;
+      int64 downloaded_chunks = 3;
+      int64 chunk_fetchers = 4;
+      google.protobuf.Timestamp started_at = 5;
+      google.protobuf.Timestamp completed_at = 6;
+    }
+
+    message BlockSyncInfo {
+      int64 block_diff = 1;
+      NodeInfo head_source = 2;
+      int64 head_height = 3;
+      int64 sync_height = 4;
+      google.protobuf.Timestamp started_at = 5;
+      google.protobuf.Timestamp completed_at = 6;
+    }
+  }
+
+  message PruningInfo {
+    bool enabled = 1;
+    int64 prune_amount = 2;
+    int64 earliest_height = 3;
+  }
+
+  message ResourceInfo {
+    int64 db_size = 1;
+    int64 chain_size = 2;
+    int64 mem_size = 3;
+    int64 cpu_usage = 4;
+    int64 mem_usage = 5;
+    int64 disk_usage = 6;
+    int64 disk_free = 7;
+  }
+
+  message MempoolInfo {
+    int64 tx_count = 1;
+    int64 tx_size = 2;
+    int64 max_tx_count = 3;
+    int64 max_tx_size = 4;
+  }
+
+  message SnapshotInfo {
+    bool enabled = 1;
+    repeated SnapshotMetadata snapshots = 2;
+  }
+
+  message PeerInfo {
+    repeated NodeInfo p2p = 1;
+    repeated NodeInfo rpc = 2;
+  }
+
+  bool live = 1;
+  bool ready = 2;
+  NodeInfo node_info = 3;
+  ChainInfo chain_info = 4;
+  SyncInfo sync_info = 5;
+  PruningInfo pruning_info = 6;
+  ResourceInfo resource_info = 7;
+  MempoolInfo mempool_info = 8;
+  PeerInfo peers = 9;
+  SnapshotInfo snapshot_info = 10;
+}
+
 message GetNodeInfoRequest {}
 
 message GetNodeInfoResponse {

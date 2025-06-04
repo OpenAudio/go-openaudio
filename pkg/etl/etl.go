@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"connectrpc.com/connect"
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
@@ -39,9 +40,40 @@ func (etl *ETLService) Run() error {
 
 	etl.logger.Infof("starting etl service")
 
+	err = etl.awaitReadiness()
+	if err != nil {
+		return fmt.Errorf("error awaiting readiness: %v", err)
+	}
+
 	err = etl.indexBlocks()
 	if err != nil {
 		return fmt.Errorf("indexer crashed: %v", err)
+	}
+
+	return nil
+}
+
+func (etl *ETLService) awaitReadiness() error {
+	etl.logger.Infof("awaiting readiness")
+	attempts := 0
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		attempts++
+		if attempts > 60 {
+			return fmt.Errorf("timed out waiting for readiness")
+		}
+
+		res, err := etl.core.GetStatus(context.Background(), connect.NewRequest(&v1.GetStatusRequest{}))
+		if err != nil {
+			continue
+		}
+
+		if res.Msg.Ready {
+			return nil
+		}
 	}
 
 	return nil

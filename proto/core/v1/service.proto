@@ -8,6 +8,7 @@ option go_package = "github.com/AudiusProject/audiusd/pkg/api/core/v1";
 service CoreService {
   rpc Ping(PingRequest) returns (PingResponse) {}
   rpc GetHealth(GetHealthRequest) returns (GetHealthResponse) {}
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {}
   rpc GetNodeInfo(GetNodeInfoRequest) returns (GetNodeInfoResponse) {}
   rpc GetBlock(GetBlockRequest) returns (GetBlockResponse) {}
   rpc GetTransaction(GetTransactionRequest) returns (GetTransactionResponse) {}

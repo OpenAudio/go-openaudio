@@ -37,6 +37,8 @@ const (
 	CoreServicePingProcedure = "/core.v1.CoreService/Ping"
 	// CoreServiceGetHealthProcedure is the fully-qualified name of the CoreService's GetHealth RPC.
 	CoreServiceGetHealthProcedure = "/core.v1.CoreService/GetHealth"
+	// CoreServiceGetStatusProcedure is the fully-qualified name of the CoreService's GetStatus RPC.
+	CoreServiceGetStatusProcedure = "/core.v1.CoreService/GetStatus"
 	// CoreServiceGetNodeInfoProcedure is the fully-qualified name of the CoreService's GetNodeInfo RPC.
 	CoreServiceGetNodeInfoProcedure = "/core.v1.CoreService/GetNodeInfo"
 	// CoreServiceGetBlockProcedure is the fully-qualified name of the CoreService's GetBlock RPC.
@@ -65,6 +67,7 @@ const (
 type CoreServiceClient interface {
 	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error)
 	GetHealth(context.Context, *connect.Request[v1.GetHealthRequest]) (*connect.Response[v1.GetHealthResponse], error)
+	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
 	GetNodeInfo(context.Context, *connect.Request[v1.GetNodeInfoRequest]) (*connect.Response[v1.GetNodeInfoResponse], error)
 	GetBlock(context.Context, *connect.Request[v1.GetBlockRequest]) (*connect.Response[v1.GetBlockResponse], error)
 	GetTransaction(context.Context, *connect.Request[v1.GetTransactionRequest]) (*connect.Response[v1.GetTransactionResponse], error)
@@ -96,6 +99,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+CoreServiceGetHealthProcedure,
 			connect.WithSchema(coreServiceMethods.ByName("GetHealth")),
+			connect.WithClientOptions(opts...),
+		),
+		getStatus: connect.NewClient[v1.GetStatusRequest, v1.GetStatusResponse](
+			httpClient,
+			baseURL+CoreServiceGetStatusProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetStatus")),
 			connect.WithClientOptions(opts...),
 		),
 		getNodeInfo: connect.NewClient[v1.GetNodeInfoRequest, v1.GetNodeInfoResponse](
@@ -153,6 +162,7 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 type coreServiceClient struct {
 	ping                         *connect.Client[v1.PingRequest, v1.PingResponse]
 	getHealth                    *connect.Client[v1.GetHealthRequest, v1.GetHealthResponse]
+	getStatus                    *connect.Client[v1.GetStatusRequest, v1.GetStatusResponse]
 	getNodeInfo                  *connect.Client[v1.GetNodeInfoRequest, v1.GetNodeInfoResponse]
 	getBlock                     *connect.Client[v1.GetBlockRequest, v1.GetBlockResponse]
 	getTransaction               *connect.Client[v1.GetTransactionRequest, v1.GetTransactionResponse]
@@ -171,6 +181,11 @@ func (c *coreServiceClient) Ping(ctx context.Context, req *connect.Request[v1.Pi
 // GetHealth calls core.v1.CoreService.GetHealth.
 func (c *coreServiceClient) GetHealth(ctx context.Context, req *connect.Request[v1.GetHealthRequest]) (*connect.Response[v1.GetHealthResponse], error) {
 	return c.getHealth.CallUnary(ctx, req)
+}
+
+// GetStatus calls core.v1.CoreService.GetStatus.
+func (c *coreServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
+	return c.getStatus.CallUnary(ctx, req)
 }
 
 // GetNodeInfo calls core.v1.CoreService.GetNodeInfo.
@@ -217,6 +232,7 @@ func (c *coreServiceClient) GetStoredSnapshots(ctx context.Context, req *connect
 type CoreServiceHandler interface {
 	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error)
 	GetHealth(context.Context, *connect.Request[v1.GetHealthRequest]) (*connect.Response[v1.GetHealthResponse], error)
+	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
 	GetNodeInfo(context.Context, *connect.Request[v1.GetNodeInfoRequest]) (*connect.Response[v1.GetNodeInfoResponse], error)
 	GetBlock(context.Context, *connect.Request[v1.GetBlockRequest]) (*connect.Response[v1.GetBlockResponse], error)
 	GetTransaction(context.Context, *connect.Request[v1.GetTransactionRequest]) (*connect.Response[v1.GetTransactionResponse], error)
@@ -244,6 +260,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		CoreServiceGetHealthProcedure,
 		svc.GetHealth,
 		connect.WithSchema(coreServiceMethods.ByName("GetHealth")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceGetStatusHandler := connect.NewUnaryHandler(
+		CoreServiceGetStatusProcedure,
+		svc.GetStatus,
+		connect.WithSchema(coreServiceMethods.ByName("GetStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServiceGetNodeInfoHandler := connect.NewUnaryHandler(
@@ -300,6 +322,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServicePingHandler.ServeHTTP(w, r)
 		case CoreServiceGetHealthProcedure:
 			coreServiceGetHealthHandler.ServeHTTP(w, r)
+		case CoreServiceGetStatusProcedure:
+			coreServiceGetStatusHandler.ServeHTTP(w, r)
 		case CoreServiceGetNodeInfoProcedure:
 			coreServiceGetNodeInfoHandler.ServeHTTP(w, r)
 		case CoreServiceGetBlockProcedure:
@@ -331,6 +355,10 @@ func (UnimplementedCoreServiceHandler) Ping(context.Context, *connect.Request[v1
 
 func (UnimplementedCoreServiceHandler) GetHealth(context.Context, *connect.Request[v1.GetHealthRequest]) (*connect.Response[v1.GetHealthResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetHealth is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetStatus is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) GetNodeInfo(context.Context, *connect.Request[v1.GetNodeInfoRequest]) (*connect.Response[v1.GetNodeInfoResponse], error) {

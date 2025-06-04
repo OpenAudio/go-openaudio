@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core"
 	"github.com/AudiusProject/audiusd/pkg/core/console"
@@ -37,6 +38,9 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/AudiusProject/audiusd/pkg/system"
 	"github.com/AudiusProject/audiusd/pkg/uptime"
+	"go.akshayshah.org/connectproto"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
 	etlv1connect "github.com/AudiusProject/audiusd/pkg/api/etl/v1/v1connect"
@@ -58,6 +62,15 @@ const (
 )
 
 var startTime time.Time
+
+// Common global options
+var (
+	marshalOpts   = protojson.MarshalOptions{EmitUnpopulated: true}
+	unmarshalOpts = protojson.UnmarshalOptions{DiscardUnknown: true}
+
+	// Compose them into the Connect handler option
+	connectJSONOpt = connectproto.WithJSON(marshalOpts, unmarshalOpts)
+)
 
 type proxyConfig struct {
 	path   string
@@ -280,23 +293,93 @@ func getEchoServerConfig(hostUrl *url.URL) serverConfig {
 	}
 }
 
+func connectGET[Req any, Res any](
+	handler func(ctx context.Context, req *connect.Request[Req]) (*connect.Response[Res], error),
+) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		queryParams := c.QueryParams()
+		maxParams := 50
+		count := 0
+		paramMap := make(map[string]interface{})
+		for k, v := range queryParams {
+			if count >= maxParams {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": "too many query parameters"})
+			}
+			if len(v) == 1 {
+				val := v[0]
+				// Try int64
+				if i, err := strconv.ParseInt(val, 10, 64); err == nil {
+					paramMap[k] = i
+				} else if f, err := strconv.ParseFloat(val, 64); err == nil {
+					paramMap[k] = f
+				} else if b, err := strconv.ParseBool(val); err == nil {
+					paramMap[k] = b
+				} else {
+					paramMap[k] = val
+				}
+			} else {
+				paramMap[k] = v
+			}
+			count++
+		}
+
+		// Marshal to JSON
+		paramBytes, err := json.Marshal(paramMap)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid query parameters"})
+		}
+
+		// Unmarshal to your generic request type
+		req := new(Req)
+		if err := json.Unmarshal(paramBytes, req); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to map query parameters to request"})
+		}
+
+		// Call the ConnectRPC handler
+		resp, err := handler(c.Request().Context(), connect.NewRequest(req))
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+
+		msg, ok := any(resp.Msg).(proto.Message)
+		if !ok {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "response is not proto.Message"})
+		}
+
+		jsonBytes, err := marshalOpts.Marshal(msg)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to marshal response: %v", err.Error())})
+		}
+
+		return c.JSONBlob(http.StatusOK, jsonBytes)
+
+	}
+}
+
 func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreServer.CoreService, storageService *server.StorageService, etlService *etl.ETLService, systemService *system.SystemService) error {
 	e := echo.New()
 	e.HideBanner = true
 	e.Use(middleware.Logger(), middleware.Recover(), common.InjectRealIP())
 
 	rpcGroup := e.Group("")
-	corePath, coreHandler := corev1connect.NewCoreServiceHandler(coreService)
-	rpcGroup.Any(corePath+"*", echo.WrapHandler(coreHandler))
+	corePath, coreHandler := corev1connect.NewCoreServiceHandler(coreService, connectJSONOpt)
+	rpcGroup.POST(corePath+"*", echo.WrapHandler(coreHandler))
 
-	storagePath, storageHandler := storagev1connect.NewStorageServiceHandler(storageService)
-	rpcGroup.Any(storagePath+"*", echo.WrapHandler(storageHandler))
+	storagePath, storageHandler := storagev1connect.NewStorageServiceHandler(storageService, connectJSONOpt)
+	rpcGroup.POST(storagePath+"*", echo.WrapHandler(storageHandler))
 
-	etlPath, etlHandler := etlv1connect.NewETLServiceHandler(etlService)
-	rpcGroup.Any(etlPath+"*", echo.WrapHandler(etlHandler))
+	etlPath, etlHandler := etlv1connect.NewETLServiceHandler(etlService, connectJSONOpt)
+	rpcGroup.POST(etlPath+"*", echo.WrapHandler(etlHandler))
 
-	systemPath, systemHandler := systemv1connect.NewSystemServiceHandler(systemService)
-	rpcGroup.Any(systemPath+"*", echo.WrapHandler(systemHandler))
+	systemPath, systemHandler := systemv1connect.NewSystemServiceHandler(systemService, connectJSONOpt)
+	rpcGroup.POST(systemPath+"*", echo.WrapHandler(systemHandler))
+
+	// register GET routes
+	rpcGroup.GET(corev1connect.CoreServiceGetStatusProcedure, connectGET(coreService.GetStatus))
+	rpcGroup.GET(corev1connect.CoreServiceGetNodeInfoProcedure, connectGET(coreService.GetNodeInfo))
+	rpcGroup.GET(corev1connect.CoreServiceGetBlockProcedure, connectGET(coreService.GetBlock))
+	rpcGroup.GET(corev1connect.CoreServiceGetTransactionProcedure, connectGET(coreService.GetTransaction))
+	rpcGroup.GET(corev1connect.CoreServiceGetStoredSnapshotsProcedure, connectGET(coreService.GetStoredSnapshots))
 
 	go func() {
 		grpcServer := echo.New()
