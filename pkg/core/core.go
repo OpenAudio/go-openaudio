@@ -10,17 +10,17 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/console"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/core/server"
-	"github.com/AudiusProject/audiusd/pkg/eth"
 	"github.com/AudiusProject/audiusd/pkg/pos"
 
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService, ethService *eth.EthService) error {
-	return run(ctx, logger, posChannel, coreService, ethService)
+func Run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService) error {
+	return run(ctx, logger, posChannel, coreService)
 }
 
-func run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService, ethService *eth.EthService) error {
+func run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService) error {
 	logger.Info("good morning!")
 
 	config, cometConfig, err := config.SetupNode(logger)
@@ -44,7 +44,13 @@ func run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequ
 	}
 	defer pool.Close()
 
-	s, err := server.NewServer(config, cometConfig, logger, pool, ethService, posChannel)
+	ethrpc, err := ethclient.Dial(config.EthRPCUrl)
+	if err != nil {
+		return fmt.Errorf("eth client dial err: %v", err)
+	}
+	defer ethrpc.Close()
+
+	s, err := server.NewServer(config, cometConfig, logger, pool, ethrpc, posChannel)
 	if err != nil {
 		return fmt.Errorf("server init error: %v", err)
 	}

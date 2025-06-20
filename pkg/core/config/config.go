@@ -47,12 +47,9 @@ const (
 	StageAcdcAddress = "0x1Cd8a543596D499B9b6E7a6eC15ECd2B7857Fd64"
 	DevAcdcAddress   = "0x254dffcd3277C0b1660F6d42EFbB754edaBAbC2B"
 
-	ProdEthRpc  = "wss://eth.audius.co"
-	StageEthRpc = "wss://eth.staging.audius.co"
-	DevEthRpc   = "ws://eth-ganache:8545"
-
-	DiscoveryDbURL = "postgresql://postgres:postgres@localhost:5432/audius_discovery"
-	ContentDbURL   = "postgresql://postgres:postgres@localhost:5432/audius_creator_node"
+	ProdEthRpc  = "https://eth.audius.co"
+	StageEthRpc = "https://eth.staging.audius.co"
+	DevEthRpc   = "http://eth-ganache:8545"
 )
 
 const (
@@ -192,21 +189,22 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		RPCServers:     strings.Split(GetEnvWithDefault("stateSyncRPCServers", ""), ","),
 	}
 
-	cfg.Environment = GetRuntimeEnvironment()
-	cfg.EthRPCUrl = GetEthRPC()
-
 	// check if discovery specific key is set
 	isDiscovery := os.Getenv("audius_delegate_private_key") != ""
 	var delegatePrivateKey string
 	if isDiscovery {
 		delegatePrivateKey = os.Getenv("audius_delegate_private_key")
 		cfg.NodeType = Discovery
+		cfg.Environment = os.Getenv("audius_discprov_env")
 		cfg.NodeEndpoint = os.Getenv("audius_discprov_url")
 		cfg.PSQLConn = GetEnvWithDefault("audius_db_url", "postgresql://postgres:postgres@localhost:5432/audius_discovery")
+		cfg.EthRPCUrl = os.Getenv("audius_web3_eth_provider_url")
 	} else {
 		delegatePrivateKey = os.Getenv("delegatePrivateKey")
 		cfg.NodeType = Content
+		cfg.Environment = os.Getenv("MEDIORUM_ENV")
 		cfg.PSQLConn = GetEnvWithDefault("dbUrl", "postgresql://postgres:postgres@localhost:5432/audius_creator_node")
+		cfg.EthRPCUrl = os.Getenv("ethProviderUrl")
 		cfg.NodeEndpoint = os.Getenv("creatorNodeEndpoint")
 	}
 
@@ -228,11 +226,14 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	cfg.AddrBookStrict = true
 	cfg.UseHttpsForSdk = GetEnvWithDefault("useHttpsForSdk", "true") == "true"
 	cfg.ExternalAddress = os.Getenv("externalAddress")
-	cfg.EthRegistryAddress = GetRegistryAddress()
-
 	switch cfg.Environment {
 	case "prod", "production", "mainnet":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", ProdPersistentPeers)
+		cfg.EthRegistryAddress = ProdRegistryAddress
+		if cfg.EthRPCUrl == "" {
+			cfg.EthRPCUrl = ProdEthRpc
+		}
+
 		cfg.SlaRollupInterval = mainnetRollupInterval
 		cfg.ValidatorVotingPower = mainnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(ProdClaimAuthorities, ProdRewardExtensions)
@@ -240,6 +241,10 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 
 	case "stage", "staging", "testnet":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", StagePersistentPeers)
+		cfg.EthRegistryAddress = StageRegistryAddress
+		if cfg.EthRPCUrl == "" {
+			cfg.EthRPCUrl = StageEthRpc
+		}
 		cfg.SlaRollupInterval = testnetRollupInterval
 		cfg.ValidatorVotingPower = testnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(StageClaimAuthorities, StageRewardExtensions)
@@ -248,6 +253,12 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	case "dev", "development", "devnet", "local", "sandbox":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", DevPersistentPeers)
 		cfg.AddrBookStrict = false
+		if cfg.EthRPCUrl == "" {
+			cfg.EthRPCUrl = DevEthRpc
+		}
+		if cfg.EthRegistryAddress == "" {
+			cfg.EthRegistryAddress = DevRegistryAddress
+		}
 		cfg.SlaRollupInterval = devnetRollupInterval
 		cfg.ValidatorVotingPower = devnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(DevClaimAuthorities, DevRewardExtensions)
@@ -299,59 +310,14 @@ func getEnvIntWithDefault(key string, defaultValue int) int {
 	return defaultValue
 }
 
-func GetEthRPC() string {
-	return GetEnvWithDefault(
-		"ethProviderUrl",
-		GetEnvWithDefault(
-			"audius_web3_eth_provider_url",
-			DefaultEthRPC(),
-		),
-	)
-}
-
-func GetDbURL() string {
-	isDiscovery := os.Getenv("audius_delegate_private_key") != ""
-	var dbUrl string
-	if isDiscovery {
-		dbUrl = GetEnvWithDefault("audius_db_url", DiscoveryDbURL)
-	} else {
-		dbUrl = GetEnvWithDefault("dbUrl", ContentDbURL)
-	}
-
-	if !strings.HasSuffix(dbUrl, "?sslmode=disable") && isLocalDbUrlRegex.MatchString(dbUrl) {
-		dbUrl += "?sslmode=disable"
-	}
-	return dbUrl
-}
-
-func GetRegistryAddress() string {
-	return GetEnvWithDefault(
-		"ethRegistryAddress",
-		GetEnvWithDefault(
-			"audius_eth_contracts_registry",
-			DefaultRegistryAddress(),
-		),
-	)
-}
-
-func GetRuntimeEnvironment() string {
-	var env string
-	isDiscovery := os.Getenv("audius_delegate_private_key") != ""
-	if isDiscovery {
-		env = os.Getenv("audius_discprov_env")
-	} else {
-		env = os.Getenv("MEDIORUM_ENV")
-	}
-	return env
-}
-
 func DefaultEthRPC() string {
-	switch GetRuntimeEnvironment() {
-	case "prod", "production", "mainnet":
+	env := os.Getenv("MEDIORUM_ENV")
+	switch env {
+	case "prod":
 		return ProdEthRpc
-	case "stage", "staging", "testnet":
+	case "stage":
 		return StageEthRpc
-	case "dev", "development", "devnet", "local", "sandbox":
+	case "dev":
 		return DevEthRpc
 	default:
 		return ""
@@ -359,12 +325,13 @@ func DefaultEthRPC() string {
 }
 
 func DefaultRegistryAddress() string {
-	switch GetRuntimeEnvironment() {
-	case "prod", "production", "mainnet":
+	env := os.Getenv("MEDIORUM_ENV")
+	switch env {
+	case "prod":
 		return ProdRegistryAddress
-	case "stage", "staging", "testnet":
+	case "stage":
 		return StageRegistryAddress
-	case "dev", "development", "devnet", "local", "sandbox":
+	case "dev":
 		return DevRegistryAddress
 	default:
 		return ""

@@ -30,6 +30,7 @@ func (s *Server) startEchoServer() error {
 	g.GET("/nodes/discovery/verbose", s.getRegisteredNodes)
 	g.GET("/nodes/content", s.getRegisteredNodes)
 	g.GET("/nodes/content/verbose", s.getRegisteredNodes)
+	g.GET("/nodes/eth", s.getEthNodesHandler)
 
 	// proxy cometbft requests
 	g.Any("/crpc*", s.proxyCometRequest)

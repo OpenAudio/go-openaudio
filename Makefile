@@ -4,30 +4,28 @@ WRAPPER_TAG ?= default
 UPGRADE_TYPE ?= patch
 
 GIT_SHA := $(shell git rev-parse HEAD)
-VERSION_LDFLAG := -X github.com/AudiusProject/audius-protocol/core/config.Version=$(GIT_SHA)
 
-###### SQL
-CORE_SQL_SRCS := $(shell find pkg/core/db/sql -type f -name '*.sql') pkg/core/db/sqlc.yaml
-CORE_SQL_ARTIFACTS := $(wildcard pkg/core/db/*.sql.go)
+SQL_SRCS := $(shell find pkg/core/db/sql -type f -name '*.sql') pkg/core/db/sqlc.yaml
+SQL_ARTIFACTS := $(wildcard pkg/core/db/*.sql.go)
 
 ETL_SQL_SRCS := $(shell find pkg/etl/db/sql -type f -name '*.sql') pkg/etl/db/sqlc.yaml
 ETL_SQL_ARTIFACTS := $(wildcard pkg/etl/db/*.sql.go)
 
-ETH_SQL_SRCS := $(shell find pkg/eth/db/sql -type f -name '*.sql') pkg/eth/db/sqlc.yaml
-ETH_SQL_ARTIFACTS := $(wildcard pkg/eth/db/*.sql.go)
-
-SQL_ARTIFACTS := $(CORE_SQL_ARTIFACTS) $(ETL_SQL_ARTIFACTS) $(ETH_SQL_ARTIFACTS)
-
-###### PROTO
 PROTO_SRCS := $(shell find proto -type f -name '*.proto')
 PROTO_ARTIFACTS := $(shell find pkg/api -type f -name '*.pb.go')
 
-###### TEMPL
 TEMPL_SRCS := $(shell find pkg/core/console -type f -name "*.templ")
 TEMPL_ARTIFACTS := $(shell find pkg/core/console -type f -name "*_templ.go")
 
+CONTRACT_SRCS := contracts/ProportionalRewards.sol
+CONTRACT_ARTIFACTS := contracts/build/ProportionalRewards.abi \
+                     contracts/build/ProportionalRewards.bin
 
-###### CODE
+CONTRACT_GO_SRCS := $(CONTRACT_ARTIFACTS)
+CONTRACT_GO_ARTIFACTS := pkg/core/contracts/gen/proportional_rewards.go
+
+VERSION_LDFLAG := -X github.com/AudiusProject/audius-protocol/core/config.Version=$(GIT_SHA)
+
 JSON_SRCS := $(wildcard pkg/core/config/genesis/*.json)
 JS_SRCS := $(shell find pkg/core -type f -name '*.js')
 GO_SRCS := $(shell find pkg cmd -type f -name '*.go')
@@ -105,7 +103,7 @@ uninstall:
 clean:
 	rm -f bin/*
 	rm -f contracts/build/*.abi contracts/build/*.bin
-	rm -f pkg/eth/contracts/gen/*.go
+	rm -f pkg/core/contracts/gen/*.go
 
 .PHONY: install-deps install-go-deps
 install-deps: install-go-deps
@@ -140,7 +138,7 @@ go.mod: $(GO_SRCS)
 	@touch go.mod # in case there's nothing to tidy
 
 .PHONY: gen
-gen: regen-templ regen-proto regen-sql
+gen: regen-templ regen-proto regen-sql regen-etl-sql gen-contracts
 
 .PHONY: regen-templ
 regen-templ: $(TEMPL_ARTIFACTS)
@@ -156,11 +154,8 @@ $(PROTO_ARTIFACTS): $(PROTO_SRCS)
 	buf generate
 
 .PHONY: regen-sql
-regen-sql: regen-core-sql regen-etl-sql regen-eth-sql
-
-.PHONY: regen-core-sql
-regen-core-sql: $(CORE_SQL_ARTIFACTS)
-$(CORE_SQL_ARTIFACTS): $(CORE_SQL_SRCS)
+regen-sql: $(SQL_ARTIFACTS)
+$(SQL_ARTIFACTS): $(SQL_SRCS)
 	@echo Regenerating sql code
 	cd pkg/core/db && sqlc generate
 
@@ -170,16 +165,25 @@ $(ETL_SQL_ARTIFACTS): $(ETL_SQL_SRCS)
 	@echo Regenerating etl sql code
 	cd pkg/etl/db && sqlc generate
 
-.PHONY: regen-eth-sql
-regen-eth-sql: $(ETH_SQL_ARTIFACTS)
-$(ETH_SQL_ARTIFACTS): $(ETH_SQL_SRCS)
-	@echo Regenerating eth sql code
-	cd pkg/eth/db && sqlc generate
-
 .PHONY: regen-contracts
 regen-contracts:
 	@echo Regenerating contracts
-	cd pkg/eth/contracts && sh -c "./generate_contract.sh"
+	cd pkg/core && sh -c "./generate_contract.sh"
+
+.PHONY: gen-contracts
+gen-contracts: $(CONTRACT_GO_ARTIFACTS)
+$(CONTRACT_GO_ARTIFACTS): $(CONTRACT_SRCS)
+	@echo "Building and generating contracts"
+	@mkdir -p contracts/build
+	@mkdir -p pkg/core/contracts/gen
+	solc --abi --bin --overwrite -o contracts/build contracts/ProportionalRewards.sol
+	abigen \
+		--abi contracts/build/ProportionalRewards.abi \
+		--bin contracts/build/ProportionalRewards.bin \
+		--pkg gen \
+		--type ProportionalRewards \
+		--out pkg/core/contracts/gen/proportional_rewards.go
+
 
 .PHONY: docker-test docker-dev docker-local
 docker-test:
