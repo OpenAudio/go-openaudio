@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package eth.v1;
+
+import "eth/v1/types.proto";
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/eth/v1";
+
+service EthService {
+  rpc IsReady(IsReadyRequest) returns (IsReadyResponse) {}
+  rpc GetRegisteredEndpoints(GetRegisteredEndpointsRequest) returns (GetRegisteredEndpointsResponse) {}
+  rpc GetRegisteredEndpointInfo(GetRegisteredEndpointInfoRequest) returns (GetRegisteredEndpointInfoResponse) {}
+  rpc GetServiceProviders(GetServiceProvidersRequest) returns (GetServiceProvidersResponse) {}
+  rpc GetLatestFundingRound(GetLatestFundingRoundRequest) returns (GetLatestFundingRoundResponse) {}
+  rpc IsDuplicateDelegateWallet(IsDuplicateDelegateWalletRequest) returns (IsDuplicateDelegateWalletResponse) {}
+  rpc RegisterOnEthereum(RegisterOnEthereumRequest) returns (RegisterOnEthereumResponse) {}
+}

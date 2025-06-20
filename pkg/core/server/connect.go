@@ -13,7 +13,6 @@ import (
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
 	"github.com/AudiusProject/audiusd/pkg/common"
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -159,11 +158,12 @@ func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *con
 		return nil, fmt.Errorf("could not format eth block '%s' for node '%s'", node.EthBlock, node.Endpoint)
 	}
 
-	if c.core.isNodeRegisteredOnEthereum(
-		ethcommon.HexToAddress(node.EthAddress),
+	if registered, err := c.core.IsNodeRegisteredOnEthereum(
+		ctx,
 		node.Endpoint,
-		ethBlock,
-	) {
+		node.EthAddress,
+		ethBlock.Int64(),
+	); registered || err != nil {
 		c.core.logger.Error("Could not attest to node eth deregistration: node is still registered",
 			"cometAddress",
 			dereg.CometAddress,
@@ -171,6 +171,8 @@ func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *con
 			node.EthAddress,
 			"endpoint",
 			node.Endpoint,
+			"error",
+			err,
 		)
 		return nil, errors.New("node is still registered on ethereum")
 	}
@@ -208,11 +210,12 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 		return nil, fmt.Errorf("cannot sign registration request with deadline %d (current height is %d)", reg.Deadline, c.core.cache.currentHeight.Load())
 	}
 
-	if !c.core.isNodeRegisteredOnEthereum(
-		ethcommon.HexToAddress(reg.DelegateWallet),
+	if registered, err := c.core.IsNodeRegisteredOnEthereum(
+		ctx,
 		reg.Endpoint,
-		big.NewInt(reg.EthBlock),
-	) {
+		reg.DelegateWallet,
+		reg.EthBlock,
+	); !registered || err != nil {
 		c.core.logger.Error(
 			"Could not attest to node eth registration",
 			"delegate",
@@ -221,6 +224,8 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 			reg.Endpoint,
 			"eth block",
 			reg.EthBlock,
+			"error",
+			err,
 		)
 		return nil, errors.New("node is not registered on ethereum")
 	}

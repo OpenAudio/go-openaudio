@@ -1,14 +1,16 @@
 package contracts
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 
 	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/core/contracts/gen"
+	"github.com/AudiusProject/audiusd/pkg/eth/contracts/gen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	geth "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -36,7 +38,7 @@ var (
 // manager struct so contracts get loaded lazily upon usage
 // and don't spam rpcs for contracts a developer may not need
 type AudiusContracts struct {
-	Rpc *ethclient.Client
+	rpc *ethclient.Client
 
 	/** contract addresses */
 	RegistryAddress               *geth.Address
@@ -80,7 +82,7 @@ func NewAudiusContracts(rpc *ethclient.Client, registryAddress string) (*AudiusC
 	}
 
 	return &AudiusContracts{
-		Rpc:      rpc,
+		rpc:      rpc,
 		Registry: registry,
 	}, nil
 }
@@ -140,7 +142,7 @@ func (ac *AudiusContracts) GetAudioTokenContract() (*gen.AudiusToken, error) {
 	}
 	ac.AudioTokenAddress = &addr
 
-	contract, err := gen.NewAudiusToken(addr, ac.Rpc)
+	contract, err := gen.NewAudiusToken(addr, ac.rpc)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +162,7 @@ func (ac *AudiusContracts) GetGovernanceContract() (*gen.Governance, error) {
 	}
 	ac.GovernanceAddress = &addr
 
-	contract, err := gen.NewGovernance(addr, ac.Rpc)
+	contract, err := gen.NewGovernance(addr, ac.rpc)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +182,7 @@ func (ac *AudiusContracts) GetStakingContract() (*gen.Staking, error) {
 	}
 	ac.StakingAddress = &addr
 
-	contract, err := gen.NewStaking(addr, ac.Rpc)
+	contract, err := gen.NewStaking(addr, ac.rpc)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +202,7 @@ func (ac *AudiusContracts) GetServiceProviderFactoryContract() (*gen.ServiceProv
 	}
 	ac.ServiceProviderFactoryAddress = &addr
 
-	contract, err := gen.NewServiceProviderFactory(addr, ac.Rpc)
+	contract, err := gen.NewServiceProviderFactory(addr, ac.rpc)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +222,7 @@ func (ac *AudiusContracts) GetClaimsManagerContract() (*gen.ClaimsManager, error
 	}
 	ac.ClaimsManagerAddress = &addr
 
-	contract, err := gen.NewClaimsManager(addr, ac.Rpc)
+	contract, err := gen.NewClaimsManager(addr, ac.rpc)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +242,7 @@ func (ac *AudiusContracts) GetDelegateManagerContract() (*gen.DelegateManager, e
 	}
 	ac.DelegateManagerAddress = &addr
 
-	contract, err := gen.NewDelegateManager(addr, ac.Rpc)
+	contract, err := gen.NewDelegateManager(addr, ac.rpc)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +262,7 @@ func (ac *AudiusContracts) GetRewardsManagerContract() (*gen.EthRewardsManager, 
 	}
 	ac.RewardsManagerAddress = &addr
 
-	contract, err := gen.NewEthRewardsManager(addr, ac.Rpc)
+	contract, err := gen.NewEthRewardsManager(addr, ac.rpc)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +287,7 @@ func (ac *AudiusContracts) GetServiceTypeManagerContract() (*gen.ServiceTypeMana
 	}
 	ac.ServiceTypeManagerAddress = &addr
 
-	contract, err := gen.NewServiceTypeManager(addr, ac.Rpc)
+	contract, err := gen.NewServiceTypeManager(addr, ac.rpc)
 	if err != nil {
 		return nil, err
 	}
@@ -297,10 +299,42 @@ func (ac *AudiusContracts) GetServiceTypeManagerContract() (*gen.ServiceTypeMana
 /* Utilities */
 
 type Node struct {
+	Id                  *big.Int
 	Owner               geth.Address
 	Endpoint            string
+	Type                [32]byte
 	BlockNumber         *big.Int
 	DelegateOwnerWallet geth.Address
+}
+
+func (ac *AudiusContracts) GetRegisteredNode(ctx context.Context, id *big.Int, nodeType [32]byte) (*Node, error) {
+	spf, err := ac.GetServiceProviderFactoryContract()
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := spf.GetServiceEndpointInfo(
+		&bind.CallOpts{Context: ctx},
+		nodeType,
+		id,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// zero address
+	if info.DelegateOwnerWallet == (geth.Address{}) {
+		return nil, errors.New("node not found")
+	}
+	node := &Node{
+		Id:                  new(big.Int).Set(id),
+		Type:                nodeType,
+		Owner:               info.Owner,
+		DelegateOwnerWallet: info.DelegateOwnerWallet,
+		BlockNumber:         info.BlockNumber,
+		Endpoint:            info.Endpoint,
+	}
+	return node, nil
 }
 
 func (ac *AudiusContracts) GetAllRegisteredNodes(ctx context.Context) ([]*Node, error) {
@@ -372,6 +406,8 @@ func (ac *AudiusContracts) GetAllRegisteredNodesForType(ctx context.Context, nod
 			mu.Lock()
 			defer mu.Unlock()
 			nodes = append(nodes, &Node{
+				Id:                  new(big.Int).Set(currentID),
+				Type:                nodeType,
 				Owner:               info.Owner,
 				DelegateOwnerWallet: info.DelegateOwnerWallet,
 				BlockNumber:         info.BlockNumber,
@@ -387,4 +423,24 @@ func (ac *AudiusContracts) GetAllRegisteredNodesForType(ctx context.Context, nod
 	}
 
 	return nodes, nil
+}
+
+func StringToServiceType(s string) ([32]byte, error) {
+	if strings.HasPrefix(strings.ToLower(s), "discovery") {
+		return DiscoveryNode, nil
+	} else if strings.HasPrefix(strings.ToLower(s), "content") {
+		return ContentNode, nil
+	} else {
+		return [32]byte{}, fmt.Errorf("No matching service type found for '%s'", s)
+	}
+}
+
+func ServiceTypeToString(serviceType [32]byte) (string, error) {
+	if bytes.Equal(serviceType[:], DiscoveryNode[:]) {
+		return "discovery-node", nil
+	} else if bytes.Equal(serviceType[:], ContentNode[:]) {
+		return "content-node", nil
+	} else {
+		return "", fmt.Errorf("no matching service type found for '%v'", serviceType)
+	}
 }

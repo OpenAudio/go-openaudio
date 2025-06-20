@@ -1,0 +1,250 @@
+package eth
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/AudiusProject/audiusd/pkg/common"
+	"github.com/AudiusProject/audiusd/pkg/eth/contracts"
+	"github.com/AudiusProject/audiusd/pkg/eth/contracts/gen"
+	"github.com/AudiusProject/audiusd/pkg/eth/db"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type EthService struct {
+	rpcURL          string
+	dbURL           string
+	registryAddress string
+	env             string
+
+	rpc    *ethclient.Client
+	db     *db.Queries
+	pool   *pgxpool.Pool
+	logger *common.Logger
+	c      *contracts.AudiusContracts
+
+	isReady atomic.Bool
+}
+
+func NewEthService(dbURL, rpcURL, registryAddress string, logger *common.Logger, environment string) *EthService {
+	return &EthService{
+		logger:          logger.Child("eth"),
+		rpcURL:          rpcURL,
+		dbURL:           dbURL,
+		registryAddress: registryAddress,
+		env:             environment,
+	}
+}
+
+func (eth *EthService) Run(ctx context.Context) error {
+	// Init db
+	if eth.dbURL == "" {
+		return fmt.Errorf("dbUrl environment variable not set")
+	}
+
+	if err := db.RunMigrations(eth.logger, eth.dbURL, false); err != nil {
+		return fmt.Errorf("error running migrations: %v", err)
+	}
+
+	pgConfig, err := pgxpool.ParseConfig(eth.dbURL)
+	if err != nil {
+		return fmt.Errorf("error parsing database config: %v", err)
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, pgConfig)
+	if err != nil {
+		return fmt.Errorf("error creating database pool: %v", err)
+	}
+	eth.pool = pool
+	eth.db = db.New(pool)
+
+	// Init eth rpc
+	wsRpcUrl := eth.rpcURL
+	if strings.HasPrefix(eth.rpcURL, "https") {
+		wsRpcUrl = "wss" + strings.TrimPrefix(eth.rpcURL, "https")
+	}
+	ethrpc, err := ethclient.Dial(wsRpcUrl)
+	if err != nil {
+		return fmt.Errorf("eth client dial err: %v", err)
+	}
+	eth.rpc = ethrpc
+	defer ethrpc.Close()
+
+	// Init contracts
+	c, err := contracts.NewAudiusContracts(eth.rpc, eth.registryAddress)
+	if err != nil {
+		return fmt.Errorf("failed to initialize eth contracts: %v", err)
+	}
+	eth.c = c
+
+	eth.logger.Infof("starting eth service")
+
+	if err := eth.startEthEndpointManager(); err != nil {
+		return fmt.Errorf("Error running endpoint manager: %w", err)
+	}
+
+	return nil
+}
+
+func (eth *EthService) startEthEndpointManager() error {
+	ctx := context.Background()
+	// Initial query with retries
+	maxRetries := 10
+	retryDelay := 2 * time.Second
+
+	for i := 0; i < maxRetries; i++ {
+		if err := eth.refreshEndpoints(ctx); err != nil {
+			eth.logger.Errorf("error gathering registered eth endpoints (attempt %d/%d): %v", i+1, maxRetries, err)
+			time.Sleep(retryDelay)
+			retryDelay *= 2
+		} else {
+			break
+		}
+		if i == maxRetries-1 {
+			return fmt.Errorf("failed to gather registered eth endpoints after %d retries", maxRetries)
+		}
+	}
+
+	eth.isReady.Store(true)
+
+	// Instantiate the contract
+	spf, err := eth.c.GetServiceProviderFactoryContract()
+	if err != nil {
+		return fmt.Errorf("failed to bind service provider factory contract: %v", err)
+	}
+
+	watchOpts := &bind.WatchOpts{Context: ctx}
+
+	registerChan := make(chan *gen.ServiceProviderFactoryRegisteredServiceProvider)
+	deregisterChan := make(chan *gen.ServiceProviderFactoryDeregisteredServiceProvider)
+	updateChan := make(chan *gen.ServiceProviderFactoryEndpointUpdated)
+
+	registerSub, err := spf.WatchRegisteredServiceProvider(watchOpts, registerChan, nil, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to endpoint registration events: %v", err)
+	}
+
+	deregisterSub, err := spf.WatchDeregisteredServiceProvider(watchOpts, deregisterChan, nil, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to endpoint deregistration events: %v", err)
+	}
+
+	updateSub, err := spf.WatchEndpointUpdated(watchOpts, updateChan, nil, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to endpoint update events: %v", err)
+	}
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case err := <-registerSub.Err():
+			return fmt.Errorf("register event subscription error: %v", err)
+		case err := <-deregisterSub.Err():
+			return fmt.Errorf("deregister event subscription error: %v", err)
+		case err := <-updateSub.Err():
+			return fmt.Errorf("update event subscription error: %v", err)
+		case reg := <-registerChan:
+			st, err := contracts.ServiceTypeToString(reg.ServiceType)
+			if err != nil {
+				eth.logger.Error("could not handle registration event: %v", err)
+				continue
+			}
+			node, err := eth.c.GetRegisteredNode(ctx, reg.SpID, reg.ServiceType)
+			if err != nil {
+				eth.logger.Error("could not handle registration event: %v", err)
+			}
+			if err := eth.db.InsertRegisteredEndpoint(
+				ctx,
+				db.InsertRegisteredEndpointParams{
+					ID:             int32(reg.SpID.Int64()),
+					ServiceType:    st,
+					Owner:          reg.Owner.Hex(),
+					DelegateWallet: node.DelegateOwnerWallet.Hex(),
+					Endpoint:       reg.Endpoint,
+					Blocknumber:    node.BlockNumber.Int64(),
+				},
+			); err != nil {
+				eth.logger.Error("could not handle registration event: %v", err)
+				continue
+			}
+		case dereg := <-deregisterChan:
+			st, err := contracts.ServiceTypeToString(dereg.ServiceType)
+			if err != nil {
+				eth.logger.Error("could not handle deregistration event: %v", err)
+				continue
+			}
+			if err := eth.db.DeleteRegisteredEndpoint(
+				ctx,
+				db.DeleteRegisteredEndpointParams{
+					ID:          int32(dereg.SpID.Int64()),
+					Endpoint:    dereg.Endpoint,
+					Owner:       dereg.Owner.Hex(),
+					ServiceType: st,
+				},
+			); err != nil {
+				eth.logger.Error("could not handle deregistration event: %v", err)
+				continue
+			}
+		case <-ticker.C:
+			if err := eth.refreshEndpoints(ctx); err != nil {
+				eth.logger.Errorf("error gathering eth endpoints: %v", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (eth *EthService) refreshEndpoints(ctx context.Context) error {
+	eth.logger.Info("refreshing registered endpoints")
+
+	nodes, err := eth.c.GetAllRegisteredNodes(ctx)
+	if err != nil {
+		return fmt.Errorf("could not get registered nodes from contracts: %w", err)
+	}
+	if len(nodes) == 0 {
+		return errors.New("got 0 registered nodes")
+	}
+
+	tx, err := eth.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("could not begin db tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	txq := eth.db.WithTx(tx)
+
+	if err := txq.ClearRegisteredEndpoints(ctx); err != nil {
+		return fmt.Errorf("could not clear registered endpoints: %w", err)
+	}
+	for _, node := range nodes {
+		st, err := contracts.ServiceTypeToString(node.Type)
+		if err != nil {
+			return fmt.Errorf("could resolve service type for node: %w", err)
+		}
+		if err := txq.InsertRegisteredEndpoint(
+			ctx,
+			db.InsertRegisteredEndpointParams{
+				ID:             int32(node.Id.Int64()),
+				ServiceType:    st,
+				Owner:          node.Owner.Hex(),
+				DelegateWallet: node.DelegateOwnerWallet.Hex(),
+				Endpoint:       node.Endpoint,
+			},
+		); err != nil {
+			return fmt.Errorf("could not insert registered endpoint into eth indexer db: %w", err)
+		}
+	}
+
+	return tx.Commit(ctx)
+
+	return nil
+}

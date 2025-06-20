@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"github.com/AudiusProject/audiusd/pkg/core/config"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/jackc/pgx/v5"
@@ -147,23 +146,4 @@ func (api *EthAPI) GetBlockByNumber(ctx context.Context, blockNumber string, ful
 	}
 
 	return block, nil
-}
-
-// eth_getBalance
-func (api *EthAPI) GetBalance(ctx context.Context, address string, block string) (*hexutil.Big, error) {
-	audioTokenContract, err := api.server.contracts.GetAudioTokenContract()
-	if err != nil {
-		return nil, fmt.Errorf("could not connect to ethereum: %v", err)
-	}
-
-	if !common.IsHexAddress(address) {
-		return nil, errors.New("not valid address")
-	}
-
-	balance, err := audioTokenContract.BalanceOf(nil, common.HexToAddress(address))
-	if err != nil {
-		return nil, fmt.Errorf("could not get balance: %v", err)
-	}
-
-	return (*hexutil.Big)(balance), nil
 }

@@ -4,19 +4,21 @@ package server
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 	"time"
 
 	"connectrpc.com/connect"
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	ethv1 "github.com/AudiusProject/audiusd/pkg/api/eth/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/core/contracts"
+	"github.com/AudiusProject/audiusd/pkg/core/config"
+	"github.com/AudiusProject/audiusd/pkg/eth/contracts"
 	"github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	geth "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/google/uuid"
@@ -27,29 +29,45 @@ import (
 func (s *Server) startRegistryBridge() error {
 	if s.isDevEnvironment() {
 		s.logger.Info("running in dev, registering on ethereum")
+		// allow ethservice to initialize
+		time.Sleep(5 * time.Second)
 		if err := s.registerSelfOnEth(); err != nil {
-			return fmt.Errorf("error registering onto eth: %v", err)
+			s.logger.Errorf("error registering onto eth: %v", err)
+			return err
 		}
-		s.gatherEthNodes()
 	}
 
-	<-s.awaitEthNodesReady
+	ticker := time.NewTicker(5 * time.Second)
+	attempts := 0
+	defer ticker.Stop()
+	for range ticker.C {
+		attempts++
+		if attempts > 20 {
+			s.logger.Error("timed out waiting for eth service")
+			return errors.New("timed out waiting for eth service")
+		}
+		if res, err := s.eth.IsReady(
+			context.Background(),
+			connect.NewRequest(&ethv1.IsReadyRequest{}),
+		); !res.Msg.Ready || err != nil {
+			s.logger.Info("waiting for eth service to be ready", "error", err)
+		} else if res.Msg.Ready {
+			close(s.awaitEthReady)
+			break
+		}
+	}
+
 	<-s.awaitRpcReady
 	s.logger.Info("starting registry bridge")
 
-	// check eth status
-	_, err := s.eth.ChainID(context.Background())
-	if err != nil {
-		return fmt.Errorf("init registry bridge failed eth chain id: %v", err)
-	}
-
 	// check comet status
-	_, err = s.rpc.Status(context.Background())
-	if err != nil {
-		return fmt.Errorf("init registry bridge failed comet rpc status: %v", err)
+	if _, err := s.rpc.Status(context.Background()); err != nil {
+		s.logger.Errorf("init registry bridge failed comet rpc status: %v", err)
+		return err
 	}
 
 	if err := s.awaitNodeCatchup(context.Background()); err != nil {
+		s.logger.Errorf("error awaiting node catchup: %v", err)
 		return err
 	}
 
@@ -82,47 +100,31 @@ func (s *Server) RegisterSelf() error {
 		return nil
 	}
 
-	nodeAddress := crypto.PubkeyToAddress(s.config.EthereumKey.PublicKey)
 	nodeEndpoint := s.config.NodeEndpoint
 
-	isRegistered, err := s.isSelfRegisteredOnEth()
+	ep, err := s.eth.GetRegisteredEndpointInfo(
+		ctx,
+		connect.NewRequest(&ethv1.GetRegisteredEndpointInfoRequest{
+			Endpoint:       nodeEndpoint,
+			DelegateWallet: s.config.WalletAddress,
+		}),
+	)
 	if err != nil {
-		return fmt.Errorf("could not check ethereum registration status: %v", err)
-	}
-	if !isRegistered {
-		s.logger.Infof("node %s : %s not registered on Ethereum", nodeAddress.Hex(), nodeEndpoint)
-		logger.Info("continuing unregistered")
-		return nil
-	}
-
-	spf, err := s.contracts.GetServiceProviderFactoryContract()
-	if err != nil {
-		return fmt.Errorf("could not get service provider factory: %v", err)
-	}
-
-	spID, err := spf.GetServiceProviderIdFromEndpoint(nil, nodeEndpoint)
-	if err != nil {
-		return fmt.Errorf("issue getting sp data: %v", err)
-	}
-
-	serviceType, err := contracts.ServiceType(s.config.NodeType)
-	if err != nil {
-		return fmt.Errorf("invalid node type: %v", err)
-	}
-
-	info, err := spf.GetServiceEndpointInfo(nil, serviceType, spID)
-	if err != nil {
-		return fmt.Errorf("could not get service endpoint info: %v", err)
-	}
-
-	if info.DelegateOwnerWallet != nodeAddress {
-		return fmt.Errorf("node %s is claiming to be %s but that endpoint is owned by %s", nodeAddress.Hex(), nodeEndpoint, info.DelegateOwnerWallet.Hex())
+		var connectErr *connect.Error
+		if errors.As(err, &connectErr) {
+			if connectErr.Code() == connect.CodeNotFound {
+				s.logger.Infof("node %s : %s not registered on Ethereum", s.config.WalletAddress, nodeEndpoint)
+				logger.Info("continuing unregistered")
+				return nil
+			}
+		}
+		return fmt.Errorf("could not register self: unexpected error: %w", err)
 	}
 
 	nodeRecord, err := s.db.GetNodeByEndpoint(ctx, nodeEndpoint)
 	if errors.Is(err, pgx.ErrNoRows) {
 		s.logger.Infof("node %s not found on comet but found on eth, registering", nodeEndpoint)
-		if err := s.registerSelfOnComet(ctx, info.DelegateOwnerWallet, info.BlockNumber, spID.String()); err != nil {
+		if err := s.registerSelfOnComet(ctx, geth.HexToAddress(s.config.WalletAddress), big.NewInt(ep.Msg.Se.BlockNumber), fmt.Sprint(ep.Msg.Se.Id)); err != nil {
 			return fmt.Errorf("could not register on comet: %v", err)
 		}
 		return nil
@@ -139,7 +141,12 @@ func (s *Server) isDevEnvironment() bool {
 }
 
 func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet geth.Address, ethBlock *big.Int, spID string) error {
-	if err := s.isDuplicateDelegateOwnerWallet(s.config.WalletAddress); err != nil {
+	if res, err := s.eth.IsDuplicateDelegateWallet(
+		ctx,
+		connect.NewRequest(&ethv1.IsDuplicateDelegateWalletRequest{Wallet: s.config.WalletAddress}),
+	); err != nil {
+		return fmt.Errorf("could not check for duplicate delegate wallet: %w", err)
+	} else if res.Msg.IsDuplicate {
 		s.logger.Errorf("node is a duplicate, not registering on comet: %s", s.config.WalletAddress)
 		return nil
 	}
@@ -164,7 +171,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 		return errors.New("not in genesis and no peers, retrying to register on comet later")
 	}
 
-	serviceType, err := contracts.ServiceType(s.config.NodeType)
+	serviceType, err := serviceType(s.config.NodeType)
 	if err != nil {
 		return fmt.Errorf("invalid node type: %v", err)
 	}
@@ -178,7 +185,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 	rendezvous := common.GetAttestorRendezvous(addrs, keyBytes, s.config.AttRegistrationRSize)
 
 	attestations := make([]string, 0, s.config.AttRegistrationRSize)
-	reg := &v1.ValidatorRegistration{
+	reg := &corev1.ValidatorRegistration{
 		CometAddress:   s.config.ProposerAddress,
 		PubKey:         s.config.CometKey.PubKey().Bytes(),
 		Power:          int64(s.config.ValidatorVotingPower),
@@ -191,8 +198,8 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 	}
 	for addr := range rendezvous {
 		if peer, ok := peers[addr]; ok {
-			resp, err := peer.GetRegistrationAttestation(ctx, connect.NewRequest(&v1.GetRegistrationAttestationRequest{
-				Registration: &v1.ValidatorRegistration{
+			resp, err := peer.GetRegistrationAttestation(ctx, connect.NewRequest(&corev1.GetRegistrationAttestationRequest{
+				Registration: &corev1.ValidatorRegistration{
 					CometAddress:   s.config.ProposerAddress,
 					PubKey:         s.config.CometKey.PubKey().Bytes(),
 					Power:          int64(s.config.ValidatorVotingPower),
@@ -212,9 +219,9 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 		}
 	}
 
-	registrationAtt := &v1.Attestation{
+	registrationAtt := &corev1.Attestation{
 		Signatures: attestations,
-		Body:       &v1.Attestation_ValidatorRegistration{ValidatorRegistration: reg},
+		Body:       &corev1.Attestation_ValidatorRegistration{ValidatorRegistration: reg},
 	}
 
 	txBytes, err := proto.Marshal(registrationAtt)
@@ -227,15 +234,15 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 		return fmt.Errorf("could not sign register tx: %v", err)
 	}
 
-	tx := &v1.SignedTransaction{
+	tx := &corev1.SignedTransaction{
 		Signature: sig,
 		RequestId: uuid.NewString(),
-		Transaction: &v1.SignedTransaction_Attestation{
+		Transaction: &corev1.SignedTransaction_Attestation{
 			Attestation: registrationAtt,
 		},
 	}
 
-	txreq := &v1.SendTransactionRequest{
+	txreq := &corev1.SendTransactionRequest{
 		Transaction: tx,
 	}
 
@@ -286,109 +293,69 @@ func (s *Server) isSelfAlreadyRegistered(ctx context.Context) bool {
 	return res.EthAddress == s.config.WalletAddress
 }
 
-func (s *Server) isSelfRegisteredOnEth() (bool, error) {
-	_, err := s.getRegisteredNode(s.config.NodeEndpoint)
+func (s *Server) IsNodeRegisteredOnEthereum(ctx context.Context, endpoint, delegateWallet string, ethBlock int64) (bool, error) {
+	ep, err := s.eth.GetRegisteredEndpointInfo(
+		ctx,
+		connect.NewRequest(&ethv1.GetRegisteredEndpointInfoRequest{
+			Endpoint:       endpoint,
+			DelegateWallet: delegateWallet,
+		}),
+	)
 	if err != nil {
-		return false, err
+		var connectErr *connect.Error
+		if errors.As(err, &connectErr) {
+			if connectErr.Code() == connect.CodeNotFound {
+				return false, nil
+			}
+		}
+		return false, fmt.Errorf("could check registration status for node at %s with address %s: %w", endpoint, delegateWallet, err)
+	}
+
+	if ep.Msg.Se.BlockNumber != ethBlock {
+		return false, nil
 	}
 	return true, nil
 }
 
 func (s *Server) registerSelfOnEth() error {
-	s.logger.Info("Attempting to register self on ethereum")
-	chainID, err := s.contracts.Rpc.ChainID(context.Background())
-	if err != nil {
-		return fmt.Errorf("could not get chain id: %v", err)
-	}
+	if _, err := s.eth.GetRegisteredEndpointInfo(
+		context.Background(),
+		connect.NewRequest(&ethv1.GetRegisteredEndpointInfoRequest{
+			Endpoint:       s.config.NodeEndpoint,
+			DelegateWallet: s.config.WalletAddress,
+		}),
+	); err != nil {
+		var connectErr *connect.Error
+		if errors.As(err, &connectErr) {
+			if connectErr.Code() == connect.CodeNotFound {
+				keyBytes := crypto.FromECDSA(s.config.EthereumKey)
+				keyHex := hex.EncodeToString(keyBytes)
+				var st string
+				switch s.config.NodeType {
+				case config.Discovery:
+					st = "discovery-node"
+				default:
+					st = "content-node"
+				}
 
-	opts, err := bind.NewKeyedTransactorWithChainID(s.config.EthereumKey, chainID)
-	if err != nil {
-		return fmt.Errorf("could not create keyed transactor: %v", err)
-	}
-
-	token, err := s.contracts.GetAudioTokenContract()
-	if err != nil {
-		return fmt.Errorf("could not get token contract: %v", err)
-	}
-
-	spf, err := s.contracts.GetServiceProviderFactoryContract()
-	if err != nil {
-		return fmt.Errorf("could not get service provider factory contract: %v", err)
-	}
-
-	alreadyRegistered := false
-	addr := geth.HexToAddress(s.config.WalletAddress)
-	spIDs, err := spf.GetServiceProviderIdsFromAddress(nil, addr, contracts.DiscoveryNode)
-	if err != nil {
-		return fmt.Errorf("could not get spIDs from address: %v", err)
-	}
-	serviceType, err := contracts.ServiceType(s.config.NodeType)
-	if err != nil {
-		return fmt.Errorf("invalid node type: %v", err)
-	}
-
-	for _, spID := range spIDs {
-		info, err := spf.GetServiceEndpointInfo(nil, serviceType, spID)
-		if err != nil {
-			return fmt.Errorf("could not get service endpoint info: %v", err)
+				if _, err := s.eth.RegisterOnEthereum(
+					context.Background(),
+					connect.NewRequest(&ethv1.RegisterOnEthereumRequest{
+						DelegateKey: keyHex,
+						Endpoint:    s.config.NodeEndpoint,
+						ServiceType: st,
+					}),
+				); err != nil {
+					s.logger.Errorf("could not register on eth: %v", err)
+					return fmt.Errorf("could not register on eth: %v", err)
+				}
+				return nil
+			}
 		}
-		if info.Endpoint == s.config.NodeEndpoint {
-			alreadyRegistered = true
-		}
+		return fmt.Errorf("could not register self: unexpected error: %v", err)
 	}
 
-	if alreadyRegistered {
-		s.logger.Info("node already registered on eth!")
-		return nil
-	}
-
-	stakingAddress, err := spf.GetStakingAddress(nil)
-	if err != nil {
-		return fmt.Errorf("could not get staking address: %v", err)
-	}
-
-	decimals := 18
-	stake := new(big.Int).Mul(big.NewInt(200000), new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil))
-
-	_, err = token.Approve(opts, stakingAddress, stake)
-	if err != nil {
-		return fmt.Errorf("could not approve tokens: %v", err)
-	}
-
-	endpoint := s.config.NodeEndpoint
-	delegateOwnerWallet := crypto.PubkeyToAddress(s.config.EthereumKey.PublicKey)
-
-	_, err = spf.Register(opts, serviceType, endpoint, stake, delegateOwnerWallet)
-	if err != nil {
-		return fmt.Errorf("couldn't register node: %v", err)
-	}
-
-	s.logger.Infof("node %s registered on eth", endpoint)
-
-	return nil
-}
-
-func (s *Server) getRegisteredNode(endpoint string) (*contracts.Node, error) {
-	s.ethNodeMU.RLock()
-	defer s.ethNodeMU.RUnlock()
-	for _, node := range s.ethNodes {
-		if node.Endpoint == endpoint {
-			return node, nil
-		}
-	}
-	return nil, fmt.Errorf("node not found: %s", endpoint)
-}
-
-func (s *Server) isDuplicateDelegateOwnerWallet(delegateOwnerWallet string) error {
-	s.ethNodeMU.RLock()
-	defer s.ethNodeMU.RUnlock()
-
-	for _, node := range s.duplicateEthNodes {
-		if node.DelegateOwnerWallet.Hex() == delegateOwnerWallet {
-			return fmt.Errorf("delegateOwnerWallet %s duplicated, invalid registration", delegateOwnerWallet)
-		}
-	}
-
+	// Already registered
 	return nil
 }
 
@@ -407,7 +374,7 @@ func (s *Server) deregisterMissingNode(ctx context.Context, ethAddress string) {
 	pubKey := ed25519.PubKey(node.CometPubKey)
 	rendezvous := common.GetAttestorRendezvous(addrs, pubKey.Bytes(), s.config.AttDeregistrationRSize)
 	attestations := make([]string, 0, s.config.AttRegistrationRSize)
-	dereg := &v1.ValidatorDeregistration{
+	dereg := &corev1.ValidatorDeregistration{
 		CometAddress: s.config.ProposerAddress,
 		PubKey:       s.config.CometKey.PubKey().Bytes(),
 		Deadline:     s.cache.currentHeight.Load() + 120,
@@ -416,8 +383,8 @@ func (s *Server) deregisterMissingNode(ctx context.Context, ethAddress string) {
 	peers := s.GetPeers()
 	for addr := range rendezvous {
 		if peer, ok := peers[addr]; ok {
-			resp, err := peer.GetDeregistrationAttestation(ctx, connect.NewRequest(&v1.GetDeregistrationAttestationRequest{
-				Deregistration: &v1.ValidatorDeregistration{
+			resp, err := peer.GetDeregistrationAttestation(ctx, connect.NewRequest(&corev1.GetDeregistrationAttestationRequest{
+				Deregistration: &corev1.ValidatorDeregistration{
 					CometAddress: s.config.ProposerAddress,
 					PubKey:       s.config.CometKey.PubKey().Bytes(),
 					Deadline:     s.cache.currentHeight.Load() + 120,
@@ -431,9 +398,9 @@ func (s *Server) deregisterMissingNode(ctx context.Context, ethAddress string) {
 		}
 	}
 
-	deregistrationAtt := &v1.Attestation{
+	deregistrationAtt := &corev1.Attestation{
 		Signatures: attestations,
-		Body:       &v1.Attestation_ValidatorDeregistration{ValidatorDeregistration: dereg},
+		Body:       &corev1.Attestation_ValidatorDeregistration{ValidatorDeregistration: dereg},
 	}
 
 	txBytes, err := proto.Marshal(deregistrationAtt)
@@ -448,15 +415,15 @@ func (s *Server) deregisterMissingNode(ctx context.Context, ethAddress string) {
 		return
 	}
 
-	tx := &v1.SignedTransaction{
+	tx := &corev1.SignedTransaction{
 		Signature: sig,
 		RequestId: uuid.NewString(),
-		Transaction: &v1.SignedTransaction_Attestation{
+		Transaction: &corev1.SignedTransaction_Attestation{
 			Attestation: deregistrationAtt,
 		},
 	}
 
-	txreq := &v1.SendTransactionRequest{
+	txreq := &corev1.SendTransactionRequest{
 		Transaction: tx,
 	}
 
@@ -467,4 +434,14 @@ func (s *Server) deregisterMissingNode(ctx context.Context, ethAddress string) {
 	}
 
 	s.logger.Infof("deregistered node %s in tx %s", s.config.NodeEndpoint, txhash)
+}
+
+func serviceType(nt config.NodeType) ([32]byte, error) {
+	switch nt {
+	case config.Discovery:
+		return contracts.DiscoveryNode, nil
+	case config.Content:
+		return contracts.ContentNode, nil
+	}
+	return [32]byte{}, fmt.Errorf("node type provided not valid: %v", nt)
 }

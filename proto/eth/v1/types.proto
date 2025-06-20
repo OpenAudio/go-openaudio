@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package eth.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/eth/v1";
+
+message IsReadyRequest {}
+
+message IsReadyResponse {
+  bool ready = 1;
+}
+
+message GetRegisteredEndpointsRequest {}
+
+message GetRegisteredEndpointsResponse {
+  repeated ServiceEndpoint endpoints = 1;
+}
+
+message GetRegisteredEndpointInfoRequest {
+  string endpoint = 1;
+  string delegate_wallet = 2;
+}
+
+message GetRegisteredEndpointInfoResponse {
+  ServiceEndpoint se = 1;
+}
+
+message ServiceEndpoint {
+  int64 id = 1;
+  string owner = 2;
+  string endpoint = 3;
+  int64 block_number = 4;
+  string delegate_wallet = 5;
+}
+
+message GetServiceProvidersRequest {}
+
+message GetServiceProvidersResponse {
+  repeated ServiceProvider serviceProviders = 1;
+}
+
+message ServiceProvider {
+  string wallet = 1;
+  int64 deployer_stake = 2; 
+  int64 deployer_cut = 3; 
+  bool valid_bounds = 4;
+  int32 number_of_endpoints = 5;
+  int64 min_account_stake = 6;
+  int64 max_account_stake = 7;
+}
+
+message GetLatestFundingRoundRequest {}
+
+message GetLatestFundingRoundResponse {
+  int64 round = 1;
+  int64 eth_block = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+message IsDuplicateDelegateWalletRequest {
+  string wallet = 1;
+}
+
+message IsDuplicateDelegateWalletResponse {
+  bool is_duplicate = 1;
+}
+
+message RegisterOnEthereumRequest {
+  string delegate_key = 1;
+  string endpoint = 2;
+  string service_type = 3;
+}
+
+message RegisterOnEthereumResponse {}
