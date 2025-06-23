@@ -380,6 +380,8 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreSe
 	rpcGroup.GET(corev1connect.CoreServiceGetBlockProcedure, connectGET(coreService.GetBlock))
 	rpcGroup.GET(corev1connect.CoreServiceGetTransactionProcedure, connectGET(coreService.GetTransaction))
 	rpcGroup.GET(corev1connect.CoreServiceGetStoredSnapshotsProcedure, connectGET(coreService.GetStoredSnapshots))
+	rpcGroup.GET(corev1connect.CoreServiceGetRewardAttestationProcedure, connectGET(coreService.GetRewardAttestation))
+	rpcGroup.GET(corev1connect.CoreServiceGetRewardsProcedure, connectGET(coreService.GetRewards))
 
 	go func() {
 		grpcServer := echo.New()

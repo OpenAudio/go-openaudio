@@ -13,6 +13,7 @@ import (
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
 	"github.com/AudiusProject/audiusd/pkg/common"
+	"github.com/AudiusProject/audiusd/pkg/rewards"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
@@ -461,6 +462,91 @@ func (c *CoreService) GetStatus(context.Context, *connect.Request[v1.GetStatusRe
 	res.ResourceInfo = resourceInfo
 	res.MempoolInfo = mempoolInfo
 	res.SnapshotInfo = snapshotInfo
+
+	return connect.NewResponse(res), nil
+}
+
+// GetRewardAttestation implements v1connect.CoreServiceHandler.
+func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
+	ethRecipientAddress := req.Msg.EthRecipientAddress
+	if ethRecipientAddress == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("eth_recipient_address is required"))
+	}
+	rewardID := req.Msg.RewardId
+	if rewardID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward_id is required"))
+	}
+	specifier := req.Msg.Specifier
+	if specifier == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("specifier is required"))
+	}
+	oracleAddress := req.Msg.OracleAddress
+	if oracleAddress == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("oracle_address is required"))
+	}
+	signature := req.Msg.Signature
+	if signature == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("signature is required"))
+	}
+	amount := req.Msg.Amount
+	if amount == 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount is required"))
+	}
+
+	claim := rewards.RewardClaim{
+		RecipientEthAddress:       ethRecipientAddress,
+		Amount:                    amount,
+		RewardID:                  rewardID,
+		Specifier:                 specifier,
+		AntiAbuseOracleEthAddress: oracleAddress,
+	}
+
+	err := c.core.rewards.Validate(claim)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	err = c.core.rewards.Authenticate(claim, signature)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	_, attestation, err := c.core.rewards.Attest(claim)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	res := &v1.GetRewardAttestationResponse{
+		Owner:       c.core.rewards.EthereumAddress,
+		Attestation: attestation,
+	}
+
+	return connect.NewResponse(res), nil
+}
+
+// GetRewards implements v1connect.CoreServiceHandler.
+func (c *CoreService) GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error) {
+	rewards := c.core.rewards.Rewards
+	rewardResponses := make([]*v1.Reward, 0, len(rewards))
+	for _, reward := range rewards {
+		claimAuthorities := make([]*v1.ClaimAuthority, 0, len(reward.ClaimAuthorities))
+		for _, claimAuthority := range reward.ClaimAuthorities {
+			claimAuthorities = append(claimAuthorities, &v1.ClaimAuthority{
+				Address: claimAuthority.Address,
+				Name:    claimAuthority.Name,
+			})
+		}
+		rewardResponses = append(rewardResponses, &v1.Reward{
+			RewardId:         reward.RewardId,
+			Amount:           reward.Amount,
+			Name:             reward.Name,
+			ClaimAuthorities: claimAuthorities,
+		})
+	}
+
+	res := &v1.GetRewardsResponse{
+		Rewards: rewardResponses,
+	}
 
 	return connect.NewResponse(res), nil
 }

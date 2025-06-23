@@ -61,6 +61,11 @@ const (
 	// CoreServiceGetStoredSnapshotsProcedure is the fully-qualified name of the CoreService's
 	// GetStoredSnapshots RPC.
 	CoreServiceGetStoredSnapshotsProcedure = "/core.v1.CoreService/GetStoredSnapshots"
+	// CoreServiceGetRewardsProcedure is the fully-qualified name of the CoreService's GetRewards RPC.
+	CoreServiceGetRewardsProcedure = "/core.v1.CoreService/GetRewards"
+	// CoreServiceGetRewardAttestationProcedure is the fully-qualified name of the CoreService's
+	// GetRewardAttestation RPC.
+	CoreServiceGetRewardAttestationProcedure = "/core.v1.CoreService/GetRewardAttestation"
 )
 
 // CoreServiceClient is a client for the core.v1.CoreService service.
@@ -76,6 +81,8 @@ type CoreServiceClient interface {
 	GetRegistrationAttestation(context.Context, *connect.Request[v1.GetRegistrationAttestationRequest]) (*connect.Response[v1.GetRegistrationAttestationResponse], error)
 	GetDeregistrationAttestation(context.Context, *connect.Request[v1.GetDeregistrationAttestationRequest]) (*connect.Response[v1.GetDeregistrationAttestationResponse], error)
 	GetStoredSnapshots(context.Context, *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error)
+	GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error)
+	GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the core.v1.CoreService service. By default, it uses
@@ -155,6 +162,18 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("GetStoredSnapshots")),
 			connect.WithClientOptions(opts...),
 		),
+		getRewards: connect.NewClient[v1.GetRewardsRequest, v1.GetRewardsResponse](
+			httpClient,
+			baseURL+CoreServiceGetRewardsProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetRewards")),
+			connect.WithClientOptions(opts...),
+		),
+		getRewardAttestation: connect.NewClient[v1.GetRewardAttestationRequest, v1.GetRewardAttestationResponse](
+			httpClient,
+			baseURL+CoreServiceGetRewardAttestationProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetRewardAttestation")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -171,6 +190,8 @@ type coreServiceClient struct {
 	getRegistrationAttestation   *connect.Client[v1.GetRegistrationAttestationRequest, v1.GetRegistrationAttestationResponse]
 	getDeregistrationAttestation *connect.Client[v1.GetDeregistrationAttestationRequest, v1.GetDeregistrationAttestationResponse]
 	getStoredSnapshots           *connect.Client[v1.GetStoredSnapshotsRequest, v1.GetStoredSnapshotsResponse]
+	getRewards                   *connect.Client[v1.GetRewardsRequest, v1.GetRewardsResponse]
+	getRewardAttestation         *connect.Client[v1.GetRewardAttestationRequest, v1.GetRewardAttestationResponse]
 }
 
 // Ping calls core.v1.CoreService.Ping.
@@ -228,6 +249,16 @@ func (c *coreServiceClient) GetStoredSnapshots(ctx context.Context, req *connect
 	return c.getStoredSnapshots.CallUnary(ctx, req)
 }
 
+// GetRewards calls core.v1.CoreService.GetRewards.
+func (c *coreServiceClient) GetRewards(ctx context.Context, req *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error) {
+	return c.getRewards.CallUnary(ctx, req)
+}
+
+// GetRewardAttestation calls core.v1.CoreService.GetRewardAttestation.
+func (c *coreServiceClient) GetRewardAttestation(ctx context.Context, req *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
+	return c.getRewardAttestation.CallUnary(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the core.v1.CoreService service.
 type CoreServiceHandler interface {
 	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error)
@@ -241,6 +272,8 @@ type CoreServiceHandler interface {
 	GetRegistrationAttestation(context.Context, *connect.Request[v1.GetRegistrationAttestationRequest]) (*connect.Response[v1.GetRegistrationAttestationResponse], error)
 	GetDeregistrationAttestation(context.Context, *connect.Request[v1.GetDeregistrationAttestationRequest]) (*connect.Response[v1.GetDeregistrationAttestationResponse], error)
 	GetStoredSnapshots(context.Context, *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error)
+	GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error)
+	GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -316,6 +349,18 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("GetStoredSnapshots")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceGetRewardsHandler := connect.NewUnaryHandler(
+		CoreServiceGetRewardsProcedure,
+		svc.GetRewards,
+		connect.WithSchema(coreServiceMethods.ByName("GetRewards")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceGetRewardAttestationHandler := connect.NewUnaryHandler(
+		CoreServiceGetRewardAttestationProcedure,
+		svc.GetRewardAttestation,
+		connect.WithSchema(coreServiceMethods.ByName("GetRewardAttestation")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/core.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServicePingProcedure:
@@ -340,6 +385,10 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceGetDeregistrationAttestationHandler.ServeHTTP(w, r)
 		case CoreServiceGetStoredSnapshotsProcedure:
 			coreServiceGetStoredSnapshotsHandler.ServeHTTP(w, r)
+		case CoreServiceGetRewardsProcedure:
+			coreServiceGetRewardsHandler.ServeHTTP(w, r)
+		case CoreServiceGetRewardAttestationProcedure:
+			coreServiceGetRewardAttestationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -391,4 +440,12 @@ func (UnimplementedCoreServiceHandler) GetDeregistrationAttestation(context.Cont
 
 func (UnimplementedCoreServiceHandler) GetStoredSnapshots(context.Context, *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetStoredSnapshots is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetRewards is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetRewardAttestation is not implemented"))
 }

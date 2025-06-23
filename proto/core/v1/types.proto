@@ -336,3 +336,35 @@ message SnapshotMetadata {
   int64 chunk_count = 3;
   string chain_id = 4;
 }
+
+message ClaimAuthority {
+  string address = 1;
+  string name = 2;
+}
+
+message Reward {
+  string reward_id = 1;
+  uint64 amount = 2;
+  string name = 3;
+  repeated ClaimAuthority claim_authorities = 4;
+}
+
+message GetRewardsRequest {}
+
+message GetRewardsResponse {
+  repeated Reward rewards = 1;
+}
+
+message GetRewardAttestationRequest {
+  string eth_recipient_address = 1;
+  string reward_id = 2;
+  string specifier = 3;
+  string oracle_address = 4;
+  string signature = 5;
+  uint64 amount = 6;
+}
+
+message GetRewardAttestationResponse {
+  string owner = 1;
+  string attestation = 2;
+}

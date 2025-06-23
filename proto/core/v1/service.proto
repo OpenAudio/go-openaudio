@@ -17,4 +17,6 @@ service CoreService {
   rpc GetRegistrationAttestation(GetRegistrationAttestationRequest) returns (GetRegistrationAttestationResponse) {}
   rpc GetDeregistrationAttestation(GetDeregistrationAttestationRequest) returns (GetDeregistrationAttestationResponse) {}
   rpc GetStoredSnapshots(GetStoredSnapshotsRequest) returns (GetStoredSnapshotsResponse) {}
+  rpc GetRewards(GetRewardsRequest) returns (GetRewardsResponse) {}
+  rpc GetRewardAttestation(GetRewardAttestationRequest) returns (GetRewardAttestationResponse) {}
 }
