@@ -42,7 +42,7 @@ func (p *PlayEventQueue) popPlayEventBatch() []*PlayEvent {
 	return batch
 }
 
-var playQueueInterval = 20 * time.Second
+var playQueueInterval = 4 * time.Second
 
 type PlayEvent struct {
 	RowID            int
