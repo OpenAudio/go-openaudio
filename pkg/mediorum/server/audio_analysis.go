@@ -282,7 +282,11 @@ func (ss *MediorumServer) analyzeBPM(filename string) (float64, error) {
 
 // converts an MP3 file to WAV format using ffmpeg
 func convertToWav(inputFile, outputFile string) error {
-	cmd := exec.Command("ffmpeg", "-i", inputFile, "-f", "wav", "-t", "60", outputFile)
+	// for consistent downstream analysis, convert to:
+	// - mono (1 channel)
+	// - 44.1 kHz sample rate
+	// - 120 seconds
+	cmd := exec.Command("ffmpeg", "-i", inputFile, "-ac", "1", "-ar", "44100", "-f", "wav", "-t", "120", outputFile)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to convert to WAV: %v, output: %s", err, string(output))
 	}
