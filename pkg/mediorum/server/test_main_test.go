@@ -9,6 +9,7 @@ import (
 
 	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	"github.com/AudiusProject/audiusd/pkg/pos"
+	"github.com/AudiusProject/audiusd/pkg/version"
 )
 
 var testNetwork []*MediorumServer
@@ -42,7 +43,7 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 			ReplicationFactor: replicationFactor,
 			Dir:               fmt.Sprintf("%s/%s", testBaseDir, peer.Wallet),
 			PostgresDSN:       fmt.Sprintf(dbUrlTemplate, idx+1),
-			VersionJson: VersionJson{
+			VersionJson: version.VersionJson{
 				Version: "0.0.0",
 				Service: "content-node",
 			},

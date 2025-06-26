@@ -38,6 +38,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/AudiusProject/audiusd/pkg/system"
 	"github.com/AudiusProject/audiusd/pkg/uptime"
+	"github.com/AudiusProject/audiusd/pkg/version"
 	"go.akshayshah.org/connectproto"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -439,7 +440,7 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreSe
 			Latitude  float64 `json:"latitude"`
 			Longitude float64 `json:"longitude"`
 		}{
-			Version: mediorum.GetVersionJson().Version,
+			Version: version.Version.Version,
 		}
 
 		resp, err := http.Get("https://ipinfo.io")
@@ -462,7 +463,7 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreSe
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"data": response,
 			"version": map[string]string{
-				"version": mediorum.GetVersionJson().Version,
+				"version": version.Version.Version,
 			},
 		})
 	}
@@ -703,7 +704,7 @@ func getHealthCheckResponse(hostUrl *url.URL) map[string]interface{} {
 		"uptime":    time.Since(startTime).String(),
 		// TODO: legacy version data for uptime health check
 		"data": map[string]interface{}{
-			"version": mediorum.GetVersionJson().Version,
+			"version": version.Version.Version,
 		},
 	}
 

@@ -26,6 +26,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/persistence"
 	"github.com/AudiusProject/audiusd/pkg/pos"
+	"github.com/AudiusProject/audiusd/pkg/version"
 	"github.com/erni27/imcache"
 	"github.com/imroc/req/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -42,11 +43,6 @@ import (
 type Peer struct {
 	Host   string `json:"host"`
 	Wallet string `json:"wallet"`
-}
-
-type VersionJson struct {
-	Version string `json:"version"`
-	Service string `json:"service"`
 }
 
 type MediorumConfig struct {
@@ -69,7 +65,7 @@ type MediorumConfig struct {
 	AutoUpgradeEnabled        bool
 	WalletIsRegistered        bool
 	StoreAll                  bool
-	VersionJson               VersionJson
+	VersionJson               version.VersionJson
 	DiscoveryListensEndpoints []string
 	LogLevel                  string
 
@@ -157,7 +153,7 @@ func New(config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer
 		isAudiusdManaged = true
 	}
 
-	if config.VersionJson == (VersionJson{}) {
+	if config.VersionJson == (version.VersionJson{}) {
 		log.Fatal(".version.json is required to be bundled with the mediorum binary")
 	}
 

@@ -2,7 +2,6 @@ package mediorum
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -19,23 +18,11 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/AudiusProject/audiusd/pkg/registrar"
+	"github.com/AudiusProject/audiusd/pkg/version"
 	"golang.org/x/exp/slices"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sync/errgroup"
 )
-
-//go:embed .version.json
-var versionJSON []byte
-
-func GetVersionJson() server.VersionJson {
-	var versionJson server.VersionJson
-
-	if err := json.Unmarshal(versionJSON, &versionJson); err != nil {
-		log.Fatalf("unable to parse .version.json file: %v", err)
-	}
-
-	return versionJson
-}
 
 func init() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
@@ -180,7 +167,7 @@ func startMediorum(mediorumEnv string, posChannel chan pos.PoSRequest, storageSe
 		AudiusDockerCompose:       os.Getenv("AUDIUS_DOCKER_COMPOSE_GIT_SHA"),
 		AutoUpgradeEnabled:        os.Getenv("autoUpgradeEnabled") == "true",
 		StoreAll:                  os.Getenv("STORE_ALL") == "true",
-		VersionJson:               GetVersionJson(),
+		VersionJson:               version.Version,
 		DiscoveryListensEndpoints: discoveryListensEndpoints(),
 		LogLevel:                  getenvWithDefault("AUDIUSD_LOG_LEVEL", "info"),
 	}
