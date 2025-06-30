@@ -30,8 +30,10 @@ import (
 	"connectrpc.com/connect"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core"
+	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/console"
 	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
+	"github.com/AudiusProject/audiusd/pkg/eth"
 	"github.com/AudiusProject/audiusd/pkg/etl"
 	"github.com/AudiusProject/audiusd/pkg/mediorum"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
@@ -94,7 +96,9 @@ func main() {
 	hostUrl := setupHostUrl()
 	setupDelegateKeyPair(logger)
 	posChannel := make(chan pos.PoSRequest)
+	dbUrl := config.GetDbURL()
 
+	ethService := eth.NewEthService(dbUrl, config.GetEthRPC(), config.GetRegistryAddress(), logger, config.GetRuntimeEnvironment())
 	coreService := coreServer.NewCoreService()
 	storageService := server.NewStorageService()
 	etlService := etl.NewETLService(coreService, logger)
@@ -114,7 +118,7 @@ func main() {
 		},
 		{
 			"core",
-			func() error { return core.Run(ctx, logger, posChannel, coreService) },
+			func() error { return core.Run(ctx, logger, posChannel, coreService, ethService) },
 			true,
 		},
 		{
@@ -130,11 +134,16 @@ func main() {
 		{
 			"etl",
 			func() error {
-				etlService.SetDBURL(os.Getenv("dbUrl"))
+				etlService.SetDBURL(dbUrl)
 				etlService.SetRunDownMigrations(os.Getenv("AUDIUSD_ETL_RUN_DOWN_MIGRATIONS") == "true")
 				return etlService.Run()
 			},
 			os.Getenv("AUDIUSD_ETL_ENABLED") == "true",
+		},
+		{
+			"eth",
+			func() error { return ethService.Run(ctx) },
+			true,
 		},
 	}
 

@@ -33,6 +33,8 @@ services:
       - ./dev/scripts/eth-ganache.sh:/tmp/scripts/eth-ganache.sh
     deploy:
       mode: global
+    ports:
+      - 8545:8545
     profiles:
       - audiusd-dev
       - core-tests

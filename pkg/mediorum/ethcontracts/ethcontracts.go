@@ -30,7 +30,7 @@ type NotifierInfo struct {
 }
 
 func GetNotifierForID(ID string, delegateOwnerWallet string) (NotifierInfo, error) {
-	client, err := ethclient.Dial(config.GetEnvWithDefault("ethProviderUrl", config.DefaultEthRPC()))
+	client, err := ethclient.Dial(config.GetEthRPC())
 	if err != nil {
 		return NotifierInfo{}, fmt.Errorf("failed to connect to Ethereum node: %v", err)
 	}
@@ -77,7 +77,7 @@ func GetNotifierForID(ID string, delegateOwnerWallet string) (NotifierInfo, erro
 }
 
 func GetServiceProviderIdFromEndpoint(endpoint string, delegateOwnerWallet string) (int, error) {
-	client, err := ethclient.Dial(config.GetEnvWithDefault("ethProviderUrl", config.DefaultEthRPC()))
+	client, err := ethclient.Dial(config.GetEthRPC())
 	if err != nil {
 		return 0, fmt.Errorf("failed to connect to Ethereum node: %v", err)
 	}
@@ -114,7 +114,7 @@ func GetServiceProviderIdFromEndpoint(endpoint string, delegateOwnerWallet strin
 }
 
 func GetServiceProviderList(serviceType string) ([]ServiceProvider, error) {
-	client, err := ethclient.Dial(config.GetEnvWithDefault("ethProviderUrl", config.DefaultEthRPC()))
+	client, err := ethclient.Dial(config.GetEthRPC())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Ethereum node: %v", err)
 	}

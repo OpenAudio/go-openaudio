@@ -9,15 +9,15 @@ import (
 	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
-	"github.com/AudiusProject/audiusd/pkg/core/contracts"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
+	"github.com/AudiusProject/audiusd/pkg/eth"
 	aLogger "github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/AudiusProject/audiusd/pkg/pos"
+	"github.com/AudiusProject/audiusd/pkg/pubsub"
 	"github.com/AudiusProject/audiusd/pkg/rewards"
 	cconfig "github.com/cometbft/cometbft/config"
 	nm "github.com/cometbft/cometbft/node"
 	"github.com/cometbft/cometbft/rpc/client/local"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
@@ -25,21 +25,24 @@ import (
 	"google.golang.org/grpc"
 )
 
+// subscribes by tx hash, pubsub completes once tx
+// is committed
+type TransactionHashPubsub = pubsub.Pubsub[struct{}]
+
 type Server struct {
 	config         *config.Config
 	cometbftConfig *cconfig.Config
 	logger         *common.Logger
 	z              *zap.Logger
 	self           corev1connect.CoreServiceClient
+	eth            *eth.EthService
 
 	httpServer         *echo.Echo
 	grpcServer         *grpc.Server
 	pool               *pgxpool.Pool
-	contracts          *contracts.AudiusContracts
 	mediorumPoSChannel chan pos.PoSRequest
 
 	db    *db.Queries
-	eth   *ethclient.Client
 	node  *nm.Node
 	rpc   *local.Local
 	mempl *Mempool
@@ -54,34 +57,20 @@ type Server struct {
 
 	rewards *rewards.RewardAttester
 
-	ethNodes          []*contracts.Node
-	duplicateEthNodes []*contracts.Node
-	missingEthNodes   []string
-	ethNodeMU         sync.RWMutex
-
 	awaitHttpServerReady chan struct{}
 	awaitRpcReady        chan struct{}
-	awaitEthNodesReady   chan struct{}
+	awaitEthReady        chan struct{}
 }
 
-func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Logger, pool *pgxpool.Pool, eth *ethclient.Client, posChannel chan pos.PoSRequest) (*Server, error) {
+func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Logger, pool *pgxpool.Pool, ethService *eth.EthService, posChannel chan pos.PoSRequest) (*Server, error) {
 	// create mempool
 	mempl := NewMempool(logger, config, db.New(pool), cconfig.Mempool.Size)
 
 	// create pubsubs
-	txPubsub := NewPubsub[struct{}]()
-
-	// create contracts
-	c, err := contracts.NewAudiusContracts(eth, config.EthRegistryAddress)
-	if err != nil {
-		return nil, fmt.Errorf("contracts init error: %v", err)
-	}
+	txPubsub := pubsub.NewPubsub[struct{}]()
 
 	httpServer := echo.New()
 	grpcServer := grpc.NewServer()
-
-	ethNodes := []*contracts.Node{}
-	duplicateEthNodes := []*contracts.Node{}
 
 	baseLogger, err := aLogger.CreateLogger(config.Environment, config.LogLevel)
 	if err != nil {
@@ -96,13 +85,12 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 		cometbftConfig: cconfig,
 		logger:         logger.Child("server"),
 		z:              z,
+		eth:            ethService,
 
 		pool:               pool,
-		contracts:          c,
 		mediorumPoSChannel: posChannel,
 
 		db:        db.New(pool),
-		eth:       eth,
 		mempl:     mempl,
 		peers:     make(map[string]corev1connect.CoreServiceClient),
 		txPubsub:  txPubsub,
@@ -112,15 +100,11 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 		httpServer: httpServer,
 		grpcServer: grpcServer,
 
-		ethNodes:          ethNodes,
-		duplicateEthNodes: duplicateEthNodes,
-		missingEthNodes:   []string{},
-
 		rewards: rewards.NewRewardAttester(config.EthereumKey, config.Rewards),
 
 		awaitHttpServerReady: make(chan struct{}),
 		awaitRpcReady:        make(chan struct{}),
-		awaitEthNodesReady:   make(chan struct{}),
+		awaitEthReady:        make(chan struct{}),
 	}
 
 	return s, nil
@@ -134,11 +118,9 @@ func (s *Server) Start(ctx context.Context) error {
 	g.Go(s.startEchoServer)
 	g.Go(s.startSyncTasks)
 	g.Go(s.startPeerManager)
-	g.Go(s.startEthNodeManager)
 	g.Go(s.startCache)
 	g.Go(s.startDataCompanion)
 	g.Go(s.syncLogs)
-	g.Go(s.startProportionalRewards)
 	g.Go(s.startStateSync)
 	s.z.Info("routines started")
 
