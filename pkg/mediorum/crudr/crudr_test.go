@@ -1,9 +1,13 @@
 package crudr
 
 import (
+	"context"
+	"log/slog"
 	"testing"
 	"time"
 
+	"github.com/AudiusProject/audiusd/pkg/common"
+	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 )
@@ -23,7 +27,7 @@ func TestCrudr(t *testing.T) {
 	err := db.AutoMigrate(TestBlobThing{})
 	assert.NoError(t, err)
 
-	c := New("host1", nil, nil, db).RegisterModels(&TestBlobThing{})
+	c := New("host1", nil, nil, db, lifecycle.NewLifecycle(context.Background(), "crudr test", common.NewLogger(&slog.HandlerOptions{}))).RegisterModels(&TestBlobThing{})
 
 	// table name
 	{

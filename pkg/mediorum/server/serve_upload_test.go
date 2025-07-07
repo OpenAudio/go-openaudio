@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 )
 
 func TestUploadFile(t *testing.T) {
+	ctx := context.Background()
 	s1 := testNetwork[0]
 	s2 := testNetwork[1]
 
@@ -46,7 +48,7 @@ func TestUploadFile(t *testing.T) {
 
 	// check transcode stats
 	{
-		s1stats := s1.updateTranscodeStats()
+		s1stats := s1.updateTranscodeStats(ctx)
 		assert.Equal(t, 1, s1stats.UploadCount)
 		assert.Greater(t, s1stats.MinTranscodeTime, 0.1)
 	}

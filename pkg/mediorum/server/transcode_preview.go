@@ -14,13 +14,13 @@ import (
 // which stored preview CID on the upload record itself.
 // This is still expected by client when creating + editing a preview.
 // When client is fully using generate_preview endpoint, this can probably go away.
-func (ss *MediorumServer) generateAudioPreviewForUpload(upload *Upload) error {
+func (ss *MediorumServer) generateAudioPreviewForUpload(ctx context.Context, upload *Upload) error {
 	// if a start time is set, also transcode an audio preview from the full 320kbps downsample
 	if upload.SelectedPreview.Valid {
 		splitPreview := strings.Split(upload.SelectedPreview.String, "|")
 		previewStart := splitPreview[1]
 
-		audioPreview, err := ss.generateAudioPreview(context.Background(), upload.TranscodeResults["320"], previewStart)
+		audioPreview, err := ss.generateAudioPreview(ctx, upload.TranscodeResults["320"], previewStart)
 		if err != nil {
 			return err
 		}
@@ -81,7 +81,7 @@ func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash str
 		return nil, err
 	}
 
-	_, err = ss.replicateFileParallel(previewCid, destPath, nil)
+	_, err = ss.replicateFileParallel(ctx, previewCid, destPath, nil)
 	if err != nil {
 		return nil, err
 	}

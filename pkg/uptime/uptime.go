@@ -19,7 +19,6 @@ import (
 
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/httputil"
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
 	"github.com/AudiusProject/audiusd/pkg/registrar"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -32,8 +31,8 @@ var (
 )
 
 type Config struct {
-	Self       server.Peer
-	Peers      []server.Peer
+	Self       registrar.Peer
+	Peers      []registrar.Peer
 	ListenPort string
 	Dir        string
 
@@ -339,7 +338,7 @@ func startStagingOrProd(isProd bool, nodeType, env string) {
 	if isProd {
 		g = registrar.NewMultiProd()
 	}
-	var peers []server.Peer
+	var peers []registrar.Peer
 	var err error
 
 	eg := new(errgroup.Group)
@@ -359,7 +358,7 @@ func startStagingOrProd(isProd bool, nodeType, env string) {
 	logger.Info("fetched registered nodes", "peers", len(peers), "nodeType", nodeType, "env", env)
 
 	config := Config{
-		Self: server.Peer{
+		Self: registrar.Peer{
 			Host: httputil.RemoveTrailingSlash(strings.ToLower(myEndpoint)),
 		},
 		Peers:      peers,
@@ -383,7 +382,7 @@ func startStagingOrProd(isProd bool, nodeType, env string) {
 func refreshPeersAndSigners(ph *Uptime, g registrar.PeerProvider, nodeType string) {
 	ticker := time.NewTicker(30 * time.Minute)
 	for range ticker.C {
-		var peers []server.Peer
+		var peers []registrar.Peer
 		var err error
 
 		eg := new(errgroup.Group)

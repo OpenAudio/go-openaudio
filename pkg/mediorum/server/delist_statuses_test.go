@@ -109,18 +109,19 @@ func TestPollDelistStatuses(t *testing.T) {
 		json.NewEncoder(w).Encode(mockResponse)
 	}))
 	defer server.Close()
+	ctx := context.Background()
 
 	// Nothing should be delisted yet
-	assert.False(t, ss.isCidBlacklisted(context.Background(), "trackCid1"))
-	assert.False(t, ss.isCidBlacklisted(context.Background(), "trackCid2"))
-	assert.False(t, ss.isCidBlacklisted(context.Background(), "trackCid3"))
+	assert.False(t, ss.isCidBlacklisted(ctx, "trackCid1"))
+	assert.False(t, ss.isCidBlacklisted(ctx, "trackCid2"))
+	assert.False(t, ss.isCidBlacklisted(ctx, "trackCid3"))
 
 	// Poll delisted tracks and users
-	assert.NoError(t, ss.pollDelistStatuses("tracks", server.URL, "testWallet"))
-	assert.NoError(t, ss.pollDelistStatuses("users", server.URL, "testWallet"))
+	assert.NoError(t, ss.pollDelistStatuses(ctx, "tracks", server.URL, "testWallet"))
+	assert.NoError(t, ss.pollDelistStatuses(ctx, "users", server.URL, "testWallet"))
 
 	// Verify that the delist statuses were inserted into the database
-	assert.False(t, ss.isCidBlacklisted(context.Background(), "trackCid1"))
-	assert.True(t, ss.isCidBlacklisted(context.Background(), "trackCid2"))
-	assert.True(t, ss.isCidBlacklisted(context.Background(), "trackCid3"))
+	assert.False(t, ss.isCidBlacklisted(ctx, "trackCid1"))
+	assert.True(t, ss.isCidBlacklisted(ctx, "trackCid2"))
+	assert.True(t, ss.isCidBlacklisted(ctx, "trackCid3"))
 }

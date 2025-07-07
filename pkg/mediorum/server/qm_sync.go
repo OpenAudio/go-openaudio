@@ -62,9 +62,7 @@ func (ss *MediorumServer) serveInternalQmCsv(c echo.Context) error {
 	return nil
 }
 
-func (ss *MediorumServer) pullQmFromPeer(host string) error {
-	ctx := context.Background()
-
+func (ss *MediorumServer) pullQmFromPeer(ctx context.Context, host string) error {
 	done := false
 	ss.pgPool.QueryRow(ctx, "select count(*) = 1 from qm_sync where host = $1", host).Scan(&done)
 	if done {
@@ -81,10 +79,11 @@ func (ss *MediorumServer) pullQmFromPeer(host string) error {
 		return fmt.Errorf("bad status %d", req.StatusCode)
 	}
 
-	tx, err := ss.pgPool.Begin(context.Background())
+	tx, err := ss.pgPool.Begin(ctx)
 	if err != nil {
 		return err
 	}
+	// must use context.Background() to ensure rollback doesn't fail in case ctx is canceled
 	defer tx.Rollback(context.Background())
 
 	scanner := bufio.NewScanner(req.Body)
@@ -104,20 +103,28 @@ func (ss *MediorumServer) pullQmFromPeer(host string) error {
 	return err
 }
 
-func (ss *MediorumServer) startQmSyncer() {
-	time.Sleep(time.Minute * 1)
-
-	err := ss.writeQmFile()
-	if err != nil {
-		ss.logger.Error("qmSync: failed to write qm.csv file", "err", err)
-	}
-
-	time.Sleep(time.Minute * 1)
-	for _, peer := range ss.findHealthyPeers(time.Hour) {
-		if err = ss.pullQmFromPeer(peer); err != nil {
-			ss.logger.Error("qmSync: failed to pull qm.csv from peer", "peer", peer, "err", err)
-		} else {
-			ss.logger.Debug("qmSync: pulled qm.csv from peer", "peer", peer)
+func (ss *MediorumServer) startQmSyncer(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Minute)
+	for i := 0; ; i++ {
+		select {
+		case <-ticker.C:
+			if i == 0 { // wait one minute before writing file
+				err := ss.writeQmFile()
+				if err != nil {
+					ss.logger.Error("qmSync: failed to write qm.csv file", "err", err)
+				}
+			} else { // wait an additional minute
+				for _, peer := range ss.findHealthyPeers(time.Hour) {
+					if err := ss.pullQmFromPeer(ctx, peer); err != nil {
+						ss.logger.Error("qmSync: failed to pull qm.csv from peer", "peer", peer, "err", err)
+					} else {
+						ss.logger.Debug("qmSync: pulled qm.csv from peer", "peer", peer)
+					}
+				}
+				return
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }

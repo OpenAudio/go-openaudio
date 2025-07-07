@@ -6,8 +6,6 @@ import (
 	"strings"
 
 	"github.com/AudiusProject/audiusd/pkg/httputil"
-
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
 )
 
 type NodeResponse struct {
@@ -37,15 +35,15 @@ type audiusApiGatewayProvider struct {
 	endpoint string
 }
 
-func (p *audiusApiGatewayProvider) Peers() ([]server.Peer, error) {
+func (p *audiusApiGatewayProvider) Peers() ([]Peer, error) {
 	return p.getNodes("/content/verbose?all=true")
 }
 
-func (p *audiusApiGatewayProvider) Signers() ([]server.Peer, error) {
+func (p *audiusApiGatewayProvider) Signers() ([]Peer, error) {
 	return p.getNodes("/discovery/verbose?all=true")
 }
 
-func (p *audiusApiGatewayProvider) getNodes(path string) ([]server.Peer, error) {
+func (p *audiusApiGatewayProvider) getNodes(path string) ([]Peer, error) {
 	endpoint := p.endpoint + path
 
 	resp, err := httpClient.Get(endpoint)
@@ -65,9 +63,9 @@ func (p *audiusApiGatewayProvider) getNodes(path string) ([]server.Peer, error) 
 		return nil, err
 	}
 
-	var peers []server.Peer
+	var peers []Peer
 	for _, node := range nodeResponse.Data {
-		peer := server.Peer{
+		peer := Peer{
 			Host:   httputil.RemoveTrailingSlash(strings.ToLower(node.Endpoint)),
 			Wallet: strings.ToLower(node.DelegateOwnerWallet),
 		}

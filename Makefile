@@ -181,9 +181,9 @@ regen-contracts:
 	@echo Regenerating contracts
 	cd pkg/eth/contracts && sh -c "./generate_contract.sh"
 
-.PHONY: docker-test docker-dev docker-local
-docker-test:
-	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target test --build-arg GIT_SHA=$(GIT_SHA) -t audius/audiusd:test -f ./cmd/audiusd/Dockerfile ./
+.PHONY: docker-harness docker-dev docker-local
+docker-harness:
+	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target harness --build-arg GIT_SHA=$(GIT_SHA) -t audius/audiusd:harness -f ./cmd/audiusd/Dockerfile ./
 
 docker-dev:
 	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target dev --build-arg GIT_SHA=$(GIT_SHA) -t audius/audiusd:dev -f ./cmd/audiusd/Dockerfile ./
@@ -192,7 +192,7 @@ docker-local:
 	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target prod --build-arg GIT_SHA=$(GIT_SHA) -t audius/audiusd:local -f ./cmd/audiusd/Dockerfile ./
 
 .PHONY: up down
-up: down docker-dev docker-test
+up: down docker-dev docker-harness
 	@docker compose \
 		--file='dev/docker-compose.yml' \
 		--project-name='dev' \
@@ -227,12 +227,16 @@ down: ss-down
 		down -v
 
 .PHONY: test
-test: mediorum-test core-test
+test: mediorum-test core-test unit-test
+
+.PHONY: unit-test
+unit-test:
+	go test -v -count=1 -timeout=60s ./pkg/lifecycle/
 
 .PHONY: mediorum-test
 mediorum-test:
-	@if [ -z "$(AUDIUSD_TEST_IMAGE)" ]; then \
-		make docker-test; \
+	@if [ -z "$(AUDIUSD_TEST_HARNESS_IMAGE)" ]; then \
+		make docker-harness; \
 	fi
 	@docker compose \
 		--file='dev/docker-compose.yml' \
@@ -250,8 +254,8 @@ mediorum-test:
 
 .PHONY: core-test
 core-test:
-	@if [ -z "$(AUDIUSD_TEST_IMAGE)" ]; then \
-		make docker-test; \
+	@if [ -z "$(AUDIUSD_TEST_HARNESS_IMAGE)" ]; then \
+		make docker-harness; \
 	fi
 	docker compose \
 		--file='dev/docker-compose.yml' \
@@ -265,4 +269,14 @@ core-test:
 		--project-name='test' \
 		--project-directory='./' \
 		--profile=core-tests \
+		down -v
+
+.PHONY: test-down
+test-down:
+	@docker compose \
+		--file='dev/docker-compose.yml' \
+		--project-name='test' \
+		--project-directory='./' \
+		--profile=core-tests \
+		--profile=mediorum-unittests \
 		down -v

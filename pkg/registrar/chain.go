@@ -6,8 +6,6 @@ import (
 
 	"github.com/AudiusProject/audiusd/pkg/httputil"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
-
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
 )
 
 func NewEthChainProvider() PeerProvider {
@@ -17,14 +15,14 @@ func NewEthChainProvider() PeerProvider {
 type ethChainProvider struct {
 }
 
-func (p *ethChainProvider) Peers() ([]server.Peer, error) {
+func (p *ethChainProvider) Peers() ([]Peer, error) {
 	serviceProviders, err := ethcontracts.GetServiceProviderList("content-node")
 	if err != nil {
 		return nil, err
 	}
-	peers := make([]server.Peer, len(serviceProviders))
+	peers := make([]Peer, len(serviceProviders))
 	for i, sp := range serviceProviders {
-		peers[i] = server.Peer{
+		peers[i] = Peer{
 			Host:   httputil.RemoveTrailingSlash(strings.ToLower(sp.Endpoint)),
 			Wallet: strings.ToLower(sp.DelegateOwnerWallet),
 		}
@@ -32,7 +30,7 @@ func (p *ethChainProvider) Peers() ([]server.Peer, error) {
 	return peers, nil
 }
 
-func (p *ethChainProvider) Signers() ([]server.Peer, error) {
+func (p *ethChainProvider) Signers() ([]Peer, error) {
 	serviceProviders, err := ethcontracts.GetServiceProviderList("discovery-node")
 	if err != nil {
 		return nil, err
@@ -44,9 +42,9 @@ func (p *ethChainProvider) Signers() ([]server.Peer, error) {
 		}
 		serviceProviders = append(serviceProviders, additionalServiceProviders...)
 	}
-	signers := make([]server.Peer, len(serviceProviders))
+	signers := make([]Peer, len(serviceProviders))
 	for i, sp := range serviceProviders {
-		signers[i] = server.Peer{
+		signers[i] = Peer{
 			Host:   httputil.RemoveTrailingSlash(strings.ToLower(sp.Endpoint)),
 			Wallet: strings.ToLower(sp.DelegateOwnerWallet),
 		}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	"github.com/AudiusProject/audiusd/pkg/registrar"
 	"github.com/gowebpki/jcs"
 	"github.com/labstack/echo/v4"
 )
@@ -44,9 +45,9 @@ type HealthCheckResponseData struct {
 	AutoUpgradeEnabled        bool                       `json:"autoUpgradeEnabled"`
 	TrustedNotifier           *ethcontracts.NotifierInfo `json:"trustedNotifier"`
 	Env                       string                     `json:"env"`
-	Self                      Peer                       `json:"self"`
+	Self                      registrar.Peer             `json:"self"`
 	WalletIsRegistered        bool                       `json:"wallet_is_registered"`
-	Signers                   []Peer                     `json:"signers"`
+	Signers                   []registrar.Peer           `json:"signers"`
 	ReplicationFactor         int                        `json:"replicationFactor"`
 	Dir                       string                     `json:"dir"`
 	BlobStorePrefix           string                     `json:"blobStorePrefix"`

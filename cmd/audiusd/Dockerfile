@@ -60,7 +60,7 @@ VOLUME ["/data"]
 ENTRYPOINT ["/bin/entrypoint.sh"]
 
 
-FROM prod AS test
+FROM prod AS harness
 
 COPY --from=golang:alpine3.21 /usr/local/go/ /usr/local/go/
 ENV PATH="/usr/local/go/bin:${PATH}"
@@ -75,7 +75,7 @@ COPY ./cmd/audiusd/.initdb /app/audiusd/.initdb
 ENV AUDIUSD_TEST_MODE="true"
 
 
-FROM prod as dev
+FROM prod AS dev
 
 COPY --from=golang:alpine3.21 /usr/local/go/ /usr/local/go/
 ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"

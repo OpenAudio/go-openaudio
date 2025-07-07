@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -12,88 +13,91 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func (ss *MediorumServer) startHealthPoller() {
+func (ss *MediorumServer) startHealthPoller(ctx context.Context) {
 	time.Sleep(time.Second)
 
 	httpClient := http.Client{
 		Timeout: time.Second,
 	}
 
+	ticker := time.NewTicker(1 * time.Second)
 	for i := 0; ; i++ {
-		wg := sync.WaitGroup{}
-		wg.Add(len(ss.Config.Peers))
-		for _, peer := range ss.Config.Peers {
-			peer := peer
-			go func() {
-				defer wg.Done()
-				if peer.Host == ss.Config.Self.Host {
-					return
-				}
-				req, err := http.NewRequest("GET", apiPath(peer.Host, "/health_check"), nil)
-				if err != nil {
-					return
-				}
-				req.Header.Set("User-Agent", "mediorum "+ss.Config.Self.Host)
-				resp, err := httpClient.Do(req)
-				if err != nil {
-					return
-				}
-				defer resp.Body.Close()
+		select {
+		case <-ticker.C:
+			wg := sync.WaitGroup{}
+			wg.Add(len(ss.Config.Peers))
+			for _, peer := range ss.Config.Peers {
+				peer := peer
+				go func() {
+					defer wg.Done()
+					if peer.Host == ss.Config.Self.Host {
+						return
+					}
+					req, err := http.NewRequest("GET", apiPath(peer.Host, "/health_check"), nil)
+					if err != nil {
+						return
+					}
+					req.Header.Set("User-Agent", "mediorum "+ss.Config.Self.Host)
+					resp, err := httpClient.Do(req)
+					if err != nil {
+						return
+					}
+					defer resp.Body.Close()
 
-				// read body
-				var response map[string]interface{}
-				decoder := json.NewDecoder(resp.Body)
-				err = decoder.Decode(&response)
-				if err != nil {
-					return
-				}
+					// read body
+					var response map[string]interface{}
+					decoder := json.NewDecoder(resp.Body)
+					err = decoder.Decode(&response)
+					if err != nil {
+						return
+					}
 
-				if data, ok := response["data"].(map[string]interface{}); ok {
-					if peerHealthsMap, ok := data["peerHealths"].(map[string]interface{}); ok {
+					if data, ok := response["data"].(map[string]interface{}); ok {
+						if peerHealthsMap, ok := data["peerHealths"].(map[string]interface{}); ok {
 
-						// set node as reachable
-						ss.peerHealthsMutex.Lock()
-						defer ss.peerHealthsMutex.Unlock()
-						if _, ok := ss.peerHealths[peer.Host]; !ok {
-							ss.peerHealths[peer.Host] = &PeerHealth{}
-						}
-						ss.peerHealths[peer.Host].LastReachable = time.Now()
+							// set node as reachable
+							ss.peerHealthsMutex.Lock()
+							defer ss.peerHealthsMutex.Unlock()
+							if _, ok := ss.peerHealths[peer.Host]; !ok {
+								ss.peerHealths[peer.Host] = &PeerHealth{}
+							}
+							ss.peerHealths[peer.Host].LastReachable = time.Now()
 
-						if v, ok := data["version"].(string); ok {
-							ss.peerHealths[peer.Host].Version = v
-						}
+							if v, ok := data["version"].(string); ok {
+								ss.peerHealths[peer.Host].Version = v
+							}
 
-						// set node's reachable peers
-						for host, hostPeerHealths := range peerHealthsMap {
-							if peerHealth, ok := hostPeerHealths.(map[string]interface{}); ok {
-								if lastReachable, ok := peerHealth["LastReachable"].(string); ok {
-									if t, err := time.Parse(time.RFC3339Nano, lastReachable); err == nil {
-										ss.peerHealths[peer.Host].ReachablePeers[host] = t
+							// set node's reachable peers
+							for host, hostPeerHealths := range peerHealthsMap {
+								if peerHealth, ok := hostPeerHealths.(map[string]interface{}); ok {
+									if lastReachable, ok := peerHealth["LastReachable"].(string); ok {
+										if t, err := time.Parse(time.RFC3339Nano, lastReachable); err == nil {
+											ss.peerHealths[peer.Host].ReachablePeers[host] = t
+										}
 									}
 								}
 							}
-						}
 
-						// set node as healthy
-						if resp.StatusCode == 200 {
-							// node isn't healthy if there's any other node that is reachable by >50% of other nodes but not by this node
-							unreachablePeers := ss.getReachableByMajorityButNotByHost(peer.Host)
-							if len(unreachablePeers) == 0 || true { // TODO: we can remove the "|| true" if we want to enforce peer reachability
-								ss.peerHealths[peer.Host].LastHealthy = time.Now()
+							// set node as healthy
+							if resp.StatusCode == 200 {
+								// node isn't healthy if there's any other node that is reachable by >50% of other nodes but not by this node
+								unreachablePeers := ss.getReachableByMajorityButNotByHost(peer.Host)
+								if len(unreachablePeers) == 0 || true { // TODO: we can remove the "|| true" if we want to enforce peer reachability
+									ss.peerHealths[peer.Host].LastHealthy = time.Now()
+								}
 							}
+
 						}
-
 					}
-				}
 
-			}()
-		}
-		wg.Wait()
-
-		if i < 5 {
-			time.Sleep(time.Second)
-		} else {
-			time.Sleep(time.Minute * 2)
+				}()
+			}
+			wg.Wait()
+			if i > 5 {
+				ticker.Reset(2 * time.Minute)
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }

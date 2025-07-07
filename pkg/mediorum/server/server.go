@@ -3,29 +3,32 @@ package server
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	_ "embed"
 	_ "net/http/pprof"
 
+	"github.com/AudiusProject/audiusd/pkg/common"
 	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
+	audiusHttputil "github.com/AudiusProject/audiusd/pkg/httputil"
+	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 	aLogger "github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/crudr"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/persistence"
 	"github.com/AudiusProject/audiusd/pkg/pos"
+	"github.com/AudiusProject/audiusd/pkg/registrar"
 	"github.com/AudiusProject/audiusd/pkg/version"
 	"github.com/erni27/imcache"
 	"github.com/imroc/req/v3"
@@ -35,21 +38,18 @@ import (
 	"github.com/oschwald/maxminddb-golang"
 	"go.uber.org/zap"
 	"gocloud.dev/blob"
+	"golang.org/x/exp/slices"
 	"golang.org/x/exp/slog"
+	"golang.org/x/sync/errgroup"
 
 	_ "gocloud.dev/blob/fileblob"
 )
 
-type Peer struct {
-	Host   string `json:"host"`
-	Wallet string `json:"wallet"`
-}
-
 type MediorumConfig struct {
 	Env                       string
-	Self                      Peer
-	Peers                     []Peer
-	Signers                   []Peer
+	Self                      registrar.Peer
+	Peers                     []registrar.Peer
+	Signers                   []registrar.Peer
 	ReplicationFactor         int
 	Dir                       string `default:"/tmp/mediorum"`
 	BlobStoreDSN              string `json:"-"`
@@ -76,17 +76,19 @@ type MediorumConfig struct {
 }
 
 type MediorumServer struct {
+	lc               *lifecycle.Lifecycle
 	echo             *echo.Echo
 	bucket           *blob.Bucket
 	logger           *slog.Logger
 	z                *zap.Logger
 	crud             *crudr.Crudr
 	pgPool           *pgxpool.Pool
-	quit             chan os.Signal
+	quit             chan error
 	trustedNotifier  *ethcontracts.NotifierInfo
 	reqClient        *req.Client
 	rendezvousHasher *RendezvousHasher
 	transcodeWork    chan *Upload
+	g                registrar.PeerProvider
 
 	// stats
 	statsMutex       sync.RWMutex
@@ -143,7 +145,7 @@ var (
 
 const PercentSeededThreshold = 50
 
-func New(config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer.CoreService) (*MediorumServer, error) {
+func New(config MediorumConfig, provider registrar.PeerProvider, posChannel chan pos.PoSRequest, core *coreServer.CoreService, commonLogger *common.Logger) (*MediorumServer, error) {
 	if env := os.Getenv("MEDIORUM_ENV"); env != "" {
 		config.Env = env
 	}
@@ -256,6 +258,9 @@ func New(config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer
 		logger.Error("dial postgres failed", "err", err)
 	}
 
+	// lifecycle
+	lc := lifecycle.NewLifecycle(context.Background(), "mediorum lifecycle", commonLogger)
+
 	// crud
 	peerHosts := []string{}
 	allHosts := []string{}
@@ -265,7 +270,7 @@ func New(config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer
 			peerHosts = append(peerHosts, peer.Host)
 		}
 	}
-	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db)
+	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db, lc)
 	dbMigrate(crud, config.Self.Host)
 
 	rendezvousHasher := NewRendezvousHasher(allHosts)
@@ -299,6 +304,7 @@ func New(config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer
 	echoServer.Use(timingMiddleware)
 
 	ss := &MediorumServer{
+		lc:               lc,
 		echo:             echoServer,
 		bucket:           bucket,
 		crud:             crud,
@@ -306,7 +312,8 @@ func New(config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer
 		reqClient:        reqClient,
 		logger:           logger,
 		z:                z,
-		quit:             make(chan os.Signal, 1),
+		quit:             make(chan error, 1),
+		g:                provider,
 		trustedNotifier:  &trustedNotifier,
 		isSeeding:        config.Env == "stage" || config.Env == "prod",
 		isAudiusdManaged: isAudiusdManaged,
@@ -477,26 +484,14 @@ func setTimingHeader(c echo.Context) {
 	}
 }
 
-func (ss *MediorumServer) MustStart() {
-
-	// start pprof server
-	go func() {
-		log.Println(http.ListenAndServe(":6060", nil))
-	}()
-
-	// start server
-	go func() {
-		err := ss.echo.Start(":" + ss.Config.ListenPort)
-		if err != nil && err != http.ErrServerClosed {
-			panic(err)
-		}
-	}()
-
-	go ss.startTranscoder()
-	go ss.startAudioAnalyzer()
+func (ss *MediorumServer) MustStart() error {
+	ss.lc.AddManagedRoutine("pprof server", ss.startPprofServer)
+	ss.lc.AddManagedRoutine("echo server", ss.startEchoServer)
+	ss.lc.AddManagedRoutine("transcoder", ss.startTranscoder)
+	ss.lc.AddManagedRoutine("audio analyzer", ss.startAudioAnalyzer)
 
 	if ss.Config.StoreAll {
-		go ss.startFixTruncatedQmWorker()
+		ss.lc.AddManagedRoutine("fix truncated qm worker", ss.startFixTruncatedQmWorker)
 	}
 
 	zeroTime := time.Time{}
@@ -523,62 +518,53 @@ func (ss *MediorumServer) MustStart() {
 	// for any background task that make authenticated peer requests
 	// only start if we have a valid registered wallet
 	if ss.Config.WalletIsRegistered {
-
-		go ss.startHealthPoller()
-
-		go ss.startRepairer()
-
-		go ss.startQmSyncer()
-
 		ss.crud.StartClients()
 
-		go ss.startPollingDelistStatuses()
-
-		go ss.pollForSeedingCompletion()
-
-		go ss.startUploadScroller()
-
-		go ss.startPlayEventQueue()
-
-		go func() {
+		ss.lc.AddManagedRoutine("health poller", ss.startHealthPoller)
+		ss.lc.AddManagedRoutine("repairer", ss.startRepairer)
+		ss.lc.AddManagedRoutine("qm syncer", ss.startQmSyncer)
+		ss.lc.AddManagedRoutine("delist status poller", ss.startPollingDelistStatuses)
+		ss.lc.AddManagedRoutine("seeding completion poller", ss.pollForSeedingCompletion)
+		ss.lc.AddManagedRoutine("upload scroller", ss.startUploadScroller)
+		ss.lc.AddManagedRoutine("play event queue", ss.startPlayEventQueue)
+		ss.lc.AddManagedRoutine("zap syncer", func(ctx context.Context) {
 			ticker := time.NewTicker(10 * time.Second)
-			defer ticker.Stop()
-
-			for range ticker.C {
-				ss.z.Sync()
+			for {
+				select {
+				case <-ticker.C:
+					ss.z.Sync()
+				case <-ctx.Done():
+					return
+				}
 			}
-		}()
+		})
 
 	} else {
-		go func() {
-			for range time.Tick(10 * time.Second) {
-				ss.logger.Warn("node not fully running yet - please register at https://dashboard.audius.org and restart the server")
+		ss.lc.AddManagedRoutine("registration warner", func(ctx context.Context) {
+			ticker := time.NewTicker(10 * time.Second)
+			for {
+				select {
+				case <-ticker.C:
+					ss.logger.Warn("node not fully running yet - please register at https://dashboard.audius.org and restart the server")
+				case <-ctx.Done():
+					return
+				}
 			}
-		}()
+		})
 	}
 
-	go ss.monitorMetrics()
+	ss.lc.AddManagedRoutine("metrics monitor", ss.monitorMetrics)
+	ss.lc.AddManagedRoutine("peer reachability monitor", ss.monitorPeerReachability)
+	ss.lc.AddManagedRoutine("proof of storage handler", ss.startPoSHandler)
+	ss.lc.AddManagedRoutine("peer refresher", ss.refreshPeersAndSigners)
 
-	go ss.monitorPeerReachability()
-
-	go ss.startPoSHandler()
-
-	// signals
-	signal.Notify(ss.quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	<-ss.quit
-	close(ss.quit)
-
-	ss.Stop()
+	return <-ss.quit
 }
 
 func (ss *MediorumServer) Stop() {
 	ss.logger.Info("stopping")
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-
-	if err := ss.echo.Shutdown(ctx); err != nil {
-		ss.logger.Error("echo shutdown", "err", err)
+	if err := ss.lc.ShutdownWithTimeout(time.Minute); err != nil {
+		panic("could not shutdown gracefully, timed out")
 	}
 
 	if db, err := ss.crud.DB.DB(); err == nil {
@@ -586,18 +572,20 @@ func (ss *MediorumServer) Stop() {
 			ss.logger.Error("db shutdown", "err", err)
 		}
 	}
-
-	// todo: stop transcode worker + repairer too
-
 	ss.logger.Info("bye")
-
+	ss.quit <- errors.New("mediorum stopped")
 }
 
-func (ss *MediorumServer) pollForSeedingCompletion() {
+func (ss *MediorumServer) pollForSeedingCompletion(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Second)
-	for range ticker.C {
-		if ss.crud.GetPercentNodesSeeded() > PercentSeededThreshold {
-			ss.isSeeding = false
+	for {
+		select {
+		case <-ticker.C:
+			if ss.crud.GetPercentNodesSeeded() > PercentSeededThreshold {
+				ss.isSeeding = false
+				return
+			}
+		case <-ctx.Done():
 			return
 		}
 	}
@@ -606,4 +594,99 @@ func (ss *MediorumServer) pollForSeedingCompletion() {
 // discovery listens are enabled if endpoints are provided
 func (mc *MediorumConfig) discoveryListensEnabled() bool {
 	return len(mc.DiscoveryListensEndpoints) > 0
+}
+
+func (ss *MediorumServer) startEchoServer(ctx context.Context) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		err := ss.echo.Start(":" + ss.Config.ListenPort)
+		if err != nil && err != http.ErrServerClosed {
+			panic(err)
+		}
+	}()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ctx.Done():
+			ctx, _ := context.WithTimeout(context.Background(), 1*time.Minute)
+			if err := ss.echo.Shutdown(ctx); err != nil {
+				ss.logger.Error("failed to shutdown echo server", "error", err)
+			}
+			return
+		}
+	}
+}
+
+func (ss *MediorumServer) startPprofServer(ctx context.Context) {
+	done := make(chan struct{})
+	srv := &http.Server{Addr: ":6060", Handler: nil}
+	go func() {
+		defer close(done)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			ss.logger.Error("pprof server error", "error", err)
+		}
+	}()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ctx.Done():
+			ctx, _ := context.WithTimeout(context.Background(), 1*time.Minute)
+			if err := srv.Shutdown(ctx); err != nil {
+				ss.logger.Error("failed to shutdown pprof server", "error", err)
+			}
+			return
+		}
+	}
+}
+
+func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) {
+	interval := 30 * time.Minute
+	if os.Getenv("MEDIORUM_ENV") == "dev" {
+		interval = 10 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	for {
+		select {
+		case <-ticker.C:
+			var peers, signers []registrar.Peer
+			var err error
+
+			eg := new(errgroup.Group)
+			eg.Go(func() error {
+				peers, err = ss.g.Peers()
+				return err
+			})
+			eg.Go(func() error {
+				signers, err = ss.g.Signers()
+				return err
+			})
+			if err := eg.Wait(); err != nil {
+				ss.logger.Error("failed to fetch registered nodes", "err", err)
+				continue
+			}
+
+			var combined, configCombined []string
+
+			for _, peer := range append(peers, signers...) {
+				combined = append(combined, fmt.Sprintf("%s,%s", audiusHttputil.RemoveTrailingSlash(strings.ToLower(peer.Host)), strings.ToLower(peer.Wallet)))
+			}
+
+			for _, configPeer := range append(ss.Config.Peers, ss.Config.Signers...) {
+				configCombined = append(configCombined, fmt.Sprintf("%s,%s", audiusHttputil.RemoveTrailingSlash(strings.ToLower(configPeer.Host)), strings.ToLower(configPeer.Wallet)))
+			}
+
+			slices.Sort(combined)
+			slices.Sort(configCombined)
+			if !slices.Equal(combined, configCombined) {
+				ss.logger.Info("peers or signers changed on chain. restarting...", "peers", len(peers), "signers", len(signers), "combined", combined, "configCombined", configCombined)
+				go ss.Stop()
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }

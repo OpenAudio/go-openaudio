@@ -143,7 +143,7 @@ func (ss *MediorumServer) serveInsertDelistStatus(c echo.Context) error {
 	return c.JSON(http.StatusCreated, ds)
 }
 
-func (ss *MediorumServer) startPollingDelistStatuses() {
+func (ss *MediorumServer) startPollingDelistStatuses(ctx context.Context) {
 	if ss.trustedNotifier.Endpoint == "" {
 		slog.Warn("trusted notifier not properly setup, not polling delist statuses")
 		return
@@ -151,29 +151,30 @@ func (ss *MediorumServer) startPollingDelistStatuses() {
 
 	ticker := time.NewTicker(DelistStatusPollingInterval)
 	for {
-		<-ticker.C
-
-		for _, entity := range []DelistEntity{Tracks, Users} {
-			startedAt := time.Now()
-			err := ss.pollDelistStatuses(entity, ss.trustedNotifier.Endpoint, ss.trustedNotifier.Wallet)
-			pollingMsg := fmt.Sprintf("finished polling delist statuses for %s", entity)
-			if err == nil {
-				slog.Debug(pollingMsg, "took", time.Since(startedAt))
-			} else {
-				slog.Warn(pollingMsg, "err", err, "took", time.Since(startedAt))
+		select {
+		case <-ticker.C:
+			for _, entity := range []DelistEntity{Tracks, Users} {
+				startedAt := time.Now()
+				err := ss.pollDelistStatuses(ctx, entity, ss.trustedNotifier.Endpoint, ss.trustedNotifier.Wallet)
+				pollingMsg := fmt.Sprintf("finished polling delist statuses for %s", entity)
+				if err == nil {
+					slog.Debug(pollingMsg, "took", time.Since(startedAt))
+				} else {
+					slog.Warn(pollingMsg, "err", err, "took", time.Since(startedAt))
+				}
 			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
 
-func (ss *MediorumServer) pollDelistStatuses(entity DelistEntity, endpoint, _ string) error {
-	ctx := context.Background()
-
+func (ss *MediorumServer) pollDelistStatuses(ctx context.Context, entity DelistEntity, endpoint, _ string) error {
 	var cursorBefore time.Time
 	ss.pgPool.QueryRow(ctx, `SELECT created_at FROM delist_status_cursor WHERE host = $1 AND entity = $2`, endpoint, entity).Scan(&cursorBefore)
 
 	pollMoreEndpoint := fmt.Sprintf("%s/statuses/%s?cursor=%s&batchSize=%d", endpoint, entity, url.QueryEscape(cursorBefore.Format(time.RFC3339Nano)), DelistBatchSize)
-	req, err := signature.SignedGet(pollMoreEndpoint, ss.Config.privateKey, ss.Config.Self.Host)
+	req, err := signature.SignedGet(ctx, pollMoreEndpoint, ss.Config.privateKey, ss.Config.Self.Host)
 	if err != nil {
 		return err
 	}
@@ -271,13 +272,13 @@ func (ss *MediorumServer) insertDelistStatuses(ctx context.Context, dss []Delist
 				ds.CreatedAt, ds.UserID, ds.Delisted, ds.Reason)
 		}
 		if err != nil {
-			tx.Rollback(ctx)
+			tx.Rollback(context.Background())
 			return err
 		}
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		tx.Rollback(ctx)
+		tx.Rollback(context.Background())
 		return err
 	}
 	return nil

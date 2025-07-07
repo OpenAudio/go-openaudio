@@ -2,7 +2,6 @@ package console
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
@@ -28,12 +27,13 @@ type Console struct {
 }
 
 func NewConsole(config *config.Config, logger *common.Logger, e *echo.Echo, pool *pgxpool.Pool) (*Console, error) {
+	l := logger.Child("console")
 	db := db.New(pool)
 	httprpc, err := rpchttp.New(config.RPCladdr)
 	if err != nil {
 		return nil, fmt.Errorf("could not create rpc client: %v", err)
 	}
-	state, err := NewState(config, httprpc, logger, db)
+	state, err := NewState(config, httprpc, l, db)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func NewConsole(config *config.Config, logger *common.Logger, e *echo.Echo, pool
 		config:  config,
 		rpc:     httprpc,
 		e:       e,
-		logger:  logger.Child(strings.TrimPrefix(baseURL, "/")),
+		logger:  l,
 		db:      db,
 		state:   state,
 		views:   views.NewViews(config, baseURL),

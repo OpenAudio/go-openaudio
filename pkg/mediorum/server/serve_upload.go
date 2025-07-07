@@ -35,14 +35,14 @@ func (ss *MediorumServer) serveUploadDetail(c echo.Context) error {
 	}
 
 	if fix, _ := strconv.ParseBool(c.QueryParam("fix")); fix && upload.Status != JobStatusDone {
-		err = ss.transcode(upload)
+		err = ss.transcode(c.Request().Context(), upload)
 		if err != nil {
 			return err
 		}
 	}
 
 	if analyze, _ := strconv.ParseBool(c.QueryParam("analyze")); analyze && upload.AudioAnalysisStatus != "done" {
-		err = ss.analyzeAudio(upload, time.Minute*10)
+		err = ss.analyzeAudio(c.Request().Context(), upload, time.Minute*10)
 		if err != nil {
 			return err
 		}
@@ -131,7 +131,7 @@ func (ss *MediorumServer) updateUpload(c echo.Context) error {
 	// Do not support deleting previews
 	if selectedPreview.Valid && selectedPreview != upload.SelectedPreview {
 		upload.SelectedPreview = selectedPreview
-		err := ss.generateAudioPreviewForUpload(upload)
+		err := ss.generateAudioPreviewForUpload(c.Request().Context(), upload)
 		if err != nil {
 			return err
 		}
@@ -141,6 +141,7 @@ func (ss *MediorumServer) updateUpload(c echo.Context) error {
 }
 
 func (ss *MediorumServer) postUpload(c echo.Context) error {
+	ctx := c.Request().Context()
 	if !ss.diskHasSpace() {
 		ss.logger.Warn("disk is too full to accept new uploads")
 		return c.String(http.StatusServiceUnavailable, "disk is too full to accept new uploads")
@@ -274,8 +275,8 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 			upload.FFProbe.Format.Filename = formFile.Filename
 
 			// replicate to my bucket + others
-			ss.replicateToMyBucket(formFileCID, tmpFile)
-			upload.Mirrors, err = ss.replicateFileParallel(formFileCID, tmpFile.Name(), placementHosts)
+			ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
+			upload.Mirrors, err = ss.replicateFileParallel(ctx, formFileCID, tmpFile.Name(), placementHosts)
 			if err != nil {
 				upload.Error = err.Error()
 				return err

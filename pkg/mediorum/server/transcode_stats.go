@@ -1,6 +1,9 @@
 package server
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type TranscodeStats struct {
 	Since              time.Time `db:"since"`
@@ -13,7 +16,7 @@ type TranscodeStats struct {
 	TranscodeRate      float64   `db:"transcode_rate"`
 }
 
-func (ss *MediorumServer) updateTranscodeStats() *TranscodeStats {
+func (ss *MediorumServer) updateTranscodeStats(_ context.Context) *TranscodeStats {
 	var stats *TranscodeStats
 	err := ss.crud.DB.Raw(`
 	select

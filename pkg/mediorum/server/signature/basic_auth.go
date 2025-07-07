@@ -1,6 +1,7 @@
 package signature
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/hex"
@@ -28,24 +29,26 @@ func basicAuthNonce(privateKey *ecdsa.PrivateKey) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(basic))
 }
 
-func SignedGet(endpoint string, privateKey *ecdsa.PrivateKey, selfHost string) (*http.Request, error) {
+func SignedGet(ctx context.Context, endpoint string, privateKey *ecdsa.PrivateKey, selfHost string) (*http.Request, error) {
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 
+	req = req.WithContext(ctx)
 	req.Header.Add("Authorization", basicAuthNonce(privateKey))
 	req.Header.Set("User-Agent", "mediorum "+selfHost)
 
 	return req, nil
 }
 
-func SignedPost(endpoint string, contentType string, r io.Reader, privateKey *ecdsa.PrivateKey, selfHost string) (*http.Request, error) {
+func SignedPost(ctx context.Context, endpoint string, contentType string, r io.Reader, privateKey *ecdsa.PrivateKey, selfHost string) (*http.Request, error) {
 	req, err := http.NewRequest("POST", endpoint, r)
 	if err != nil {
 		return nil, err
 	}
 
+	req = req.WithContext(ctx)
 	req.Header.Add("Content-Type", contentType)
 	req.Header.Add("Authorization", basicAuthNonce(privateKey))
 	req.Header.Set("User-Agent", "mediorum "+selfHost)

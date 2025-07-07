@@ -99,29 +99,31 @@ func (eth *EthService) Run(ctx context.Context) error {
 
 	eth.logger.Infof("starting eth service")
 
-	if err := eth.startEthEndpointManager(); err != nil {
+	if err := eth.startEthEndpointManager(ctx); err != nil {
 		return fmt.Errorf("Error running endpoint manager: %w", err)
 	}
 
 	return nil
 }
 
-func (eth *EthService) startEthEndpointManager() error {
-	ctx := context.Background()
-	// Initial query with retries
-	maxRetries := 10
-	retryDelay := 2 * time.Second
-
-	for i := 0; i < maxRetries; i++ {
-		if err := eth.refreshEndpoints(ctx); err != nil {
-			eth.logger.Errorf("error gathering registered eth endpoints (attempt %d/%d): %v", i+1, maxRetries, err)
-			time.Sleep(retryDelay)
-			retryDelay *= 2
-		} else {
-			break
-		}
-		if i == maxRetries-1 {
-			return fmt.Errorf("failed to gather registered eth endpoints after %d retries", maxRetries)
+func (eth *EthService) startEthEndpointManager(ctx context.Context) error {
+	// query all endpoints at startup
+	delay := 2 * time.Second
+	ticker := time.NewTicker(delay)
+initial:
+	for {
+		select {
+		case <-ticker.C:
+			if err := eth.refreshEndpoints(ctx); err != nil {
+				eth.logger.Errorf("error gathering registered eth endpoints: %v", err)
+				delay *= 2
+				eth.logger.Infof("retrying in %s seconds", delay)
+				ticker.Reset(delay)
+			} else {
+				break initial
+			}
+		case <-ctx.Done():
+			return errors.New("context canceled")
 		}
 	}
 
@@ -154,8 +156,7 @@ func (eth *EthService) startEthEndpointManager() error {
 		return fmt.Errorf("failed to subscribe to endpoint update events: %v", err)
 	}
 
-	ticker := time.NewTicker(24 * time.Hour)
-	defer ticker.Stop()
+	ticker = time.NewTicker(1 * time.Hour)
 
 	for {
 		select {
@@ -174,6 +175,7 @@ func (eth *EthService) startEthEndpointManager() error {
 			node, err := eth.c.GetRegisteredNode(ctx, reg.SpID, reg.ServiceType)
 			if err != nil {
 				eth.logger.Error("could not handle registration event: %v", err)
+				continue
 			}
 			if err := eth.db.InsertRegisteredEndpoint(
 				ctx,
@@ -227,6 +229,8 @@ func (eth *EthService) startEthEndpointManager() error {
 				// crash if periodic updates fail - it may be necessary to reestablish connections
 				return fmt.Errorf("error gathering eth endpoints: %v", err)
 			}
+		case <-ctx.Done():
+			return errors.New("context canceled")
 		}
 	}
 
@@ -244,15 +248,12 @@ func (eth *EthService) refreshEndpoints(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not get registered nodes from contracts: %w", err)
 	}
-	if len(nodes) == 0 {
-		return errors.New("got 0 registered nodes")
-	}
 
 	tx, err := eth.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("could not begin db tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(context.Background())
 
 	txq := eth.db.WithTx(tx)
 
@@ -272,6 +273,7 @@ func (eth *EthService) refreshEndpoints(ctx context.Context) error {
 				Owner:          node.Owner.Hex(),
 				DelegateWallet: node.DelegateOwnerWallet.Hex(),
 				Endpoint:       node.Endpoint,
+				Blocknumber:    node.BlockNumber.Int64(),
 			},
 		); err != nil {
 			return fmt.Errorf("could not insert registered endpoint into eth indexer db: %w", err)
@@ -279,6 +281,4 @@ func (eth *EthService) refreshEndpoints(ctx context.Context) error {
 	}
 
 	return tx.Commit(ctx)
-
-	return nil
 }

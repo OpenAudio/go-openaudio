@@ -68,7 +68,19 @@ commands:
           command: |
             echo ${BUF_TOKEN} | buf registry login --token-stdin
             buf push --create --git-metadata
-
+  devnet-setup:
+    steps:
+      - run:
+          name: 'Ensure /etc/hosts is up to date'
+          command: |
+            if ! grep 'node1.audiusd.devnet' /etc/hosts; then
+              echo "127.0.0.1       node1.audiusd.devnet node2.audiusd.devnet node3.audiusd.devnet node4.audiusd.devnet" | sudo tee -a /etc/hosts
+            fi
+      - run:
+          name: 'Install self-signed ssl certificate'
+          command: |
+            sudo cp dev/tls/cert.pem /usr/local/share/ca-certificates/devnet.audiusd.crt
+            sudo update-ca-certificates
 
 jobs:
   build-audiusd-bin:
@@ -89,10 +101,6 @@ jobs:
           command: |
             make install-go-deps
             go mod download
-      - run:
-          name: Lint
-          command: |
-            make lint || true
       - run:
           name: Build audiusd binaries
           command: |
@@ -122,25 +130,37 @@ jobs:
               -t audius/audiusd:${CIRCLE_SHA1}-amd64 \
               -f ./cmd/audiusd/Dockerfile.ci ./
             docker push audius/audiusd:${CIRCLE_SHA1}-amd64
-            
+
             DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build \
               --target test \
               --build-arg GIT_SHA=${CIRCLE_SHA1} \
               --build-arg PREBUILT_BINARY=bin/audiusd-x86_64-linux \
               -t audius/audiusd:${CIRCLE_SHA1}-test \
               -f ./cmd/audiusd/Dockerfile.ci ./
+
+            DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build \
+              --target harness \
+              --build-arg GIT_SHA=${CIRCLE_SHA1} \
+              --build-arg PREBUILT_BINARY=bin/audiusd-x86_64-linux \
+              -t audius/audiusd:${CIRCLE_SHA1}-harness \
+              -f ./cmd/audiusd/Dockerfile.ci ./
       - run:
           name: Run (unit) mediorum tests
           command: |
-            AUDIUSD_IMAGE=audius/audiusd:${CIRCLE_SHA1}-amd64 \
-            AUDIUSD_TEST_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
+            AUDIUSD_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
+            AUDIUSD_TEST_HARNESS_IMAGE=audius/audiusd:${CIRCLE_SHA1}-harness \
             TTY_FLAG="--no-TTY" make mediorum-test
       - run:
           name: Run (integration) core tests
           command: |
-            AUDIUSD_IMAGE=audius/audiusd:${CIRCLE_SHA1}-amd64 \
-            AUDIUSD_TEST_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
+            AUDIUSD_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
+            AUDIUSD_TEST_HARNESS_IMAGE=audius/audiusd:${CIRCLE_SHA1}-harness \
             TTY_FLAG="--no-TTY" make core-test
+      - run:
+          when: always
+          name: Clean up tests
+          command: |
+            make test-down
       - when:
           condition:
             equal: [ main, << pipeline.git.branch >> ]

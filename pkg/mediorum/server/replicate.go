@@ -20,7 +20,7 @@ import (
 	"gocloud.dev/blob"
 )
 
-func (ss *MediorumServer) replicateFileParallel(cid string, filePath string, placementHosts []string) ([]string, error) {
+func (ss *MediorumServer) replicateFileParallel(ctx context.Context, cid string, filePath string, placementHosts []string) ([]string, error) {
 	replicaCount := ss.Config.ReplicationFactor
 
 	if len(placementHosts) > 0 {
@@ -54,7 +54,7 @@ func (ss *MediorumServer) replicateFileParallel(cid string, filePath string, pla
 			defer file.Close()
 			for peer := range queue {
 				file.Seek(0, 0)
-				err := ss.replicateFileToHost(peer, cid, file)
+				err := ss.replicateFileToHost(ctx, peer, cid, file)
 				if err == nil {
 					mu.Lock()
 					results = append(results, peer)
@@ -70,7 +70,7 @@ func (ss *MediorumServer) replicateFileParallel(cid string, filePath string, pla
 	return results, nil
 }
 
-func (ss *MediorumServer) replicateFile(fileName string, file io.ReadSeeker) ([]string, error) {
+func (ss *MediorumServer) replicateFile(ctx context.Context, fileName string, file io.ReadSeeker) ([]string, error) {
 	logger := ss.logger.With("task", "replicate", "cid", fileName)
 
 	success := []string{}
@@ -81,7 +81,7 @@ func (ss *MediorumServer) replicateFile(fileName string, file io.ReadSeeker) ([]
 		logger.Debug("replicating")
 
 		file.Seek(0, 0)
-		err := ss.replicateFileToHost(peer, fileName, file)
+		err := ss.replicateFileToHost(ctx, peer, fileName, file)
 		if err != nil {
 			logger.Error("replication failed", "err", err)
 		} else {
@@ -96,8 +96,7 @@ func (ss *MediorumServer) replicateFile(fileName string, file io.ReadSeeker) ([]
 	return success, nil
 }
 
-func (ss *MediorumServer) replicateToMyBucket(fileName string, file io.Reader) error {
-	ctx := context.Background()
+func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName string, file io.Reader) error {
 	logger := ss.logger.With("task", "replicateToMyBucket", "cid", fileName)
 	logger.Debug("replicateToMyBucket")
 	key := cidutil.ShardCID(fileName)
@@ -136,10 +135,10 @@ func (ss *MediorumServer) haveInMyBucket(fileName string) bool {
 	return exists
 }
 
-func (ss *MediorumServer) replicateFileToHost(peer string, fileName string, file io.Reader) error {
+func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, fileName string, file io.Reader) error {
 	// logger := ss.logger.With()
 	if peer == ss.Config.Self.Host {
-		return ss.replicateToMyBucket(fileName, file)
+		return ss.replicateToMyBucket(ctx, fileName, file)
 	}
 
 	client := http.Client{
@@ -166,6 +165,7 @@ func (ss *MediorumServer) replicateFileToHost(peer string, fileName string, file
 	}()
 
 	req, err := signature.SignedPost(
+		ctx,
 		peer+"/internal/blobs",
 		m.FormDataContentType(),
 		r,
@@ -209,7 +209,7 @@ func (ss *MediorumServer) hostGetBlobInfo(host, key string) (*blob.Attributes, e
 	return attr, nil
 }
 
-func (ss *MediorumServer) pullFileFromHost(host, cid string) error {
+func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string) error {
 	if host == ss.Config.Self.Host {
 		return errors.New("should not pull blob from self")
 	}
@@ -218,7 +218,7 @@ func (ss *MediorumServer) pullFileFromHost(host, cid string) error {
 	}
 	u := apiPath(host, "internal/blobs", url.PathEscape(cid))
 
-	req, err := signature.SignedGet(u, ss.Config.privateKey, ss.Config.Self.Host)
+	req, err := signature.SignedGet(ctx, u, ss.Config.privateKey, ss.Config.Self.Host)
 	if err != nil {
 		return err
 	}
@@ -233,7 +233,7 @@ func (ss *MediorumServer) pullFileFromHost(host, cid string) error {
 		return fmt.Errorf("pull blob: bad status: %d cid: %s host: %s", resp.StatusCode, cid, host)
 	}
 
-	return ss.replicateToMyBucket(cid, resp.Body)
+	return ss.replicateToMyBucket(ctx, cid, resp.Body)
 }
 
 // if the node is using local (disk) storage, do not replicate if there is <200GB remaining (i.e. 10% of 2TB)

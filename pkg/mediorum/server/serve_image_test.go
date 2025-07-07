@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"testing"
@@ -12,6 +13,7 @@ import (
 )
 
 func TestServeImage(t *testing.T) {
+	ctx := context.Background()
 	f, err := os.Open("testdata/claudius.jpg")
 	assert.NoError(t, err)
 
@@ -23,7 +25,7 @@ func TestServeImage(t *testing.T) {
 
 	s1, s2, s3, s4 := testNetwork[0], testNetwork[1], testNetwork[2], testNetwork[3]
 
-	s2.replicateToMyBucket(cid, f)
+	s2.replicateToMyBucket(ctx, cid, f)
 
 	// the first time it will go get the orig + generate a resized version
 	// the x-dynamic-resize-ok header should be set
@@ -74,7 +76,7 @@ func TestServeImage(t *testing.T) {
 	// test with some Qm URLs
 	{
 		qmKey := "QmQSGUjVkSfGBJCU4dcPn3LC17ikQXbfikGbFUAzL5rcXt/original.jpg"
-		s2.replicateToMyBucket(qmKey, f)
+		s2.replicateToMyBucket(ctx, qmKey, f)
 
 		resp, err := http.Get(s1.Config.Self.Host + "/content/" + qmKey)
 		assert.NoError(t, err)

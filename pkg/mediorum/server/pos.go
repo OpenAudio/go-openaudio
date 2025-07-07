@@ -11,50 +11,55 @@ import (
 	"gorm.io/gorm"
 )
 
-func (ss *MediorumServer) startPoSHandler() {
+func (ss *MediorumServer) startPoSHandler(ctx context.Context) {
 	for {
-		posReq := <-ss.posChannel
-
-		cid, err := ss.getStorageProofCIDFromBlockhash(posReq.Hash)
-		if err != nil {
-			ss.logger.Error("Could not get a CID to perform proof with")
-			continue
-		}
-		orderedHosts := ss.rendezvousHasher.Rank(cid)
-		ss.logger.Info("Retrieved artifacts for proof of storage challenge", "cid", cid, "provers", orderedHosts)
-		replicaSet := make([]string, 0, ss.Config.ReplicationFactor)
-		mustProve := false
-		for i, h := range orderedHosts {
-			if i >= ss.Config.ReplicationFactor {
-				break
+		select {
+		case posReq, ok := <-ss.posChannel:
+			if !ok {
+				return // channel closed
 			}
-			if ss.Config.Self.Host == h {
-				mustProve = true
-			}
-			replicaSet = append(replicaSet, h)
-		}
-
-		var proof []byte
-		if mustProve {
-			ss.logger.Info("Generating storage proof", "cid", cid, "blockHeight", posReq.Height)
-			proof, err = ss.getStorageProof(cid, posReq.Hash)
+			cid, err := ss.getStorageProofCIDFromBlockhash(posReq.Hash)
 			if err != nil {
-				ss.logger.Error("Failed to get storage proof", "cid", cid, "error", err)
+				ss.logger.Error("Could not get a CID to perform proof with")
 				continue
 			}
-		}
-		response := pos.PoSResponse{
-			CID:      cid,
-			Replicas: replicaSet,
-			Proof:    proof,
-		}
+			orderedHosts := ss.rendezvousHasher.Rank(cid)
+			ss.logger.Info("Retrieved artifacts for proof of storage challenge", "cid", cid, "provers", orderedHosts)
+			replicaSet := make([]string, 0, ss.Config.ReplicationFactor)
+			mustProve := false
+			for i, h := range orderedHosts {
+				if i >= ss.Config.ReplicationFactor {
+					break
+				}
+				if ss.Config.Self.Host == h {
+					mustProve = true
+				}
+				replicaSet = append(replicaSet, h)
+			}
 
-		posReq.Response <- response
+			var proof []byte
+			if mustProve {
+				ss.logger.Info("Generating storage proof", "cid", cid, "blockHeight", posReq.Height)
+				proof, err = ss.getStorageProof(ctx, cid, posReq.Hash)
+				if err != nil {
+					ss.logger.Error("Failed to get storage proof", "cid", cid, "error", err)
+					continue
+				}
+			}
+			response := pos.PoSResponse{
+				CID:      cid,
+				Replicas: replicaSet,
+				Proof:    proof,
+			}
+
+			posReq.Response <- response
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
-func (ss *MediorumServer) getStorageProof(cid string, nonce []byte) ([]byte, error) {
-	ctx := context.Background()
+func (ss *MediorumServer) getStorageProof(ctx context.Context, cid string, nonce []byte) ([]byte, error) {
 	key := cidutil.ShardCID(cid)
 	var proof []byte
 	blob, err := ss.bucket.NewReader(ctx, key, nil)

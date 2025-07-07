@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/httputil"
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
 )
 
 func NewGraphStaging() PeerProvider {
@@ -27,22 +26,22 @@ type graphProvider struct {
 	endpoint string
 }
 
-func (p *graphProvider) Peers() ([]server.Peer, error) {
+func (p *graphProvider) Peers() ([]Peer, error) {
 	return p.query(true)
 }
 
-func (p *graphProvider) Signers() ([]server.Peer, error) {
+func (p *graphProvider) Signers() ([]Peer, error) {
 	return p.query(false)
 }
 
-func (p *graphProvider) query(isContent bool) ([]server.Peer, error) {
+func (p *graphProvider) query(isContent bool) ([]Peer, error) {
 
 	nodeType := "discovery-node"
 	if isContent {
 		nodeType = "content-node"
 	}
 
-	result := []server.Peer{}
+	result := []Peer{}
 
 	gql := `
 	query ServiceProviders($type: String, $skip: Int) {
@@ -81,7 +80,7 @@ func (p *graphProvider) query(isContent bool) ([]server.Peer, error) {
 		}
 
 		for _, node := range output.Data.ServiceNodes {
-			result = append(result, server.Peer{
+			result = append(result, Peer{
 				Host:   httputil.RemoveTrailingSlash(strings.ToLower(node.Endpoint)),
 				Wallet: node.DelegateOwnerWallet,
 			})

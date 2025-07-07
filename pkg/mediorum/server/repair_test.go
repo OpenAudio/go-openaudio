@@ -18,7 +18,7 @@ func testNetworkRunRepair(cleanup bool) {
 	for _, s := range testNetwork {
 		s := s
 		go func() {
-			err := s.runRepair(&RepairTracker{StartedAt: time.Now(), CleanupMode: cleanup, Counters: map[string]int{}})
+			err := s.runRepair(context.Background(), &RepairTracker{StartedAt: time.Now(), CleanupMode: cleanup, Counters: map[string]int{}})
 			if err != nil {
 				panic(err)
 			}
@@ -41,6 +41,7 @@ func testNetworkLocateBlob(cid string) []string {
 }
 
 func TestRepair(t *testing.T) {
+	ctx := context.Background()
 	replicationFactor := 5
 
 	ss := testNetwork[0]
@@ -49,7 +50,7 @@ func TestRepair(t *testing.T) {
 	data := []byte("repair test")
 	cid, err := cidutil.ComputeFileCID(bytes.NewReader(data))
 	assert.NoError(t, err)
-	err = ss.replicateToMyBucket(cid, bytes.NewReader(data))
+	err = ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data))
 	assert.NoError(t, err)
 
 	// create a dummy upload for it?
@@ -102,7 +103,7 @@ func TestRepair(t *testing.T) {
 	// now over-replicate file
 	//
 	for _, server := range testNetwork {
-		ss.replicateFileToHost(server.Config.Self.Host, cid, bytes.NewReader(data))
+		ss.replicateFileToHost(ctx, server.Config.Self.Host, cid, bytes.NewReader(data))
 	}
 
 	// assert over-replicated
@@ -140,22 +141,22 @@ func TestRepair(t *testing.T) {
 
 		// normally a standby server wouldn't pull this file
 		standby := rendezvousOrder[replicationFactor+2]
-		err = standby.runRepair(&RepairTracker{StartedAt: time.Now(), CleanupMode: false, Counters: map[string]int{}})
+		err = standby.runRepair(ctx, &RepairTracker{StartedAt: time.Now(), CleanupMode: false, Counters: map[string]int{}})
 		assert.NoError(t, err)
 		assert.False(t, standby.hostHasBlob(standby.Config.Self.Host, cid))
 
 		// running repair in cleanup mode... standby will observe that #1 doesn't have blob so will pull it
-		err = standby.runRepair(&RepairTracker{StartedAt: time.Now(), CleanupMode: true, Counters: map[string]int{}})
+		err = standby.runRepair(ctx, &RepairTracker{StartedAt: time.Now(), CleanupMode: true, Counters: map[string]int{}})
 		assert.NoError(t, err)
 		assert.True(t, standby.hostHasBlob(standby.Config.Self.Host, cid))
 
 		// leader re-gets lost file when repair runs
-		err = leader.runRepair(&RepairTracker{StartedAt: time.Now(), CleanupMode: false, Counters: map[string]int{}})
+		err = leader.runRepair(ctx, &RepairTracker{StartedAt: time.Now(), CleanupMode: false, Counters: map[string]int{}})
 		assert.NoError(t, err)
 		assert.True(t, leader.hostHasBlob(leader.Config.Self.Host, cid))
 
 		// standby drops file after leader has it back
-		err = standby.runRepair(&RepairTracker{StartedAt: time.Now(), CleanupMode: true, Counters: map[string]int{}})
+		err = standby.runRepair(ctx, &RepairTracker{StartedAt: time.Now(), CleanupMode: true, Counters: map[string]int{}})
 		assert.NoError(t, err)
 		assert.False(t, standby.hostHasBlob(standby.Config.Self.Host, cid))
 	}

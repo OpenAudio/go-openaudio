@@ -2,6 +2,7 @@ package crudr
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/httputil"
+	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
 	"github.com/oklog/ulid/v2"
@@ -42,10 +44,9 @@ func NewPeerClient(host string, crudr *Crudr, selfHost string) *PeerClient {
 	}
 }
 
-func (p *PeerClient) Start() {
-	// todo: should be able to stop these
-	go p.startSender()
-	go p.startSweeper()
+func (p *PeerClient) Start(lc *lifecycle.Lifecycle) {
+	lc.AddManagedRoutine(fmt.Sprintf("sender for crudr peer %s", p.Host), p.startSender)
+	lc.AddManagedRoutine(fmt.Sprintf("sweeper for crudr peer %s", p.Host), p.startSweeper)
 }
 
 func (p *PeerClient) Send(data []byte) bool {
@@ -58,45 +59,60 @@ func (p *PeerClient) Send(data []byte) bool {
 	}
 }
 
-func (p *PeerClient) startSender() {
+func (p *PeerClient) startSender(ctx context.Context) {
 	httpClient := http.Client{
 		Timeout: 5 * time.Second,
 	}
-	for data := range p.outbox {
-		endpoint := p.Host + "/internal/crud/push" // hardcoded
-		req, err := signature.SignedPost(
-			endpoint,
-			"application/json",
-			bytes.NewReader(data),
-			p.crudr.myPrivateKey,
-			p.selfHost,
-		)
-		if err != nil {
-			p.logger.Debug("could not create req client", "host", p.Host, "err", err)
-			continue
-		}
+	for {
+		select {
+		case data, ok := <-p.outbox:
+			if !ok {
+				return // channel closed
+			}
+			endpoint := p.Host + "/internal/crud/push" // hardcoded
+			req, err := signature.SignedPost(
+				ctx,
+				endpoint,
+				"application/json",
+				bytes.NewReader(data),
+				p.crudr.myPrivateKey,
+				p.selfHost,
+			)
+			if err != nil {
+				p.logger.Debug("could not create req client", "host", p.Host, "err", err)
+				continue
+			}
 
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			p.logger.Debug("push failed", "host", p.Host, "err", err)
-			continue
-		}
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				p.logger.Debug("push failed", "host", p.Host, "err", err)
+				continue
+			}
 
-		if resp.StatusCode != 200 {
-			p.logger.Debug("push bad status", "host", p.Host, "status", resp.StatusCode)
-		}
+			if resp.StatusCode != 200 {
+				p.logger.Debug("push bad status", "host", p.Host, "status", resp.StatusCode)
+			}
 
-		resp.Body.Close()
+			resp.Body.Close()
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
-func (p *PeerClient) startSweeper() {
+func (p *PeerClient) startSweeper(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Second) // do first sweep immediately
 	for {
-		err := p.doSweep()
-		if err != nil {
-			p.logger.Warn("sweep failed", "err", err)
+		select {
+		case <-ticker.C:
+			ticker.Reset(10 * time.Minute) // do subsequent sweeps every 10 min
+			err := p.doSweep()
+			if err != nil {
+				p.logger.Warn("sweep failed", "err", err)
+			}
+		case <-ctx.Done():
+			return
 		}
-		time.Sleep(time.Minute * 10)
 	}
 }
 

@@ -28,36 +28,36 @@ import (
 )
 
 func (s *Server) startRegistryBridge() error {
+	ctx := context.Background()
+	ticker := time.NewTicker(5 * time.Second)
+
+ethstatus:
+	for {
+		select {
+		case <-ticker.C:
+			if status, err := s.eth.GetStatus(ctx, connect.NewRequest(&ethv1.GetStatusRequest{})); err != nil {
+				s.logger.Errorf("error getting eth service status: %v", err)
+				continue
+			} else if !status.Msg.Ready {
+				s.logger.Info("waiting for eth service to be ready")
+				continue
+			} else {
+				break ethstatus
+			}
+		case <-ctx.Done():
+			return errors.New("context canceled")
+		}
+	}
+
 	if s.isDevEnvironment() {
 		s.logger.Info("running in dev, registering on ethereum")
-		// allow ethservice to initialize
-		time.Sleep(5 * time.Second)
-		if err := s.registerSelfOnEth(); err != nil {
+		if err := s.registerSelfOnEth(ctx); err != nil {
 			s.logger.Errorf("error registering onto eth: %v", err)
 			return err
 		}
 	}
 
-	ticker := time.NewTicker(5 * time.Second)
-	attempts := 0
-	defer ticker.Stop()
-	for range ticker.C {
-		attempts++
-		if attempts > 20 {
-			s.logger.Error("timed out waiting for eth service")
-			return errors.New("timed out waiting for eth service")
-		}
-		if res, err := s.eth.GetStatus(
-			context.Background(),
-			connect.NewRequest(&ethv1.GetStatusRequest{}),
-		); !res.Msg.Ready || err != nil {
-			s.logger.Info("waiting for eth service to be ready", "error", err)
-		} else if res.Msg.Ready {
-			close(s.awaitEthReady)
-			break
-		}
-	}
-
+	close(s.awaitEthReady)
 	<-s.awaitRpcReady
 	s.logger.Info("starting registry bridge")
 
@@ -72,23 +72,28 @@ func (s *Server) startRegistryBridge() error {
 		return err
 	}
 
+	timeout := time.After(120 * time.Minute)
 	delay := 2 * time.Second
-	maxTime := 120 * time.Minute
-	startTime := time.Now()
-
-	for time.Since(startTime) < maxTime {
-		if err := s.RegisterSelf(); err != nil {
-			s.logger.Errorf("node registration failed, will try again: %v", err)
-			s.logger.Infof("Retrying registration in %s", delay)
-			time.Sleep(delay)
-			delay *= 2
-		} else {
-			s.listenForEthContractEvents(context.Background())
+	ticker = time.NewTicker(2 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			if err := s.RegisterSelf(); err != nil {
+				s.logger.Errorf("node registration failed, will try again: %v", err)
+				delay *= 2
+				s.logger.Infof("Retrying registration in %s", delay)
+				ticker.Reset(delay)
+			} else {
+				s.listenForEthContractEvents(context.Background())
+				return nil
+			}
+		case <-timeout:
+			s.logger.Warn("exhausted registration retries, continuing unregistered")
 			return nil
+		case <-ctx.Done():
+			return errors.New("context canceled")
 		}
 	}
-
-	s.logger.Warn("exhausted registration retries after 120 minutes")
 	return nil
 }
 
@@ -97,7 +102,7 @@ func (s *Server) listenForEthContractEvents(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			s.logger.Info("received cancellation signal, stopping subscription to eth events")
+			s.logger.Info("context canceled, stopping subscription to eth events")
 			return
 		case dereg := <-deregChan:
 			s.logger.Info("received deregistration event")
@@ -232,7 +237,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 				},
 			}))
 			if err != nil {
-				s.logger.Error("failed to get registration attestation from %s: %v", addr, err)
+				s.logger.Errorf("failed to get registration attestation from %s: %v", addr, err)
 				continue
 			}
 			attestations = append(attestations, resp.Msg.Signature)
@@ -336,7 +341,7 @@ func (s *Server) IsNodeRegisteredOnEthereum(ctx context.Context, endpoint, deleg
 	return true, nil
 }
 
-func (s *Server) registerSelfOnEth() error {
+func (s *Server) registerSelfOnEth(ctx context.Context) error {
 	if _, err := s.eth.GetRegisteredEndpointInfo(
 		context.Background(),
 		connect.NewRequest(&ethv1.GetRegisteredEndpointInfoRequest{

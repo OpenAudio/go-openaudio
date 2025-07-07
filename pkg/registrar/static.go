@@ -1,20 +1,18 @@
 package registrar
 
-import "github.com/AudiusProject/audiusd/pkg/mediorum/server"
-
 type staticProvider struct {
-	peers   []server.Peer
-	signers []server.Peer
+	peers   []Peer
+	signers []Peer
 }
 
-func NewStatic(peers, signers []server.Peer) PeerProvider {
+func NewStatic(peers, signers []Peer) PeerProvider {
 	return &staticProvider{peers, signers}
 }
 
-func (p *staticProvider) Peers() ([]server.Peer, error) {
+func (p *staticProvider) Peers() ([]Peer, error) {
 	return p.peers, nil
 }
 
-func (p *staticProvider) Signers() ([]server.Peer, error) {
+func (p *staticProvider) Signers() ([]Peer, error) {
 	return p.signers, nil
 }

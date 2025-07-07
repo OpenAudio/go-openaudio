@@ -56,20 +56,23 @@ type PlayEvent struct {
 	RequestSignature string
 }
 
-func (ss *MediorumServer) startPlayEventQueue() {
+func (ss *MediorumServer) startPlayEventQueue(ctx context.Context) {
 	ticker := time.NewTicker(playQueueInterval)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		if err := ss.processPlayRecordBatch(); err != nil {
-			ss.logger.Error("error recording play batch", "error", err)
+	for {
+		select {
+		case <-ticker.C:
+			if err := ss.processPlayRecordBatch(ctx); err != nil {
+				ss.logger.Error("error recording play batch", "error", err)
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
 
-func (ss *MediorumServer) processPlayRecordBatch() error {
+func (ss *MediorumServer) processPlayRecordBatch(ctx context.Context) error {
 	// require all operations in process batch take at most 30 seconds
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	plays := ss.playEventQueue.popPlayEventBatch()

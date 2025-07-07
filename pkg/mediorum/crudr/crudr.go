@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/AudiusProject/audiusd/pkg/httputil"
+	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 
 	"github.com/oklog/ulid/v2"
 	"golang.org/x/exp/slog"
@@ -44,6 +45,8 @@ type Crudr struct {
 
 	mu        sync.Mutex
 	callbacks []func(op *Op, records interface{})
+
+	lc *lifecycle.Lifecycle
 }
 
 // create ops table if it does not exist
@@ -85,7 +88,7 @@ func migrateOps(db *gorm.DB) error {
 	return nil
 }
 
-func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db *gorm.DB) *Crudr {
+func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db *gorm.DB, parentLifecycle *lifecycle.Lifecycle) *Crudr {
 	selfHost = httputil.RemoveTrailingSlash(strings.ToLower(selfHost))
 
 	err := migrateOps(db)
@@ -107,6 +110,7 @@ func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db
 		typeMap: map[string]reflect.Type{},
 
 		peerClients: make([]*PeerClient, len(peerHosts)),
+		lc:          lifecycle.NewFromLifecycle(parentLifecycle, "crudr lifecycle"),
 	}
 
 	for idx, peerHost := range peerHosts {
@@ -118,7 +122,7 @@ func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db
 
 func (c *Crudr) StartClients() {
 	for _, p := range c.peerClients {
-		p.Start()
+		p.Start(c.lc)
 	}
 }
 

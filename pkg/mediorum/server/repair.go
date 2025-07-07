@@ -33,95 +33,98 @@ type RepairTracker struct {
 	AbortedReason    string         `gorm:"not null"`
 }
 
-func (ss *MediorumServer) startRepairer() {
-	// wait a minute on startup to determine healthy peers
-	time.Sleep(time.Minute * 1)
-
+func (ss *MediorumServer) startRepairer(ctx context.Context) {
 	logger := ss.logger.With("task", "repair")
 
+	// wait a minute on startup to determine healthy peers
+	ticker := time.NewTicker(1 * time.Minute)
 	for {
-		// pick up where we left off from the last repair.go run, including if the server restarted in the middle of a run
-		tracker := RepairTracker{
-			StartedAt:   time.Now(),
-			CleanupMode: true,
-			CursorI:     1,
-			Counters:    map[string]int{},
-		}
-		var lastRun RepairTracker
-		if err := ss.crud.DB.Order("started_at desc").First(&lastRun).Error; err == nil {
-			if lastRun.FinishedAt.IsZero() {
-				// resume previously interrupted job
-				tracker = lastRun
-			} else {
-				// run the next job
-				tracker.CursorI = lastRun.CursorI + 1
+		select {
+		case <-ticker.C:
+			// Wait 1 hour for next interval unless otherwise specified
+			ticker.Reset(1 * time.Hour)
 
-				// every few runs, run cleanup mode
-				if tracker.CursorI > 4 {
-					tracker.CursorI = 1
+			// pick up where we left off from the last repair.go run, including if the server restarted in the middle of a run
+			tracker := RepairTracker{
+				StartedAt:   time.Now(),
+				CleanupMode: true,
+				CursorI:     1,
+				Counters:    map[string]int{},
+			}
+			var lastRun RepairTracker
+			if err := ss.crud.DB.Order("started_at desc").First(&lastRun).Error; err == nil {
+				if lastRun.FinishedAt.IsZero() {
+					// resume previously interrupted job
+					tracker = lastRun
+				} else {
+					// run the next job
+					tracker.CursorI = lastRun.CursorI + 1
+
+					// every few runs, run cleanup mode
+					if tracker.CursorI > 4 {
+						tracker.CursorI = 1
+					}
+					tracker.CleanupMode = tracker.CursorI == 1
 				}
-				tracker.CleanupMode = tracker.CursorI == 1
+			} else {
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					logger.Error("failed to get last repair.go run", "err", err)
+				}
 			}
-		} else {
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				logger.Error("failed to get last repair.go run", "err", err)
-			}
-		}
-		logger := logger.With("run", tracker.CursorI, "cleanupMode", tracker.CleanupMode)
+			logger := logger.With("run", tracker.CursorI, "cleanupMode", tracker.CleanupMode)
 
-		saveTracker := func() {
-			tracker.UpdatedAt = time.Now()
-			if err := ss.crud.DB.Save(tracker).Error; err != nil {
-				logger.Error("failed to save repair tracker", "err", err)
+			saveTracker := func() {
+				tracker.UpdatedAt = time.Now()
+				if err := ss.crud.DB.Save(tracker).Error; err != nil {
+					logger.Error("failed to save repair tracker", "err", err)
+				}
 			}
-		}
 
-		// check that network is valid (should have more peers than replication factor)
-		if healthyPeers := ss.findHealthyPeers(time.Hour); len(healthyPeers) < ss.Config.ReplicationFactor {
-			logger.Warn("not enough healthy peers to run repair",
-				"R", ss.Config.ReplicationFactor,
-				"peers", len(healthyPeers))
-			tracker.AbortedReason = "NOT_ENOUGH_PEERS"
+			// check that network is valid (should have more peers than replication factor)
+			if healthyPeers := ss.findHealthyPeers(time.Hour); len(healthyPeers) < ss.Config.ReplicationFactor {
+				logger.Warn("not enough healthy peers to run repair",
+					"R", ss.Config.ReplicationFactor,
+					"peers", len(healthyPeers))
+				tracker.AbortedReason = "NOT_ENOUGH_PEERS"
+				tracker.FinishedAt = time.Now()
+				saveTracker()
+				// wait 1 minute before running again
+				ticker.Reset(time.Minute * 1)
+				continue
+			}
+
+			// check that disk has space
+			if !ss.diskHasSpace() && !tracker.CleanupMode {
+				logger.Warn("disk has <200GB remaining and is not in cleanup mode. skipping repair")
+				tracker.AbortedReason = "DISK_FULL"
+				tracker.FinishedAt = time.Now()
+				saveTracker()
+				// wait 1 minute before running again
+				ticker.Reset(time.Minute * 1)
+				continue
+			}
+
+			logger.Info("repair starting")
+			err := ss.runRepair(ctx, &tracker)
 			tracker.FinishedAt = time.Now()
-			saveTracker()
-			// wait 1 minute before running again
-			time.Sleep(time.Minute * 1)
-			continue
-		}
-
-		// check that disk has space
-		if !ss.diskHasSpace() && !tracker.CleanupMode {
-			logger.Warn("disk has <200GB remaining and is not in cleanup mode. skipping repair")
-			tracker.AbortedReason = "DISK_FULL"
-			tracker.FinishedAt = time.Now()
-			saveTracker()
-			// wait 1 minute before running again
-			time.Sleep(time.Minute * 1)
-			continue
-		}
-
-		logger.Info("repair starting")
-		err := ss.runRepair(&tracker)
-		tracker.FinishedAt = time.Now()
-		if err != nil {
-			logger.Error("repair failed", "err", err, "took", tracker.Duration)
-			tracker.AbortedReason = err.Error()
-		} else {
-			logger.Info("repair OK", "took", tracker.Duration)
-			ss.lastSuccessfulRepair = tracker
-			if tracker.CleanupMode {
-				ss.lastSuccessfulCleanup = tracker
+			if err != nil {
+				logger.Error("repair failed", "err", err, "took", tracker.Duration)
+				tracker.AbortedReason = err.Error()
+			} else {
+				logger.Info("repair OK", "took", tracker.Duration)
+				ss.lastSuccessfulRepair = tracker
+				if tracker.CleanupMode {
+					ss.lastSuccessfulCleanup = tracker
+				}
 			}
+			saveTracker()
+		case <-ctx.Done():
+			return
 		}
-		saveTracker()
-
-		time.Sleep(time.Hour)
 	}
 }
 
-func (ss *MediorumServer) runRepair(tracker *RepairTracker) error {
-	ctx := context.Background()
-
+func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker) error {
 	saveTracker := func() {
 		tracker.UpdatedAt = time.Now()
 		if err := ss.crud.DB.Save(tracker).Error; err != nil {
@@ -150,14 +153,14 @@ func (ss *MediorumServer) runRepair(tracker *RepairTracker) error {
 		}
 		for _, u := range uploads {
 			tracker.CursorUploadID = u.ID
-			ss.repairCid(u.OrigFileCID, u.PlacementHosts, tracker)
+			ss.repairCid(ctx, u.OrigFileCID, u.PlacementHosts, tracker)
 			// images are resized dynamically
 			// so only consider audio TranscodeResults for repair
 			if u.Template != JobTemplateAudio {
 				continue
 			}
 			for _, cid := range u.TranscodeResults {
-				ss.repairCid(cid, u.PlacementHosts, tracker)
+				ss.repairCid(ctx, cid, u.PlacementHosts, tracker)
 			}
 		}
 
@@ -185,7 +188,7 @@ func (ss *MediorumServer) runRepair(tracker *RepairTracker) error {
 		}
 		for _, u := range previews {
 			tracker.CursorPreviewCID = u.CID
-			ss.repairCid(u.CID, nil, tracker)
+			ss.repairCid(ctx, u.CID, nil, tracker)
 		}
 
 		tracker.Duration += time.Since(startIter)
@@ -219,7 +222,7 @@ func (ss *MediorumServer) runRepair(tracker *RepairTracker) error {
 		}
 		for _, cid := range cidBatch {
 			tracker.CursorQmCID = cid
-			ss.repairCid(cid, nil, tracker)
+			ss.repairCid(ctx, cid, nil, tracker)
 		}
 
 		tracker.Duration += time.Since(startIter)
@@ -229,8 +232,7 @@ func (ss *MediorumServer) runRepair(tracker *RepairTracker) error {
 	return nil
 }
 
-func (ss *MediorumServer) repairCid(cid string, placementHosts []string, tracker *RepairTracker) error {
-	ctx := context.Background()
+func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHosts []string, tracker *RepairTracker) error {
 	logger := ss.logger.With("task", "repair", "cid", cid, "cleanup", tracker.CleanupMode)
 
 	preferredHosts, isMine := ss.rendezvousAllHosts(cid)
@@ -331,7 +333,7 @@ func (ss *MediorumServer) repairCid(cid string, placementHosts []string, tracker
 			if host == ss.Config.Self.Host {
 				continue
 			}
-			err := ss.pullFileFromHost(host, cid)
+			err := ss.pullFileFromHost(ctx, host, cid)
 			if err != nil {
 				tracker.Counters["pull_mine_fail"]++
 				logger.Error("pull failed (blob I should have)", "err", err, "host", host)

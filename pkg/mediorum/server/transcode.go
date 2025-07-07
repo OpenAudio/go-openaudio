@@ -31,7 +31,7 @@ var (
 	audioPreviewDuration = "30" // seconds
 )
 
-func (ss *MediorumServer) startTranscoder() {
+func (ss *MediorumServer) startTranscoder(ctx context.Context) {
 	myHost := ss.Config.Self.Host
 
 	// use most cpus for transcode
@@ -68,7 +68,10 @@ func (ss *MediorumServer) startTranscoder() {
 
 	// start workers
 	for i := 0; i < numWorkers; i++ {
-		go ss.startTranscodeWorker(i)
+		ss.lc.AddManagedRoutine(
+			fmt.Sprintf("transcode worker %d", i),
+			ss.startTranscodeWorker,
+		)
 	}
 
 	// hash-migration: the findMissedJobs was using the og `mirrors` list
@@ -87,9 +90,14 @@ func (ss *MediorumServer) startTranscoder() {
 	}
 
 	// finally... poll periodically for uploads that slipped thru the cracks
+	ticker := time.NewTicker(1 * time.Minute)
 	for {
-		time.Sleep(time.Minute)
-		ss.findMissedJobs(ss.transcodeWork, myHost)
+		select {
+		case <-ticker.C:
+			ss.findMissedJobs(ss.transcodeWork, myHost)
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
@@ -115,12 +123,20 @@ func (ss *MediorumServer) findMissedJobs(work chan *Upload, myHost string) {
 	}
 }
 
-func (ss *MediorumServer) startTranscodeWorker(_ int) {
-	for upload := range ss.transcodeWork {
-		ss.logger.Debug("transcoding", "upload", upload.ID)
-		err := ss.transcode(upload)
-		if err != nil {
-			ss.logger.Warn("transcode failed", "upload", upload, "err", err)
+func (ss *MediorumServer) startTranscodeWorker(ctx context.Context) {
+	for {
+		select {
+		case upload, ok := <-ss.transcodeWork:
+			if !ok {
+				return // channel closed
+			}
+			ss.logger.Debug("transcoding", "upload", upload.ID)
+			err := ss.transcode(ctx, upload)
+			if err != nil {
+				ss.logger.Warn("transcode failed", "upload", upload, "err", err)
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
@@ -149,7 +165,7 @@ func (ss *MediorumServer) getKeyToTempFile(fileHash string) (*os.File, error) {
 
 type errorCallback func(err error, uploadStatus string, info ...string) error
 
-func (ss *MediorumServer) transcodeAudio(upload *Upload, _ string, cmd *exec.Cmd, logger *slog.Logger, onError errorCallback) error {
+func (ss *MediorumServer) transcodeAudio(_ context.Context, upload *Upload, _ string, cmd *exec.Cmd, logger *slog.Logger, onError errorCallback) error {
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return onError(err, upload.Status, "cmd.StdoutPipe")
@@ -235,7 +251,7 @@ func (ss *MediorumServer) transcodeAudio(upload *Upload, _ string, cmd *exec.Cmd
 	return nil
 }
 
-func (ss *MediorumServer) transcodeFullAudio(upload *Upload, temp *os.File, logger *slog.Logger, onError errorCallback) error {
+func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload, temp *os.File, logger *slog.Logger, onError errorCallback) error {
 	srcPath := temp.Name()
 	destPath := srcPath + "_320.mp3"
 	defer os.Remove(destPath)
@@ -254,7 +270,7 @@ func (ss *MediorumServer) transcodeFullAudio(upload *Upload, temp *os.File, logg
 		"-progress", "pipe:2",
 		destPath)
 
-	err := ss.transcodeAudio(upload, destPath, cmd, logger, onError)
+	err := ss.transcodeAudio(ctx, upload, destPath, cmd, logger, onError)
 	if err != nil {
 		return err
 	}
@@ -272,13 +288,13 @@ func (ss *MediorumServer) transcodeFullAudio(upload *Upload, temp *os.File, logg
 		return onError(err, upload.Status, "computeFileCID")
 	}
 	resultKey := resultHash
-	upload.TranscodedMirrors, err = ss.replicateFileParallel(resultHash, destPath, upload.PlacementHosts)
+	upload.TranscodedMirrors, err = ss.replicateFileParallel(ctx, resultHash, destPath, upload.PlacementHosts)
 	if err != nil {
 		return onError(err, upload.Status, "replicateFile")
 	}
 
 	// transcode server will retain transcode result for analysis
-	ss.replicateToMyBucket(resultHash, dest)
+	ss.replicateToMyBucket(ctx, resultHash, dest)
 
 	upload.TranscodeResults["320"] = resultKey
 
@@ -286,7 +302,7 @@ func (ss *MediorumServer) transcodeFullAudio(upload *Upload, temp *os.File, logg
 
 	// if a start time is set, also transcode an audio preview from the full 320kbps downsample
 	if upload.SelectedPreview.Valid {
-		err := ss.generateAudioPreviewForUpload(upload)
+		err := ss.generateAudioPreviewForUpload(ctx, upload)
 		if err != nil {
 			return onError(err, upload.Status, "generateAudioPreview")
 		}
@@ -317,7 +333,7 @@ outerLoop:
 	return builder.String()
 }
 
-func (ss *MediorumServer) transcode(upload *Upload) error {
+func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 	upload.TranscodedBy = ss.Config.Self.Host
 	upload.TranscodedAt = time.Now().UTC()
 	upload.Status = JobStatusBusy
@@ -326,7 +342,7 @@ func (ss *MediorumServer) transcode(upload *Upload) error {
 	logger := ss.logger.With("template", upload.Template, "cid", fileHash)
 
 	if !ss.haveInMyBucket(fileHash) {
-		_, err := ss.findAndPullBlob(context.Background(), fileHash)
+		_, err := ss.findAndPullBlob(ctx, fileHash)
 		if err != nil {
 			logger.Warn("failed to find blob", "err", err)
 			return err
@@ -368,11 +384,11 @@ func (ss *MediorumServer) transcode(upload *Upload) error {
 			logger.Warn("empty template (shouldn't happen), falling back to audio")
 		}
 
-		err := ss.transcodeFullAudio(upload, temp, logger, onError)
+		err := ss.transcodeFullAudio(ctx, upload, temp, logger, onError)
 		if err != nil {
 			return err
 		}
-		ss.analyzeAudio(upload, time.Minute)
+		ss.analyzeAudio(ctx, upload, time.Minute)
 
 	default:
 		return fmt.Errorf("unsupported format: %s", upload.Template)

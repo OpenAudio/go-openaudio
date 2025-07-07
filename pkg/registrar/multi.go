@@ -3,8 +3,6 @@ package registrar
 import (
 	"errors"
 	"fmt"
-
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
 )
 
 func NewMultiStaging() PeerProvider {
@@ -36,7 +34,7 @@ type multiProvider struct {
 	providers []PeerProvider
 }
 
-func (p multiProvider) Peers() ([]server.Peer, error) {
+func (p multiProvider) Peers() ([]Peer, error) {
 	for _, provider := range p.providers {
 		if vals, err := provider.Peers(); err == nil {
 			return vals, nil
@@ -47,7 +45,7 @@ func (p multiProvider) Peers() ([]server.Peer, error) {
 	return nil, errors.New("all providers failed")
 }
 
-func (p multiProvider) Signers() ([]server.Peer, error) {
+func (p multiProvider) Signers() ([]Peer, error) {
 	for _, provider := range p.providers {
 		if vals, err := provider.Signers(); err == nil {
 			return vals, nil

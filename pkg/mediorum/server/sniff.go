@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"sync"
 
 	"gocloud.dev/blob"
@@ -16,7 +17,7 @@ type HostAttrSniff struct {
 // calls /internal/blobs/info/:cid
 // for every host to collect the size reported by each host.
 // useful for finding truncated Qm audio CIDs.
-func (ss *MediorumServer) sniffAndFix(cid string, fix bool) []HostAttrSniff {
+func (ss *MediorumServer) sniffAndFix(ctx context.Context, cid string, fix bool) []HostAttrSniff {
 	preferred, _ := ss.rendezvousAllHosts(cid)
 	var attrs []HostAttrSniff
 
@@ -63,7 +64,7 @@ func (ss *MediorumServer) sniffAndFix(cid string, fix bool) []HostAttrSniff {
 			if a.Attr.Size < best.Attr.Size {
 				break
 			}
-			if err := ss.pullFileFromHost(a.Host, cid); err == nil {
+			if err := ss.pullFileFromHost(ctx, a.Host, cid); err == nil {
 				break
 			}
 		}

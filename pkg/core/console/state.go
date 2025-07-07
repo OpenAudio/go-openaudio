@@ -38,7 +38,7 @@ type State struct {
 func NewState(config *config.Config, rpc client.Client, logger *common.Logger, db *db.Queries) (*State, error) {
 	return &State{
 		rpc:    rpc,
-		logger: logger,
+		logger: logger.Child("console state"),
 		db:     db,
 
 		chainId:      config.GenesisFile.ChainID,

@@ -28,11 +28,11 @@ type StorageAndDbSize struct {
 	LastCleanupSize  int64     `gorm:"not null"`
 }
 
-func (ss *MediorumServer) recordStorageAndDbSize() {
-	record := func() {
+func (ss *MediorumServer) recordStorageAndDbSize(ctx context.Context) {
+	record := func(ctx context.Context) {
 		// only do this once every 6 hours, even if the server restarts
 		var lastStatus StorageAndDbSize
-		err := ss.crud.DB.WithContext(context.Background()).
+		err := ss.crud.DB.WithContext(ctx).
 			Where("host = ?", ss.Config.Self.Host).
 			Order("logged_at desc").
 			First(&lastStatus).
@@ -66,66 +66,87 @@ func (ss *MediorumServer) recordStorageAndDbSize() {
 		}
 	}
 
-	record()
+	record(ctx)
 	ticker := time.NewTicker(6*time.Hour + time.Minute)
-	for range ticker.C {
-		record()
+	for {
+		select {
+		case <-ticker.C:
+			record(ctx)
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
-func (ss *MediorumServer) monitorMetrics() {
+func (ss *MediorumServer) monitorMetrics(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Second)
 	// retry a few times to get initial status on startup
 	for i := 0; i < 3; i++ {
-		ss.updateDiskAndDbStatus()
-		ss.updateTranscodeStats()
-		time.Sleep(time.Minute)
+		select {
+		case <-ticker.C:
+			ticker.Reset(1 * time.Minute) // set longer interval after first attempt
+			ss.updateDiskAndDbStatus(ctx)
+			ss.updateTranscodeStats(ctx)
+		case <-ctx.Done():
+			return
+		}
 	}
 
 	// persist the sizes in the db and let crudr share them with other nodes
-	go ss.recordStorageAndDbSize()
+	ss.lc.AddManagedRoutine("storage and db size recorder", ss.recordStorageAndDbSize)
 
-	ticker := time.NewTicker(10 * time.Minute)
-	for range ticker.C {
-		ss.updateDiskAndDbStatus()
-		ss.updateTranscodeStats()
+	ticker.Reset(10 * time.Minute)
+	for {
+		select {
+		case <-ticker.C:
+			ss.updateDiskAndDbStatus(ctx)
+			ss.updateTranscodeStats(ctx)
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
-func (ss *MediorumServer) monitorPeerReachability() {
+func (ss *MediorumServer) monitorPeerReachability(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)
-	for range ticker.C {
-		// find unreachable nodes in the last 2 minutes
-		var unreachablePeers []string
-		for _, peer := range ss.Config.Peers {
-			if peer.Host == ss.Config.Self.Host {
-				continue
-			}
-			if peerHealth, ok := ss.peerHealths[peer.Host]; ok {
-				if peerHealth.LastReachable.Before(time.Now().Add(-2 * time.Minute)) {
+	for {
+		select {
+		case <-ticker.C:
+			// find unreachable nodes in the last 2 minutes
+			var unreachablePeers []string
+			for _, peer := range ss.Config.Peers {
+				if peer.Host == ss.Config.Self.Host {
+					continue
+				}
+				if peerHealth, ok := ss.peerHealths[peer.Host]; ok {
+					if peerHealth.LastReachable.Before(time.Now().Add(-2 * time.Minute)) {
+						unreachablePeers = append(unreachablePeers, peer.Host)
+					}
+				} else {
 					unreachablePeers = append(unreachablePeers, peer.Host)
 				}
-			} else {
-				unreachablePeers = append(unreachablePeers, peer.Host)
 			}
-		}
 
-		// check if each unreachable node was also unreachable last time we checked (so we ignore temporary downtime from restarts/updates)
-		failsPeerReachability := false
-		for _, unreachable := range unreachablePeers {
-			if slices.Contains(ss.unreachablePeers, unreachable) {
-				// we can't reach this peer. self-mark unhealthy if >50% of other nodes can
-				if ss.canMajorityReachHost(unreachable) {
-					// TODO: we can self-mark unhealthy if we want to enforce peer reachability
-					failsPeerReachability = true
-					break
+			// check if each unreachable node was also unreachable last time we checked (so we ignore temporary downtime from restarts/updates)
+			failsPeerReachability := false
+			for _, unreachable := range unreachablePeers {
+				if slices.Contains(ss.unreachablePeers, unreachable) {
+					// we can't reach this peer. self-mark unhealthy if >50% of other nodes can
+					if ss.canMajorityReachHost(unreachable) {
+						// TODO: we can self-mark unhealthy if we want to enforce peer reachability
+						failsPeerReachability = true
+						break
+					}
 				}
 			}
-		}
 
-		ss.peerHealthsMutex.Lock()
-		ss.unreachablePeers = unreachablePeers
-		ss.failsPeerReachability = failsPeerReachability
-		ss.peerHealthsMutex.Unlock()
+			ss.peerHealthsMutex.Lock()
+			ss.unreachablePeers = unreachablePeers
+			ss.failsPeerReachability = failsPeerReachability
+			ss.peerHealthsMutex.Unlock()
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
@@ -146,12 +167,12 @@ func (ss *MediorumServer) canMajorityReachHost(host string) bool {
 	return numTotal < 5 || numCanReach > numTotal/2
 }
 
-func (ss *MediorumServer) updateDiskAndDbStatus() {
-	dbSize, errStr := getDatabaseSize(ss.pgPool)
+func (ss *MediorumServer) updateDiskAndDbStatus(ctx context.Context) {
+	dbSize, errStr := getDatabaseSize(ctx, ss.pgPool)
 	ss.databaseSize = dbSize
 	ss.dbSizeErr = errStr
 
-	uploadsCount, errStr := getUploadsCount(ss.crud.DB)
+	uploadsCount, errStr := getUploadsCount(ctx, ss.crud.DB)
 	ss.uploadsCount = uploadsCount
 	ss.uploadsCountErr = errStr
 
@@ -177,8 +198,8 @@ func getDiskStatus(path string) (total uint64, free uint64, err error) {
 	return
 }
 
-func getDatabaseSize(p *pgxpool.Pool) (size uint64, errStr string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func getDatabaseSize(ctx context.Context, p *pgxpool.Pool) (size uint64, errStr string) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	if err := p.QueryRow(ctx, `SELECT pg_database_size(current_database())`).Scan(&size); err != nil {
@@ -192,8 +213,8 @@ func getDatabaseSize(p *pgxpool.Pool) (size uint64, errStr string) {
 	return
 }
 
-func getUploadsCount(db *gorm.DB) (count int64, errStr string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+func getUploadsCount(ctx context.Context, db *gorm.DB) (count int64, errStr string) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	if err := db.WithContext(ctx).Model(&Upload{}).Count(&count).Error; err != nil {

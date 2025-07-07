@@ -42,7 +42,7 @@ func (s *StorageService) Ping(context.Context, *connect.Request[v1.PingRequest])
 
 // GetUpload implements v1connect.StorageServiceHandler.
 func (s *StorageService) GetUpload(ctx context.Context, req *connect.Request[v1.GetUploadRequest]) (*connect.Response[v1.GetUploadResponse], error) {
-	dbUpload, err := s.mediorum.serveUpload(req.Msg.Id, req.Msg.Fix, req.Msg.Analyze)
+	dbUpload, err := s.mediorum.serveUpload(ctx, req.Msg.Id, req.Msg.Fix, req.Msg.Analyze)
 	if err != nil {
 		return nil, err
 	}

@@ -40,6 +40,21 @@ func TestEntityManager(t *testing.T) {
 	expectedTxHash, err := common.ToTxHash(signedManageEntity)
 	assert.NoError(t, err)
 
+	timeout := time.After(30 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			assert.Fail(t, "timed out waiting for discovery node to be ready")
+		default:
+		}
+		status, err := sdk.Core.GetStatus(ctx, connect.NewRequest(&corev1.GetStatusRequest{}))
+		assert.NoError(t, err)
+		if status.Msg.Ready {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+
 	req := &corev1.SendTransactionRequest{
 		Transaction: signedManageEntity,
 	}

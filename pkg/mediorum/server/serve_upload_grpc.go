@@ -37,7 +37,7 @@ var (
 	ErrUploadProcessFailed                      = errors.New("upload process failed")
 )
 
-func (ss *MediorumServer) serveUpload(id string, fix bool, analyze bool) (*Upload, error) {
+func (ss *MediorumServer) serveUpload(ctx context.Context, id string, fix bool, analyze bool) (*Upload, error) {
 	var upload *Upload
 	err := ss.crud.DB.First(&upload, "id = ?", id).Error
 	if err != nil {
@@ -48,14 +48,14 @@ func (ss *MediorumServer) serveUpload(id string, fix bool, analyze bool) (*Uploa
 	}
 
 	if fix && upload.Status != JobStatusDone {
-		err = ss.transcode(upload)
+		err = ss.transcode(ctx, upload)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if analyze && upload.AudioAnalysisStatus != "done" {
-		err = ss.analyzeAudio(upload, time.Minute*10)
+		err = ss.analyzeAudio(ctx, upload, time.Minute*10)
 		if err != nil {
 			return nil, err
 		}
@@ -197,9 +197,9 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 			upload.FFProbe.Format.Filename = filename
 
 			// replicate to my bucket + others
-			ss.replicateToMyBucket(formFileCID, tmpFile)
+			ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
 			ss.logger.Info("replicating to my bucket", "name", tmpFile.Name(), "cid", formFileCID)
-			upload.Mirrors, err = ss.replicateFileParallel(formFileCID, tmpFile.Name(), placementHosts)
+			upload.Mirrors, err = ss.replicateFileParallel(ctx, formFileCID, tmpFile.Name(), placementHosts)
 			if err != nil {
 				upload.Error = err.Error()
 				return err

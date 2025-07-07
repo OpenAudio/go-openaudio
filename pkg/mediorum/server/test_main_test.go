@@ -3,12 +3,15 @@ package server
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/AudiusProject/audiusd/pkg/common"
 	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	"github.com/AudiusProject/audiusd/pkg/pos"
+	"github.com/AudiusProject/audiusd/pkg/registrar"
 	"github.com/AudiusProject/audiusd/pkg/version"
 )
 
@@ -19,8 +22,9 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 	testBaseDir := "/tmp/mediorum_test"
 	os.RemoveAll(testBaseDir)
 
-	network := []Peer{}
+	network := []registrar.Peer{}
 	servers := []*MediorumServer{}
+	provider := registrar.NewMultiDev()
 
 	dbUrlTemplate := os.Getenv("dbUrlTemplate")
 	if dbUrlTemplate == "" {
@@ -28,7 +32,7 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 	}
 
 	for i := 1; i <= serverCount; i++ {
-		network = append(network, Peer{
+		network = append(network, registrar.Peer{
 			Host:   fmt.Sprintf("http://127.0.0.1:%d", 1980+i),
 			Wallet: fmt.Sprintf("0xWallet%d", i), // todo keypair stuff
 		})
@@ -49,7 +53,7 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 			},
 		}
 		posChannel := make(chan pos.PoSRequest)
-		server, err := New(config, posChannel, &coreServer.CoreService{})
+		server, err := New(config, provider, posChannel, &coreServer.CoreService{}, common.NewLogger(&slog.HandlerOptions{}))
 		if err != nil {
 			panic(err)
 		}

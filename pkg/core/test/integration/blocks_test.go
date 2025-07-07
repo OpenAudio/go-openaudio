@@ -3,6 +3,7 @@ package integration_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +18,21 @@ func TestBlockCreation(t *testing.T) {
 
 	_, err := sdk.Core.Ping(ctx, connect.NewRequest(&corev1.PingRequest{}))
 	assert.NoError(t, err)
+
+	timeout := time.After(30 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			assert.Fail(t, "timed out waiting for discovery node to be ready")
+		default:
+		}
+		status, err := sdk.Core.GetStatus(ctx, connect.NewRequest(&corev1.GetStatusRequest{}))
+		assert.NoError(t, err)
+		if status.Msg.Ready {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
 
 	var blockOne *corev1.Block
 	var blockTwo *corev1.Block

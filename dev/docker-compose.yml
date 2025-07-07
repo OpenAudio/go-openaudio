@@ -182,7 +182,7 @@ services:
       - audiusd-dev
 
   test-core:
-    image: ${AUDIUSD_TEST_IMAGE:-audius/audiusd:test}
+    image: ${AUDIUSD_TEST_HARNESS_IMAGE:-audius/audiusd:harness}
     command: go test -v -count=1 -timeout=60s ./pkg/core/...
     volumes:
       - ./cmd:/app/cmd
@@ -202,11 +202,13 @@ services:
         condition: service_started
       eth-ganache:
         condition: service_healthy
+      nginx:
+        condition: service_healthy
     profiles:
       - core-tests
 
   test-mediorum-unittests:
-    image: ${AUDIUSD_TEST_IMAGE:-audius/audiusd:test}
+    image: ${AUDIUSD_TEST_HARNESS_IMAGE:-audius/audiusd:harness}
     command: go test -v -count=1 -timeout=60s ./pkg/mediorum/...
     volumes:
       - ./cmd:/app/cmd
