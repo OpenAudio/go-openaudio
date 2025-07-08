@@ -128,31 +128,33 @@ jobs:
               --build-arg GIT_SHA=${CIRCLE_SHA1} \
               --build-arg PREBUILT_BINARY=bin/audiusd-x86_64-linux \
               -t audius/audiusd:${CIRCLE_SHA1}-amd64 \
-              -f ./cmd/audiusd/Dockerfile.ci ./
+              -f ./cmd/audiusd/Dockerfile ./
             docker push audius/audiusd:${CIRCLE_SHA1}-amd64
 
             DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build \
-              --target test \
+              --target ci \
               --build-arg GIT_SHA=${CIRCLE_SHA1} \
               --build-arg PREBUILT_BINARY=bin/audiusd-x86_64-linux \
               -t audius/audiusd:${CIRCLE_SHA1}-test \
-              -f ./cmd/audiusd/Dockerfile.ci ./
+              -f ./cmd/audiusd/Dockerfile ./
 
             DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build \
               --target harness \
               --build-arg GIT_SHA=${CIRCLE_SHA1} \
               --build-arg PREBUILT_BINARY=bin/audiusd-x86_64-linux \
               -t audius/audiusd:${CIRCLE_SHA1}-harness \
-              -f ./cmd/audiusd/Dockerfile.ci ./
+              -f ./cmd/audiusd/Dockerfile ./
       - run:
           name: Run (unit) mediorum tests
           command: |
+            AUDIUSD_CI=true \
             AUDIUSD_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
             AUDIUSD_TEST_HARNESS_IMAGE=audius/audiusd:${CIRCLE_SHA1}-harness \
             TTY_FLAG="--no-TTY" make mediorum-test
       - run:
           name: Run (integration) core tests
           command: |
+            AUDIUSD_CI=true \
             AUDIUSD_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
             AUDIUSD_TEST_HARNESS_IMAGE=audius/audiusd:${CIRCLE_SHA1}-harness \
             TTY_FLAG="--no-TTY" make core-test
@@ -185,7 +187,7 @@ jobs:
               --build-arg GIT_SHA=${CIRCLE_SHA1} \
               --build-arg PREBUILT_BINARY=bin/audiusd-arm64-linux \
               -t audius/audiusd:${CIRCLE_SHA1}-arm64 \
-              -f ./cmd/audiusd/Dockerfile.ci ./
+              -f ./cmd/audiusd/Dockerfile ./
       - when:
           condition:
             equal: [ main, << pipeline.git.branch >> ]

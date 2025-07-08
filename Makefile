@@ -181,18 +181,28 @@ regen-contracts:
 	@echo Regenerating contracts
 	cd pkg/eth/contracts && sh -c "./generate_contract.sh"
 
-.PHONY: docker-harness docker-dev docker-local
-docker-harness:
-	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target harness --build-arg GIT_SHA=$(GIT_SHA) -t audius/audiusd:harness -f ./cmd/audiusd/Dockerfile ./
+.PHONY: docker-harness docker-dev
+docker-harness: docker-dev bin/audiusd-arm64-linux
+	docker build \
+		--target harness \
+		--build-arg GIT_SHA=$(GIT_SHA) \
+		--build-arg PREBUILT_BINARY=bin/audiusd-arm64-linux \
+		-t audius/audiusd:harness \
+		-f ./cmd/audiusd/Dockerfile \
+		./
 
-docker-dev:
-	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target dev --build-arg GIT_SHA=$(GIT_SHA) -t audius/audiusd:dev -f ./cmd/audiusd/Dockerfile ./
+docker-dev: bin/audiusd-arm64-linux
+	docker build \
+		--target dev \
+		--build-arg GIT_SHA=$(GIT_SHA) \
+		--build-arg PREBUILT_BINARY=bin/audiusd-arm64-linux \
+		-t audius/audiusd:dev \
+		-f ./cmd/audiusd/Dockerfile \
+		./
 
-docker-local:
-	DOCKER_DEFAULT_PLATFORM=linux/arm64 docker build --target prod --build-arg GIT_SHA=$(GIT_SHA) -t audius/audiusd:local -f ./cmd/audiusd/Dockerfile ./
 
 .PHONY: up down
-up: down docker-dev docker-harness
+up: down docker-dev
 	@docker compose \
 		--file='dev/docker-compose.yml' \
 		--project-name='dev' \
@@ -235,8 +245,8 @@ unit-test:
 
 .PHONY: mediorum-test
 mediorum-test:
-	@if [ -z "$(AUDIUSD_TEST_HARNESS_IMAGE)" ]; then \
-		make docker-harness; \
+	@if [ -z "$(AUDIUSD_CI)" ]; then \
+		$(MAKE) docker-harness; \
 	fi
 	@docker compose \
 		--file='dev/docker-compose.yml' \
@@ -254,15 +264,16 @@ mediorum-test:
 
 .PHONY: core-test
 core-test:
-	@if [ -z "$(AUDIUSD_TEST_HARNESS_IMAGE)" ]; then \
-		make docker-harness; \
+	@if [ -z "$(AUDIUSD_CI)" ]; then \
+		$(MAKE) docker-harness; \
 	fi
-	docker compose \
+	@docker compose \
 		--file='dev/docker-compose.yml' \
 		--project-name='test' \
 		--project-directory='./' \
 		--profile=core-tests \
-		run $(TTY_FLAG) --rm test-core
+		run $(TTY_FLAG) --rm test-core \
+		|| (echo "Tests failed, but containers left running. Use 'make test-down' to cleanup." && false)
 	@echo 'Tests complete. Spinning down containers...'
 	@docker compose \
 		--file='dev/docker-compose.yml' \

@@ -1,21 +1,8 @@
-FROM golang:alpine AS builder
-
-WORKDIR /app
-
-COPY go.mod go.sum ./
-RUN go mod download
-
-COPY ./pkg ./pkg
-COPY ./cmd/audiusd/main.go ./cmd/audiusd/main.go
-RUN go build -o audiusd cmd/audiusd/main.go
-
-
 FROM debian:bookworm-slim AS prod
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
-    curl \
     ffmpeg \
     libfftw3-single3 \
     libfftw3-double3 \
@@ -40,8 +27,6 @@ COPY --from=audius/cpp:bookworm /bin/analyze-bpm /bin/
 COPY --from=audius/cpp:bookworm /usr/local/lib/libkeyfinder.so* /usr/local/lib/
 RUN ldconfig
 
-COPY --from=builder /app/audiusd /bin/audiusd
-
 RUN mkdir -p /env
 COPY ./cmd/audiusd/env/* /env/
 
@@ -57,47 +42,49 @@ EXPOSE 26656
 
 VOLUME ["/data"]
 
+ARG PREBUILT_BINARY
+COPY ${PREBUILT_BINARY} /bin/audiusd
+RUN chmod +x /bin/audiusd
+
 ENTRYPOINT ["/bin/entrypoint.sh"]
 
 
-FROM prod AS harness
-
-COPY --from=golang:alpine3.21 /usr/local/go/ /usr/local/go/
-ENV PATH="/usr/local/go/bin:${PATH}"
-ENV GOPATH="/go"
-ENV GOROOT="/usr/local/go"
-
-WORKDIR /app
-COPY --from=builder /go/pkg/mod /go/pkg/mod
-
-COPY ./cmd/audiusd/.initdb /app/audiusd/.initdb
-
-ENV AUDIUSD_TEST_MODE="true"
-
-
-FROM prod AS dev
-
-COPY --from=golang:alpine3.21 /usr/local/go/ /usr/local/go/
-ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
-ENV GOPATH="/go"
-ENV GOROOT="/usr/local/go"
-
-RUN go install github.com/air-verse/air@v1.61.5
+# Image on which to base anything used for development, testing, etc.
+FROM prod AS toolbase 
 
 COPY ./dev/tls/cert.pem /usr/share/ca-certificates/devnet.crt
 RUN chmod 644 /usr/share/ca-certificates/devnet.crt && \
     echo "devnet.crt" >> /etc/ca-certificates.conf && \
-    update-ca-certificates
+    update-ca-certificates && \
+    apt-get update && apt-get install -y curl
+
+
+# Image from which go tests can be executed in the same network
+# with all the audiusd deps installed
+FROM toolbase AS harness
+
+COPY --from=golang:alpine /usr/local/go/ /usr/local/go/
+
+ENV GOPATH="/go"
+ENV GOROOT="/usr/local/go"
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+COPY ./cmd/audiusd/.initdb /app/audiusd/.initdb
 
 WORKDIR /app
-COPY --from=builder /go/pkg/mod /go/pkg/mod
+COPY go.mod go.sum ./
+RUN go mod download
 
-COPY ./cmd ./cmd
-COPY ./pkg ./pkg
-COPY ./go.mod ./go.mod
-COPY ./go.sum ./go.sum
-COPY ./.air.toml ./.air.toml
+ENV AUDIUSD_TEST_HARNESS_MODE="true"
 
-RUN go build -o ./tmp/audiusd cmd/audiusd/main.go
 
-ENV AUDIUSD_DEV_MODE="true"
+# Image for running audiusd during CI tests.
+# Ideally nothing should be added here unless strictly necessary.
+FROM toolbase AS ci
+# no-op
+
+
+# Image for running audiusd for development.
+# Add any developer convenience tools or state here that don't belong in CI
+FROM toolbase AS dev
+# no-op
