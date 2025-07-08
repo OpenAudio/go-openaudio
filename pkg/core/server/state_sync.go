@@ -345,6 +345,10 @@ func (s *Server) pruneSnapshots(logger *common.Logger) error {
 }
 
 func (s *Server) getStoredSnapshots() ([]v1.Snapshot, error) {
+	if !s.config.StateSync.ServeSnapshots {
+		return []v1.Snapshot{}, nil
+	}
+
 	snapshotDir := getSnapshotDir(s.config.RootDir, s.config.GenesisFile.ChainID)
 
 	dirs, err := os.ReadDir(snapshotDir)
