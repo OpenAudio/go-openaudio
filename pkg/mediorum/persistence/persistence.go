@@ -122,6 +122,10 @@ func checkStorageCredentials(blobDriverUrl string) error {
 			return errors.New("missing credentials required for persistent GS backing (i.e. GOOGLE_APPLICATION_CREDENTIALS)")
 		}
 
+		if _, err := os.Stat(googleAppCredentials); errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("file '%s' does not exist. Please ensure '$%s' points to the correct location", googleAppCredentials, GOOGLE_APPLICATION_CREDENTIALS)
+		}
+
 		return nil
 	case AZBLOB:
 		azureStorageAccount := os.Getenv(AZURE_STORAGE_ACCOUNT)

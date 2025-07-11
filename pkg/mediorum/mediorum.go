@@ -2,8 +2,8 @@ package mediorum
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -70,12 +70,18 @@ func runMediorum(mediorumEnv string, posChannel chan pos.PoSRequest, storageServ
 	}
 	logger.Info("fetched registered nodes", "peers", len(peers), "signers", len(signers))
 
-	creatorNodeEndpoint := mustGetenv("creatorNodeEndpoint")
-	privateKeyHex := mustGetenv("delegatePrivateKey")
+	creatorNodeEndpoint := os.Getenv("creatorNodeEndpoint")
+	if creatorNodeEndpoint == "" {
+		return errors.New("missing required env variable 'creatorNodeEndpoint'")
+	}
+	privateKeyHex := os.Getenv("delegatePrivateKey")
+	if privateKeyHex == "" {
+		return errors.New("missing required env variable 'delegatePrivateKey'")
+	}
 
 	privateKey, err := ethcontracts.ParsePrivateKeyHex(privateKeyHex)
 	if err != nil {
-		log.Fatal("invalid private key", err)
+		return fmt.Errorf("invalid private key: %v", err)
 	}
 
 	// compute wallet address
@@ -142,23 +148,11 @@ func runMediorum(mediorumEnv string, posChannel chan pos.PoSRequest, storageServ
 
 	ss, err := server.New(config, g, posChannel, core, commonLogger)
 	if err != nil {
-		logger.Error("failed to create server", "err", err)
-		log.Fatal(err)
+		return fmt.Errorf("failed to create server: %v", err)
 	}
 
 	storageService.SetMediorum(ss)
 	return ss.MustStart()
-}
-
-func mustGetenv(key string) string {
-	val := os.Getenv(key)
-	if val == "" {
-		log.Println("missing required env variable: ", key, " sleeping ...")
-		// if config is incorrect, sleep a bit to prevent container from restarting constantly
-		time.Sleep(time.Hour)
-		log.Fatal("missing required env variable: ", key)
-	}
-	return val
 }
 
 func getenvWithDefault(key string, fallback string) string {

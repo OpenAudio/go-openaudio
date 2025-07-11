@@ -156,14 +156,14 @@ func New(config MediorumConfig, provider registrar.PeerProvider, posChannel chan
 	}
 
 	if config.VersionJson == (version.VersionJson{}) {
-		log.Fatal(".version.json is required to be bundled with the mediorum binary")
+		return nil, errors.New(".version.json is required to be bundled with the mediorum binary")
 	}
 
 	// validate host config
 	if config.Self.Host == "" {
-		log.Fatal("host is required")
+		return nil, errors.New("host is required")
 	} else if hostUrl, err := url.Parse(config.Self.Host); err != nil {
-		log.Fatal("invalid host: ", err)
+		return nil, fmt.Errorf("invalid host: %v", err)
 	} else if config.ListenPort == "" {
 		config.ListenPort = hostUrl.Port()
 	}
@@ -245,7 +245,7 @@ func New(config MediorumConfig, provider registrar.PeerProvider, posChannel chan
 		if err == nil {
 			_, err = sqlDB.Exec("SET client_encoding TO 'UTF8';")
 			if err != nil {
-				panic(fmt.Sprintf("Failed to set client encoding: %v", err))
+				return nil, fmt.Errorf("Failed to set client encoding: %v", err)
 			}
 		}
 	}
@@ -388,20 +388,10 @@ func New(config MediorumConfig, provider registrar.PeerProvider, posChannel chan
 	routes.POST("/delist_status/insert", ss.serveInsertDelistStatus, ss.requireBodySignedByOwner)
 
 	// -------------------
-	// healthz
-	healthz := routes.Group("/healthz")
-	healthzUrl, err := url.Parse("http://healthz")
-	if err != nil {
-		log.Fatal("Invalid healthz URL: ", err)
-	}
-	healthzProxy := httputil.NewSingleHostReverseProxy(healthzUrl)
-	healthz.Any("*", echo.WrapHandler(healthzProxy))
-
-	// -------------------
 	// reverse proxy /d and /d_api to uptime container
 	uptimeUrl, err := url.Parse("http://uptime:1996")
 	if err != nil {
-		log.Fatal("Invalid uptime URL: ", err)
+		return nil, fmt.Errorf("Invalid uptime URL: %v", err)
 	}
 	uptimeProxy := httputil.NewSingleHostReverseProxy(uptimeUrl)
 
@@ -602,7 +592,7 @@ func (ss *MediorumServer) startEchoServer(ctx context.Context) {
 		defer close(done)
 		err := ss.echo.Start(":" + ss.Config.ListenPort)
 		if err != nil && err != http.ErrServerClosed {
-			panic(err)
+			ss.logger.Error("echo server error", "error", err)
 		}
 	}()
 	for {
@@ -610,7 +600,7 @@ func (ss *MediorumServer) startEchoServer(ctx context.Context) {
 		case <-done:
 			return
 		case <-ctx.Done():
-			ctx, _ := context.WithTimeout(context.Background(), 1*time.Minute)
+			ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
 			if err := ss.echo.Shutdown(ctx); err != nil {
 				ss.logger.Error("failed to shutdown echo server", "error", err)
 			}
@@ -633,7 +623,7 @@ func (ss *MediorumServer) startPprofServer(ctx context.Context) {
 		case <-done:
 			return
 		case <-ctx.Done():
-			ctx, _ := context.WithTimeout(context.Background(), 1*time.Minute)
+			ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
 			if err := srv.Shutdown(ctx); err != nil {
 				ss.logger.Error("failed to shutdown pprof server", "error", err)
 			}
