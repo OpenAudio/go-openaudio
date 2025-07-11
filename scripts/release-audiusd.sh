@@ -1,7 +1,8 @@
+#!/bin/bash
 # This script should be run from the Makefile only.
 make_target="$1"
 
-if [ -n "$(git status -s)" ]; then 
+if [ -n "$(git status -s)" ]; then
     echo "You have uncommitted changes. Commit them first before releasing a docker image."
     exit 1
 fi

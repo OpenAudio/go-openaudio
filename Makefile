@@ -46,60 +46,14 @@ bin/audiusd-arm64-linux: $(BUILD_SRCS)
 	@echo "Building arm audiusd for linux..."
 	@bash scripts/build-audiusd.sh $@ arm64 linux
 
-bin/audius-ctl-native: $(BUILD_SRCS)
-	@echo "Building audius-ctl for local platform and architecture..."
-	@bash scripts/build-audius-ctl.sh $@
-
-bin/audius-ctl-arm64-linux: $(BUILD_SRCS)
-	@echo "Building arm audius-ctl for linux..."
-	@bash scripts/build-audius-ctl.sh $@ arm64 linux
-
-bin/audius-ctl-x86_64-linux: $(BUILD_SRCS)
-	@echo "Building x86 audius-ctl for linux..."
-	@bash scripts/build-audius-ctl.sh $@ amd64 linux
-
-bin/audius-ctl-arm64-darwin: $(BUILD_SRCS)
-	@echo "Building macos arm audius-ctl..."
-	@bash scripts/build-audius-ctl.sh $@ arm64 darwin
-
-bin/audius-ctl-x86_64-darwin: $(BUILD_SRCS)
-	@echo "Building macos x86 audius-ctl..."
-	@bash scripts/build-audius-ctl.sh $@ amd64 darwin
-
-bin/aupl: $(BUILD_SRCS)
-	@echo "Building aupl for native platform and architecture..."
-	@CGO_ENABLED=0 go build -o $@ ./cmd/aupl
-
-.PHONY: release-audius-ctl audius-ctl-production-build
-release-audius-ctl:
-	bash scripts/release-audius-ctl.sh
-
-audius-ctl-production-build: clean ignore-code-gen bin/audius-ctl-arm64-linux bin/audius-ctl-x86_64-linux bin/audius-ctl-arm64-darwin bin/audius-ctl-x86_64-darwin
-
 .PHONY: ignore-code-gen
 ignore-code-gen:
 	@echo "Warning: not regenerating .go files from sql, templ, proto, etc. Using existing artifacts instead."
 	@touch $(SQL_ARTIFACTS) $(TEMPL_ARTIFACTS) $(PROTO_ARTIFACTS) go.mod
 
-.PHONY: build-wrapper-local build-push-wrapper
-docker-wrapper-local:
-	@echo "Building Docker image for local platform..."
-	docker buildx build --load -t audius/audius-d:$(WRAPPER_TAG) pkg/orchestration
-
-docker-push-wrapper:
-	@echo "Building and pushing Docker images for all platforms..."
-	docker buildx build --platform linux/amd64,linux/arm64 --push -t audius/audius-d:$(WRAPPER_TAG) pkg/orchestration
-
 .PHONY: build-push-cpp
 docker-push-cpp:
 	docker buildx build --platform linux/amd64,linux/arm64 --push -t audius/cpp:bookworm -f ./cmd/audiusd/Dockerfile.deps ./
-
-.PHONY: install uninstall
-install:
-	@bash scripts/install-audius-ctl.sh local
-
-uninstall:
-	@bash scripts/uninstall-audius-ctl.sh
 
 .PHONY: clean
 clean:

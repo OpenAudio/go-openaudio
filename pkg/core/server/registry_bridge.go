@@ -17,7 +17,6 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/eth/contracts"
-	"github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 
 	geth "github.com/ethereum/go-ethereum/common"
@@ -139,7 +138,7 @@ func (s *Server) RegisterSelf() error {
 		if errors.As(err, &connectErr) {
 			if connectErr.Code() == connect.CodeNotFound {
 				s.logger.Infof("node %s : %s not registered on Ethereum", s.config.WalletAddress, nodeEndpoint)
-				logger.Info("continuing unregistered")
+				s.logger.Info("continuing unregistered")
 				return nil
 			}
 		}

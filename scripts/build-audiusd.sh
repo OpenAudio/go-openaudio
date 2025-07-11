@@ -1,3 +1,4 @@
+#!/bin/bash
 # This script should be run from the Makefile only.
 set -eo pipefail
 

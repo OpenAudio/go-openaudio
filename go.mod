@@ -7,20 +7,16 @@ require (
 	github.com/cometbft/cometbft v1.0.0
 	github.com/cosmos/gogoproto v1.7.0 // indirect
 	github.com/disintegration/imaging v1.6.2
-	github.com/docker/cli v25.0.3+incompatible
-	github.com/docker/docker v28.0.1+incompatible
-	github.com/docker/go-connections v0.5.0
+	github.com/docker/docker v28.0.1+incompatible // indirect
+	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1
 	github.com/erni27/imcache v1.2.0
 	github.com/ethereum/go-ethereum v1.14.9
 	github.com/georgysavva/scany/v2 v2.0.0
-	github.com/google/go-github/v61 v61.0.0
 	github.com/gowebpki/jcs v1.0.0
 	github.com/imroc/req/v3 v3.42.0
 	github.com/ipfs/go-cid v0.4.1
 	github.com/jackc/pgx/v5 v5.6.0
-	github.com/jedib0t/go-pretty/v6 v6.5.9
-	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v4 v4.12.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/oklog/ulid/v2 v2.1.0
@@ -28,7 +24,7 @@ require (
 	github.com/orandin/slog-gorm v1.1.0
 	github.com/speps/go-hashids/v2 v2.0.1
 	github.com/spf13/cast v1.7.0
-	github.com/spf13/cobra v1.8.1
+	github.com/spf13/cobra v1.8.1 // indirect
 	github.com/storyicon/sigverify v1.1.0
 	github.com/stretchr/testify v1.10.0
 	go.etcd.io/bbolt v1.4.0-alpha.0.0.20240404170359-43604f3112c5
@@ -37,10 +33,8 @@ require (
 	golang.org/x/sync v0.13.0
 	google.golang.org/grpc v1.70.0
 	google.golang.org/protobuf v1.36.6
-	gopkg.in/yaml.v2 v2.4.0
 	gorm.io/driver/postgres v1.5.0
 	gorm.io/gorm v1.25.5
-	nhooyr.io/websocket v1.8.11
 )
 
 require (
@@ -185,7 +179,6 @@ require (
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/minio/highwayhash v1.0.3 // indirect
 	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
@@ -214,7 +207,6 @@ require (
 	github.com/quic-go/quic-go v0.44.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/refraction-networking/utls v1.5.3 // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/rs/cors v1.11.1 // indirect
 	github.com/sasha-s/go-deadlock v0.3.5 // indirect
