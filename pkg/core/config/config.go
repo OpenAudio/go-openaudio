@@ -47,7 +47,7 @@ const (
 	StageAcdcAddress = "0x1Cd8a543596D499B9b6E7a6eC15ECd2B7857Fd64"
 	DevAcdcAddress   = "0x254dffcd3277C0b1660F6d42EFbB754edaBAbC2B"
 
-	ProdEthRpc  = "https://eth.audius.co"
+	ProdEthRpc  = "https://eth-validator.audius.co"
 	StageEthRpc = "https://eth-validator.staging.audius.co"
 	DevEthRpc   = "http://eth-ganache:8545"
 

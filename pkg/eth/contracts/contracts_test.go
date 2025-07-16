@@ -15,7 +15,7 @@ func TestGetAllRegisteredNodes(t *testing.T) {
 
 	ctx := context.Background()
 
-	ethrpc, err := ethclient.Dial("https://eth.audius.co")
+	ethrpc, err := ethclient.Dial("https://eth-validator.audius.co")
 	require.Nil(t, err)
 	defer ethrpc.Close()
 
