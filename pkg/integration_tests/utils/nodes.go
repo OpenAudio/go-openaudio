@@ -1,9 +1,14 @@
 package utils
 
 import (
+	"context"
+	"errors"
 	"os"
 	"strings"
+	"time"
 
+	"connectrpc.com/connect"
+	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/sdk"
 )
 
@@ -39,4 +44,38 @@ func EnsureProtocol(endpoint string) string {
 		return "http://" + endpoint
 	}
 	return endpoint
+}
+
+func WaitForDevnetHealthy(timeout time.Duration) error {
+	timeoutChan := time.After(timeout)
+	nodes := []*sdk.AudiusdSDK{
+		DiscoveryOne,
+		ContentOne,
+		ContentTwo,
+		ContentThree,
+	}
+
+	for {
+		select {
+		case <-timeoutChan:
+			return errors.New("timed out waiting for devnet to be ready")
+		default:
+		}
+		allReady := true
+		for _, n := range nodes {
+			status, err := n.Core.GetStatus(context.Background(), connect.NewRequest(&corev1.GetStatusRequest{}))
+			if err != nil {
+				allReady = false
+				break
+			} else if !status.Msg.Ready {
+				allReady = false
+				break
+			}
+		}
+		if allReady {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return nil
 }

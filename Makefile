@@ -191,14 +191,22 @@ down: ss-down
 		down -v
 
 .PHONY: test
-test: mediorum-test core-test unit-test
+test: test-mediorum test-integration test-unit
 
-.PHONY: unit-test
-unit-test:
-	go test -v -count=1 -timeout=60s ./pkg/lifecycle/
+.PHONY: test-unit
+test-unit:
+	@if [ -z "$(AUDIUSD_CI)" ]; then \
+		$(MAKE) docker-harness; \
+	fi
+	@docker compose \
+		--file='dev/docker-compose.yml' \
+		--project-name='test' \
+		--project-directory='./' \
+		--profile=unittests \
+		run $(TTY_FLAG) --rm test-unittests
 
-.PHONY: mediorum-test
-mediorum-test:
+.PHONY: test-mediorum
+test-mediorum:
 	@if [ -z "$(AUDIUSD_CI)" ]; then \
 		$(MAKE) docker-harness; \
 	fi
@@ -208,16 +216,9 @@ mediorum-test:
 		--project-directory='./' \
 		--profile=mediorum-unittests \
 		run $(TTY_FLAG) --rm test-mediorum-unittests
-	@echo 'Tests successful. Spinning down containers...'
-	@docker compose \
-    	--file='dev/docker-compose.yml' \
-        --project-name='test' \
-        --project-directory='./' \
-		--profile=mediorum-unittests \
-        down -v
 
-.PHONY: core-test
-core-test:
+.PHONY: test-integration
+test-integration:
 	@if [ -z "$(AUDIUSD_CI)" ]; then \
 		$(MAKE) docker-harness; \
 	fi
@@ -225,15 +226,15 @@ core-test:
 		--file='dev/docker-compose.yml' \
 		--project-name='test' \
 		--project-directory='./' \
-		--profile=core-tests \
-		run $(TTY_FLAG) --rm test-core \
+		--profile=integration-tests \
+		run $(TTY_FLAG) --rm test-integration \
 		|| (echo "Tests failed, but containers left running. Use 'make test-down' to cleanup." && false)
 	@echo 'Tests complete. Spinning down containers...'
 	@docker compose \
 		--file='dev/docker-compose.yml' \
 		--project-name='test' \
 		--project-directory='./' \
-		--profile=core-tests \
+		--profile=integration-tests \
 		down -v
 
 .PHONY: test-down
@@ -242,6 +243,7 @@ test-down:
 		--file='dev/docker-compose.yml' \
 		--project-name='test' \
 		--project-directory='./' \
-		--profile=core-tests \
+		--profile=integration-tests \
 		--profile=mediorum-unittests \
+		--profile=unittests \
 		down -v

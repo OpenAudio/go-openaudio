@@ -1,4 +1,4 @@
-package integration_test
+package integration_tests
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"connectrpc.com/connect"
 	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/core/test/integration/utils"
+	"github.com/AudiusProject/audiusd/pkg/integration_tests/utils"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
@@ -40,20 +40,8 @@ func TestEntityManager(t *testing.T) {
 	expectedTxHash, err := common.ToTxHash(signedManageEntity)
 	assert.NoError(t, err)
 
-	timeout := time.After(30 * time.Second)
-	for {
-		select {
-		case <-timeout:
-			assert.Fail(t, "timed out waiting for discovery node to be ready")
-		default:
-		}
-		status, err := sdk.Core.GetStatus(ctx, connect.NewRequest(&corev1.GetStatusRequest{}))
-		assert.NoError(t, err)
-		if status.Msg.Ready {
-			break
-		}
-		time.Sleep(2 * time.Second)
-	}
+	err = utils.WaitForDevnetHealthy(60 * time.Second)
+	assert.NoError(t, err)
 
 	req := &corev1.SendTransactionRequest{
 		Transaction: signedManageEntity,

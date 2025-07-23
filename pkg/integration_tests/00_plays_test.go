@@ -1,4 +1,4 @@
-package integration_test
+package integration_tests
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"connectrpc.com/connect"
 	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/core/test/integration/utils"
+	"github.com/AudiusProject/audiusd/pkg/integration_tests/utils"
 	"github.com/google/uuid"
 	protob "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"

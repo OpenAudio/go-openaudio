@@ -3,7 +3,6 @@ package eth
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/big"
 
 	"connectrpc.com/connect"
@@ -30,7 +29,8 @@ func (e *EthService) GetStatus(context.Context, *connect.Request[v1.GetStatusReq
 func (e *EthService) GetRegisteredEndpoints(ctx context.Context, _ *connect.Request[v1.GetRegisteredEndpointsRequest]) (*connect.Response[v1.GetRegisteredEndpointsResponse], error) {
 	eps, err := e.db.GetRegisteredEndpoints(ctx)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not get registered endpoints: %w", err))
+		e.logger.Debugf("could not get registered endpoints: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get registered endpoints"))
 	}
 	peps := make([]*v1.ServiceEndpoint, 0, len(eps))
 	for _, ep := range eps {
@@ -49,9 +49,11 @@ func (e *EthService) GetRegisteredEndpoints(ctx context.Context, _ *connect.Requ
 func (e *EthService) GetRegisteredEndpointInfo(ctx context.Context, req *connect.Request[v1.GetRegisteredEndpointInfoRequest]) (*connect.Response[v1.GetRegisteredEndpointInfoResponse], error) {
 	ep, err := e.db.GetRegisteredEndpoint(ctx, req.Msg.Endpoint)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not get registered endpoint: %w", err))
+		e.logger.Debugf("could not get registered endpoint: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get registered endpoint"))
 	} else if errors.Is(err, pgx.ErrNoRows) {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("endpoint not found: %w", err))
+		e.logger.Debugf("registered endpoint not found: %v", err)
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("could not get registered endpoint"))
 	}
 	res := &v1.GetRegisteredEndpointInfoResponse{
 		Se: &v1.ServiceEndpoint{
@@ -68,7 +70,8 @@ func (e *EthService) GetRegisteredEndpointInfo(ctx context.Context, req *connect
 func (e *EthService) GetServiceProviders(ctx context.Context, _ *connect.Request[v1.GetServiceProvidersRequest]) (*connect.Response[v1.GetServiceProvidersResponse], error) {
 	sps, err := e.db.GetServiceProviders(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not get service providers: %w", err))
+		e.logger.Debugf("could not get service providers: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get service providers"))
 	}
 	psps := make([]*v1.ServiceProvider, 0, len(sps))
 	for _, sp := range sps {
@@ -91,7 +94,8 @@ func (e *EthService) GetServiceProviders(ctx context.Context, _ *connect.Request
 func (e *EthService) GetLatestFundingRound(ctx context.Context, _ *connect.Request[v1.GetLatestFundingRoundRequest]) (*connect.Response[v1.GetLatestFundingRoundResponse], error) {
 	round, err := e.db.GetLatestFundingRound(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not get latest funding round: %w", err)
+		e.logger.Debugf("could not get latest funding round: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get latest funding round"))
 	}
 	res := &v1.GetLatestFundingRoundResponse{
 		Round:     int64(round.RoundNum),
@@ -104,7 +108,8 @@ func (e *EthService) GetLatestFundingRound(ctx context.Context, _ *connect.Reque
 func (e *EthService) IsDuplicateDelegateWallet(ctx context.Context, req *connect.Request[v1.IsDuplicateDelegateWalletRequest]) (*connect.Response[v1.IsDuplicateDelegateWalletResponse], error) {
 	count, err := e.db.GetCountOfEndpointsWithDelegateWallet(ctx, req.Msg.Wallet)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not get registered endpoints: %w", err))
+		e.logger.Debugf("could not check for duplicate wallet: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not check for duplicate wallet"))
 	}
 	res := &v1.IsDuplicateDelegateWalletResponse{IsDuplicate: count > 1}
 	return connect.NewResponse(res), nil
@@ -112,34 +117,44 @@ func (e *EthService) IsDuplicateDelegateWallet(ctx context.Context, req *connect
 
 // For development purposes only
 func (e *EthService) Register(ctx context.Context, req *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error) {
+	if e.env != "dev" && e.env != "test" {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+	}
+
 	ethKey, err := common.EthToEthKey(req.Msg.DelegateKey)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to create eth key %v", err))
+		e.logger.Debugf("failed to create eth key: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	chainID, err := e.rpc.ChainID(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not get chain id: %v", err))
+		e.logger.Debugf("could not get chain id: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	opts, err := bind.NewKeyedTransactorWithChainID(ethKey, chainID)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not create keyed transactor: %v", err))
+		e.logger.Debugf("could not create keyed transactor: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	token, err := e.c.GetAudioTokenContract()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not get token contract: %v", err))
+		e.logger.Debugf("could not get token contract: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	spf, err := e.c.GetServiceProviderFactoryContract()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not get service provider factory contract: %v", err))
+		e.logger.Debugf("could not get service provider factory contract: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	stakingAddress, err := spf.GetStakingAddress(nil)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not get staking address: %v", err))
+		e.logger.Debugf("could not get staking address: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	decimals := 18
@@ -147,18 +162,21 @@ func (e *EthService) Register(ctx context.Context, req *connect.Request[v1.Regis
 
 	_, err = token.Approve(opts, stakingAddress, stake)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not approve tokens: %v", err))
+		e.logger.Debugf("could not approve tokens: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	delegateOwnerWallet := crypto.PubkeyToAddress(ethKey.PublicKey)
 	st, err := contracts.StringToServiceType(req.Msg.ServiceType)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("invalid service type: %v", err))
+		e.logger.Debugf("invalid service type: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	_, err = spf.Register(opts, st, req.Msg.Endpoint, stake, delegateOwnerWallet)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("couldn't register node: %v", err))
+		e.logger.Debugf("couldn't register node: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	e.logger.Infof("node %s registered on eth", req.Msg.Endpoint)
@@ -179,7 +197,8 @@ func (e *EthService) Subscribe(ctx context.Context, req *connect.Request[v1.Subs
 				e.deregPubsub.Unsubscribe(DeregistrationTopic, deregCh)
 				e.logger.Info("unsubscribed from deregistration events")
 			}
-			return ctx.Err()
+			e.logger.Debugf("subscription canceled by context: %v", ctx.Err())
+			return connect.NewError(connect.CodeInternal, errors.New("subscription canceled"))
 
 		case dereg := <-deregCh:
 			if dereg != nil {

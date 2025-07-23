@@ -126,19 +126,26 @@ jobs:
               -t audius/audiusd:${CIRCLE_SHA1}-harness \
               -f ./cmd/audiusd/Dockerfile ./
       - run:
-          name: Run (unit) mediorum tests
+          name: Run mediorum tests
           command: |
             AUDIUSD_CI=true \
             AUDIUSD_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
             AUDIUSD_TEST_HARNESS_IMAGE=audius/audiusd:${CIRCLE_SHA1}-harness \
-            TTY_FLAG="--no-TTY" make mediorum-test
+            TTY_FLAG="--no-TTY" make test-mediorum
       - run:
-          name: Run (integration) core tests
+          name: Run unit tests
           command: |
             AUDIUSD_CI=true \
             AUDIUSD_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
             AUDIUSD_TEST_HARNESS_IMAGE=audius/audiusd:${CIRCLE_SHA1}-harness \
-            TTY_FLAG="--no-TTY" make core-test
+            TTY_FLAG="--no-TTY" make test-unit
+      - run:
+          name: Run integration tests
+          command: |
+            AUDIUSD_CI=true \
+            AUDIUSD_IMAGE=audius/audiusd:${CIRCLE_SHA1}-test \
+            AUDIUSD_TEST_HARNESS_IMAGE=audius/audiusd:${CIRCLE_SHA1}-harness \
+            TTY_FLAG="--no-TTY" make test-integration
       - run:
           when: always
           name: Clean up tests

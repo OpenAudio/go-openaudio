@@ -1,4 +1,4 @@
-package integrationtests
+package integration_tests
 
 import (
 	"bytes"
@@ -13,12 +13,15 @@ import (
 	"connectrpc.com/connect"
 	v1storage "github.com/AudiusProject/audiusd/pkg/api/storage/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
+	"github.com/AudiusProject/audiusd/pkg/integration_tests/utils"
 	auds "github.com/AudiusProject/audiusd/pkg/sdk"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTrackReleaseWorkflow(t *testing.T) {
 	ctx := context.Background()
+
+	require.NoError(t, utils.WaitForDevnetHealthy(30*time.Second))
 
 	serverAddr := "node3.audiusd.devnet"
 	privKeyPath := "./assets/demo_key.txt"

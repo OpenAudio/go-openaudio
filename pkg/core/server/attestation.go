@@ -45,6 +45,8 @@ func (s *Server) finalizeAttestation(ctx context.Context, tx *v1.SignedTransacti
 	switch t := tx.GetAttestation().Body.(type) {
 	case *v1.Attestation_ValidatorRegistration:
 		return tx, s.finalizeRegisterNodeAttestation(ctx, tx, blockHeight)
+	case *v1.Attestation_ValidatorDeregistration:
+		return tx, s.finalizeDeregisterValidatorAttestation(ctx, tx)
 	default:
 		return nil, fmt.Errorf("unhandled attestation: %v %T", tx, t)
 	}
@@ -54,6 +56,8 @@ func getAttestationBodyBytes(att *v1.Attestation) ([]byte, error) {
 	switch t := att.Body.(type) {
 	case *v1.Attestation_ValidatorRegistration:
 		return proto.Marshal(att.GetValidatorRegistration())
+	case *v1.Attestation_ValidatorDeregistration:
+		return proto.Marshal(att.GetValidatorDeregistration())
 	default:
 		return nil, fmt.Errorf("unhandled attestation: %v %T", att, t)
 	}
@@ -91,13 +95,23 @@ func recoverSigners(signatures []string, data []byte) ([]string, error) {
 	return res, nil
 }
 
-func (s *Server) attestationHasEnoughSigners(ctx context.Context, signers []string, rendezvousKey []byte, rendezvousSize, signersNeeded int) (bool, error) {
+// param excludeAddress is for attestations that should exclude a particular signer, e.g. Deregistrations. Set to "" if unneeded.
+func (s *Server) attestationHasEnoughSigners(ctx context.Context, signers []string, rendezvousKey []byte, rendezvousSize, signersNeeded int, excludeAddress string) (bool, error) {
 	addrs, err := s.db.GetAllEthAddressesOfRegisteredNodes(ctx)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return false, fmt.Errorf("failed to get core validators while validating registration: %v", err)
 	}
-	signersNeeded = min(len(addrs), signersNeeded)
-	rendezvous := common.GetAttestorRendezvous(addrs, rendezvousKey, rendezvousSize)
+
+	filteredAddrs := addrs[:]
+	for i, addr := range addrs {
+		if addr == excludeAddress { // delete (in-place) excluded address
+			filteredAddrs[i] = filteredAddrs[len(filteredAddrs)-1]
+			filteredAddrs = filteredAddrs[:len(filteredAddrs)-1]
+			break
+		}
+	}
+	signersNeeded = min(len(filteredAddrs), signersNeeded)
+	rendezvous := common.GetAttestorRendezvous(filteredAddrs, rendezvousKey, rendezvousSize)
 	for _, address := range signers {
 		if rendezvous[address] {
 			signersNeeded--

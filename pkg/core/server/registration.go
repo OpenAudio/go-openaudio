@@ -73,7 +73,7 @@ func (s *Server) isValidRegisterNodeAttestation(ctx context.Context, tx *v1.Sign
 	// validate signers
 	keyBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(keyBytes, uint64(vr.GetEthBlock()))
-	enough, err := s.attestationHasEnoughSigners(ctx, signers, keyBytes, s.config.AttRegistrationRSize, s.config.AttRegistrationMin)
+	enough, err := s.attestationHasEnoughSigners(ctx, signers, keyBytes, s.config.AttRegistrationRSize, s.config.AttRegistrationMin, "")
 	if err != nil {
 		return fmt.Errorf("error checking attestors against validators: %v", err)
 	} else if !enough {
@@ -133,6 +133,9 @@ func (s *Server) isValidDeregisterNodeAttestation(ctx context.Context, tx *v1.Si
 		return fmt.Errorf("public Key missing from deregistration attestation: %v", tx)
 	}
 	vdPubKey := ed25519.PubKey(dereg.GetPubKey())
+	if len(vdPubKey) != ed25519.PubKeySize {
+		return fmt.Errorf("incorrect pubkey size %d, must by %d", len(vdPubKey), ed25519.PubKeySize)
+	}
 	if vdPubKey.Address().String() != addr {
 		return fmt.Errorf("address does not match public key: %s %s", vdPubKey.Address(), addr)
 	}
@@ -142,8 +145,13 @@ func (s *Server) isValidDeregisterNodeAttestation(ctx context.Context, tx *v1.Si
 		return fmt.Errorf("fegistration request for '%s' with deadline %d is too new/old (current height is %d)", addr, dereg.Deadline, blockHeight)
 	}
 
+	node, err := s.db.GetRegisteredNodeByCometAddress(ctx, addr)
+	if err != nil {
+		return fmt.Errorf("error getting eth address from node deregistration attestation: %v", err)
+	}
+
 	// validate signers
-	enough, err := s.attestationHasEnoughSigners(ctx, signers, vdPubKey.Bytes(), s.config.AttDeregistrationRSize, s.config.AttDeregistrationMin)
+	enough, err := s.attestationHasEnoughSigners(ctx, signers, vdPubKey.Bytes(), s.config.AttDeregistrationRSize, s.config.AttDeregistrationMin, node.EthAddress)
 	if err != nil {
 		return fmt.Errorf("error checking attestors against validators: %v", err)
 	} else if !enough {
@@ -153,7 +161,7 @@ func (s *Server) isValidDeregisterNodeAttestation(ctx context.Context, tx *v1.Si
 	return nil
 }
 
-func (s *Server) finalizeDeregisterValidatorAttestation(ctx context.Context, tx *v1.SignedTransaction, misbehavior []abcitypes.Misbehavior) error {
+func (s *Server) finalizeDeregisterValidatorAttestation(ctx context.Context, tx *v1.SignedTransaction) error {
 	dereg := tx.GetAttestation().GetValidatorDeregistration()
 	if dereg == nil {
 		return fmt.Errorf("unknown attestation fell into isValidDeregisterNodeAttestation: %v", tx)

@@ -1,4 +1,4 @@
-package integration_test
+package integration_tests
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"connectrpc.com/connect"
 	systemv1 "github.com/AudiusProject/audiusd/pkg/api/system/v1"
 	connectv1system "github.com/AudiusProject/audiusd/pkg/api/system/v1/v1connect"
-	"github.com/AudiusProject/audiusd/pkg/core/test/integration/utils"
+	"github.com/AudiusProject/audiusd/pkg/integration_tests/utils"
 )
 
 func TestConnectRPC(t *testing.T) {

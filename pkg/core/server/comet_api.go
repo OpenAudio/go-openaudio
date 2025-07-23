@@ -23,6 +23,7 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 
 	req, err := http.NewRequest(c.Request().Method, path, c.Request().Body)
 	if err != nil {
+		s.logger.Errorf("failed to create internal comet api request: %v", err)
 		return respondWithError(c, http.StatusInternalServerError, "failed to create internal comet request")
 	}
 
@@ -30,6 +31,7 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		s.logger.Errorf("failed to forward comet api request: %v", err)
 		return respondWithError(c, http.StatusInternalServerError, "failed to forward request")
 	}
 	defer resp.Body.Close()
