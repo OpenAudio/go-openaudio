@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -40,29 +41,36 @@ type RegisteredNodesEndpointResponse struct {
 	RegisteredNodes []string `json:"data"`
 }
 
-func (s *Server) startPeerManager() error {
-	<-s.awaitRpcReady
-	go s.updatePeersCache()
+func (s *Server) startPeerManager(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.awaitRpcReady:
+	}
+	go s.updatePeersCache(ctx)
 
 	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
 
-	for range ticker.C {
-		if err := s.onPeerTick(); err != nil {
-			s.logger.Errorf("error connecting to peers: %v", err)
+	for {
+		select {
+		case <-ticker.C:
+			if err := s.onPeerTick(ctx); err != nil {
+				s.logger.Errorf("error connecting to peers: %v", err)
+			}
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
-	return nil
 }
 
-func (s *Server) onPeerTick() error {
-	validators, err := s.db.GetAllRegisteredNodes(context.Background())
+func (s *Server) onPeerTick(ctx context.Context) error {
+	validators, err := s.db.GetAllRegisteredNodes(ctx)
 	if err != nil {
 		return fmt.Errorf("could not get validators from db: %v", err)
 	}
 
 	peers := s.GetPeers()
-	addedNewPeer := false
+	var addedNewPeer atomic.Bool
 	self := s.config.WalletAddress
 
 	var wg sync.WaitGroup
@@ -86,7 +94,7 @@ func (s *Server) onPeerTick() error {
 			}
 
 			rpc := corev1connect.NewCoreServiceClient(http.DefaultClient, validator.Endpoint)
-			_, err = rpc.Ping(context.Background(), connect.NewRequest(&v1.PingRequest{}))
+			_, err = rpc.Ping(ctx, connect.NewRequest(&v1.PingRequest{}))
 			if err != nil {
 				return
 			} else {
@@ -97,26 +105,24 @@ func (s *Server) onPeerTick() error {
 			localPeerMU.Lock()
 			peers[ethaddr] = rpc
 			localPeerMU.Unlock()
-			if !addedNewPeer {
-				addedNewPeer = true
-			}
+			addedNewPeer.Store(true)
 		}()
 	}
 
 	wg.Wait()
 
-	if addedNewPeer {
+	if addedNewPeer.Load() {
 		s.UpdatePeers(peers)
 	}
 
-	if err := s.updatePeersCache(); err != nil {
+	if err := s.updatePeersCache(ctx); err != nil {
 		return fmt.Errorf("could not update peers cache: %v", err)
 	}
 
 	return nil
 }
 
-func (s *Server) updatePeersCache() error {
+func (s *Server) updatePeersCache(ctx context.Context) error {
 	rpcPeers := s.GetPeers()
 
 	ethAddresses := []string{}
@@ -125,7 +131,7 @@ func (s *Server) updatePeersCache() error {
 	}
 
 	cometAddresses := []string{}
-	netInfo, err := s.rpc.NetInfo(context.Background())
+	netInfo, err := s.rpc.NetInfo(ctx)
 	if err != nil {
 		return fmt.Errorf("could not get net info: %v", err)
 	}
@@ -134,12 +140,12 @@ func (s *Server) updatePeersCache() error {
 		cometAddresses = append(cometAddresses, strings.ToUpper(string(peer.NodeInfo.ID())))
 	}
 
-	rpcNodes, err := s.db.GetRegisteredNodesByEthAddresses(context.Background(), ethAddresses)
+	rpcNodes, err := s.db.GetRegisteredNodesByEthAddresses(ctx, ethAddresses)
 	if err != nil {
 		return fmt.Errorf("could not get registered nodes by eth addresses: %v", err)
 	}
 
-	p2pNodes, err := s.db.GetRegisteredNodesByCometAddresses(context.Background(), cometAddresses)
+	p2pNodes, err := s.db.GetRegisteredNodesByCometAddresses(ctx, cometAddresses)
 	if err != nil {
 		return fmt.Errorf("could not get registered nodes by comet addresses: %v", err)
 	}

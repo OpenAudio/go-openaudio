@@ -143,10 +143,10 @@ func (ss *MediorumServer) serveInsertDelistStatus(c echo.Context) error {
 	return c.JSON(http.StatusCreated, ds)
 }
 
-func (ss *MediorumServer) startPollingDelistStatuses(ctx context.Context) {
+func (ss *MediorumServer) startPollingDelistStatuses(ctx context.Context) error {
 	if ss.trustedNotifier.Endpoint == "" {
 		slog.Warn("trusted notifier not properly setup, not polling delist statuses")
-		return
+		return nil
 	}
 
 	ticker := time.NewTicker(DelistStatusPollingInterval)
@@ -164,7 +164,7 @@ func (ss *MediorumServer) startPollingDelistStatuses(ctx context.Context) {
 				}
 			}
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }

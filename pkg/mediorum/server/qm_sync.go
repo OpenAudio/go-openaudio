@@ -103,7 +103,7 @@ func (ss *MediorumServer) pullQmFromPeer(ctx context.Context, host string) error
 	return err
 }
 
-func (ss *MediorumServer) startQmSyncer(ctx context.Context) {
+func (ss *MediorumServer) startQmSyncer(ctx context.Context) error {
 	ticker := time.NewTicker(1 * time.Minute)
 	for i := 0; ; i++ {
 		select {
@@ -121,10 +121,10 @@ func (ss *MediorumServer) startQmSyncer(ctx context.Context) {
 						ss.logger.Debug("qmSync: pulled qm.csv from peer", "peer", peer)
 					}
 				}
-				return
+				return nil
 			}
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }

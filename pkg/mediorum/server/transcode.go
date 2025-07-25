@@ -31,7 +31,7 @@ var (
 	audioPreviewDuration = "30" // seconds
 )
 
-func (ss *MediorumServer) startTranscoder(ctx context.Context) {
+func (ss *MediorumServer) startTranscoder(ctx context.Context) error {
 	myHost := ss.Config.Self.Host
 
 	// use most cpus for transcode
@@ -86,7 +86,7 @@ func (ss *MediorumServer) startTranscoder(ctx context.Context) {
 	//
 	// long term fix is to move transcode inline to upload...
 	if ss.Config.Env == "prod" && !ss.Config.StoreAll {
-		return
+		return nil
 	}
 
 	// finally... poll periodically for uploads that slipped thru the cracks
@@ -96,7 +96,7 @@ func (ss *MediorumServer) startTranscoder(ctx context.Context) {
 		case <-ticker.C:
 			ss.findMissedJobs(ss.transcodeWork, myHost)
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }
@@ -123,12 +123,12 @@ func (ss *MediorumServer) findMissedJobs(work chan *Upload, myHost string) {
 	}
 }
 
-func (ss *MediorumServer) startTranscodeWorker(ctx context.Context) {
+func (ss *MediorumServer) startTranscodeWorker(ctx context.Context) error {
 	for {
 		select {
 		case upload, ok := <-ss.transcodeWork:
 			if !ok {
-				return // channel closed
+				return nil // channel closed
 			}
 			ss.logger.Debug("transcoding", "upload", upload.ID)
 			err := ss.transcode(ctx, upload)
@@ -136,7 +136,7 @@ func (ss *MediorumServer) startTranscodeWorker(ctx context.Context) {
 				ss.logger.Warn("transcode failed", "upload", upload, "err", err)
 			}
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }

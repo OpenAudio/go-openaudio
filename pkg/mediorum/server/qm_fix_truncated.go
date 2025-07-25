@@ -10,7 +10,7 @@ import (
 	"github.com/georgysavva/scany/v2/pgxscan"
 )
 
-func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) {
+func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) error {
 	logger := ss.logger.With("task", "fixTruncatedQm")
 	var err error
 
@@ -21,7 +21,7 @@ func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) {
 	_, err = ss.pgPool.Exec(ctx, `insert into cursors (host, last_ulid) values ('qm_fix_truncated', '') on conflict do nothing`)
 	if err != nil {
 		logger.Error("create cursor failed", "err", err)
-		return
+		return err
 	}
 
 	ticker := time.NewTicker(1 * time.Second)
@@ -48,7 +48,7 @@ func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) {
 			}
 
 			if len(cidBatch) == 0 {
-				return
+				return nil
 			}
 
 			wg := sync.WaitGroup{}
@@ -89,7 +89,7 @@ func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) {
 				logger.Warn("update cursor failed", "err", err)
 			}
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }

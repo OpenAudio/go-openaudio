@@ -56,7 +56,7 @@ type PlayEvent struct {
 	RequestSignature string
 }
 
-func (ss *MediorumServer) startPlayEventQueue(ctx context.Context) {
+func (ss *MediorumServer) startPlayEventQueue(ctx context.Context) error {
 	ticker := time.NewTicker(playQueueInterval)
 	for {
 		select {
@@ -65,7 +65,7 @@ func (ss *MediorumServer) startPlayEventQueue(ctx context.Context) {
 				ss.logger.Error("error recording play batch", "error", err)
 			}
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }

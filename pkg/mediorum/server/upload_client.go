@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (ss *MediorumServer) startUploadScroller(ctx context.Context) {
+func (ss *MediorumServer) startUploadScroller(ctx context.Context) error {
 	ticker := time.NewTicker(1 * time.Minute)
 	for {
 		select {
@@ -82,8 +82,7 @@ func (ss *MediorumServer) startUploadScroller(ctx context.Context) {
 
 			}
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
-
 }

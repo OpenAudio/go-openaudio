@@ -59,7 +59,7 @@ func (p *PeerClient) Send(data []byte) bool {
 	}
 }
 
-func (p *PeerClient) startSender(ctx context.Context) {
+func (p *PeerClient) startSender(ctx context.Context) error {
 	httpClient := http.Client{
 		Timeout: 5 * time.Second,
 	}
@@ -67,7 +67,7 @@ func (p *PeerClient) startSender(ctx context.Context) {
 		select {
 		case data, ok := <-p.outbox:
 			if !ok {
-				return // channel closed
+				return nil // channel closed
 			}
 			endpoint := p.Host + "/internal/crud/push" // hardcoded
 			req, err := signature.SignedPost(
@@ -95,12 +95,12 @@ func (p *PeerClient) startSender(ctx context.Context) {
 
 			resp.Body.Close()
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }
 
-func (p *PeerClient) startSweeper(ctx context.Context) {
+func (p *PeerClient) startSweeper(ctx context.Context) error {
 	ticker := time.NewTicker(1 * time.Second) // do first sweep immediately
 	for {
 		select {
@@ -111,7 +111,7 @@ func (p *PeerClient) startSweeper(ctx context.Context) {
 				p.logger.Warn("sweep failed", "err", err)
 			}
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }

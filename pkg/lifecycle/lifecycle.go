@@ -46,16 +46,17 @@ func NewFromLifecycle(lc *Lifecycle, name string) *Lifecycle {
 	return newLc
 }
 
-func (l *Lifecycle) AddManagedRoutine(name string, f func(context.Context)) {
+func (l *Lifecycle) AddManagedRoutine(name string, f func(context.Context) error) {
 	if l.isShutDown.Load() {
 		panic("attempting to add managed routine to already shut down lifecycle")
 	}
-	l.logger.Infof("Starting managed goroutine '%s'", name)
+	l.logger.Info("starting managed routine", "routine", name)
 	l.wg.Add(1)
 	go func() {
-		defer l.logger.Infof("Shut down managed goroutine '%s'", name)
+		var err error
+		defer l.logger.Info("managed routine was shut down", "routine", name, "error", err)
 		defer l.wg.Done()
-		f(l.ctx)
+		err = f(l.ctx)
 	}()
 }
 
@@ -94,4 +95,8 @@ func (l *Lifecycle) ShutdownWithTimeout(timeout time.Duration) error {
 		l.logger.Info("Lifecycle shutdown timed out")
 		return errors.New("lifecycle shutdown timed out")
 	}
+}
+
+func (l *Lifecycle) Wait() {
+	l.wg.Wait()
 }

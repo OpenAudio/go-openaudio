@@ -11,12 +11,12 @@ import (
 	"gorm.io/gorm"
 )
 
-func (ss *MediorumServer) startPoSHandler(ctx context.Context) {
+func (ss *MediorumServer) startPoSHandler(ctx context.Context) error {
 	for {
 		select {
 		case posReq, ok := <-ss.posChannel:
 			if !ok {
-				return // channel closed
+				return nil // channel closed
 			}
 			cid, err := ss.getStorageProofCIDFromBlockhash(posReq.Hash)
 			if err != nil {
@@ -54,7 +54,7 @@ func (ss *MediorumServer) startPoSHandler(ctx context.Context) {
 
 			posReq.Response <- response
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }

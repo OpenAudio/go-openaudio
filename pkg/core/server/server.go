@@ -11,6 +11,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/eth"
+	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 	aLogger "github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/AudiusProject/audiusd/pkg/pubsub"
@@ -21,7 +22,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 )
 
@@ -30,6 +30,7 @@ import (
 type TransactionHashPubsub = pubsub.Pubsub[struct{}]
 
 type Server struct {
+	lc             *lifecycle.Lifecycle
 	config         *config.Config
 	cometbftConfig *cconfig.Config
 	logger         *common.Logger
@@ -62,7 +63,7 @@ type Server struct {
 	awaitEthReady        chan struct{}
 }
 
-func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Logger, pool *pgxpool.Pool, ethService *eth.EthService, posChannel chan pos.PoSRequest) (*Server, error) {
+func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.Config, logger *common.Logger, pool *pgxpool.Pool, ethService *eth.EthService, posChannel chan pos.PoSRequest) (*Server, error) {
 	// create mempool
 	mempl := NewMempool(logger, config, db.New(pool), cconfig.Mempool.Size)
 
@@ -80,7 +81,10 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 	z := baseLogger.With(zap.String("service", "core"), zap.String("node", config.NodeEndpoint))
 	z.Info("core server starting")
 
+	coreLifecycle := lifecycle.NewFromLifecycle(lc, "core")
+
 	s := &Server{
+		lc:             coreLifecycle,
 		config:         config,
 		cometbftConfig: cconfig,
 		logger:         logger.Child("server"),
@@ -110,48 +114,46 @@ func NewServer(config *config.Config, cconfig *cconfig.Config, logger *common.Lo
 	return s, nil
 }
 
-func (s *Server) Start(ctx context.Context) error {
-	g, _ := errgroup.WithContext(ctx)
+func (s *Server) Start() error {
+	s.lc.AddManagedRoutine("abci", s.startABCI)
+	s.lc.AddManagedRoutine("registry bridge", s.startRegistryBridge)
+	s.lc.AddManagedRoutine("echo server", s.startEchoServer)
+	s.lc.AddManagedRoutine("sync tasks", s.startSyncTasks)
+	s.lc.AddManagedRoutine("peer manager", s.startPeerManager)
+	s.lc.AddManagedRoutine("cache", s.startCache)
+	s.lc.AddManagedRoutine("data companion", s.startDataCompanion)
+	s.lc.AddManagedRoutine("log sync", s.syncLogs)
+	s.lc.AddManagedRoutine("state sync", s.startStateSync)
 
-	g.Go(s.startABCI)
-	g.Go(s.startRegistryBridge)
-	g.Go(s.startEchoServer)
-	g.Go(s.startSyncTasks)
-	g.Go(s.startPeerManager)
-	g.Go(s.startCache)
-	g.Go(s.startDataCompanion)
-	g.Go(s.syncLogs)
-	g.Go(s.startStateSync)
 	s.z.Info("routines started")
 
-	return g.Wait()
+	s.lc.Wait()
+	return fmt.Errorf("core stopped or shut down")
 }
 
 func (s *Server) setSelf(self corev1connect.CoreServiceClient) {
 	s.self = self
 }
 
-func (s *Server) syncLogs() error {
+func (s *Server) syncLogs(ctx context.Context) error {
 	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		s.z.Sync()
+	for {
+		select {
+		case <-ticker.C:
+			s.z.Sync()
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
-	return nil
 }
 
-func (s *Server) Shutdown(ctx context.Context) error {
+func (s *Server) Shutdown() error {
 	s.logger.Info("shutting down all services...")
 
-	g, ctx := errgroup.WithContext(ctx)
+	if err := s.lc.ShutdownWithTimeout(60 * time.Second); err != nil {
+		return fmt.Errorf("failure shutting down core: %v", err)
+	}
+	s.grpcServer.GracefulStop()
 
-	g.Go(func() error { return s.httpServer.Shutdown(ctx) })
-	g.Go(s.node.Stop)
-	g.Go(func() error {
-		s.grpcServer.GracefulStop()
-		return nil
-	})
-
-	return g.Wait()
+	return nil
 }

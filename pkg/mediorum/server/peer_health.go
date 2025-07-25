@@ -13,7 +13,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func (ss *MediorumServer) startHealthPoller(ctx context.Context) {
+func (ss *MediorumServer) startHealthPoller(ctx context.Context) error {
 	time.Sleep(time.Second)
 
 	httpClient := http.Client{
@@ -97,7 +97,7 @@ func (ss *MediorumServer) startHealthPoller(ctx context.Context) {
 				ticker.Reset(2 * time.Minute)
 			}
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }

@@ -35,6 +35,7 @@ import (
 	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	"github.com/AudiusProject/audiusd/pkg/eth"
 	"github.com/AudiusProject/audiusd/pkg/etl"
+	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 	"github.com/AudiusProject/audiusd/pkg/mediorum"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
 	"github.com/AudiusProject/audiusd/pkg/pos"
@@ -99,6 +100,8 @@ func main() {
 	posChannel := make(chan pos.PoSRequest)
 	dbUrl := config.GetDbURL()
 
+	rootLifecycle := lifecycle.NewLifecycle(ctx, "root lifecycle", logger)
+
 	ethService := eth.NewEthService(dbUrl, config.GetEthRPC(), config.GetRegistryAddress(), logger, config.GetRuntimeEnvironment())
 	coreService := coreServer.NewCoreService()
 	storageService := server.NewStorageService()
@@ -119,12 +122,12 @@ func main() {
 		},
 		{
 			"core",
-			func() error { return core.Run(ctx, logger, posChannel, coreService, ethService) },
+			func() error { return core.Run(ctx, rootLifecycle, logger, posChannel, coreService, ethService) },
 			true,
 		},
 		{
 			"mediorum",
-			func() error { return mediorum.Run(ctx, logger, posChannel, storageService, coreService) },
+			func() error { return mediorum.Run(rootLifecycle, posChannel, storageService, coreService) },
 			isStorageEnabled(),
 		},
 		{

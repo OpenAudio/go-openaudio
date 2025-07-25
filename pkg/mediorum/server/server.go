@@ -18,7 +18,6 @@ import (
 	_ "embed"
 	_ "net/http/pprof"
 
-	"github.com/AudiusProject/audiusd/pkg/common"
 	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	audiusHttputil "github.com/AudiusProject/audiusd/pkg/httputil"
 	"github.com/AudiusProject/audiusd/pkg/lifecycle"
@@ -145,7 +144,7 @@ var (
 
 const PercentSeededThreshold = 50
 
-func New(config MediorumConfig, provider registrar.PeerProvider, posChannel chan pos.PoSRequest, core *coreServer.CoreService, commonLogger *common.Logger) (*MediorumServer, error) {
+func New(lc *lifecycle.Lifecycle, config MediorumConfig, provider registrar.PeerProvider, posChannel chan pos.PoSRequest, core *coreServer.CoreService) (*MediorumServer, error) {
 	if env := os.Getenv("MEDIORUM_ENV"); env != "" {
 		config.Env = env
 	}
@@ -259,7 +258,7 @@ func New(config MediorumConfig, provider registrar.PeerProvider, posChannel chan
 	}
 
 	// lifecycle
-	lc := lifecycle.NewLifecycle(context.Background(), "mediorum lifecycle", commonLogger)
+	mediorumLifecycle := lifecycle.NewFromLifecycle(lc, "mediorum")
 
 	// crud
 	peerHosts := []string{}
@@ -270,7 +269,8 @@ func New(config MediorumConfig, provider registrar.PeerProvider, posChannel chan
 			peerHosts = append(peerHosts, peer.Host)
 		}
 	}
-	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db, lc)
+
+	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db, mediorumLifecycle)
 	dbMigrate(crud, config.Self.Host)
 
 	rendezvousHasher := NewRendezvousHasher(allHosts)
@@ -304,7 +304,7 @@ func New(config MediorumConfig, provider registrar.PeerProvider, posChannel chan
 	echoServer.Use(timingMiddleware)
 
 	ss := &MediorumServer{
-		lc:               lc,
+		lc:               mediorumLifecycle,
 		echo:             echoServer,
 		bucket:           bucket,
 		crud:             crud,
@@ -517,27 +517,27 @@ func (ss *MediorumServer) MustStart() error {
 		ss.lc.AddManagedRoutine("seeding completion poller", ss.pollForSeedingCompletion)
 		ss.lc.AddManagedRoutine("upload scroller", ss.startUploadScroller)
 		ss.lc.AddManagedRoutine("play event queue", ss.startPlayEventQueue)
-		ss.lc.AddManagedRoutine("zap syncer", func(ctx context.Context) {
+		ss.lc.AddManagedRoutine("zap syncer", func(ctx context.Context) error {
 			ticker := time.NewTicker(10 * time.Second)
 			for {
 				select {
 				case <-ticker.C:
 					ss.z.Sync()
 				case <-ctx.Done():
-					return
+					return ctx.Err()
 				}
 			}
 		})
 
 	} else {
-		ss.lc.AddManagedRoutine("registration warner", func(ctx context.Context) {
+		ss.lc.AddManagedRoutine("registration warner", func(ctx context.Context) error {
 			ticker := time.NewTicker(10 * time.Second)
 			for {
 				select {
 				case <-ticker.C:
 					ss.logger.Warn("node not fully running yet - please register at https://dashboard.audius.org and restart the server")
 				case <-ctx.Done():
-					return
+					return ctx.Err()
 				}
 			}
 		})
@@ -566,17 +566,17 @@ func (ss *MediorumServer) Stop() {
 	ss.quit <- errors.New("mediorum stopped")
 }
 
-func (ss *MediorumServer) pollForSeedingCompletion(ctx context.Context) {
+func (ss *MediorumServer) pollForSeedingCompletion(ctx context.Context) error {
 	ticker := time.NewTicker(10 * time.Second)
 	for {
 		select {
 		case <-ticker.C:
 			if ss.crud.GetPercentNodesSeeded() > PercentSeededThreshold {
 				ss.isSeeding = false
-				return
+				return nil
 			}
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }
@@ -586,53 +586,63 @@ func (mc *MediorumConfig) discoveryListensEnabled() bool {
 	return len(mc.DiscoveryListensEndpoints) > 0
 }
 
-func (ss *MediorumServer) startEchoServer(ctx context.Context) {
-	done := make(chan struct{})
+func (ss *MediorumServer) startEchoServer(ctx context.Context) error {
+	done := make(chan error, 1)
 	go func() {
-		defer close(done)
 		err := ss.echo.Start(":" + ss.Config.ListenPort)
 		if err != nil && err != http.ErrServerClosed {
 			ss.logger.Error("echo server error", "error", err)
+			done <- err
+		} else {
+			done <- nil
 		}
 	}()
-	for {
-		select {
-		case <-done:
-			return
-		case <-ctx.Done():
-			ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
-			if err := ss.echo.Shutdown(ctx); err != nil {
-				ss.logger.Error("failed to shutdown echo server", "error", err)
-			}
-			return
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		err := ss.echo.Shutdown(shutdownCtx)
+		if err != nil {
+			ss.logger.Error("failed to shutdown echo server", "error", err)
+			return err
 		}
+		return ctx.Err()
 	}
 }
 
-func (ss *MediorumServer) startPprofServer(ctx context.Context) {
-	done := make(chan struct{})
+func (ss *MediorumServer) startPprofServer(ctx context.Context) error {
+	done := make(chan error, 1)
 	srv := &http.Server{Addr: ":6060", Handler: nil}
 	go func() {
-		defer close(done)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		err := srv.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
 			ss.logger.Error("pprof server error", "error", err)
+			done <- err
+		} else {
+			done <- nil
 		}
 	}()
 	for {
 		select {
-		case <-done:
-			return
+		case err := <-done:
+			return err
 		case <-ctx.Done():
-			ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
-			if err := srv.Shutdown(ctx); err != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			if err := srv.Shutdown(shutdownCtx); err != nil {
 				ss.logger.Error("failed to shutdown pprof server", "error", err)
+				return err
 			}
-			return
+			return ctx.Err()
 		}
 	}
 }
 
-func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) {
+func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
 	interval := 30 * time.Minute
 	if os.Getenv("MEDIORUM_ENV") == "dev" {
 		interval = 10 * time.Second
@@ -673,10 +683,10 @@ func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) {
 			if !slices.Equal(combined, configCombined) {
 				ss.logger.Info("peers or signers changed on chain. restarting...", "peers", len(peers), "signers", len(signers), "combined", combined, "configCombined", configCombined)
 				go ss.Stop()
-				return
+				return nil
 			}
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }

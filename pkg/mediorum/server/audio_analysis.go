@@ -18,7 +18,7 @@ import (
 
 const MAX_TRIES = 3
 
-func (ss *MediorumServer) startAudioAnalyzer(ctx context.Context) {
+func (ss *MediorumServer) startAudioAnalyzer(ctx context.Context) error {
 	work := make(chan *Upload)
 
 	numWorkers := 4
@@ -40,7 +40,7 @@ func (ss *MediorumServer) startAudioAnalyzer(ctx context.Context) {
 	// in prod... only look for old work on StoreAll nodes
 	// see transcode.go line 123 for longer comment
 	if ss.Config.Env == "prod" && !ss.Config.StoreAll {
-		return
+		return nil
 	}
 
 	// find old work from backlog
@@ -51,7 +51,7 @@ func (ss *MediorumServer) startAudioAnalyzer(ctx context.Context) {
 			ticker.Reset(5 * time.Minute) // increase interval length after first run
 			ss.findMissedAudioAnalysisJobs(ctx, work)
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }
@@ -91,12 +91,12 @@ func (ss *MediorumServer) findMissedAudioAnalysisJobs(ctx context.Context, work 
 }
 
 func (ss *MediorumServer) startAudioAnalysisWorker(workerId int, work chan *Upload) {
-	ss.lc.AddManagedRoutine(fmt.Sprintf("audio analysis worker %d", workerId), func(ctx context.Context) {
+	ss.lc.AddManagedRoutine(fmt.Sprintf("audio analysis worker %d", workerId), func(ctx context.Context) error {
 		for {
 			select {
 			case upload, ok := <-work:
 				if !ok {
-					return // channel closed
+					return nil // channel closed
 				}
 				logger := ss.logger.With("upload", upload.ID)
 				logger.Debug("analyzing audio")
@@ -111,7 +111,7 @@ func (ss *MediorumServer) startAudioAnalysisWorker(workerId int, work chan *Uplo
 					logger.Info("audio analysis done")
 				}
 			case <-ctx.Done():
-				return
+				return ctx.Err()
 			}
 		}
 	})

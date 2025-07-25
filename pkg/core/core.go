@@ -11,16 +11,17 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/core/server"
 	"github.com/AudiusProject/audiusd/pkg/eth"
+	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 	"github.com/AudiusProject/audiusd/pkg/pos"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService, ethService *eth.EthService) error {
-	return run(ctx, logger, posChannel, coreService, ethService)
+func Run(ctx context.Context, lc *lifecycle.Lifecycle, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService, ethService *eth.EthService) error {
+	return run(ctx, lc, logger, posChannel, coreService, ethService)
 }
 
-func run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService, ethService *eth.EthService) error {
+func run(ctx context.Context, lc *lifecycle.Lifecycle, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService, ethService *eth.EthService) error {
 	logger.Info("good morning!")
 
 	config, cometConfig, err := config.SetupNode(logger)
@@ -44,7 +45,7 @@ func run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequ
 	}
 	defer pool.Close()
 
-	s, err := server.NewServer(config, cometConfig, logger, pool, ethService, posChannel)
+	s, err := server.NewServer(lc, config, cometConfig, logger, pool, ethService, posChannel)
 	if err != nil {
 		return fmt.Errorf("server init error: %v", err)
 	}
@@ -74,10 +75,10 @@ func run(ctx context.Context, logger *common.Logger, posChannel chan pos.PoSRequ
 	// create core service
 	coreService.SetCore(s)
 
-	if err := s.Start(ctx); err != nil {
+	if err := s.Start(); err != nil {
 		logger.Errorf("something crashed: %v", err)
 		return err
 	}
 
-	return s.Shutdown(ctx)
+	return s.Shutdown()
 }

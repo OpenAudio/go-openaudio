@@ -34,41 +34,41 @@ func TestLifecycleShutsDown(t *testing.T) {
 
 	wg.Add(9)
 	go func() {
-		lc.AddManagedRoutine("doAThing 1", doAThing)
+		lc.AddManagedRoutine("dummyRoutine 1", dummyRoutine)
 		wg.Done()
 	}()
 	go func() {
-		lc.AddManagedRoutine("doAThing 2", doAThing)
+		lc.AddManagedRoutine("dummyRoutine 2", dummyRoutine)
 		wg.Done()
 	}()
 	go func() {
-		lc.AddManagedRoutine("doAThing 3", doAThing)
-		wg.Done()
-	}()
-
-	go func() {
-		childLc1.AddManagedRoutine("doAThing c1 1", doAThing)
-		wg.Done()
-	}()
-	go func() {
-		childLc1.AddManagedRoutine("doAThing c1 2", doAThing)
-		wg.Done()
-	}()
-	go func() {
-		childLc1.AddManagedRoutine("doAThing c1 3", doAThing)
+		lc.AddManagedRoutine("dummyRoutine 3", dummyRoutine)
 		wg.Done()
 	}()
 
 	go func() {
-		childLc2.AddManagedRoutine("doAThing c2 1", doAThing)
+		childLc1.AddManagedRoutine("dummyRoutine c1 1", dummyRoutine)
 		wg.Done()
 	}()
 	go func() {
-		childLc2.AddManagedRoutine("doAThing c2 2", doAThing)
+		childLc1.AddManagedRoutine("dummyRoutine c1 2", dummyRoutine)
 		wg.Done()
 	}()
 	go func() {
-		childLc2.AddManagedRoutine("doAThing c2 3", doAThing)
+		childLc1.AddManagedRoutine("dummyRoutine c1 3", dummyRoutine)
+		wg.Done()
+	}()
+
+	go func() {
+		childLc2.AddManagedRoutine("dummyRoutine c2 1", dummyRoutine)
+		wg.Done()
+	}()
+	go func() {
+		childLc2.AddManagedRoutine("dummyRoutine c2 2", dummyRoutine)
+		wg.Done()
+	}()
+	go func() {
+		childLc2.AddManagedRoutine("dummyRoutine c2 3", dummyRoutine)
 		wg.Done()
 	}()
 
@@ -76,28 +76,29 @@ func TestLifecycleShutsDown(t *testing.T) {
 
 	err := childLc2.ShutdownWithTimeout(3 * time.Second)
 	assert.NoError(t, err)
-	assert.Panics(t, func() { childLc2.AddManagedRoutine("should panic", doAThing) })
+	assert.Panics(t, func() { childLc2.AddManagedRoutine("should panic", dummyRoutine) })
 
 	err = lc.ShutdownWithTimeout(3 * time.Second)
 	assert.NoError(t, err)
-	assert.Panics(t, func() { lc.AddManagedRoutine("should panic", doAThing) })
-	assert.Panics(t, func() { childLc1.AddManagedRoutine("should panic", doAThing) })
+	assert.Panics(t, func() { lc.AddManagedRoutine("should panic", dummyRoutine) })
+	assert.Panics(t, func() { childLc1.AddManagedRoutine("should panic", dummyRoutine) })
 }
 
 func TestLifecycleTimesOut(t *testing.T) {
 	ctx := context.Background()
 	lc := NewLifecycle(ctx, "test lifecycle", common.NewLogger(&slog.HandlerOptions{}))
-	lc.AddManagedRoutine("doAThingForever", doAThingForever)
+	lc.AddManagedRoutine("dummyRoutineThatNeverEnds", dummyRoutineThatNeverEnds)
 	err := lc.ShutdownWithTimeout(3 * time.Second)
 	assert.Error(t, err)
 }
 
-func doAThing(ctx context.Context) {
+func dummyRoutine(ctx context.Context) error {
 	<-ctx.Done()
 	time.Sleep(time.Duration(rand.Intn(3)) * time.Second)
+	return nil
 }
 
-func doAThingForever(ctx context.Context) {
+func dummyRoutineThatNeverEnds(ctx context.Context) error {
 	ticker := time.NewTicker(1 * time.Minute)
 	for {
 		select {
@@ -105,4 +106,5 @@ func doAThingForever(ctx context.Context) {
 			time.Sleep(2 * time.Second)
 		}
 	}
+	return nil
 }

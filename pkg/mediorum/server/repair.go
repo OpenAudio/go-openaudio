@@ -33,7 +33,7 @@ type RepairTracker struct {
 	AbortedReason    string         `gorm:"not null"`
 }
 
-func (ss *MediorumServer) startRepairer(ctx context.Context) {
+func (ss *MediorumServer) startRepairer(ctx context.Context) error {
 	logger := ss.logger.With("task", "repair")
 
 	// wait a minute on startup to determine healthy peers
@@ -119,7 +119,7 @@ func (ss *MediorumServer) startRepairer(ctx context.Context) {
 			}
 			saveTracker()
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }

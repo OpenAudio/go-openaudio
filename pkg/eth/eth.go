@@ -241,6 +241,10 @@ func (eth *EthService) SubscribeToDeregistrationEvents() chan *v1.ServiceEndpoin
 	return eth.deregPubsub.Subscribe(DeregistrationTopic, 10)
 }
 
+func (eth *EthService) UnsubscribeFromDeregistrationEvents(ch chan *v1.ServiceEndpoint) {
+	eth.deregPubsub.Unsubscribe(DeregistrationTopic, ch)
+}
+
 func (eth *EthService) refreshEndpoints(ctx context.Context) error {
 	eth.logger.Info("refreshing registered endpoints")
 

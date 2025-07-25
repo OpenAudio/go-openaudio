@@ -11,6 +11,7 @@ import (
 
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
+	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 	"github.com/cometbft/cometbft/types"
 	"github.com/maypok86/otter"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -172,18 +173,36 @@ func (c *Cache) initCaches(config *config.Config) error {
 
 // maybe put a separate errgroup in here for things that
 // continuously hydrate the cache
-func (s *Server) startCache() error {
+func (s *Server) startCache(ctx context.Context) error {
 	s.logger.Info("caches initialized")
 
-	<-s.awaitRpcReady
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.awaitRpcReady:
+	}
 
-	status, err := s.rpc.Status(context.Background())
+	status, err := s.rpc.Status(ctx)
 	if err != nil {
 		return fmt.Errorf("could not get initial status: %v", err)
 	}
 
 	s.cache.currentHeight.Store(status.SyncInfo.LatestBlockHeight)
 
+	cacheLifecycle := lifecycle.NewFromLifecycle(s.lc, "cache")
+	cacheLifecycle.AddManagedRoutine("block event subscriber", s.startBlockEventSubscriber)
+	cacheLifecycle.AddManagedRoutine("refresher", s.startCacheRefresh)
+	cacheLifecycle.AddManagedRoutine("sync status refresher", s.refreshSyncStatus)
+
+	<-ctx.Done()
+	err = cacheLifecycle.ShutdownWithTimeout(15 * time.Second)
+	if err != nil {
+		return err
+	}
+	return ctx.Err()
+}
+
+func (s *Server) startBlockEventSubscriber(ctx context.Context) error {
 	node := s.node
 	eb := node.EventBus()
 
@@ -192,100 +211,84 @@ func (s *Server) startCache() error {
 	}
 
 	subscriberID := "block-cache-subscriber"
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	query := types.EventQueryNewBlock
 	subscription, err := eb.Subscribe(ctx, subscriberID, query)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to NewBlock events: %v", err)
 	}
 
-	wg := sync.WaitGroup{}
-	wg.Add(3)
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Info("Stopping block event subscription")
+			return ctx.Err()
+		case msg := <-subscription.Out():
+			blockEvent := msg.Data().(types.EventDataNewBlock)
+			blockHeight := blockEvent.Block.Height
+			s.cache.currentHeight.Store(blockHeight)
 
-	go func() {
-		defer wg.Done()
-		s.startCacheRefresh()
-	}()
+			upsertCache(s.cache.chainInfo, ChainInfoKey, func(chainInfo *v1.GetStatusResponse_ChainInfo) *v1.GetStatusResponse_ChainInfo {
+				chainInfo.CurrentHeight = blockHeight
+				chainInfo.CurrentBlockHash = strings.ToLower(blockEvent.Block.Hash().String())
+				return chainInfo
+			})
 
-	go func() {
-		defer wg.Done()
-		s.refreshSyncStatus()
-	}()
-
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case <-ctx.Done():
-				s.logger.Info("Stopping block event subscription")
-				return
-			case msg := <-subscription.Out():
-				blockEvent := msg.Data().(types.EventDataNewBlock)
-				blockHeight := blockEvent.Block.Height
-				s.cache.currentHeight.Store(blockHeight)
-
-				upsertCache(s.cache.chainInfo, ChainInfoKey, func(chainInfo *v1.GetStatusResponse_ChainInfo) *v1.GetStatusResponse_ChainInfo {
-					chainInfo.CurrentHeight = blockHeight
-					chainInfo.CurrentBlockHash = strings.ToLower(blockEvent.Block.Hash().String())
-					return chainInfo
-				})
-
-			case err := <-subscription.Canceled():
-				s.logger.Errorf("Subscription cancelled: %v", err)
-				return
-			}
+		case <-subscription.Canceled():
+			s.logger.Errorf("Subscription cancelled: %v", subscription.Err())
+			return subscription.Err()
 		}
-	}()
-
-	wg.Wait()
-
-	return nil
+	}
 }
 
-func (s *Server) startCacheRefresh() error {
+func (s *Server) startCacheRefresh(ctx context.Context) error {
 	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
 
-	for range ticker.C {
-		wg := sync.WaitGroup{}
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			if err := s.refreshResourceStatus(); err != nil {
-				s.logger.Errorf("error refreshing resource status: %v", err)
-			}
-		}()
-		go func() {
-			defer wg.Done()
-			if err := s.cacheSnapshots(); err != nil {
-				s.logger.Errorf("error caching snapshots: %v", err)
-			}
-		}()
-		wg.Wait()
+	for {
+		select {
+		case <-ticker.C:
+			wg := sync.WaitGroup{}
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				if err := s.refreshResourceStatus(); err != nil {
+					s.logger.Errorf("error refreshing resource status: %v", err)
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				if err := s.cacheSnapshots(); err != nil {
+					s.logger.Errorf("error caching snapshots: %v", err)
+				}
+			}()
+			wg.Wait()
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	return nil
 }
 
-func (s *Server) refreshSyncStatus() error {
+func (s *Server) refreshSyncStatus(ctx context.Context) error {
 	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
 
-	for range ticker.C {
-		if s.rpc == nil {
-			return nil
+	for {
+		select {
+		case <-ticker.C:
+			if s.rpc == nil {
+				return nil
+			}
+
+			status, err := s.rpc.Status(ctx)
+			if err != nil {
+				return fmt.Errorf("could not get status: %v", err)
+			}
+
+			upsertCache(s.cache.syncInfo, SyncInfoKey, func(syncInfo *v1.GetStatusResponse_SyncInfo) *v1.GetStatusResponse_SyncInfo {
+				syncInfo.Synced = !status.SyncInfo.CatchingUp
+				return syncInfo
+			})
+		case <-ctx.Done():
+			return ctx.Err()
 		}
-
-		status, err := s.rpc.Status(context.Background())
-		if err != nil {
-			return fmt.Errorf("could not get status: %v", err)
-		}
-
-		upsertCache(s.cache.syncInfo, SyncInfoKey, func(syncInfo *v1.GetStatusResponse_SyncInfo) *v1.GetStatusResponse_SyncInfo {
-			syncInfo.Synced = !status.SyncInfo.CatchingUp
-			return syncInfo
-		})
 	}
-	return nil
 }

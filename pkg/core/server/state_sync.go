@@ -76,8 +76,13 @@ func getPgDumpPath(baseDir string) string {
 	return filepath.Join(baseDir, pgDumpFileName)
 }
 
-func (s *Server) startStateSync() error {
-	<-s.awaitRpcReady
+func (s *Server) startStateSync(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.awaitRpcReady:
+	}
+
 	logger := s.logger.Child("state_sync")
 
 	if !s.config.StateSync.ServeSnapshots {
@@ -93,8 +98,6 @@ func (s *Server) startStateSync() error {
 	}
 
 	subscriberID := "state-sync-subscriber"
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	query := types.EventQueryNewBlock
 	subscription, err := eb.Subscribe(ctx, subscriberID, query)
@@ -106,7 +109,7 @@ func (s *Server) startStateSync() error {
 		select {
 		case <-ctx.Done():
 			s.logger.Info("Stopping block event subscription")
-			return nil
+			return ctx.Err()
 		case msg := <-subscription.Out():
 			blockEvent := msg.Data().(types.EventDataNewBlock)
 			blockHeight := blockEvent.Block.Height
@@ -121,9 +124,9 @@ func (s *Server) startStateSync() error {
 			if err := s.pruneSnapshots(logger); err != nil {
 				logger.Errorf("error pruning snapshots: %v", err)
 			}
-		case err := <-subscription.Canceled():
-			s.logger.Errorf("Subscription cancelled: %v", err)
-			return nil
+		case <-subscription.Canceled():
+			s.logger.Errorf("Subscription cancelled: %v", subscription.Err())
+			return subscription.Err()
 		}
 	}
 }

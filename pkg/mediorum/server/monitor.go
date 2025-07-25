@@ -28,7 +28,7 @@ type StorageAndDbSize struct {
 	LastCleanupSize  int64     `gorm:"not null"`
 }
 
-func (ss *MediorumServer) recordStorageAndDbSize(ctx context.Context) {
+func (ss *MediorumServer) recordStorageAndDbSize(ctx context.Context) error {
 	record := func(ctx context.Context) {
 		// only do this once every 6 hours, even if the server restarts
 		var lastStatus StorageAndDbSize
@@ -73,12 +73,12 @@ func (ss *MediorumServer) recordStorageAndDbSize(ctx context.Context) {
 		case <-ticker.C:
 			record(ctx)
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }
 
-func (ss *MediorumServer) monitorMetrics(ctx context.Context) {
+func (ss *MediorumServer) monitorMetrics(ctx context.Context) error {
 	ticker := time.NewTicker(1 * time.Second)
 	// retry a few times to get initial status on startup
 	for i := 0; i < 3; i++ {
@@ -88,7 +88,7 @@ func (ss *MediorumServer) monitorMetrics(ctx context.Context) {
 			ss.updateDiskAndDbStatus(ctx)
 			ss.updateTranscodeStats(ctx)
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 
@@ -102,12 +102,12 @@ func (ss *MediorumServer) monitorMetrics(ctx context.Context) {
 			ss.updateDiskAndDbStatus(ctx)
 			ss.updateTranscodeStats(ctx)
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }
 
-func (ss *MediorumServer) monitorPeerReachability(ctx context.Context) {
+func (ss *MediorumServer) monitorPeerReachability(ctx context.Context) error {
 	ticker := time.NewTicker(1 * time.Minute)
 	for {
 		select {
@@ -145,7 +145,7 @@ func (ss *MediorumServer) monitorPeerReachability(ctx context.Context) {
 			ss.failsPeerReachability = failsPeerReachability
 			ss.peerHealthsMutex.Unlock()
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }
