@@ -165,21 +165,25 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 		if id3, _ := strconv.ParseBool(c.QueryParam("id3")); id3 {
 			title := c.QueryParam("id3_title")
 			artist := c.QueryParam("id3_artist")
-			album := c.QueryParam("id3_album")
 
-			tag := buildID3v2Tag(title, artist, album)
+			tag := buildID3v2Tag(title, artist)
 
-			c.Response().Header().Set("Content-Type", "audio/mpeg")
-			c.Response().WriteHeader(http.StatusOK)
+			tagged := &taggedStream{
+				tag:  tag,
+				blob: blob,
+			}
 
-			// Write ID3 tag
-			if _, err := c.Response().Write(tag); err != nil {
+			// Rewind blob to start
+			if _, err := blob.Seek(0, io.SeekStart); err != nil {
 				return err
 			}
 
-			// Stream MP3 content
-			_, err := io.Copy(c.Response(), blob)
-			return err
+			http.ServeContent(c.Response(), c.Request(), cid, blob.ModTime(), &struct {
+				io.ReadSeeker
+			}{
+				ReadSeeker: tagged,
+			})
+			return nil
 		}
 
 		// stream audio

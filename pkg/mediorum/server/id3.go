@@ -5,11 +5,10 @@ import (
 	"encoding/binary"
 )
 
-func buildID3v2Tag(title, artist, album string) []byte {
+func buildID3v2Tag(title, artist string) []byte {
 	frames := filterNilFrames([][]byte{
 		createTextFrame("TIT2", title),
 		createTextFrame("TPE1", artist),
-		createTextFrame("TALB", album),
 	})
 
 	body := bytes.Join(frames, nil)
