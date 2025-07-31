@@ -3,6 +3,7 @@ package pages
 import (
 	"encoding/json"
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	v1beta1 "github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
 	"github.com/dustin/go-humanize"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -18,18 +19,26 @@ type TxView struct {
 
 func (p *Pages) toJSON(tx []byte) map[string]interface{} {
 	empty := make(map[string]interface{})
+	jsonData := []byte{}
 
 	var transaction v1.SignedTransaction
 	err := proto.Unmarshal(tx, &transaction)
 	if err != nil {
-		//  fmt.Errorf("could not marshal tx into signed tx: %v", err)
+		var transaction v1beta1.Transaction
+		err := proto.Unmarshal(tx, &transaction)
+		if err != nil {
+			return empty
+		}
+		jsonData, err = protojson.Marshal(&transaction)
+		if err != nil {
+			return empty
+		}
 		return empty
-	}
-
-	jsonData, err := protojson.Marshal(&transaction)
-	if err != nil {
-		// fmt.Errorf("could not marshal proto into json: %v", err)
-		return empty
+	} else {
+		jsonData, err = protojson.Marshal(&transaction)
+		if err != nil {
+			return empty
+		}
 	}
 
 	var obj map[string]interface{}

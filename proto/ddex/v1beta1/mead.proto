@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package ddex.v1beta1;
+
+import "ddex/v1beta1/common.proto";
+import "ddex/v1beta1/party.proto";
+import "ddex/v1beta1/release.proto";
+import "ddex/v1beta1/resource.proto";
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1";
+
+// Media Enrichment and Description (MEAD) message from the DDEX standard
+message MeadMessage {
+  message ResourceInformationList {
+    repeated ResourceInformation resource_information = 1;
+  }
+
+  message ResourceInformation {
+    ResourceSummary resource_summary = 1;
+    repeated ResourceContributor resource_contributor = 2;
+  }
+
+  message ResourceSummary {
+    ddex.v1beta1.Resource.ResourceId resource_id = 1;
+    ddex.v1beta1.Resource.DisplayTitle display_title = 2;
+    ddex.v1beta1.Resource.DisplayArtist display_artist = 3;
+
+    // optional information fields
+    optional Mood mood = 4;
+    optional BeatsPerMinute beats_per_minute = 5;
+    optional Key key = 6;
+  }
+
+  message ResourceContributor {
+    ddex.v1beta1.Party.PartyId party_id = 1;
+    ddex.v1beta1.Party.PartyName party_name = 2;
+  }
+
+  message ReleaseSummary {
+    ddex.v1beta1.Release.ReleaseId release_id = 1;
+    ddex.v1beta1.Release.DisplayTitle display_title = 2;
+    ddex.v1beta1.Release.DisplayArtist display_artist = 3;
+  }
+
+  message ReleaseInformationList {
+    repeated ReleaseInformation release_information = 1;
+  }
+
+  message ReleaseInformation {
+    ReleaseSummary release_summary = 1;
+
+    // optional information fields
+    optional Mood mood = 2;
+    optional BeatsPerMinute beats_per_minute = 3;
+    optional Key key = 4;
+  }
+
+  message Mood {
+    string type = 1;
+    string description = 2;
+  }
+
+  message BeatsPerMinute {
+    float value = 1;
+  }
+
+  message Key {
+    string value = 1;
+  }
+
+  ddex.v1beta1.MessageHeader message_header = 1;
+  ResourceInformationList resource_information_list = 2;
+  ReleaseInformationList release_information_list = 3;
+}
+
+message MeadMessageAck {
+  // address of the MEAD message
+  string mead_address = 1;
+}

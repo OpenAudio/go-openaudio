@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package ddex.v1beta1;
+
+import "ddex/v1beta1/common.proto";
+import "ddex/v1beta1/deal.proto";
+import "ddex/v1beta1/party.proto";
+import "ddex/v1beta1/release.proto";
+import "ddex/v1beta1/resource.proto";
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1";
+
+// DDEX 4.3 Release Notification Message
+message NewReleaseMessage {
+  ddex.v1beta1.MessageHeader message_header = 1;
+  repeated ddex.v1beta1.Party party_list = 2;
+  repeated ddex.v1beta1.Resource resource_list = 3;
+  repeated ddex.v1beta1.Release release_list = 4;
+  repeated ddex.v1beta1.Deal deal_list = 5;
+}
+
+message NewReleaseMessageAck {
+  // address of the ERN message
+  string ern_address = 1;
+  // addresses of the parties in the ERN message
+  repeated string party_addresses = 2;
+  // addresses of the resources in the ERN message
+  repeated string resource_addresses = 3;
+  // addresses of the releases in the ERN message
+  repeated string release_addresses = 4;
+  // addresses of the deals in the ERN message
+  repeated string deal_addresses = 5;
+}

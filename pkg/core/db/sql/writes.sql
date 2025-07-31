@@ -225,3 +225,45 @@ insert into access_keys (track_id, pub_key) values ($1, $2);
 
 -- name: InsertManagementKey :exec
 insert into management_keys (track_id, address) values ($1, $2);
+
+-- ERN, MEAD, PIE insert queries - using protobuf storage with new schema
+-- name: InsertCoreERN :exec
+insert into core_ern (
+    address,
+    tx_hash,
+    index,
+    sender,
+    message_control_type,
+    party_addresses,
+    resource_addresses,
+    release_addresses,
+    deal_addresses,
+    raw_message,
+    raw_acknowledgment,
+    block_height
+) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);
+
+-- name: InsertCoreMEAD :exec
+insert into core_mead (
+    address,
+    tx_hash,
+    index,
+    sender,
+    resource_addresses,
+    release_addresses,
+    raw_message,
+    raw_acknowledgment,
+    block_height
+) values ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+
+-- name: InsertCorePIE :exec
+insert into core_pie (
+    address,
+    tx_hash,
+    index,
+    sender,
+    party_addresses,
+    raw_message,
+    raw_acknowledgment,
+    block_height
+) values ($1, $2, $3, $4, $5, $6, $7, $8);

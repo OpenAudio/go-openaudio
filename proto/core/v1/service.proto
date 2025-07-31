@@ -19,4 +19,8 @@ service CoreService {
   rpc GetStoredSnapshots(GetStoredSnapshotsRequest) returns (GetStoredSnapshotsResponse) {}
   rpc GetRewards(GetRewardsRequest) returns (GetRewardsResponse) {}
   rpc GetRewardAttestation(GetRewardAttestationRequest) returns (GetRewardAttestationResponse) {}
+
+  rpc GetERN(GetERNRequest) returns (GetERNResponse) {}
+  rpc GetMEAD(GetMEADRequest) returns (GetMEADResponse) {}
+  rpc GetPIE(GetPIERequest) returns (GetPIEResponse) {}
 }

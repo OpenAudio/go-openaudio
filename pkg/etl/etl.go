@@ -125,6 +125,10 @@ func (etl *ETLService) indexBlocks() error {
 
 		txs := block.Msg.Block.Transactions
 		for _, tx := range txs {
+			if tx.Transaction == nil || tx.Transaction.Transaction == nil {
+				continue
+			}
+
 			switch signedTx := tx.Transaction.Transaction.(type) {
 			case *v1.SignedTransaction_Plays:
 				for _, play := range signedTx.Plays.GetPlays() {

@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package ddex.v1beta1;
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1";
+
+message Resource {
+  message ResourceId {
+    string isrc = 1;
+    repeated ProprietaryId proprietary_id = 2;
+  }
+
+  message ProprietaryId {
+    string namespace = 1;
+    string proprietary_id = 2;
+  }
+
+  message DisplayTitle {
+    string title_text = 1;
+  }
+
+  message DisplayArtist {
+    string artist_party_reference = 1;
+    string display_artist_role = 2;
+    string artistic_role = 3;
+  }
+
+  message SoundRecording {
+    message SoundRecordingEdition {
+      message PLine {
+        string year = 1;
+        string p_line_text = 2;
+      }
+
+      message TechnicalDetails {
+        message DeliveryFile {
+          message File {
+            message HashSum {
+              string algorithm = 1;
+              string hash_sum_value = 2;
+            }
+
+            string uri = 1;
+            HashSum hash_sum = 2;
+            uint64 file_size = 3;
+          }
+          string type = 1;
+          string audio_codec_type = 2;
+          uint32 number_of_channels = 3;
+          float sampling_rate = 4;
+          uint32 bits_per_sample = 5;
+          File file = 6;
+          bool is_provided_in_delivery = 7;
+        }
+
+        message ClipDetails {
+          message Timing {
+            uint64 start_point = 1;
+            uint64 end_point = 2;
+            string duration_used = 3;
+          }
+
+          string technical_resource_details_reference = 1;
+          string clip_type = 2;
+          Timing timing = 3;
+          string expression_type = 4;
+        }
+
+        string technical_resource_details_reference = 1;
+        DeliveryFile delivery_file = 2;
+        bool is_clip = 3;
+        ClipDetails clip_details = 4;
+      }
+
+      string type = 1;
+      ResourceId resource_id = 2;
+      PLine p_line = 3;
+      TechnicalDetails technical_details = 4;
+    }
+
+    message Contributor {}
+
+    string resource_reference = 1;
+    string type = 2;
+    SoundRecordingEdition sound_recording_edition = 3;
+    string display_title_text = 4;
+    DisplayTitle display_title = 5;
+    string version_type = 6;
+    string display_artist_name = 7;
+    repeated DisplayArtist display_artist = 8;
+    repeated Contributor contributor = 9;
+    string duration = 10;
+    string first_publication_date = 11;
+    string parental_warning_type = 12;
+    string language_of_performance = 13;
+  }
+
+  message Image {
+    message TechnicalDetails {
+      message File {
+        message HashSum {
+          string algorithm = 1;
+          string hash_sum_value = 2;
+        }
+
+        string uri = 1;
+        HashSum hash_sum = 2;
+        uint64 file_size = 3;
+      }
+
+      string technical_resource_details_reference = 1;
+      string image_codec_type = 2;
+      uint64 image_height = 3;
+      uint64 image_width = 4;
+      string image_resolution = 5;
+      File file = 6;
+      bool is_provided_in_delivery = 7;
+    }
+
+    string resource_reference = 1;
+    string type = 2;
+    ResourceId resource_id = 3;
+    TechnicalDetails technical_details = 4;
+  }
+
+  oneof resource {
+    SoundRecording sound_recording = 1;
+    Image image = 2;
+  }
+}

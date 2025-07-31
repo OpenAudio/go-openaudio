@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package ddex.v1beta1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1";
+
+message Deal {
+  message ReleaseDeal {
+    message Deal {
+      message DealTerms {
+        message ValidityPeriod {
+          google.protobuf.Timestamp start_date_time = 1;
+        }
+        repeated string territory_code = 1;
+        ValidityPeriod validity_period = 2;
+        string commercial_model_type = 3;
+        string use_type = 4;
+      }
+    }
+    repeated string deal_release_reference = 1;
+    Deal deal = 2;
+  }
+
+  oneof deal {
+    ReleaseDeal release_deal = 1;
+  }
+}

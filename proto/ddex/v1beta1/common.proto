@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package ddex.v1beta1;
+
+import "ddex/v1beta1/party.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1";
+
+message ProprietaryId {
+  string namespace = 1;
+  string id = 2;
+}
+
+message MessageHeader {
+  optional string message_thread_id = 1;
+  string message_id = 2;
+  MessageSender message_sender = 3;
+  repeated MessageRecipient message_recipient = 4;
+  google.protobuf.Timestamp message_created_date_time = 5;
+  optional MessageControlType message_control_type = 6;
+  optional MessageSender sent_on_behalf_of = 7;
+  optional MessageRecipient sent_as_requested_by = 8;
+}
+
+message MessageSender {
+  Party.PartyId party_id = 1;
+  Party.PartyName party_name = 2;
+}
+
+message MessageRecipient {
+  Party.PartyId party_id = 1;
+  Party.PartyName party_name = 2;
+}
+
+enum MessageControlType {
+  MESSAGE_CONTROL_TYPE_UNSPECIFIED = 0;
+  MESSAGE_CONTROL_TYPE_NEW_MESSAGE = 1;
+  MESSAGE_CONTROL_TYPE_UPDATED_MESSAGE = 2;
+  MESSAGE_CONTROL_TYPE_TAKEDOWN_MESSAGE = 3;
+  MESSAGE_CONTROL_TYPE_TEST_MESSAGE = 4;
+}

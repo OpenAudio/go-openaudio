@@ -2,7 +2,14 @@ syntax = "proto3";
 
 package core.v1;
 
+import "core/v1beta1/types.proto";
+import "ddex/v1beta1/deal.proto";
+import "ddex/v1beta1/ern.proto";
+import "ddex/v1beta1/mead.proto";
+import "ddex/v1beta1/party.proto";
+import "ddex/v1beta1/pie.proto";
 import "ddex/v1beta1/release.proto";
+import "ddex/v1beta1/resource.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/AudiusProject/audiusd/pkg/api/core/v1";
@@ -169,14 +176,17 @@ message GetTransactionResponse {
 
 message SendTransactionRequest {
   SignedTransaction transaction = 1;
+  core.v1beta1.Transaction transactionv2 = 2;
 }
 
 message SendTransactionResponse {
   Transaction transaction = 1;
+  core.v1beta1.TransactionReceipt transaction_receipt = 2;
 }
 
 message ForwardTransactionRequest {
   SignedTransaction transaction = 1;
+  core.v1beta1.Transaction transactionv2 = 2;
 }
 
 message ForwardTransactionResponse {}
@@ -215,6 +225,7 @@ message Transaction {
   int64 height = 4;
   string block_hash = 5;
   google.protobuf.Timestamp timestamp = 6;
+  core.v1beta1.Transaction transactionv2 = 7;
 }
 
 message SignedTransaction {
@@ -367,4 +378,60 @@ message GetRewardAttestationRequest {
 message GetRewardAttestationResponse {
   string owner = 1;
   string attestation = 2;
+}
+
+message GetERNRequest {
+  string address = 1;
+}
+
+message GetERNResponse {
+  ddex.v1beta1.NewReleaseMessage ern = 1;
+}
+
+message GetPartyRequest {
+  string address = 1;
+}
+
+message GetPartyResponse {
+  ddex.v1beta1.Party party = 1;
+}
+
+message GetResourceRequest {
+  string address = 1;
+}
+
+message GetResourceResponse {
+  ddex.v1beta1.Resource resource = 1;
+}
+
+message GetReleaseRequest {
+  string address = 1;
+}
+
+message GetReleaseResponse {
+  ddex.v1beta1.Release release = 1;
+}
+
+message GetDealRequest {
+  string address = 1;
+}
+
+message GetDealResponse {
+  ddex.v1beta1.Deal deal = 1;
+}
+
+message GetMEADRequest {
+  string address = 1;
+}
+
+message GetMEADResponse {
+  ddex.v1beta1.MeadMessage mead = 1;
+}
+
+message GetPIERequest {
+  string address = 1;
+}
+
+message GetPIEResponse {
+  ddex.v1beta1.PieMessage pie = 1;
 }

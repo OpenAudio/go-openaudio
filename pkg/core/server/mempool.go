@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
+	"github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
@@ -42,6 +43,7 @@ type Mempool struct {
 type MempoolTransaction struct {
 	Deadline int64
 	Tx       *v1.SignedTransaction
+	Txv2     *v1beta1.Transaction
 }
 
 func NewMempool(logger *common.Logger, config *config.Config, db *db.Queries, maxTransactions int) *Mempool {
@@ -56,11 +58,11 @@ func NewMempool(logger *common.Logger, config *config.Config, db *db.Queries, ma
 }
 
 // gathers a batch of transactions skipping those that have expired
-func (m *Mempool) GetBatch(batchSize int, currentBlock int64) []*v1.SignedTransaction {
+func (m *Mempool) GetBatch(batchSize int, currentBlock int64) []*MempoolTransaction {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	batch := []*v1.SignedTransaction{}
+	batch := []*MempoolTransaction{}
 	count := 0
 
 	for e := m.deque.Front(); e != nil && count < batchSize; e = e.Next() {
@@ -73,18 +75,18 @@ func (m *Mempool) GetBatch(batchSize int, currentBlock int64) []*v1.SignedTransa
 			continue
 		}
 
-		batch = append(batch, tx.Tx)
+		batch = append(batch, tx)
 		count++
 	}
 
 	return batch
 }
 
-func (m *Mempool) GetAll() []*v1.SignedTransaction {
+func (m *Mempool) GetAll() []*MempoolTransaction {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	batch := []*v1.SignedTransaction{}
+	batch := []*MempoolTransaction{}
 
 	for {
 		e := m.deque.Front()
@@ -93,7 +95,7 @@ func (m *Mempool) GetAll() []*v1.SignedTransaction {
 			if !ok {
 				continue
 			}
-			batch = append(batch, tx.Tx)
+			batch = append(batch, tx)
 			continue
 		}
 		break
@@ -167,17 +169,32 @@ func (s *Server) addMempoolTransaction(key string, tx *MempoolTransaction, broad
 
 func (s *Server) broadcastMempoolTransaction(key string, tx *MempoolTransaction) {
 	// only broadcast certain types of txs, don't broadcast these ones
-	switch tx.Tx.Transaction.(type) {
-	case *v1.SignedTransaction_SlaRollup:
-		return
+	if tx.Tx != nil {
+		switch tx.Tx.Transaction.(type) {
+		case *v1.SignedTransaction_SlaRollup:
+			return
+		}
 	}
+	// For v2 transactions, we don't have specific broadcast filtering yet
+	// but we can add it here later if needed
 
 	peers := s.GetPeers()
 	for _, peer := range peers {
 		go func(logger *common.Logger, peer corev1connect.CoreServiceClient) {
-			_, err := peer.ForwardTransaction(context.Background(), connect.NewRequest(&v1.ForwardTransactionRequest{
-				Transaction: tx.Tx,
-			}))
+			var err error
+			if tx.Tx != nil {
+				_, err = peer.ForwardTransaction(context.Background(), connect.NewRequest(&v1.ForwardTransactionRequest{
+					Transaction: tx.Tx,
+				}))
+			} else if tx.Txv2 != nil {
+				_, err = peer.ForwardTransaction(context.Background(), connect.NewRequest(&v1.ForwardTransactionRequest{
+					Transactionv2: tx.Txv2,
+				}))
+			} else {
+				logger.Errorf("mempool transaction has no content: %s", key)
+				return
+			}
+
 			if err != nil {
 				logger.Errorf("could not broadcast tx %s: %v", key, err)
 				return
@@ -192,7 +209,13 @@ func (s *Server) getMempl(c echo.Context) error {
 
 	jsontxs := [][]byte{}
 	for _, tx := range txs {
-		jsonData, err := protojson.Marshal(tx)
+		var jsonData []byte
+		var err error
+		if tx.Txv2 != nil {
+			jsonData, err = protojson.Marshal(tx.Txv2)
+		} else {
+			jsonData, err = protojson.Marshal(tx.Tx)
+		}
 		if err != nil {
 			return fmt.Errorf("could not marshal proto into json: %v", err)
 		}

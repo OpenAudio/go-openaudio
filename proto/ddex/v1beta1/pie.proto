@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package ddex.v1beta1;
+
+import "ddex/v1beta1/common.proto";
+import "ddex/v1beta1/party.proto";
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1";
+
+// Party Identification and Enrichment (PIE) message from the DDEX standard
+message PieMessage {
+  message PartyList {
+    repeated Party party = 1;
+  }
+
+  message Party {
+    message PartyType {
+      string value = 1;
+    }
+    string party_reference = 1;
+    ddex.v1beta1.Party.PartyId party_id = 2;
+    ddex.v1beta1.Party.PartyName party_name = 3;
+    PartyType party_type = 4;
+
+    // optional enrichment fields
+    repeated Handle handles = 5;
+    repeated Verified verified = 6;
+    repeated Award awards = 7;
+  }
+
+  message Handle {
+    // "audius" or "twitter"
+    string type = 1;
+    // the handle value, e.g. "audius_user_id" or "twitter_handle"
+    string value = 2;
+  }
+
+  message Verified {
+    // "audius" or "twitter"
+    string type = 1;
+    // true if the handle is verified, false otherwise
+    bool verified = 2;
+  }
+
+  // Official DDEX Award structure based on PIE specification
+  message Award {
+    message AwardingBody {
+      ddex.v1beta1.Party.PartyName party_name = 1;
+      optional ddex.v1beta1.Party.PartyId party_id = 2;
+    }
+
+    message AwardedParty {
+      ddex.v1beta1.Party.PartyName party_name = 1;
+      optional ddex.v1beta1.Party.PartyId party_id = 2;
+    }
+
+    AwardingBody awarding_body = 1;
+    AwardedParty awarded_party = 2;
+    string award_name = 3;
+    string date = 4; // ISO 8601 format: YYYY-MM-DD
+    bool is_winner = 5;
+    optional string comment = 6;
+  }
+
+  ddex.v1beta1.MessageHeader message_header = 1;
+  PartyList party_list = 2;
+}
+
+message PieMessageAck {
+  // address of the PIE message
+  string pie_address = 1;
+}

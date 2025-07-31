@@ -86,6 +86,136 @@ func (q *Queries) InsertAccessKey(ctx context.Context, arg InsertAccessKeyParams
 	return err
 }
 
+const insertCoreERN = `-- name: InsertCoreERN :exec
+insert into core_ern (
+    address,
+    tx_hash,
+    index,
+    sender,
+    message_control_type,
+    party_addresses,
+    resource_addresses,
+    release_addresses,
+    deal_addresses,
+    raw_message,
+    raw_acknowledgment,
+    block_height
+) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+`
+
+type InsertCoreERNParams struct {
+	Address            string
+	TxHash             string
+	Index              int64
+	Sender             string
+	MessageControlType int16
+	PartyAddresses     []string
+	ResourceAddresses  []string
+	ReleaseAddresses   []string
+	DealAddresses      []string
+	RawMessage         []byte
+	RawAcknowledgment  []byte
+	BlockHeight        int64
+}
+
+// ERN, MEAD, PIE insert queries - using protobuf storage with new schema
+func (q *Queries) InsertCoreERN(ctx context.Context, arg InsertCoreERNParams) error {
+	_, err := q.db.Exec(ctx, insertCoreERN,
+		arg.Address,
+		arg.TxHash,
+		arg.Index,
+		arg.Sender,
+		arg.MessageControlType,
+		arg.PartyAddresses,
+		arg.ResourceAddresses,
+		arg.ReleaseAddresses,
+		arg.DealAddresses,
+		arg.RawMessage,
+		arg.RawAcknowledgment,
+		arg.BlockHeight,
+	)
+	return err
+}
+
+const insertCoreMEAD = `-- name: InsertCoreMEAD :exec
+insert into core_mead (
+    address,
+    tx_hash,
+    index,
+    sender,
+    resource_addresses,
+    release_addresses,
+    raw_message,
+    raw_acknowledgment,
+    block_height
+) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+`
+
+type InsertCoreMEADParams struct {
+	Address           string
+	TxHash            string
+	Index             int64
+	Sender            string
+	ResourceAddresses []string
+	ReleaseAddresses  []string
+	RawMessage        []byte
+	RawAcknowledgment []byte
+	BlockHeight       int64
+}
+
+func (q *Queries) InsertCoreMEAD(ctx context.Context, arg InsertCoreMEADParams) error {
+	_, err := q.db.Exec(ctx, insertCoreMEAD,
+		arg.Address,
+		arg.TxHash,
+		arg.Index,
+		arg.Sender,
+		arg.ResourceAddresses,
+		arg.ReleaseAddresses,
+		arg.RawMessage,
+		arg.RawAcknowledgment,
+		arg.BlockHeight,
+	)
+	return err
+}
+
+const insertCorePIE = `-- name: InsertCorePIE :exec
+insert into core_pie (
+    address,
+    tx_hash,
+    index,
+    sender,
+    party_addresses,
+    raw_message,
+    raw_acknowledgment,
+    block_height
+) values ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+type InsertCorePIEParams struct {
+	Address           string
+	TxHash            string
+	Index             int64
+	Sender            string
+	PartyAddresses    []string
+	RawMessage        []byte
+	RawAcknowledgment []byte
+	BlockHeight       int64
+}
+
+func (q *Queries) InsertCorePIE(ctx context.Context, arg InsertCorePIEParams) error {
+	_, err := q.db.Exec(ctx, insertCorePIE,
+		arg.Address,
+		arg.TxHash,
+		arg.Index,
+		arg.Sender,
+		arg.PartyAddresses,
+		arg.RawMessage,
+		arg.RawAcknowledgment,
+		arg.BlockHeight,
+	)
+	return err
+}
+
 const insertDecodedManageEntity = `-- name: InsertDecodedManageEntity :exec
 with duplicate_check as (
     insert into core_etl_tx_manage_entity (

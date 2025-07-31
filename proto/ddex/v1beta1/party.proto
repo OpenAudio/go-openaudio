@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package ddex.v1beta1;
+
+option go_package = "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1";
+
+message Party {
+  message PartyName {
+    string full_name = 1;
+    string full_name_indexed = 2;
+  }
+
+  message PartyId {
+    string dpid = 1;
+  }
+
+  string party_reference = 1;
+  PartyName party_name = 2;
+  PartyId party_id = 3;
+}

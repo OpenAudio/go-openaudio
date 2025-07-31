@@ -75,6 +75,22 @@ type CoreBlock struct {
 	CreatedAt pgtype.Timestamp
 }
 
+type CoreErn struct {
+	ID                 int64
+	Address            string
+	Index              int64
+	TxHash             string
+	Sender             string
+	MessageControlType int16
+	PartyAddresses     []string
+	ResourceAddresses  []string
+	ReleaseAddresses   []string
+	DealAddresses      []string
+	RawMessage         []byte
+	RawAcknowledgment  []byte
+	BlockHeight        int64
+}
+
 type CoreEtlTx struct {
 	ID          int64
 	BlockHeight int64
@@ -167,6 +183,31 @@ type CoreEtlTxValidatorRegistration struct {
 	PubKey       []byte
 	Power        int64
 	CreatedAt    pgtype.Timestamptz
+}
+
+type CoreMead struct {
+	ID                int64
+	Address           string
+	TxHash            string
+	Index             int64
+	Sender            string
+	ResourceAddresses []string
+	ReleaseAddresses  []string
+	RawMessage        []byte
+	RawAcknowledgment []byte
+	BlockHeight       int64
+}
+
+type CorePie struct {
+	ID                int64
+	Address           string
+	TxHash            string
+	Index             int64
+	Sender            string
+	PartyAddresses    []string
+	RawMessage        []byte
+	RawAcknowledgment []byte
+	BlockHeight       int64
 }
 
 type CoreTransaction struct {

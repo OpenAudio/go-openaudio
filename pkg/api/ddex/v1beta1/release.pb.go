@@ -20,496 +20,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type NewReleaseMessage struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	ReleaseHeader *ReleaseHeader `protobuf:"bytes,1,opt,name=release_header,json=releaseHeader,proto3" json:"release_header,omitempty"`
-	ResourceList  []*Resource    `protobuf:"bytes,2,rep,name=resource_list,json=resourceList,proto3" json:"resource_list,omitempty"`
-	ReleaseList   []*Release     `protobuf:"bytes,3,rep,name=release_list,json=releaseList,proto3" json:"release_list,omitempty"`
-}
-
-func (x *NewReleaseMessage) Reset() {
-	*x = NewReleaseMessage{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_ddex_v1beta1_release_proto_msgTypes[0]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *NewReleaseMessage) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*NewReleaseMessage) ProtoMessage() {}
-
-func (x *NewReleaseMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_ddex_v1beta1_release_proto_msgTypes[0]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use NewReleaseMessage.ProtoReflect.Descriptor instead.
-func (*NewReleaseMessage) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *NewReleaseMessage) GetReleaseHeader() *ReleaseHeader {
-	if x != nil {
-		return x.ReleaseHeader
-	}
-	return nil
-}
-
-func (x *NewReleaseMessage) GetResourceList() []*Resource {
-	if x != nil {
-		return x.ResourceList
-	}
-	return nil
-}
-
-func (x *NewReleaseMessage) GetReleaseList() []*Release {
-	if x != nil {
-		return x.ReleaseList
-	}
-	return nil
-}
-
-type ReleaseHeader struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	MessageId      string `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
-	Sender         *Party `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`
-	SentOnBehalfOf *Party `protobuf:"bytes,3,opt,name=sent_on_behalf_of,json=sentOnBehalfOf,proto3" json:"sent_on_behalf_of,omitempty"`
-}
-
-func (x *ReleaseHeader) Reset() {
-	*x = ReleaseHeader{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_ddex_v1beta1_release_proto_msgTypes[1]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *ReleaseHeader) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReleaseHeader) ProtoMessage() {}
-
-func (x *ReleaseHeader) ProtoReflect() protoreflect.Message {
-	mi := &file_ddex_v1beta1_release_proto_msgTypes[1]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReleaseHeader.ProtoReflect.Descriptor instead.
-func (*ReleaseHeader) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *ReleaseHeader) GetMessageId() string {
-	if x != nil {
-		return x.MessageId
-	}
-	return ""
-}
-
-func (x *ReleaseHeader) GetSender() *Party {
-	if x != nil {
-		return x.Sender
-	}
-	return nil
-}
-
-func (x *ReleaseHeader) GetSentOnBehalfOf() *Party {
-	if x != nil {
-		return x.SentOnBehalfOf
-	}
-	return nil
-}
-
-type Party struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	PartyId string `protobuf:"bytes,1,opt,name=party_id,json=partyId,proto3" json:"party_id,omitempty"`
-	Address string `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
-}
-
-func (x *Party) Reset() {
-	*x = Party{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_ddex_v1beta1_release_proto_msgTypes[2]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *Party) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Party) ProtoMessage() {}
-
-func (x *Party) ProtoReflect() protoreflect.Message {
-	mi := &file_ddex_v1beta1_release_proto_msgTypes[2]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Party.ProtoReflect.Descriptor instead.
-func (*Party) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *Party) GetPartyId() string {
-	if x != nil {
-		return x.PartyId
-	}
-	return ""
-}
-
-func (x *Party) GetAddress() string {
-	if x != nil {
-		return x.Address
-	}
-	return ""
-}
-
-type Resource struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	ResourceReference string `protobuf:"bytes,1,opt,name=resource_reference,json=resourceReference,proto3" json:"resource_reference,omitempty"`
-	// Types that are assignable to Resource:
-	//
-	//	*Resource_SoundRecording
-	//	*Resource_Image
-	Resource isResource_Resource `protobuf_oneof:"resource"`
-}
-
-func (x *Resource) Reset() {
-	*x = Resource{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_ddex_v1beta1_release_proto_msgTypes[3]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *Resource) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Resource) ProtoMessage() {}
-
-func (x *Resource) ProtoReflect() protoreflect.Message {
-	mi := &file_ddex_v1beta1_release_proto_msgTypes[3]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Resource.ProtoReflect.Descriptor instead.
-func (*Resource) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *Resource) GetResourceReference() string {
-	if x != nil {
-		return x.ResourceReference
-	}
-	return ""
-}
-
-func (m *Resource) GetResource() isResource_Resource {
-	if m != nil {
-		return m.Resource
-	}
-	return nil
-}
-
-func (x *Resource) GetSoundRecording() *SoundRecording {
-	if x, ok := x.GetResource().(*Resource_SoundRecording); ok {
-		return x.SoundRecording
-	}
-	return nil
-}
-
-func (x *Resource) GetImage() *Image {
-	if x, ok := x.GetResource().(*Resource_Image); ok {
-		return x.Image
-	}
-	return nil
-}
-
-type isResource_Resource interface {
-	isResource_Resource()
-}
-
-type Resource_SoundRecording struct {
-	SoundRecording *SoundRecording `protobuf:"bytes,2,opt,name=sound_recording,json=soundRecording,proto3,oneof"`
-}
-
-type Resource_Image struct {
-	Image *Image `protobuf:"bytes,3,opt,name=image,proto3,oneof"`
-}
-
-func (*Resource_SoundRecording) isResource_Resource() {}
-
-func (*Resource_Image) isResource_Resource() {}
-
-type SoundRecording struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Id       *SoundRecordingId `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Filename string            `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
-	Cid      string            `protobuf:"bytes,3,opt,name=cid,proto3" json:"cid,omitempty"`
-}
-
-func (x *SoundRecording) Reset() {
-	*x = SoundRecording{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_ddex_v1beta1_release_proto_msgTypes[4]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *SoundRecording) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SoundRecording) ProtoMessage() {}
-
-func (x *SoundRecording) ProtoReflect() protoreflect.Message {
-	mi := &file_ddex_v1beta1_release_proto_msgTypes[4]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SoundRecording.ProtoReflect.Descriptor instead.
-func (*SoundRecording) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *SoundRecording) GetId() *SoundRecordingId {
-	if x != nil {
-		return x.Id
-	}
-	return nil
-}
-
-func (x *SoundRecording) GetFilename() string {
-	if x != nil {
-		return x.Filename
-	}
-	return ""
-}
-
-func (x *SoundRecording) GetCid() string {
-	if x != nil {
-		return x.Cid
-	}
-	return ""
-}
-
-type SoundRecordingId struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Isrc string `protobuf:"bytes,1,opt,name=isrc,proto3" json:"isrc,omitempty"`
-}
-
-func (x *SoundRecordingId) Reset() {
-	*x = SoundRecordingId{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_ddex_v1beta1_release_proto_msgTypes[5]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *SoundRecordingId) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SoundRecordingId) ProtoMessage() {}
-
-func (x *SoundRecordingId) ProtoReflect() protoreflect.Message {
-	mi := &file_ddex_v1beta1_release_proto_msgTypes[5]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SoundRecordingId.ProtoReflect.Descriptor instead.
-func (*SoundRecordingId) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *SoundRecordingId) GetIsrc() string {
-	if x != nil {
-		return x.Isrc
-	}
-	return ""
-}
-
-type Image struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Id  *ImageId `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Cid string   `protobuf:"bytes,2,opt,name=cid,proto3" json:"cid,omitempty"`
-}
-
-func (x *Image) Reset() {
-	*x = Image{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_ddex_v1beta1_release_proto_msgTypes[6]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *Image) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Image) ProtoMessage() {}
-
-func (x *Image) ProtoReflect() protoreflect.Message {
-	mi := &file_ddex_v1beta1_release_proto_msgTypes[6]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Image.ProtoReflect.Descriptor instead.
-func (*Image) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *Image) GetId() *ImageId {
-	if x != nil {
-		return x.Id
-	}
-	return nil
-}
-
-func (x *Image) GetCid() string {
-	if x != nil {
-		return x.Cid
-	}
-	return ""
-}
-
-type ImageId struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	ProprietaryId string `protobuf:"bytes,1,opt,name=proprietary_id,json=proprietaryId,proto3" json:"proprietary_id,omitempty"`
-	Namespace     string `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
-}
-
-func (x *ImageId) Reset() {
-	*x = ImageId{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_ddex_v1beta1_release_proto_msgTypes[7]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *ImageId) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ImageId) ProtoMessage() {}
-
-func (x *ImageId) ProtoReflect() protoreflect.Message {
-	mi := &file_ddex_v1beta1_release_proto_msgTypes[7]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ImageId.ProtoReflect.Descriptor instead.
-func (*ImageId) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *ImageId) GetProprietaryId() string {
-	if x != nil {
-		return x.ProprietaryId
-	}
-	return ""
-}
-
-func (x *ImageId) GetNamespace() string {
-	if x != nil {
-		return x.Namespace
-	}
-	return ""
-}
-
 type Release struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -517,15 +27,15 @@ type Release struct {
 
 	// Types that are assignable to Release:
 	//
-	//	*Release_TrackRelease
-	//	*Release_AlbumRelease
+	//	*Release_MainRelease
+	//	*Release_TrackRelease_
 	Release isRelease_Release `protobuf_oneof:"release"`
 }
 
 func (x *Release) Reset() {
 	*x = Release{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ddex_v1beta1_release_proto_msgTypes[8]
+		mi := &file_ddex_v1beta1_release_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -538,7 +48,7 @@ func (x *Release) String() string {
 func (*Release) ProtoMessage() {}
 
 func (x *Release) ProtoReflect() protoreflect.Message {
-	mi := &file_ddex_v1beta1_release_proto_msgTypes[8]
+	mi := &file_ddex_v1beta1_release_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -551,7 +61,7 @@ func (x *Release) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Release.ProtoReflect.Descriptor instead.
 func (*Release) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{8}
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0}
 }
 
 func (m *Release) GetRelease() isRelease_Release {
@@ -561,16 +71,16 @@ func (m *Release) GetRelease() isRelease_Release {
 	return nil
 }
 
-func (x *Release) GetTrackRelease() *TrackRelease {
-	if x, ok := x.GetRelease().(*Release_TrackRelease); ok {
-		return x.TrackRelease
+func (x *Release) GetMainRelease() *Release_Release {
+	if x, ok := x.GetRelease().(*Release_MainRelease); ok {
+		return x.MainRelease
 	}
 	return nil
 }
 
-func (x *Release) GetAlbumRelease() *AlbumRelease {
-	if x, ok := x.GetRelease().(*Release_AlbumRelease); ok {
-		return x.AlbumRelease
+func (x *Release) GetTrackRelease() *Release_TrackRelease {
+	if x, ok := x.GetRelease().(*Release_TrackRelease_); ok {
+		return x.TrackRelease
 	}
 	return nil
 }
@@ -579,33 +89,588 @@ type isRelease_Release interface {
 	isRelease_Release()
 }
 
-type Release_TrackRelease struct {
-	TrackRelease *TrackRelease `protobuf:"bytes,1,opt,name=track_release,json=trackRelease,proto3,oneof"`
+type Release_MainRelease struct {
+	MainRelease *Release_Release `protobuf:"bytes,1,opt,name=main_release,json=mainRelease,proto3,oneof"`
 }
 
-type Release_AlbumRelease struct {
-	AlbumRelease *AlbumRelease `protobuf:"bytes,2,opt,name=album_release,json=albumRelease,proto3,oneof"`
+type Release_TrackRelease_ struct {
+	TrackRelease *Release_TrackRelease `protobuf:"bytes,2,opt,name=track_release,json=trackRelease,proto3,oneof"`
 }
 
-func (*Release_TrackRelease) isRelease_Release() {}
+func (*Release_MainRelease) isRelease_Release() {}
 
-func (*Release_AlbumRelease) isRelease_Release() {}
+func (*Release_TrackRelease_) isRelease_Release() {}
 
-type TrackRelease struct {
+type Release_ReleaseId struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	ReleaseId                      *ReleaseId `protobuf:"bytes,1,opt,name=release_id,json=releaseId,proto3" json:"release_id,omitempty"`
-	ReleaseResourceReference       string     `protobuf:"bytes,2,opt,name=release_resource_reference,json=releaseResourceReference,proto3" json:"release_resource_reference,omitempty"`
-	LinkedReleaseResourceReference string     `protobuf:"bytes,3,opt,name=linked_release_resource_reference,json=linkedReleaseResourceReference,proto3" json:"linked_release_resource_reference,omitempty"`
-	Title                          string     `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
-	Genre                          string     `protobuf:"bytes,5,opt,name=genre,proto3" json:"genre,omitempty"`
-	Artist                         string     `protobuf:"bytes,6,opt,name=artist,proto3" json:"artist,omitempty"`
+	Grid            string                   `protobuf:"bytes,1,opt,name=grid,proto3" json:"grid,omitempty"`
+	Icpn            string                   `protobuf:"bytes,2,opt,name=icpn,proto3" json:"icpn,omitempty"`
+	CatalogueNumber string                   `protobuf:"bytes,3,opt,name=catalogue_number,json=catalogueNumber,proto3" json:"catalogue_number,omitempty"`
+	ProprietaryId   []*Release_ProprietaryId `protobuf:"bytes,4,rep,name=proprietary_id,json=proprietaryId,proto3" json:"proprietary_id,omitempty"`
 }
 
-func (x *TrackRelease) Reset() {
-	*x = TrackRelease{}
+func (x *Release_ReleaseId) Reset() {
+	*x = Release_ReleaseId{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_release_proto_msgTypes[1]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Release_ReleaseId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Release_ReleaseId) ProtoMessage() {}
+
+func (x *Release_ReleaseId) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_release_proto_msgTypes[1]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Release_ReleaseId.ProtoReflect.Descriptor instead.
+func (*Release_ReleaseId) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 0}
+}
+
+func (x *Release_ReleaseId) GetGrid() string {
+	if x != nil {
+		return x.Grid
+	}
+	return ""
+}
+
+func (x *Release_ReleaseId) GetIcpn() string {
+	if x != nil {
+		return x.Icpn
+	}
+	return ""
+}
+
+func (x *Release_ReleaseId) GetCatalogueNumber() string {
+	if x != nil {
+		return x.CatalogueNumber
+	}
+	return ""
+}
+
+func (x *Release_ReleaseId) GetProprietaryId() []*Release_ProprietaryId {
+	if x != nil {
+		return x.ProprietaryId
+	}
+	return nil
+}
+
+type Release_ProprietaryId struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Namespace string `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Id        string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+}
+
+func (x *Release_ProprietaryId) Reset() {
+	*x = Release_ProprietaryId{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_release_proto_msgTypes[2]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Release_ProprietaryId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Release_ProprietaryId) ProtoMessage() {}
+
+func (x *Release_ProprietaryId) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_release_proto_msgTypes[2]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Release_ProprietaryId.ProtoReflect.Descriptor instead.
+func (*Release_ProprietaryId) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 1}
+}
+
+func (x *Release_ProprietaryId) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *Release_ProprietaryId) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type Release_DisplayTitle struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	TitleText string `protobuf:"bytes,1,opt,name=title_text,json=titleText,proto3" json:"title_text,omitempty"`
+}
+
+func (x *Release_DisplayTitle) Reset() {
+	*x = Release_DisplayTitle{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_release_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Release_DisplayTitle) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Release_DisplayTitle) ProtoMessage() {}
+
+func (x *Release_DisplayTitle) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_release_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Release_DisplayTitle.ProtoReflect.Descriptor instead.
+func (*Release_DisplayTitle) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 2}
+}
+
+func (x *Release_DisplayTitle) GetTitleText() string {
+	if x != nil {
+		return x.TitleText
+	}
+	return ""
+}
+
+type Release_DisplayArtist struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ArtistPartyReference string `protobuf:"bytes,1,opt,name=artist_party_reference,json=artistPartyReference,proto3" json:"artist_party_reference,omitempty"`
+	DisplayArtistRole    string `protobuf:"bytes,2,opt,name=display_artist_role,json=displayArtistRole,proto3" json:"display_artist_role,omitempty"`
+}
+
+func (x *Release_DisplayArtist) Reset() {
+	*x = Release_DisplayArtist{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_release_proto_msgTypes[4]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Release_DisplayArtist) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Release_DisplayArtist) ProtoMessage() {}
+
+func (x *Release_DisplayArtist) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_release_proto_msgTypes[4]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Release_DisplayArtist.ProtoReflect.Descriptor instead.
+func (*Release_DisplayArtist) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 3}
+}
+
+func (x *Release_DisplayArtist) GetArtistPartyReference() string {
+	if x != nil {
+		return x.ArtistPartyReference
+	}
+	return ""
+}
+
+func (x *Release_DisplayArtist) GetDisplayArtistRole() string {
+	if x != nil {
+		return x.DisplayArtistRole
+	}
+	return ""
+}
+
+type Release_Release struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ReleaseReference      string                         `protobuf:"bytes,1,opt,name=release_reference,json=releaseReference,proto3" json:"release_reference,omitempty"`
+	ReleaseType           string                         `protobuf:"bytes,2,opt,name=release_type,json=releaseType,proto3" json:"release_type,omitempty"`
+	ReleaseId             *Release_ReleaseId             `protobuf:"bytes,3,opt,name=release_id,json=releaseId,proto3" json:"release_id,omitempty"`
+	DisplayTitleText      string                         `protobuf:"bytes,4,opt,name=display_title_text,json=displayTitleText,proto3" json:"display_title_text,omitempty"`
+	DisplayTitle          *Release_DisplayTitle          `protobuf:"bytes,5,opt,name=display_title,json=displayTitle,proto3" json:"display_title,omitempty"`
+	DisplayArtistName     string                         `protobuf:"bytes,6,opt,name=display_artist_name,json=displayArtistName,proto3" json:"display_artist_name,omitempty"`
+	DisplayArtist         []*Release_DisplayArtist       `protobuf:"bytes,7,rep,name=display_artist,json=displayArtist,proto3" json:"display_artist,omitempty"`
+	ReleaseLabelReference string                         `protobuf:"bytes,8,opt,name=release_label_reference,json=releaseLabelReference,proto3" json:"release_label_reference,omitempty"`
+	PLine                 *Release_Release_PLine         `protobuf:"bytes,9,opt,name=p_line,json=pLine,proto3" json:"p_line,omitempty"`
+	Duration              string                         `protobuf:"bytes,10,opt,name=duration,proto3" json:"duration,omitempty"`
+	Genre                 *Release_Release_Genre         `protobuf:"bytes,11,opt,name=genre,proto3" json:"genre,omitempty"`
+	OriginalReleaseDate   string                         `protobuf:"bytes,12,opt,name=original_release_date,json=originalReleaseDate,proto3" json:"original_release_date,omitempty"`
+	ParentalWarningType   string                         `protobuf:"bytes,13,opt,name=parental_warning_type,json=parentalWarningType,proto3" json:"parental_warning_type,omitempty"`
+	ResourceGroup         *Release_Release_ResourceGroup `protobuf:"bytes,14,opt,name=resource_group,json=resourceGroup,proto3" json:"resource_group,omitempty"`
+}
+
+func (x *Release_Release) Reset() {
+	*x = Release_Release{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_release_proto_msgTypes[5]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Release_Release) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Release_Release) ProtoMessage() {}
+
+func (x *Release_Release) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_release_proto_msgTypes[5]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Release_Release.ProtoReflect.Descriptor instead.
+func (*Release_Release) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 4}
+}
+
+func (x *Release_Release) GetReleaseReference() string {
+	if x != nil {
+		return x.ReleaseReference
+	}
+	return ""
+}
+
+func (x *Release_Release) GetReleaseType() string {
+	if x != nil {
+		return x.ReleaseType
+	}
+	return ""
+}
+
+func (x *Release_Release) GetReleaseId() *Release_ReleaseId {
+	if x != nil {
+		return x.ReleaseId
+	}
+	return nil
+}
+
+func (x *Release_Release) GetDisplayTitleText() string {
+	if x != nil {
+		return x.DisplayTitleText
+	}
+	return ""
+}
+
+func (x *Release_Release) GetDisplayTitle() *Release_DisplayTitle {
+	if x != nil {
+		return x.DisplayTitle
+	}
+	return nil
+}
+
+func (x *Release_Release) GetDisplayArtistName() string {
+	if x != nil {
+		return x.DisplayArtistName
+	}
+	return ""
+}
+
+func (x *Release_Release) GetDisplayArtist() []*Release_DisplayArtist {
+	if x != nil {
+		return x.DisplayArtist
+	}
+	return nil
+}
+
+func (x *Release_Release) GetReleaseLabelReference() string {
+	if x != nil {
+		return x.ReleaseLabelReference
+	}
+	return ""
+}
+
+func (x *Release_Release) GetPLine() *Release_Release_PLine {
+	if x != nil {
+		return x.PLine
+	}
+	return nil
+}
+
+func (x *Release_Release) GetDuration() string {
+	if x != nil {
+		return x.Duration
+	}
+	return ""
+}
+
+func (x *Release_Release) GetGenre() *Release_Release_Genre {
+	if x != nil {
+		return x.Genre
+	}
+	return nil
+}
+
+func (x *Release_Release) GetOriginalReleaseDate() string {
+	if x != nil {
+		return x.OriginalReleaseDate
+	}
+	return ""
+}
+
+func (x *Release_Release) GetParentalWarningType() string {
+	if x != nil {
+		return x.ParentalWarningType
+	}
+	return ""
+}
+
+func (x *Release_Release) GetResourceGroup() *Release_Release_ResourceGroup {
+	if x != nil {
+		return x.ResourceGroup
+	}
+	return nil
+}
+
+type Release_TrackRelease struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ReleaseReference         string                      `protobuf:"bytes,1,opt,name=release_reference,json=releaseReference,proto3" json:"release_reference,omitempty"`
+	ReleaseId                *Release_ReleaseId          `protobuf:"bytes,2,opt,name=release_id,json=releaseId,proto3" json:"release_id,omitempty"`
+	ReleaseResourceReference string                      `protobuf:"bytes,3,opt,name=release_resource_reference,json=releaseResourceReference,proto3" json:"release_resource_reference,omitempty"`
+	ReleaseLabelReference    string                      `protobuf:"bytes,4,opt,name=release_label_reference,json=releaseLabelReference,proto3" json:"release_label_reference,omitempty"`
+	Genre                    *Release_TrackRelease_Genre `protobuf:"bytes,5,opt,name=genre,proto3" json:"genre,omitempty"`
+}
+
+func (x *Release_TrackRelease) Reset() {
+	*x = Release_TrackRelease{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_release_proto_msgTypes[6]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Release_TrackRelease) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Release_TrackRelease) ProtoMessage() {}
+
+func (x *Release_TrackRelease) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_release_proto_msgTypes[6]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Release_TrackRelease.ProtoReflect.Descriptor instead.
+func (*Release_TrackRelease) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 5}
+}
+
+func (x *Release_TrackRelease) GetReleaseReference() string {
+	if x != nil {
+		return x.ReleaseReference
+	}
+	return ""
+}
+
+func (x *Release_TrackRelease) GetReleaseId() *Release_ReleaseId {
+	if x != nil {
+		return x.ReleaseId
+	}
+	return nil
+}
+
+func (x *Release_TrackRelease) GetReleaseResourceReference() string {
+	if x != nil {
+		return x.ReleaseResourceReference
+	}
+	return ""
+}
+
+func (x *Release_TrackRelease) GetReleaseLabelReference() string {
+	if x != nil {
+		return x.ReleaseLabelReference
+	}
+	return ""
+}
+
+func (x *Release_TrackRelease) GetGenre() *Release_TrackRelease_Genre {
+	if x != nil {
+		return x.Genre
+	}
+	return nil
+}
+
+type Release_Release_PLine struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Year      string `protobuf:"bytes,1,opt,name=year,proto3" json:"year,omitempty"`
+	PLineText string `protobuf:"bytes,2,opt,name=p_line_text,json=pLineText,proto3" json:"p_line_text,omitempty"`
+}
+
+func (x *Release_Release_PLine) Reset() {
+	*x = Release_Release_PLine{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_release_proto_msgTypes[7]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Release_Release_PLine) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Release_Release_PLine) ProtoMessage() {}
+
+func (x *Release_Release_PLine) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_release_proto_msgTypes[7]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Release_Release_PLine.ProtoReflect.Descriptor instead.
+func (*Release_Release_PLine) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 4, 0}
+}
+
+func (x *Release_Release_PLine) GetYear() string {
+	if x != nil {
+		return x.Year
+	}
+	return ""
+}
+
+func (x *Release_Release_PLine) GetPLineText() string {
+	if x != nil {
+		return x.PLineText
+	}
+	return ""
+}
+
+type Release_Release_Genre struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	GenreText string `protobuf:"bytes,1,opt,name=genre_text,json=genreText,proto3" json:"genre_text,omitempty"`
+}
+
+func (x *Release_Release_Genre) Reset() {
+	*x = Release_Release_Genre{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_release_proto_msgTypes[8]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Release_Release_Genre) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Release_Release_Genre) ProtoMessage() {}
+
+func (x *Release_Release_Genre) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_release_proto_msgTypes[8]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Release_Release_Genre.ProtoReflect.Descriptor instead.
+func (*Release_Release_Genre) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 4, 1}
+}
+
+func (x *Release_Release_Genre) GetGenreText() string {
+	if x != nil {
+		return x.GenreText
+	}
+	return ""
+}
+
+type Release_Release_ResourceGroup struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ResourceGroup []*Release_Release_ResourceGroup_ResourceGroup `protobuf:"bytes,1,rep,name=resource_group,json=resourceGroup,proto3" json:"resource_group,omitempty"`
+}
+
+func (x *Release_Release_ResourceGroup) Reset() {
+	*x = Release_Release_ResourceGroup{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_ddex_v1beta1_release_proto_msgTypes[9]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -613,13 +678,13 @@ func (x *TrackRelease) Reset() {
 	}
 }
 
-func (x *TrackRelease) String() string {
+func (x *Release_Release_ResourceGroup) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*TrackRelease) ProtoMessage() {}
+func (*Release_Release_ResourceGroup) ProtoMessage() {}
 
-func (x *TrackRelease) ProtoReflect() protoreflect.Message {
+func (x *Release_Release_ResourceGroup) ProtoReflect() protoreflect.Message {
 	mi := &file_ddex_v1beta1_release_proto_msgTypes[9]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -631,66 +696,31 @@ func (x *TrackRelease) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use TrackRelease.ProtoReflect.Descriptor instead.
-func (*TrackRelease) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{9}
+// Deprecated: Use Release_Release_ResourceGroup.ProtoReflect.Descriptor instead.
+func (*Release_Release_ResourceGroup) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 4, 2}
 }
 
-func (x *TrackRelease) GetReleaseId() *ReleaseId {
+func (x *Release_Release_ResourceGroup) GetResourceGroup() []*Release_Release_ResourceGroup_ResourceGroup {
 	if x != nil {
-		return x.ReleaseId
+		return x.ResourceGroup
 	}
 	return nil
 }
 
-func (x *TrackRelease) GetReleaseResourceReference() string {
-	if x != nil {
-		return x.ReleaseResourceReference
-	}
-	return ""
-}
-
-func (x *TrackRelease) GetLinkedReleaseResourceReference() string {
-	if x != nil {
-		return x.LinkedReleaseResourceReference
-	}
-	return ""
-}
-
-func (x *TrackRelease) GetTitle() string {
-	if x != nil {
-		return x.Title
-	}
-	return ""
-}
-
-func (x *TrackRelease) GetGenre() string {
-	if x != nil {
-		return x.Genre
-	}
-	return ""
-}
-
-func (x *TrackRelease) GetArtist() string {
-	if x != nil {
-		return x.Artist
-	}
-	return ""
-}
-
-type AlbumRelease struct {
+type Release_Release_ResourceGroup_ResourceGroup struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	ReleaseId *ReleaseId `protobuf:"bytes,1,opt,name=release_id,json=releaseId,proto3" json:"release_id,omitempty"`
-	Title     string     `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Genre     string     `protobuf:"bytes,3,opt,name=genre,proto3" json:"genre,omitempty"`
-	Artist    string     `protobuf:"bytes,4,opt,name=artist,proto3" json:"artist,omitempty"`
+	ResourceGroupType        string                                                                  `protobuf:"bytes,1,opt,name=resource_group_type,json=resourceGroupType,proto3" json:"resource_group_type,omitempty"`
+	AdditionalTitle          *Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle            `protobuf:"bytes,2,opt,name=additional_title,json=additionalTitle,proto3" json:"additional_title,omitempty"`
+	SequenceNumber           string                                                                  `protobuf:"bytes,3,opt,name=sequence_number,json=sequenceNumber,proto3" json:"sequence_number,omitempty"`
+	ResourceGroupContentItem []*Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem `protobuf:"bytes,4,rep,name=resource_group_content_item,json=resourceGroupContentItem,proto3" json:"resource_group_content_item,omitempty"`
 }
 
-func (x *AlbumRelease) Reset() {
-	*x = AlbumRelease{}
+func (x *Release_Release_ResourceGroup_ResourceGroup) Reset() {
+	*x = Release_Release_ResourceGroup_ResourceGroup{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_ddex_v1beta1_release_proto_msgTypes[10]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -698,13 +728,13 @@ func (x *AlbumRelease) Reset() {
 	}
 }
 
-func (x *AlbumRelease) String() string {
+func (x *Release_Release_ResourceGroup_ResourceGroup) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AlbumRelease) ProtoMessage() {}
+func (*Release_Release_ResourceGroup_ResourceGroup) ProtoMessage() {}
 
-func (x *AlbumRelease) ProtoReflect() protoreflect.Message {
+func (x *Release_Release_ResourceGroup_ResourceGroup) ProtoReflect() protoreflect.Message {
 	mi := &file_ddex_v1beta1_release_proto_msgTypes[10]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -716,53 +746,50 @@ func (x *AlbumRelease) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AlbumRelease.ProtoReflect.Descriptor instead.
-func (*AlbumRelease) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{10}
+// Deprecated: Use Release_Release_ResourceGroup_ResourceGroup.ProtoReflect.Descriptor instead.
+func (*Release_Release_ResourceGroup_ResourceGroup) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 4, 2, 0}
 }
 
-func (x *AlbumRelease) GetReleaseId() *ReleaseId {
+func (x *Release_Release_ResourceGroup_ResourceGroup) GetResourceGroupType() string {
 	if x != nil {
-		return x.ReleaseId
+		return x.ResourceGroupType
+	}
+	return ""
+}
+
+func (x *Release_Release_ResourceGroup_ResourceGroup) GetAdditionalTitle() *Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle {
+	if x != nil {
+		return x.AdditionalTitle
 	}
 	return nil
 }
 
-func (x *AlbumRelease) GetTitle() string {
+func (x *Release_Release_ResourceGroup_ResourceGroup) GetSequenceNumber() string {
 	if x != nil {
-		return x.Title
+		return x.SequenceNumber
 	}
 	return ""
 }
 
-func (x *AlbumRelease) GetGenre() string {
+func (x *Release_Release_ResourceGroup_ResourceGroup) GetResourceGroupContentItem() []*Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem {
 	if x != nil {
-		return x.Genre
+		return x.ResourceGroupContentItem
 	}
-	return ""
+	return nil
 }
 
-func (x *AlbumRelease) GetArtist() string {
-	if x != nil {
-		return x.Artist
-	}
-	return ""
-}
-
-type ReleaseId struct {
+type Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Isrc            string `protobuf:"bytes,1,opt,name=isrc,proto3" json:"isrc,omitempty"`
-	Icpn            string `protobuf:"bytes,2,opt,name=icpn,proto3" json:"icpn,omitempty"`
-	Grid            string `protobuf:"bytes,3,opt,name=grid,proto3" json:"grid,omitempty"`
-	CatalogueNumber string `protobuf:"bytes,4,opt,name=catalogue_number,json=catalogueNumber,proto3" json:"catalogue_number,omitempty"`
-	Namespace       string `protobuf:"bytes,5,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	TitleType string `protobuf:"bytes,1,opt,name=title_type,json=titleType,proto3" json:"title_type,omitempty"`
+	TitleText string `protobuf:"bytes,2,opt,name=title_text,json=titleText,proto3" json:"title_text,omitempty"`
 }
 
-func (x *ReleaseId) Reset() {
-	*x = ReleaseId{}
+func (x *Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle) Reset() {
+	*x = Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_ddex_v1beta1_release_proto_msgTypes[11]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -770,13 +797,13 @@ func (x *ReleaseId) Reset() {
 	}
 }
 
-func (x *ReleaseId) String() string {
+func (x *Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ReleaseId) ProtoMessage() {}
+func (*Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle) ProtoMessage() {}
 
-func (x *ReleaseId) ProtoReflect() protoreflect.Message {
+func (x *Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle) ProtoReflect() protoreflect.Message {
 	mi := &file_ddex_v1beta1_release_proto_msgTypes[11]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -788,42 +815,123 @@ func (x *ReleaseId) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ReleaseId.ProtoReflect.Descriptor instead.
-func (*ReleaseId) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{11}
+// Deprecated: Use Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle.ProtoReflect.Descriptor instead.
+func (*Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 4, 2, 0, 0}
 }
 
-func (x *ReleaseId) GetIsrc() string {
+func (x *Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle) GetTitleType() string {
 	if x != nil {
-		return x.Isrc
+		return x.TitleType
 	}
 	return ""
 }
 
-func (x *ReleaseId) GetIcpn() string {
+func (x *Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle) GetTitleText() string {
 	if x != nil {
-		return x.Icpn
+		return x.TitleText
 	}
 	return ""
 }
 
-func (x *ReleaseId) GetGrid() string {
+type Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ResourceGroupContentItemType string `protobuf:"bytes,1,opt,name=resource_group_content_item_type,json=resourceGroupContentItemType,proto3" json:"resource_group_content_item_type,omitempty"`
+	ResourceGroupContentItemText string `protobuf:"bytes,2,opt,name=resource_group_content_item_text,json=resourceGroupContentItemText,proto3" json:"resource_group_content_item_text,omitempty"`
+}
+
+func (x *Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem) Reset() {
+	*x = Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_release_proto_msgTypes[12]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem) ProtoMessage() {}
+
+func (x *Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_release_proto_msgTypes[12]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem.ProtoReflect.Descriptor instead.
+func (*Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 4, 2, 0, 1}
+}
+
+func (x *Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem) GetResourceGroupContentItemType() string {
 	if x != nil {
-		return x.Grid
+		return x.ResourceGroupContentItemType
 	}
 	return ""
 }
 
-func (x *ReleaseId) GetCatalogueNumber() string {
+func (x *Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem) GetResourceGroupContentItemText() string {
 	if x != nil {
-		return x.CatalogueNumber
+		return x.ResourceGroupContentItemText
 	}
 	return ""
 }
 
-func (x *ReleaseId) GetNamespace() string {
+type Release_TrackRelease_Genre struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	GenreText string `protobuf:"bytes,1,opt,name=genre_text,json=genreText,proto3" json:"genre_text,omitempty"`
+}
+
+func (x *Release_TrackRelease_Genre) Reset() {
+	*x = Release_TrackRelease_Genre{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_release_proto_msgTypes[13]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Release_TrackRelease_Genre) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Release_TrackRelease_Genre) ProtoMessage() {}
+
+func (x *Release_TrackRelease_Genre) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_release_proto_msgTypes[13]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Release_TrackRelease_Genre.ProtoReflect.Descriptor instead.
+func (*Release_TrackRelease_Genre) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_release_proto_rawDescGZIP(), []int{0, 5, 0}
+}
+
+func (x *Release_TrackRelease_Genre) GetGenreText() string {
 	if x != nil {
-		return x.Namespace
+		return x.GenreText
 	}
 	return ""
 }
@@ -833,114 +941,171 @@ var File_ddex_v1beta1_release_proto protoreflect.FileDescriptor
 var file_ddex_v1beta1_release_proto_rawDesc = []byte{
 	0x0a, 0x1a, 0x64, 0x64, 0x65, 0x78, 0x2f, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2f, 0x72,
 	0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x0c, 0x64, 0x64,
-	0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x22, 0xce, 0x01, 0x0a, 0x11, 0x4e,
-	0x65, 0x77, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65,
-	0x12, 0x42, 0x0a, 0x0e, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x5f, 0x68, 0x65, 0x61, 0x64,
-	0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1b, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e,
-	0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x48,
-	0x65, 0x61, 0x64, 0x65, 0x72, 0x52, 0x0d, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x48, 0x65,
-	0x61, 0x64, 0x65, 0x72, 0x12, 0x3b, 0x0a, 0x0d, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65,
-	0x5f, 0x6c, 0x69, 0x73, 0x74, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x64, 0x64,
-	0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x73, 0x6f, 0x75,
-	0x72, 0x63, 0x65, 0x52, 0x0c, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x4c, 0x69, 0x73,
-	0x74, 0x12, 0x38, 0x0a, 0x0c, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x5f, 0x6c, 0x69, 0x73,
-	0x74, 0x18, 0x03, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x15, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76,
-	0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x52, 0x0b,
-	0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x4c, 0x69, 0x73, 0x74, 0x22, 0x9b, 0x01, 0x0a, 0x0d,
-	0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x12, 0x1d, 0x0a,
-	0x0a, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x09, 0x52, 0x09, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x64, 0x12, 0x2b, 0x0a, 0x06,
-	0x73, 0x65, 0x6e, 0x64, 0x65, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x64,
-	0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x50, 0x61, 0x72, 0x74,
-	0x79, 0x52, 0x06, 0x73, 0x65, 0x6e, 0x64, 0x65, 0x72, 0x12, 0x3e, 0x0a, 0x11, 0x73, 0x65, 0x6e,
-	0x74, 0x5f, 0x6f, 0x6e, 0x5f, 0x62, 0x65, 0x68, 0x61, 0x6c, 0x66, 0x5f, 0x6f, 0x66, 0x18, 0x03,
-	0x20, 0x01, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65,
-	0x74, 0x61, 0x31, 0x2e, 0x50, 0x61, 0x72, 0x74, 0x79, 0x52, 0x0e, 0x73, 0x65, 0x6e, 0x74, 0x4f,
-	0x6e, 0x42, 0x65, 0x68, 0x61, 0x6c, 0x66, 0x4f, 0x66, 0x22, 0x3c, 0x0a, 0x05, 0x50, 0x61, 0x72,
-	0x74, 0x79, 0x12, 0x19, 0x0a, 0x08, 0x70, 0x61, 0x72, 0x74, 0x79, 0x5f, 0x69, 0x64, 0x18, 0x01,
-	0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x70, 0x61, 0x72, 0x74, 0x79, 0x49, 0x64, 0x12, 0x18, 0x0a,
-	0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07,
-	0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x22, 0xbb, 0x01, 0x0a, 0x08, 0x52, 0x65, 0x73, 0x6f,
-	0x75, 0x72, 0x63, 0x65, 0x12, 0x2d, 0x0a, 0x12, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65,
-	0x5f, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
-	0x52, 0x11, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x52, 0x65, 0x66, 0x65, 0x72, 0x65,
-	0x6e, 0x63, 0x65, 0x12, 0x47, 0x0a, 0x0f, 0x73, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x72, 0x65, 0x63,
-	0x6f, 0x72, 0x64, 0x69, 0x6e, 0x67, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1c, 0x2e, 0x64,
-	0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x53, 0x6f, 0x75, 0x6e,
-	0x64, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x69, 0x6e, 0x67, 0x48, 0x00, 0x52, 0x0e, 0x73, 0x6f,
-	0x75, 0x6e, 0x64, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x69, 0x6e, 0x67, 0x12, 0x2b, 0x0a, 0x05,
-	0x69, 0x6d, 0x61, 0x67, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x64, 0x64,
-	0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x49, 0x6d, 0x61, 0x67, 0x65,
-	0x48, 0x00, 0x52, 0x05, 0x69, 0x6d, 0x61, 0x67, 0x65, 0x42, 0x0a, 0x0a, 0x08, 0x72, 0x65, 0x73,
-	0x6f, 0x75, 0x72, 0x63, 0x65, 0x22, 0x6e, 0x0a, 0x0e, 0x53, 0x6f, 0x75, 0x6e, 0x64, 0x52, 0x65,
-	0x63, 0x6f, 0x72, 0x64, 0x69, 0x6e, 0x67, 0x12, 0x2e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20,
-	0x01, 0x28, 0x0b, 0x32, 0x1e, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74,
-	0x61, 0x31, 0x2e, 0x53, 0x6f, 0x75, 0x6e, 0x64, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x69, 0x6e,
-	0x67, 0x49, 0x64, 0x52, 0x02, 0x69, 0x64, 0x12, 0x1a, 0x0a, 0x08, 0x66, 0x69, 0x6c, 0x65, 0x6e,
-	0x61, 0x6d, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x66, 0x69, 0x6c, 0x65, 0x6e,
-	0x61, 0x6d, 0x65, 0x12, 0x10, 0x0a, 0x03, 0x63, 0x69, 0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09,
-	0x52, 0x03, 0x63, 0x69, 0x64, 0x22, 0x26, 0x0a, 0x10, 0x53, 0x6f, 0x75, 0x6e, 0x64, 0x52, 0x65,
-	0x63, 0x6f, 0x72, 0x64, 0x69, 0x6e, 0x67, 0x49, 0x64, 0x12, 0x12, 0x0a, 0x04, 0x69, 0x73, 0x72,
-	0x63, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x69, 0x73, 0x72, 0x63, 0x22, 0x40, 0x0a,
-	0x05, 0x49, 0x6d, 0x61, 0x67, 0x65, 0x12, 0x25, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x0b, 0x32, 0x15, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61,
-	0x31, 0x2e, 0x49, 0x6d, 0x61, 0x67, 0x65, 0x49, 0x64, 0x52, 0x02, 0x69, 0x64, 0x12, 0x10, 0x0a,
-	0x03, 0x63, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x63, 0x69, 0x64, 0x22,
-	0x4e, 0x0a, 0x07, 0x49, 0x6d, 0x61, 0x67, 0x65, 0x49, 0x64, 0x12, 0x25, 0x0a, 0x0e, 0x70, 0x72,
-	0x6f, 0x70, 0x72, 0x69, 0x65, 0x74, 0x61, 0x72, 0x79, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x0d, 0x70, 0x72, 0x6f, 0x70, 0x72, 0x69, 0x65, 0x74, 0x61, 0x72, 0x79, 0x49,
-	0x64, 0x12, 0x1c, 0x0a, 0x09, 0x6e, 0x61, 0x6d, 0x65, 0x73, 0x70, 0x61, 0x63, 0x65, 0x18, 0x02,
-	0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x6e, 0x61, 0x6d, 0x65, 0x73, 0x70, 0x61, 0x63, 0x65, 0x22,
-	0x9a, 0x01, 0x0a, 0x07, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x12, 0x41, 0x0a, 0x0d, 0x74,
-	0x72, 0x61, 0x63, 0x6b, 0x5f, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61,
-	0x31, 0x2e, 0x54, 0x72, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x48, 0x00,
-	0x52, 0x0c, 0x74, 0x72, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x12, 0x41,
-	0x0a, 0x0d, 0x61, 0x6c, 0x62, 0x75, 0x6d, 0x5f, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x18,
-	0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62,
-	0x65, 0x74, 0x61, 0x31, 0x2e, 0x41, 0x6c, 0x62, 0x75, 0x6d, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73,
-	0x65, 0x48, 0x00, 0x52, 0x0c, 0x61, 0x6c, 0x62, 0x75, 0x6d, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73,
-	0x65, 0x42, 0x09, 0x0a, 0x07, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x22, 0x93, 0x02, 0x0a,
-	0x0c, 0x54, 0x72, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x12, 0x36, 0x0a,
-	0x0a, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x0b, 0x32, 0x17, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31,
-	0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x49, 0x64, 0x52, 0x09, 0x72, 0x65, 0x6c, 0x65,
-	0x61, 0x73, 0x65, 0x49, 0x64, 0x12, 0x3c, 0x0a, 0x1a, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65,
-	0x5f, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x5f, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65,
-	0x6e, 0x63, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x18, 0x72, 0x65, 0x6c, 0x65, 0x61,
-	0x73, 0x65, 0x52, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x52, 0x65, 0x66, 0x65, 0x72, 0x65,
-	0x6e, 0x63, 0x65, 0x12, 0x49, 0x0a, 0x21, 0x6c, 0x69, 0x6e, 0x6b, 0x65, 0x64, 0x5f, 0x72, 0x65,
-	0x6c, 0x65, 0x61, 0x73, 0x65, 0x5f, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x5f, 0x72,
-	0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x1e,
-	0x6c, 0x69, 0x6e, 0x6b, 0x65, 0x64, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x52, 0x65, 0x73,
-	0x6f, 0x75, 0x72, 0x63, 0x65, 0x52, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x12, 0x14,
-	0x0a, 0x05, 0x74, 0x69, 0x74, 0x6c, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x74,
-	0x69, 0x74, 0x6c, 0x65, 0x12, 0x14, 0x0a, 0x05, 0x67, 0x65, 0x6e, 0x72, 0x65, 0x18, 0x05, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x05, 0x67, 0x65, 0x6e, 0x72, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x61, 0x72,
-	0x74, 0x69, 0x73, 0x74, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x61, 0x72, 0x74, 0x69,
-	0x73, 0x74, 0x22, 0x8a, 0x01, 0x0a, 0x0c, 0x41, 0x6c, 0x62, 0x75, 0x6d, 0x52, 0x65, 0x6c, 0x65,
-	0x61, 0x73, 0x65, 0x12, 0x36, 0x0a, 0x0a, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x5f, 0x69,
-	0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x17, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76,
-	0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x49, 0x64,
-	0x52, 0x09, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x49, 0x64, 0x12, 0x14, 0x0a, 0x05, 0x74,
-	0x69, 0x74, 0x6c, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x74, 0x69, 0x74, 0x6c,
-	0x65, 0x12, 0x14, 0x0a, 0x05, 0x67, 0x65, 0x6e, 0x72, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09,
-	0x52, 0x05, 0x67, 0x65, 0x6e, 0x72, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x61, 0x72, 0x74, 0x69, 0x73,
-	0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x61, 0x72, 0x74, 0x69, 0x73, 0x74, 0x22,
-	0x90, 0x01, 0x0a, 0x09, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x49, 0x64, 0x12, 0x12, 0x0a,
-	0x04, 0x69, 0x73, 0x72, 0x63, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x69, 0x73, 0x72,
-	0x63, 0x12, 0x12, 0x0a, 0x04, 0x69, 0x63, 0x70, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x04, 0x69, 0x63, 0x70, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x67, 0x72, 0x69, 0x64, 0x18, 0x03, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x04, 0x67, 0x72, 0x69, 0x64, 0x12, 0x29, 0x0a, 0x10, 0x63, 0x61, 0x74,
-	0x61, 0x6c, 0x6f, 0x67, 0x75, 0x65, 0x5f, 0x6e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x18, 0x04, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x0f, 0x63, 0x61, 0x74, 0x61, 0x6c, 0x6f, 0x67, 0x75, 0x65, 0x4e, 0x75,
-	0x6d, 0x62, 0x65, 0x72, 0x12, 0x1c, 0x0a, 0x09, 0x6e, 0x61, 0x6d, 0x65, 0x73, 0x70, 0x61, 0x63,
-	0x65, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x6e, 0x61, 0x6d, 0x65, 0x73, 0x70, 0x61,
-	0x63, 0x65, 0x42, 0x37, 0x5a, 0x35, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d,
-	0x2f, 0x41, 0x75, 0x64, 0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x2f, 0x61,
-	0x75, 0x64, 0x69, 0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x64,
-	0x64, 0x65, 0x78, 0x2f, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x33,
+	0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x22, 0xf3, 0x13, 0x0a, 0x07, 0x52,
+	0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x12, 0x42, 0x0a, 0x0c, 0x6d, 0x61, 0x69, 0x6e, 0x5f, 0x72,
+	0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1d, 0x2e, 0x64,
+	0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65,
+	0x61, 0x73, 0x65, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x48, 0x00, 0x52, 0x0b, 0x6d,
+	0x61, 0x69, 0x6e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x12, 0x49, 0x0a, 0x0d, 0x74, 0x72,
+	0x61, 0x63, 0x6b, 0x5f, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x22, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31,
+	0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x54, 0x72, 0x61, 0x63, 0x6b, 0x52, 0x65,
+	0x6c, 0x65, 0x61, 0x73, 0x65, 0x48, 0x00, 0x52, 0x0c, 0x74, 0x72, 0x61, 0x63, 0x6b, 0x52, 0x65,
+	0x6c, 0x65, 0x61, 0x73, 0x65, 0x1a, 0xaa, 0x01, 0x0a, 0x09, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73,
+	0x65, 0x49, 0x64, 0x12, 0x12, 0x0a, 0x04, 0x67, 0x72, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x04, 0x67, 0x72, 0x69, 0x64, 0x12, 0x12, 0x0a, 0x04, 0x69, 0x63, 0x70, 0x6e, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x69, 0x63, 0x70, 0x6e, 0x12, 0x29, 0x0a, 0x10, 0x63,
+	0x61, 0x74, 0x61, 0x6c, 0x6f, 0x67, 0x75, 0x65, 0x5f, 0x6e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x18,
+	0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0f, 0x63, 0x61, 0x74, 0x61, 0x6c, 0x6f, 0x67, 0x75, 0x65,
+	0x4e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x12, 0x4a, 0x0a, 0x0e, 0x70, 0x72, 0x6f, 0x70, 0x72, 0x69,
+	0x65, 0x74, 0x61, 0x72, 0x79, 0x5f, 0x69, 0x64, 0x18, 0x04, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x23,
+	0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65,
+	0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x50, 0x72, 0x6f, 0x70, 0x72, 0x69, 0x65, 0x74, 0x61, 0x72,
+	0x79, 0x49, 0x64, 0x52, 0x0d, 0x70, 0x72, 0x6f, 0x70, 0x72, 0x69, 0x65, 0x74, 0x61, 0x72, 0x79,
+	0x49, 0x64, 0x1a, 0x3d, 0x0a, 0x0d, 0x50, 0x72, 0x6f, 0x70, 0x72, 0x69, 0x65, 0x74, 0x61, 0x72,
+	0x79, 0x49, 0x64, 0x12, 0x1c, 0x0a, 0x09, 0x6e, 0x61, 0x6d, 0x65, 0x73, 0x70, 0x61, 0x63, 0x65,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x6e, 0x61, 0x6d, 0x65, 0x73, 0x70, 0x61, 0x63,
+	0x65, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69,
+	0x64, 0x1a, 0x2d, 0x0a, 0x0c, 0x44, 0x69, 0x73, 0x70, 0x6c, 0x61, 0x79, 0x54, 0x69, 0x74, 0x6c,
+	0x65, 0x12, 0x1d, 0x0a, 0x0a, 0x74, 0x69, 0x74, 0x6c, 0x65, 0x5f, 0x74, 0x65, 0x78, 0x74, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x74, 0x69, 0x74, 0x6c, 0x65, 0x54, 0x65, 0x78, 0x74,
+	0x1a, 0x75, 0x0a, 0x0d, 0x44, 0x69, 0x73, 0x70, 0x6c, 0x61, 0x79, 0x41, 0x72, 0x74, 0x69, 0x73,
+	0x74, 0x12, 0x34, 0x0a, 0x16, 0x61, 0x72, 0x74, 0x69, 0x73, 0x74, 0x5f, 0x70, 0x61, 0x72, 0x74,
+	0x79, 0x5f, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x14, 0x61, 0x72, 0x74, 0x69, 0x73, 0x74, 0x50, 0x61, 0x72, 0x74, 0x79, 0x52, 0x65,
+	0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x12, 0x2e, 0x0a, 0x13, 0x64, 0x69, 0x73, 0x70, 0x6c,
+	0x61, 0x79, 0x5f, 0x61, 0x72, 0x74, 0x69, 0x73, 0x74, 0x5f, 0x72, 0x6f, 0x6c, 0x65, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x11, 0x64, 0x69, 0x73, 0x70, 0x6c, 0x61, 0x79, 0x41, 0x72, 0x74,
+	0x69, 0x73, 0x74, 0x52, 0x6f, 0x6c, 0x65, 0x1a, 0xdf, 0x0c, 0x0a, 0x07, 0x52, 0x65, 0x6c, 0x65,
+	0x61, 0x73, 0x65, 0x12, 0x2b, 0x0a, 0x11, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x5f, 0x72,
+	0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10,
+	0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x52, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65,
+	0x12, 0x21, 0x0a, 0x0c, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x5f, 0x74, 0x79, 0x70, 0x65,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x54,
+	0x79, 0x70, 0x65, 0x12, 0x3e, 0x0a, 0x0a, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x5f, 0x69,
+	0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76,
+	0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x52,
+	0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x49, 0x64, 0x52, 0x09, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73,
+	0x65, 0x49, 0x64, 0x12, 0x2c, 0x0a, 0x12, 0x64, 0x69, 0x73, 0x70, 0x6c, 0x61, 0x79, 0x5f, 0x74,
+	0x69, 0x74, 0x6c, 0x65, 0x5f, 0x74, 0x65, 0x78, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x10, 0x64, 0x69, 0x73, 0x70, 0x6c, 0x61, 0x79, 0x54, 0x69, 0x74, 0x6c, 0x65, 0x54, 0x65, 0x78,
+	0x74, 0x12, 0x47, 0x0a, 0x0d, 0x64, 0x69, 0x73, 0x70, 0x6c, 0x61, 0x79, 0x5f, 0x74, 0x69, 0x74,
+	0x6c, 0x65, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e,
+	0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e,
+	0x44, 0x69, 0x73, 0x70, 0x6c, 0x61, 0x79, 0x54, 0x69, 0x74, 0x6c, 0x65, 0x52, 0x0c, 0x64, 0x69,
+	0x73, 0x70, 0x6c, 0x61, 0x79, 0x54, 0x69, 0x74, 0x6c, 0x65, 0x12, 0x2e, 0x0a, 0x13, 0x64, 0x69,
+	0x73, 0x70, 0x6c, 0x61, 0x79, 0x5f, 0x61, 0x72, 0x74, 0x69, 0x73, 0x74, 0x5f, 0x6e, 0x61, 0x6d,
+	0x65, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x11, 0x64, 0x69, 0x73, 0x70, 0x6c, 0x61, 0x79,
+	0x41, 0x72, 0x74, 0x69, 0x73, 0x74, 0x4e, 0x61, 0x6d, 0x65, 0x12, 0x4a, 0x0a, 0x0e, 0x64, 0x69,
+	0x73, 0x70, 0x6c, 0x61, 0x79, 0x5f, 0x61, 0x72, 0x74, 0x69, 0x73, 0x74, 0x18, 0x07, 0x20, 0x03,
+	0x28, 0x0b, 0x32, 0x23, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61,
+	0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x44, 0x69, 0x73, 0x70, 0x6c, 0x61,
+	0x79, 0x41, 0x72, 0x74, 0x69, 0x73, 0x74, 0x52, 0x0d, 0x64, 0x69, 0x73, 0x70, 0x6c, 0x61, 0x79,
+	0x41, 0x72, 0x74, 0x69, 0x73, 0x74, 0x12, 0x36, 0x0a, 0x17, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73,
+	0x65, 0x5f, 0x6c, 0x61, 0x62, 0x65, 0x6c, 0x5f, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63,
+	0x65, 0x18, 0x08, 0x20, 0x01, 0x28, 0x09, 0x52, 0x15, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65,
+	0x4c, 0x61, 0x62, 0x65, 0x6c, 0x52, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x12, 0x3a,
+	0x0a, 0x06, 0x70, 0x5f, 0x6c, 0x69, 0x6e, 0x65, 0x18, 0x09, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x23,
+	0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65,
+	0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x50, 0x4c,
+	0x69, 0x6e, 0x65, 0x52, 0x05, 0x70, 0x4c, 0x69, 0x6e, 0x65, 0x12, 0x1a, 0x0a, 0x08, 0x64, 0x75,
+	0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x0a, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x64, 0x75,
+	0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x39, 0x0a, 0x05, 0x67, 0x65, 0x6e, 0x72, 0x65, 0x18,
+	0x0b, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x23, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62,
+	0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x52, 0x65, 0x6c,
+	0x65, 0x61, 0x73, 0x65, 0x2e, 0x47, 0x65, 0x6e, 0x72, 0x65, 0x52, 0x05, 0x67, 0x65, 0x6e, 0x72,
+	0x65, 0x12, 0x32, 0x0a, 0x15, 0x6f, 0x72, 0x69, 0x67, 0x69, 0x6e, 0x61, 0x6c, 0x5f, 0x72, 0x65,
+	0x6c, 0x65, 0x61, 0x73, 0x65, 0x5f, 0x64, 0x61, 0x74, 0x65, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x13, 0x6f, 0x72, 0x69, 0x67, 0x69, 0x6e, 0x61, 0x6c, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73,
+	0x65, 0x44, 0x61, 0x74, 0x65, 0x12, 0x32, 0x0a, 0x15, 0x70, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x61,
+	0x6c, 0x5f, 0x77, 0x61, 0x72, 0x6e, 0x69, 0x6e, 0x67, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x18, 0x0d,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x13, 0x70, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x61, 0x6c, 0x57, 0x61,
+	0x72, 0x6e, 0x69, 0x6e, 0x67, 0x54, 0x79, 0x70, 0x65, 0x12, 0x52, 0x0a, 0x0e, 0x72, 0x65, 0x73,
+	0x6f, 0x75, 0x72, 0x63, 0x65, 0x5f, 0x67, 0x72, 0x6f, 0x75, 0x70, 0x18, 0x0e, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x2b, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31,
+	0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65,
+	0x2e, 0x52, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x52, 0x0d,
+	0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x1a, 0x3b, 0x0a,
+	0x05, 0x50, 0x4c, 0x69, 0x6e, 0x65, 0x12, 0x12, 0x0a, 0x04, 0x79, 0x65, 0x61, 0x72, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x79, 0x65, 0x61, 0x72, 0x12, 0x1e, 0x0a, 0x0b, 0x70, 0x5f,
+	0x6c, 0x69, 0x6e, 0x65, 0x5f, 0x74, 0x65, 0x78, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x09, 0x70, 0x4c, 0x69, 0x6e, 0x65, 0x54, 0x65, 0x78, 0x74, 0x1a, 0x26, 0x0a, 0x05, 0x47, 0x65,
+	0x6e, 0x72, 0x65, 0x12, 0x1d, 0x0a, 0x0a, 0x67, 0x65, 0x6e, 0x72, 0x65, 0x5f, 0x74, 0x65, 0x78,
+	0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x67, 0x65, 0x6e, 0x72, 0x65, 0x54, 0x65,
+	0x78, 0x74, 0x1a, 0xe4, 0x05, 0x0a, 0x0d, 0x52, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x47,
+	0x72, 0x6f, 0x75, 0x70, 0x12, 0x60, 0x0a, 0x0e, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65,
+	0x5f, 0x67, 0x72, 0x6f, 0x75, 0x70, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x39, 0x2e, 0x64,
+	0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65,
+	0x61, 0x73, 0x65, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x52, 0x65, 0x73, 0x6f,
+	0x75, 0x72, 0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x2e, 0x52, 0x65, 0x73, 0x6f, 0x75, 0x72,
+	0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x52, 0x0d, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63,
+	0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x1a, 0xf0, 0x04, 0x0a, 0x0d, 0x52, 0x65, 0x73, 0x6f, 0x75,
+	0x72, 0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x12, 0x2e, 0x0a, 0x13, 0x72, 0x65, 0x73, 0x6f,
+	0x75, 0x72, 0x63, 0x65, 0x5f, 0x67, 0x72, 0x6f, 0x75, 0x70, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x11, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x47,
+	0x72, 0x6f, 0x75, 0x70, 0x54, 0x79, 0x70, 0x65, 0x12, 0x74, 0x0a, 0x10, 0x61, 0x64, 0x64, 0x69,
+	0x74, 0x69, 0x6f, 0x6e, 0x61, 0x6c, 0x5f, 0x74, 0x69, 0x74, 0x6c, 0x65, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x49, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61,
+	0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73,
+	0x65, 0x2e, 0x52, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x2e,
+	0x52, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x2e, 0x41, 0x64,
+	0x64, 0x69, 0x74, 0x69, 0x6f, 0x6e, 0x61, 0x6c, 0x54, 0x69, 0x74, 0x6c, 0x65, 0x52, 0x0f, 0x61,
+	0x64, 0x64, 0x69, 0x74, 0x69, 0x6f, 0x6e, 0x61, 0x6c, 0x54, 0x69, 0x74, 0x6c, 0x65, 0x12, 0x27,
+	0x0a, 0x0f, 0x73, 0x65, 0x71, 0x75, 0x65, 0x6e, 0x63, 0x65, 0x5f, 0x6e, 0x75, 0x6d, 0x62, 0x65,
+	0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0e, 0x73, 0x65, 0x71, 0x75, 0x65, 0x6e, 0x63,
+	0x65, 0x4e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x12, 0x91, 0x01, 0x0a, 0x1b, 0x72, 0x65, 0x73, 0x6f,
+	0x75, 0x72, 0x63, 0x65, 0x5f, 0x67, 0x72, 0x6f, 0x75, 0x70, 0x5f, 0x63, 0x6f, 0x6e, 0x74, 0x65,
+	0x6e, 0x74, 0x5f, 0x69, 0x74, 0x65, 0x6d, 0x18, 0x04, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x52, 0x2e,
+	0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x6c,
+	0x65, 0x61, 0x73, 0x65, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x2e, 0x52, 0x65, 0x73,
+	0x6f, 0x75, 0x72, 0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x2e, 0x52, 0x65, 0x73, 0x6f, 0x75,
+	0x72, 0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x2e, 0x52, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63,
+	0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x49, 0x74, 0x65,
+	0x6d, 0x52, 0x18, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70,
+	0x43, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x49, 0x74, 0x65, 0x6d, 0x1a, 0x4f, 0x0a, 0x0f, 0x41,
+	0x64, 0x64, 0x69, 0x74, 0x69, 0x6f, 0x6e, 0x61, 0x6c, 0x54, 0x69, 0x74, 0x6c, 0x65, 0x12, 0x1d,
+	0x0a, 0x0a, 0x74, 0x69, 0x74, 0x6c, 0x65, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x09, 0x74, 0x69, 0x74, 0x6c, 0x65, 0x54, 0x79, 0x70, 0x65, 0x12, 0x1d, 0x0a,
+	0x0a, 0x74, 0x69, 0x74, 0x6c, 0x65, 0x5f, 0x74, 0x65, 0x78, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x09, 0x74, 0x69, 0x74, 0x6c, 0x65, 0x54, 0x65, 0x78, 0x74, 0x1a, 0xaa, 0x01, 0x0a,
+	0x18, 0x52, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x43, 0x6f,
+	0x6e, 0x74, 0x65, 0x6e, 0x74, 0x49, 0x74, 0x65, 0x6d, 0x12, 0x46, 0x0a, 0x20, 0x72, 0x65, 0x73,
+	0x6f, 0x75, 0x72, 0x63, 0x65, 0x5f, 0x67, 0x72, 0x6f, 0x75, 0x70, 0x5f, 0x63, 0x6f, 0x6e, 0x74,
+	0x65, 0x6e, 0x74, 0x5f, 0x69, 0x74, 0x65, 0x6d, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x1c, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x47, 0x72, 0x6f,
+	0x75, 0x70, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x49, 0x74, 0x65, 0x6d, 0x54, 0x79, 0x70,
+	0x65, 0x12, 0x46, 0x0a, 0x20, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x5f, 0x67, 0x72,
+	0x6f, 0x75, 0x70, 0x5f, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x5f, 0x69, 0x74, 0x65, 0x6d,
+	0x5f, 0x74, 0x65, 0x78, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x1c, 0x72, 0x65, 0x73,
+	0x6f, 0x75, 0x72, 0x63, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x6e,
+	0x74, 0x49, 0x74, 0x65, 0x6d, 0x54, 0x65, 0x78, 0x74, 0x1a, 0xd9, 0x02, 0x0a, 0x0c, 0x54, 0x72,
+	0x61, 0x63, 0x6b, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x12, 0x2b, 0x0a, 0x11, 0x72, 0x65,
+	0x6c, 0x65, 0x61, 0x73, 0x65, 0x5f, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x52, 0x65,
+	0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x12, 0x3e, 0x0a, 0x0a, 0x72, 0x65, 0x6c, 0x65, 0x61,
+	0x73, 0x65, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x64, 0x64,
+	0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61,
+	0x73, 0x65, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x49, 0x64, 0x52, 0x09, 0x72, 0x65,
+	0x6c, 0x65, 0x61, 0x73, 0x65, 0x49, 0x64, 0x12, 0x3c, 0x0a, 0x1a, 0x72, 0x65, 0x6c, 0x65, 0x61,
+	0x73, 0x65, 0x5f, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x5f, 0x72, 0x65, 0x66, 0x65,
+	0x72, 0x65, 0x6e, 0x63, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x18, 0x72, 0x65, 0x6c,
+	0x65, 0x61, 0x73, 0x65, 0x52, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x52, 0x65, 0x66, 0x65,
+	0x72, 0x65, 0x6e, 0x63, 0x65, 0x12, 0x36, 0x0a, 0x17, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65,
+	0x5f, 0x6c, 0x61, 0x62, 0x65, 0x6c, 0x5f, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65,
+	0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x15, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x4c,
+	0x61, 0x62, 0x65, 0x6c, 0x52, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x12, 0x3e, 0x0a,
+	0x05, 0x67, 0x65, 0x6e, 0x72, 0x65, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x28, 0x2e, 0x64,
+	0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x52, 0x65, 0x6c, 0x65,
+	0x61, 0x73, 0x65, 0x2e, 0x54, 0x72, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65,
+	0x2e, 0x47, 0x65, 0x6e, 0x72, 0x65, 0x52, 0x05, 0x67, 0x65, 0x6e, 0x72, 0x65, 0x1a, 0x26, 0x0a,
+	0x05, 0x47, 0x65, 0x6e, 0x72, 0x65, 0x12, 0x1d, 0x0a, 0x0a, 0x67, 0x65, 0x6e, 0x72, 0x65, 0x5f,
+	0x74, 0x65, 0x78, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x67, 0x65, 0x6e, 0x72,
+	0x65, 0x54, 0x65, 0x78, 0x74, 0x42, 0x09, 0x0a, 0x07, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65,
+	0x42, 0x37, 0x5a, 0x35, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41,
+	0x75, 0x64, 0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x2f, 0x61, 0x75, 0x64,
+	0x69, 0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x64, 0x64, 0x65,
+	0x78, 0x2f, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x33,
 }
 
 var (
@@ -955,40 +1120,43 @@ func file_ddex_v1beta1_release_proto_rawDescGZIP() []byte {
 	return file_ddex_v1beta1_release_proto_rawDescData
 }
 
-var file_ddex_v1beta1_release_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_ddex_v1beta1_release_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_ddex_v1beta1_release_proto_goTypes = []interface{}{
-	(*NewReleaseMessage)(nil), // 0: ddex.v1beta1.NewReleaseMessage
-	(*ReleaseHeader)(nil),     // 1: ddex.v1beta1.ReleaseHeader
-	(*Party)(nil),             // 2: ddex.v1beta1.Party
-	(*Resource)(nil),          // 3: ddex.v1beta1.Resource
-	(*SoundRecording)(nil),    // 4: ddex.v1beta1.SoundRecording
-	(*SoundRecordingId)(nil),  // 5: ddex.v1beta1.SoundRecordingId
-	(*Image)(nil),             // 6: ddex.v1beta1.Image
-	(*ImageId)(nil),           // 7: ddex.v1beta1.ImageId
-	(*Release)(nil),           // 8: ddex.v1beta1.Release
-	(*TrackRelease)(nil),      // 9: ddex.v1beta1.TrackRelease
-	(*AlbumRelease)(nil),      // 10: ddex.v1beta1.AlbumRelease
-	(*ReleaseId)(nil),         // 11: ddex.v1beta1.ReleaseId
+	(*Release)(nil),                                                     // 0: ddex.v1beta1.Release
+	(*Release_ReleaseId)(nil),                                           // 1: ddex.v1beta1.Release.ReleaseId
+	(*Release_ProprietaryId)(nil),                                       // 2: ddex.v1beta1.Release.ProprietaryId
+	(*Release_DisplayTitle)(nil),                                        // 3: ddex.v1beta1.Release.DisplayTitle
+	(*Release_DisplayArtist)(nil),                                       // 4: ddex.v1beta1.Release.DisplayArtist
+	(*Release_Release)(nil),                                             // 5: ddex.v1beta1.Release.Release
+	(*Release_TrackRelease)(nil),                                        // 6: ddex.v1beta1.Release.TrackRelease
+	(*Release_Release_PLine)(nil),                                       // 7: ddex.v1beta1.Release.Release.PLine
+	(*Release_Release_Genre)(nil),                                       // 8: ddex.v1beta1.Release.Release.Genre
+	(*Release_Release_ResourceGroup)(nil),                               // 9: ddex.v1beta1.Release.Release.ResourceGroup
+	(*Release_Release_ResourceGroup_ResourceGroup)(nil),                 // 10: ddex.v1beta1.Release.Release.ResourceGroup.ResourceGroup
+	(*Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle)(nil), // 11: ddex.v1beta1.Release.Release.ResourceGroup.ResourceGroup.AdditionalTitle
+	(*Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem)(nil), // 12: ddex.v1beta1.Release.Release.ResourceGroup.ResourceGroup.ResourceGroupContentItem
+	(*Release_TrackRelease_Genre)(nil),                                           // 13: ddex.v1beta1.Release.TrackRelease.Genre
 }
 var file_ddex_v1beta1_release_proto_depIdxs = []int32{
-	1,  // 0: ddex.v1beta1.NewReleaseMessage.release_header:type_name -> ddex.v1beta1.ReleaseHeader
-	3,  // 1: ddex.v1beta1.NewReleaseMessage.resource_list:type_name -> ddex.v1beta1.Resource
-	8,  // 2: ddex.v1beta1.NewReleaseMessage.release_list:type_name -> ddex.v1beta1.Release
-	2,  // 3: ddex.v1beta1.ReleaseHeader.sender:type_name -> ddex.v1beta1.Party
-	2,  // 4: ddex.v1beta1.ReleaseHeader.sent_on_behalf_of:type_name -> ddex.v1beta1.Party
-	4,  // 5: ddex.v1beta1.Resource.sound_recording:type_name -> ddex.v1beta1.SoundRecording
-	6,  // 6: ddex.v1beta1.Resource.image:type_name -> ddex.v1beta1.Image
-	5,  // 7: ddex.v1beta1.SoundRecording.id:type_name -> ddex.v1beta1.SoundRecordingId
-	7,  // 8: ddex.v1beta1.Image.id:type_name -> ddex.v1beta1.ImageId
-	9,  // 9: ddex.v1beta1.Release.track_release:type_name -> ddex.v1beta1.TrackRelease
-	10, // 10: ddex.v1beta1.Release.album_release:type_name -> ddex.v1beta1.AlbumRelease
-	11, // 11: ddex.v1beta1.TrackRelease.release_id:type_name -> ddex.v1beta1.ReleaseId
-	11, // 12: ddex.v1beta1.AlbumRelease.release_id:type_name -> ddex.v1beta1.ReleaseId
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	5,  // 0: ddex.v1beta1.Release.main_release:type_name -> ddex.v1beta1.Release.Release
+	6,  // 1: ddex.v1beta1.Release.track_release:type_name -> ddex.v1beta1.Release.TrackRelease
+	2,  // 2: ddex.v1beta1.Release.ReleaseId.proprietary_id:type_name -> ddex.v1beta1.Release.ProprietaryId
+	1,  // 3: ddex.v1beta1.Release.Release.release_id:type_name -> ddex.v1beta1.Release.ReleaseId
+	3,  // 4: ddex.v1beta1.Release.Release.display_title:type_name -> ddex.v1beta1.Release.DisplayTitle
+	4,  // 5: ddex.v1beta1.Release.Release.display_artist:type_name -> ddex.v1beta1.Release.DisplayArtist
+	7,  // 6: ddex.v1beta1.Release.Release.p_line:type_name -> ddex.v1beta1.Release.Release.PLine
+	8,  // 7: ddex.v1beta1.Release.Release.genre:type_name -> ddex.v1beta1.Release.Release.Genre
+	9,  // 8: ddex.v1beta1.Release.Release.resource_group:type_name -> ddex.v1beta1.Release.Release.ResourceGroup
+	1,  // 9: ddex.v1beta1.Release.TrackRelease.release_id:type_name -> ddex.v1beta1.Release.ReleaseId
+	13, // 10: ddex.v1beta1.Release.TrackRelease.genre:type_name -> ddex.v1beta1.Release.TrackRelease.Genre
+	10, // 11: ddex.v1beta1.Release.Release.ResourceGroup.resource_group:type_name -> ddex.v1beta1.Release.Release.ResourceGroup.ResourceGroup
+	11, // 12: ddex.v1beta1.Release.Release.ResourceGroup.ResourceGroup.additional_title:type_name -> ddex.v1beta1.Release.Release.ResourceGroup.ResourceGroup.AdditionalTitle
+	12, // 13: ddex.v1beta1.Release.Release.ResourceGroup.ResourceGroup.resource_group_content_item:type_name -> ddex.v1beta1.Release.Release.ResourceGroup.ResourceGroup.ResourceGroupContentItem
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_ddex_v1beta1_release_proto_init() }
@@ -998,102 +1166,6 @@ func file_ddex_v1beta1_release_proto_init() {
 	}
 	if !protoimpl.UnsafeEnabled {
 		file_ddex_v1beta1_release_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*NewReleaseMessage); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_ddex_v1beta1_release_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ReleaseHeader); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_ddex_v1beta1_release_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Party); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_ddex_v1beta1_release_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Resource); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_ddex_v1beta1_release_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SoundRecording); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_ddex_v1beta1_release_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SoundRecordingId); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_ddex_v1beta1_release_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Image); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_ddex_v1beta1_release_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ImageId); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_ddex_v1beta1_release_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Release); i {
 			case 0:
 				return &v.state
@@ -1105,8 +1177,104 @@ func file_ddex_v1beta1_release_proto_init() {
 				return nil
 			}
 		}
+		file_ddex_v1beta1_release_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Release_ReleaseId); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ddex_v1beta1_release_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Release_ProprietaryId); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ddex_v1beta1_release_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Release_DisplayTitle); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ddex_v1beta1_release_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Release_DisplayArtist); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ddex_v1beta1_release_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Release_Release); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ddex_v1beta1_release_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Release_TrackRelease); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ddex_v1beta1_release_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Release_Release_PLine); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ddex_v1beta1_release_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Release_Release_Genre); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 		file_ddex_v1beta1_release_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TrackRelease); i {
+			switch v := v.(*Release_Release_ResourceGroup); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1118,7 +1286,7 @@ func file_ddex_v1beta1_release_proto_init() {
 			}
 		}
 		file_ddex_v1beta1_release_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*AlbumRelease); i {
+			switch v := v.(*Release_Release_ResourceGroup_ResourceGroup); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1130,7 +1298,31 @@ func file_ddex_v1beta1_release_proto_init() {
 			}
 		}
 		file_ddex_v1beta1_release_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ReleaseId); i {
+			switch v := v.(*Release_Release_ResourceGroup_ResourceGroup_AdditionalTitle); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ddex_v1beta1_release_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ddex_v1beta1_release_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Release_TrackRelease_Genre); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1142,13 +1334,9 @@ func file_ddex_v1beta1_release_proto_init() {
 			}
 		}
 	}
-	file_ddex_v1beta1_release_proto_msgTypes[3].OneofWrappers = []interface{}{
-		(*Resource_SoundRecording)(nil),
-		(*Resource_Image)(nil),
-	}
-	file_ddex_v1beta1_release_proto_msgTypes[8].OneofWrappers = []interface{}{
-		(*Release_TrackRelease)(nil),
-		(*Release_AlbumRelease)(nil),
+	file_ddex_v1beta1_release_proto_msgTypes[0].OneofWrappers = []interface{}{
+		(*Release_MainRelease)(nil),
+		(*Release_TrackRelease_)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1156,7 +1344,7 @@ func file_ddex_v1beta1_release_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_ddex_v1beta1_release_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -292,3 +292,20 @@ select * from sound_recordings where track_id = $1;
 -- name: GetDBSize :one
 select pg_database_size(current_database())::bigint as size;
 
+-- name: GetERN :one
+select * from core_ern where address = $1 order by block_height desc limit 1;
+
+-- name: GetPIE :one
+select * from core_pie where address = $1 order by block_height desc limit 1;
+
+-- name: GetMEAD :one
+select * from core_mead where address = $1 order by block_height desc limit 1;
+
+-- name: GetERNReceipts :many
+select raw_acknowledgment, index from core_ern where tx_hash = $1;
+
+-- name: GetMEADReceipts :many
+select raw_acknowledgment, index from core_mead where tx_hash = $1;
+
+-- name: GetPIEReceipts :many
+select raw_acknowledgment, index from core_pie where tx_hash = $1;
