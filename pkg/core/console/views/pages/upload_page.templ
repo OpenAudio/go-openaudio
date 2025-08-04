@@ -13,7 +13,7 @@ templ (p *Pages) UploadPage() {
 					<!-- Artwork -->
 					<div
 						class="rounded-xl border border-dashed p-4 cursor-pointer transition-all aspect-square flex items-center justify-center bg-gray-50 overflow-hidden"
-						x-bind:class="{ 'border-blue-500 bg-blue-100': dragging }"
+						x-bind:class="{ 'border-purple-500 bg-purple-100': dragging }"
 						x-on:click="$refs.artworkInput.click()"
 					>
 						<input type="file" accept="image/*" name="artwork" x-ref="artworkInput" class="hidden" x-on:change="selectArtwork"/>
@@ -27,7 +27,7 @@ templ (p *Pages) UploadPage() {
 					<!-- Audio -->
 					<div
 						class="border-2 border-dashed rounded-xl p-4 cursor-pointer transition-all"
-						x-bind:class="{ 'border-blue-500 bg-blue-50': dragging }"
+						x-bind:class="{ 'border-purple-500 bg-purple-50': dragging }"
 						x-on:click="$refs.fileInput.click()"
 					>
 						<input type="file" accept="audio/*" name="files" x-ref="fileInput" class="hidden" x-on:change="selectFile"/>
@@ -55,7 +55,7 @@ templ (p *Pages) UploadPage() {
 					<!-- Title -->
 					<div>
 						<label class="block text-sm font-medium mb-1" for="title">Track Title</label>
-						<input type="text" name="title" id="title" required class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-blue-500"/>
+						<input type="text" name="title" id="title" required class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-purple-500"/>
 					</div>
 					<!-- Artist Wallet -->
 					<div>
@@ -84,7 +84,7 @@ templ (p *Pages) UploadPage() {
 							name="genre"
 							id="genre"
 							required
-							class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-blue-500"
+							class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-purple-500"
 						>
 							<option value="">Select Genre</option>
 							<option>All Genres</option>
@@ -149,7 +149,7 @@ templ (p *Pages) UploadPage() {
 						<select
 							name="mood"
 							id="mood"
-							class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-blue-500"
+							class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-purple-500"
 						>
 							<option value="">Select Mood</option>
 							<option>Peaceful</option>
@@ -180,12 +180,12 @@ templ (p *Pages) UploadPage() {
 					<!-- Tags -->
 					<div>
 						<label class="block text-sm font-medium mb-1" for="tags">Tags</label>
-						<input type="text" x-model="tagInput" @blur="addTagsFromInput" @keydown.enter.prevent="addTagsFromInput" placeholder="e.g. vaporwave, chill" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-blue-500"/>
+						<input type="text" x-model="tagInput" @blur="addTagsFromInput" @keydown.enter.prevent="addTagsFromInput" placeholder="e.g. vaporwave, chill" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-purple-500"/>
 						<div class="flex flex-wrap gap-2 mt-2">
 							<template x-for="(tag, index) in tags" :key="index">
-								<span class="inline-flex items-center bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full">
+								<span class="inline-flex items-center bg-purple-100 text-purple-800 text-sm px-2 py-1 rounded-full">
 									<span x-text="tag"></span>
-									<button type="button" class="ml-1 text-blue-500 hover:text-red-500" @click="removeTag(tag)">×</button>
+									<button type="button" class="ml-1 text-purple-500 hover:text-red-500" @click="removeTag(tag)">×</button>
 								</span>
 							</template>
 						</div>
@@ -193,7 +193,7 @@ templ (p *Pages) UploadPage() {
 					<!-- Description -->
 					<div>
 						<label class="block text-sm font-medium mb-1" for="description">Description</label>
-						<textarea x-model="description" name="description" id="description" rows="4" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-blue-500"></textarea>
+						<textarea x-model="description" name="description" id="description" rows="4" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-black focus:ring-2 focus:ring-purple-500"></textarea>
 					</div>
 				</form>
 			</div>

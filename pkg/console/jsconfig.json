@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "module": "esnext",
+    "target": "es2020"
+  },
+  "include": ["assets/js/**/*"]
+}

@@ -28,8 +28,8 @@ require (
 	github.com/stretchr/testify v1.10.0
 	go.etcd.io/bbolt v1.4.0-alpha.0.0.20240404170359-43604f3112c5
 	gocloud.dev v0.39.0
-	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
-	golang.org/x/sync v0.13.0
+	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
+	golang.org/x/sync v0.14.0
 	google.golang.org/grpc v1.70.0
 	google.golang.org/protobuf v1.36.6
 	gorm.io/driver/postgres v1.5.0
@@ -53,7 +53,8 @@ require (
 	github.com/shirou/gopsutil/v4 v4.25.1
 	github.com/testcontainers/testcontainers-go v0.37.0
 	go.uber.org/zap v1.27.0
-	golang.org/x/crypto v0.37.0
+	golang.org/x/crypto v0.38.0
+	modernc.org/sqlite v1.38.0
 )
 
 require (
@@ -149,7 +150,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/orderedcode v0.0.1 // indirect
-	github.com/google/pprof v0.0.0-20240424215950-a892ee059fd6 // indirect
+	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
 	github.com/google/wire v0.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
@@ -188,6 +189,7 @@ require (
 	github.com/moby/term v0.5.0 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/oasisprotocol/curve25519-voi v0.0.0-20220708102147-0a8a51822cae // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
@@ -205,6 +207,7 @@ require (
 	github.com/quic-go/quic-go v0.44.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/refraction-networking/utls v1.5.3 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/rs/cors v1.11.1 // indirect
 	github.com/sasha-s/go-deadlock v0.3.5 // indirect
@@ -230,15 +233,18 @@ require (
 	golang.org/x/image v0.20.0 // indirect
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/oauth2 v0.24.0 // indirect
-	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/text v0.25.0 // indirect
 	golang.org/x/time v0.6.0 // indirect
-	golang.org/x/tools v0.32.0 // indirect
+	golang.org/x/tools v0.33.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240716161551-93cc26a95ae9 // indirect
 	google.golang.org/api v0.191.0 // indirect
 	google.golang.org/genproto v0.0.0-20240812133136-8ffd90a71988 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250115164207-1a7da9e5054f // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250127172529-29210b9bc287 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	modernc.org/libc v1.65.10 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
+	modernc.org/memory v1.11.0 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
@@ -253,7 +259,7 @@ require (
 	github.com/multiformats/go-varint v0.0.6 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	go.akshayshah.org/connectproto v0.6.0
-	golang.org/x/net v0.39.0
-	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/net v0.40.0
+	golang.org/x/sys v0.33.0 // indirect
 	lukechampine.com/blake3 v1.1.6 // indirect
 )

@@ -108,7 +108,8 @@ func (q *Queries) GetAllRegisteredNodesSorted(ctx context.Context) ([]CoreValida
 }
 
 const getAppStateAtHeight = `-- name: GetAppStateAtHeight :one
-select block_height, app_hash
+select block_height,
+    app_hash
 from core_app_state
 where block_height = $1
 limit 1
@@ -127,12 +128,23 @@ func (q *Queries) GetAppStateAtHeight(ctx context.Context, blockHeight int64) (G
 }
 
 const getAvailableCities = `-- name: GetAvailableCities :many
-select city, region, country, count(*) as play_count
+select city,
+    region,
+    country,
+    count(*) as play_count
 from core_etl_tx_plays
 where city is not null
-  and (nullif($1, '')::text is null or lower(country) = lower($1))
-  and (nullif($2, '')::text is null or lower(region) = lower($2))
-group by city, region, country
+    and (
+        nullif($1, '')::text is null
+        or lower(country) = lower($1)
+    )
+    and (
+        nullif($2, '')::text is null
+        or lower(region) = lower($2)
+    )
+group by city,
+    region,
+    country
 order by count(*) desc
 limit $3
 `
@@ -176,7 +188,8 @@ func (q *Queries) GetAvailableCities(ctx context.Context, arg GetAvailableCities
 }
 
 const getAvailableCountries = `-- name: GetAvailableCountries :many
-select country, count(*) as play_count
+select country,
+    count(*) as play_count
 from core_etl_tx_plays
 where country is not null
 group by country
@@ -210,11 +223,17 @@ func (q *Queries) GetAvailableCountries(ctx context.Context, limit int32) ([]Get
 }
 
 const getAvailableRegions = `-- name: GetAvailableRegions :many
-select region, country, count(*) as play_count
+select region,
+    country,
+    count(*) as play_count
 from core_etl_tx_plays
 where region is not null
-  and (nullif($1, '')::text is null or lower(country) = lower($1))
-group by region, country
+    and (
+        nullif($1, '')::text is null
+        or lower(country) = lower($1)
+    )
+group by region,
+    country
 order by count(*) desc
 limit $2
 `
@@ -251,7 +270,9 @@ func (q *Queries) GetAvailableRegions(ctx context.Context, arg GetAvailableRegio
 }
 
 const getBlock = `-- name: GetBlock :one
-select rowid, height, chain_id, hash, proposer, created_at from core_blocks where height = $1
+select rowid, height, chain_id, hash, proposer, created_at
+from core_blocks
+where height = $1
 `
 
 func (q *Queries) GetBlock(ctx context.Context, height int64) (CoreBlock, error) {
@@ -269,7 +290,10 @@ func (q *Queries) GetBlock(ctx context.Context, height int64) (CoreBlock, error)
 }
 
 const getBlockTransactions = `-- name: GetBlockTransactions :many
-select rowid, block_id, index, tx_hash, transaction, created_at from core_transactions where block_id = $1 order by created_at desc
+select rowid, block_id, index, tx_hash, transaction, created_at
+from core_transactions
+where block_id = $1
+order by created_at desc
 `
 
 func (q *Queries) GetBlockTransactions(ctx context.Context, blockID int64) ([]CoreTransaction, error) {
@@ -311,7 +335,15 @@ func (q *Queries) GetDBSize(ctx context.Context) (int64, error) {
 }
 
 const getDecodedPlays = `-- name: GetDecodedPlays :many
-select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
+select tx_hash,
+    user_id,
+    track_id,
+    played_at,
+    signature,
+    city,
+    region,
+    country,
+    created_at
 from core_etl_tx_plays
 order by played_at desc
 limit $1
@@ -360,12 +392,28 @@ func (q *Queries) GetDecodedPlays(ctx context.Context, limit int32) ([]GetDecode
 }
 
 const getDecodedPlaysByLocation = `-- name: GetDecodedPlaysByLocation :many
-select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
+select tx_hash,
+    user_id,
+    track_id,
+    played_at,
+    signature,
+    city,
+    region,
+    country,
+    created_at
 from core_etl_tx_plays
-where 
-    (nullif($1, '')::text is null or lower(city) = lower($1)) and
-    (nullif($2, '')::text is null or lower(region) = lower($2)) and
-    (nullif($3, '')::text is null or lower(country) = lower($3))
+where (
+        nullif($1, '')::text is null
+        or lower(city) = lower($1)
+    )
+    and (
+        nullif($2, '')::text is null
+        or lower(region) = lower($2)
+    )
+    and (
+        nullif($3, '')::text is null
+        or lower(country) = lower($3)
+    )
 order by played_at desc
 limit $4
 `
@@ -425,7 +473,15 @@ func (q *Queries) GetDecodedPlaysByLocation(ctx context.Context, arg GetDecodedP
 }
 
 const getDecodedPlaysByTimeRange = `-- name: GetDecodedPlaysByTimeRange :many
-select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
+select tx_hash,
+    user_id,
+    track_id,
+    played_at,
+    signature,
+    city,
+    region,
+    country,
+    created_at
 from core_etl_tx_plays
 where played_at between $1 and $2
 order by played_at desc
@@ -481,7 +537,15 @@ func (q *Queries) GetDecodedPlaysByTimeRange(ctx context.Context, arg GetDecoded
 }
 
 const getDecodedPlaysByTrack = `-- name: GetDecodedPlaysByTrack :many
-select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
+select tx_hash,
+    user_id,
+    track_id,
+    played_at,
+    signature,
+    city,
+    region,
+    country,
+    created_at
 from core_etl_tx_plays
 where track_id = $1
 order by played_at desc
@@ -536,7 +600,15 @@ func (q *Queries) GetDecodedPlaysByTrack(ctx context.Context, arg GetDecodedPlay
 }
 
 const getDecodedPlaysByUser = `-- name: GetDecodedPlaysByUser :many
-select tx_hash, user_id, track_id, played_at, signature, city, region, country, created_at
+select tx_hash,
+    user_id,
+    track_id,
+    played_at,
+    signature,
+    city,
+    region,
+    country,
+    created_at
 from core_etl_tx_plays
 where user_id = $1
 order by played_at desc
@@ -591,9 +663,16 @@ func (q *Queries) GetDecodedPlaysByUser(ctx context.Context, arg GetDecodedPlays
 }
 
 const getDecodedTx = `-- name: GetDecodedTx :one
-select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+select id,
+    block_height,
+    tx_index,
+    tx_hash,
+    tx_type,
+    tx_data,
+    created_at
 from core_etl_tx
-where tx_hash = $1 limit 1
+where tx_hash = $1
+limit 1
 `
 
 func (q *Queries) GetDecodedTx(ctx context.Context, txHash string) (CoreEtlTx, error) {
@@ -612,7 +691,13 @@ func (q *Queries) GetDecodedTx(ctx context.Context, txHash string) (CoreEtlTx, e
 }
 
 const getDecodedTxsByBlock = `-- name: GetDecodedTxsByBlock :many
-select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+select id,
+    block_height,
+    tx_index,
+    tx_hash,
+    tx_type,
+    tx_data,
+    created_at
 from core_etl_tx
 where block_height = $1
 order by tx_index asc
@@ -647,7 +732,13 @@ func (q *Queries) GetDecodedTxsByBlock(ctx context.Context, blockHeight int64) (
 }
 
 const getDecodedTxsByType = `-- name: GetDecodedTxsByType :many
-select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+select id,
+    block_height,
+    tx_index,
+    tx_hash,
+    tx_type,
+    tx_data,
+    created_at
 from core_etl_tx
 where tx_type = $1
 order by created_at desc
@@ -742,8 +833,9 @@ func (q *Queries) GetERNReceipts(ctx context.Context, txHash string) ([]GetERNRe
 }
 
 const getInProgressRollupReports = `-- name: GetInProgressRollupReports :many
-select id, address, blocks_proposed, sla_rollup_id from sla_node_reports
-where sla_rollup_id is null 
+select id, address, blocks_proposed, sla_rollup_id
+from sla_node_reports
+where sla_rollup_id is null
 order by address
 `
 
@@ -773,7 +865,8 @@ func (q *Queries) GetInProgressRollupReports(ctx context.Context) ([]SlaNodeRepo
 }
 
 const getLatestAppState = `-- name: GetLatestAppState :one
-select block_height, app_hash
+select block_height,
+    app_hash
 from core_app_state
 order by block_height desc
 limit 1
@@ -792,7 +885,10 @@ func (q *Queries) GetLatestAppState(ctx context.Context) (GetLatestAppStateRow, 
 }
 
 const getLatestBlock = `-- name: GetLatestBlock :one
-select rowid, height, chain_id, hash, proposer, created_at from core_blocks order by height desc limit 1
+select rowid, height, chain_id, hash, proposer, created_at
+from core_blocks
+order by height desc
+limit 1
 `
 
 func (q *Queries) GetLatestBlock(ctx context.Context) (CoreBlock, error) {
@@ -810,7 +906,13 @@ func (q *Queries) GetLatestBlock(ctx context.Context) (CoreBlock, error) {
 }
 
 const getLatestDecodedTxs = `-- name: GetLatestDecodedTxs :many
-select id, block_height, tx_index, tx_hash, tx_type, tx_data, created_at
+select id,
+    block_height,
+    tx_index,
+    tx_hash,
+    tx_type,
+    tx_data,
+    created_at
 from core_etl_tx
 order by created_at desc
 limit $1
@@ -845,7 +947,10 @@ func (q *Queries) GetLatestDecodedTxs(ctx context.Context, limit int32) ([]CoreE
 }
 
 const getLatestSlaRollup = `-- name: GetLatestSlaRollup :one
-select id, tx_hash, block_start, block_end, time from sla_rollups order by time desc limit 1
+select id, tx_hash, block_start, block_end, time
+from sla_rollups
+order by time desc
+limit 1
 `
 
 func (q *Queries) GetLatestSlaRollup(ctx context.Context) (SlaRollup, error) {
@@ -939,7 +1044,7 @@ func (q *Queries) GetNodeByEndpoint(ctx context.Context, endpoint string) (CoreV
 const getNodesByEndpoints = `-- name: GetNodesByEndpoints :many
 select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key
 from core_validators
-where endpoint = any($1::text[])
+where endpoint = any($1::text [])
 `
 
 func (q *Queries) GetNodesByEndpoints(ctx context.Context, dollar_1 []string) ([]CoreValidator, error) {
@@ -1023,10 +1128,13 @@ func (q *Queries) GetPIEReceipts(ctx context.Context, txHash string) ([]GetPIERe
 }
 
 const getPreviousSlaRollupFromId = `-- name: GetPreviousSlaRollupFromId :one
-select id, tx_hash, block_start, block_end, time from sla_rollups
+select id, tx_hash, block_start, block_end, time
+from sla_rollups
 where time < (
-    select time from sla_rollups sr where sr.id = $1
-)
+        select time
+        from sla_rollups sr
+        where sr.id = $1
+    )
 order by time desc
 limit 1
 `
@@ -1045,7 +1153,10 @@ func (q *Queries) GetPreviousSlaRollupFromId(ctx context.Context, id int32) (Sla
 }
 
 const getRecentBlocks = `-- name: GetRecentBlocks :many
-select rowid, height, chain_id, hash, proposer, created_at from core_blocks order by created_at desc limit $1
+select rowid, height, chain_id, hash, proposer, created_at
+from core_blocks
+order by created_at desc
+limit $1
 `
 
 func (q *Queries) GetRecentBlocks(ctx context.Context, limit int32) ([]CoreBlock, error) {
@@ -1083,8 +1194,7 @@ with recent_rollups as (
     order by time desc
     limit $2
 )
-select
-    rr.id,
+select rr.id,
     rr.tx_hash,
     rr.block_start,
     rr.block_end,
@@ -1092,8 +1202,7 @@ select
     nr.address,
     nr.blocks_proposed
 from recent_rollups rr
-left join sla_node_reports nr
-on rr.id = nr.sla_rollup_id
+    left join sla_node_reports nr on rr.id = nr.sla_rollup_id
 order by rr.time
 `
 
@@ -1147,8 +1256,7 @@ with recent_rollups as (
     order by time desc
     limit 30
 )
-select
-    rr.id,
+select rr.id,
     rr.tx_hash,
     rr.block_start,
     rr.block_end,
@@ -1156,8 +1264,8 @@ select
     nr.address,
     nr.blocks_proposed
 from recent_rollups rr
-left join sla_node_reports nr
-on rr.id = nr.sla_rollup_id and nr.address = $1
+    left join sla_node_reports nr on rr.id = nr.sla_rollup_id
+    and nr.address = $1
 order by rr.time
 `
 
@@ -1200,7 +1308,10 @@ func (q *Queries) GetRecentRollupsForNode(ctx context.Context, address string) (
 }
 
 const getRecentTxs = `-- name: GetRecentTxs :many
-select rowid, block_id, index, tx_hash, transaction, created_at from core_transactions order by created_at desc limit $1
+select rowid, block_id, index, tx_hash, transaction, created_at
+from core_transactions
+order by created_at desc
+limit $1
 `
 
 func (q *Queries) GetRecentTxs(ctx context.Context, limit int32) ([]CoreTransaction, error) {
@@ -1231,7 +1342,9 @@ func (q *Queries) GetRecentTxs(ctx context.Context, limit int32) ([]CoreTransact
 }
 
 const getRecordingsForTrack = `-- name: GetRecordingsForTrack :many
-select id, sound_recording_id, track_id, cid, encoding_details from sound_recordings where track_id = $1
+select id, sound_recording_id, track_id, cid, encoding_details
+from sound_recordings
+where track_id = $1
 `
 
 func (q *Queries) GetRecordingsForTrack(ctx context.Context, trackID string) ([]SoundRecording, error) {
@@ -1261,7 +1374,9 @@ func (q *Queries) GetRecordingsForTrack(ctx context.Context, trackID string) ([]
 }
 
 const getRegisteredNodeByCometAddress = `-- name: GetRegisteredNodeByCometAddress :one
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key from core_validators where comet_address = $1
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key
+from core_validators
+where comet_address = $1
 `
 
 func (q *Queries) GetRegisteredNodeByCometAddress(ctx context.Context, cometAddress string) (CoreValidator, error) {
@@ -1282,7 +1397,9 @@ func (q *Queries) GetRegisteredNodeByCometAddress(ctx context.Context, cometAddr
 }
 
 const getRegisteredNodeByEthAddress = `-- name: GetRegisteredNodeByEthAddress :one
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key from core_validators where eth_address = $1
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key
+from core_validators
+where eth_address = $1
 `
 
 func (q *Queries) GetRegisteredNodeByEthAddress(ctx context.Context, ethAddress string) (CoreValidator, error) {
@@ -1303,7 +1420,9 @@ func (q *Queries) GetRegisteredNodeByEthAddress(ctx context.Context, ethAddress 
 }
 
 const getRegisteredNodesByCometAddresses = `-- name: GetRegisteredNodesByCometAddresses :many
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key from core_validators where comet_address = any($1::text[])
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key
+from core_validators
+where comet_address = any($1::text [])
 `
 
 func (q *Queries) GetRegisteredNodesByCometAddresses(ctx context.Context, dollar_1 []string) ([]CoreValidator, error) {
@@ -1337,7 +1456,9 @@ func (q *Queries) GetRegisteredNodesByCometAddresses(ctx context.Context, dollar
 }
 
 const getRegisteredNodesByEthAddresses = `-- name: GetRegisteredNodesByEthAddresses :many
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key from core_validators where eth_address = any($1::text[])
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key
+from core_validators
+where eth_address = any($1::text [])
 `
 
 func (q *Queries) GetRegisteredNodesByEthAddresses(ctx context.Context, dollar_1 []string) ([]CoreValidator, error) {
@@ -1407,8 +1528,10 @@ func (q *Queries) GetRegisteredNodesByType(ctx context.Context, nodeType string)
 }
 
 const getRollupReportForNodeAndId = `-- name: GetRollupReportForNodeAndId :one
-select id, address, blocks_proposed, sla_rollup_id from sla_node_reports
-where address = $1 and sla_rollup_id = $2
+select id, address, blocks_proposed, sla_rollup_id
+from sla_node_reports
+where address = $1
+    and sla_rollup_id = $2
 `
 
 type GetRollupReportForNodeAndIdParams struct {
@@ -1429,7 +1552,8 @@ func (q *Queries) GetRollupReportForNodeAndId(ctx context.Context, arg GetRollup
 }
 
 const getRollupReportsForId = `-- name: GetRollupReportsForId :many
-select id, address, blocks_proposed, sla_rollup_id from sla_node_reports
+select id, address, blocks_proposed, sla_rollup_id
+from sla_node_reports
 where sla_rollup_id = $1
 order by address
 `
@@ -1460,7 +1584,9 @@ func (q *Queries) GetRollupReportsForId(ctx context.Context, slaRollupID pgtype.
 }
 
 const getSlaRollupWithId = `-- name: GetSlaRollupWithId :one
-select id, tx_hash, block_start, block_end, time from sla_rollups where id = $1
+select id, tx_hash, block_start, block_end, time
+from sla_rollups
+where id = $1
 `
 
 func (q *Queries) GetSlaRollupWithId(ctx context.Context, id int32) (SlaRollup, error) {
@@ -1477,7 +1603,9 @@ func (q *Queries) GetSlaRollupWithId(ctx context.Context, id int32) (SlaRollup, 
 }
 
 const getSlaRollupWithTimestamp = `-- name: GetSlaRollupWithTimestamp :one
-select id, tx_hash, block_start, block_end, time from sla_rollups where time = $1
+select id, tx_hash, block_start, block_end, time
+from sla_rollups
+where time = $1
 `
 
 func (q *Queries) GetSlaRollupWithTimestamp(ctx context.Context, time pgtype.Timestamp) (SlaRollup, error) {
@@ -1494,7 +1622,10 @@ func (q *Queries) GetSlaRollupWithTimestamp(ctx context.Context, time pgtype.Tim
 }
 
 const getStorageProof = `-- name: GetStorageProof :one
-select id, block_height, address, cid, proof_signature, proof, prover_addresses, status from storage_proofs where block_height = $1 and address = $2
+select id, block_height, address, cid, proof_signature, proof, prover_addresses, status
+from storage_proofs
+where block_height = $1
+    and address = $2
 `
 
 type GetStorageProofParams struct {
@@ -1519,7 +1650,9 @@ func (q *Queries) GetStorageProof(ctx context.Context, arg GetStorageProofParams
 }
 
 const getStorageProofPeers = `-- name: GetStorageProofPeers :one
-select prover_addresses from storage_proof_peers where block_height = $1
+select prover_addresses
+from storage_proof_peers
+where block_height = $1
 `
 
 func (q *Queries) GetStorageProofPeers(ctx context.Context, blockHeight int64) ([]string, error) {
@@ -1530,12 +1663,14 @@ func (q *Queries) GetStorageProofPeers(ctx context.Context, blockHeight int64) (
 }
 
 const getStorageProofRollups = `-- name: GetStorageProofRollups :many
-select 
-    address, 
-    count(*) filter (where status = 'fail') as failed_count,
+select address,
+    count(*) filter (
+        where status = 'fail'
+    ) as failed_count,
     count(*) as total_count
-from storage_proofs 
-where block_height >= $1 and block_height <= $2
+from storage_proofs
+where block_height >= $1
+    and block_height <= $2
 group by address
 `
 
@@ -1571,7 +1706,9 @@ func (q *Queries) GetStorageProofRollups(ctx context.Context, arg GetStorageProo
 }
 
 const getStorageProofs = `-- name: GetStorageProofs :many
-select id, block_height, address, cid, proof_signature, proof, prover_addresses, status from storage_proofs where block_height = $1
+select id, block_height, address, cid, proof_signature, proof, prover_addresses, status
+from storage_proofs
+where block_height = $1
 `
 
 func (q *Queries) GetStorageProofs(ctx context.Context, blockHeight int64) ([]StorageProof, error) {
@@ -1604,12 +1741,15 @@ func (q *Queries) GetStorageProofs(ctx context.Context, blockHeight int64) ([]St
 }
 
 const getStorageProofsForNodeInRange = `-- name: GetStorageProofsForNodeInRange :many
-select id, block_height, address, cid, proof_signature, proof, prover_addresses, status from storage_proofs
+select id, block_height, address, cid, proof_signature, proof, prover_addresses, status
+from storage_proofs
 where block_height in (
-    select block_height
-    from storage_proofs sp
-    where sp.block_height >= $1 and sp.block_height <= $2 and sp.address = $3 
-)
+        select block_height
+        from storage_proofs sp
+        where sp.block_height >= $1
+            and sp.block_height <= $2
+            and sp.address = $3
+    )
 `
 
 type GetStorageProofsForNodeInRangeParams struct {
@@ -1648,7 +1788,10 @@ func (q *Queries) GetStorageProofsForNodeInRange(ctx context.Context, arg GetSto
 }
 
 const getTx = `-- name: GetTx :one
-select rowid, block_id, index, tx_hash, transaction, created_at from core_transactions where lower(tx_hash) = lower($1) limit 1
+select rowid, block_id, index, tx_hash, transaction, created_at
+from core_transactions
+where lower(tx_hash) = lower($1)
+limit 1
 `
 
 func (q *Queries) GetTx(ctx context.Context, lower string) (CoreTransaction, error) {
@@ -1667,10 +1810,11 @@ func (q *Queries) GetTx(ctx context.Context, lower string) (CoreTransaction, err
 
 const hasAccessToTrackRelease = `-- name: HasAccessToTrackRelease :one
 select exists (
-    select 1
-    from access_keys
-    where track_id = $1 and pub_key = $2
-)
+        select 1
+        from access_keys
+        where track_id = $1
+            and pub_key = $2
+    )
 `
 
 type HasAccessToTrackReleaseParams struct {
@@ -1686,7 +1830,8 @@ func (q *Queries) HasAccessToTrackRelease(ctx context.Context, arg HasAccessToTr
 }
 
 const totalBlocks = `-- name: TotalBlocks :one
-select count(*) from core_blocks
+select count(*)
+from core_blocks
 `
 
 func (q *Queries) TotalBlocks(ctx context.Context) (int64, error) {
@@ -1697,7 +1842,8 @@ func (q *Queries) TotalBlocks(ctx context.Context) (int64, error) {
 }
 
 const totalTransactions = `-- name: TotalTransactions :one
-select count(*) from core_tx_stats
+select count(*)
+from core_tx_stats
 `
 
 func (q *Queries) TotalTransactions(ctx context.Context) (int64, error) {
@@ -1708,7 +1854,9 @@ func (q *Queries) TotalTransactions(ctx context.Context) (int64, error) {
 }
 
 const totalTransactionsByType = `-- name: TotalTransactionsByType :one
-select count(*) from core_tx_stats where tx_type = $1
+select count(*)
+from core_tx_stats
+where tx_type = $1
 `
 
 func (q *Queries) TotalTransactionsByType(ctx context.Context, txType string) (int64, error) {
@@ -1719,7 +1867,8 @@ func (q *Queries) TotalTransactionsByType(ctx context.Context, txType string) (i
 }
 
 const totalTxResults = `-- name: TotalTxResults :one
-select count(tx_hash) from core_transactions
+select count(tx_hash)
+from core_transactions
 `
 
 func (q *Queries) TotalTxResults(ctx context.Context) (int64, error) {
@@ -1730,7 +1879,8 @@ func (q *Queries) TotalTxResults(ctx context.Context) (int64, error) {
 }
 
 const totalValidators = `-- name: TotalValidators :one
-select count(*) from core_validators
+select count(*)
+from core_validators
 `
 
 func (q *Queries) TotalValidators(ctx context.Context) (int64, error) {
@@ -1741,10 +1891,13 @@ func (q *Queries) TotalValidators(ctx context.Context) (int64, error) {
 }
 
 const txsPerHour = `-- name: TxsPerHour :many
-select date_trunc('hour', created_at)::timestamp as hour, tx_type, count(*) as tx_count
-from core_tx_stats 
+select date_trunc('hour', created_at)::timestamp as hour,
+    tx_type,
+    count(*) as tx_count
+from core_tx_stats
 where created_at >= now() - interval '1 day'
-group by hour, tx_type 
+group by hour,
+    tx_type
 order by hour asc
 `
 

@@ -2,193 +2,140 @@ package etl
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"time"
 
 	"connectrpc.com/connect"
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/etl/v1"
+	"github.com/AudiusProject/audiusd/pkg/api/etl/v1/v1connect"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/etl/db"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/AudiusProject/audiusd/pkg/etl/location"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func (etl *ETLService) Run() error {
-	dbUrl := etl.dbURL
-	if dbUrl == "" {
-		return fmt.Errorf("dbUrl environment variable not set")
+var _ v1connect.ETLServiceHandler = (*ETLService)(nil)
+
+type ETLService struct {
+	dbURL               string
+	runDownMigrations   bool
+	startingBlockHeight int64
+	endingBlockHeight   int64
+	checkReadiness      bool
+	ChainID             string
+
+	core   corev1connect.CoreServiceClient
+	pool   *pgxpool.Pool
+	db     *db.Queries
+	logger *common.Logger
+
+	locationDB *location.LocationService
+
+	blockPubsub *BlockPubsub
+	playPubsub  *PlayPubsub
+
+	mvRefresher *MaterializedViewRefresher
+}
+
+func NewETLService(core corev1connect.CoreServiceClient, logger *common.Logger) *ETLService {
+	etl := &ETLService{
+		logger: logger.Child("etl"),
+		core:   core,
 	}
 
-	err := db.RunMigrations(etl.logger, dbUrl, etl.runDownMigrations)
+	return etl
+}
+
+func (e *ETLService) SetDBURL(dbURL string) {
+	e.dbURL = dbURL
+}
+
+func (e *ETLService) SetStartingBlockHeight(startingBlockHeight int64) {
+	e.startingBlockHeight = startingBlockHeight
+}
+
+func (e *ETLService) SetEndingBlockHeight(endingBlockHeight int64) {
+	e.endingBlockHeight = endingBlockHeight
+}
+
+func (e *ETLService) SetRunDownMigrations(runDownMigrations bool) {
+	e.runDownMigrations = runDownMigrations
+}
+
+func (e *ETLService) SetCheckReadiness(checkReadiness bool) {
+	e.checkReadiness = checkReadiness
+}
+
+func (e *ETLService) GetDB() *db.Queries {
+	return e.db
+}
+
+// GetBlockPubsub returns the block pubsub instance
+func (e *ETLService) GetBlockPubsub() *BlockPubsub {
+	return e.blockPubsub
+}
+
+// GetPlayPubsub returns the play pubsub instance
+func (e *ETLService) GetPlayPubsub() *PlayPubsub {
+	return e.playPubsub
+}
+
+// GetLocationDB returns the location service instance
+func (e *ETLService) GetLocationDB() *location.LocationService {
+	return e.locationDB
+}
+
+// InitializeChainID fetches and caches the chain ID from the core service
+func (e *ETLService) InitializeChainID(ctx context.Context) error {
+	nodeInfoResp, err := e.core.GetNodeInfo(ctx, connect.NewRequest(&corev1.GetNodeInfoRequest{}))
 	if err != nil {
-		return fmt.Errorf("error running migrations: %v", err)
+		// Use fallback chain ID if core service is not available
+		e.ChainID = "--"
+		e.logger.Warn("Failed to get chain ID from core service, using fallback", "error", err, "chainID", e.ChainID)
+		return nil
 	}
 
-	pgConfig, err := pgxpool.ParseConfig(dbUrl)
-	if err != nil {
-		return fmt.Errorf("error parsing database config: %v", err)
-	}
-
-	pool, err := pgxpool.NewWithConfig(context.Background(), pgConfig)
-	if err != nil {
-		return fmt.Errorf("error creating database pool: %v", err)
-	}
-
-	etl.pool = pool
-	etl.db = db.New(pool)
-
-	etl.logger.Infof("starting etl service")
-
-	err = etl.awaitReadiness()
-	if err != nil {
-		return fmt.Errorf("error awaiting readiness: %v", err)
-	}
-
-	err = etl.indexBlocks()
-	if err != nil {
-		return fmt.Errorf("indexer crashed: %v", err)
-	}
-
+	e.ChainID = nodeInfoResp.Msg.Chainid
+	e.logger.Info("Initialized chain ID", "chainID", e.ChainID)
 	return nil
 }
 
-func (etl *ETLService) awaitReadiness() error {
-	etl.logger.Infof("awaiting readiness")
-	attempts := 0
-
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		attempts++
-		if attempts > 60 {
-			return fmt.Errorf("timed out waiting for readiness")
-		}
-
-		res, err := etl.core.GetStatus(context.Background(), connect.NewRequest(&v1.GetStatusRequest{}))
-		if err != nil {
-			continue
-		}
-
-		if res.Msg.Ready {
-			return nil
-		}
-	}
-
-	return nil
+// GetHealth implements v1connect.ETLServiceHandler.
+func (e *ETLService) GetHealth(context.Context, *connect.Request[v1.GetHealthRequest]) (*connect.Response[v1.GetHealthResponse], error) {
+	return connect.NewResponse(&v1.GetHealthResponse{}), nil
 }
 
-func (etl *ETLService) indexBlocks() error {
-	for {
-		// Get the latest indexed block height
-		latestHeight, err := etl.db.GetLatestIndexedBlock(context.Background())
-		if err != nil {
-			// If no records exist, start from block 1
-			if errors.Is(err, pgx.ErrNoRows) {
-				if etl.startingBlockHeight > 0 {
-					// Start from block 1 (nextHeight will be 1)
-					latestHeight = etl.startingBlockHeight - 1
-				} else {
-					// Start from block 1 (nextHeight will be 1)
-					latestHeight = 0
-				}
-			} else {
-				etl.logger.Errorf("error getting latest indexed block: %v", err)
-				continue
-			}
-		}
+// GetBlocks implements v1connect.ETLServiceHandler.
+func (e *ETLService) GetBlocks(context.Context, *connect.Request[v1.GetBlocksRequest]) (*connect.Response[v1.GetBlocksResponse], error) {
+	return connect.NewResponse(&v1.GetBlocksResponse{}), nil
+}
 
-		// Get the next block
-		nextHeight := latestHeight + 1
-		block, err := etl.core.GetBlock(context.Background(), connect.NewRequest(&v1.GetBlockRequest{
-			Height: nextHeight,
-		}))
-		if err != nil {
-			etl.logger.Errorf("error getting block %d: %v", nextHeight, err)
-			continue
-		}
+// GetLocation implements v1connect.ETLServiceHandler.
+func (e *ETLService) GetLocation(context.Context, *connect.Request[v1.GetLocationRequest]) (*connect.Response[v1.GetLocationResponse], error) {
+	return connect.NewResponse(&v1.GetLocationResponse{}), nil
+}
 
-		if block.Msg.Block.Height < 0 {
-			continue
-		}
+// GetManageEntities implements v1connect.ETLServiceHandler.
+func (e *ETLService) GetManageEntities(context.Context, *connect.Request[v1.GetManageEntitiesRequest]) (*connect.Response[v1.GetManageEntitiesResponse], error) {
+	return connect.NewResponse(&v1.GetManageEntitiesResponse{}), nil
+}
 
-		_, err = etl.db.InsertBlock(context.Background(), db.InsertBlockParams{
-			ProposerAddress: block.Msg.Block.Proposer,
-			BlockHeight:     block.Msg.Block.Height,
-			BlockTime:       pgtype.Timestamp{Time: block.Msg.Block.Timestamp.AsTime(), Valid: true},
-		})
-		if err != nil {
-			etl.logger.Errorf("error inserting block %d: %v", nextHeight, err)
-			continue
-		}
+// GetPlays implements v1connect.ETLServiceHandler.
+func (e *ETLService) GetPlays(context.Context, *connect.Request[v1.GetPlaysRequest]) (*connect.Response[v1.GetPlaysResponse], error) {
+	return connect.NewResponse(&v1.GetPlaysResponse{}), nil
+}
 
-		txs := block.Msg.Block.Transactions
-		for _, tx := range txs {
-			if tx.Transaction == nil || tx.Transaction.Transaction == nil {
-				continue
-			}
+// GetTransactions implements v1connect.ETLServiceHandler.
+func (e *ETLService) GetTransactions(context.Context, *connect.Request[v1.GetTransactionsRequest]) (*connect.Response[v1.GetTransactionsResponse], error) {
+	return connect.NewResponse(&v1.GetTransactionsResponse{}), nil
+}
 
-			switch signedTx := tx.Transaction.Transaction.(type) {
-			case *v1.SignedTransaction_Plays:
-				for _, play := range signedTx.Plays.GetPlays() {
-					etl.db.InsertPlay(context.Background(), db.InsertPlayParams{
-						Address:     play.UserId,
-						TrackID:     play.TrackId,
-						City:        play.City,
-						Region:      play.Region,
-						Country:     play.Country,
-						PlayedAt:    pgtype.Timestamp{Time: play.Timestamp.AsTime(), Valid: true},
-						BlockHeight: block.Msg.Block.Height,
-						TxHash:      tx.Hash,
-					})
-				}
-			case *v1.SignedTransaction_ManageEntity:
-				me := signedTx.ManageEntity
-				etl.db.InsertManageEntity(context.Background(), db.InsertManageEntityParams{
-					Address:     me.GetSigner(),
-					EntityType:  me.GetEntityType(),
-					EntityID:    me.GetEntityId(),
-					Action:      me.GetAction(),
-					Metadata:    pgtype.Text{String: me.GetMetadata(), Valid: true},
-					Signature:   me.GetSignature(),
-					Signer:      me.GetSigner(),
-					Nonce:       me.GetNonce(),
-					BlockHeight: block.Msg.Block.Height,
-					TxHash:      tx.Hash,
-				})
-			case *v1.SignedTransaction_Attestation:
-				at := signedTx.Attestation
-				if at.GetValidatorRegistration() != nil {
-					vr := at.GetValidatorRegistration()
-					etl.db.InsertValidatorRegistration(context.Background(), db.InsertValidatorRegistrationParams{
-						Address:      block.Msg.Block.Proposer,
-						Endpoint:     vr.Endpoint,
-						CometAddress: vr.CometAddress,
-						EthBlock:     fmt.Sprintf("%d", vr.EthBlock),
-						NodeType:     vr.NodeType,
-						Spid:         vr.SpId,
-						CometPubkey:  vr.PubKey,
-						VotingPower:  vr.Power,
-						BlockHeight:  block.Msg.Block.Height,
-						TxHash:       tx.Hash,
-					})
-				}
-				if at.GetValidatorDeregistration() != nil {
-					vd := at.GetValidatorDeregistration()
-					etl.db.InsertValidatorDeregistration(context.Background(), db.InsertValidatorDeregistrationParams{
-						CometAddress: vd.CometAddress,
-						CometPubkey:  vd.PubKey,
-						BlockHeight:  block.Msg.Block.Height,
-						TxHash:       tx.Hash,
-					})
-				}
-			}
-		}
+// GetValidators implements v1connect.ETLServiceHandler.
+func (e *ETLService) GetValidators(context.Context, *connect.Request[v1.GetValidatorsRequest]) (*connect.Response[v1.GetValidatorsResponse], error) {
+	return connect.NewResponse(&v1.GetValidatorsResponse{}), nil
+}
 
-		if etl.endingBlockHeight > 0 && block.Msg.Block.Height >= etl.endingBlockHeight {
-			etl.logger.Infof("ending block height reached, stopping etl service")
-			return nil
-		}
-	}
+// Ping implements v1connect.ETLServiceHandler.
+func (e *ETLService) Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error) {
+	return connect.NewResponse(&v1.PingResponse{}), nil
 }

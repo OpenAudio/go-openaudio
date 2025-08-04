@@ -1,0 +1,203 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/AudiusProject/audiusd/pkg/console/templates"
+	"github.com/AudiusProject/audiusd/pkg/console/templates/layouts"
+	"github.com/AudiusProject/audiusd/pkg/etl/db"
+)
+
+func buildPaginationURL(address string, page int32, pageSize int32, currentFilter string, startDate string, endDate string) string {
+	baseURL := fmt.Sprintf("/account/%s?page=%d&count=%d", address, page, pageSize)
+	if currentFilter != "" && currentFilter != "all" {
+		baseURL += "&relation=" + currentFilter
+	}
+	if startDate != "" {
+		baseURL += "&start_date=" + startDate
+	}
+	if endDate != "" {
+		baseURL += "&end_date=" + endDate
+	}
+	return baseURL
+}
+
+type AccountProps struct {
+	Address       string
+	Transactions  []*db.EtlTransaction
+	TxRelations   []string
+	CurrentPage   int32
+	HasNext       bool
+	HasPrev       bool
+	PageSize      int32
+	RelationTypes []string
+	CurrentFilter string
+	StartDate     string
+	EndDate       string
+}
+
+templ Account(props AccountProps) {
+	@layouts.Base(fmt.Sprintf("Account %s", props.Address[:6])) {
+		<div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6">
+			<div class="flex justify-between items-center mb-6">
+				<h2 class="text-2xl font-light text-gray-900 dark:text-gray-100">
+					Account 
+					<span class="font-mono text-purple-600 dark:text-purple-400">
+						{ props.Address }
+					</span>
+				</h2>
+				<div class="text-sm text-gray-500 dark:text-gray-400">
+					Page { fmt.Sprint(props.CurrentPage) } • { fmt.Sprint(props.PageSize) } transactions per page
+				</div>
+			</div>
+			<div class="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+					<div>
+						<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Address</div>
+						<div class="font-mono text-sm text-gray-900 dark:text-gray-100 break-all">{ props.Address }</div>
+					</div>
+					<div>
+						<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Total Transactions</div>
+						<div class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ fmt.Sprint(len(props.Transactions)) }</div>
+					</div>
+					if len(props.RelationTypes) > 0 {
+						<div>
+							<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Filter by Relation</div>
+							<select
+								id="relationFilter"
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+								onchange="updateFilters()"
+							>
+								<option value="all" selected?={ props.CurrentFilter == "" || props.CurrentFilter == "all" }>All Relations</option>
+								for _, relationType := range props.RelationTypes {
+									<option value={ relationType } selected?={ props.CurrentFilter == relationType }>{ relationType }</option>
+								}
+							</select>
+						</div>
+					}
+					<div>
+						<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">From Date</div>
+						<input
+							type="date"
+							id="startDate"
+							value={ props.StartDate }
+							class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+							onchange="updateFilters()"
+						/>
+					</div>
+					<div>
+						<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">To Date</div>
+						<input
+							type="date"
+							id="endDate"
+							value={ props.EndDate }
+							class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+							onchange="updateFilters()"
+						/>
+					</div>
+				</div>
+			</div>
+			if len(props.Transactions) > 0 {
+				<div class="space-y-2">
+					for i, tx := range props.Transactions {
+						<a href={ templ.SafeURL(fmt.Sprintf("/transaction/%s", tx.TxHash)) } class="block">
+							<div class="flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-700 rounded hover:bg-purple-50 hover:border-purple-200 dark:hover:bg-gray-700 transition-colors cursor-pointer">
+								<div class="flex items-center gap-6 flex-1">
+									<div class="flex-1">
+										<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Hash</div>
+										<div class="font-mono text-sm text-purple-600 dark:text-purple-400">
+											@templates.StringWithTooltip(tx.TxHash)
+										</div>
+									</div>
+									<div class="flex-1">
+										<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Type</div>
+										<span class="px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
+											{ tx.TxType }
+										</span>
+									</div>
+									<div class="flex-1">
+										<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Relation</div>
+										<span class="px-3 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded">
+											{ props.TxRelations[i] }
+										</span>
+									</div>
+									<div class="flex-1">
+										<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Block</div>
+										<div class="text-xs text-purple-600 dark:text-purple-400">
+											{ fmt.Sprintf("%d", tx.BlockHeight) }
+										</div>
+									</div>
+								</div>
+								<div class="text-right flex-shrink-0">
+									<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Time</div>
+									<div class="text-sm text-gray-700 dark:text-gray-300">
+										@templates.TimeWithTooltip(tx.CreatedAt.Time)
+									</div>
+								</div>
+							</div>
+						</a>
+					}
+				</div>
+				<div class="flex justify-between items-center mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+					<div class="flex gap-3">
+						if props.HasPrev {
+							<a href={ templ.SafeURL(buildPaginationURL(props.Address, props.CurrentPage-1, props.PageSize, props.CurrentFilter, props.StartDate, props.EndDate)) } class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors">
+								← Previous
+							</a>
+						} else {
+							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-gray-600 bg-gray-50 dark:bg-gray-700 rounded cursor-not-allowed">
+								← Previous
+							</span>
+						}
+						if props.HasNext {
+							<a href={ templ.SafeURL(buildPaginationURL(props.Address, props.CurrentPage+1, props.PageSize, props.CurrentFilter, props.StartDate, props.EndDate)) } class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors">
+								Next →
+							</a>
+						} else {
+							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-gray-600 bg-gray-50 dark:bg-gray-700 rounded cursor-not-allowed">
+								Next →
+							</span>
+						}
+					</div>
+				</div>
+			} else {
+				<div class="text-center py-12">
+					<p class="text-gray-500 dark:text-gray-400">No transactions found for this address</p>
+				</div>
+			}
+		</div>
+		<script>
+			function updateFilters() {
+				const startDate = document.getElementById('startDate').value;
+				const endDate = document.getElementById('endDate').value;
+				const relationFilter = document.getElementById('relationFilter') ? document.getElementById('relationFilter').value : '';
+				
+				const url = new URL(window.location);
+				
+				// Handle relation filter
+				if (relationFilter === 'all' || relationFilter === '') {
+					url.searchParams.delete('relation');
+				} else {
+					url.searchParams.set('relation', relationFilter);
+				}
+				
+				// Handle date filters
+				if (startDate) {
+					url.searchParams.set('start_date', startDate);
+				} else {
+					url.searchParams.delete('start_date');
+				}
+				
+				if (endDate) {
+					url.searchParams.set('end_date', endDate);
+				} else {
+					url.searchParams.delete('end_date');
+				}
+				
+				// Reset to page 1 when changing filters
+				url.searchParams.set('page', '1');
+				
+				window.location.href = url.toString();
+			}
+		</script>
+	}
+}

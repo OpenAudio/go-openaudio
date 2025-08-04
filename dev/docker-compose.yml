@@ -139,6 +139,21 @@ services:
       - audiusd-dev
       - integration-tests
 
+  audiusd-console:
+    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
+    restart: unless-stopped
+    env_file:
+      - ./dev/env/audiusd-console.env
+    extra_hosts:
+      - 'node1.audiusd.devnet:host-gateway'
+      - 'node2.audiusd.devnet:host-gateway'
+      - 'node3.audiusd.devnet:host-gateway'
+      - 'node4.audiusd.devnet:host-gateway'
+    ports:
+      - 8081:80
+    profiles:
+      - audiusd-dev
+
   audiusd-ss:
     image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
     restart: unless-stopped

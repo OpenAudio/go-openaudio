@@ -5,16 +5,68 @@
 package db
 
 import (
+	"database/sql/driver"
+	"fmt"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type EtlProofStatus string
+
+const (
+	EtlProofStatusUnresolved EtlProofStatus = "unresolved"
+	EtlProofStatusPass       EtlProofStatus = "pass"
+	EtlProofStatusFail       EtlProofStatus = "fail"
+)
+
+func (e *EtlProofStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = EtlProofStatus(s)
+	case string:
+		*e = EtlProofStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for EtlProofStatus: %T", src)
+	}
+	return nil
+}
+
+type NullEtlProofStatus struct {
+	EtlProofStatus EtlProofStatus `json:"etl_proof_status"`
+	Valid          bool           `json:"valid"` // Valid is true if EtlProofStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullEtlProofStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.EtlProofStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.EtlProofStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullEtlProofStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.EtlProofStatus), nil
+}
+
+type EtlAddress struct {
+	ID                   int32            `json:"id"`
+	Address              string           `json:"address"`
+	PubKey               []byte           `json:"pub_key"`
+	FirstSeenBlockHeight pgtype.Int8      `json:"first_seen_block_height"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+}
 
 type EtlBlock struct {
 	ID              int32            `json:"id"`
 	ProposerAddress string           `json:"proposer_address"`
 	BlockHeight     int64            `json:"block_height"`
 	BlockTime       pgtype.Timestamp `json:"block_time"`
-	CreatedAt       pgtype.Timestamp `json:"created_at"`
-	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 }
 
 type EtlManageEntity struct {
@@ -30,12 +82,11 @@ type EtlManageEntity struct {
 	BlockHeight int64            `json:"block_height"`
 	TxHash      string           `json:"tx_hash"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
-	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
 }
 
 type EtlPlay struct {
 	ID          int32            `json:"id"`
-	Address     string           `json:"address"`
+	UserID      string           `json:"user_id"`
 	TrackID     string           `json:"track_id"`
 	City        string           `json:"city"`
 	Region      string           `json:"region"`
@@ -43,32 +94,123 @@ type EtlPlay struct {
 	PlayedAt    pgtype.Timestamp `json:"played_at"`
 	BlockHeight int64            `json:"block_height"`
 	TxHash      string           `json:"tx_hash"`
+	ListenedAt  pgtype.Timestamp `json:"listened_at"`
+	RecordedAt  pgtype.Timestamp `json:"recorded_at"`
+}
+
+type EtlSlaNodeReport struct {
+	ID                 int32            `json:"id"`
+	SlaRollupID        int32            `json:"sla_rollup_id"`
+	Address            string           `json:"address"`
+	NumBlocksProposed  int32            `json:"num_blocks_proposed"`
+	ChallengesReceived int32            `json:"challenges_received"`
+	ChallengesFailed   int32            `json:"challenges_failed"`
+	BlockHeight        int64            `json:"block_height"`
+	TxHash             string           `json:"tx_hash"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+}
+
+type EtlSlaRollup struct {
+	ID             int32            `json:"id"`
+	BlockStart     int64            `json:"block_start"`
+	BlockEnd       int64            `json:"block_end"`
+	BlockHeight    int64            `json:"block_height"`
+	ValidatorCount int32            `json:"validator_count"`
+	BlockQuota     int32            `json:"block_quota"`
+	Bps            float64          `json:"bps"`
+	Tps            float64          `json:"tps"`
+	TxHash         string           `json:"tx_hash"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
+type EtlStorageProof struct {
+	ID              int32            `json:"id"`
+	Height          int64            `json:"height"`
+	Address         string           `json:"address"`
+	ProverAddresses []string         `json:"prover_addresses"`
+	Cid             string           `json:"cid"`
+	ProofSignature  []byte           `json:"proof_signature"`
+	Proof           []byte           `json:"proof"`
+	Status          EtlProofStatus   `json:"status"`
+	BlockHeight     int64            `json:"block_height"`
+	TxHash          string           `json:"tx_hash"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+}
+
+type EtlStorageProofVerification struct {
+	ID          int32            `json:"id"`
+	Height      int64            `json:"height"`
+	Proof       []byte           `json:"proof"`
+	BlockHeight int64            `json:"block_height"`
+	TxHash      string           `json:"tx_hash"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
-	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+}
+
+type EtlTransaction struct {
+	ID          int32            `json:"id"`
+	TxHash      string           `json:"tx_hash"`
+	BlockHeight int64            `json:"block_height"`
+	TxIndex     int32            `json:"tx_index"`
+	TxType      string           `json:"tx_type"`
+	Address     pgtype.Text      `json:"address"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+}
+
+type EtlValidator struct {
+	ID             int32            `json:"id"`
+	Address        string           `json:"address"`
+	Endpoint       string           `json:"endpoint"`
+	CometAddress   string           `json:"comet_address"`
+	NodeType       string           `json:"node_type"`
+	Spid           string           `json:"spid"`
+	VotingPower    int64            `json:"voting_power"`
+	Status         string           `json:"status"`
+	RegisteredAt   int64            `json:"registered_at"`
+	DeregisteredAt pgtype.Int8      `json:"deregistered_at"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
 }
 
 type EtlValidatorDeregistration struct {
+	ID           int32  `json:"id"`
+	CometAddress string `json:"comet_address"`
+	CometPubkey  []byte `json:"comet_pubkey"`
+	BlockHeight  int64  `json:"block_height"`
+	TxHash       string `json:"tx_hash"`
+}
+
+type EtlValidatorMisbehaviorDeregistration struct {
 	ID           int32            `json:"id"`
 	CometAddress string           `json:"comet_address"`
-	CometPubkey  []byte           `json:"comet_pubkey"`
+	PubKey       []byte           `json:"pub_key"`
 	BlockHeight  int64            `json:"block_height"`
 	TxHash       string           `json:"tx_hash"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
-	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 }
 
 type EtlValidatorRegistration struct {
-	ID           int32            `json:"id"`
-	Address      string           `json:"address"`
-	Endpoint     string           `json:"endpoint"`
-	CometAddress string           `json:"comet_address"`
-	EthBlock     string           `json:"eth_block"`
-	NodeType     string           `json:"node_type"`
-	Spid         string           `json:"spid"`
-	CometPubkey  []byte           `json:"comet_pubkey"`
-	VotingPower  int64            `json:"voting_power"`
-	BlockHeight  int64            `json:"block_height"`
-	TxHash       string           `json:"tx_hash"`
-	CreatedAt    pgtype.Timestamp `json:"created_at"`
-	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	ID           int32  `json:"id"`
+	Address      string `json:"address"`
+	Endpoint     string `json:"endpoint"`
+	CometAddress string `json:"comet_address"`
+	EthBlock     string `json:"eth_block"`
+	NodeType     string `json:"node_type"`
+	Spid         string `json:"spid"`
+	CometPubkey  []byte `json:"comet_pubkey"`
+	VotingPower  int64  `json:"voting_power"`
+	BlockHeight  int64  `json:"block_height"`
+	TxHash       string `json:"tx_hash"`
+}
+
+type MvDashboardTransactionStat struct {
+	Transactions24h         int64 `json:"transactions_24h"`
+	TransactionsPrevious24h int64 `json:"transactions_previous_24h"`
+	Transactions7d          int64 `json:"transactions_7d"`
+	Transactions30d         int64 `json:"transactions_30d"`
+	TotalTransactions       int64 `json:"total_transactions"`
+}
+
+type MvDashboardTransactionType struct {
+	TxType           string `json:"tx_type"`
+	TransactionCount int64  `json:"transaction_count"`
 }
