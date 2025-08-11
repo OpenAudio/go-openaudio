@@ -183,13 +183,24 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 
 	cfg.LogLevel = GetEnvWithDefault("AUDIUSD_LOG_LEVEL", "info")
 
+	ssRpcServers := ""
+	ssEnable := "false"
+	switch cfg.Environment {
+	case "prod", "production":
+		ssRpcServers = "creatornode.audius.co,creatornode.audius.co"
+		ssEnable = "true"
+	case "stage", "staging":
+		ssRpcServers = "creatornode11.audius.co,creatornode11.audius.co"
+		ssEnable = "true"
+	}
+
 	cfg.StateSync = &StateSyncConfig{
-		ServeSnapshots: GetEnvWithDefault("stateSyncServeSnapshots", "false") == "true",
+		ServeSnapshots: GetEnvWithDefault("stateSyncServeSnapshots", ssEnable) == "true",
 		Enable:         GetEnvWithDefault("stateSyncEnable", "false") == "true",
 		Keep:           getEnvIntWithDefault("stateSyncKeep", 6),
 		BlockInterval:  int64(getEnvIntWithDefault("stateSyncBlockInterval", 100)),
 		ChunkFetchers:  int32(getEnvIntWithDefault("stateSyncChunkFetchers", 10)),
-		RPCServers:     strings.Split(GetEnvWithDefault("stateSyncRPCServers", ""), ","),
+		RPCServers:     strings.Split(GetEnvWithDefault("stateSyncRPCServers", ssRpcServers), ","),
 	}
 
 	cfg.Environment = GetRuntimeEnvironment()
