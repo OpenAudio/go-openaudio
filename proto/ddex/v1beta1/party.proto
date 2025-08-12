@@ -10,11 +10,27 @@ message Party {
     string full_name_indexed = 2;
   }
 
+  message ProprietaryId {
+    string namespace = 1;
+    string id = 2;
+  }
+
   message PartyId {
     string dpid = 1;
+    repeated ProprietaryId proprietary_ids = 2;
   }
 
   string party_reference = 1;
   PartyName party_name = 2;
   PartyId party_id = 3;
+}
+
+message PartyDescriptorWithPronounciation {
+  message PartyIdOrPartyName {
+    oneof party {
+      Party.PartyId party_id = 1;
+      Party.PartyName party_name = 2;
+    }
+  }
+  repeated PartyIdOrPartyName parties = 1;
 }

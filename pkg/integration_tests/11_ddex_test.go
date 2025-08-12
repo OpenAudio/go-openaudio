@@ -1050,103 +1050,42 @@ func createFakeBandPIEMessage() *ddexv1beta1.PieMessage {
 				PartyId: &ddexv1beta1.Party_PartyId{
 					Dpid: "BAND_ELECTRIC_RIDERS_001",
 				},
-				PartyName: &ddexv1beta1.Party_PartyName{
+				PartyName: []*ddexv1beta1.Party_PartyName{{
 					FullName: "The Electric Riders",
-				},
+				}},
 				PartyType: &ddexv1beta1.PieMessage_Party_PartyType{
 					Value: "Artist",
 				},
-				Handles: []*ddexv1beta1.PieMessage_Handle{
-					{
-						Type:  "audius",
-						Value: "electric_riders_official",
-					},
-					{
-						Type:  "twitter",
-						Value: "@ElectricRidersOfficial",
-					},
-					{
-						Type:  "instagram",
-						Value: "@electric.riders.band",
-					},
-				},
-				Verified: []*ddexv1beta1.PieMessage_Verified{
-					{
-						Type:     "audius",
-						Verified: true,
-					},
-					{
-						Type:     "twitter",
-						Verified: true,
-					},
-				},
-				Awards: []*ddexv1beta1.PieMessage_Award{
-					{
-						AwardingBody: &ddexv1beta1.PieMessage_Award_AwardingBody{
-							PartyName: &ddexv1beta1.Party_PartyName{
-								FullName: "Rock Music Awards Foundation",
+				Biographies: []*ddexv1beta1.PieMessage_Biography{{
+					Text: "Riders of the Electric Sky",
+					Author: &ddexv1beta1.PartyDescriptorWithPronounciation{
+						Parties: []*ddexv1beta1.PartyDescriptorWithPronounciation_PartyIdOrPartyName{{
+							Party: &ddexv1beta1.PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyId{
+								PartyId: &ddexv1beta1.Party_PartyId{
+									Dpid: "DPID",
+								},
+							},
+						}, {
+							Party: &ddexv1beta1.PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyName{
+								PartyName: &ddexv1beta1.Party_PartyName{
+									FullName: "The Electric Riders",
+								},
 							},
 						},
-						AwardedParty: &ddexv1beta1.PieMessage_Award_AwardedParty{
-							PartyName: &ddexv1beta1.Party_PartyName{
-								FullName: "The Electric Riders",
-							},
 						},
-						AwardName: "Best Live Performance 2023",
-						Date:      "2023-12-15",
-						IsWinner:  true,
-						Comment:   stringPtr("Outstanding live performance at Thunder Arena"),
 					},
-				},
+				}},
 			},
 			{
 				PartyReference: "P_ARTIST_4729799",
 				PartyId: &ddexv1beta1.Party_PartyId{
 					Dpid: "ARTIST_MARCUS_STONE_001",
 				},
-				PartyName: &ddexv1beta1.Party_PartyName{
+				PartyName: []*ddexv1beta1.Party_PartyName{{
 					FullName: "Marcus Stone",
-				},
+				}},
 				PartyType: &ddexv1beta1.PieMessage_Party_PartyType{
 					Value: "Individual",
-				},
-				Handles: []*ddexv1beta1.PieMessage_Handle{
-					{
-						Type:  "audius",
-						Value: "marcus_stone_music",
-					},
-					{
-						Type:  "twitter",
-						Value: "@MarcusStoneMusic",
-					},
-				},
-				Verified: []*ddexv1beta1.PieMessage_Verified{
-					{
-						Type:     "audius",
-						Verified: true,
-					},
-					{
-						Type:     "twitter",
-						Verified: false,
-					},
-				},
-				Awards: []*ddexv1beta1.PieMessage_Award{
-					{
-						AwardingBody: &ddexv1beta1.PieMessage_Award_AwardingBody{
-							PartyName: &ddexv1beta1.Party_PartyName{
-								FullName: "Guitar Player Magazine",
-							},
-						},
-						AwardedParty: &ddexv1beta1.PieMessage_Award_AwardedParty{
-							PartyName: &ddexv1beta1.Party_PartyName{
-								FullName: "Marcus Stone",
-							},
-						},
-						AwardName: "Guitar Solo of the Year 2023",
-						Date:      "2023-11-20",
-						IsWinner:  true,
-						Comment:   stringPtr("Exceptional guitar work on 'Lightning Flash'"),
-					},
 				},
 			},
 			{
@@ -1154,49 +1093,11 @@ func createFakeBandPIEMessage() *ddexv1beta1.PieMessage {
 				PartyId: &ddexv1beta1.Party_PartyId{
 					Dpid: "LABEL_HARMONY_001",
 				},
-				PartyName: &ddexv1beta1.Party_PartyName{
+				PartyName: []*ddexv1beta1.Party_PartyName{{
 					FullName: "Harmony Records Legacy",
-				},
+				}},
 				PartyType: &ddexv1beta1.PieMessage_Party_PartyType{
 					Value: "Label",
-				},
-				Handles: []*ddexv1beta1.PieMessage_Handle{
-					{
-						Type:  "audius",
-						Value: "harmony_records_legacy",
-					},
-					{
-						Type:  "twitter",
-						Value: "@HarmonyRecordsLegacy",
-					},
-				},
-				Verified: []*ddexv1beta1.PieMessage_Verified{
-					{
-						Type:     "audius",
-						Verified: true,
-					},
-					{
-						Type:     "twitter",
-						Verified: true,
-					},
-				},
-				Awards: []*ddexv1beta1.PieMessage_Award{
-					{
-						AwardingBody: &ddexv1beta1.PieMessage_Award_AwardingBody{
-							PartyName: &ddexv1beta1.Party_PartyName{
-								FullName: "Independent Music Awards",
-							},
-						},
-						AwardedParty: &ddexv1beta1.PieMessage_Award_AwardedParty{
-							PartyName: &ddexv1beta1.Party_PartyName{
-								FullName: "Harmony Records Legacy",
-							},
-						},
-						AwardName: "Independent Label of the Year 2023",
-						Date:      "2023-10-10",
-						IsWinner:  true,
-						Comment:   stringPtr("Excellence in promoting emerging rock artists"),
-					},
 				},
 			},
 		},

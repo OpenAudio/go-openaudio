@@ -7,11 +7,6 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1";
 
-message ProprietaryId {
-  string namespace = 1;
-  string id = 2;
-}
-
 message MessageHeader {
   optional string message_thread_id = 1;
   string message_id = 2;

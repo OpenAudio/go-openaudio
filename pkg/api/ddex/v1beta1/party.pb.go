@@ -83,6 +83,53 @@ func (x *Party) GetPartyId() *Party_PartyId {
 	return nil
 }
 
+type PartyDescriptorWithPronounciation struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Parties []*PartyDescriptorWithPronounciation_PartyIdOrPartyName `protobuf:"bytes,1,rep,name=parties,proto3" json:"parties,omitempty"`
+}
+
+func (x *PartyDescriptorWithPronounciation) Reset() {
+	*x = PartyDescriptorWithPronounciation{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_party_proto_msgTypes[1]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *PartyDescriptorWithPronounciation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PartyDescriptorWithPronounciation) ProtoMessage() {}
+
+func (x *PartyDescriptorWithPronounciation) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_party_proto_msgTypes[1]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PartyDescriptorWithPronounciation.ProtoReflect.Descriptor instead.
+func (*PartyDescriptorWithPronounciation) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_party_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *PartyDescriptorWithPronounciation) GetParties() []*PartyDescriptorWithPronounciation_PartyIdOrPartyName {
+	if x != nil {
+		return x.Parties
+	}
+	return nil
+}
+
 type Party_PartyName struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -95,7 +142,7 @@ type Party_PartyName struct {
 func (x *Party_PartyName) Reset() {
 	*x = Party_PartyName{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ddex_v1beta1_party_proto_msgTypes[1]
+		mi := &file_ddex_v1beta1_party_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -108,7 +155,7 @@ func (x *Party_PartyName) String() string {
 func (*Party_PartyName) ProtoMessage() {}
 
 func (x *Party_PartyName) ProtoReflect() protoreflect.Message {
-	mi := &file_ddex_v1beta1_party_proto_msgTypes[1]
+	mi := &file_ddex_v1beta1_party_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -138,18 +185,74 @@ func (x *Party_PartyName) GetFullNameIndexed() string {
 	return ""
 }
 
+type Party_ProprietaryId struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Namespace string `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Id        string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+}
+
+func (x *Party_ProprietaryId) Reset() {
+	*x = Party_ProprietaryId{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_party_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Party_ProprietaryId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Party_ProprietaryId) ProtoMessage() {}
+
+func (x *Party_ProprietaryId) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_party_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Party_ProprietaryId.ProtoReflect.Descriptor instead.
+func (*Party_ProprietaryId) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_party_proto_rawDescGZIP(), []int{0, 1}
+}
+
+func (x *Party_ProprietaryId) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *Party_ProprietaryId) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 type Party_PartyId struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Dpid string `protobuf:"bytes,1,opt,name=dpid,proto3" json:"dpid,omitempty"`
+	Dpid           string                 `protobuf:"bytes,1,opt,name=dpid,proto3" json:"dpid,omitempty"`
+	ProprietaryIds []*Party_ProprietaryId `protobuf:"bytes,2,rep,name=proprietary_ids,json=proprietaryIds,proto3" json:"proprietary_ids,omitempty"`
 }
 
 func (x *Party_PartyId) Reset() {
 	*x = Party_PartyId{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ddex_v1beta1_party_proto_msgTypes[2]
+		mi := &file_ddex_v1beta1_party_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -162,7 +265,7 @@ func (x *Party_PartyId) String() string {
 func (*Party_PartyId) ProtoMessage() {}
 
 func (x *Party_PartyId) ProtoReflect() protoreflect.Message {
-	mi := &file_ddex_v1beta1_party_proto_msgTypes[2]
+	mi := &file_ddex_v1beta1_party_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -175,7 +278,7 @@ func (x *Party_PartyId) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Party_PartyId.ProtoReflect.Descriptor instead.
 func (*Party_PartyId) Descriptor() ([]byte, []int) {
-	return file_ddex_v1beta1_party_proto_rawDescGZIP(), []int{0, 1}
+	return file_ddex_v1beta1_party_proto_rawDescGZIP(), []int{0, 2}
 }
 
 func (x *Party_PartyId) GetDpid() string {
@@ -185,12 +288,102 @@ func (x *Party_PartyId) GetDpid() string {
 	return ""
 }
 
+func (x *Party_PartyId) GetProprietaryIds() []*Party_ProprietaryId {
+	if x != nil {
+		return x.ProprietaryIds
+	}
+	return nil
+}
+
+type PartyDescriptorWithPronounciation_PartyIdOrPartyName struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Types that are assignable to Party:
+	//
+	//	*PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyId
+	//	*PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyName
+	Party isPartyDescriptorWithPronounciation_PartyIdOrPartyName_Party `protobuf_oneof:"party"`
+}
+
+func (x *PartyDescriptorWithPronounciation_PartyIdOrPartyName) Reset() {
+	*x = PartyDescriptorWithPronounciation_PartyIdOrPartyName{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ddex_v1beta1_party_proto_msgTypes[5]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *PartyDescriptorWithPronounciation_PartyIdOrPartyName) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PartyDescriptorWithPronounciation_PartyIdOrPartyName) ProtoMessage() {}
+
+func (x *PartyDescriptorWithPronounciation_PartyIdOrPartyName) ProtoReflect() protoreflect.Message {
+	mi := &file_ddex_v1beta1_party_proto_msgTypes[5]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PartyDescriptorWithPronounciation_PartyIdOrPartyName.ProtoReflect.Descriptor instead.
+func (*PartyDescriptorWithPronounciation_PartyIdOrPartyName) Descriptor() ([]byte, []int) {
+	return file_ddex_v1beta1_party_proto_rawDescGZIP(), []int{1, 0}
+}
+
+func (m *PartyDescriptorWithPronounciation_PartyIdOrPartyName) GetParty() isPartyDescriptorWithPronounciation_PartyIdOrPartyName_Party {
+	if m != nil {
+		return m.Party
+	}
+	return nil
+}
+
+func (x *PartyDescriptorWithPronounciation_PartyIdOrPartyName) GetPartyId() *Party_PartyId {
+	if x, ok := x.GetParty().(*PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyId); ok {
+		return x.PartyId
+	}
+	return nil
+}
+
+func (x *PartyDescriptorWithPronounciation_PartyIdOrPartyName) GetPartyName() *Party_PartyName {
+	if x, ok := x.GetParty().(*PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyName); ok {
+		return x.PartyName
+	}
+	return nil
+}
+
+type isPartyDescriptorWithPronounciation_PartyIdOrPartyName_Party interface {
+	isPartyDescriptorWithPronounciation_PartyIdOrPartyName_Party()
+}
+
+type PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyId struct {
+	PartyId *Party_PartyId `protobuf:"bytes,1,opt,name=party_id,json=partyId,proto3,oneof"`
+}
+
+type PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyName struct {
+	PartyName *Party_PartyName `protobuf:"bytes,2,opt,name=party_name,json=partyName,proto3,oneof"`
+}
+
+func (*PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyId) isPartyDescriptorWithPronounciation_PartyIdOrPartyName_Party() {
+}
+
+func (*PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyName) isPartyDescriptorWithPronounciation_PartyIdOrPartyName_Party() {
+}
+
 var File_ddex_v1beta1_party_proto protoreflect.FileDescriptor
 
 var file_ddex_v1beta1_party_proto_rawDesc = []byte{
 	0x0a, 0x18, 0x64, 0x64, 0x65, 0x78, 0x2f, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2f, 0x70,
 	0x61, 0x72, 0x74, 0x79, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x0c, 0x64, 0x64, 0x65, 0x78,
-	0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x22, 0x9b, 0x02, 0x0a, 0x05, 0x50, 0x61, 0x72,
+	0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x22, 0xa6, 0x03, 0x0a, 0x05, 0x50, 0x61, 0x72,
 	0x74, 0x79, 0x12, 0x27, 0x0a, 0x0f, 0x70, 0x61, 0x72, 0x74, 0x79, 0x5f, 0x72, 0x65, 0x66, 0x65,
 	0x72, 0x65, 0x6e, 0x63, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0e, 0x70, 0x61, 0x72,
 	0x74, 0x79, 0x52, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x12, 0x3c, 0x0a, 0x0a, 0x70,
@@ -206,13 +399,39 @@ var file_ddex_v1beta1_party_proto_rawDesc = []byte{
 	0x09, 0x52, 0x08, 0x66, 0x75, 0x6c, 0x6c, 0x4e, 0x61, 0x6d, 0x65, 0x12, 0x2a, 0x0a, 0x11, 0x66,
 	0x75, 0x6c, 0x6c, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x5f, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x65, 0x64,
 	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0f, 0x66, 0x75, 0x6c, 0x6c, 0x4e, 0x61, 0x6d, 0x65,
-	0x49, 0x6e, 0x64, 0x65, 0x78, 0x65, 0x64, 0x1a, 0x1d, 0x0a, 0x07, 0x50, 0x61, 0x72, 0x74, 0x79,
-	0x49, 0x64, 0x12, 0x12, 0x0a, 0x04, 0x64, 0x70, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
-	0x52, 0x04, 0x64, 0x70, 0x69, 0x64, 0x42, 0x37, 0x5a, 0x35, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62,
-	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41, 0x75, 0x64, 0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65,
-	0x63, 0x74, 0x2f, 0x61, 0x75, 0x64, 0x69, 0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61,
-	0x70, 0x69, 0x2f, 0x64, 0x64, 0x65, 0x78, 0x2f, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x62,
-	0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x49, 0x6e, 0x64, 0x65, 0x78, 0x65, 0x64, 0x1a, 0x3d, 0x0a, 0x0d, 0x50, 0x72, 0x6f, 0x70, 0x72,
+	0x69, 0x65, 0x74, 0x61, 0x72, 0x79, 0x49, 0x64, 0x12, 0x1c, 0x0a, 0x09, 0x6e, 0x61, 0x6d, 0x65,
+	0x73, 0x70, 0x61, 0x63, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x6e, 0x61, 0x6d,
+	0x65, 0x73, 0x70, 0x61, 0x63, 0x65, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x02, 0x69, 0x64, 0x1a, 0x69, 0x0a, 0x07, 0x50, 0x61, 0x72, 0x74, 0x79, 0x49,
+	0x64, 0x12, 0x12, 0x0a, 0x04, 0x64, 0x70, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x04, 0x64, 0x70, 0x69, 0x64, 0x12, 0x4a, 0x0a, 0x0f, 0x70, 0x72, 0x6f, 0x70, 0x72, 0x69, 0x65,
+	0x74, 0x61, 0x72, 0x79, 0x5f, 0x69, 0x64, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x21,
+	0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x50, 0x61,
+	0x72, 0x74, 0x79, 0x2e, 0x50, 0x72, 0x6f, 0x70, 0x72, 0x69, 0x65, 0x74, 0x61, 0x72, 0x79, 0x49,
+	0x64, 0x52, 0x0e, 0x70, 0x72, 0x6f, 0x70, 0x72, 0x69, 0x65, 0x74, 0x61, 0x72, 0x79, 0x49, 0x64,
+	0x73, 0x22, 0x9b, 0x02, 0x0a, 0x21, 0x50, 0x61, 0x72, 0x74, 0x79, 0x44, 0x65, 0x73, 0x63, 0x72,
+	0x69, 0x70, 0x74, 0x6f, 0x72, 0x57, 0x69, 0x74, 0x68, 0x50, 0x72, 0x6f, 0x6e, 0x6f, 0x75, 0x6e,
+	0x63, 0x69, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x5c, 0x0a, 0x07, 0x70, 0x61, 0x72, 0x74, 0x69,
+	0x65, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x42, 0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e,
+	0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x50, 0x61, 0x72, 0x74, 0x79, 0x44, 0x65, 0x73,
+	0x63, 0x72, 0x69, 0x70, 0x74, 0x6f, 0x72, 0x57, 0x69, 0x74, 0x68, 0x50, 0x72, 0x6f, 0x6e, 0x6f,
+	0x75, 0x6e, 0x63, 0x69, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x2e, 0x50, 0x61, 0x72, 0x74, 0x79, 0x49,
+	0x64, 0x4f, 0x72, 0x50, 0x61, 0x72, 0x74, 0x79, 0x4e, 0x61, 0x6d, 0x65, 0x52, 0x07, 0x70, 0x61,
+	0x72, 0x74, 0x69, 0x65, 0x73, 0x1a, 0x97, 0x01, 0x0a, 0x12, 0x50, 0x61, 0x72, 0x74, 0x79, 0x49,
+	0x64, 0x4f, 0x72, 0x50, 0x61, 0x72, 0x74, 0x79, 0x4e, 0x61, 0x6d, 0x65, 0x12, 0x38, 0x0a, 0x08,
+	0x70, 0x61, 0x72, 0x74, 0x79, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1b,
+	0x2e, 0x64, 0x64, 0x65, 0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x50, 0x61,
+	0x72, 0x74, 0x79, 0x2e, 0x50, 0x61, 0x72, 0x74, 0x79, 0x49, 0x64, 0x48, 0x00, 0x52, 0x07, 0x70,
+	0x61, 0x72, 0x74, 0x79, 0x49, 0x64, 0x12, 0x3e, 0x0a, 0x0a, 0x70, 0x61, 0x72, 0x74, 0x79, 0x5f,
+	0x6e, 0x61, 0x6d, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1d, 0x2e, 0x64, 0x64, 0x65,
+	0x78, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x50, 0x61, 0x72, 0x74, 0x79, 0x2e,
+	0x50, 0x61, 0x72, 0x74, 0x79, 0x4e, 0x61, 0x6d, 0x65, 0x48, 0x00, 0x52, 0x09, 0x70, 0x61, 0x72,
+	0x74, 0x79, 0x4e, 0x61, 0x6d, 0x65, 0x42, 0x07, 0x0a, 0x05, 0x70, 0x61, 0x72, 0x74, 0x79, 0x42,
+	0x37, 0x5a, 0x35, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41, 0x75,
+	0x64, 0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x2f, 0x61, 0x75, 0x64, 0x69,
+	0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x64, 0x64, 0x65, 0x78,
+	0x2f, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -227,20 +446,27 @@ func file_ddex_v1beta1_party_proto_rawDescGZIP() []byte {
 	return file_ddex_v1beta1_party_proto_rawDescData
 }
 
-var file_ddex_v1beta1_party_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_ddex_v1beta1_party_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_ddex_v1beta1_party_proto_goTypes = []interface{}{
-	(*Party)(nil),           // 0: ddex.v1beta1.Party
-	(*Party_PartyName)(nil), // 1: ddex.v1beta1.Party.PartyName
-	(*Party_PartyId)(nil),   // 2: ddex.v1beta1.Party.PartyId
+	(*Party)(nil), // 0: ddex.v1beta1.Party
+	(*PartyDescriptorWithPronounciation)(nil),                    // 1: ddex.v1beta1.PartyDescriptorWithPronounciation
+	(*Party_PartyName)(nil),                                      // 2: ddex.v1beta1.Party.PartyName
+	(*Party_ProprietaryId)(nil),                                  // 3: ddex.v1beta1.Party.ProprietaryId
+	(*Party_PartyId)(nil),                                        // 4: ddex.v1beta1.Party.PartyId
+	(*PartyDescriptorWithPronounciation_PartyIdOrPartyName)(nil), // 5: ddex.v1beta1.PartyDescriptorWithPronounciation.PartyIdOrPartyName
 }
 var file_ddex_v1beta1_party_proto_depIdxs = []int32{
-	1, // 0: ddex.v1beta1.Party.party_name:type_name -> ddex.v1beta1.Party.PartyName
-	2, // 1: ddex.v1beta1.Party.party_id:type_name -> ddex.v1beta1.Party.PartyId
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	2, // 0: ddex.v1beta1.Party.party_name:type_name -> ddex.v1beta1.Party.PartyName
+	4, // 1: ddex.v1beta1.Party.party_id:type_name -> ddex.v1beta1.Party.PartyId
+	5, // 2: ddex.v1beta1.PartyDescriptorWithPronounciation.parties:type_name -> ddex.v1beta1.PartyDescriptorWithPronounciation.PartyIdOrPartyName
+	3, // 3: ddex.v1beta1.Party.PartyId.proprietary_ids:type_name -> ddex.v1beta1.Party.ProprietaryId
+	4, // 4: ddex.v1beta1.PartyDescriptorWithPronounciation.PartyIdOrPartyName.party_id:type_name -> ddex.v1beta1.Party.PartyId
+	2, // 5: ddex.v1beta1.PartyDescriptorWithPronounciation.PartyIdOrPartyName.party_name:type_name -> ddex.v1beta1.Party.PartyName
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_ddex_v1beta1_party_proto_init() }
@@ -262,7 +488,7 @@ func file_ddex_v1beta1_party_proto_init() {
 			}
 		}
 		file_ddex_v1beta1_party_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Party_PartyName); i {
+			switch v := v.(*PartyDescriptorWithPronounciation); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -274,6 +500,30 @@ func file_ddex_v1beta1_party_proto_init() {
 			}
 		}
 		file_ddex_v1beta1_party_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Party_PartyName); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ddex_v1beta1_party_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Party_ProprietaryId); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ddex_v1beta1_party_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Party_PartyId); i {
 			case 0:
 				return &v.state
@@ -285,6 +535,22 @@ func file_ddex_v1beta1_party_proto_init() {
 				return nil
 			}
 		}
+		file_ddex_v1beta1_party_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*PartyDescriptorWithPronounciation_PartyIdOrPartyName); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+	}
+	file_ddex_v1beta1_party_proto_msgTypes[5].OneofWrappers = []interface{}{
+		(*PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyId)(nil),
+		(*PartyDescriptorWithPronounciation_PartyIdOrPartyName_PartyName)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -292,7 +558,7 @@ func file_ddex_v1beta1_party_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_ddex_v1beta1_party_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
