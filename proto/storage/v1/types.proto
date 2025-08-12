@@ -123,3 +123,17 @@ message GetStreamURLRequest {
 message GetStreamURLResponse {
   repeated string urls = 1;
 }
+
+message GetIPDataRequest {
+  string ip = 1;
+}
+
+message GetIPDataResponse {
+  string country = 1;
+  string country_code = 2;
+  string city = 3;
+  string region = 4;
+  string region_code = 5;
+  float latitude = 6;
+  float longitude = 7;
+}

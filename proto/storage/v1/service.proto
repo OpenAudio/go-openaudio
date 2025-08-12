@@ -13,4 +13,5 @@ service StorageService {
   rpc GetUpload(GetUploadRequest) returns (GetUploadResponse) {}
   rpc StreamTrack(StreamTrackRequest) returns (stream StreamTrackResponse) {}
   rpc GetStreamURL(GetStreamURLRequest) returns (GetStreamURLResponse) {}
+  rpc GetIPData(GetIPDataRequest) returns (GetIPDataResponse) {}
 }

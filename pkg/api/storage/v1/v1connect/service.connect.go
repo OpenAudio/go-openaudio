@@ -50,6 +50,9 @@ const (
 	// StorageServiceGetStreamURLProcedure is the fully-qualified name of the StorageService's
 	// GetStreamURL RPC.
 	StorageServiceGetStreamURLProcedure = "/storage.v1.StorageService/GetStreamURL"
+	// StorageServiceGetIPDataProcedure is the fully-qualified name of the StorageService's GetIPData
+	// RPC.
+	StorageServiceGetIPDataProcedure = "/storage.v1.StorageService/GetIPData"
 )
 
 // StorageServiceClient is a client for the storage.v1.StorageService service.
@@ -60,6 +63,7 @@ type StorageServiceClient interface {
 	GetUpload(context.Context, *connect.Request[v1.GetUploadRequest]) (*connect.Response[v1.GetUploadResponse], error)
 	StreamTrack(context.Context, *connect.Request[v1.StreamTrackRequest]) (*connect.ServerStreamForClient[v1.StreamTrackResponse], error)
 	GetStreamURL(context.Context, *connect.Request[v1.GetStreamURLRequest]) (*connect.Response[v1.GetStreamURLResponse], error)
+	GetIPData(context.Context, *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error)
 }
 
 // NewStorageServiceClient constructs a client for the storage.v1.StorageService service. By
@@ -109,6 +113,12 @@ func NewStorageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(storageServiceMethods.ByName("GetStreamURL")),
 			connect.WithClientOptions(opts...),
 		),
+		getIPData: connect.NewClient[v1.GetIPDataRequest, v1.GetIPDataResponse](
+			httpClient,
+			baseURL+StorageServiceGetIPDataProcedure,
+			connect.WithSchema(storageServiceMethods.ByName("GetIPData")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -120,6 +130,7 @@ type storageServiceClient struct {
 	getUpload    *connect.Client[v1.GetUploadRequest, v1.GetUploadResponse]
 	streamTrack  *connect.Client[v1.StreamTrackRequest, v1.StreamTrackResponse]
 	getStreamURL *connect.Client[v1.GetStreamURLRequest, v1.GetStreamURLResponse]
+	getIPData    *connect.Client[v1.GetIPDataRequest, v1.GetIPDataResponse]
 }
 
 // Ping calls storage.v1.StorageService.Ping.
@@ -152,6 +163,11 @@ func (c *storageServiceClient) GetStreamURL(ctx context.Context, req *connect.Re
 	return c.getStreamURL.CallUnary(ctx, req)
 }
 
+// GetIPData calls storage.v1.StorageService.GetIPData.
+func (c *storageServiceClient) GetIPData(ctx context.Context, req *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error) {
+	return c.getIPData.CallUnary(ctx, req)
+}
+
 // StorageServiceHandler is an implementation of the storage.v1.StorageService service.
 type StorageServiceHandler interface {
 	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error)
@@ -160,6 +176,7 @@ type StorageServiceHandler interface {
 	GetUpload(context.Context, *connect.Request[v1.GetUploadRequest]) (*connect.Response[v1.GetUploadResponse], error)
 	StreamTrack(context.Context, *connect.Request[v1.StreamTrackRequest], *connect.ServerStream[v1.StreamTrackResponse]) error
 	GetStreamURL(context.Context, *connect.Request[v1.GetStreamURLRequest]) (*connect.Response[v1.GetStreamURLResponse], error)
+	GetIPData(context.Context, *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error)
 }
 
 // NewStorageServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -205,6 +222,12 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 		connect.WithSchema(storageServiceMethods.ByName("GetStreamURL")),
 		connect.WithHandlerOptions(opts...),
 	)
+	storageServiceGetIPDataHandler := connect.NewUnaryHandler(
+		StorageServiceGetIPDataProcedure,
+		svc.GetIPData,
+		connect.WithSchema(storageServiceMethods.ByName("GetIPData")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/storage.v1.StorageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case StorageServicePingProcedure:
@@ -219,6 +242,8 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 			storageServiceStreamTrackHandler.ServeHTTP(w, r)
 		case StorageServiceGetStreamURLProcedure:
 			storageServiceGetStreamURLHandler.ServeHTTP(w, r)
+		case StorageServiceGetIPDataProcedure:
+			storageServiceGetIPDataHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -250,4 +275,8 @@ func (UnimplementedStorageServiceHandler) StreamTrack(context.Context, *connect.
 
 func (UnimplementedStorageServiceHandler) GetStreamURL(context.Context, *connect.Request[v1.GetStreamURLRequest]) (*connect.Response[v1.GetStreamURLResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("storage.v1.StorageService.GetStreamURL is not implemented"))
+}
+
+func (UnimplementedStorageServiceHandler) GetIPData(context.Context, *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("storage.v1.StorageService.GetIPData is not implemented"))
 }

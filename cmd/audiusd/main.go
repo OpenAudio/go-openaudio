@@ -397,6 +397,8 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreSe
 	rpcGroup.POST(ethPath+"*", echo.WrapHandler(ethHandler))
 
 	// register GET routes
+
+	// core GET routes
 	rpcGroup.GET(corev1connect.CoreServiceGetStatusProcedure, connectGET(coreService.GetStatus))
 	rpcGroup.GET(corev1connect.CoreServiceGetNodeInfoProcedure, connectGET(coreService.GetNodeInfo))
 	rpcGroup.GET(corev1connect.CoreServiceGetBlockProcedure, connectGET(coreService.GetBlock))
@@ -404,6 +406,9 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreSe
 	rpcGroup.GET(corev1connect.CoreServiceGetStoredSnapshotsProcedure, connectGET(coreService.GetStoredSnapshots))
 	rpcGroup.GET(corev1connect.CoreServiceGetRewardAttestationProcedure, connectGET(coreService.GetRewardAttestation))
 	rpcGroup.GET(corev1connect.CoreServiceGetRewardsProcedure, connectGET(coreService.GetRewards))
+
+	// storage GET routes
+	rpcGroup.GET(storagev1connect.StorageServiceGetIPDataProcedure, connectGET(storageService.GetIPData))
 
 	if consoleEnabled {
 		// start indexing immediately

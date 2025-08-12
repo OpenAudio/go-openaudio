@@ -215,3 +215,27 @@ func (s *StorageService) GetStreamURL(ctx context.Context, req *connect.Request[
 
 	return connect.NewResponse(&v1.GetStreamURLResponse{Urls: urls}), nil
 }
+
+// GetIPData implements v1connect.StorageServiceHandler.
+func (s *StorageService) GetIPData(ctx context.Context, req *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error) {
+	ip := req.Msg.Ip
+	if ip == "" {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("must send IP"))
+	}
+
+	ipData, err := s.mediorum.getGeoFromIP(ip)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	res := &v1.GetIPDataResponse{
+		Country:     ipData.Country,
+		CountryCode: ipData.CountryCode,
+		Region:      ipData.Region,
+		RegionCode:  ipData.RegionCode,
+		City:        ipData.City,
+		Latitude:    float32(ipData.Latitude),
+		Longitude:   float32(ipData.Longitude),
+	}
+	return connect.NewResponse(res), nil
+}
