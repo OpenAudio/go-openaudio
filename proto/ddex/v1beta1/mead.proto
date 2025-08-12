@@ -28,7 +28,7 @@ message MeadMessage {
     // optional information fields
     optional Mood mood = 4;
     optional BeatsPerMinute beats_per_minute = 5;
-    optional Key key = 6;
+    optional Harmony harmony = 6;
   }
 
   message ResourceContributor {
@@ -52,7 +52,7 @@ message MeadMessage {
     // optional information fields
     optional Mood mood = 2;
     optional BeatsPerMinute beats_per_minute = 3;
-    optional Key key = 4;
+    optional Harmony harmony = 4;
   }
 
   message Mood {
@@ -64,8 +64,10 @@ message MeadMessage {
     float value = 1;
   }
 
-  message Key {
-    string value = 1;
+  message Harmony {
+    string root_chord_note = 1;
+    string root_chord_quality = 2;
+    string mode = 3;
   }
 
   ddex.v1beta1.MessageHeader message_header = 1;

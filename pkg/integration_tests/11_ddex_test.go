@@ -929,8 +929,10 @@ func createFakeBandMEADMessage() *ddexv1beta1.MeadMessage {
 					BeatsPerMinute: &ddexv1beta1.MeadMessage_BeatsPerMinute{
 						Value: 128.5,
 					},
-					Key: &ddexv1beta1.MeadMessage_Key{
-						Value: "A Minor",
+					Harmony: &ddexv1beta1.MeadMessage_Harmony{
+						RootChordNote:    "D",
+						RootChordQuality: "minor",
+						Mode:             "dorian",
 					},
 				},
 				ResourceContributor: []*ddexv1beta1.MeadMessage_ResourceContributor{
@@ -968,8 +970,10 @@ func createFakeBandMEADMessage() *ddexv1beta1.MeadMessage {
 					BeatsPerMinute: &ddexv1beta1.MeadMessage_BeatsPerMinute{
 						Value: 140.0,
 					},
-					Key: &ddexv1beta1.MeadMessage_Key{
-						Value: "E Major",
+					Harmony: &ddexv1beta1.MeadMessage_Harmony{
+						RootChordNote:    "F",
+						RootChordQuality: "minor",
+						Mode:             "aeolian",
 					},
 				},
 			},
@@ -1000,8 +1004,10 @@ func createFakeBandMEADMessage() *ddexv1beta1.MeadMessage {
 				BeatsPerMinute: &ddexv1beta1.MeadMessage_BeatsPerMinute{
 					Value: 132.0, // Average BPM across the album
 				},
-				Key: &ddexv1beta1.MeadMessage_Key{
-					Value: "Various Keys",
+				Harmony: &ddexv1beta1.MeadMessage_Harmony{
+					RootChordNote:    "C",
+					RootChordQuality: "major",
+					Mode:             "ionian",
 				},
 			},
 		},
