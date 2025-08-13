@@ -407,24 +407,10 @@ func (s *Server) Commit(ctx context.Context, commit *abcitypes.CommitRequest) (*
 	state.finalizedTxs = []string{}
 
 	resp := &abcitypes.CommitResponse{}
-	if !s.config.Archive {
-		latestBlock, err := s.db.GetLatestBlock(ctx)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return resp, nil
-			}
-			s.logger.Errorf("could not get latest block, can't prune: %v", err)
-			return resp, nil
-		}
 
-		latestBlockHeight := latestBlock.Height
-		lastRetainHeight := state.lastRetainHeight
-		retainHeight := s.config.RetainHeight
-
-		if latestBlockHeight-retainHeight > lastRetainHeight {
-			state.lastRetainHeight = latestBlockHeight
-			resp.RetainHeight = state.lastRetainHeight
-		}
+	if h := s.calculateLowestRetainHeight(ctx); h > 0 {
+		state.lastRetainHeight = h
+		resp.RetainHeight = h
 	}
 
 	return resp, nil

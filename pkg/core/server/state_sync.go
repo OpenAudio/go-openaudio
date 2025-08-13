@@ -614,18 +614,29 @@ func (s *Server) cacheSnapshots() error {
 		return fmt.Errorf("error getting stored snapshots: %w", err)
 	}
 
-	for _, snapshot := range snapshots {
-		upsertCache(s.cache.snapshotInfo, SnapshotInfoKey, func(snapshotInfo *corev1.GetStatusResponse_SnapshotInfo) *corev1.GetStatusResponse_SnapshotInfo {
-			snapshotInfo.Enabled = s.config.StateSync.ServeSnapshots
-			snapshotInfo.Snapshots = append(snapshotInfo.Snapshots, &corev1.SnapshotMetadata{
+	return upsertCache(s.cache.snapshotInfo, SnapshotInfoKey, func(snapshotInfo *corev1.GetStatusResponse_SnapshotInfo) *corev1.GetStatusResponse_SnapshotInfo {
+		snapshotInfo.Enabled = s.config.StateSync.ServeSnapshots
+
+		newSnapshots := make([]*corev1.SnapshotMetadata, 0, len(snapshots))
+		for _, snapshot := range snapshots {
+			newSnapshots = append(newSnapshots, &corev1.SnapshotMetadata{
 				Height:     int64(snapshot.Height),
 				Hash:       hex.EncodeToString(snapshot.Hash),
 				ChunkCount: int64(snapshot.Chunks),
 				ChainId:    s.config.GenesisFile.ChainID,
 			})
-			return snapshotInfo
-		})
-	}
+		}
 
-	return nil
+		// Sort DESC so index 0 is most recent; last element is oldest.
+		sort.Slice(newSnapshots, func(i, j int) bool {
+			if newSnapshots[i].Height == newSnapshots[j].Height {
+				// deterministic tiebreaker (optional)
+				return newSnapshots[i].Hash > newSnapshots[j].Hash
+			}
+			return newSnapshots[i].Height > newSnapshots[j].Height
+		})
+
+		snapshotInfo.Snapshots = newSnapshots
+		return snapshotInfo
+	})
 }
