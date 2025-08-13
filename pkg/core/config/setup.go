@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"crypto/sha256"
 	"fmt"
 	"math/big"
@@ -9,15 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config/genesis"
-	"github.com/AudiusProject/audiusd/pkg/sdk"
 	cconfig "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
-	"github.com/cometbft/cometbft/rpc/client/http"
 )
 
 const PrivilegedServiceSocket = "/tmp/cometbft.privileged.sock"
@@ -138,23 +133,6 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 	cometConfig.Mempool.MaxTxBytes = 307200
 	cometConfig.Mempool.Size = 30000
 
-	if envConfig.StateSync.Enable {
-		cometConfig.StateSync.Enable = true
-		rpcServers := envConfig.StateSync.RPCServers
-		if len(rpcServers) == 0 {
-			return nil, nil, fmt.Errorf("no rpc servers provided for state sync")
-		}
-		logger.Info("state sync enabled, using rpc servers", "rpcServers", rpcServers)
-		cometConfig.StateSync.RPCServers = rpcServers
-		latestBlockHeight, latestBlockHash, err := stateSyncLatestBlock(logger, rpcServers)
-		if err != nil {
-			return nil, nil, fmt.Errorf("getting latest block for state sync: %v", err)
-		}
-		cometConfig.StateSync.TrustHeight = latestBlockHeight
-		cometConfig.StateSync.TrustHash = latestBlockHash
-		cometConfig.StateSync.ChunkFetchers = envConfig.StateSync.ChunkFetchers
-	}
-
 	// consensus
 	// don't recheck mempool transactions, rely on CheckTx and Propose step
 	cometConfig.Mempool.Recheck = false
@@ -241,40 +219,4 @@ func moduloPersistentPeers(nodeAddress string, persistentPeers string, groupSize
 	}
 
 	return strings.Join(assignedPeers, ",")
-}
-
-func stateSyncLatestBlock(logger *common.Logger, rpcServers []string) (trustHeight int64, trustHash string, err error) {
-	for _, rpcServer := range rpcServers {
-		audsRpc := strings.TrimSuffix(rpcServer, "/core/crpc")
-		auds := sdk.NewAudiusdSDK(audsRpc)
-		snapshots, err := auds.Core.GetStoredSnapshots(context.Background(), connect.NewRequest(&v1.GetStoredSnapshotsRequest{}))
-		if err != nil {
-			logger.Error("error getting stored snapshots", "rpcServer", rpcServer, "err", err)
-			continue
-		}
-
-		// get last snapshot in list, this is the latest snapshot
-		lastSnapshot := snapshots.Msg.Snapshots[len(snapshots.Msg.Snapshots)-1]
-		trustBuffer := 10 // number of blocks to step back
-		safeHeight := lastSnapshot.Height - int64(trustBuffer)
-
-		client, err := http.New(rpcServer)
-		if err != nil {
-			logger.Error("error creating rpc client", "rpcServer", rpcServer, "err", err)
-			continue
-		}
-
-		block, err := client.Block(context.Background(), &safeHeight)
-		if err != nil {
-			logger.Error("error getting latest block", "rpcServer", rpcServer, "err", err)
-			continue
-		}
-
-		trustHeight = block.Block.Height
-		trustHash = block.Block.Hash().String()
-
-		return trustHeight, trustHash, nil
-	}
-
-	return 0, "", fmt.Errorf("no usable block found for state sync")
 }

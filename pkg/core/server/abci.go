@@ -73,6 +73,29 @@ func (s *Server) startABCI(ctx context.Context) error {
 		return fmt.Errorf("failed to parse log level: %v", err)
 	}
 
+	// query for existing blocks
+	alreadySynced := true
+	_, err = s.db.GetLatestBlock(context.Background())
+	if errors.Is(err, pgx.ErrNoRows) {
+		alreadySynced = false
+	} else if err != nil {
+		return fmt.Errorf("db not ready for ABCI: %v", err)
+	}
+
+	if s.config.StateSync.Enable && !alreadySynced && len(s.config.StateSync.RPCServers) > 1 {
+		cometConfig.StateSync.Enable = true
+		rpcServers := s.config.StateSync.RPCServers
+		s.logger.Info("state sync enabled, using rpc servers", "rpcServers", rpcServers)
+		cometConfig.StateSync.RPCServers = rpcServers
+		latestBlockHeight, latestBlockHash, err := s.stateSyncLatestBlock(rpcServers)
+		if err != nil {
+			return fmt.Errorf("getting latest block for state sync: %v", err)
+		}
+		cometConfig.StateSync.TrustHeight = latestBlockHeight
+		cometConfig.StateSync.TrustHash = latestBlockHash
+		cometConfig.StateSync.ChunkFetchers = s.config.StateSync.ChunkFetchers
+	}
+
 	node, err := nm.NewNode(
 		ctx,
 		cometConfig,

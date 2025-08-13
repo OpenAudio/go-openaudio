@@ -15,9 +15,12 @@ import (
 	"sort"
 	"strings"
 
+	"connectrpc.com/connect"
 	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
+	"github.com/AudiusProject/audiusd/pkg/sdk"
 	v1 "github.com/cometbft/cometbft/api/cometbft/abci/v1"
+	"github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/cometbft/cometbft/types"
 )
 
@@ -639,4 +642,40 @@ func (s *Server) cacheSnapshots() error {
 		snapshotInfo.Snapshots = newSnapshots
 		return snapshotInfo
 	})
+}
+
+func (s *Server) stateSyncLatestBlock(rpcServers []string) (trustHeight int64, trustHash string, err error) {
+	for _, rpcServer := range rpcServers {
+		audsRpc := strings.TrimSuffix(rpcServer, "/core/crpc")
+		auds := sdk.NewAudiusdSDK(audsRpc)
+		snapshots, err := auds.Core.GetStoredSnapshots(context.Background(), connect.NewRequest(&corev1.GetStoredSnapshotsRequest{}))
+		if err != nil {
+			s.logger.Error("error getting stored snapshots", "rpcServer", rpcServer, "err", err)
+			continue
+		}
+
+		// get last snapshot in list, this is the latest snapshot
+		lastSnapshot := snapshots.Msg.Snapshots[len(snapshots.Msg.Snapshots)-1]
+		trustBuffer := 10 // number of blocks to step back
+		safeHeight := lastSnapshot.Height - int64(trustBuffer)
+
+		client, err := http.New(rpcServer)
+		if err != nil {
+			s.logger.Error("error creating rpc client", "rpcServer", rpcServer, "err", err)
+			continue
+		}
+
+		block, err := client.Block(context.Background(), &safeHeight)
+		if err != nil {
+			s.logger.Error("error getting latest block", "rpcServer", rpcServer, "err", err)
+			continue
+		}
+
+		trustHeight = block.Block.Height
+		trustHash = block.Block.Hash().String()
+
+		return trustHeight, trustHash, nil
+	}
+
+	return 0, "", fmt.Errorf("no usable block found for state sync")
 }
