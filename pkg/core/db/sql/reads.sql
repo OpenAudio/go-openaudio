@@ -62,7 +62,7 @@ with recent_rollups as (
     select *
     from sla_rollups
     order by time desc
-    limit 30
+    limit $1 
 )
 select rr.id,
     rr.tx_hash,
@@ -73,7 +73,7 @@ select rr.id,
     nr.blocks_proposed
 from recent_rollups rr
     left join sla_node_reports nr on rr.id = nr.sla_rollup_id
-    and nr.address = $1
+    and nr.address = $2
 order by rr.time;
 
 -- name: GetRecentRollupsForAllNodes :many

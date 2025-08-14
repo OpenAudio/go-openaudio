@@ -184,13 +184,14 @@ func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *con
 		return nil, fmt.Errorf("could not format eth block '%s' for node '%s'", node.EthBlock, node.Endpoint)
 	}
 
-	if registered, err := c.core.IsNodeRegisteredOnEthereum(
+	registered, err := c.core.IsNodeRegisteredOnEthereum(
 		ctx,
 		node.Endpoint,
 		node.EthAddress,
 		ethBlock.Int64(),
-	); registered || err != nil {
-		c.core.logger.Error("Could not attest to node eth deregistration: node is still registered",
+	)
+	if err != nil {
+		c.core.logger.Error("Could not attest to node eth deregistration: error checking eth registration status",
 			"cometAddress",
 			dereg.CometAddress,
 			"ethAddress",
@@ -200,8 +201,37 @@ func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *con
 			"error",
 			err,
 		)
-		return nil, errors.New("node is still registered on ethereum")
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not attest to node deregistration"))
 	}
+
+	shouldPurge, err := c.core.ShouldPurgeValidatorForUnderperformance(ctx, dereg.CometAddress)
+	if err != nil {
+		c.core.logger.Error("Could not attest to node eth deregistration: could not check uptime SLA history",
+			"cometAddress",
+			dereg.CometAddress,
+			"ethAddress",
+			node.EthAddress,
+			"endpoint",
+			node.Endpoint,
+			"error",
+			err,
+		)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not attest to node deregistration"))
+	}
+
+	if registered && !shouldPurge {
+		c.core.logger.Error("Could not attest to node eth deregistration: node is still registered and not underperforming",
+			"cometAddress",
+			dereg.CometAddress,
+			"ethAddress",
+			node.EthAddress,
+			"endpoint",
+			node.Endpoint,
+		)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not attest to node deregistration"))
+	}
+
+	c.core.logger.Infof("Attesting to deregister %s because validator is down", dereg.CometAddress)
 
 	deregBytes, err := proto.Marshal(dereg)
 	if err != nil {
@@ -243,7 +273,7 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 		reg.EthBlock,
 	); !registered || err != nil {
 		c.core.logger.Error(
-			"Could not attest to node eth registration",
+			"Could not attest to node registration, failed to find endpoint on ethereum",
 			"delegate",
 			reg.DelegateWallet,
 			"endpoint",
@@ -253,7 +283,22 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 			"error",
 			err,
 		)
-		return nil, errors.New("node is not registered on ethereum")
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("node is not registered on ethereum"))
+	}
+
+	if shouldPurge, err := c.core.ShouldPurgeValidatorForUnderperformance(ctx, reg.CometAddress); shouldPurge || err != nil {
+		c.core.logger.Error(
+			"Could not attest to node eth registration, validator should stay purged",
+			"delegate",
+			reg.DelegateWallet,
+			"endpoint",
+			reg.Endpoint,
+			"eth block",
+			reg.EthBlock,
+			"error",
+			err,
+		)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("node is temporarily blacklisted"))
 	}
 
 	regBytes, err := proto.Marshal(reg)

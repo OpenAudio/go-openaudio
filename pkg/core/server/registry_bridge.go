@@ -115,7 +115,7 @@ func (s *Server) listenForEthContractEvents(ctx context.Context) error {
 			rand.Seed(time.Now().UnixNano())
 			randInterval := rand.Intn(10)
 			time.Sleep(time.Duration(randInterval) * time.Second)
-			s.deregisterMissingNode(ctx, dereg.DelegateWallet)
+			s.deregisterValidator(ctx, dereg.DelegateWallet)
 		}
 	}
 	return nil
@@ -126,7 +126,7 @@ func (s *Server) startValidatorWarden(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			allValidatorEthAddresses, err := s.db.GetAllEthAddressesOfRegisteredNodes(ctx)
+			allValidators, err := s.db.GetAllRegisteredNodes(ctx)
 			if err != nil {
 				s.logger.Error("could not get all validator eth addresses", "error", err)
 				continue
@@ -149,9 +149,21 @@ func (s *Server) startValidatorWarden(ctx context.Context) error {
 				allEthAddrsMap[endpoint.DelegateWallet] = true
 			}
 
-			for _, validatorEthAddress := range allValidatorEthAddresses {
-				if _, ok := allEthAddrsMap[validatorEthAddress]; !ok {
-					s.deregisterMissingNode(ctx, validatorEthAddress)
+			// deregister any missing validators
+			for _, validator := range allValidators {
+				if _, ok := allEthAddrsMap[validator.EthAddress]; !ok {
+					s.deregisterValidator(ctx, validator.EthAddress)
+				}
+			}
+
+			// deregister any down validators
+			for _, validator := range allValidators {
+				if shouldPurge, err := s.ShouldPurgeValidatorForUnderperformance(ctx, validator.CometAddress); err == nil && shouldPurge {
+					s.logger.Infof("attempting to deregister validator %s", validator.CometAddress)
+					s.deregisterValidator(ctx, validator.EthAddress)
+					break // killswitch: wait until next run to purge the next down validator
+				} else if err != nil {
+					s.logger.Errorf("error checking if validator should be purged: %v", err)
 				}
 			}
 		case <-ctx.Done():
@@ -424,7 +436,7 @@ func (s *Server) registerSelfOnEth(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) deregisterMissingNode(ctx context.Context, ethAddress string) {
+func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 	node, err := s.db.GetRegisteredNodeByEthAddress(ctx, ethAddress)
 	if err != nil {
 		s.logger.Error("could not deregister missing node", "address", ethAddress, "error", err)

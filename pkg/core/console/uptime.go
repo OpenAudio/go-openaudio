@@ -14,7 +14,10 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const validatorReportHistoryLength = 5
+const (
+	activeValidatorReportHistoryLength = 30
+	validatorReportHistoryLength       = 5
+)
 
 func (cs *Console) uptimeFragment(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -60,7 +63,13 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 	myUptime.IsValidator = isValidator
 
 	// Get history for this node
-	recentRollups, err := cs.db.GetRecentRollupsForNode(ctx, cs.state.cometAddress)
+	recentRollups, err := cs.db.GetRecentRollupsForNode(
+		ctx,
+		db.GetRecentRollupsForNodeParams{
+			Limit:   activeValidatorReportHistoryLength,
+			Address: cs.state.cometAddress,
+		},
+	)
 	if err != nil && err != pgx.ErrNoRows {
 		cs.logger.Error("Failed to get recent rollups from db", "error", err)
 		return err

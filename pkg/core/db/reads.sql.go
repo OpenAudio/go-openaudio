@@ -1254,7 +1254,7 @@ with recent_rollups as (
     select id, tx_hash, block_start, block_end, time
     from sla_rollups
     order by time desc
-    limit 30
+    limit $1 
 )
 select rr.id,
     rr.tx_hash,
@@ -1265,9 +1265,14 @@ select rr.id,
     nr.blocks_proposed
 from recent_rollups rr
     left join sla_node_reports nr on rr.id = nr.sla_rollup_id
-    and nr.address = $1
+    and nr.address = $2
 order by rr.time
 `
+
+type GetRecentRollupsForNodeParams struct {
+	Limit   int32
+	Address string
+}
 
 type GetRecentRollupsForNodeRow struct {
 	ID             int32
@@ -1279,8 +1284,8 @@ type GetRecentRollupsForNodeRow struct {
 	BlocksProposed pgtype.Int4
 }
 
-func (q *Queries) GetRecentRollupsForNode(ctx context.Context, address string) ([]GetRecentRollupsForNodeRow, error) {
-	rows, err := q.db.Query(ctx, getRecentRollupsForNode, address)
+func (q *Queries) GetRecentRollupsForNode(ctx context.Context, arg GetRecentRollupsForNodeParams) ([]GetRecentRollupsForNodeRow, error) {
+	rows, err := q.db.Query(ctx, getRecentRollupsForNode, arg.Limit, arg.Address)
 	if err != nil {
 		return nil, err
 	}

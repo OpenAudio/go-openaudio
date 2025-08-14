@@ -15,6 +15,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+const (
+	validatorPurgeSLAInterval   int32 = 8
+	validatorPurgeMinValidators       = 50
+)
+
 func (s *Server) createRollupTx(ctx context.Context, ts time.Time, height int64) ([]byte, error) {
 	rollup, err := s.createRollup(ctx, ts, height)
 	if err != nil {
@@ -171,4 +176,49 @@ func (s *Server) finalizeSlaRollup(ctx context.Context, event *v1.SignedTransact
 		}
 	}
 	return rollup, nil
+}
+
+func (s *Server) ShouldPurgeValidatorForUnderperformance(ctx context.Context, validatorAddress string) (bool, error) {
+	totalValidators, err := s.db.TotalValidators(ctx)
+	if err != nil {
+		return false, fmt.Errorf("could not get total validators: %v", err)
+	}
+
+	// killswitch to avoid purging too many validators
+	if totalValidators <= validatorPurgeMinValidators {
+		return false, nil
+	}
+
+	rollups, err := s.db.GetRecentRollupsForNode(
+		ctx,
+		db.GetRecentRollupsForNodeParams{
+			Limit:   validatorPurgeSLAInterval,
+			Address: validatorAddress,
+		},
+	)
+	if err != nil {
+		return false, fmt.Errorf("could not get recent rollups for node %s: %v", validatorAddress, err)
+	}
+
+	// if we have no SLA history for this validator, it hasn't been registered on comet during this interval
+	noHistory := true
+	for _, rollup := range rollups {
+		if rollup.Address.Valid {
+			noHistory = false
+			break
+		}
+	}
+	if noHistory {
+		return false, nil
+	}
+
+	// if the validator has proposed at least one block during the interval, don't purge
+	downTooLong := true
+	for _, rollup := range rollups {
+		if rollup.BlocksProposed.Int32 > 0 {
+			downTooLong = false
+			break
+		}
+	}
+	return downTooLong, nil
 }
