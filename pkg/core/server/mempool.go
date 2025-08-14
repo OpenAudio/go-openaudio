@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
@@ -232,4 +233,30 @@ func (s *Server) getMempl(c echo.Context) error {
 	}
 
 	return c.JSONPretty(200, result, "  ")
+}
+
+func (s *Server) startMempoolCache(ctx context.Context) error {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		func(s *Server) {
+			mempl := s.mempl
+			mempl.mutex.Lock()
+
+			memplCount := mempl.deque.Len()
+			txCount := int64(memplCount)
+			maxTxCount := int64(mempl.maxMempoolTransactions)
+			mempl.mutex.Unlock()
+
+			upsertCache(s.cache.mempoolInfo, MempoolInfoKey, func(mempoolInfo *v1.GetStatusResponse_MempoolInfo) *v1.GetStatusResponse_MempoolInfo {
+				return &v1.GetStatusResponse_MempoolInfo{
+					TxCount:    txCount,
+					MaxTxCount: maxTxCount,
+				}
+			})
+		}(s)
+	}
+
+	return nil
 }

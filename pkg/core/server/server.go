@@ -124,6 +124,7 @@ func (s *Server) Start() error {
 	s.lc.AddManagedRoutine("data companion", s.startDataCompanion)
 	s.lc.AddManagedRoutine("log sync", s.syncLogs)
 	s.lc.AddManagedRoutine("state sync", s.startStateSync)
+	s.lc.AddManagedRoutine("mempool cache", s.startMempoolCache)
 
 	s.z.Info("routines started")
 
