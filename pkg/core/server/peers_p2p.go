@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,54 +41,52 @@ func (s *Server) refreshP2PPeers(ctx context.Context) error {
 	}
 
 	peers := nodeInfo.Peers
-	existingPeers := safemap.New[string, struct{}]()
+	existingPeers := safemap.New[string, CometBFTAddress]()
+	otherPeers := safemap.New[string, CometBFTAddress]()
 
+	// gather all listen addrs from peers (ip:26656 format) into set
 	for _, peer := range peers {
-		existingPeers.Set(string(peer.NodeInfo.DefaultNodeID), struct{}{})
+		existingPeers.Set(peer.NodeInfo.ListenAddr, CometBFTAddress(peer.NodeInfo.ID()))
 	}
-
-	// collect nodeid -> ip map from cometrpc peers
-	peerConnections := safemap.New[string, struct{}]()
 
 	rpcClients := s.cometRPCPeers.Values()
 	var wg sync.WaitGroup
 	wg.Add(len(rpcClients))
 
+	// get listen addr from all peers we're aware of
 	for _, rpc := range rpcClients {
 		go func(rpc *CometBFTRPC) {
 			defer wg.Done()
-			remoteNetInfo, err := rpc.NetInfo(ctx)
+
+			status, err := rpc.Status(ctx)
 			if err != nil {
 				return
 			}
 
-			remotePeers := remoteNetInfo.Peers
-			for _, peer := range remotePeers {
-				nodeid := peer.NodeInfo.DefaultNodeID
-				alreadyPeered := existingPeers.Has(string(nodeid))
-				if alreadyPeered {
-					continue
-				}
-				ip := peer.RemoteIP
-				address := net.JoinHostPort(ip, "26656")
-				conn, err := net.DialTimeout("tcp", address, 3*time.Second)
-				if err != nil {
-					// TODO: report 26656 status to core status endpoint
-					continue
-				}
-				_ = conn.Close()
-
-				connectionStr := fmt.Sprintf("%s@%s:26656", nodeid, peer.RemoteIP)
-				peerConnections.Set(connectionStr, struct{}{})
+			listenAddr := status.NodeInfo.ListenAddr
+			if existingPeers.Has(listenAddr) {
+				return
 			}
+
+			// port open test for listen addr, don't attempt peers who
+			// don't have the port open
+			conn, err := net.DialTimeout("tcp", listenAddr, 3*time.Second)
+			if err != nil {
+				// TODO: report 26656 status to core status endpoint
+				return
+			}
+			_ = conn.Close()
+
+			otherPeers.Set(listenAddr, CometBFTAddress(status.NodeInfo.ID()))
 		}(rpc)
 	}
 
 	wg.Wait()
 
 	// connect to ones available that aren't in existing peer set and have port open
-	dialPeers := []string{}
-	dialPeers = append(dialPeers, peerConnections.Keys()...)
+	dialPeers := safemap.ToSlice(otherPeers, func(listenAddr string, nodeid CometBFTAddress) string {
+		return fmt.Sprintf("%s@%s", strings.ToLower(nodeid), listenAddr)
+	})
 
 	if len(dialPeers) == 0 {
 		return nil

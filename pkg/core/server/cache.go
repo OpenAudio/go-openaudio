@@ -265,7 +265,6 @@ func (s *Server) startCacheRefresh(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
-	return nil
 }
 
 func (s *Server) refreshSyncStatus(ctx context.Context) error {

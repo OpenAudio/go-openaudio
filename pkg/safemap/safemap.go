@@ -136,3 +136,22 @@ func (s *SafeMap[K, V]) Compute(key K, fn func(prev V, ok bool) (next V, delete 
 	s.m[key] = next
 	return next, true
 }
+
+func ToSlice[K comparable, V any, T any](sm *SafeMap[K, V], mapFn func(K, V) T) []T {
+	sm.mu.RLock()
+	type entry struct {
+		k K
+		v V
+	}
+	entries := make([]entry, 0, len(sm.m))
+	for k, v := range sm.m {
+		entries = append(entries, entry{k: k, v: v})
+	}
+	sm.mu.RUnlock()
+
+	out := make([]T, len(entries))
+	for i, e := range entries {
+		out[i] = mapFn(e.k, e.v)
+	}
+	return out
+}
