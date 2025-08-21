@@ -46,6 +46,26 @@ func (e *EthService) GetRegisteredEndpoints(ctx context.Context, _ *connect.Requ
 	return connect.NewResponse(res), nil
 }
 
+func (e *EthService) GetRegisteredEndpointsForServiceProvider(ctx context.Context, req *connect.Request[v1.GetRegisteredEndpointsForServiceProviderRequest]) (*connect.Response[v1.GetRegisteredEndpointsForServiceProviderResponse], error) {
+	eps, err := e.db.GetRegisteredEndpointsForServiceProvider(ctx, req.Msg.Owner)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		e.logger.Debugf("could not get registered endpoints for service provider %s: %v", req.Msg.Owner, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get registered endpoints for service provider"))
+	}
+	peps := make([]*v1.ServiceEndpoint, 0, len(eps))
+	for _, ep := range eps {
+		peps = append(peps, &v1.ServiceEndpoint{
+			Id:             int64(ep.ID),
+			BlockNumber:    ep.Blocknumber,
+			Owner:          ep.Owner,
+			Endpoint:       ep.Endpoint,
+			DelegateWallet: ep.DelegateWallet,
+		})
+	}
+	res := &v1.GetRegisteredEndpointsForServiceProviderResponse{Endpoints: peps}
+	return connect.NewResponse(res), nil
+}
+
 func (e *EthService) GetRegisteredEndpointInfo(ctx context.Context, req *connect.Request[v1.GetRegisteredEndpointInfoRequest]) (*connect.Response[v1.GetRegisteredEndpointInfoResponse], error) {
 	ep, err := e.db.GetRegisteredEndpoint(ctx, req.Msg.Endpoint)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -62,6 +82,28 @@ func (e *EthService) GetRegisteredEndpointInfo(ctx context.Context, req *connect
 			Endpoint:       ep.Endpoint,
 			BlockNumber:    ep.Blocknumber,
 			DelegateWallet: ep.DelegateWallet,
+			RegisteredAt:   timestamppb.New(ep.RegisteredAt.Time),
+		},
+	}
+	return connect.NewResponse(res), nil
+}
+
+func (e *EthService) GetServiceProvider(ctx context.Context, req *connect.Request[v1.GetServiceProviderRequest]) (*connect.Response[v1.GetServiceProviderResponse], error) {
+	serviceProvider, err := e.db.GetServiceProvider(ctx, req.Msg.Address)
+	if err != nil {
+		e.logger.Debugf("could not get service provider: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get service provider"))
+	}
+
+	res := &v1.GetServiceProviderResponse{
+		ServiceProvider: &v1.ServiceProvider{
+			Wallet:            serviceProvider.Address,
+			DeployerStake:     serviceProvider.DeployerStake,
+			DeployerCut:       serviceProvider.DeployerCut,
+			ValidBounds:       serviceProvider.ValidBounds,
+			NumberOfEndpoints: serviceProvider.NumberOfEndpoints,
+			MinAccountStake:   serviceProvider.MinAccountStake,
+			MaxAccountStake:   serviceProvider.MaxAccountStake,
 		},
 	}
 	return connect.NewResponse(res), nil
@@ -216,4 +258,19 @@ func (e *EthService) Subscribe(ctx context.Context, req *connect.Request[v1.Subs
 			}
 		}
 	}
+}
+
+func (e *EthService) GetStakingMetadataForServiceProvider(ctx context.Context, req *connect.Request[v1.GetStakingMetadataForServiceProviderRequest]) (*connect.Response[v1.GetStakingMetadataForServiceProviderResponse], error) {
+	staked, err := e.db.GetStakedAmountForServiceProvider(ctx, req.Msg.Address)
+	if err != nil {
+		e.logger.Debugf("could not get staked amount for service provider at address %s: %v", req.Msg.Address, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("Could not get staking metadata"))
+	}
+	rewardsPerRound := int64(float64(staked) * float64(e.fundingRound.fundingAmountPerRound) / float64(e.fundingRound.totalStakedAmount))
+	return connect.NewResponse(
+		&v1.GetStakingMetadataForServiceProviderResponse{
+			TotalStaked:     e.fundingRound.totalStakedAmount,
+			RewardsPerRound: rewardsPerRound,
+		},
+	), nil
 }

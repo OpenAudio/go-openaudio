@@ -9,8 +9,11 @@ option go_package = "github.com/AudiusProject/audiusd/pkg/api/eth/v1";
 service EthService {
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {}
   rpc GetRegisteredEndpoints(GetRegisteredEndpointsRequest) returns (GetRegisteredEndpointsResponse) {}
+  rpc GetRegisteredEndpointsForServiceProvider(GetRegisteredEndpointsForServiceProviderRequest) returns (GetRegisteredEndpointsForServiceProviderResponse) {}
   rpc GetRegisteredEndpointInfo(GetRegisteredEndpointInfoRequest) returns (GetRegisteredEndpointInfoResponse) {}
+  rpc GetServiceProvider(GetServiceProviderRequest) returns (GetServiceProviderResponse) {}
   rpc GetServiceProviders(GetServiceProvidersRequest) returns (GetServiceProvidersResponse) {}
+  rpc GetStakingMetadataForServiceProvider(GetStakingMetadataForServiceProviderRequest) returns (GetStakingMetadataForServiceProviderResponse) {}
   rpc GetLatestFundingRound(GetLatestFundingRoundRequest) returns (GetLatestFundingRoundResponse) {}
   rpc IsDuplicateDelegateWallet(IsDuplicateDelegateWalletRequest) returns (IsDuplicateDelegateWalletResponse) {}
   rpc Register(RegisterRequest) returns (RegisterResponse) {}

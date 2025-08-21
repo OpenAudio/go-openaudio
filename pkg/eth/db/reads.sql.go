@@ -33,7 +33,7 @@ func (q *Queries) GetLatestFundingRound(ctx context.Context) (EthFundingRound, e
 }
 
 const getRegisteredEndpoint = `-- name: GetRegisteredEndpoint :one
-select id, service_type, owner, delegate_wallet, endpoint, blocknumber from eth_registered_endpoints
+select id, service_type, owner, delegate_wallet, endpoint, blocknumber, registered_at from eth_registered_endpoints
 where endpoint = $1
 `
 
@@ -47,12 +47,13 @@ func (q *Queries) GetRegisteredEndpoint(ctx context.Context, endpoint string) (E
 		&i.DelegateWallet,
 		&i.Endpoint,
 		&i.Blocknumber,
+		&i.RegisteredAt,
 	)
 	return i, err
 }
 
 const getRegisteredEndpoints = `-- name: GetRegisteredEndpoints :many
-select id, service_type, owner, delegate_wallet, endpoint, blocknumber from eth_registered_endpoints
+select id, service_type, owner, delegate_wallet, endpoint, blocknumber, registered_at from eth_registered_endpoints
 `
 
 func (q *Queries) GetRegisteredEndpoints(ctx context.Context) ([]EthRegisteredEndpoint, error) {
@@ -71,6 +72,7 @@ func (q *Queries) GetRegisteredEndpoints(ctx context.Context) ([]EthRegisteredEn
 			&i.DelegateWallet,
 			&i.Endpoint,
 			&i.Blocknumber,
+			&i.RegisteredAt,
 		); err != nil {
 			return nil, err
 		}
@@ -80,6 +82,59 @@ func (q *Queries) GetRegisteredEndpoints(ctx context.Context) ([]EthRegisteredEn
 		return nil, err
 	}
 	return items, nil
+}
+
+const getRegisteredEndpointsForServiceProvider = `-- name: GetRegisteredEndpointsForServiceProvider :many
+select id, service_type, owner, delegate_wallet, endpoint, blocknumber, registered_at from eth_registered_endpoints
+where owner = $1
+`
+
+func (q *Queries) GetRegisteredEndpointsForServiceProvider(ctx context.Context, owner string) ([]EthRegisteredEndpoint, error) {
+	rows, err := q.db.Query(ctx, getRegisteredEndpointsForServiceProvider, owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []EthRegisteredEndpoint
+	for rows.Next() {
+		var i EthRegisteredEndpoint
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceType,
+			&i.Owner,
+			&i.DelegateWallet,
+			&i.Endpoint,
+			&i.Blocknumber,
+			&i.RegisteredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getServiceProvider = `-- name: GetServiceProvider :one
+select address, deployer_stake, deployer_cut, valid_bounds, number_of_endpoints, min_account_stake, max_account_stake from eth_service_providers
+where address = $1
+`
+
+func (q *Queries) GetServiceProvider(ctx context.Context, address string) (EthServiceProvider, error) {
+	row := q.db.QueryRow(ctx, getServiceProvider, address)
+	var i EthServiceProvider
+	err := row.Scan(
+		&i.Address,
+		&i.DeployerStake,
+		&i.DeployerCut,
+		&i.ValidBounds,
+		&i.NumberOfEndpoints,
+		&i.MinAccountStake,
+		&i.MaxAccountStake,
+	)
+	return i, err
 }
 
 const getServiceProviders = `-- name: GetServiceProviders :many
@@ -112,4 +167,15 @@ func (q *Queries) GetServiceProviders(ctx context.Context) ([]EthServiceProvider
 		return nil, err
 	}
 	return items, nil
+}
+
+const getStakedAmountForServiceProvider = `-- name: GetStakedAmountForServiceProvider :one
+select total_staked from eth_staked where address = $1
+`
+
+func (q *Queries) GetStakedAmountForServiceProvider(ctx context.Context, address string) (int64, error) {
+	row := q.db.QueryRow(ctx, getStakedAmountForServiceProvider, address)
+	var total_staked int64
+	err := row.Scan(&total_staked)
+	return total_staked, err
 }

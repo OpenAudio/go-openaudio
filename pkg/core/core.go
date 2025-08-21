@@ -58,7 +58,7 @@ func run(ctx context.Context, lc *lifecycle.Lifecycle, logger *common.Logger, po
 	// unlike the other modules that register themselves on the echo http server
 	if config.ConsoleModule {
 		e := s.GetEcho()
-		con, err := console.NewConsole(config, logger, e, pool)
+		con, err := console.NewConsole(config, logger, e, pool, ethService)
 		if err != nil {
 			logger.Errorf("console init error: %v", err)
 			return err

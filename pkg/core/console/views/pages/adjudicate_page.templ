@@ -1,0 +1,310 @@
+package pages
+
+import (
+    "fmt"
+    "net/url"
+    "time"
+
+    "github.com/dustin/go-humanize"
+)
+
+const unearnedRewardsThreshold = int64(10000)
+
+type AdjudicatePageView struct {
+    ServiceProvider        *ServiceProvider
+    StartTime              time.Time
+    EndTime                time.Time
+    MetSlas                int
+    PartialSlas            int
+    DeadSlas               int
+    TotalSlas              int
+    TotalStaked            int64
+    TotalChallenges        int64
+    FailedChallenges       int64
+    SlashRecommendation    int64
+}
+
+type ServiceProvider struct {
+    Address   string
+    Endpoints []*Endpoint
+    StorageProofRollups map[string]*StorageProofRollup
+}
+
+type StorageProofRollup struct {
+    ChallengesReceived int64
+    ChallengesFailed   int64
+}
+
+func getTimeRangeQueryString(start time.Time, end time.Time) string {
+    v := url.Values{}
+    v.Set("start", start.Format("2006-01-02"))
+    v.Set("end", end.Format("2006-01-02"))
+    return v.Encode()
+}
+
+func getReceivedChallengesFromProofRollup(rollup *StorageProofRollup) int64 {
+    if rollup != nil {
+        return rollup.ChallengesReceived
+    }
+    return int64(0)
+}
+
+func getFailedChallengesFromProofRollup(rollup *StorageProofRollup) int64 {
+    if rollup != nil {
+        return rollup.ChallengesFailed
+    }
+    return int64(0)
+}
+
+templ staticAdjudicateStyles() {
+    <style type="text/css">
+        .copyAdjudicateLink {
+            cursor: pointer;
+        }
+        .slashProposalModal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+        }
+
+        .slashProposalModalContent {
+            background: #fff;
+            padding: 20px;
+            margin: 15% auto;
+            width: 800px;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        .slashProposalModalCloseButton {
+            position: absolute;
+            top: 10px; right: 10px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        #openSlashProposalModal:hover {
+            cursor: pointer;
+            background-color: black;
+        }
+
+        .adjudicateToolTip {
+            visibility: hidden;
+            width: 120px;
+            background-color: black;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 0;
+            position: absolute;
+            z-index: 1;
+        }
+
+    </style>
+}
+
+templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
+	@c.layout.SiteFrame() {
+        @staticUptimeStyles()
+        @staticAdjudicateStyles()
+        <div>
+            <h1 class="text-xl w-full p-3 text-center bg-red-100 text-red-400 my-3">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-8 p-1 inline">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                </svg>
+                <span class="align-middle">UI currently under development</span>
+            </h1>
+
+            <h2 class="text-lg text-gray-400">
+                Node Operator
+            </h2>
+            <h1 class="text-xl p-4">
+                { props.ServiceProvider.Address }
+                <svg xmlns="http://www.w3.org/2000/svg" id="copyAdjudicateLinkButton" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="copyAdjudicateLink size-6 inline text-gray-600">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+                </svg>
+            </h1>
+        </div>
+        <input type="text" id="timeRangeQueryStringInput" class="hidden" value={ getTimeRangeQueryString(props.StartTime, props.EndTime) }>
+
+        <script>
+            document.getElementById("copyAdjudicateLinkButton").addEventListener("click", () => {
+              timeRangeInput = document.getElementById("timeRangeQueryStringInput")
+              const link = window.location.origin + window.location.pathname + "?" + timeRangeInput.value;
+              
+              navigator.clipboard.writeText(link)
+                .then(() => {
+                  console.log("Link copied to clipboard!");
+                  alert("Copied to clipboard!");
+                })
+                .catch(err => {
+                  console.error("Failed to copy: ", err);
+                });
+              });
+        </script>
+
+        <div class="flex flex-row text-center p-2">
+            <div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
+                <dt class="text-lg">
+                    { props.StartTime.Format("2006-01-02") }
+                </dt>
+                <dd class="text-sm">Start</dd>
+            </div>
+            <div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
+                <dt class="text-lg">
+                    { props.EndTime.Format("2006-01-02") }
+                </dt>
+                <dd class="text-sm">End</dd>
+            </div>
+        </div>
+
+        <div class="flex flex-row text-center p-2">
+            <div class="basis-1/5 rounded-md bg-slate-100 py-8 mx-1">
+                <dt class="text-4xl">{ humanize.Comma(int64(props.TotalSlas)) }</dt>
+                <dd class="text-sm">Total SLAs</dd>
+            </div>
+
+            <div class={ "basis-1/5 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMetClass(), props.MetSlas > 0) }>
+                <dt class="text-4xl">{ humanize.Comma(int64(props.MetSlas)) }</dt>
+                <dd class="text-sm">SLAs Met</dd>
+            </div>
+
+            <div class={ "basis-1/5 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaDeadClass(), props.DeadSlas > 0) }>
+                <dt class="text-4xl">{ humanize.Comma(int64(props.DeadSlas)) }</dt>
+                <dd class="text-sm">SLAs Missed</dd>
+            </div>
+
+            <div class="basis-1/5 rounded-md bg-slate-100 py-8 mx-1">
+                <dt class="text-4xl">{ humanize.Comma(int64(props.TotalChallenges)) }</dt>
+                <dd class="text-sm">Challenges Received</dd>
+            </div>
+
+            <div class={ "basis-1/5 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissClass(), props.FailedChallenges > 0) }>
+                <dt class="text-4xl">{ humanize.Comma(int64(props.FailedChallenges)) }</dt>
+                <dd class="text-sm">Challenges Failed</dd>
+            </div>
+
+        </div>
+        @adjudicateProposalRecommendation(props.SlashRecommendation)
+
+
+        <table class="bg-slate-50 p-2 rounded validatorReports text-left m-4">
+            <colgroup>
+                <col />
+                <col class="bg-white" />
+                <col />
+                <col class="bg-white" />
+                <col />
+            </colgroup>
+            <tr>
+                <th>Endpoint</th>
+                <th colspan="2" class="text-center">
+                    Proof of Storage Challenges
+                    <div class="flex flex-row text-left">
+                        <div class="basis-1/2">Received</div>
+                        <div class="basis-1/2">Failed</div>
+                    </div>
+                </th>
+                <th>SLA History</th>
+            </tr>
+            for _, ep := range props.ServiceProvider.Endpoints {
+                @endpointRowReport(ep, props.ServiceProvider.StorageProofRollups[ep.CometAddress])
+            }
+        </table>
+
+        <div id="slashProposalModal" class="slashProposalModal">
+          <div class="slashProposalModalContent">
+            <span id="closeSlashProposalModal" class="slashProposalModalCloseButton">&times;</span>
+            <h2 class="text-lg">Create Slash Proposal for Delinquent Node Operator</h2>
+
+            <div class="py-2">
+                <h3 class="text-sm text-gray-400">Signature</h3>
+                <p class="text-sm px-2">slash(uint256,address)</p>
+            </div>
+
+            <div class="py-2">
+                <h3 class="text-sm text-gray-400">Call Data</h3>
+                <p class="text-sm px-2">{ fmt.Sprintf("%d,%s", props.SlashRecommendation, props.ServiceProvider.Address) }</p>
+            </div>
+
+            <div class="py-2">
+                <h3 class="text-sm text-gray-400">Name</h3>
+                <p class="text-sm px-2">{ fmt.Sprintf("Slash %s", props.ServiceProvider.Address) }</p>
+            </div>
+
+            <div class="py-2">
+                <h3 class="text-sm text-gray-400">Description</h3>
+                <p class="text-sm px-2" id="slashProposalDescription">
+                    { fmt.Sprintf("Slash %s $AUDIO from %s for consistently failing to meet SLA. See ", humanize.Comma(props.SlashRecommendation), props.ServiceProvider.Address) }
+                </p>
+            </div>
+
+            <div class="p-4 text-right">
+                <a class="text-blue-800" href="https://dashboard.audius.co/#/governance" target="_blank">
+                    Open Protocol Dashboard
+                </a>
+            </div>
+          </div>
+        </div>
+
+        <script>
+            const modal = document.getElementById("slashProposalModal");
+            const openBtn = document.getElementById("openSlashProposalModal");
+            const closeBtn = document.getElementById("closeSlashProposalModal");
+
+            openBtn.onclick = () => modal.style.display = "block";
+            closeBtn.onclick = () => modal.style.display = "none";
+
+            window.onclick = (e) => {
+                if (e.target === modal) modal.style.display = "none";
+            };
+
+            timeRangeInput = document.getElementById("timeRangeQueryStringInput")
+            const link = window.location.origin + window.location.pathname + "?" + timeRangeInput.value;
+            const slashDesc = document.getElementById("slashProposalDescription")
+            slashDesc.textContent += link
+        </script>
+	}
+}
+
+templ endpointRowReport(endpoint *Endpoint, proofRollup *StorageProofRollup) {
+    <tr>
+        <td>
+            <a href={ templ.URL(fmt.Sprintf("%s/console/uptime", endpoint.Endpoint)) }>
+                { strippedEndpoint(endpoint.Endpoint) }
+            </a>
+        </td>
+        <td>{ fmt.Sprintf("%d", getReceivedChallengesFromProofRollup(proofRollup)) }</td>
+        <td class={ templ.KV(slaMissClass(), getFailedChallengesFromProofRollup(proofRollup) > 100) }>
+            { fmt.Sprintf("%d", getFailedChallengesFromProofRollup(proofRollup)) }
+        </td>
+        <td class="bg-white">
+            for _, r := range endpoint.SlaReports {
+                @endpointSlaHistory(r)
+            }
+        </td>
+    </tr>
+}
+
+templ endpointSlaHistory(report *SlaReport) {
+    <li class={ "slaBarMini",  getSlaClassFromStatus(report.Status) }>
+        <a class="reportLink" href={ templ.URL(fmt.Sprintf("/console/uptime/%d", report.BlockEnd)) }></a>
+    </li>
+}
+
+templ adjudicateProposalRecommendation(unearnedRewards int64) {
+    if unearnedRewards > unearnedRewardsThreshold {
+        <div id="openSlashProposalModal" class={ "flex-row rounded-md bg-slate-100 mx-3 p-1", slaDeadClass() }>
+            <dt>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-8 p-1 inline">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                </svg>
+                <span class="align-middle">Node performance appears to be delinquent. Action is recommended.</span>
+            </dt>
+
+        </div>
+    }
+}

@@ -90,7 +90,8 @@ func (s *Server) createRollup(ctx context.Context, timestamp time.Time, height i
 
 // Checks if the given sla rollup matches our local tallies
 func (s *Server) isValidRollup(ctx context.Context, timestamp time.Time, height int64, rollup *v1.SlaRollup) (bool, error) {
-	if !s.shouldProposeNewRollup(ctx, height) {
+	// +1 for backwards compatibility with off-by-one legacy error, delete on next chain rollover
+	if !s.shouldProposeNewRollup(ctx, height+1) {
 		return false, nil
 	}
 	if rollup.BlockStart > rollup.BlockEnd {
@@ -123,7 +124,8 @@ func (s *Server) shouldProposeNewRollup(ctx context.Context, height int64) bool 
 	} else {
 		previousHeight = latestRollup.BlockEnd
 	}
-	return height-previousHeight >= int64(s.config.SlaRollupInterval)
+	// Rollup interval excludes block at current height.
+	return height-1-previousHeight >= int64(s.config.SlaRollupInterval)
 }
 
 func (s *Server) finalizeSlaRollup(ctx context.Context, event *v1.SignedTransaction, txHash string) (*v1.SlaRollup, error) {

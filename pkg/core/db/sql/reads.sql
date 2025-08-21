@@ -95,6 +95,53 @@ from recent_rollups rr
     left join sla_node_reports nr on rr.id = nr.sla_rollup_id
 order by rr.time;
 
+-- name: GetRollupReportsForNodeInTimeRange :many
+select 
+    sr.id,
+    sr.tx_hash,
+    sr.block_start,
+    sr.block_end,
+    sr.time,
+    nr.address,
+    nr.blocks_proposed,
+    (
+        select count(distinct address)
+        from sla_node_reports
+        where sla_rollup_id = sr.id
+    ) as validator_count
+from 
+    sla_rollups sr
+left join sla_node_reports nr
+    on nr.sla_rollup_id = sr.id and nr.address = $1
+where sr.time > $2 and sr.time <= $3
+order by sr.time;
+
+-- name: GetRollupReportsForNodesInTimeRange :many
+with address_list as (
+    select unnest($1::text[])::text as address
+)
+select 
+    sr.id,
+    sr.tx_hash,
+    sr.block_start,
+    sr.block_end,
+    sr.time,
+    al.address,
+    nr.blocks_proposed,
+    (
+        select count(distinct address)
+        from sla_node_reports
+        where sla_rollup_id = sr.id
+    ) as validator_count
+from 
+    sla_rollups sr
+join address_list al on true
+left join sla_node_reports nr
+    on nr.sla_rollup_id = sr.id 
+    and nr.address = al.address
+where sr.time > $2 and sr.time <= $3
+order by sr.time, al.address;
+
 -- name: GetSlaRollupWithTimestamp :one
 select *
 from sla_rollups
@@ -104,6 +151,11 @@ where time = $1;
 select *
 from sla_rollups
 where id = $1;
+
+-- name: GetSlaRollupWithBlockEnd :one
+select *
+from sla_rollups
+where block_end = $1;
 
 -- name: GetPreviousSlaRollupFromId :one
 select *
@@ -229,6 +281,18 @@ select address,
 from storage_proofs
 where block_height >= $1
     and block_height <= $2
+group by address;
+
+-- name: GetStorageProofRollupForNode :one
+select address,
+    count(*) filter (
+        where status = 'fail'
+    ) as failed_count,
+    count(*) as total_count
+from storage_proofs
+where address = $1
+    and block_height >= $2
+    and block_height <= $3
 group by address;
 
 -- name: GetStorageProofsForNodeInRange :many

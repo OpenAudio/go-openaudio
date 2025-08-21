@@ -74,3 +74,7 @@ func (v *Views) RenderBlockView(c echo.Context, view *pages.BlockView) error {
 func (v *Views) RenderTxView(c echo.Context, view *pages.TxView) error {
 	return v.pages.TxPageHTML(view).Render(c.Request().Context(), c.Response().Writer)
 }
+
+func (v *Views) RenderAdjudicateView(c echo.Context, view *pages.AdjudicatePageView) error {
+	return v.pages.AdjudicatePageHTML(view).Render(c.Request().Context(), c.Response().Writer)
+}

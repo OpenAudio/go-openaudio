@@ -8,6 +8,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/console/views"
 	"github.com/AudiusProject/audiusd/pkg/core/console/views/layout"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
+	"github.com/AudiusProject/audiusd/pkg/eth"
 	"github.com/cometbft/cometbft/rpc/client"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,13 +21,14 @@ type Console struct {
 	db     *db.Queries
 	e      *echo.Echo
 	logger *common.Logger
+	eth    *eth.EthService
 
 	state   *State
 	layouts *layout.Layout
 	views   *views.Views
 }
 
-func NewConsole(config *config.Config, logger *common.Logger, e *echo.Echo, pool *pgxpool.Pool) (*Console, error) {
+func NewConsole(config *config.Config, logger *common.Logger, e *echo.Echo, pool *pgxpool.Pool, ethService *eth.EthService) (*Console, error) {
 	l := logger.Child("console")
 	db := db.New(pool)
 	httprpc, err := rpchttp.New(config.RPCladdr)
@@ -42,6 +44,7 @@ func NewConsole(config *config.Config, logger *common.Logger, e *echo.Echo, pool
 		rpc:     httprpc,
 		e:       e,
 		logger:  l,
+		eth:     ethService,
 		db:      db,
 		state:   state,
 		views:   views.NewViews(config, baseURL),
