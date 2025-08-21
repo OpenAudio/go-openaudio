@@ -179,7 +179,7 @@ func (s *Server) broadcastMempoolTransaction(key string, tx *MempoolTransaction)
 	// For v2 transactions, we don't have specific broadcast filtering yet
 	// but we can add it here later if needed
 
-	peers := s.GetPeers()
+	peers := s.connectRPCPeers.Values()
 	for _, peer := range peers {
 		go func(logger *common.Logger, peer corev1connect.CoreServiceClient) {
 			var err error

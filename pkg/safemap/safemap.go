@@ -155,3 +155,12 @@ func ToSlice[K comparable, V any, T any](sm *SafeMap[K, V], mapFn func(K, V) T) 
 	}
 	return out
 }
+
+// ToMap returns a copy of the underlying map.
+func (s *SafeMap[K, V]) ToMap() map[K]V {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cp := make(map[K]V, len(s.m))
+	maps.Copy(cp, s.m)
+	return cp
+}

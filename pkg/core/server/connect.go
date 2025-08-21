@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 	"time"
 
@@ -638,8 +639,13 @@ func (c *CoreService) GetStatus(context.Context, *connect.Request[v1.GetStatusRe
 		return connect.NewResponse(res), nil
 	}
 
+	peerStatuses := c.core.peerStatus.Values()
+	sort.Slice(peerStatuses, func(i, j int) bool {
+		return peerStatuses[i].CometAddress < peerStatuses[j].CometAddress
+	})
+
 	nodeInfo, _ := c.core.cache.nodeInfo.Get(NodeInfoKey)
-	peers, _ := c.core.cache.peers.Get(PeersKey)
+	peers := &v1.GetStatusResponse_PeerInfo{Peers: peerStatuses}
 	chainInfo, _ := c.core.cache.chainInfo.Get(ChainInfoKey)
 	syncInfo, _ := c.core.cache.syncInfo.Get(SyncInfoKey)
 	pruningInfo, _ := c.core.cache.pruningInfo.Get(PruningInfoKey)
@@ -647,7 +653,7 @@ func (c *CoreService) GetStatus(context.Context, *connect.Request[v1.GetStatusRe
 	mempoolInfo, _ := c.core.cache.mempoolInfo.Get(MempoolInfoKey)
 	snapshotInfo, _ := c.core.cache.snapshotInfo.Get(SnapshotInfoKey)
 
-	peersOk := len(peers.P2P) > 0 && len(peers.Rpc) > 0
+	peersOk := len(peers.Peers) > 0
 	syncInfoOk := syncInfo.Synced
 	diskOk := resourceInfo.DiskFree > 0
 	memOk := resourceInfo.MemUsage < resourceInfo.MemSize

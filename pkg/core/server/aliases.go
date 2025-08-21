@@ -7,5 +7,7 @@ import (
 
 type EthAddress = string
 type CometBFTAddress = string
+type CometP2PConnectionString = string
+type CometBFTListener = string
 
 type CometBFTRPC = rpchttp.HTTP

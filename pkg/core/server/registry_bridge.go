@@ -245,7 +245,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 		}
 	}
 
-	peers := s.GetPeers()
+	peers := s.connectRPCPeers.ToMap()
 	noPeers := len(peers) == 0
 
 	if !isGenValidator && noPeers {
@@ -473,7 +473,7 @@ func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 		Deadline:     s.cache.currentHeight.Load() + 120,
 	}
 
-	peers := s.GetPeers()
+	peers := s.connectRPCPeers.ToMap()
 	for addr := range rendezvous {
 		if addr == s.config.WalletAddress {
 			deregCopy := dereg
