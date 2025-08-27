@@ -1,12 +1,18 @@
 package server
 
 import (
+	"context"
 	"hash/fnv"
 	"sort"
 	"strings"
 
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	"github.com/AudiusProject/audiusd/pkg/pubsub"
 )
+
+const BlockNumPubsubTopic = "block-num-topic"
+
+type BlockNumPubsub = pubsub.Pubsub[int64]
 
 // stringToUint32 generates a deterministic uint32 hash from a string
 func stringToUint32(s string) uint32 {
@@ -64,4 +70,31 @@ func sortTransactionResponse(txs []*v1.Transaction) []*v1.Transaction {
 	})
 
 	return txs
+}
+
+func (s *Server) cacheTxCount(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.awaitRpcReady:
+	}
+
+	blockNumChan := s.blockNumPubsub.Subscribe(BlockNumPubsubTopic)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case blockNum := <-blockNumChan:
+			// every 5 blocks, recache tx count so it looks the same across nodes
+			if blockNum%5 == 0 {
+				totalTxs, err := s.db.TotalTransactions(ctx)
+				if err != nil {
+					s.logger.Errorf("could not count txs in db: %v", err)
+					continue
+				}
+				s.cache.currentTxCount.Store(totalTxs)
+			}
+		}
+	}
 }

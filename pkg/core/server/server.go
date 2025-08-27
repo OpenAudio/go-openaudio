@@ -54,7 +54,8 @@ type Server struct {
 	cometListenAddrs *safemap.SafeMap[CometBFTAddress, CometBFTListener]
 	peerStatus       *safemap.SafeMap[EthAddress, *v1.GetStatusResponse_PeerInfo_Peer]
 
-	txPubsub *TransactionHashPubsub
+	txPubsub       *TransactionHashPubsub
+	blockNumPubsub *BlockNumPubsub
 
 	cache     *Cache
 	abciState *ABCIState
@@ -72,6 +73,7 @@ func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.
 
 	// create pubsubs
 	txPubsub := pubsub.NewPubsub[struct{}]()
+	blockNumPubsub := pubsub.NewPubsub[int64]()
 
 	httpServer := echo.New()
 	grpcServer := grpc.NewServer()
@@ -104,6 +106,7 @@ func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.
 		cometListenAddrs: safemap.New[CometBFTAddress, CometBFTListener](),
 		peerStatus:       safemap.New[EthAddress, *v1.GetStatusResponse_PeerInfo_Peer](),
 		txPubsub:         txPubsub,
+		blockNumPubsub:   blockNumPubsub,
 		cache:            NewCache(config),
 		abciState:        NewABCIState(config.RetainHeight),
 
@@ -131,6 +134,7 @@ func (s *Server) Start() error {
 	s.lc.AddManagedRoutine("state sync", s.startStateSync)
 	s.lc.AddManagedRoutine("mempool cache", s.startMempoolCache)
 	s.lc.AddManagedRoutine("peer manager", s.managePeers)
+	s.lc.AddManagedRoutine("tx count cache", s.cacheTxCount)
 
 	s.z.Info("routines started")
 
@@ -144,7 +148,7 @@ func (s *Server) setSelf(self corev1connect.CoreServiceClient) {
 
 func (s *Server) syncLogs(ctx context.Context) error {
 	s.StartProcess(ProcessStateLogSync)
-	
+
 	ticker := time.NewTicker(10 * time.Second)
 	for {
 		select {

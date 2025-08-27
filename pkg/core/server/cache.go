@@ -44,8 +44,9 @@ const (
 // maybe upgrade to something like bigcache later
 type Cache struct {
 	// old values, replace with otter cache later
-	currentHeight atomic.Int64
-	catchingUp    atomic.Bool
+	currentHeight  atomic.Int64
+	currentTxCount atomic.Int64
+	catchingUp     atomic.Bool
 
 	// process states
 	abciState           otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
@@ -73,6 +74,7 @@ type Cache struct {
 func NewCache(config *config.Config) *Cache {
 	c := &Cache{}
 	c.currentHeight.Store(0)
+	c.currentTxCount.Store(0)
 	c.catchingUp.Store(true) // assume syncing on startup
 
 	if err := c.initCaches(config); err != nil {
@@ -247,6 +249,7 @@ func (s *Server) startBlockEventSubscriber(ctx context.Context) error {
 			blockEvent := msg.Data().(types.EventDataNewBlock)
 			blockHeight := blockEvent.Block.Height
 			s.cache.currentHeight.Store(blockHeight)
+			s.blockNumPubsub.Publish(ctx, BlockNumPubsubTopic, blockHeight)
 
 			upsertCache(s.cache.chainInfo, ChainInfoKey, func(chainInfo *v1.GetStatusResponse_ChainInfo) *v1.GetStatusResponse_ChainInfo {
 				chainInfo.CurrentHeight = blockHeight
@@ -315,7 +318,7 @@ func (s *Server) refreshSyncStatus(ctx context.Context) error {
 
 func (c *Cache) UpdateProcessState(processKey string, state v1.GetStatusResponse_ProcessInfo_ProcessState, errorMsg string, metadata string) error {
 	var processCache otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
-	
+
 	switch processKey {
 	case ProcessStateABCI:
 		processCache = c.abciState

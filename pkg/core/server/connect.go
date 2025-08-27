@@ -653,6 +653,8 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 	mempoolInfo, _ := c.core.cache.mempoolInfo.Get(MempoolInfoKey)
 	snapshotInfo, _ := c.core.cache.snapshotInfo.Get(SnapshotInfoKey)
 
+	chainInfo.TotalTxCount = c.core.cache.currentTxCount.Load()
+
 	// Retrieve process states from cache
 	abciState, _ := c.core.cache.abciState.Get(ProcessStateABCI)
 	registryBridgeState, _ := c.core.cache.registryBridgeState.Get(ProcessStateRegistryBridge)
