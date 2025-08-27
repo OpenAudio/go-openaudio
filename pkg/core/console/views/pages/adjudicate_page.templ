@@ -286,7 +286,7 @@ templ endpointRowReport(endpoint *Endpoint, proofRollup *StorageProofRollup) {
 
 templ endpointSlaHistory(report *SlaReport, endpoint string) {
     <li class={ "slaBarMini",  getSlaClassFromStatus(report.Status) }>
-        <a class="reportLink" href={ templ.URL(fmt.Sprintf("/console/uptime/%d/%s", report.BlockEnd, endpoint)) }></a>
+        <a class="reportLink" href={ templ.URL(fmt.Sprintf("/console/uptime/%d/%s", report.BlockEnd, strippedEndpoint(endpoint))) }></a>
     </li>
 }
 
