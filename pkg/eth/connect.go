@@ -36,6 +36,8 @@ func (e *EthService) GetRegisteredEndpoints(ctx context.Context, _ *connect.Requ
 	for _, ep := range eps {
 		peps = append(peps, &v1.ServiceEndpoint{
 			Id:             int64(ep.ID),
+			RegisteredAt:   timestamppb.New(ep.RegisteredAt.Time),
+			ServiceType:    ep.ServiceType,
 			BlockNumber:    ep.Blocknumber,
 			Owner:          ep.Owner,
 			Endpoint:       ep.Endpoint,
@@ -56,6 +58,8 @@ func (e *EthService) GetRegisteredEndpointsForServiceProvider(ctx context.Contex
 	for _, ep := range eps {
 		peps = append(peps, &v1.ServiceEndpoint{
 			Id:             int64(ep.ID),
+			RegisteredAt:   timestamppb.New(ep.RegisteredAt.Time),
+			ServiceType:    ep.ServiceType,
 			BlockNumber:    ep.Blocknumber,
 			Owner:          ep.Owner,
 			Endpoint:       ep.Endpoint,
@@ -78,6 +82,7 @@ func (e *EthService) GetRegisteredEndpointInfo(ctx context.Context, req *connect
 	res := &v1.GetRegisteredEndpointInfoResponse{
 		Se: &v1.ServiceEndpoint{
 			Id:             int64(ep.ID),
+			ServiceType:    ep.ServiceType,
 			Owner:          ep.Owner,
 			Endpoint:       ep.Endpoint,
 			BlockNumber:    ep.Blocknumber,

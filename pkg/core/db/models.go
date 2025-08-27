@@ -54,6 +54,48 @@ func (ns NullProofStatus) Value() (driver.Value, error) {
 	return string(ns.ProofStatus), nil
 }
 
+type ValidatorEvent string
+
+const (
+	ValidatorEventRegistered   ValidatorEvent = "registered"
+	ValidatorEventDeregistered ValidatorEvent = "deregistered"
+)
+
+func (e *ValidatorEvent) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ValidatorEvent(s)
+	case string:
+		*e = ValidatorEvent(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ValidatorEvent: %T", src)
+	}
+	return nil
+}
+
+type NullValidatorEvent struct {
+	ValidatorEvent ValidatorEvent
+	Valid          bool // Valid is true if ValidatorEvent is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullValidatorEvent) Scan(value interface{}) error {
+	if value == nil {
+		ns.ValidatorEvent, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ValidatorEvent.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullValidatorEvent) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ValidatorEvent), nil
+}
+
 type AccessKey struct {
 	ID      int32
 	TrackID string
@@ -288,4 +330,16 @@ type StorageProofPeer struct {
 type TrackRelease struct {
 	ID      int32
 	TrackID string
+}
+
+type ValidatorHistory struct {
+	Rowid        int32
+	Endpoint     string
+	EthAddress   string
+	CometAddress string
+	SpID         int64
+	ServiceType  string
+	EventType    ValidatorEvent
+	EventTime    pgtype.Timestamp
+	EventBlock   int64
 }

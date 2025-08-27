@@ -206,6 +206,14 @@ select *
 from core_validators
 where comet_address = any($1::text []);
 
+-- name: GetValidatorHistoryForID :one
+select *
+from validator_history
+where sp_id = $1
+    and service_type = $2
+order by event_time desc
+limit 1;
+
 -- name: GetRecentBlocks :many
 select *
 from core_blocks

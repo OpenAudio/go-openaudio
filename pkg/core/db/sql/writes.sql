@@ -267,3 +267,15 @@ insert into core_pie (
     raw_acknowledgment,
     block_height
 ) values ($1, $2, $3, $4, $5, $6, $7, $8);
+
+-- name: AppendValidatorHistory :exec
+insert into validator_history (
+    endpoint,
+    eth_address,
+    comet_address,
+    sp_id,
+    service_type,
+    event_type,
+    event_time,
+    event_block
+) values ($1, $2, $3, $4, $5, $6, $7, $8);

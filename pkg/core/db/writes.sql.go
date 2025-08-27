@@ -11,6 +11,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const appendValidatorHistory = `-- name: AppendValidatorHistory :exec
+insert into validator_history (
+    endpoint,
+    eth_address,
+    comet_address,
+    sp_id,
+    service_type,
+    event_type,
+    event_time,
+    event_block
+) values ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+type AppendValidatorHistoryParams struct {
+	Endpoint     string
+	EthAddress   string
+	CometAddress string
+	SpID         int64
+	ServiceType  string
+	EventType    ValidatorEvent
+	EventTime    pgtype.Timestamp
+	EventBlock   int64
+}
+
+func (q *Queries) AppendValidatorHistory(ctx context.Context, arg AppendValidatorHistoryParams) error {
+	_, err := q.db.Exec(ctx, appendValidatorHistory,
+		arg.Endpoint,
+		arg.EthAddress,
+		arg.CometAddress,
+		arg.SpID,
+		arg.ServiceType,
+		arg.EventType,
+		arg.EventTime,
+		arg.EventBlock,
+	)
+	return err
+}
+
 const clearUncommittedSlaNodeReports = `-- name: ClearUncommittedSlaNodeReports :exec
 delete from sla_node_reports
 where sla_rollup_id is null

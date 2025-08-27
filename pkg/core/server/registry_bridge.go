@@ -407,7 +407,7 @@ func (s *Server) IsNodeRegisteredOnEthereum(ctx context.Context, endpoint, deleg
 
 func (s *Server) registerSelfOnEth(ctx context.Context) error {
 	if _, err := s.eth.GetRegisteredEndpointInfo(
-		context.Background(),
+		ctx,
 		connect.NewRequest(&ethv1.GetRegisteredEndpointInfoRequest{
 			Endpoint: s.config.NodeEndpoint,
 		}),
@@ -426,7 +426,7 @@ func (s *Server) registerSelfOnEth(ctx context.Context) error {
 				}
 
 				if _, err := s.eth.Register(
-					context.Background(),
+					ctx,
 					connect.NewRequest(&ethv1.RegisterRequest{
 						DelegateKey: keyHex,
 						Endpoint:    s.config.NodeEndpoint,
@@ -437,6 +437,8 @@ func (s *Server) registerSelfOnEth(ctx context.Context) error {
 					return fmt.Errorf("could not register on eth: %v", err)
 				}
 				return nil
+			} else {
+				return fmt.Errorf("could not register self: unexpected connect error: %v", err)
 			}
 		}
 		return fmt.Errorf("could not register self: unexpected error: %v", err)

@@ -2005,6 +2005,37 @@ func (q *Queries) GetTx(ctx context.Context, lower string) (CoreTransaction, err
 	return i, err
 }
 
+const getValidatorHistoryForID = `-- name: GetValidatorHistoryForID :one
+select rowid, endpoint, eth_address, comet_address, sp_id, service_type, event_type, event_time, event_block
+from validator_history
+where sp_id = $1
+    and service_type = $2
+order by event_time desc
+limit 1
+`
+
+type GetValidatorHistoryForIDParams struct {
+	SpID        int64
+	ServiceType string
+}
+
+func (q *Queries) GetValidatorHistoryForID(ctx context.Context, arg GetValidatorHistoryForIDParams) (ValidatorHistory, error) {
+	row := q.db.QueryRow(ctx, getValidatorHistoryForID, arg.SpID, arg.ServiceType)
+	var i ValidatorHistory
+	err := row.Scan(
+		&i.Rowid,
+		&i.Endpoint,
+		&i.EthAddress,
+		&i.CometAddress,
+		&i.SpID,
+		&i.ServiceType,
+		&i.EventType,
+		&i.EventTime,
+		&i.EventBlock,
+	)
+	return i, err
+}
+
 const hasAccessToTrackRelease = `-- name: HasAccessToTrackRelease :one
 select exists (
         select 1

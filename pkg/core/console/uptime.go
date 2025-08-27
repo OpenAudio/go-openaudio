@@ -118,7 +118,7 @@ func endpointIsExemptForSlaReport(endpoint *pages.Endpoint, reportTimestamp time
 }
 
 func (cs *Console) generateEndpoints(ctx context.Context, activeEndpointURL string) (endpoints []*pages.Endpoint, activeEndpoint *pages.Endpoint, err error) {
-	// get all endpoints registered on eth
+	// Fetch all endpoints registered on eth
 	endpointsResp, err := cs.eth.GetRegisteredEndpoints(
 		ctx,
 		connect.NewRequest(&ethv1.GetRegisteredEndpointsRequest{}),
@@ -127,9 +127,19 @@ func (cs *Console) generateEndpoints(ctx context.Context, activeEndpointURL stri
 		return nil, nil, fmt.Errorf("error requesting endpoints from eth service: %v", err)
 	}
 
-	// transform endpoints into pages.Endpoint objects
-	endpointMap := make(map[string]*pages.Endpoint, len(endpointsResp.Msg.Endpoints))
-	for _, ep := range endpointsResp.Msg.Endpoints {
+	// Fetch all cometBFT validators
+	cometValidators, err := cs.db.GetAllRegisteredNodes(ctx)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, fmt.Errorf("error fetching cometValidators from db: %v", err)
+	}
+	cometValidatorMap := make(map[string]*db.CoreValidator, len(cometValidators))
+	for _, cv := range cometValidators {
+		cometValidatorMap[cv.Endpoint] = &cv
+	}
+
+	// Transform endpoints into pages.Endpoint objects
+	endpoints = make([]*pages.Endpoint, len(endpointsResp.Msg.Endpoints))
+	for i, ep := range endpointsResp.Msg.Endpoints {
 		pep := &pages.Endpoint{
 			Endpoint:        ep.Endpoint,
 			EthAddress:      ep.DelegateWallet,
@@ -140,34 +150,32 @@ func (cs *Console) generateEndpoints(ctx context.Context, activeEndpointURL stri
 		if ep.Endpoint == activeEndpointURL {
 			activeEndpoint = pep
 		}
-		endpointMap[ep.Endpoint] = pep
-	}
-	if activeEndpoint == nil {
-		// dummy endpoint for unregistered nodes, e.g. sandboxes or rpcs
-		activeEndpoint = &pages.Endpoint{Endpoint: activeEndpointURL}
-	}
+		endpoints[i] = pep
 
-	// Attach comet address to as many endpoints as possible
-	cometValidators, err := cs.db.GetAllRegisteredNodes(ctx)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil, fmt.Errorf("error fetching cometValidators from db: %v", err)
-	}
-	for _, cv := range cometValidators {
-		if pep, ok := endpointMap[cv.Endpoint]; ok {
+		if cv, ok := cometValidatorMap[pep.Endpoint]; ok {
 			pep.CometAddress = cv.CometAddress
 		} else {
-			// Rare case when node is a comet validator but not registered on eth
-			endpointMap[cv.Endpoint] = &pages.Endpoint{
-				Endpoint:     cv.Endpoint,
-				EthAddress:   cv.EthAddress,
-				CometAddress: cv.CometAddress,
+			// Endpoint is registered on eth but not on comet.
+			// Attempt to get comet address from validator history
+			history, err := cs.db.GetValidatorHistoryForID(
+				ctx,
+				db.GetValidatorHistoryForIDParams{
+					ep.Id,
+					ep.ServiceType,
+				},
+			)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				cs.logger.Error("Falled to get validator history for endpoint", "endpoint", ep.Endpoint, "error", err)
+				return nil, nil, err
+			} else if err == nil {
+				pep.CometAddress = history.CometAddress
 			}
 		}
 	}
 
-	endpoints = make([]*pages.Endpoint, 0, len(endpointMap))
-	for _, ep := range endpointMap {
-		endpoints = append(endpoints, ep)
+	// If this server is unregistered, create a dummy endpoint
+	if activeEndpoint == nil {
+		activeEndpoint = &pages.Endpoint{Endpoint: activeEndpointURL}
 	}
 
 	return endpoints, activeEndpoint, nil

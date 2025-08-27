@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -297,6 +298,8 @@ func (eth *EthService) deleteAndDeregisterEndpoint(ctx context.Context, spID *bi
 		DeregistrationTopic,
 		&v1.ServiceEndpoint{
 			Id:             spID.Int64(),
+			ServiceType:    st,
+			RegisteredAt:   timestamppb.New(ep.RegisteredAt.Time),
 			Owner:          owner.Hex(),
 			Endpoint:       endpoint,
 			DelegateWallet: ep.DelegateWallet,

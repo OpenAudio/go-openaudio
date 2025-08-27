@@ -296,6 +296,10 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 						PubKeyType:  "ed25519",
 					}
 				}
+				if err := s.appendRegistrationToValidatorHistory(ctx, vr, req.Time, req.Height); err != nil {
+					// do not halt on validator history
+					s.logger.Errorf("failed to append registration event to validator history: %v", err)
+				}
 			} else if att := signedTx.GetAttestation(); att != nil && att.GetValidatorDeregistration() != nil {
 				vr := att.GetValidatorDeregistration()
 				vrPubKey := ed25519.PubKey(vr.GetPubKey())
@@ -306,7 +310,11 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 					PubKeyBytes: vr.PubKey,
 					PubKeyType:  "ed25519",
 				}
-			} else if vd := signedTx.GetValidatorDeregistration(); vd != nil {
+				if err := s.appendDeregistrationToValidatorHistory(ctx, vr, req.Time, req.Height); err != nil {
+					// do not halt on validator history
+					s.logger.Errorf("failed to append deregistration event to validator history: %v", err)
+				}
+			} else if vd := signedTx.GetValidatorDeregistration(); vd != nil { // TODO: delete legacy deregistration after chain rollover
 				vdPubKey := ed25519.PubKey(vd.GetPubKey())
 				vdAddr := vdPubKey.Address().String()
 				// intentionally override any existing updates

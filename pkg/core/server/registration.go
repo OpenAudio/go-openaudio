@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
@@ -263,4 +264,57 @@ func (s *Server) createDeregisterTransaction(address types.Address) ([]byte, err
 		return []byte{}, err
 	}
 	return signedTxBytes, nil
+}
+
+func (s *Server) appendDeregistrationToValidatorHistory(ctx context.Context, dereg *v1.ValidatorDeregistration, timestamp time.Time, block int64) error {
+	// get validator metadata from db before deregistration state is committed
+	validator, err := s.db.GetRegisteredNodeByCometAddress(ctx, dereg.GetCometAddress())
+	if err != nil {
+		return fmt.Errorf("could not get metadata for node being deregistered: %v", err)
+	}
+
+	// convert spid
+	spId64, err := strconv.ParseInt(validator.SpID, 10, 64)
+	if err != nil {
+		return err
+	}
+
+	qtx := s.getDb()
+	if err := qtx.AppendValidatorHistory(ctx, db.AppendValidatorHistoryParams{
+		Endpoint:     validator.Endpoint,
+		EthAddress:   validator.EthAddress,
+		CometAddress: dereg.CometAddress,
+		SpID:         spId64,
+		ServiceType:  validator.NodeType,
+		EventType:    db.ValidatorEventDeregistered,
+		EventTime:    qtx.ToPgxTimestamp(timestamp),
+		EventBlock:   block,
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Server) appendRegistrationToValidatorHistory(ctx context.Context, reg *v1.ValidatorRegistration, timestamp time.Time, block int64) error {
+	// convert spid
+	spId64, err := strconv.ParseInt(reg.SpId, 10, 64)
+	if err != nil {
+		return err
+	}
+
+	qtx := s.getDb()
+	if err := qtx.AppendValidatorHistory(ctx, db.AppendValidatorHistoryParams{
+		Endpoint:     reg.Endpoint,
+		EthAddress:   reg.DelegateWallet,
+		CometAddress: reg.CometAddress,
+		SpID:         spId64,
+		ServiceType:  reg.NodeType,
+		EventType:    db.ValidatorEventRegistered,
+		EventTime:    qtx.ToPgxTimestamp(timestamp),
+		EventBlock:   block,
+	}); err != nil {
+		return err
+	}
+	return nil
 }

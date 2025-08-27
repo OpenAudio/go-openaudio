@@ -41,6 +41,7 @@ message ServiceEndpoint {
   int64 block_number = 4;
   string delegate_wallet = 5;
   google.protobuf.Timestamp registered_at = 6;
+  string service_type = 7;
 }
 
 message GetServiceProviderRequest {

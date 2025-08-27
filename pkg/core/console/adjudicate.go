@@ -83,6 +83,22 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			cs.logger.Error("Falled to get cometbft validator for endpoint", "endpoint", ep.Endpoint, "error", err)
 			return err
+		} else if errors.Is(err, pgx.ErrNoRows) {
+			// Endpoint is registered on eth but not on comet.
+			// Attempt to get comet address from validator history
+			history, err := cs.db.GetValidatorHistoryForID(
+				ctx,
+				db.GetValidatorHistoryForIDParams{
+					ep.Id,
+					ep.ServiceType,
+				},
+			)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				cs.logger.Error("Falled to get validator history for endpoint", "endpoint", ep.Endpoint, "error", err)
+				return err
+			} else if err == nil {
+				cometAddress = history.CometAddress
+			}
 		} else if err == nil {
 			cometAddress = validator.CometAddress
 		}
