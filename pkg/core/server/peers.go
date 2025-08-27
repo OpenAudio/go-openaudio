@@ -193,7 +193,7 @@ func (s *Server) getRegisteredNodes(c echo.Context) error {
 
 func (s *Server) managePeers(ctx context.Context) error {
 	s.StartProcess(ProcessStatePeerManager)
-	
+
 	logger := s.logger.Child("peer_manager")
 
 	select {
@@ -478,18 +478,13 @@ func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *common.Logger) er
 
 			var p2pAccessible bool
 
-			if s.isNonRoutableAddress(listenAddr) {
+			conn, err := net.DialTimeout("tcp", listenAddr, 3*time.Second)
+			if err != nil {
+				logger.Errorf("p2p not accessible for %s: %v", ethaddress, err)
 				p2pAccessible = false
-				logger.Debugf("p2p not accessible for %s: non-routable address %s", ethaddress, listenAddr)
 			} else {
-				conn, err := net.DialTimeout("tcp", listenAddr, 3*time.Second)
-				if err != nil {
-					logger.Errorf("p2p not accessible for %s: %v", ethaddress, err)
-					p2pAccessible = false
-				} else {
-					p2pAccessible = true
-					_ = conn.Close()
-				}
+				p2pAccessible = true
+				_ = conn.Close()
 			}
 
 			status, exists := s.peerStatus.Get(ethaddress)
