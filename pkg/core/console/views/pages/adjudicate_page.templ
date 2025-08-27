@@ -162,27 +162,22 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
         </div>
 
         <div class="flex flex-row text-center p-2">
-            <div class="basis-1/5 rounded-md bg-slate-100 py-8 mx-1">
+            <div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
                 <dt class="text-4xl">{ humanize.Comma(int64(props.TotalSlas)) }</dt>
                 <dd class="text-sm">Total SLAs</dd>
             </div>
 
-            <div class={ "basis-1/5 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMetClass(), props.MetSlas > 0) }>
-                <dt class="text-4xl">{ humanize.Comma(int64(props.MetSlas)) }</dt>
-                <dd class="text-sm">SLAs Met</dd>
-            </div>
-
-            <div class={ "basis-1/5 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaDeadClass(), props.DeadSlas > 0) }>
+            <div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaDeadClass(), props.DeadSlas > 0) }>
                 <dt class="text-4xl">{ humanize.Comma(int64(props.DeadSlas)) }</dt>
                 <dd class="text-sm">SLAs Missed</dd>
             </div>
 
-            <div class="basis-1/5 rounded-md bg-slate-100 py-8 mx-1">
+            <div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
                 <dt class="text-4xl">{ humanize.Comma(int64(props.TotalChallenges)) }</dt>
                 <dd class="text-sm">Challenges Received</dd>
             </div>
 
-            <div class={ "basis-1/5 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissClass(), props.FailedChallenges > 0) }>
+            <div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissClass(), props.FailedChallenges > 0) }>
                 <dt class="text-4xl">{ humanize.Comma(int64(props.FailedChallenges)) }</dt>
                 <dd class="text-sm">Challenges Failed</dd>
             </div>

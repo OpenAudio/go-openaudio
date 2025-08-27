@@ -8,7 +8,7 @@ type PoSPageView struct {
     Address       string
     BlockStart    int64
     BlockEnd      int64
-    StorageProofs []StorageProof
+    StorageProofs []*StorageProof
 }
 
 type StorageProof struct {
@@ -39,9 +39,14 @@ templ staticStylesPoS() {
 templ (c *Pages) PoSPageHTML(props *PoSPageView) {
 	@c.layout.SiteFrame() {
         @staticStylesPoS()
-        <h1 class="text-xl">Proof of Storage Challenges</h1>
-        <h3 class="text-sm">
-            Prover: { props.Address } | Blocks: { fmt.Sprintf("%d - %d", props.BlockStart, props.BlockEnd) }
+        <h2 class="text-lg text-gray-400">
+            Proof of Storage Challenges
+        </h2>
+        <h1 class="text-4xl p-3">
+            { props.Address }
+        </h1>
+        <h3 class="text-sm text-gray-400 px-3">
+            Blocks: { fmt.Sprintf("%d - %d", props.BlockStart, props.BlockEnd) }
         </h3>
         <table class="bg-slate-50 p-2 rounded posReports text-left m-4">
             <colgroup>
@@ -63,7 +68,7 @@ templ (c *Pages) PoSPageHTML(props *PoSPageView) {
 	}
 }
 
-templ posRowReport(sp StorageProof, start, end int64) {
+templ posRowReport(sp *StorageProof, start, end int64) {
     <tr class={ templ.KV(slaMissClass(), sp.Status == "fail") }>
         <td>{ fmt.Sprintf("%d", sp.BlockHeight) }</td>
         <td>

@@ -63,19 +63,6 @@ func meetsPoSSla(report *SlaReport) bool {
     return faultRatio >= slaMeetsThreshold
 }
 
-func meetsSlaText(status SlaStatus) string {
-    switch status {
-    case SlaDead, SlaPartial:
-        return "Miss"
-    case SlaMet:
-        return "Met"
-    case SlaExempt:
-        return "N/A"
-    default:
-        return ""
-    }
-}
-
 func strippedEndpoint(endpoint string) string {
     res := strings.TrimPrefix(endpoint, "https://")
     res = strings.TrimPrefix(res, "http://")
@@ -87,7 +74,7 @@ func getSlaClassFromStatus(status SlaStatus) templ.CSSClass {
     case SlaDead:
         return slaDeadClass()
     case SlaPartial:
-        return slaMissClass()
+        return slaPartialClass()
     case SlaExempt:
         return slaExemptClass()
     case SlaMet:
@@ -107,7 +94,9 @@ func getPoSSlaClass(report *SlaReport) templ.CSSClass {
 
 
 css slaMetClass() {
-    background-color: { templ.SafeCSSProperty(slaGreen) };
+}
+
+css slaPartialClass() {
 }
 
 css slaMissClass() {
@@ -115,8 +104,7 @@ css slaMissClass() {
 }
 
 css slaDeadClass() {
-    background-color: { templ.SafeCSSProperty(slaDead) };
-    color: white;
+    background-color: { templ.SafeCSSProperty(slaRed) };
 }
 
 css slaExemptClass() {
@@ -132,6 +120,7 @@ templ staticUptimeStyles() {
             display: inline-block;
             margin: 3px;
             border-radius: 0.5rem;
+            background-color: #9ef19e;
         }
 
         .slaBarMini {
@@ -141,6 +130,7 @@ templ staticUptimeStyles() {
             margin: 1px;
             border-radius: 0.5rem;
             vertical-align: middle;
+            background-color: #9ef19e;
         }
 
 
@@ -252,7 +242,7 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                     } else {
                         <dt class="text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlocksProposed) }</dt>
                     }
-                    <dd class="text-sm">Blocks Proposed by Me</dd>
+                    <dd class="text-sm">Blocks Proposed</dd>
                 </div>
 
                 <div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
@@ -264,7 +254,8 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                     <a href={ 
                         templ.URL(
                             fmt.Sprintf(
-                                "/console/pos?block_start=%d&block_end=%d",
+                                "/console/pos/%s?block_start=%d&block_end=%d",
+                                props.ActiveEndpoint.CometAddress,
                                 props.ActiveEndpoint.ActiveReport.BlockStart,
                                 props.ActiveEndpoint.ActiveReport.BlockEnd,
                             ),
@@ -287,18 +278,10 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                     <col />
                     <col class="bg-white" />
                     <col />
-                    <col />
-                    <col />
                 </colgroup>
                 <tr>
                     <th>Validator</th>
-                    <th colspan="2" class="text-center">
-                        Proof of Work Blocks
-                        <div class="flex flex-row text-left">
-                            <div class="basis-1/2">Quota</div>
-                            <div class="basis-1/2">Proposed</div>
-                        </div>
-                    </th>
+                    <th>Blocks Proposed</th>
                     <th colspan="2" class="text-center">
                         Proof of Storage Challenges
                         <div class="flex flex-row text-left">
@@ -306,7 +289,6 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                             <div class="basis-1/2">Failed</div>
                         </div>
                     </th>
-                    <th>SLA</th>
                     <th>History</th>
                 </tr>
                 for _, ep := range props.Endpoints {
@@ -324,7 +306,6 @@ templ validatorRowReport(ep *Endpoint) {
                 { strippedEndpoint(ep.Endpoint) }
             </a>
         </td>
-        <td>{ fmt.Sprintf("%d", ep.ActiveReport.Quota) }</td>
         <td class={ getSlaClassFromStatus(ep.ActiveReport.Status) }>
             { fmt.Sprintf("%d", ep.ActiveReport.BlocksProposed) }
         </td>
@@ -332,10 +313,6 @@ templ validatorRowReport(ep *Endpoint) {
         <td>{ fmt.Sprintf("%d", ep.ActiveReport.PoSChallengesTotal) }</td>
         <td class={ getPoSSlaClass(ep.ActiveReport) }>
             { fmt.Sprintf("%d", ep.ActiveReport.PoSChallengesFailed) }
-        </td>
-
-        <td class={ getSlaClassFromStatus(ep.ActiveReport.Status) }>
-            { meetsSlaText(ep.ActiveReport.Status) }
         </td>
         <td class="bg-white">
             for i := max(0, len(ep.SlaReports) - 6); i < len(ep.SlaReports); i++ {

@@ -17,13 +17,17 @@ const maxBlockRange = int64(1000)
 func (cs *Console) posFragment(c echo.Context) error {
 	ctx := c.Request().Context()
 	start, end := cs.getValidBlockRange(ctx, c.QueryParam("block_start"), c.QueryParam("block_end"))
+	address := c.Param("address")
+	if address == "" {
+		address = cs.config.ProposerAddress
+	}
 
 	proofs, err := cs.db.GetStorageProofsForNodeInRange(
 		ctx,
 		db.GetStorageProofsForNodeInRangeParams{
 			BlockHeight:   start,
 			BlockHeight_2: end,
-			Address:       cs.config.ProposerAddress,
+			Address:       address,
 		},
 	)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -40,23 +44,23 @@ func (cs *Console) posFragment(c echo.Context) error {
 		validatorMap[v.CometAddress] = v.Endpoint
 	}
 
-	pageProofs := make([]pages.StorageProof, 0, len(proofs))
-	for _, p := range proofs {
+	pageProofs := make([]*pages.StorageProof, len(proofs))
+	for i, p := range proofs {
 		ep, ok := validatorMap[p.Address]
 		if !ok {
 			ep = ""
 		}
-		psp := pages.StorageProof{
+		psp := &pages.StorageProof{
 			BlockHeight: p.BlockHeight,
 			Endpoint:    ep,
 			CID:         p.Cid.String,
 			Status:      string(p.Status),
 		}
-		pageProofs = append(pageProofs, psp)
+		pageProofs[i] = psp
 	}
 
 	return cs.views.RenderPoSView(c, &pages.PoSPageView{
-		Address:       cs.config.ProposerAddress,
+		Address:       address,
 		BlockStart:    start,
 		BlockEnd:      end,
 		StorageProofs: pageProofs,
