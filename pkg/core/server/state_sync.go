@@ -80,8 +80,11 @@ func getPgDumpPath(baseDir string) string {
 }
 
 func (s *Server) startStateSync(ctx context.Context) error {
+	s.StartProcess(ProcessStateStateSync)
+	
 	select {
 	case <-ctx.Done():
+		s.CompleteProcess(ProcessStateStateSync)
 		return ctx.Err()
 	case <-s.awaitRpcReady:
 	}
@@ -90,6 +93,7 @@ func (s *Server) startStateSync(ctx context.Context) error {
 
 	if !s.config.StateSync.ServeSnapshots {
 		logger.Info("State sync is not enabled, skipping snapshot creation")
+		s.CompleteProcess(ProcessStateStateSync)
 		return nil
 	}
 
@@ -97,6 +101,7 @@ func (s *Server) startStateSync(ctx context.Context) error {
 	eb := node.EventBus()
 
 	if eb == nil {
+		s.ErrorProcess(ProcessStateStateSync, "event bus not ready")
 		return errors.New("event bus not ready")
 	}
 
@@ -105,30 +110,39 @@ func (s *Server) startStateSync(ctx context.Context) error {
 	query := types.EventQueryNewBlock
 	subscription, err := eb.Subscribe(ctx, subscriberID, query)
 	if err != nil {
+		s.ErrorProcess(ProcessStateStateSync, fmt.Sprintf("failed to subscribe to NewBlock events: %v", err))
 		return fmt.Errorf("failed to subscribe to NewBlock events: %v", err)
 	}
+
+	s.RunningProcessWithMetadata(ProcessStateStateSync, "Listening for new blocks")
 
 	for {
 		select {
 		case <-ctx.Done():
 			s.logger.Info("Stopping block event subscription")
+			s.CompleteProcess(ProcessStateStateSync)
 			return ctx.Err()
 		case msg := <-subscription.Out():
 			blockEvent := msg.Data().(types.EventDataNewBlock)
 			blockHeight := blockEvent.Block.Height
 			if blockHeight%s.config.StateSync.BlockInterval != 0 {
+				s.SleepingProcessWithMetadata(ProcessStateStateSync, "Waiting for snapshot interval")
 				continue
 			}
 
+			s.RunningProcessWithMetadata(ProcessStateStateSync, fmt.Sprintf("Creating snapshot at height %d", blockHeight))
 			if err := s.createSnapshot(logger, blockHeight); err != nil {
 				logger.Errorf("error creating snapshot: %v", err)
 			}
 
+			s.RunningProcessWithMetadata(ProcessStateStateSync, "Pruning old snapshots")
 			if err := s.pruneSnapshots(logger); err != nil {
 				logger.Errorf("error pruning snapshots: %v", err)
 			}
+			s.SleepingProcessWithMetadata(ProcessStateStateSync, "Waiting for next block")
 		case <-subscription.Canceled():
 			s.logger.Errorf("Subscription cancelled: %v", subscription.Err())
+			s.ErrorProcess(ProcessStateStateSync, fmt.Sprintf("subscription cancelled: %v", subscription.Err()))
 			return subscription.Err()
 		}
 	}

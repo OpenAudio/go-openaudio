@@ -192,10 +192,13 @@ func (s *Server) getRegisteredNodes(c echo.Context) error {
 }
 
 func (s *Server) managePeers(ctx context.Context) error {
+	s.StartProcess(ProcessStatePeerManager)
+	
 	logger := s.logger.Child("peer_manager")
 
 	select {
 	case <-ctx.Done():
+		s.CompleteProcess(ProcessStatePeerManager)
 		return ctx.Err()
 	case <-s.awaitRpcReady:
 	}
@@ -218,27 +221,38 @@ func (s *Server) managePeers(ctx context.Context) error {
 	for {
 		select {
 		case <-connectRPCTicker.C:
+			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Refreshing Connect RPC clients")
 			if err := s.refreshConnectRPCPeers(ctx, logger); err != nil {
 				logger.Errorf("could not refresh connectrpcs: %v", err)
 			}
+			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
 		case <-cometRPCTicker.C:
+			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Refreshing Comet RPC clients")
 			if err := s.refreshCometRPCPeers(ctx, logger); err != nil {
 				logger.Errorf("could not refresh cometbft rpcs: %v", err)
 			}
+			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
 		case <-healthcheckTicker.C:
+			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Health checking peers")
 			if err := s.refreshPeerHealth(ctx, logger); err != nil {
 				logger.Errorf("could not check health: %v", err)
 			}
+			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
 		case <-p2pcheckTicker.C:
+			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Checking P2P connectivity")
 			if err := s.checkPeerP2PAddr(ctx, logger); err != nil {
 				logger.Errorf("could not check p2p connectivity: %v", err)
 			}
+			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
 		case <-peerInfoTicker.C:
+			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Refreshing peer data")
 			if err := s.refreshPeerData(ctx, logger); err != nil {
 				logger.Errorf("could not refresh peer data: %v", err)
 			}
+			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
 		case <-ctx.Done():
 			logger.Info("shutting down")
+			s.CompleteProcess(ProcessStatePeerManager)
 			return ctx.Err()
 		}
 	}
@@ -483,10 +497,10 @@ func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *common.Logger) er
 			if exists {
 				status.P2PConnected = isPeered(nodeid)
 				s.peerStatus.Set(ethaddress, status)
-			}
 
-			if status.P2PConnected {
-				return
+				if status.P2PConnected {
+					return
+				}
 			}
 
 			connectionString := fmt.Sprintf("%s@%s", nodeid, listenAddr)

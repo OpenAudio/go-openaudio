@@ -41,12 +41,16 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 
 	if err := cs.populateSlaReportsForEndpoints(ctx, endpoints, activeEndpoint, rollupBlockEnd); err != nil {
 		cs.logger.Error("failed to populate SLA reports for endpoints: %v", err)
-		return err
+		return cs.views.RenderUptimeView(c, &pages.UptimePageView{
+			ActiveEndpoint: activeEndpoint,
+		})
 	}
 
 	// SLA rollup not found, abort early with empty data
 	if activeEndpoint.ActiveReport == nil {
-		return cs.views.RenderUptimeView(c, &pages.UptimePageView{})
+		return cs.views.RenderUptimeView(c, &pages.UptimePageView{
+			ActiveEndpoint: activeEndpoint,
+		})
 	}
 
 	avgBlockTimeMs, err := cs.getAverageBlockTimeForReport(ctx, activeEndpoint.ActiveReport)
@@ -79,56 +83,27 @@ func (cs *Console) getActiveSlaRollup(ctx context.Context, rollupBlockEndParam s
 		rollup, err = cs.db.GetLatestSlaRollup(ctx)
 	} else if i, err := strconv.Atoi(rollupBlockEndParam); err == nil {
 		rollup, err = cs.db.GetSlaRollupWithBlockEnd(ctx, int64(i))
+		if err != nil {
+			return rollup, err
+		}
 	} else {
-		err = fmt.Errorf("Sla page called with invalid rollup block end %s", rollupBlockEndParam)
+		err = fmt.Errorf("sla page called with invalid rollup block end %s", rollupBlockEndParam)
+		return rollup, err
 	}
 	if err != nil {
-		err = fmt.Errorf("Failed to retrieve SlaRollup from db: %v", err)
+		err = fmt.Errorf("failed to retrieve SlaRollup from db: %v", err)
 		return rollup, err
 	}
 
 	return rollup, nil
 }
 
-func (cs *Console) getEndpoint(ctx context.Context, endpoint string) (*pages.Endpoint, error) {
-	infoResp, err := cs.eth.GetRegisteredEndpointInfo(
-		ctx,
-		connect.NewRequest(&ethv1.GetRegisteredEndpointInfoRequest{
-			Endpoint: endpoint,
-		}),
-	)
-	if err != nil {
-		var connectErr *connect.Error
-		if errors.As(err, &connectErr) {
-			if connectErr.Code() == connect.CodeNotFound {
-				return &pages.Endpoint{Endpoint: endpoint}, nil
-			}
-		}
-		return nil, err
-	}
-
-	ep := &pages.Endpoint{
-		Endpoint:        endpoint,
-		EthAddress:      infoResp.Msg.Se.DelegateWallet,
-		Owner:           infoResp.Msg.Se.Owner,
-		RegisteredAt:    infoResp.Msg.Se.RegisteredAt.AsTime(),
-		IsEthRegistered: true,
-	}
-
-	if validator, err := cs.db.GetRegisteredNodeByEthAddress(ctx, infoResp.Msg.Se.DelegateWallet); err != nil {
-		ep.CometAddress = validator.CometAddress
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
-	}
-
-	return ep, nil
-}
-
 func (cs *Console) getAverageBlockTimeForReport(ctx context.Context, report *pages.SlaReport) (int, error) {
 	var avgBlockTimeMs = 0
 	previousRollup, err := cs.db.GetPreviousSlaRollupFromId(ctx, report.SlaRollupId)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		err = fmt.Errorf("Failure reading previous SlaRollup from db: %v", err)
+		err = fmt.Errorf("failure reading previous SlaRollup from db: %v", err)
+		return avgBlockTimeMs, err
 	} else if errors.Is(err, pgx.ErrNoRows) {
 		err = nil
 	} else if err == nil && report.BlockEnd != 0 {

@@ -20,12 +20,12 @@ templ (p *Pages) NodesPageHTML(data *NodesView) {
 					</div>
 					<div class="uk-card-body text-sm">
 						<div>
-							@p.components.Link("/node/%s", node.EthAddress) {
+							@p.components.Link("/validator/%s", node.EthAddress) {
 								<div>Eth Address: { node.EthAddress } </div>
 							}
 						</div>
 						<div>
-							@p.components.Link("/node/%s", node.CometAddress) {
+							@p.components.Link("/validator/%s", node.CometAddress) {
 								<div>Comet Address: { node.CometAddress } </div>
 							}
 						</div>

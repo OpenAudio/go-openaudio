@@ -2,98 +2,578 @@ package pages
 
 import (
 	"fmt"
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/dustin/go-humanize"
-	"google.golang.org/protobuf/proto"
+	"github.com/AudiusProject/audiusd/pkg/api/core/v1"
 )
 
-type TxData struct {
-	TxType string
-	db.CoreTransaction
-}
-
-func NewTxData(tx db.CoreTransaction) TxData {
-	txType := "Unknown"
-	var stx v1.SignedTransaction
-	if err := proto.Unmarshal(tx.Transaction, &stx); err == nil {
-		if stx.GetPlays() != nil {
-			txType = "Plays"
-		} else if stx.GetManageEntity() != nil {
-			txType = "ManageEntity"
-		} else if stx.GetSlaRollup() != nil {
-			txType = "SLARollup"
-		} else if stx.GetStorageProof() != nil {
-			txType = "StorageProof"
-		} else if stx.GetValidatorRegistration() != nil {
-			txType = "ValidatorRegistration"
-		} else if stx.GetValidatorDeregistration() != nil {
-			txType = "ValidatorDeregistration"
-		} else if stx.GetStorageProofVerification() != nil {
-			txType = "StorageProofVerification"
-		}
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
 	}
-	return TxData{
-		TxType:          txType,
-		CoreTransaction: tx,
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+func formatPercentage(value, total int64) string {
+	if total == 0 {
+		return "0%"
+	}
+	return fmt.Sprintf("%.1f%%", (float64(value)/float64(total))*100)
+}
+
+func getProcessStateText(state v1.GetStatusResponse_ProcessInfo_ProcessState) string {
+	switch state {
+	case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_STARTING:
+		return "Starting"
+	case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_RUNNING:
+		return "Running"
+	case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_SLEEPING:
+		return "Sleeping"
+	case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED:
+		return "Completed"
+	case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_ERROR:
+		return "Error"
+	default:
+		return "Unknown"
 	}
 }
 
-type OverviewPageView struct {
-	Blocks []BlockView
-	Txs    []TxData
+func getProcessStateIcon(state v1.GetStatusResponse_ProcessInfo_ProcessState) string {
+	switch state {
+	case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_RUNNING:
+		return "🟢"
+	case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_STARTING:
+		return "🟡"
+	case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_SLEEPING:
+		return "🔵"
+	case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED:
+		return "✅"
+	case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_ERROR:
+		return "🔴"
+	default:
+		return "⚪"
+	}
 }
 
-templ (p *Pages) OverviewPageHTML(data *OverviewPageView) {
-	@p.layout.SiteFrame() {
-		<div class="uk-grid-small uk-child-width-1-2@s uk-grid-match" uk-grid>
-			<div>
-				<div class="uk-card uk-card-default uk-card-body">
-					<h3 class="uk-card-title">Recent Blocks</h3>
-					for _, block := range data.Blocks {
-						<div class="text-sm">
-							<div class="p-6">
-								<div>
-									@p.components.Link("/block/%s", block.Hash) {
-										<div>Hash: { block.Hash }</div>
-									}
-								</div>
-								<div>
-									@p.components.Link("/node/%s", block.Proposer) {
-										<div>Proposer: { block.ProposerEndpoint }</div>
-									}
-								</div>
-								<div>
-									@p.components.Link("/block/%d", block.Height) {
-										<div>Height: { fmt.Sprint(block.Height) }</div>
-									}
-								</div>
-								<div>
-									Transactions: { fmt.Sprint(len(block.Txs)) }
-								</div>
-								<div>
-									Age: { humanize.Time(block.Timestamp) }
-								</div>
+func getSyncPhaseText(phase v1.GetStatusResponse_SyncInfo_StateSyncInfo_Phase) string {
+	switch phase {
+	case v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_STARTING:
+		return "Starting"
+	case v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_DOWNLOADING_CHUNKS:
+		return "Downloading Chunks"
+	case v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_RECONSTRUCTING_CHUNKS:
+		return "Reconstructing Chunks"
+	case v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_RESTORING_PG_DUMP:
+		return "Restoring Database"
+	case v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_BLOCK_SYNC:
+		return "Block Sync"
+	case v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_COMPLETED:
+		return "Completed"
+	default:
+		return "Unknown"
+	}
+}
+
+templ (p *Pages) OverviewCriticalFragment(status *v1.GetStatusResponse) {
+	<!-- Critical Status Overview -->
+	<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+		<div class="bg-slate-100 rounded-lg p-4 text-center">
+			<div class="text-2xl font-bold">
+				if status.Live {
+					🟢 Live
+				} else {
+					🔴 Down
+				}
+			</div>
+			<div class="text-sm text-gray-600">Node Status</div>
+		</div>
+		<div class="bg-slate-100 rounded-lg p-4 text-center">
+			<div class="text-2xl font-bold">
+				if status.SyncInfo != nil && status.SyncInfo.Synced {
+					🟢 Synced
+				} else {
+					🟡 Syncing
+				}
+			</div>
+			<div class="text-sm text-gray-600">Sync Status</div>
+		</div>
+		<div class="bg-slate-100 rounded-lg p-4 text-center">
+			<div class="text-2xl font-bold">
+				if status.ChainInfo != nil {
+					@p.components.Link("/block/%d", status.ChainInfo.CurrentHeight) {
+						{ fmt.Sprintf("%d", status.ChainInfo.CurrentHeight) }
+					}
+				} else {
+					N/A
+				}
+			</div>
+			<div class="text-sm text-gray-600">Current Height</div>
+		</div>
+		<div class="bg-slate-100 rounded-lg p-4 text-center">
+			<div class="text-2xl font-bold">
+				if status.Ready {
+					✅ Ready
+				} else {
+					⏳ Not Ready
+				}
+			</div>
+			<div class="text-sm text-gray-600">Readiness</div>
+		</div>
+	</div>
+}
+
+templ (p *Pages) OverviewProcessesFragment(status *v1.GetStatusResponse) {
+	if status.ProcessInfo != nil {
+		<div class="bg-white shadow-md rounded-lg p-6">
+			<h2 class="text-xl font-semibold mb-4">Process Status</h2>
+			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+				<div class="bg-slate-50 rounded-lg p-4">
+					<div class="flex items-center justify-between mb-2">
+						<span class="font-medium">ABCI</span>
+						if status.ProcessInfo.Abci != nil {
+							<span>{ getProcessStateIcon(status.ProcessInfo.Abci.GetState()) }</span>
+						}
+					</div>
+					if status.ProcessInfo.Abci != nil {
+						<div class="text-sm text-gray-600">{ getProcessStateText(status.ProcessInfo.Abci.GetState()) }</div>
+						if status.ProcessInfo.Abci.Metadata != "" {
+							<div class="text-xs text-gray-500 mt-1">{ status.ProcessInfo.Abci.Metadata }</div>
+						}
+						if status.ProcessInfo.Abci.Error != "" {
+							<div class="text-xs text-red-600 mt-1">{ status.ProcessInfo.Abci.Error }</div>
+						}
+					}
+				</div>
+				<div class="bg-slate-50 rounded-lg p-4">
+					<div class="flex items-center justify-between mb-2">
+						<span class="font-medium">Registry Bridge</span>
+						if status.ProcessInfo.RegistryBridge != nil {
+							<span>{ getProcessStateIcon(status.ProcessInfo.RegistryBridge.GetState()) }</span>
+						}
+					</div>
+					if status.ProcessInfo.RegistryBridge != nil {
+						<div class="text-sm text-gray-600">{ getProcessStateText(status.ProcessInfo.RegistryBridge.GetState()) }</div>
+						if status.ProcessInfo.RegistryBridge.Metadata != "" {
+							<div class="text-xs text-gray-500 mt-1">{ status.ProcessInfo.RegistryBridge.Metadata }</div>
+						}
+						if status.ProcessInfo.RegistryBridge.Error != "" {
+							<div class="text-xs text-red-600 mt-1">{ status.ProcessInfo.RegistryBridge.Error }</div>
+						}
+					}
+				</div>
+				<div class="bg-slate-50 rounded-lg p-4">
+					<div class="flex items-center justify-between mb-2">
+						<span class="font-medium">Echo Server</span>
+						if status.ProcessInfo.EchoServer != nil {
+							<span>{ getProcessStateIcon(status.ProcessInfo.EchoServer.GetState()) }</span>
+						}
+					</div>
+					if status.ProcessInfo.EchoServer != nil {
+						<div class="text-sm text-gray-600">{ getProcessStateText(status.ProcessInfo.EchoServer.GetState()) }</div>
+						if status.ProcessInfo.EchoServer.Metadata != "" {
+							<div class="text-xs text-gray-500 mt-1">{ status.ProcessInfo.EchoServer.Metadata }</div>
+						}
+						if status.ProcessInfo.EchoServer.Error != "" {
+							<div class="text-xs text-red-600 mt-1">{ status.ProcessInfo.EchoServer.Error }</div>
+						}
+					}
+				</div>
+				<div class="bg-slate-50 rounded-lg p-4">
+					<div class="flex items-center justify-between mb-2">
+						<span class="font-medium">Sync Tasks</span>
+						if status.ProcessInfo.SyncTasks != nil {
+							<span>{ getProcessStateIcon(status.ProcessInfo.SyncTasks.GetState()) }</span>
+						}
+					</div>
+					if status.ProcessInfo.SyncTasks != nil {
+						<div class="text-sm text-gray-600">{ getProcessStateText(status.ProcessInfo.SyncTasks.GetState()) }</div>
+						if status.ProcessInfo.SyncTasks.Metadata != "" {
+							<div class="text-xs text-gray-500 mt-1">{ status.ProcessInfo.SyncTasks.Metadata }</div>
+						}
+						if status.ProcessInfo.SyncTasks.Error != "" {
+							<div class="text-xs text-red-600 mt-1">{ status.ProcessInfo.SyncTasks.Error }</div>
+						}
+					}
+				</div>
+				<div class="bg-slate-50 rounded-lg p-4">
+					<div class="flex items-center justify-between mb-2">
+						<span class="font-medium">Peer Manager</span>
+						if status.ProcessInfo.PeerManager != nil {
+							<span>{ getProcessStateIcon(status.ProcessInfo.PeerManager.GetState()) }</span>
+						}
+					</div>
+					if status.ProcessInfo.PeerManager != nil {
+						<div class="text-sm text-gray-600">{ getProcessStateText(status.ProcessInfo.PeerManager.GetState()) }</div>
+						if status.ProcessInfo.PeerManager.Metadata != "" {
+							<div class="text-xs text-gray-500 mt-1">{ status.ProcessInfo.PeerManager.Metadata }</div>
+						}
+						if status.ProcessInfo.PeerManager.Error != "" {
+							<div class="text-xs text-red-600 mt-1">{ status.ProcessInfo.PeerManager.Error }</div>
+						}
+					}
+				</div>
+				<div class="bg-slate-50 rounded-lg p-4">
+					<div class="flex items-center justify-between mb-2">
+						<span class="font-medium">Data Companion</span>
+						if status.ProcessInfo.DataCompanion != nil {
+							<span>{ getProcessStateIcon(status.ProcessInfo.DataCompanion.GetState()) }</span>
+						}
+					</div>
+					if status.ProcessInfo.DataCompanion != nil {
+						<div class="text-sm text-gray-600">{ getProcessStateText(status.ProcessInfo.DataCompanion.GetState()) }</div>
+						if status.ProcessInfo.DataCompanion.Metadata != "" {
+							<div class="text-xs text-gray-500 mt-1">{ status.ProcessInfo.DataCompanion.Metadata }</div>
+						}
+						if status.ProcessInfo.DataCompanion.Error != "" {
+							<div class="text-xs text-red-600 mt-1">{ status.ProcessInfo.DataCompanion.Error }</div>
+						}
+					}
+				</div>
+				<div class="bg-slate-50 rounded-lg p-4">
+					<div class="flex items-center justify-between mb-2">
+						<span class="font-medium">State Sync</span>
+						if status.ProcessInfo.StateSync != nil {
+							<span>{ getProcessStateIcon(status.ProcessInfo.StateSync.GetState()) }</span>
+						}
+					</div>
+					if status.ProcessInfo.StateSync != nil {
+						<div class="text-sm text-gray-600">{ getProcessStateText(status.ProcessInfo.StateSync.GetState()) }</div>
+						if status.ProcessInfo.StateSync.Metadata != "" {
+							<div class="text-xs text-gray-500 mt-1">{ status.ProcessInfo.StateSync.Metadata }</div>
+						}
+						if status.ProcessInfo.StateSync.Error != "" {
+							<div class="text-xs text-red-600 mt-1">{ status.ProcessInfo.StateSync.Error }</div>
+						}
+					}
+				</div>
+				<div class="bg-slate-50 rounded-lg p-4">
+					<div class="flex items-center justify-between mb-2">
+						<span class="font-medium">Mempool</span>
+						if status.ProcessInfo.MempoolCache != nil {
+							<span>{ getProcessStateIcon(status.ProcessInfo.MempoolCache.GetState()) }</span>
+						}
+					</div>
+					if status.ProcessInfo.MempoolCache != nil {
+						<div class="text-sm text-gray-600">{ getProcessStateText(status.ProcessInfo.MempoolCache.GetState()) }</div>
+						if status.ProcessInfo.MempoolCache.Metadata != "" {
+							<div class="text-xs text-gray-500 mt-1">{ status.ProcessInfo.MempoolCache.Metadata }</div>
+						}
+						if status.ProcessInfo.MempoolCache.Error != "" {
+							<div class="text-xs text-red-600 mt-1">{ status.ProcessInfo.MempoolCache.Error }</div>
+						}
+					}
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ (p *Pages) OverviewResourcesFragment(status *v1.GetStatusResponse) {
+	if status.ResourceInfo != nil || status.MempoolInfo != nil || status.SyncInfo != nil {
+		<div class="bg-white shadow-md rounded-lg p-6">
+			<h2 class="text-xl font-semibold mb-4">Performance & Resources</h2>
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+				<!-- Left Column: System Resources -->
+				<div>
+					<h3 class="text-lg font-medium mb-4">System Resources</h3>
+					if status.ResourceInfo != nil {
+						<div class="grid grid-cols-2 gap-4">
+							<div class="bg-slate-100 rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold">{ formatBytes(status.ResourceInfo.MemUsage) }</div>
+								<div class="text-sm text-gray-600">Memory</div>
+							</div>
+							<div class="bg-slate-100 rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold">{ fmt.Sprintf("%.1f%%", float64(status.ResourceInfo.CpuUsage)/100.0) }</div>
+								<div class="text-sm text-gray-600">CPU</div>
+							</div>
+							<div class="bg-slate-100 rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold">{ formatBytes(status.ResourceInfo.DiskUsage) }</div>
+								<div class="text-sm text-gray-600">Disk Used</div>
+							</div>
+							<div class="bg-slate-100 rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold">{ formatBytes(status.ResourceInfo.DiskFree) }</div>
+								<div class="text-sm text-gray-600">Disk Free</div>
+							</div>
+							<div class="bg-slate-100 rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold">{ formatBytes(status.ResourceInfo.DbSize) }</div>
+								<div class="text-sm text-gray-600">Database</div>
+							</div>
+							<div class="bg-slate-100 rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold">{ formatBytes(status.ResourceInfo.ChainSize) }</div>
+								<div class="text-sm text-gray-600">Chain Size</div>
 							</div>
 						</div>
 					}
 				</div>
-			</div>
-			<div>
-				<div class="uk-card uk-card-default uk-card-body flex-grow overflow-y-auto">
-					<h3 class="uk-card-title">Recent Transactions</h3>
-					for _, tx := range data.Txs {
-						<div class="text-sm">
-							<div class="p-6">
-								<div>
-									<a href={ templ.URL(fmt.Sprintf("/console/tx/%s", tx.TxHash)) }>Hash: { tx.TxHash }</a>
+				<!-- Right Column: Mempool & Sync -->
+				<div class="space-y-6">
+					<!-- Mempool -->
+					if status.MempoolInfo != nil {
+						<div>
+							<h3 class="text-lg font-medium mb-3">Mempool</h3>
+							<div class="grid grid-cols-2 gap-4">
+								<div class="bg-slate-100 rounded-lg p-4 text-center">
+									<div class="text-2xl font-bold">{ fmt.Sprintf("%d", status.MempoolInfo.TxCount) }</div>
+									<div class="text-sm text-gray-600">Transactions</div>
 								</div>
-								<a href={ templ.URL(fmt.Sprintf("/console/block/%s", fmt.Sprint(tx.BlockID))) }>Block { fmt.Sprint(tx.BlockID) }</a>
-								<div>
-									Type: { tx.TxType }
+								<div class="bg-slate-100 rounded-lg p-4 text-center">
+									<div class="text-2xl font-bold">{ formatBytes(status.MempoolInfo.TxSize) }</div>
+									<div class="text-sm text-gray-600">Size</div>
 								</div>
-								<div>Time: { humanize.Time(tx.CreatedAt.Time) } </div>
 							</div>
+						</div>
+					}
+					<!-- Sync Details -->
+					if status.SyncInfo != nil && (!status.SyncInfo.Synced) {
+						<div>
+							<h3 class="text-lg font-medium mb-3">Sync Progress</h3>
+							if status.SyncInfo.GetStateSync() != nil {
+								<div class="bg-slate-50 rounded-lg p-3 mb-3">
+									<div class="text-sm font-medium">State Sync: { getSyncPhaseText(status.SyncInfo.GetStateSync().Phase) }</div>
+									<div class="text-xs text-gray-600">{ fmt.Sprintf("%d chunks downloaded", status.SyncInfo.GetStateSync().DownloadedChunks) }</div>
+								</div>
+							}
+							if status.SyncInfo.GetBlockSync() != nil {
+								<div class="bg-slate-50 rounded-lg p-3">
+									<div class="text-sm font-medium">Block Sync</div>
+									<div class="text-xs text-gray-600">{ fmt.Sprintf("%d blocks behind", status.SyncInfo.GetBlockSync().BlockDiff) }</div>
+									if status.SyncInfo.GetBlockSync().HeadSource != nil {
+										<div class="text-xs text-gray-600">Source: { status.SyncInfo.GetBlockSync().HeadSource.Endpoint }</div>
+									}
+								</div>
+							}
+						</div>
+					}
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ (p *Pages) OverviewNetworkFragment(status *v1.GetStatusResponse) {
+	if status.Peers != nil && len(status.Peers.Peers) > 0 {
+		<div class="bg-white shadow-md rounded-lg p-6">
+			<h2 class="text-xl font-semibold mb-4">Network - Connected Peers ({ fmt.Sprintf("%d", len(status.Peers.Peers)) })</h2>
+			<div class="overflow-x-auto">
+				<table class="min-w-full">
+					<thead class="bg-slate-50">
+						<tr>
+							<th class="px-4 py-2 text-left text-sm font-medium text-gray-500">Endpoint</th>
+							<th class="px-4 py-2 text-left text-sm font-medium text-gray-500">Type</th>
+							<th class="px-4 py-2 text-left text-sm font-medium text-gray-500">Connect RPC</th>
+							<th class="px-4 py-2 text-left text-sm font-medium text-gray-500">Comet RPC</th>
+							<th class="px-4 py-2 text-left text-sm font-medium text-gray-500">P2P</th>
+						</tr>
+					</thead>
+					<tbody class="bg-white divide-y divide-gray-200">
+						for _, peer := range status.Peers.Peers {
+							<tr>
+								<td class="px-4 py-2 text-sm font-mono">
+									@p.components.ExternalLink("%s%s", peer.Endpoint, "/console/overview") {
+										{ peer.Endpoint }
+									}
+								</td>
+								<td class="px-4 py-2 text-sm">{ peer.NodeType }</td>
+								<td class="px-4 py-2 text-sm">
+									if peer.ConnectrpcHealthy {
+										🟢 Healthy
+									} else if peer.ConnectrpcClient {
+										🟡 Connected
+									} else {
+										🔴 Disconnected
+									}
+								</td>
+								<td class="px-4 py-2 text-sm">
+									if peer.CometrpcHealthy {
+										🟢 Healthy
+									} else if peer.CometrpcClient {
+										🟡 Connected
+									} else {
+										🔴 Disconnected
+									}
+								</td>
+								<td class="px-4 py-2 text-sm">
+									if peer.P2PConnected {
+										🟢 Connected
+									} else {
+										🔴 Disconnected
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	}
+}
+
+templ (p *Pages) OverviewPage(status *v1.GetStatusResponse) {
+	@p.layout.SiteFrame() {
+		<div class="space-y-6">
+			<h1 class="text-3xl font-bold">Node Overview</h1>
+			<!-- Critical Status Overview - refresh every 3 seconds -->
+			<div hx-get="/console/fragments/overview/critical" hx-trigger="every 3s" hx-swap="innerHTML">
+				@p.OverviewCriticalFragment(status)
+			</div>
+			<!-- Node & Chain Information -->
+			if status.NodeInfo != nil || status.ChainInfo != nil {
+				<div class="bg-white shadow-md rounded-lg p-6">
+					<h2 class="text-xl font-semibold mb-4">Node & Chain Information</h2>
+					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+						if status.NodeInfo != nil {
+							<div>
+								<label class="text-sm text-gray-500">Endpoint</label>
+								<div class="font-mono text-sm">{ status.NodeInfo.Endpoint }</div>
+							</div>
+							<div>
+								<label class="text-sm text-gray-500">Node Type</label>
+								<div class="font-mono text-sm">{ status.NodeInfo.NodeType }</div>
+							</div>
+						}
+						if status.ChainInfo != nil {
+							<div>
+								<label class="text-sm text-gray-500">Chain ID</label>
+								<div class="font-mono text-sm">{ status.ChainInfo.ChainId }</div>
+							</div>
+							<div>
+								<label class="text-sm text-gray-500">Block Hash</label>
+								<div class="font-mono text-sm break-all">
+									@p.components.Link("/block/%d", status.ChainInfo.CurrentHeight) {
+										{ status.ChainInfo.CurrentBlockHash }
+									}
+								</div>
+							</div>
+						}
+						if status.NodeInfo != nil {
+							<div>
+								<label class="text-sm text-gray-500">Comet Address</label>
+								<div class="font-mono text-sm break-all">
+									@p.components.Link("/validator/%s", status.NodeInfo.CometAddress) {
+										{ status.NodeInfo.CometAddress }
+									}
+								</div>
+							</div>
+							<div>
+								<label class="text-sm text-gray-500">Ethereum Address</label>
+								<div class="font-mono text-sm break-all">
+									@p.components.Link("/validator/%s", status.NodeInfo.EthAddress) {
+										{ status.NodeInfo.EthAddress }
+									}
+								</div>
+							</div>
+						}
+					</div>
+				</div>
+			}
+			<!-- Process Status - refresh every 5 seconds -->
+			<div hx-get="/console/fragments/overview/processes" hx-trigger="every 5s" hx-swap="innerHTML">
+				@p.OverviewProcessesFragment(status)
+			</div>
+			<!-- Performance & Resources - refresh every 15 seconds -->
+			<div hx-get="/console/fragments/overview/resources" hx-trigger="every 15s" hx-swap="innerHTML">
+				@p.OverviewResourcesFragment(status)
+			</div>
+			<!-- Network - refresh every 10 seconds -->
+			<div hx-get="/console/fragments/overview/network" hx-trigger="every 10s" hx-swap="innerHTML">
+				@p.OverviewNetworkFragment(status)
+			</div>
+			<!-- Advanced Configuration -->
+			<div class="bg-white shadow-md rounded-lg p-6">
+				<h2 class="text-xl font-semibold mb-4">Advanced Configuration</h2>
+				<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+					<!-- Archive Mode -->
+					<div>
+						<h3 class="text-lg font-medium mb-3">Archive Mode</h3>
+						<div class="bg-slate-100 rounded-lg p-3 text-center">
+							<div class="text-lg font-bold">
+								if status.ProcessInfo != nil && status.ProcessInfo.DataCompanion != nil && status.ProcessInfo.DataCompanion.GetState() == v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED {
+									🟢 Enabled
+								} else {
+									🔴 Disabled
+								}
+							</div>
+							<div class="text-xs text-gray-600">
+								if status.ProcessInfo != nil && status.ProcessInfo.DataCompanion != nil && status.ProcessInfo.DataCompanion.GetState() == v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED {
+									Archive Node
+								} else {
+									Validator Node
+								}
+							</div>
+						</div>
+					</div>
+					<!-- Pruning -->
+					if status.SnapshotInfo != nil {
+						<div>
+							<h3 class="text-lg font-medium mb-3">Pruning</h3>
+							<div class="space-y-3">
+								<div class="bg-slate-100 rounded-lg p-3 text-center">
+									<div class="text-lg font-bold">
+										if status.PruningInfo.Enabled {
+											🟢 Enabled
+										} else {
+											🔴 Disabled
+										}
+									</div>
+								</div>
+								if status.PruningInfo.Enabled {
+									<div class="grid grid-cols-2 gap-3">
+										<div class="bg-slate-100 rounded-lg p-3 text-center">
+											<div class="text-lg font-bold">{ fmt.Sprintf("%d", status.PruningInfo.RetainBlocks) }</div>
+											<div class="text-xs text-gray-600">Retain Blocks</div>
+										</div>
+										<div class="bg-slate-100 rounded-lg p-3 text-center">
+											<div class="text-lg font-bold">{ fmt.Sprintf("%d", status.PruningInfo.EarliestHeight) }</div>
+											<div class="text-xs text-gray-600">Earliest Height</div>
+										</div>
+									</div>
+								}
+							</div>
+						</div>
+					}
+					<!-- Snapshots -->
+					if status.SnapshotInfo != nil {
+						<div>
+							<h3 class="text-lg font-medium mb-3">Snapshots</h3>
+							<div class="bg-slate-100 rounded-lg p-3 text-center mb-3">
+								<div class="text-lg font-bold">
+									if status.SnapshotInfo.Enabled {
+										🟢 Enabled
+									} else {
+										🔴 Disabled
+									}
+								</div>
+								<div class="text-xs text-gray-600">Status</div>
+							</div>
+							if status.SnapshotInfo.Enabled && len(status.SnapshotInfo.Snapshots) > 0 {
+								<div class="text-xs text-gray-600 mb-3">{ fmt.Sprintf("%d snapshots available", len(status.SnapshotInfo.Snapshots)) }</div>
+								<div class="overflow-x-auto">
+									<table class="min-w-full text-xs">
+										<thead class="bg-slate-50">
+											<tr>
+												<th class="px-2 py-1 text-left text-xs font-medium text-gray-500">Height</th>
+												<th class="px-2 py-1 text-left text-xs font-medium text-gray-500">Hash</th>
+												<th class="px-2 py-1 text-left text-xs font-medium text-gray-500">Chunks</th>
+												<th class="px-2 py-1 text-left text-xs font-medium text-gray-500">Chain ID</th>
+											</tr>
+										</thead>
+										<tbody class="bg-white divide-y divide-gray-200">
+											for _, snapshot := range status.SnapshotInfo.Snapshots {
+												<tr>
+													<td class="px-2 py-1 text-xs">{ fmt.Sprintf("%d", snapshot.Height) }</td>
+													<td class="px-2 py-1 text-xs font-mono">{ snapshot.Hash[:12] }...</td>
+													<td class="px-2 py-1 text-xs">{ fmt.Sprintf("%d", snapshot.ChunkCount) }</td>
+													<td class="px-2 py-1 text-xs">{ snapshot.ChainId }</td>
+												</tr>
+											}
+										</tbody>
+									</table>
+								</div>
+							}
 						</div>
 					}
 				</div>

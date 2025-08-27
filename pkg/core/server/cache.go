@@ -23,8 +23,11 @@ const (
 	ProcessStateEchoServer     = "echoServer"
 	ProcessStateSyncTasks      = "syncTasks"
 	ProcessStatePeerManager    = "peerManager"
-	ProcessStateEthNodeManager = "ethNodeManager"
+	ProcessStateDataCompanion  = "dataCompanion"
 	ProcessStateCache          = "cache"
+	ProcessStateLogSync        = "logSync"
+	ProcessStateStateSync      = "stateSync"
+	ProcessStateMempoolCache   = "mempoolCache"
 
 	NodeInfoKey      = "nodeInfo"
 	PeersKey         = "peers"
@@ -50,8 +53,11 @@ type Cache struct {
 	echoServerState     otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
 	syncTasksState      otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
 	peerManagerState    otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
-	ethNodeManagerState otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	dataCompanionState  otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
 	cacheState          otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	logSyncState        otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	stateSyncState      otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	mempoolCacheState   otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
 
 	// info
 	nodeInfo     otter.Cache[string, *v1.GetStatusResponse_NodeInfo]
@@ -132,12 +138,27 @@ func (c *Cache) initCaches(config *config.Config) error {
 		StartedAt: timestamppb.New(time.Now()),
 	})
 
-	c.ethNodeManagerState = initCache(ProcessStateEthNodeManager, &v1.GetStatusResponse_ProcessInfo_ProcessStateInfo{
+	c.dataCompanionState = initCache(ProcessStateDataCompanion, &v1.GetStatusResponse_ProcessInfo_ProcessStateInfo{
 		State:     v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_STARTING,
 		StartedAt: timestamppb.New(time.Now()),
 	})
 
 	c.cacheState = initCache(ProcessStateCache, &v1.GetStatusResponse_ProcessInfo_ProcessStateInfo{
+		State:     v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_STARTING,
+		StartedAt: timestamppb.New(time.Now()),
+	})
+
+	c.logSyncState = initCache(ProcessStateLogSync, &v1.GetStatusResponse_ProcessInfo_ProcessStateInfo{
+		State:     v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_STARTING,
+		StartedAt: timestamppb.New(time.Now()),
+	})
+
+	c.stateSyncState = initCache(ProcessStateStateSync, &v1.GetStatusResponse_ProcessInfo_ProcessStateInfo{
+		State:     v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_STARTING,
+		StartedAt: timestamppb.New(time.Now()),
+	})
+
+	c.mempoolCacheState = initCache(ProcessStateMempoolCache, &v1.GetStatusResponse_ProcessInfo_ProcessStateInfo{
 		State:     v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_STARTING,
 		StartedAt: timestamppb.New(time.Now()),
 	})
@@ -290,4 +311,49 @@ func (s *Server) refreshSyncStatus(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+}
+
+func (c *Cache) UpdateProcessState(processKey string, state v1.GetStatusResponse_ProcessInfo_ProcessState, errorMsg string, metadata string) error {
+	var processCache otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	
+	switch processKey {
+	case ProcessStateABCI:
+		processCache = c.abciState
+	case ProcessStateRegistryBridge:
+		processCache = c.registryBridgeState
+	case ProcessStateEchoServer:
+		processCache = c.echoServerState
+	case ProcessStateSyncTasks:
+		processCache = c.syncTasksState
+	case ProcessStatePeerManager:
+		processCache = c.peerManagerState
+	case ProcessStateDataCompanion:
+		processCache = c.dataCompanionState
+	case ProcessStateCache:
+		processCache = c.cacheState
+	case ProcessStateLogSync:
+		processCache = c.logSyncState
+	case ProcessStateStateSync:
+		processCache = c.stateSyncState
+	case ProcessStateMempoolCache:
+		processCache = c.mempoolCacheState
+	default:
+		return fmt.Errorf("unknown process: %s", processKey)
+	}
+
+	return upsertCache(processCache, processKey, func(stateInfo *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo) *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo {
+		now := timestamppb.Now()
+		stateInfo.State = state
+		stateInfo.Error = errorMsg
+		stateInfo.Metadata = metadata
+
+		if state == v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_STARTING {
+			stateInfo.StartedAt = now
+			stateInfo.CompletedAt = nil
+		} else if state == v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED || state == v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_ERROR {
+			stateInfo.CompletedAt = now
+		}
+
+		return stateInfo
+	})
 }

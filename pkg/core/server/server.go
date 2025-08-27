@@ -143,12 +143,17 @@ func (s *Server) setSelf(self corev1connect.CoreServiceClient) {
 }
 
 func (s *Server) syncLogs(ctx context.Context) error {
+	s.StartProcess(ProcessStateLogSync)
+	
 	ticker := time.NewTicker(10 * time.Second)
 	for {
 		select {
 		case <-ticker.C:
+			s.RunningProcessWithMetadata(ProcessStateLogSync, "Syncing log buffers")
 			s.z.Sync()
+			s.SleepingProcessWithMetadata(ProcessStateLogSync, "Waiting for next sync")
 		case <-ctx.Done():
+			s.CompleteProcess(ProcessStateLogSync)
 			return ctx.Err()
 		}
 	}

@@ -50,6 +50,8 @@ var _ abcitypes.Application = (*Server)(nil)
 // initializes the cometbft node and the abci application which is the server itself
 // connects the local rpc instance to the abci application once successfully created
 func (s *Server) startABCI(ctx context.Context) error {
+	s.StartProcess(ProcessStateABCI)
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -110,6 +112,7 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 	if err != nil {
 		s.logger.Errorf("error creating node: %v", err)
+		s.ErrorProcess(ProcessStateABCI, fmt.Sprintf("error creating node: %v", err))
 		return fmt.Errorf("creating node: %v", err)
 	}
 
@@ -121,14 +124,22 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 	if err := s.node.Start(); err != nil {
 		s.logger.Errorf("cometbft failed to start: %v", err)
+		s.ErrorProcess(ProcessStateABCI, fmt.Sprintf("cometbft failed to start: %v", err))
 		return err
 	}
 
+	s.RunningProcess(ProcessStateABCI)
+
 	<-ctx.Done()
+	s.SleepingProcess(ProcessStateABCI)
+
 	err = s.node.Stop()
 	if err != nil {
+		s.ErrorProcess(ProcessStateABCI, fmt.Sprintf("error stopping node: %v", err))
 		return err
 	}
+
+	s.CompleteProcess(ProcessStateABCI)
 	return ctx.Err()
 }
 

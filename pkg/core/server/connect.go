@@ -39,17 +39,17 @@ var _ v1connect.CoreServiceHandler = (*CoreService)(nil)
 
 // GetNodeInfo implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetNodeInfo(ctx context.Context, req *connect.Request[v1.GetNodeInfoRequest]) (*connect.Response[v1.GetNodeInfoResponse], error) {
-	status, err := c.core.rpc.Status(ctx)
+	status, err := c.GetStatus(ctx, &connect.Request[v1.GetStatusRequest]{})
 	if err != nil {
 		return nil, err
 	}
 
 	res := &v1.GetNodeInfoResponse{
 		Chainid:       c.core.config.GenesisFile.ChainID,
-		Synced:        !status.SyncInfo.CatchingUp,
+		Synced:        status.Msg.SyncInfo.Synced,
 		CometAddress:  c.core.config.ProposerAddress,
 		EthAddress:    c.core.config.WalletAddress,
-		CurrentHeight: status.SyncInfo.LatestBlockHeight,
+		CurrentHeight: status.Msg.ChainInfo.CurrentHeight,
 	}
 	return connect.NewResponse(res), nil
 }
@@ -626,7 +626,7 @@ func (c *CoreService) GetStoredSnapshots(context.Context, *connect.Request[v1.Ge
 }
 
 // GetStatus implements v1connect.CoreServiceHandler.
-func (c *CoreService) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
+func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
 	live := true
 	ready := false
 
@@ -648,10 +648,45 @@ func (c *CoreService) GetStatus(context.Context, *connect.Request[v1.GetStatusRe
 	peers := &v1.GetStatusResponse_PeerInfo{Peers: peerStatuses}
 	chainInfo, _ := c.core.cache.chainInfo.Get(ChainInfoKey)
 	syncInfo, _ := c.core.cache.syncInfo.Get(SyncInfoKey)
-	pruningInfo, _ := c.core.cache.pruningInfo.Get(PruningInfoKey)
+	pruningInfo := &v1.GetStatusResponse_PruningInfo{}
 	resourceInfo, _ := c.core.cache.resourceInfo.Get(ResourceInfoKey)
 	mempoolInfo, _ := c.core.cache.mempoolInfo.Get(MempoolInfoKey)
 	snapshotInfo, _ := c.core.cache.snapshotInfo.Get(SnapshotInfoKey)
+
+	// Retrieve process states from cache
+	abciState, _ := c.core.cache.abciState.Get(ProcessStateABCI)
+	registryBridgeState, _ := c.core.cache.registryBridgeState.Get(ProcessStateRegistryBridge)
+	echoServerState, _ := c.core.cache.echoServerState.Get(ProcessStateEchoServer)
+	syncTasksState, _ := c.core.cache.syncTasksState.Get(ProcessStateSyncTasks)
+	peerManagerState, _ := c.core.cache.peerManagerState.Get(ProcessStatePeerManager)
+	dataCompanionState, _ := c.core.cache.dataCompanionState.Get(ProcessStateDataCompanion)
+	cacheState, _ := c.core.cache.cacheState.Get(ProcessStateCache)
+	logSyncState, _ := c.core.cache.logSyncState.Get(ProcessStateLogSync)
+	stateSyncState, _ := c.core.cache.stateSyncState.Get(ProcessStateStateSync)
+	mempoolCacheState, _ := c.core.cache.mempoolCacheState.Get(ProcessStateMempoolCache)
+
+	// data companion state
+	if c.core != nil && c.core.rpc != nil {
+		status, err := c.core.rpc.Status(ctx)
+		if err == nil {
+			pruningInfo.EarliestHeight = status.SyncInfo.EarliestBlockHeight
+			pruningInfo.Enabled = status.SyncInfo.EarliestBlockHeight != 1
+			pruningInfo.RetainBlocks = c.core.config.RetainHeight
+		}
+	}
+
+	processInfo := &v1.GetStatusResponse_ProcessInfo{
+		Abci:           abciState,
+		RegistryBridge: registryBridgeState,
+		EchoServer:     echoServerState,
+		SyncTasks:      syncTasksState,
+		PeerManager:    peerManagerState,
+		DataCompanion:  dataCompanionState,
+		Cache:          cacheState,
+		LogSync:        logSyncState,
+		StateSync:      stateSyncState,
+		MempoolCache:   mempoolCacheState,
+	}
 
 	peersOk := len(peers.Peers) > 0
 	syncInfoOk := syncInfo.Synced
@@ -669,6 +704,7 @@ func (c *CoreService) GetStatus(context.Context, *connect.Request[v1.GetStatusRe
 	res.ResourceInfo = resourceInfo
 	res.MempoolInfo = mempoolInfo
 	res.SnapshotInfo = snapshotInfo
+	res.ProcessInfo = processInfo
 
 	return connect.NewResponse(res), nil
 }

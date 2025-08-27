@@ -20,14 +20,21 @@ func (s *Server) refreshResourceStatus() error {
 	}
 
 	chainDir := s.cometbftConfig.RootDir
-	chainSize := int64(-1)
-	filepath.Walk(chainDir, func(path string, info fs.FileInfo, err error) error {
+	chainSize := int64(0)
+	err = filepath.Walk(chainDir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
-			return err
+			s.logger.Debugf("error walking chain dir %s: %v", path, err)
+			return nil // Continue walking despite errors
 		}
-		chainSize += info.Size()
+		if !info.IsDir() {
+			chainSize += info.Size()
+		}
 		return nil
 	})
+	if err != nil {
+		s.logger.Errorf("could not calculate chain size: %v", err)
+		chainSize = -1
+	}
 
 	stat, err := mem.VirtualMemory()
 	if err != nil {
@@ -46,7 +53,13 @@ func (s *Server) refreshResourceStatus() error {
 
 	diskStat, err := disk.Usage(s.config.RootDir)
 	if err != nil {
-		s.logger.Errorf("could not get disk info: %v", err)
+		s.logger.Errorf("could not get disk info for %s: %v", s.config.RootDir, err)
+	} else {
+		s.logger.Debugf("disk stats for %s: used=%d GB, free=%d GB, total=%d GB", 
+			s.config.RootDir, 
+			diskStat.Used/(1024*1024*1024), 
+			diskStat.Free/(1024*1024*1024), 
+			diskStat.Total/(1024*1024*1024))
 	}
 
 	upsertCache(s.cache.resourceInfo, ResourceInfoKey, func(resourceInfo *v1.GetStatusResponse_ResourceInfo) *v1.GetStatusResponse_ResourceInfo {

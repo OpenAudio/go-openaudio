@@ -42,6 +42,7 @@ message GetStatusResponse {
       google.protobuf.Timestamp started_at = 2;
       google.protobuf.Timestamp completed_at = 3;
       string error = 4;
+      string metadata = 5;
     }
 
     ProcessStateInfo abci = 1;
@@ -49,8 +50,11 @@ message GetStatusResponse {
     ProcessStateInfo echo_server = 3;
     ProcessStateInfo sync_tasks = 4;
     ProcessStateInfo peer_manager = 5;
-    ProcessStateInfo eth_node_manager = 6;
+    ProcessStateInfo data_companion = 6;
     ProcessStateInfo cache = 7;
+    ProcessStateInfo log_sync = 8;
+    ProcessStateInfo state_sync = 9;
+    ProcessStateInfo mempool_cache = 10;
   }
 
   message NodeInfo {
@@ -104,7 +108,7 @@ message GetStatusResponse {
 
   message PruningInfo {
     bool enabled = 1;
-    int64 prune_amount = 2;
+    int64 retain_blocks = 2;
     int64 earliest_height = 3;
   }
 
@@ -159,6 +163,7 @@ message GetStatusResponse {
   MempoolInfo mempool_info = 8;
   PeerInfo peers = 9;
   SnapshotInfo snapshot_info = 10;
+  ProcessInfo process_info = 11;
 }
 
 message GetNodeInfoRequest {}

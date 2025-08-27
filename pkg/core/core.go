@@ -58,18 +58,11 @@ func run(ctx context.Context, lc *lifecycle.Lifecycle, logger *common.Logger, po
 	// unlike the other modules that register themselves on the echo http server
 	if config.ConsoleModule {
 		e := s.GetEcho()
-		con, err := console.NewConsole(config, logger, e, pool, ethService)
+		_, err := console.NewConsole(config, logger, e, pool, ethService, coreService)
 		if err != nil {
 			logger.Errorf("console init error: %v", err)
 			return err
 		}
-		go func() {
-			logger.Info("core console starting")
-			if err := con.Start(); err != nil {
-				logger.Errorf("console couldn't start or crashed: %v", err)
-				return
-			}
-		}()
 	}
 
 	// create core service

@@ -31,7 +31,6 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
-	"github.com/AudiusProject/audiusd/pkg/core/console"
 	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	"github.com/AudiusProject/audiusd/pkg/eth"
 	"github.com/AudiusProject/audiusd/pkg/etl"
@@ -779,10 +778,10 @@ func getHealthCheckResponse(hostUrl *url.URL) map[string]interface{} {
 	}
 	response["storage"] = storageResponse
 
-	resp, err := http.Get("http://localhost:26659/console/health_check")
+	resp, err := http.Get("http://localhost:26659/core/status")
 	if err == nil {
 		defer resp.Body.Close()
-		var coreHealth console.HealthCheckResponse
+		var coreHealth interface{}
 		if err := json.NewDecoder(resp.Body).Decode(&coreHealth); err == nil {
 			// TODO: remove cruft
 			healthBytes, _ := json.Marshal(coreHealth)

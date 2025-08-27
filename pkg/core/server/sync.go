@@ -14,17 +14,23 @@ var (
 
 // tasks that execute once the node is fully synced
 func (s *Server) startSyncTasks(ctx context.Context) error {
+	s.StartProcess(ProcessStateSyncTasks)
+	
 	ticker := time.NewTicker(5 * time.Second)
 
 	for {
 		select {
 		case <-ticker.C:
+			s.RunningProcessWithMetadata(ProcessStateSyncTasks, "Checking sync status")
 			if err := s.onSyncTick(ctx); err != nil {
 				s.logger.Debugf("still syncing: %v", err)
+				s.SleepingProcessWithMetadata(ProcessStateSyncTasks, "Waiting for sync")
 			} else {
+				s.CompleteProcess(ProcessStateSyncTasks)
 				return nil
 			}
 		case <-ctx.Done():
+			s.CompleteProcess(ProcessStateSyncTasks)
 			return ctx.Err()
 		}
 	}

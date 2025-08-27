@@ -3,21 +3,19 @@ package console
 import (
 	"fmt"
 
+	"connectrpc.com/connect"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/labstack/echo/v4"
 )
 
 func (con *Console) navChainData(c echo.Context) error {
-	totalBlocks := fmt.Sprint(con.state.totalBlocks)
-	totalTxs := fmt.Sprint(con.state.totalTransactions)
-
-	// once synced don't ask comet again
-	if !con.state.isSyncing {
-		return con.views.RenderNavChainData(c, totalBlocks, totalTxs, con.state.isSyncing)
+	res, err := con.core.GetNodeInfo(c.Request().Context(), &connect.Request[v1.GetNodeInfoRequest]{})
+	if err != nil {
+		return err
 	}
 
-	status, err := con.rpc.Status(c.Request().Context())
-	if err == nil {
-		con.state.isSyncing = status.SyncInfo.CatchingUp
-	}
-	return con.views.RenderNavChainData(c, totalBlocks, totalTxs, con.state.isSyncing)
+	totalBlocks := fmt.Sprint(res.Msg.CurrentHeight)
+	isSyncing := !res.Msg.Synced
+
+	return con.views.RenderNavChainData(c, totalBlocks, isSyncing)
 }

@@ -28,6 +28,8 @@ import (
 )
 
 func (s *Server) startRegistryBridge(ctx context.Context) error {
+	s.StartProcess(ProcessStateRegistryBridge)
+
 	ticker := time.NewTicker(5 * time.Second)
 
 ethstatus:
@@ -36,6 +38,7 @@ ethstatus:
 		case <-ticker.C:
 			if status, err := s.eth.GetStatus(ctx, connect.NewRequest(&ethv1.GetStatusRequest{})); err != nil {
 				s.logger.Errorf("error getting eth service status: %v", err)
+				s.ErrorProcess(ProcessStateRegistryBridge, fmt.Sprintf("error getting eth service status: %v", err))
 				continue
 			} else if !status.Msg.Ready {
 				s.logger.Info("waiting for eth service to be ready")
@@ -52,6 +55,7 @@ ethstatus:
 		s.logger.Info("running in dev, registering on ethereum")
 		if err := s.registerSelfOnEth(ctx); err != nil {
 			s.logger.Errorf("error registering onto eth: %v", err)
+			s.ErrorProcess(ProcessStateRegistryBridge, fmt.Sprintf("error registering onto eth: %v", err))
 			return err
 		}
 	}
@@ -67,11 +71,14 @@ ethstatus:
 	// check comet status
 	if _, err := s.rpc.Status(ctx); err != nil {
 		s.logger.Errorf("init registry bridge failed comet rpc status: %v", err)
+		s.ErrorProcess(ProcessStateRegistryBridge, fmt.Sprintf("init registry bridge failed comet rpc status: %v", err))
 		return err
 	}
 
+	s.SleepingProcess(ProcessStateRegistryBridge)
 	if err := s.awaitNodeCatchup(ctx); err != nil {
 		s.logger.Errorf("error awaiting node catchup: %v", err)
+		s.ErrorProcess(ProcessStateRegistryBridge, fmt.Sprintf("error awaiting node catchup: %v", err))
 		return err
 	}
 
@@ -87,14 +94,17 @@ ethstatus:
 				s.logger.Infof("Retrying registration in %s", delay)
 				ticker.Reset(delay)
 			} else {
+				s.RunningProcess(ProcessStateRegistryBridge)
 				s.lc.AddManagedRoutine("eth contract event listener", s.listenForEthContractEvents)
 				s.lc.AddManagedRoutine("validator warden", s.startValidatorWarden)
 				return nil
 			}
 		case <-timeout:
 			s.logger.Warn("exhausted registration retries, continuing unregistered")
+			s.CompleteProcess(ProcessStateRegistryBridge)
 			return nil
 		case <-ctx.Done():
+			s.CompleteProcess(ProcessStateRegistryBridge)
 			return ctx.Err()
 		}
 	}

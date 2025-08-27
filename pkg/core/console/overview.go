@@ -1,15 +1,47 @@
 package console
 
 import (
-	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
+	"connectrpc.com/connect"
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/labstack/echo/v4"
 )
 
 func (cs *Console) overviewPage(c echo.Context) error {
-	view := &pages.OverviewPageView{
-		Blocks: cs.state.latestBlocks,
-		Txs:    cs.state.latestTransactions,
+	res, err := cs.core.GetStatus(c.Request().Context(), &connect.Request[v1.GetStatusRequest]{})
+	if err != nil {
+		return err
 	}
+	return cs.views.RenderOverview(c, res.Msg)
+}
 
-	return cs.views.RenderOverviewView(c, view)
+func (cs *Console) overviewCriticalFragment(c echo.Context) error {
+	res, err := cs.core.GetStatus(c.Request().Context(), &connect.Request[v1.GetStatusRequest]{})
+	if err != nil {
+		return err
+	}
+	return cs.views.RenderOverviewCritical(c, res.Msg)
+}
+
+func (cs *Console) overviewProcessesFragment(c echo.Context) error {
+	res, err := cs.core.GetStatus(c.Request().Context(), &connect.Request[v1.GetStatusRequest]{})
+	if err != nil {
+		return err
+	}
+	return cs.views.RenderOverviewProcesses(c, res.Msg)
+}
+
+func (cs *Console) overviewResourcesFragment(c echo.Context) error {
+	res, err := cs.core.GetStatus(c.Request().Context(), &connect.Request[v1.GetStatusRequest]{})
+	if err != nil {
+		return err
+	}
+	return cs.views.RenderOverviewResources(c, res.Msg)
+}
+
+func (cs *Console) overviewNetworkFragment(c echo.Context) error {
+	res, err := cs.core.GetStatus(c.Request().Context(), &connect.Request[v1.GetStatusRequest]{})
+	if err != nil {
+		return err
+	}
+	return cs.views.RenderOverviewNetwork(c, res.Msg)
 }

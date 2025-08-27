@@ -1,6 +1,7 @@
 package views
 
 import (
+	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/console/views/layout"
 	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
@@ -19,12 +20,8 @@ func NewViews(config *config.Config, baseUrl string) *Views {
 	}
 }
 
-func (v *Views) RenderNavChainData(c echo.Context, totalBlocks, totalTxs string, syncing bool) error {
-	return v.layouts.NavBlockData(totalBlocks, totalTxs, syncing).Render(c.Request().Context(), c.Response().Writer)
-}
-
-func (v *Views) RenderOverviewView(c echo.Context, data *pages.OverviewPageView) error {
-	return v.pages.OverviewPageHTML(data).Render(c.Request().Context(), c.Response().Writer)
+func (v *Views) RenderNavChainData(c echo.Context, totalBlocks string, syncing bool) error {
+	return v.layouts.NavBlockData(totalBlocks, syncing).Render(c.Request().Context(), c.Response().Writer)
 }
 
 func (v *Views) RenderNodesView(c echo.Context, view *pages.NodesView) error {
@@ -33,14 +30,6 @@ func (v *Views) RenderNodesView(c echo.Context, view *pages.NodesView) error {
 
 func (v *Views) RenderNodeView(c echo.Context, view *pages.NodePageView) error {
 	return v.pages.NodePageHTML(view).Render(c.Request().Context(), c.Response().Writer)
-}
-
-func (v *Views) RenderAnalyticsView(c echo.Context, view *pages.AnalyticsPageView) error {
-	return v.pages.AnalyticsPageHTML(view).Render(c.Request().Context(), c.Response().Writer)
-}
-
-func (v *Views) RenderAnalyticsHeader(c echo.Context, totalBlocks string, totalTransactions string, totalPlays string, totalManageEntities string, totalValidators string) error {
-	return v.pages.AnalyticsHeaderHTML(totalBlocks, totalTransactions, totalPlays, totalManageEntities, totalValidators).Render(c.Request().Context(), c.Response().Writer)
 }
 
 func (v *Views) RenderContentView(c echo.Context) error {
@@ -77,4 +66,24 @@ func (v *Views) RenderTxView(c echo.Context, view *pages.TxView) error {
 
 func (v *Views) RenderAdjudicateView(c echo.Context, view *pages.AdjudicatePageView) error {
 	return v.pages.AdjudicatePageHTML(view).Render(c.Request().Context(), c.Response().Writer)
+}
+
+func (v *Views) RenderOverview(c echo.Context, status *v1.GetStatusResponse) error {
+	return v.pages.OverviewPage(status).Render(c.Request().Context(), c.Response().Writer)
+}
+
+func (v *Views) RenderOverviewCritical(c echo.Context, status *v1.GetStatusResponse) error {
+	return v.pages.OverviewCriticalFragment(status).Render(c.Request().Context(), c.Response().Writer)
+}
+
+func (v *Views) RenderOverviewProcesses(c echo.Context, status *v1.GetStatusResponse) error {
+	return v.pages.OverviewProcessesFragment(status).Render(c.Request().Context(), c.Response().Writer)
+}
+
+func (v *Views) RenderOverviewResources(c echo.Context, status *v1.GetStatusResponse) error {
+	return v.pages.OverviewResourcesFragment(status).Render(c.Request().Context(), c.Response().Writer)
+}
+
+func (v *Views) RenderOverviewNetwork(c echo.Context, status *v1.GetStatusResponse) error {
+	return v.pages.OverviewNetworkFragment(status).Render(c.Request().Context(), c.Response().Writer)
 }

@@ -23,12 +23,11 @@ func (cs *Console) posFragment(c echo.Context) error {
 		db.GetStorageProofsForNodeInRangeParams{
 			BlockHeight:   start,
 			BlockHeight_2: end,
-			Address:       cs.state.cometAddress,
+			Address:       cs.config.ProposerAddress,
 		},
 	)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		err = fmt.Errorf("Failed to retrieve SlaRollup from db: %v", err)
-		return err
+		return fmt.Errorf("failed to retrieve SlaRollup from db: %v", err)
 	}
 
 	validators, err := cs.db.GetAllRegisteredNodes(ctx)
@@ -57,7 +56,7 @@ func (cs *Console) posFragment(c echo.Context) error {
 	}
 
 	return cs.views.RenderPoSView(c, &pages.PoSPageView{
-		Address:       cs.state.cometAddress,
+		Address:       cs.config.ProposerAddress,
 		BlockStart:    start,
 		BlockEnd:      end,
 		StorageProofs: pageProofs,
@@ -70,7 +69,7 @@ func (cs *Console) getValidBlockRange(ctx context.Context, startParam, endParam 
 
 	// default to last 'maxBlockRange' blocks
 	if startParam == "" && endParam == "" {
-		abciInfo, err := cs.state.rpc.ABCIInfo(ctx)
+		abciInfo, err := cs.rpc.ABCIInfo(ctx)
 		if err != nil {
 			cs.logger.Error("Could not get abciInfo for default block range")
 			return start, end
