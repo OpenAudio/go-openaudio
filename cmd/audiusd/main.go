@@ -42,6 +42,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/uptime"
 	"github.com/AudiusProject/audiusd/pkg/version"
 	"go.akshayshah.org/connectproto"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -100,7 +101,7 @@ func main() {
 	posChannel := make(chan pos.PoSRequest)
 	dbUrl := config.GetDbURL()
 
-	rootLifecycle := lifecycle.NewLifecycle(ctx, "root lifecycle", logger)
+	rootLifecycle := lifecycle.NewLifecycle(ctx, "root lifecycle", logger, zap.NewNop())
 
 	ethService := eth.NewEthService(dbUrl, config.GetEthRPC(), config.GetRegistryAddress(), logger, config.GetRuntimeEnvironment())
 	coreService := coreServer.NewCoreService()

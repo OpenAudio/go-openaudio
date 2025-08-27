@@ -42,11 +42,13 @@ ethstatus:
 				continue
 			} else if !status.Msg.Ready {
 				s.logger.Info("waiting for eth service to be ready")
+				s.z.Info("waiting for eth service to be ready")
 				continue
 			} else {
 				break ethstatus
 			}
 		case <-ctx.Done():
+			s.z.Error("registry bridge ctx done")
 			return ctx.Err()
 		}
 	}
@@ -61,12 +63,14 @@ ethstatus:
 	}
 
 	close(s.awaitEthReady)
+	s.z.Info("eth ready")
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-s.awaitRpcReady:
 	}
 	s.logger.Info("starting registry bridge")
+	s.z.Info("starting registry bridge")
 
 	// check comet status
 	if _, err := s.rpc.Status(ctx); err != nil {
@@ -128,7 +132,6 @@ func (s *Server) listenForEthContractEvents(ctx context.Context) error {
 			s.deregisterValidator(ctx, dereg.DelegateWallet)
 		}
 	}
-	return nil
 }
 
 func (s *Server) startValidatorWarden(ctx context.Context) error {

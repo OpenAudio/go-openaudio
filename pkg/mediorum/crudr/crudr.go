@@ -11,6 +11,7 @@ import (
 
 	"github.com/AudiusProject/audiusd/pkg/httputil"
 	"github.com/AudiusProject/audiusd/pkg/lifecycle"
+	"go.uber.org/zap"
 
 	"github.com/oklog/ulid/v2"
 	"golang.org/x/exp/slog"
@@ -110,7 +111,7 @@ func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db
 		typeMap: map[string]reflect.Type{},
 
 		peerClients: make([]*PeerClient, len(peerHosts)),
-		lc:          lifecycle.NewFromLifecycle(parentLifecycle, "crudr lifecycle"),
+		lc:          lifecycle.NewFromLifecycle(parentLifecycle, zap.NewNop(), "crudr lifecycle"),
 	}
 
 	for idx, peerHost := range peerHosts {

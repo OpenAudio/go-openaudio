@@ -10,11 +10,12 @@ import (
 
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 func TestLifecycleShutsDown(t *testing.T) {
 	ctx := context.Background()
-	lc := NewLifecycle(ctx, "test lifecycle", common.NewLogger(&slog.HandlerOptions{}))
+	lc := NewLifecycle(ctx, "test lifecycle", common.NewLogger(&slog.HandlerOptions{}), zap.NewNop())
 
 	// Add routines and children asynchronously to test thread safety
 	var childLc1 *Lifecycle
@@ -22,11 +23,11 @@ func TestLifecycleShutsDown(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	go func() {
-		childLc1 = NewFromLifecycle(lc, "child lc 1")
+		childLc1 = NewFromLifecycle(lc, zap.NewNop(), "child lc 1")
 		wg.Done()
 	}()
 	go func() {
-		childLc2 = NewFromLifecycle(lc, "child lc 2")
+		childLc2 = NewFromLifecycle(lc, zap.NewNop(), "child lc 2")
 		wg.Done()
 	}()
 
@@ -86,7 +87,7 @@ func TestLifecycleShutsDown(t *testing.T) {
 
 func TestLifecycleTimesOut(t *testing.T) {
 	ctx := context.Background()
-	lc := NewLifecycle(ctx, "test lifecycle", common.NewLogger(&slog.HandlerOptions{}))
+	lc := NewLifecycle(ctx, "test lifecycle", common.NewLogger(&slog.HandlerOptions{}), zap.NewNop())
 	lc.AddManagedRoutine("dummyRoutineThatNeverEnds", dummyRoutineThatNeverEnds)
 	err := lc.ShutdownWithTimeout(3 * time.Second)
 	assert.Error(t, err)
@@ -106,5 +107,4 @@ func dummyRoutineThatNeverEnds(ctx context.Context) error {
 			time.Sleep(2 * time.Second)
 		}
 	}
-	return nil
 }

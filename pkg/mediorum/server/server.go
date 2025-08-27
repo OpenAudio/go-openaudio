@@ -258,7 +258,7 @@ func New(lc *lifecycle.Lifecycle, config MediorumConfig, provider registrar.Peer
 	}
 
 	// lifecycle
-	mediorumLifecycle := lifecycle.NewFromLifecycle(lc, "mediorum")
+	mediorumLifecycle := lifecycle.NewFromLifecycle(lc, z, "mediorum")
 
 	// crud
 	peerHosts := []string{}

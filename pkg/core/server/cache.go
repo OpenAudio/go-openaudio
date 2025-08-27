@@ -212,7 +212,7 @@ func (s *Server) startCache(ctx context.Context) error {
 
 	s.cache.currentHeight.Store(status.SyncInfo.LatestBlockHeight)
 
-	cacheLifecycle := lifecycle.NewFromLifecycle(s.lc, "cache")
+	cacheLifecycle := lifecycle.NewFromLifecycle(s.lc, s.z, "cache")
 	cacheLifecycle.AddManagedRoutine("block event subscriber", s.startBlockEventSubscriber)
 	cacheLifecycle.AddManagedRoutine("refresher", s.startCacheRefresh)
 	cacheLifecycle.AddManagedRoutine("sync status refresher", s.refreshSyncStatus)

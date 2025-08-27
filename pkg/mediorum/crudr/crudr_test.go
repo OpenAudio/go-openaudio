@@ -9,6 +9,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -27,7 +28,7 @@ func TestCrudr(t *testing.T) {
 	err := db.AutoMigrate(TestBlobThing{})
 	assert.NoError(t, err)
 
-	c := New("host1", nil, nil, db, lifecycle.NewLifecycle(context.Background(), "crudr test", common.NewLogger(&slog.HandlerOptions{}))).RegisterModels(&TestBlobThing{})
+	c := New("host1", nil, nil, db, lifecycle.NewLifecycle(context.Background(), "crudr test", common.NewLogger(&slog.HandlerOptions{}), zap.NewNop())).RegisterModels(&TestBlobThing{})
 
 	// table name
 	{

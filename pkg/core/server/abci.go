@@ -54,10 +54,12 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		s.z.Error("abci ctx done")
 		return ctx.Err()
 	case <-s.awaitEthReady:
 	}
 	s.logger.Info("starting abci")
+	s.z.Info("starting abci")
 
 	cometConfig := s.cometbftConfig
 	pv := privval.LoadFilePV(
@@ -84,13 +86,17 @@ func (s *Server) startABCI(ctx context.Context) error {
 		return fmt.Errorf("db not ready for ABCI: %v", err)
 	}
 
+	s.z.Info("got latest block", zap.Bool("ss_enabled", s.config.StateSync.Enable), zap.Bool("already_synced", alreadySynced), zap.Int("rpc_servers", len(s.config.StateSync.RPCServers)))
+
 	if s.config.StateSync.Enable && !alreadySynced && len(s.config.StateSync.RPCServers) > 1 {
 		cometConfig.StateSync.Enable = true
 		rpcServers := s.config.StateSync.RPCServers
 		s.logger.Info("state sync enabled, using rpc servers", "rpcServers", rpcServers)
+		s.z.Info("state sync enabled", zap.Any("rpcservers", rpcServers))
 		cometConfig.StateSync.RPCServers = rpcServers
 		latestBlockHeight, latestBlockHash, err := s.stateSyncLatestBlock(rpcServers)
 		if err != nil {
+			s.z.Error("could not get latest block for state sync", zap.Error(err))
 			return fmt.Errorf("getting latest block for state sync: %v", err)
 		}
 		cometConfig.StateSync.TrustHeight = latestBlockHeight
@@ -119,6 +125,7 @@ func (s *Server) startABCI(ctx context.Context) error {
 	s.node = node
 	s.rpc = local.New(s.node)
 	close(s.awaitRpcReady)
+	s.z.Info("rpc ready")
 
 	s.logger.Info("core CometBFT node starting")
 

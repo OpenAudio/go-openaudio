@@ -84,9 +84,10 @@ func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.
 	}
 
 	z := baseLogger.With(zap.String("service", "core"), zap.String("node", config.NodeEndpoint))
+	ethService.SetZapLogger(z)
 	z.Info("core server starting")
 
-	coreLifecycle := lifecycle.NewFromLifecycle(lc, "core")
+	coreLifecycle := lifecycle.NewFromLifecycle(lc, z, "core")
 
 	s := &Server{
 		lc:             coreLifecycle,

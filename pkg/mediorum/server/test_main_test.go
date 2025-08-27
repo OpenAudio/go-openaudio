@@ -15,6 +15,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/AudiusProject/audiusd/pkg/registrar"
 	"github.com/AudiusProject/audiusd/pkg/version"
+	"go.uber.org/zap"
 )
 
 var testNetwork []*MediorumServer
@@ -40,7 +41,7 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 		})
 	}
 
-	lc := lifecycle.NewLifecycle(context.Background(), "mediorum test lifecycle", common.NewLogger(&slog.HandlerOptions{}))
+	lc := lifecycle.NewLifecycle(context.Background(), "mediorum test lifecycle", common.NewLogger(&slog.HandlerOptions{}), zap.NewNop())
 
 	for idx, peer := range network {
 		peer := peer
