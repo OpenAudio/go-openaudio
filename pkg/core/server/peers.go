@@ -476,26 +476,25 @@ func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *common.Logger) er
 			nodeid := cometStatus.NodeInfo.DefaultNodeID
 			listenAddr := cometStatus.NodeInfo.ListenAddr
 
-			conn, err := net.DialTimeout("tcp", listenAddr, 3*time.Second)
-			if err != nil {
-				logger.Errorf("p2p not accessible for %s: %v", ethaddress, err)
-			}
-			if conn != nil {
-				_ = conn.Close()
+			var p2pAccessible bool
+
+			if s.isNonRoutableAddress(listenAddr) {
+				p2pAccessible = false
+				logger.Debugf("p2p not accessible for %s: non-routable address %s", ethaddress, listenAddr)
+			} else {
+				conn, err := net.DialTimeout("tcp", listenAddr, 3*time.Second)
+				if err != nil {
+					logger.Errorf("p2p not accessible for %s: %v", ethaddress, err)
+					p2pAccessible = false
+				} else {
+					p2pAccessible = true
+					_ = conn.Close()
+				}
 			}
 
 			status, exists := s.peerStatus.Get(ethaddress)
 			if exists {
-				status.P2PAccessible = (err == nil)
-				s.peerStatus.Set(ethaddress, status)
-			}
-
-			if err != nil {
-				return
-			}
-
-			if exists {
-				status.P2PConnected = isPeered(nodeid)
+				status.P2PAccessible = p2pAccessible
 				s.peerStatus.Set(ethaddress, status)
 
 				if status.P2PConnected {
@@ -503,8 +502,10 @@ func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *common.Logger) er
 				}
 			}
 
-			connectionString := fmt.Sprintf("%s@%s", nodeid, listenAddr)
-			peersToDial.Set(connectionString, struct{}{})
+			if !isPeered(nodeid) {
+				connectionString := fmt.Sprintf("%s@%s", nodeid, listenAddr)
+				peersToDial.Set(connectionString, struct{}{})
+			}
 		}(ethaddress, rpc)
 	}
 
@@ -518,4 +519,33 @@ func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *common.Logger) er
 	logger.Infof("dialed peers: %s", res.Log)
 
 	return nil
+}
+
+func (s *Server) isNonRoutableAddress(listenAddr string) bool {
+	host, _, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return true // If we can't parse it, treat as non-routable
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		// Could be a hostname, but check for localhost
+		if host == "localhost" {
+			return true
+		}
+		// Allow container names and other hostnames in Docker/k8s environments
+		return false
+	}
+
+	// Always block truly non-routable addresses
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+		return true
+	}
+
+	// In production, also block private IPs - in dev/test, allow them for Docker
+	if s.config.Environment != "dev" && ip.IsPrivate() {
+		return true
+	}
+
+	return false
 }
