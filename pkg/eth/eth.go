@@ -483,12 +483,12 @@ func (eth *EthService) hydrateEthData(ctx context.Context) error {
 		}
 
 		// Grab timestamp from block when this endpoint was registered
-		registeredBlock, err := eth.rpc.BlockByNumber(ctx, node.BlockNumber)
+		registeredBlock, err := eth.rpc.HeaderByNumber(ctx, node.BlockNumber)
 		if err != nil {
 			eth.z.Error("eth failed to get block to check registration date", zap.Error(err))
 			return fmt.Errorf("failed to get block to check registration date: %v", err)
 		}
-		registrationTimestamp := time.Unix(int64(registeredBlock.Time()), 0)
+		registrationTimestamp := time.Unix(int64(registeredBlock.Time), 0)
 
 		if err := txq.InsertRegisteredEndpoint(
 			ctx,
