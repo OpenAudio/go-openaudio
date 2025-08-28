@@ -191,6 +191,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	cfg.AttDeregistrationRSize = 10
 
 	cfg.LogLevel = GetEnvWithDefault("AUDIUSD_LOG_LEVEL", "info")
+	cfg.Environment = GetRuntimeEnvironment()
 
 	ssRpcServers := ""
 	switch cfg.Environment {
@@ -209,7 +210,6 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 		RPCServers:     strings.Split(GetEnvWithDefault("stateSyncRPCServers", ssRpcServers), ","),
 	}
 
-	cfg.Environment = GetRuntimeEnvironment()
 	cfg.EthRPCUrl = GetEthRPC()
 
 	// check if discovery specific key is set
