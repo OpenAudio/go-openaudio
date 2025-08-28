@@ -43,6 +43,8 @@ const (
 	CoreServiceGetNodeInfoProcedure = "/core.v1.CoreService/GetNodeInfo"
 	// CoreServiceGetBlockProcedure is the fully-qualified name of the CoreService's GetBlock RPC.
 	CoreServiceGetBlockProcedure = "/core.v1.CoreService/GetBlock"
+	// CoreServiceGetBlocksProcedure is the fully-qualified name of the CoreService's GetBlocks RPC.
+	CoreServiceGetBlocksProcedure = "/core.v1.CoreService/GetBlocks"
 	// CoreServiceGetTransactionProcedure is the fully-qualified name of the CoreService's
 	// GetTransaction RPC.
 	CoreServiceGetTransactionProcedure = "/core.v1.CoreService/GetTransaction"
@@ -81,6 +83,7 @@ type CoreServiceClient interface {
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
 	GetNodeInfo(context.Context, *connect.Request[v1.GetNodeInfoRequest]) (*connect.Response[v1.GetNodeInfoResponse], error)
 	GetBlock(context.Context, *connect.Request[v1.GetBlockRequest]) (*connect.Response[v1.GetBlockResponse], error)
+	GetBlocks(context.Context, *connect.Request[v1.GetBlocksRequest]) (*connect.Response[v1.GetBlocksResponse], error)
 	GetTransaction(context.Context, *connect.Request[v1.GetTransactionRequest]) (*connect.Response[v1.GetTransactionResponse], error)
 	SendTransaction(context.Context, *connect.Request[v1.SendTransactionRequest]) (*connect.Response[v1.SendTransactionResponse], error)
 	ForwardTransaction(context.Context, *connect.Request[v1.ForwardTransactionRequest]) (*connect.Response[v1.ForwardTransactionResponse], error)
@@ -133,6 +136,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+CoreServiceGetBlockProcedure,
 			connect.WithSchema(coreServiceMethods.ByName("GetBlock")),
+			connect.WithClientOptions(opts...),
+		),
+		getBlocks: connect.NewClient[v1.GetBlocksRequest, v1.GetBlocksResponse](
+			httpClient,
+			baseURL+CoreServiceGetBlocksProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetBlocks")),
 			connect.WithClientOptions(opts...),
 		),
 		getTransaction: connect.NewClient[v1.GetTransactionRequest, v1.GetTransactionResponse](
@@ -211,6 +220,7 @@ type coreServiceClient struct {
 	getStatus                    *connect.Client[v1.GetStatusRequest, v1.GetStatusResponse]
 	getNodeInfo                  *connect.Client[v1.GetNodeInfoRequest, v1.GetNodeInfoResponse]
 	getBlock                     *connect.Client[v1.GetBlockRequest, v1.GetBlockResponse]
+	getBlocks                    *connect.Client[v1.GetBlocksRequest, v1.GetBlocksResponse]
 	getTransaction               *connect.Client[v1.GetTransactionRequest, v1.GetTransactionResponse]
 	sendTransaction              *connect.Client[v1.SendTransactionRequest, v1.SendTransactionResponse]
 	forwardTransaction           *connect.Client[v1.ForwardTransactionRequest, v1.ForwardTransactionResponse]
@@ -247,6 +257,11 @@ func (c *coreServiceClient) GetNodeInfo(ctx context.Context, req *connect.Reques
 // GetBlock calls core.v1.CoreService.GetBlock.
 func (c *coreServiceClient) GetBlock(ctx context.Context, req *connect.Request[v1.GetBlockRequest]) (*connect.Response[v1.GetBlockResponse], error) {
 	return c.getBlock.CallUnary(ctx, req)
+}
+
+// GetBlocks calls core.v1.CoreService.GetBlocks.
+func (c *coreServiceClient) GetBlocks(ctx context.Context, req *connect.Request[v1.GetBlocksRequest]) (*connect.Response[v1.GetBlocksResponse], error) {
+	return c.getBlocks.CallUnary(ctx, req)
 }
 
 // GetTransaction calls core.v1.CoreService.GetTransaction.
@@ -311,6 +326,7 @@ type CoreServiceHandler interface {
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
 	GetNodeInfo(context.Context, *connect.Request[v1.GetNodeInfoRequest]) (*connect.Response[v1.GetNodeInfoResponse], error)
 	GetBlock(context.Context, *connect.Request[v1.GetBlockRequest]) (*connect.Response[v1.GetBlockResponse], error)
+	GetBlocks(context.Context, *connect.Request[v1.GetBlocksRequest]) (*connect.Response[v1.GetBlocksResponse], error)
 	GetTransaction(context.Context, *connect.Request[v1.GetTransactionRequest]) (*connect.Response[v1.GetTransactionResponse], error)
 	SendTransaction(context.Context, *connect.Request[v1.SendTransactionRequest]) (*connect.Response[v1.SendTransactionResponse], error)
 	ForwardTransaction(context.Context, *connect.Request[v1.ForwardTransactionRequest]) (*connect.Response[v1.ForwardTransactionResponse], error)
@@ -359,6 +375,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		CoreServiceGetBlockProcedure,
 		svc.GetBlock,
 		connect.WithSchema(coreServiceMethods.ByName("GetBlock")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceGetBlocksHandler := connect.NewUnaryHandler(
+		CoreServiceGetBlocksProcedure,
+		svc.GetBlocks,
+		connect.WithSchema(coreServiceMethods.ByName("GetBlocks")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServiceGetTransactionHandler := connect.NewUnaryHandler(
@@ -439,6 +461,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceGetNodeInfoHandler.ServeHTTP(w, r)
 		case CoreServiceGetBlockProcedure:
 			coreServiceGetBlockHandler.ServeHTTP(w, r)
+		case CoreServiceGetBlocksProcedure:
+			coreServiceGetBlocksHandler.ServeHTTP(w, r)
 		case CoreServiceGetTransactionProcedure:
 			coreServiceGetTransactionHandler.ServeHTTP(w, r)
 		case CoreServiceSendTransactionProcedure:
@@ -488,6 +512,10 @@ func (UnimplementedCoreServiceHandler) GetNodeInfo(context.Context, *connect.Req
 
 func (UnimplementedCoreServiceHandler) GetBlock(context.Context, *connect.Request[v1.GetBlockRequest]) (*connect.Response[v1.GetBlockResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetBlock is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetBlocks(context.Context, *connect.Request[v1.GetBlocksRequest]) (*connect.Response[v1.GetBlocksResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetBlocks is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) GetTransaction(context.Context, *connect.Request[v1.GetTransactionRequest]) (*connect.Response[v1.GetTransactionResponse], error) {

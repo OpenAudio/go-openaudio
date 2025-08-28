@@ -45,6 +45,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
 	ethv1connect "github.com/AudiusProject/audiusd/pkg/api/eth/v1/v1connect"
@@ -314,40 +315,35 @@ func connectGET[Req any, Res any](
 	return func(c echo.Context) error {
 		queryParams := c.QueryParams()
 		maxParams := 50
-		count := 0
-		paramMap := make(map[string]interface{})
-		for k, v := range queryParams {
-			if count >= maxParams {
-				return c.JSON(http.StatusBadRequest, map[string]string{"error": "too many query parameters"})
-			}
-			if len(v) == 1 {
-				val := v[0]
-				// Try int64
-				if i, err := strconv.ParseInt(val, 10, 64); err == nil {
-					paramMap[k] = i
-				} else if f, err := strconv.ParseFloat(val, 64); err == nil {
-					paramMap[k] = f
-				} else if b, err := strconv.ParseBool(val); err == nil {
-					paramMap[k] = b
-				} else {
-					paramMap[k] = val
-				}
-			} else {
-				paramMap[k] = v
-			}
-			count++
+		
+		if len(queryParams) > maxParams {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "too many query parameters"})
 		}
 
-		// Marshal to JSON
-		paramBytes, err := json.Marshal(paramMap)
-		if err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid query parameters"})
-		}
-
-		// Unmarshal to your generic request type
+		// Create new request instance and get protobuf reflection
 		req := new(Req)
-		if err := json.Unmarshal(paramBytes, req); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to map query parameters to request"})
+		msg, ok := any(req).(proto.Message)
+		if !ok {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "request type is not a proto.Message"})
+		}
+
+		msgReflect := msg.ProtoReflect()
+		msgDesc := msgReflect.Descriptor()
+		fields := msgDesc.Fields()
+
+		// Map query parameters to protobuf fields using reflection
+		for i := 0; i < fields.Len(); i++ {
+			field := fields.Get(i)
+			fieldName := string(field.Name())
+			
+			// Check if we have query params for this field
+			if queryValues, exists := queryParams[fieldName]; exists && len(queryValues) > 0 {
+				if err := setProtobufField(msgReflect, field, queryValues); err != nil {
+					return c.JSON(http.StatusBadRequest, map[string]string{
+						"error": fmt.Sprintf("failed to set field '%s': %v", fieldName, err),
+					})
+				}
+			}
 		}
 
 		// Call the ConnectRPC handler
@@ -356,19 +352,144 @@ func connectGET[Req any, Res any](
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 
-		msg, ok := any(resp.Msg).(proto.Message)
+		respMsg, ok := any(resp.Msg).(proto.Message)
 		if !ok {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "response is not proto.Message"})
 		}
 
-		jsonBytes, err := marshalOpts.Marshal(msg)
+		jsonBytes, err := marshalOpts.Marshal(respMsg)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to marshal response: %v", err.Error())})
 		}
 
 		return c.JSONBlob(http.StatusOK, jsonBytes)
-
 	}
+}
+
+// setProtobufField sets a protobuf field value based on query parameter values
+func setProtobufField(msgReflect protoreflect.Message, field protoreflect.FieldDescriptor, values []string) error {
+	switch field.Kind() {
+	case protoreflect.Int64Kind:
+		if field.Cardinality() == protoreflect.Repeated {
+			// Handle repeated int64 ([]int64)
+			list := msgReflect.NewField(field).List()
+			for _, val := range values {
+				i64, err := strconv.ParseInt(val, 10, 64)
+				if err != nil {
+					return fmt.Errorf("invalid int64 value '%s'", val)
+				}
+				list.Append(protoreflect.ValueOfInt64(i64))
+			}
+			msgReflect.Set(field, protoreflect.ValueOfList(list))
+		} else {
+			// Handle single int64
+			i64, err := strconv.ParseInt(values[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid int64 value '%s'", values[0])
+			}
+			msgReflect.Set(field, protoreflect.ValueOfInt64(i64))
+		}
+		
+	case protoreflect.Int32Kind:
+		if field.Cardinality() == protoreflect.Repeated {
+			list := msgReflect.NewField(field).List()
+			for _, val := range values {
+				i32, err := strconv.ParseInt(val, 10, 32)
+				if err != nil {
+					return fmt.Errorf("invalid int32 value '%s'", val)
+				}
+				list.Append(protoreflect.ValueOfInt32(int32(i32)))
+			}
+			msgReflect.Set(field, protoreflect.ValueOfList(list))
+		} else {
+			i32, err := strconv.ParseInt(values[0], 10, 32)
+			if err != nil {
+				return fmt.Errorf("invalid int32 value '%s'", values[0])
+			}
+			msgReflect.Set(field, protoreflect.ValueOfInt32(int32(i32)))
+		}
+		
+	case protoreflect.Uint64Kind:
+		if field.Cardinality() == protoreflect.Repeated {
+			list := msgReflect.NewField(field).List()
+			for _, val := range values {
+				u64, err := strconv.ParseUint(val, 10, 64)
+				if err != nil {
+					return fmt.Errorf("invalid uint64 value '%s'", val)
+				}
+				list.Append(protoreflect.ValueOfUint64(u64))
+			}
+			msgReflect.Set(field, protoreflect.ValueOfList(list))
+		} else {
+			u64, err := strconv.ParseUint(values[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid uint64 value '%s'", values[0])
+			}
+			msgReflect.Set(field, protoreflect.ValueOfUint64(u64))
+		}
+		
+	case protoreflect.FloatKind, protoreflect.DoubleKind:
+		if field.Cardinality() == protoreflect.Repeated {
+			list := msgReflect.NewField(field).List()
+			for _, val := range values {
+				f64, err := strconv.ParseFloat(val, 64)
+				if err != nil {
+					return fmt.Errorf("invalid float value '%s'", val)
+				}
+				if field.Kind() == protoreflect.FloatKind {
+					list.Append(protoreflect.ValueOfFloat32(float32(f64)))
+				} else {
+					list.Append(protoreflect.ValueOfFloat64(f64))
+				}
+			}
+			msgReflect.Set(field, protoreflect.ValueOfList(list))
+		} else {
+			f64, err := strconv.ParseFloat(values[0], 64)
+			if err != nil {
+				return fmt.Errorf("invalid float value '%s'", values[0])
+			}
+			if field.Kind() == protoreflect.FloatKind {
+				msgReflect.Set(field, protoreflect.ValueOfFloat32(float32(f64)))
+			} else {
+				msgReflect.Set(field, protoreflect.ValueOfFloat64(f64))
+			}
+		}
+		
+	case protoreflect.BoolKind:
+		if field.Cardinality() == protoreflect.Repeated {
+			list := msgReflect.NewField(field).List()
+			for _, val := range values {
+				b, err := strconv.ParseBool(val)
+				if err != nil {
+					return fmt.Errorf("invalid bool value '%s'", val)
+				}
+				list.Append(protoreflect.ValueOfBool(b))
+			}
+			msgReflect.Set(field, protoreflect.ValueOfList(list))
+		} else {
+			b, err := strconv.ParseBool(values[0])
+			if err != nil {
+				return fmt.Errorf("invalid bool value '%s'", values[0])
+			}
+			msgReflect.Set(field, protoreflect.ValueOfBool(b))
+		}
+		
+	case protoreflect.StringKind:
+		if field.Cardinality() == protoreflect.Repeated {
+			list := msgReflect.NewField(field).List()
+			for _, val := range values {
+				list.Append(protoreflect.ValueOfString(val))
+			}
+			msgReflect.Set(field, protoreflect.ValueOfList(list))
+		} else {
+			msgReflect.Set(field, protoreflect.ValueOfString(values[0]))
+		}
+		
+	default:
+		return fmt.Errorf("unsupported field type: %v", field.Kind())
+	}
+	
+	return nil
 }
 
 func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreServer.CoreService, storageService *server.StorageService, etlService *etl.ETLService, systemService *system.SystemService, ethService *eth.EthService) error {
@@ -402,6 +523,7 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreSe
 	rpcGroup.GET(corev1connect.CoreServiceGetStatusProcedure, connectGET(coreService.GetStatus))
 	rpcGroup.GET(corev1connect.CoreServiceGetNodeInfoProcedure, connectGET(coreService.GetNodeInfo))
 	rpcGroup.GET(corev1connect.CoreServiceGetBlockProcedure, connectGET(coreService.GetBlock))
+	rpcGroup.GET(corev1connect.CoreServiceGetBlocksProcedure, connectGET(coreService.GetBlocks))
 	rpcGroup.GET(corev1connect.CoreServiceGetTransactionProcedure, connectGET(coreService.GetTransaction))
 	rpcGroup.GET(corev1connect.CoreServiceGetStoredSnapshotsProcedure, connectGET(coreService.GetStoredSnapshots))
 	rpcGroup.GET(corev1connect.CoreServiceGetRewardAttestationProcedure, connectGET(coreService.GetRewardAttestation))

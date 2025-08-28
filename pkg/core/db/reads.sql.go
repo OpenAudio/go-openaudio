@@ -323,6 +323,74 @@ func (q *Queries) GetBlockTransactions(ctx context.Context, blockID int64) ([]Co
 	return items, nil
 }
 
+const getBlocksWithTransactions = `-- name: GetBlocksWithTransactions :many
+select 
+    b.rowid as block_rowid,
+    b.height,
+    b.chain_id, 
+    b.hash as block_hash,
+    b.proposer,
+    b.created_at as block_created_at,
+    t.rowid as tx_rowid,
+    t.block_id,
+    t.index as tx_index,
+    t.tx_hash,
+    t.transaction,
+    t.created_at as tx_created_at
+from core_blocks b
+left join core_transactions t on b.height = t.block_id  
+where b.height = any($1::bigint[])
+order by b.height, t.created_at desc
+`
+
+type GetBlocksWithTransactionsRow struct {
+	BlockRowid     int64
+	Height         int64
+	ChainID        string
+	BlockHash      string
+	Proposer       string
+	BlockCreatedAt pgtype.Timestamp
+	TxRowid        pgtype.Int8
+	BlockID        pgtype.Int8
+	TxIndex        pgtype.Int4
+	TxHash         pgtype.Text
+	Transaction    []byte
+	TxCreatedAt    pgtype.Timestamp
+}
+
+func (q *Queries) GetBlocksWithTransactions(ctx context.Context, dollar_1 []int64) ([]GetBlocksWithTransactionsRow, error) {
+	rows, err := q.db.Query(ctx, getBlocksWithTransactions, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetBlocksWithTransactionsRow
+	for rows.Next() {
+		var i GetBlocksWithTransactionsRow
+		if err := rows.Scan(
+			&i.BlockRowid,
+			&i.Height,
+			&i.ChainID,
+			&i.BlockHash,
+			&i.Proposer,
+			&i.BlockCreatedAt,
+			&i.TxRowid,
+			&i.BlockID,
+			&i.TxIndex,
+			&i.TxHash,
+			&i.Transaction,
+			&i.TxCreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getDBSize = `-- name: GetDBSize :one
 select pg_database_size(current_database())::bigint as size
 `

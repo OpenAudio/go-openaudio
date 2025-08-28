@@ -11,6 +11,7 @@ service CoreService {
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {}
   rpc GetNodeInfo(GetNodeInfoRequest) returns (GetNodeInfoResponse) {}
   rpc GetBlock(GetBlockRequest) returns (GetBlockResponse) {}
+  rpc GetBlocks(GetBlocksRequest) returns (GetBlocksResponse) {}
   rpc GetTransaction(GetTransactionRequest) returns (GetTransactionResponse) {}
   rpc SendTransaction(SendTransactionRequest) returns (SendTransactionResponse) {}
   rpc ForwardTransaction(ForwardTransactionRequest) returns (ForwardTransactionResponse) {}

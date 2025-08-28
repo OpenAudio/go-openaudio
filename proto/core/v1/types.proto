@@ -186,6 +186,15 @@ message GetBlockResponse {
   int64 current_height = 2;
 }
 
+message GetBlocksRequest {
+  repeated int64 height = 1;
+}
+
+message GetBlocksResponse {
+  map<int64, Block> blocks = 1;
+  int64 current_height = 2;
+}
+
 message GetTransactionRequest {
   string tx_hash = 1;
 }

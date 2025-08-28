@@ -167,6 +167,77 @@ func (c *CoreService) GetBlock(ctx context.Context, req *connect.Request[v1.GetB
 	return connect.NewResponse(&v1.GetBlockResponse{Block: res, CurrentHeight: c.core.cache.currentHeight.Load()}), nil
 }
 
+// GetBlocks implements v1connect.CoreServiceHandler.
+func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.GetBlocksRequest]) (*connect.Response[v1.GetBlocksResponse], error) {
+	heights := req.Msg.Height
+	if len(heights) == 0 {
+		return connect.NewResponse(&v1.GetBlocksResponse{
+			Blocks:        map[int64]*v1.Block{},
+			CurrentHeight: c.core.cache.currentHeight.Load(),
+		}), nil
+	}
+
+	// Apply server-side limit of 500 blocks
+	if len(heights) > 500 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("too many blocks requested: %d (max 500)", len(heights)))
+	}
+
+	currentHeight := c.core.cache.currentHeight.Load()
+	
+	// Get blocks with transactions in one efficient query
+	rows, err := c.core.db.GetBlocksWithTransactions(ctx, heights)
+	if err != nil {
+		return nil, fmt.Errorf("error getting blocks with transactions: %v", err)
+	}
+
+	// Group results by block height
+	blockMap := make(map[int64]*v1.Block)
+	
+	for _, row := range rows {
+		// Initialize block if not already created
+		if _, exists := blockMap[row.Height]; !exists {
+			blockMap[row.Height] = &v1.Block{
+				Hash:         row.BlockHash,
+				ChainId:      c.core.config.GenesisFile.ChainID,
+				Proposer:     row.Proposer,
+				Height:       row.Height,
+				Transactions: []*v1.Transaction{},
+				Timestamp:    timestamppb.New(row.BlockCreatedAt.Time),
+			}
+		}
+
+		// Add transaction if it exists (pgtype.Text.Valid checks for NULL)
+		if row.TxHash.Valid && len(row.Transaction) > 0 {
+			var transaction v1.SignedTransaction
+			err = proto.Unmarshal(row.Transaction, &transaction)
+			if err != nil {
+				return nil, fmt.Errorf("error unmarshaling transaction: %v", err)
+			}
+			
+			txResponse := &v1.Transaction{
+				Hash:        row.TxHash.String,
+				BlockHash:   row.BlockHash,
+				ChainId:     c.core.config.GenesisFile.ChainID,
+				Height:      row.Height,
+				Timestamp:   timestamppb.New(row.BlockCreatedAt.Time),
+				Transaction: &transaction,
+			}
+			
+			blockMap[row.Height].Transactions = append(blockMap[row.Height].Transactions, txResponse)
+		}
+	}
+
+	// Sort transactions within each block
+	for _, block := range blockMap {
+		block.Transactions = sortTransactionResponse(block.Transactions)
+	}
+
+	return connect.NewResponse(&v1.GetBlocksResponse{
+		Blocks:        blockMap,
+		CurrentHeight: currentHeight,
+	}), nil
+}
+
 // GetDeregistrationAttestation implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *connect.Request[v1.GetDeregistrationAttestationRequest]) (*connect.Response[v1.GetDeregistrationAttestationResponse], error) {
 	dereg := req.Msg.Deregistration
