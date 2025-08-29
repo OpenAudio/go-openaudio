@@ -15,10 +15,10 @@ import (
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
 	"github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -28,7 +28,7 @@ var (
 )
 
 type Mempool struct {
-	logger *common.Logger
+	logger *zap.Logger
 	config *config.Config
 
 	deque *list.List
@@ -48,9 +48,9 @@ type MempoolTransaction struct {
 	Txv2     *v1beta1.Transaction
 }
 
-func NewMempool(logger *common.Logger, config *config.Config, db *db.Queries, maxTransactions int) *Mempool {
+func NewMempool(logger *zap.Logger, config *config.Config, db *db.Queries, maxTransactions int) *Mempool {
 	return &Mempool{
-		logger:                 logger.Child("mempool"),
+		logger:                 logger.With(zap.String("service", "mempool")),
 		config:                 config,
 		deque:                  list.New(),
 		txMap:                  make(map[string]*list.Element),
@@ -114,7 +114,7 @@ func (m *Mempool) RemoveBatch(ids []string) {
 		if element, exists := m.txMap[id]; exists {
 			m.deque.Remove(element)
 			delete(m.txMap, id)
-			m.logger.Infof("removed from mempool %s", id)
+			m.logger.Info("removed from mempools", zap.String("tx", id))
 		}
 	}
 }
@@ -158,14 +158,14 @@ func (s *Server) addMempoolTransaction(key string, tx *MempoolTransaction, broad
 
 	_, exists := m.txMap[key]
 	if exists {
-		m.logger.Warningf("duplicate tx %s tried to add to mempool", key)
+		m.logger.Warn("duplicate tx tried to add to mempool", zap.String("tx", key))
 		return nil
 	}
 
 	element := m.deque.PushBack(tx)
 	m.txMap[key] = element
 
-	m.logger.Infof("added to mempool %s", key)
+	m.logger.Info("added to mempool", zap.String("tx", key))
 	return nil
 }
 
@@ -182,7 +182,7 @@ func (s *Server) broadcastMempoolTransaction(key string, tx *MempoolTransaction)
 
 	peers := s.connectRPCPeers.Values()
 	for _, peer := range peers {
-		go func(logger *common.Logger, peer corev1connect.CoreServiceClient) {
+		go func(logger *zap.Logger, peer corev1connect.CoreServiceClient) {
 			var err error
 			if tx.Tx != nil {
 				_, err = peer.ForwardTransaction(context.Background(), connect.NewRequest(&v1.ForwardTransactionRequest{
@@ -193,15 +193,15 @@ func (s *Server) broadcastMempoolTransaction(key string, tx *MempoolTransaction)
 					Transactionv2: tx.Txv2,
 				}))
 			} else {
-				logger.Errorf("mempool transaction has no content: %s", key)
+				logger.Error("mempool transaction has no content", zap.String("tx", key))
 				return
 			}
 
 			if err != nil {
-				logger.Errorf("could not broadcast tx %s: %v", key, err)
+				logger.Error("could not broadcast tx", zap.String("tx", key), zap.Error(err))
 				return
 			}
-			s.logger.Infof("broadcasted tx %s to peer", key)
+			s.logger.Info("broadcasted tx to peer", zap.String("tx", key))
 		}(s.logger, peer)
 	}
 }
@@ -238,7 +238,7 @@ func (s *Server) getMempl(c echo.Context) error {
 
 func (s *Server) startMempoolCache(ctx context.Context) error {
 	s.StartProcess(ProcessStateMempoolCache)
-	
+
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -253,7 +253,7 @@ func (s *Server) startMempoolCache(ctx context.Context) error {
 				memplCount := mempl.deque.Len()
 				txCount := int64(memplCount)
 				maxTxCount := int64(mempl.maxMempoolTransactions)
-				
+
 				// Calculate total size of transactions in mempool
 				var totalSize int64
 				for e := mempl.deque.Front(); e != nil; e = e.Next() {
@@ -265,11 +265,11 @@ func (s *Server) startMempoolCache(ctx context.Context) error {
 						}
 					}
 				}
-				
+
 				// Calculate theoretical max mempool size using actual config value
 				maxTxBytes := int64(s.cometbftConfig.Mempool.MaxTxBytes)
 				maxTxSize := maxTxCount * maxTxBytes
-				
+
 				mempl.mutex.Unlock()
 
 				upsertCache(s.cache.mempoolInfo, MempoolInfoKey, func(mempoolInfo *v1.GetStatusResponse_MempoolInfo) *v1.GetStatusResponse_MempoolInfo {

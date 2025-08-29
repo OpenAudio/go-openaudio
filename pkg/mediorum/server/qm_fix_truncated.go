@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/georgysavva/scany/v2/pgxscan"
+	"go.uber.org/zap"
 )
 
 func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) error {
-	logger := ss.logger.With("task", "fixTruncatedQm")
+	logger := ss.logger.With(zap.String("task", "fixTruncatedQm"))
 	var err error
 
 	client := http.Client{
@@ -20,7 +21,7 @@ func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) error {
 
 	_, err = ss.pgPool.Exec(ctx, `insert into cursors (host, last_ulid) values ('qm_fix_truncated', '') on conflict do nothing`)
 	if err != nil {
-		logger.Error("create cursor failed", "err", err)
+		logger.Error("create cursor failed", zap.Error(err))
 		return err
 	}
 
@@ -31,7 +32,7 @@ func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) error {
 			var cidCursor string
 			err = pgxscan.Get(ctx, ss.pgPool, &cidCursor, `select last_ulid from cursors where host = 'qm_fix_truncated'`)
 			if err != nil {
-				logger.Error("select cursor failed", "err", err)
+				logger.Error("select cursor failed", zap.Error(err))
 				continue
 			}
 
@@ -43,7 +44,7 @@ func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) error {
 				 order by key
 				 limit 20`, cidCursor)
 			if err != nil {
-				logger.Warn("select qm_cids batch failed", "err", err)
+				logger.Warn("select qm_cids batch failed", zap.Error(err))
 				continue
 			}
 
@@ -68,13 +69,13 @@ func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) error {
 							u := fmt.Sprintf("%s/internal/blobs/location/%s?sniff=1&fix=1", hostBlob.Host, cid)
 							resp, err := client.Get(u)
 							if err != nil {
-								logger.Warn("failed", "err", err)
+								logger.Warn("failed", zap.Error(err))
 								continue
 							}
 							if resp.StatusCode != 200 {
-								logger.Warn("failed bad status", "url", u, "status", resp.StatusCode)
+								logger.Warn("failed bad status", zap.String("url", u), zap.Int("status", resp.StatusCode))
 							} else {
-								logger.Info("ok", "url", u)
+								logger.Info("ok", zap.String("url", u))
 							}
 							resp.Body.Close()
 						}
@@ -86,7 +87,7 @@ func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) error {
 
 			_, err = ss.pgPool.Exec(ctx, `update cursors set last_ulid = $1 where host = 'qm_fix_truncated'`, cidBatch[len(cidBatch)-1])
 			if err != nil {
-				logger.Warn("update cursor failed", "err", err)
+				logger.Warn("update cursor failed", zap.Error(err))
 			}
 		case <-ctx.Done():
 			return ctx.Err()

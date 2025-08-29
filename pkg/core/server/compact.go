@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/cockroachdb/pebble"
+	"go.uber.org/zap"
 )
 
 func (s *Server) CompactStateDB() error {
@@ -19,7 +20,7 @@ func (s *Server) CompactBlockstoreDB() error {
 }
 
 func (s *Server) compactDB(path string) error {
-	s.logger.Infof("pebble compacting: %s", path)
+	s.logger.Info("pebble compacting", zap.String("path", path))
 
 	opts := &pebble.Options{
 		ReadOnly:         false,

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 var (
@@ -15,7 +17,7 @@ var (
 // tasks that execute once the node is fully synced
 func (s *Server) startSyncTasks(ctx context.Context) error {
 	s.StartProcess(ProcessStateSyncTasks)
-	
+
 	ticker := time.NewTicker(5 * time.Second)
 
 	for {
@@ -23,7 +25,7 @@ func (s *Server) startSyncTasks(ctx context.Context) error {
 		case <-ticker.C:
 			s.RunningProcessWithMetadata(ProcessStateSyncTasks, "Checking sync status")
 			if err := s.onSyncTick(ctx); err != nil {
-				s.logger.Debugf("still syncing: %v", err)
+				s.logger.Debug("still syncing", zap.Error(err))
 				s.SleepingProcessWithMetadata(ProcessStateSyncTasks, "Waiting for sync")
 			} else {
 				s.CompleteProcess(ProcessStateSyncTasks)

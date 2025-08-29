@@ -54,7 +54,7 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return c.String(404, "blob not found")
 		}
-		ss.logger.Warn("error getting blob attributes", "error", err)
+		ss.logger.Warn("error getting blob attributes", zap.Error(err))
 		return err
 	}
 
@@ -73,7 +73,7 @@ func (ss *MediorumServer) ensureNotDelisted(next echo.HandlerFunc) echo.HandlerF
 		key := c.Param("cid")
 
 		if ss.isCidBlacklisted(ctx, key) {
-			ss.logger.Debug("cid is blacklisted", "cid", key)
+			ss.logger.Debug("cid is blacklisted", zap.String("cid", key))
 			return c.String(403, "cid is blacklisted by this node")
 		}
 
@@ -225,7 +225,7 @@ func (ss *MediorumServer) recordMetric(action string) {
 	})
 
 	if err != nil {
-		ss.logger.Error("unable to increment daily metric", "err", err, "action", action)
+		ss.logger.Error("unable to increment daily metric", zap.Error(err), zap.String("action", action))
 	}
 
 	// Increment monthly metric
@@ -246,7 +246,7 @@ func (ss *MediorumServer) recordMetric(action string) {
 	})
 
 	if err != nil {
-		ss.logger.Error("unable to increment monthly metric", "err", err, "action", action)
+		ss.logger.Error("unable to increment monthly metric", zap.Error(err), zap.String("action", action))
 	}
 }
 
@@ -296,7 +296,12 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 
 	sig, err := signature.ParseFromQueryString(c.QueryParam("signature"))
 	if err != nil {
-		ss.logger.Warn("unable to parse signature for request", "signature", c.QueryParam("signature"), "remote_addr", c.Request().RemoteAddr, "url", c.Request().URL)
+		ss.logger.Warn(
+			"unable to parse signature for request",
+			zap.String("signature", c.QueryParam("signature")),
+			zap.String("remote_addr", c.Request().RemoteAddr),
+			zap.String("url", c.Request().URL.String()),
+		)
 		return
 	}
 
@@ -308,20 +313,20 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 
 	signatureData, err := signature.GenerateListenTimestampAndSignature(ss.Config.privateKey)
 	if err != nil {
-		ss.logger.Error("unable to build request", "err", err)
+		ss.logger.Error("unable to build request", zap.Error(err))
 		return
 	}
 
 	// parse out time as proto object from legacy listen sig
 	parsedTime, err := time.Parse(time.RFC3339, signatureData.Timestamp)
 	if err != nil {
-		ss.logger.Error("core error parsing time:", "err", err)
+		ss.logger.Error("core error parsing time:", zap.Error(err))
 		return
 	}
 
 	geoData, err := ss.getGeoFromIP(c.RealIP())
 	if err != nil {
-		ss.logger.Error("core plays bad ip: %v", err)
+		ss.logger.Error("core plays bad ip", zap.Error(err))
 		return
 	}
 
@@ -338,7 +343,7 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 		RequestSignature: c.QueryParam("signature"),
 	})
 
-	ss.z.Info("play logged", zap.String("user_id", userId), zap.String("track_id", trackID))
+	ss.logger.Info("play logged", zap.String("user_id", userId), zap.String("track_id", trackID))
 }
 
 // checks signature from discovery node
@@ -364,7 +369,7 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 				wallets[i] = peer.Wallet
 			}
 			if !isRegistered {
-				s.logger.Debug("sig no match", "signed by", sig.SignerWallet)
+				s.logger.Debug("sig no match", zap.String("signed by", sig.SignerWallet))
 				return c.JSON(401, map[string]string{
 					"error":         "signer not in list of registered nodes",
 					"detail":        "signed by: " + sig.SignerWallet,
@@ -433,7 +438,7 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 
 	for _, upload := range files {
 		cid := upload.Filename
-		logger := ss.logger.With("cid", cid)
+		logger := ss.logger.With(zap.String("cid", cid))
 
 		inp, err := upload.Open()
 		if err != nil {
@@ -443,7 +448,7 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 
 		err = cidutil.ValidateCID(cid, inp)
 		if err != nil {
-			logger.Error("postBlob got invalid CID", "err", err)
+			logger.Error("postBlob got invalid CID", zap.Error(err))
 			return c.JSON(400, map[string]string{
 				"error": err.Error(),
 			})
@@ -451,7 +456,7 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 
 		err = ss.replicateToMyBucket(c.Request().Context(), cid, inp)
 		if err != nil {
-			ss.logger.Error("accept ERR", "err", err)
+			ss.logger.Error("accept ERR", zap.Error(err))
 			return err
 		}
 	}
@@ -501,7 +506,7 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 	var count int
 	ss.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND pub_key = ?", trackId, base64.StdEncoding.EncodeToString(sig.SignerPubkey)).Scan(&count)
 	if count == 0 {
-		ss.logger.Debug("sig no match", "signed by", sig.SignerWallet)
+		ss.logger.Debug("sig no match", zap.String("signed by", sig.SignerWallet))
 		return c.JSON(401, map[string]string{
 			"error":  "signer not authorized to access",
 			"detail": "signed by: " + sig.SignerWallet,

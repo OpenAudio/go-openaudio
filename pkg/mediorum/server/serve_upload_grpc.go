@@ -19,6 +19,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
 	"github.com/gabriel-vasile/mimetype"
+	"go.uber.org/zap"
 
 	"github.com/oklog/ulid/v2"
 	"golang.org/x/exp/slices"
@@ -150,7 +151,7 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 
 		idx := idx
 		formFile := formFile
-		ss.logger.Info("formFile", "contentType", formFile.Header.Get("Content-Type"))
+		ss.logger.Info("formFile", zap.String("contentType", formFile.Header.Get("Content-Type")))
 
 		wg.Go(func() error {
 			now := time.Now().UTC()
@@ -198,14 +199,14 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 
 			// replicate to my bucket + others
 			ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
-			ss.logger.Info("replicating to my bucket", "name", tmpFile.Name(), "cid", formFileCID)
+			ss.logger.Info("replicating to my bucket", zap.String("name", tmpFile.Name()), zap.String("cid", formFileCID))
 			upload.Mirrors, err = ss.replicateFileParallel(ctx, formFileCID, tmpFile.Name(), placementHosts)
 			if err != nil {
 				upload.Error = err.Error()
 				return err
 			}
 
-			ss.logger.Info("mirrored", "name", filename, "uploadID", upload.ID, "cid", formFileCID, "mirrors", upload.Mirrors)
+			ss.logger.Info("mirrored", zap.String("name", filename), zap.String("uploadID", upload.ID), zap.String("cid", formFileCID), zap.Strings("mirrors", upload.Mirrors))
 
 			if template == JobTemplateImgSquare || template == JobTemplateImgBackdrop {
 				upload.TranscodeResults["original.jpg"] = formFileCID
@@ -222,7 +223,7 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 	}
 
 	if err := wg.Wait(); err != nil {
-		ss.logger.Error("failed to process new upload", "err", err)
+		ss.logger.Error("failed to process new upload", zap.Error(err))
 		return nil, fmt.Errorf("failed to process new upload: %w", err)
 	}
 

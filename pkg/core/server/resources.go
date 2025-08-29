@@ -10,12 +10,13 @@ import (
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/v4/mem"
+	"go.uber.org/zap"
 )
 
 func (s *Server) refreshResourceStatus() error {
 	dbSize, err := s.db.GetDBSize(context.Background())
 	if err != nil {
-		s.logger.Errorf("could not get db size: %v", err)
+		s.logger.Error("could not get db size", zap.Error(err))
 		dbSize = -1
 	}
 
@@ -23,7 +24,7 @@ func (s *Server) refreshResourceStatus() error {
 	chainSize := int64(0)
 	err = filepath.Walk(chainDir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
-			s.logger.Debugf("error walking chain dir %s: %v", path, err)
+			s.logger.Debug("error walking chain dir", zap.String("path", path), zap.Error(err))
 			return nil // Continue walking despite errors
 		}
 		if !info.IsDir() {
@@ -32,18 +33,18 @@ func (s *Server) refreshResourceStatus() error {
 		return nil
 	})
 	if err != nil {
-		s.logger.Errorf("could not calculate chain size: %v", err)
+		s.logger.Error("could not calculate chain size", zap.Error(err))
 		chainSize = -1
 	}
 
 	stat, err := mem.VirtualMemory()
 	if err != nil {
-		s.logger.Errorf("could not get memory info: %v", err)
+		s.logger.Error("could not get memory info", zap.Error(err))
 	}
 
 	cpuStat, err := cpu.Percent(time.Second, false)
 	if err != nil {
-		s.logger.Errorf("could not get cpu info: %v", err)
+		s.logger.Error("could not get cpu info", zap.Error(err))
 	}
 	total := 0.0
 	for _, perc := range cpuStat {
@@ -53,13 +54,15 @@ func (s *Server) refreshResourceStatus() error {
 
 	diskStat, err := disk.Usage(s.config.RootDir)
 	if err != nil {
-		s.logger.Errorf("could not get disk info for %s: %v", s.config.RootDir, err)
+		s.logger.Error("could not get disk info", zap.String("path", s.config.RootDir), zap.Error(err))
 	} else {
-		s.logger.Debugf("disk stats for %s: used=%d GB, free=%d GB, total=%d GB", 
-			s.config.RootDir, 
-			diskStat.Used/(1024*1024*1024), 
-			diskStat.Free/(1024*1024*1024), 
-			diskStat.Total/(1024*1024*1024))
+		s.logger.Debug(
+			"disk stats",
+			zap.String("path", s.config.RootDir),
+			zap.Uint64("used_GB", diskStat.Used/(1024*1024*1024)),
+			zap.Uint64("free_GB", diskStat.Free/(1024*1024*1024)),
+			zap.Uint64("total_GB", diskStat.Total/(1024*1024*1024)),
+		)
 	}
 
 	upsertCache(s.cache.resourceInfo, ResourceInfoKey, func(resourceInfo *v1.GetStatusResponse_ResourceInfo) *v1.GetStatusResponse_ResourceInfo {

@@ -18,24 +18,20 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/AudiusProject/audiusd/pkg/registrar"
 	"github.com/AudiusProject/audiusd/pkg/version"
+	"go.uber.org/zap"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sync/errgroup"
 )
 
-func init() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
-	slog.SetDefault(logger)
-}
-
-func Run(lc *lifecycle.Lifecycle, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService) error {
+func Run(lc *lifecycle.Lifecycle, logger *zap.Logger, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService) error {
 	mediorumEnv := os.Getenv("MEDIORUM_ENV")
-	slog.Info("starting", "MEDIORUM_ENV", mediorumEnv)
+	logger.Info("starting mediorum", zap.String("MEDIORUM_ENV", mediorumEnv))
 
-	return runMediorum(lc, mediorumEnv, posChannel, storageService, core)
+	return runMediorum(lc, logger, mediorumEnv, posChannel, storageService, core)
 }
 
-func runMediorum(lc *lifecycle.Lifecycle, mediorumEnv string, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService) error {
-	logger := slog.With("creatorNodeEndpoint", os.Getenv("creatorNodeEndpoint"))
+func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService) error {
+	logger = logger.With(zap.String("service", "mediorum"))
 
 	isProd := mediorumEnv == "prod"
 	isStage := mediorumEnv == "stage"
@@ -67,7 +63,7 @@ func runMediorum(lc *lifecycle.Lifecycle, mediorumEnv string, posChannel chan po
 	if err := eg.Wait(); err != nil {
 		panic(err)
 	}
-	logger.Info("fetched registered nodes", "peers", len(peers), "signers", len(signers))
+	logger.Info("fetched registered nodes", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)))
 
 	creatorNodeEndpoint := os.Getenv("creatorNodeEndpoint")
 	if creatorNodeEndpoint == "" {
@@ -92,13 +88,13 @@ func runMediorum(lc *lifecycle.Lifecycle, mediorumEnv string, posChannel chan po
 
 	trustedNotifierID, err := strconv.Atoi(getenvWithDefault("trustedNotifierID", "1"))
 	if err != nil {
-		logger.Warn("failed to parse trustedNotifierID", "err", err)
+		logger.Warn("failed to parse trustedNotifierID", zap.Error(err))
 	}
 	spID, err := ethcontracts.GetServiceProviderIdFromEndpoint(creatorNodeEndpoint, walletAddress)
 	if err != nil || spID == 0 {
 		go func() {
 			for range time.Tick(10 * time.Second) {
-				logger.Warn("failed to recover spID - please register at https://dashboard.audius.org and restart the server", "err", err)
+				logger.Warn("failed to recover spID - please register at https://dashboard.audius.org and restart the server", zap.Error(err))
 			}
 		}()
 	}
@@ -145,7 +141,7 @@ func runMediorum(lc *lifecycle.Lifecycle, mediorumEnv string, posChannel chan po
 		LogLevel:                  getenvWithDefault("AUDIUSD_LOG_LEVEL", "info"),
 	}
 
-	ss, err := server.New(lc, config, g, posChannel, core)
+	ss, err := server.New(lc, logger, config, g, posChannel, core)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %v", err)
 	}

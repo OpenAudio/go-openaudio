@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -31,7 +32,7 @@ const (
 // Called during FinalizeBlock. Keeps Proof of Storage subsystem up to date with current block.
 func (s *Server) syncPoS(_ context.Context, latestBlockHash []byte, latestBlockHeight int64) error {
 	if !s.cache.catchingUp.Load() && blockShouldTriggerNewPoSChallenge(latestBlockHash) {
-		s.logger.Info("PoS Challenge triggered", "height", latestBlockHeight, "hash", hex.EncodeToString(latestBlockHash))
+		s.logger.Info("PoS Challenge triggered", zap.Int64("height", latestBlockHeight), zap.String("hash", hex.EncodeToString(latestBlockHash)))
 		go s.sendPoSChallengeToStorage(latestBlockHash, latestBlockHeight)
 	}
 	return nil
@@ -61,7 +62,7 @@ func (s *Server) sendPoSChallengeToStorage(blockHash []byte, blockHeight int64) 
 		// get validator nodes corresponding to mediorum's replica endpoints
 		nodes, err := s.db.GetNodesByEndpoints(ctx, response.Replicas)
 		if err != nil {
-			s.logger.Error("Failed to get all registered comet nodes for endpoints", "endpoints", response.Replicas, "error", err)
+			s.logger.Error("Failed to get all registered comet nodes for endpoints", zap.Strings("endpoints", response.Replicas), zap.Error(err))
 		}
 		proverAddresses := make([]string, 0, len(nodes))
 		for _, n := range nodes {
@@ -73,14 +74,14 @@ func (s *Server) sendPoSChallengeToStorage(blockHash []byte, blockHeight int64) 
 			ctx,
 			db.InsertStorageProofPeersParams{BlockHeight: blockHeight, ProverAddresses: proverAddresses},
 		); err != nil {
-			s.logger.Error("Could not update existing PoS challenge", "hash", blockHash, "error", err)
+			s.logger.Error("Could not update existing PoS challenge", zap.ByteString("hash", blockHash), zap.Error(err))
 		}
 
 		// submit proof tx if we are part of the challenge
 		if len(response.Proof) > 0 {
 			err := s.submitStorageProofTx(blockHeight, blockHash, response.CID, proverAddresses, response.Proof)
 			if err != nil {
-				s.logger.Error("Could not submit storage proof tx", "hash", blockHash, "error", err)
+				s.logger.Error("Could not submit storage proof tx", zap.ByteString("hash", blockHash), zap.Error(err))
 			}
 		}
 
@@ -128,7 +129,7 @@ func (s *Server) submitStorageProofTx(height int64, _ []byte, cid string, replic
 	if err != nil {
 		return fmt.Errorf("send storage proof tx failed: %v", err)
 	}
-	s.logger.Infof("Sent storage proof for cid '%s' at height '%d', receipt '%s'", cid, height, txhash)
+	s.logger.Info("Sent storage proof", zap.String("cid", cid), zap.Int64("height", height), zap.String("receipt", txhash.Msg.Transaction.Hash))
 
 	// Send the verification later.
 	go func() {
@@ -171,7 +172,7 @@ func (s *Server) submitStorageProofVerificationTx(height int64, proof []byte) er
 	if err != nil {
 		return fmt.Errorf("send storage proof verification tx failed: %v", err)
 	}
-	s.logger.Infof("Sent storage proof verification for pos challenge at height '%d', receipt '%s'", height, txhash)
+	s.logger.Info("Sent storage proof verification for challenge", zap.Int64("height", height), zap.String("receipt", txhash.Msg.Transaction.Hash))
 	return nil
 }
 
@@ -275,7 +276,7 @@ func (s *Server) finalizeStorageProof(ctx context.Context, tx *v1.SignedTransact
 
 	// ignore duplicates
 	if _, err := qtx.GetStorageProof(ctx, db.GetStorageProofParams{BlockHeight: sp.Height, Address: sp.Address}); !errors.Is(err, pgx.ErrNoRows) {
-		s.logger.Error("Storage proof already exists, skipping.", "node", sp.Address, "height", sp.Height)
+		s.logger.Error("Storage proof already exists, skipping.", zap.String("address", sp.Address), zap.Int64("height", sp.Height))
 		return sp, nil
 	}
 

@@ -4,7 +4,6 @@ import (
 	"embed"
 	"net/http"
 
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/console/middleware"
 	"github.com/labstack/echo/v4"
 )
@@ -15,12 +14,12 @@ const baseURL = "/console"
 //go:embed assets/images/*
 var embeddedAssets embed.FS
 
-func (c *Console) registerRoutes(logger *common.Logger, e *echo.Echo) {
+func (c *Console) registerRoutes() {
 
-	g := e.Group(baseURL)
+	g := c.e.Group(baseURL)
 
 	g.Use(middleware.JsonExtensionMiddleware)
-	g.Use(middleware.ErrorLoggerMiddleware(logger, c.views))
+	g.Use(middleware.ErrorLoggerMiddleware(c.logger, c.views))
 
 	g.GET("", func(ctx echo.Context) error {
 		// Redirect to the base group's overview page

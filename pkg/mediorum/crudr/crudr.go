@@ -14,7 +14,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/oklog/ulid/v2"
-	"golang.org/x/exp/slog"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -39,7 +38,7 @@ type Crudr struct {
 	myPrivateKey *ecdsa.PrivateKey
 
 	host    string
-	logger  *slog.Logger
+	logger  *zap.Logger
 	typeMap map[string]reflect.Type
 
 	peerClients []*PeerClient
@@ -89,7 +88,7 @@ func migrateOps(db *gorm.DB) error {
 	return nil
 }
 
-func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db *gorm.DB, parentLifecycle *lifecycle.Lifecycle) *Crudr {
+func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db *gorm.DB, parentLifecycle *lifecycle.Lifecycle, logger *zap.Logger) *Crudr {
 	selfHost = httputil.RemoveTrailingSlash(strings.ToLower(selfHost))
 
 	err := migrateOps(db)
@@ -107,11 +106,11 @@ func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db
 		myPrivateKey: myPrivateKey,
 
 		host:    selfHost,
-		logger:  slog.With("module", "crud", "from", selfHost),
+		logger:  logger.With(zap.String("module", "crud")),
 		typeMap: map[string]reflect.Type{},
 
 		peerClients: make([]*PeerClient, len(peerHosts)),
-		lc:          lifecycle.NewFromLifecycle(parentLifecycle, zap.NewNop(), "crudr lifecycle"),
+		lc:          lifecycle.NewFromLifecycle(parentLifecycle, "crudr lifecycle"),
 	}
 
 	for idx, peerHost := range peerHosts {
@@ -202,7 +201,7 @@ func (c *Crudr) doOp(op *Op) error {
 	// apply locally
 	err := c.ApplyOp(op)
 	if err != nil {
-		c.logger.Warn("apply failed", "op", op, "err", err)
+		c.logger.Warn("apply failed", zap.Any("op", op), zap.Error(err))
 		return err
 	}
 
@@ -276,7 +275,7 @@ func (c *Crudr) ApplyOp(op *Op) error {
 		case ActionCreate:
 			res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(records)
 			if res.RowsAffected == 0 {
-				c.logger.Debug("create had no effect", "ulid", op.ULID)
+				c.logger.Debug("create had no effect", zap.String("ulid", op.ULID))
 				return nil
 			}
 			err = res.Error

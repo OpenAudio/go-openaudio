@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 type TranscodeStats struct {
@@ -36,7 +38,7 @@ func (ss *MediorumServer) updateTranscodeStats(_ context.Context) *TranscodeStat
 	`, ss.Config.Self.Host).Scan(&stats).Error
 
 	if err != nil {
-		ss.logger.Error("transcode stats query failed", "err", err)
+		ss.logger.Error("transcode stats query failed", zap.Error(err))
 	}
 
 	// set pointer

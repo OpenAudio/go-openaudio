@@ -6,6 +6,7 @@ import (
 
 	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 func (con *Console) txPage(c echo.Context) error {
@@ -14,7 +15,7 @@ func (con *Console) txPage(c echo.Context) error {
 
 	tx, err := con.db.GetTx(ctx, strings.ToUpper(txhash))
 	if err != nil {
-		con.logger.Errorf("err getting tx: %v", err)
+		con.logger.Error("err getting tx", zap.Error(err))
 		return err
 	}
 

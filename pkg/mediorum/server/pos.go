@@ -8,6 +8,7 @@ import (
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
 	"github.com/AudiusProject/audiusd/pkg/pos"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -24,7 +25,7 @@ func (ss *MediorumServer) startPoSHandler(ctx context.Context) error {
 				continue
 			}
 			orderedHosts := ss.rendezvousHasher.Rank(cid)
-			ss.logger.Info("Retrieved artifacts for proof of storage challenge", "cid", cid, "provers", orderedHosts)
+			ss.logger.Info("Retrieved artifacts for proof of storage challenge", zap.String("cid", cid), zap.Strings("provers", orderedHosts))
 			replicaSet := make([]string, 0, ss.Config.ReplicationFactor)
 			mustProve := false
 			for i, h := range orderedHosts {
@@ -39,10 +40,10 @@ func (ss *MediorumServer) startPoSHandler(ctx context.Context) error {
 
 			var proof []byte
 			if mustProve {
-				ss.logger.Info("Generating storage proof", "cid", cid, "blockHeight", posReq.Height)
+				ss.logger.Info("Generating storage proof", zap.String("cid", cid), zap.Int64("blockHeight", posReq.Height))
 				proof, err = ss.getStorageProof(ctx, cid, posReq.Hash)
 				if err != nil {
-					ss.logger.Error("Failed to get storage proof", "cid", cid, "error", err)
+					ss.logger.Error("Failed to get storage proof", zap.String("cid", cid), zap.Error(err))
 					continue
 				}
 			}

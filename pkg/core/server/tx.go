@@ -8,6 +8,7 @@ import (
 
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/pubsub"
+	"go.uber.org/zap"
 )
 
 const BlockNumPubsubTopic = "block-num-topic"
@@ -90,7 +91,7 @@ func (s *Server) cacheTxCount(ctx context.Context) error {
 			if blockNum%5 == 0 {
 				totalTxs, err := s.db.TotalTransactions(ctx)
 				if err != nil {
-					s.logger.Errorf("could not count txs in db: %v", err)
+					s.logger.Error("could not count txs in db", zap.Error(err))
 					continue
 				}
 				s.cache.currentTxCount.Store(totalTxs)

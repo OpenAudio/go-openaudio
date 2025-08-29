@@ -13,6 +13,7 @@ import (
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	"go.uber.org/zap"
 
 	"github.com/labstack/echo/v4"
 	"github.com/oklog/ulid/v2"
@@ -282,7 +283,7 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 				return err
 			}
 
-			ss.logger.Info("mirrored", "name", formFile.Filename, "uploadID", upload.ID, "cid", formFileCID, "mirrors", upload.Mirrors)
+			ss.logger.Info("mirrored", zap.String("name", formFile.Filename), zap.String("uploadID", upload.ID), zap.String("cid", formFileCID), zap.Strings("mirrors", upload.Mirrors))
 
 			if template == JobTemplateImgSquare || template == JobTemplateImgBackdrop {
 				upload.TranscodeResults["original.jpg"] = formFileCID
@@ -300,7 +301,7 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 
 	status := 200
 	if err := wg.Wait(); err != nil {
-		ss.logger.Error("failed to process new upload", "err", err)
+		ss.logger.Error("failed to process new upload", zap.Error(err))
 		status = 422
 	}
 

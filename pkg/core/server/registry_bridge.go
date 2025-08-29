@@ -19,6 +19,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/eth/contracts"
 	"github.com/cometbft/cometbft/crypto/ed25519"
+	"go.uber.org/zap"
 
 	geth "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -37,18 +38,17 @@ ethstatus:
 		select {
 		case <-ticker.C:
 			if status, err := s.eth.GetStatus(ctx, connect.NewRequest(&ethv1.GetStatusRequest{})); err != nil {
-				s.logger.Errorf("error getting eth service status: %v", err)
+				s.logger.Error("error getting eth service status", zap.Error(err))
 				s.ErrorProcess(ProcessStateRegistryBridge, fmt.Sprintf("error getting eth service status: %v", err))
 				continue
 			} else if !status.Msg.Ready {
 				s.logger.Info("waiting for eth service to be ready")
-				s.z.Info("waiting for eth service to be ready")
 				continue
 			} else {
 				break ethstatus
 			}
 		case <-ctx.Done():
-			s.z.Error("registry bridge ctx done")
+			s.logger.Info("registry bridge ctx done")
 			return ctx.Err()
 		}
 	}
@@ -56,32 +56,31 @@ ethstatus:
 	if s.isDevEnvironment() {
 		s.logger.Info("running in dev, registering on ethereum")
 		if err := s.registerSelfOnEth(ctx); err != nil {
-			s.logger.Errorf("error registering onto eth: %v", err)
+			s.logger.Error("error registering onto eth", zap.Error(err))
 			s.ErrorProcess(ProcessStateRegistryBridge, fmt.Sprintf("error registering onto eth: %v", err))
 			return err
 		}
 	}
 
 	close(s.awaitEthReady)
-	s.z.Info("eth ready")
+	s.logger.Info("eth ready")
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-s.awaitRpcReady:
 	}
 	s.logger.Info("starting registry bridge")
-	s.z.Info("starting registry bridge")
 
 	// check comet status
 	if _, err := s.rpc.Status(ctx); err != nil {
-		s.logger.Errorf("init registry bridge failed comet rpc status: %v", err)
+		s.logger.Error("init registry bridge failed comet rpc status", zap.Error(err))
 		s.ErrorProcess(ProcessStateRegistryBridge, fmt.Sprintf("init registry bridge failed comet rpc status: %v", err))
 		return err
 	}
 
 	s.SleepingProcess(ProcessStateRegistryBridge)
 	if err := s.awaitNodeCatchup(ctx); err != nil {
-		s.logger.Errorf("error awaiting node catchup: %v", err)
+		s.logger.Error("error awaiting node catchup", zap.Error(err))
 		s.ErrorProcess(ProcessStateRegistryBridge, fmt.Sprintf("error awaiting node catchup: %v", err))
 		return err
 	}
@@ -93,9 +92,9 @@ ethstatus:
 		select {
 		case <-ticker.C:
 			if err := s.RegisterSelf(); err != nil {
-				s.logger.Errorf("node registration failed, will try again: %v", err)
+				s.logger.Error("node registration failed, will try again", zap.Error(err))
 				delay *= 2
-				s.logger.Infof("Retrying registration in %s", delay)
+				s.logger.Info("Retrying registration after delay", zap.Duration("delay", delay))
 				ticker.Reset(delay)
 			} else {
 				s.RunningProcess(ProcessStateRegistryBridge)
@@ -141,13 +140,13 @@ func (s *Server) startValidatorWarden(ctx context.Context) error {
 		case <-ticker.C:
 			allValidators, err := s.db.GetAllRegisteredNodes(ctx)
 			if err != nil {
-				s.logger.Error("could not get all validator eth addresses", "error", err)
+				s.logger.Error("could not get all validator eth addresses", zap.Error(err))
 				continue
 			}
 
 			allRegisteredEndpointsResp, err := s.eth.GetRegisteredEndpoints(ctx, connect.NewRequest(&ethv1.GetRegisteredEndpointsRequest{}))
 			if err != nil {
-				s.logger.Error("could not get all registered endpoints", "error", err)
+				s.logger.Error("could not get all registered endpoints", zap.Error(err))
 				continue
 			}
 
@@ -172,11 +171,11 @@ func (s *Server) startValidatorWarden(ctx context.Context) error {
 			// deregister any down validators
 			for _, validator := range allValidators {
 				if shouldPurge, err := s.ShouldPurgeValidatorForUnderperformance(ctx, validator.CometAddress); err == nil && shouldPurge {
-					s.logger.Infof("attempting to deregister validator %s", validator.CometAddress)
+					s.logger.Info("attempting to deregister validator", zap.String("address", validator.CometAddress))
 					s.deregisterValidator(ctx, validator.EthAddress)
 					break // killswitch: wait until next run to purge the next down validator
 				} else if err != nil {
-					s.logger.Errorf("error checking if validator should be purged: %v", err)
+					s.logger.Error("error checking if validator should be purged", zap.Error(err))
 				}
 			}
 		case <-ctx.Done():
@@ -207,7 +206,7 @@ func (s *Server) RegisterSelf() error {
 		var connectErr *connect.Error
 		if errors.As(err, &connectErr) {
 			if connectErr.Code() == connect.CodeNotFound {
-				s.logger.Infof("node %s : %s not registered on Ethereum", s.config.WalletAddress, nodeEndpoint)
+				s.logger.Info("node not registered on Ethereum", zap.String("address", s.config.WalletAddress), zap.String("endpoint", nodeEndpoint))
 				s.logger.Info("continuing unregistered")
 				return nil
 			}
@@ -217,7 +216,7 @@ func (s *Server) RegisterSelf() error {
 
 	nodeRecord, err := s.db.GetNodeByEndpoint(ctx, nodeEndpoint)
 	if errors.Is(err, pgx.ErrNoRows) {
-		s.logger.Infof("node %s not found on comet but found on eth, registering", nodeEndpoint)
+		s.logger.Info("node not found on comet but found on eth, registering")
 		if err := s.registerSelfOnComet(ctx, geth.HexToAddress(s.config.WalletAddress), big.NewInt(ep.Msg.Se.BlockNumber), fmt.Sprint(ep.Msg.Se.Id)); err != nil {
 			return fmt.Errorf("could not register on comet: %v", err)
 		}
@@ -226,7 +225,7 @@ func (s *Server) RegisterSelf() error {
 		return err
 	}
 
-	s.logger.Infof("node %s : %s registered on network %s", nodeRecord.EthAddress, nodeRecord.Endpoint, s.config.Environment)
+	s.logger.Info("node registered on network", zap.String("eth_address", nodeRecord.EthAddress), zap.String("endpoint", nodeRecord.Endpoint), zap.String("env", s.config.Environment))
 	return nil
 }
 
@@ -241,7 +240,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 	); err != nil {
 		return fmt.Errorf("could not check for duplicate delegate wallet: %w", err)
 	} else if res.Msg.IsDuplicate {
-		s.logger.Errorf("node is a duplicate, not registering on comet: %s", s.config.WalletAddress)
+		s.logger.Error("node is a duplicate, not registering on comet", zap.String("wallet_address", s.config.WalletAddress))
 		return nil
 	}
 
@@ -306,7 +305,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 				},
 			}))
 			if err != nil {
-				s.logger.Errorf("failed to get registration attestation from %s: %v", addr, err)
+				s.logger.Error("failed to get registration attestation from peer", zap.String("peer_address", addr), zap.Error(err))
 				continue
 			}
 			attestations = append(attestations, resp.Msg.Signature)
@@ -345,7 +344,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 		return fmt.Errorf("send register tx failed: %v", err)
 	}
 
-	s.logger.Infof("registered node %s in tx %s", s.config.NodeEndpoint, txhash)
+	s.logger.Info("node registered", zap.String("endpoint", s.config.NodeEndpoint), zap.String("receipt", txhash.Msg.Transaction.Hash))
 
 	return nil
 }
@@ -355,7 +354,7 @@ func (s *Server) awaitNodeCatchup(ctx context.Context) error {
 	for tries := retries; tries >= 0; tries-- {
 		res, err := s.rpc.Status(ctx)
 		if err != nil {
-			s.logger.Errorf("error getting comet health: %v", err)
+			s.logger.Error("error getting comet health", zap.Error(err))
 		} else if !res.SyncInfo.CatchingUp {
 			return nil
 		}
@@ -377,7 +376,7 @@ func (s *Server) isSelfAlreadyRegistered(ctx context.Context) bool {
 	}
 
 	if err != nil {
-		s.logger.Errorf("error getting registered nodes: %v", err)
+		s.logger.Error("error getting registered nodes", zap.Error(err))
 		return false
 	}
 
@@ -436,7 +435,7 @@ func (s *Server) registerSelfOnEth(ctx context.Context) error {
 						ServiceType: st,
 					}),
 				); err != nil {
-					s.logger.Errorf("could not register on eth: %v", err)
+					s.logger.Error("could not register on eth", zap.Error(err))
 					return fmt.Errorf("could not register on eth: %v", err)
 				}
 				return nil
@@ -454,13 +453,13 @@ func (s *Server) registerSelfOnEth(ctx context.Context) error {
 func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 	node, err := s.db.GetRegisteredNodeByEthAddress(ctx, ethAddress)
 	if err != nil {
-		s.logger.Error("could not deregister missing node", "address", ethAddress, "error", err)
+		s.logger.Error("could not deregister missing node", zap.String("address", ethAddress), zap.Error(err))
 		return
 	}
 
 	addrs, err := s.db.GetAllEthAddressesOfRegisteredNodes(ctx)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		s.logger.Error("could not deregister node: failed to get currently registered nodes", "address", ethAddress, "error", err)
+		s.logger.Error("could not deregister node: failed to get currently registered nodes", zap.String("address", ethAddress), zap.Error(err))
 		return
 	}
 
@@ -476,7 +475,7 @@ func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 
 	pubkeyBytes, err := base64.StdEncoding.DecodeString(node.CometPubKey)
 	if err != nil {
-		s.logger.Error("could not deregister node: could not decode public key", "address", ethAddress, "public key", node.CometPubKey, "error", err)
+		s.logger.Error("could not deregister node: could not decode public key", zap.String("address", ethAddress), zap.String("public key", node.CometPubKey), zap.Error(err))
 		return
 	}
 	pubKey := ed25519.PubKey(pubkeyBytes)
@@ -496,7 +495,7 @@ func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 				Deregistration: &deregCopy,
 			}))
 			if err != nil {
-				s.logger.Error("failed to get deregistration attestation from %s: %v", addr, err)
+				s.logger.Error("failed to get deregistration attestation from peer", zap.String("peer_address", addr), zap.Error(err))
 				continue
 			}
 			attestations = append(attestations, resp.Msg.Signature)
@@ -506,7 +505,7 @@ func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 				Deregistration: &deregCopy,
 			}))
 			if err != nil {
-				s.logger.Error("failed to get deregistration attestation from %s: %v", addr, err)
+				s.logger.Error("failed to get deregistration attestation from peer", zap.String("peer_address", addr), zap.Error(err))
 				continue
 			}
 			attestations = append(attestations, resp.Msg.Signature)
@@ -520,13 +519,13 @@ func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 
 	txBytes, err := proto.Marshal(deregistrationAtt)
 	if err != nil {
-		s.logger.Error("failure to marshal deregister tx", "error", err)
+		s.logger.Error("failure to marshal deregister tx", zap.Error(err))
 		return
 	}
 
 	sig, err := common.EthSign(s.config.EthereumKey, txBytes)
 	if err != nil {
-		s.logger.Error("could not sign deregister tx", "error", err)
+		s.logger.Error("could not sign deregister tx", zap.Error(err))
 		return
 	}
 
@@ -544,11 +543,11 @@ func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 
 	txhash, err := s.self.SendTransaction(context.Background(), connect.NewRequest(txreq))
 	if err != nil {
-		s.logger.Error("send deregister tx failed", "error", err)
+		s.logger.Error("send deregister tx failed", zap.Error(err))
 		return
 	}
 
-	s.logger.Infof("deregistered node %s in tx %s", s.config.NodeEndpoint, txhash)
+	s.logger.Info("deregistered validator", zap.String("endpoint", s.config.NodeEndpoint), zap.String("receipt", txhash.Msg.Transaction.Hash))
 }
 
 func serviceType(nt config.NodeType) ([32]byte, error) {

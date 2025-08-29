@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 var httpClient = &http.Client{
@@ -17,13 +18,13 @@ var httpClient = &http.Client{
 func (s *Server) proxyCometRequest(c echo.Context) error {
 	rpcUrl := strings.ReplaceAll(s.config.RPCladdr, "tcp", "http")
 
-	s.logger.Info("request", "url", rpcUrl, "method", c.Request().Method, "url", c.Request().RequestURI)
+	s.logger.Info("request", zap.String("url", rpcUrl), zap.String("method", c.Request().Method), zap.String("url", c.Request().RequestURI))
 
 	path := rpcUrl + strings.TrimPrefix(c.Request().RequestURI, "/core/crpc")
 
 	req, err := http.NewRequest(c.Request().Method, path, c.Request().Body)
 	if err != nil {
-		s.logger.Errorf("failed to create internal comet api request: %v", err)
+		s.logger.Error("failed to create internal comet api request", zap.Error(err))
 		return respondWithError(c, http.StatusInternalServerError, "failed to create internal comet request")
 	}
 
@@ -31,7 +32,7 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		s.logger.Errorf("failed to forward comet api request: %v", err)
+		s.logger.Error("failed to forward comet api request", zap.Error(err))
 		return respondWithError(c, http.StatusInternalServerError, "failed to forward request")
 	}
 	defer resp.Body.Close()

@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -83,10 +84,10 @@ func (etl *ETLService) Run() error {
 
 	locationDB, err := location.NewLocationService()
 	if err != nil {
-		etl.logger.Errorf("error creating location service: %v", err)
+		etl.logger.Error("error creating location service", zap.Error(err))
 		return fmt.Errorf("error creating location service: %v", err)
 	}
-	etl.logger.Infof("location service initialized successfully")
+	etl.logger.Info("location service initialized successfully")
 	etl.locationDB = locationDB
 
 	// Initialize materialized view refresher
@@ -95,15 +96,15 @@ func (etl *ETLService) Run() error {
 	// Initialize chain ID from core service
 	err = etl.InitializeChainID(context.Background())
 	if err != nil {
-		etl.logger.Errorf("error initializing chain ID: %v", err)
+		etl.logger.Error("error initializing chain ID", zap.Error(err))
 	}
 
-	etl.logger.Infof("starting etl service")
+	etl.logger.Info("starting etl service")
 
 	if etl.checkReadiness {
 		err = etl.awaitReadiness()
 		if err != nil {
-			etl.logger.Errorf("error awaiting readiness: %v", err)
+			etl.logger.Error("error awaiting readiness", zap.Error(err))
 		}
 	}
 
@@ -132,7 +133,7 @@ func (etl *ETLService) Run() error {
 }
 
 func (etl *ETLService) awaitReadiness() error {
-	etl.logger.Infof("awaiting readiness")
+	etl.logger.Info("awaiting readiness")
 	attempts := 0
 
 	ticker := time.NewTicker(1 * time.Second)
@@ -172,7 +173,7 @@ func (etl *ETLService) indexBlocks() error {
 					latestHeight = 0
 				}
 			} else {
-				etl.logger.Errorf("error getting latest indexed block: %v", err)
+				etl.logger.Error("error getting latest indexed block", zap.Error(err))
 				continue
 			}
 		}
@@ -183,7 +184,7 @@ func (etl *ETLService) indexBlocks() error {
 			Height: nextHeight,
 		}))
 		if err != nil {
-			etl.logger.Errorf("error getting block %d: %v", nextHeight, err)
+			etl.logger.Error("error getting block", zap.Int64("height", nextHeight), zap.Error(err))
 			continue
 		}
 
@@ -198,7 +199,7 @@ func (etl *ETLService) indexBlocks() error {
 			BlockTime:       pgtype.Timestamp{Time: block.Msg.Block.Timestamp.AsTime(), Valid: true},
 		})
 		if err != nil {
-			etl.logger.Errorf("error inserting block %d: %v", nextHeight, err)
+			etl.logger.Error("error inserting block", zap.Int64("height", nextHeight), zap.Error(err))
 			continue
 		}
 
@@ -268,7 +269,7 @@ func (etl *ETLService) indexBlocks() error {
 							Column10: recordedAts,
 						})
 						if err != nil {
-							etl.logger.Errorf("error batch inserting plays: %v", err)
+							etl.logger.Error("error batch inserting plays", zap.Error(err))
 						}
 					}
 
@@ -285,7 +286,7 @@ func (etl *ETLService) indexBlocks() error {
 						CreatedAt:            pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
 					})
 					if err != nil {
-						etl.logger.Errorf("error inserting address %s: %v", me.GetSigner(), err)
+						etl.logger.Error("error inserting address", zap.String("signer", me.GetSigner()), zap.Error(err))
 					}
 
 					err = etl.db.InsertManageEntity(context.Background(), db.InsertManageEntityParams{
@@ -302,7 +303,7 @@ func (etl *ETLService) indexBlocks() error {
 						CreatedAt:   pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
 					})
 					if err != nil {
-						etl.logger.Errorf("error inserting manage entity %s: %v", me.GetSigner(), err)
+						etl.logger.Error("error inserting manage entity", zap.String("signer", me.GetSigner()), zap.Error(err))
 					}
 
 				case *corev1.SignedTransaction_ValidatorRegistration:
@@ -322,7 +323,7 @@ func (etl *ETLService) indexBlocks() error {
 						CreatedAt:    pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
 					})
 					if err != nil {
-						etl.logger.Errorf("error inserting validator misbehavior deregistration: %v", err)
+						etl.logger.Error("error inserting validator misbehavior deregistration", zap.Error(err))
 					}
 				case *corev1.SignedTransaction_SlaRollup:
 					insertTxParams.TxType = TxTypeSlaRollup
@@ -349,7 +350,7 @@ func (etl *ETLService) indexBlocks() error {
 						for blockHeight := sr.BlockStart; blockHeight <= sr.BlockEnd; blockHeight++ {
 							blockTxCount, err := etl.db.GetBlockTransactionCount(context.Background(), blockHeight)
 							if err != nil {
-								etl.logger.Debugf("failed to get transaction count for block %d: %v", blockHeight, err)
+								etl.logger.Debug("failed to get transaction count for block", zap.Int64("height", blockHeight), zap.Error(err))
 								continue
 							}
 							txCount += blockTxCount
@@ -392,12 +393,12 @@ func (etl *ETLService) indexBlocks() error {
 						CreatedAt:      pgtype.Timestamp{Time: sr.Timestamp.AsTime(), Valid: true}, // Use rollup timestamp, not block timestamp
 					})
 					if err != nil {
-						etl.logger.Errorf("error inserting SLA rollup: %v", err)
+						etl.logger.Error("error inserting SLA rollup", zap.Error(err))
 					} else {
 						// Get storage proof challenge statistics for this SLA period
 						challengeStats, err := etl.calculateChallengeStatistics(sr.BlockStart, sr.BlockEnd)
 						if err != nil {
-							etl.logger.Errorf("error calculating challenge statistics: %v", err)
+							etl.logger.Error("error calculating challenge statistics", zap.Error(err))
 							challengeStats = make(map[string]ChallengeStats) // fallback to empty map
 						}
 
@@ -416,7 +417,7 @@ func (etl *ETLService) indexBlocks() error {
 								CreatedAt:          pgtype.Timestamp{Time: sr.Timestamp.AsTime(), Valid: true}, // Use rollup timestamp
 							})
 							if err != nil {
-								etl.logger.Errorf("error inserting SLA node report: %v", err)
+								etl.logger.Error("error inserting SLA node report", zap.Error(err))
 							}
 						}
 					}
@@ -437,7 +438,7 @@ func (etl *ETLService) indexBlocks() error {
 						CreatedAt:       pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
 					})
 					if err != nil {
-						etl.logger.Errorf("error inserting storage proof: %v", err)
+						etl.logger.Error("error inserting storage proof", zap.Error(err))
 					}
 				case *corev1.SignedTransaction_StorageProofVerification:
 					insertTxParams.TxType = TxTypeStorageProofVerification
@@ -451,12 +452,12 @@ func (etl *ETLService) indexBlocks() error {
 						CreatedAt:   pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
 					})
 					if err != nil {
-						etl.logger.Errorf("error inserting storage proof verification: %v", err)
+						etl.logger.Error("error inserting storage proof verification", zap.Error(err))
 					} else {
 						// Process consensus for this storage proof challenge
 						err = etl.processStorageProofConsensus(spv.Height, spv.Proof, block.Height, tx.Hash, block.Timestamp.AsTime())
 						if err != nil {
-							etl.logger.Errorf("error processing storage proof consensus: %v", err)
+							etl.logger.Error("error processing storage proof consensus", zap.Error(err))
 						}
 					}
 				case *corev1.SignedTransaction_Attestation:
@@ -477,7 +478,7 @@ func (etl *ETLService) indexBlocks() error {
 							TxHash:       tx.Hash,
 						})
 						if err != nil {
-							etl.logger.Errorf("error inserting validator registration: %v", err)
+							etl.logger.Error("error inserting validator registration", zap.Error(err))
 						}
 						// insert RegisteredValidator record
 						err = etl.db.RegisterValidator(context.Background(), db.RegisterValidatorParams{
@@ -494,7 +495,7 @@ func (etl *ETLService) indexBlocks() error {
 							UpdatedAt:      pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
 						})
 						if err != nil {
-							etl.logger.Errorf("error registering validator: %v", err)
+							etl.logger.Error("error registering validator", zap.Error(err))
 						}
 					}
 					if vd := at.GetValidatorDeregistration(); vd != nil {
@@ -509,7 +510,7 @@ func (etl *ETLService) indexBlocks() error {
 							TxHash:       tx.Hash,
 						})
 						if err != nil {
-							etl.logger.Errorf("error inserting validator deregistration: %v", err)
+							etl.logger.Error("error inserting validator deregistration", zap.Error(err))
 						}
 						// insert DeregisteredValidator record
 						err = etl.db.DeregisterValidator(context.Background(), db.DeregisterValidatorParams{
@@ -519,14 +520,14 @@ func (etl *ETLService) indexBlocks() error {
 							CometAddress:   vd.CometAddress,
 						})
 						if err != nil {
-							etl.logger.Errorf("error deregistering validator: %v", err)
+							etl.logger.Error("error deregistering validator", zap.Error(err))
 						}
 					}
 				}
 
 				err = etl.db.InsertTransaction(context.Background(), insertTxParams)
 				if err != nil {
-					etl.logger.Errorf("error inserting transaction %s: %v", tx.Hash, err)
+					etl.logger.Error("error inserting transaction", zap.String("tx", tx.Hash), zap.Error(err))
 					return
 				}
 
@@ -538,7 +539,7 @@ func (etl *ETLService) indexBlocks() error {
 		// TODO: use pgnotify to publish block and play events to pubsub
 
 		if etl.endingBlockHeight > 0 && block.Msg.Block.Height >= etl.endingBlockHeight {
-			etl.logger.Infof("ending block height reached, stopping etl service")
+			etl.logger.Info("ending block height reached, stopping etl service")
 			return nil
 		}
 	}
@@ -573,7 +574,7 @@ func (etl *ETLService) startPgNotifyListener(ctx context.Context) error {
 			block := &db.EtlBlock{}
 			err = json.Unmarshal([]byte(notification.Payload), block)
 			if err != nil {
-				etl.logger.Errorf("error unmarshalling block: %v", err)
+				etl.logger.Error("error unmarshalling block", zap.Error(err))
 				continue
 			}
 			if etl.blockPubsub.HasSubscribers(BlockTopic) {
@@ -583,7 +584,7 @@ func (etl *ETLService) startPgNotifyListener(ctx context.Context) error {
 			play := &db.EtlPlay{}
 			err = json.Unmarshal([]byte(notification.Payload), play)
 			if err != nil {
-				etl.logger.Errorf("error unmarshalling play: %v", err)
+				etl.logger.Error("error unmarshalling play", zap.Error(err))
 				continue
 			}
 			if etl.playPubsub.HasSubscribers(PlayTopic) {
@@ -661,7 +662,7 @@ func (etl *ETLService) processStorageProofConsensus(height int64, proof []byte, 
 				Address: sp.Address,
 			})
 			if err != nil {
-				etl.logger.Errorf("error updating storage proof status to pass: %v", err)
+				etl.logger.Error("error updating storage proof status to pass", zap.Error(err))
 			} else {
 				passedProvers[sp.Address] = true
 			}
@@ -680,13 +681,17 @@ func (etl *ETLService) processStorageProofConsensus(height int64, proof []byte, 
 				CreatedAt:   pgtype.Timestamp{Time: blockTime, Valid: true},
 			})
 			if err != nil {
-				etl.logger.Errorf("error inserting failed storage proof for %s: %v", expectedProver, err)
+				etl.logger.Error("error inserting failed storage proof for", zap.String("address", expectedProver), zap.Error(err))
 			}
 		}
 	}
 
-	etl.logger.Debugf("Processed storage proof consensus for height %d: %d proofs passed, %d expected by majority",
-		height, len(passedProvers), len(expectedProvers))
+	etl.logger.Debug(
+		"Processed storage proof consensus",
+		zap.Int64("height", height),
+		zap.Int("passed", len(passedProvers)),
+		zap.Int("expected", len(expectedProvers)),
+	)
 
 	return nil
 }

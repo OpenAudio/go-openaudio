@@ -11,6 +11,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -47,7 +48,7 @@ func (s *Server) createRollup(ctx context.Context, timestamp time.Time, height i
 
 	reports, err := s.db.GetInProgressRollupReports(ctx)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		s.logger.Error("Error retrieving current rollup reports", "error", err)
+		s.logger.Error("Error retrieving current rollup reports", zap.Error(err))
 		return rollup, err
 	}
 	reportMap := make(map[string]db.SlaNodeReport, len(reports))
@@ -58,7 +59,7 @@ func (s *Server) createRollup(ctx context.Context, timestamp time.Time, height i
 	// deterministic ordering keeps validation as simple as reflect.DeepEqual
 	validators, err := s.db.GetAllRegisteredNodesSorted(ctx)
 	if err != nil {
-		s.logger.Error("Error retrieving validators", "error", err)
+		s.logger.Error("Error retrieving validators", zap.Error(err))
 		return rollup, err
 	}
 
@@ -119,7 +120,7 @@ func (s *Server) shouldProposeNewRollup(ctx context.Context, height int64) bool 
 	previousHeight := int64(0)
 	latestRollup, err := s.db.GetLatestSlaRollup(ctx)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		s.logger.Error("Error retrieving latest SLA rollup", "error", err)
+		s.logger.Error("Error retrieving latest SLA rollup", zap.Error(err))
 		return false
 	} else {
 		previousHeight = latestRollup.BlockEnd
@@ -139,7 +140,7 @@ func (s *Server) finalizeSlaRollup(ctx context.Context, event *v1.SignedTransact
 			Valid: true,
 		},
 	); err == nil {
-		s.logger.Errorf("Skipping duplicate sla rollup with timestamp '%v'", rollup.Timestamp.AsTime())
+		s.logger.Error("Skipping duplicate sla rollup with timestamp", zap.Time("timestamp", rollup.Timestamp.AsTime()))
 		return rollup, nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("failed to check for existing rollup: %v", err)

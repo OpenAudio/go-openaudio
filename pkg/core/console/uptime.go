@@ -14,6 +14,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 const (
@@ -35,12 +36,12 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 
 	endpoints, activeEndpoint, err := cs.generateEndpoints(ctx, endpointURL)
 	if err != nil {
-		cs.logger.Error("failed to generate endpoints: %v", err)
+		cs.logger.Error("failed to generate endpoints", zap.Error(err))
 		return err
 	}
 
 	if err := cs.populateSlaReportsForEndpoints(ctx, endpoints, activeEndpoint, rollupBlockEnd); err != nil {
-		cs.logger.Error("failed to populate SLA reports for endpoints: %v", err)
+		cs.logger.Error("failed to populate SLA reports for endpoints", zap.Error(err))
 		return cs.views.RenderUptimeView(c, &pages.UptimePageView{
 			ActiveEndpoint: activeEndpoint,
 		})
@@ -55,7 +56,7 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 
 	avgBlockTimeMs, err := cs.getAverageBlockTimeForReport(ctx, activeEndpoint.ActiveReport)
 	if err != nil {
-		cs.logger.Error("Failed to calculate average block time", "error", err)
+		cs.logger.Error("Failed to calculate average block time", zap.Error(err))
 		return err
 	}
 
@@ -165,7 +166,7 @@ func (cs *Console) generateEndpoints(ctx context.Context, activeEndpointURL stri
 				},
 			)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				cs.logger.Error("Falled to get validator history for endpoint", "endpoint", ep.Endpoint, "error", err)
+				cs.logger.Error("Falled to get validator history for endpoint", zap.String("endpoint", ep.Endpoint), zap.Error(err))
 				return nil, nil, err
 			} else if err == nil {
 				pep.CometAddress = history.CometAddress
@@ -184,7 +185,7 @@ func (cs *Console) generateEndpoints(ctx context.Context, activeEndpointURL stri
 func (cs *Console) populateSlaReportsForEndpoints(ctx context.Context, endpoints []*pages.Endpoint, activeEndpoint *pages.Endpoint, rollupBlockEnd string) error {
 	activeRollup, err := cs.getActiveSlaRollup(ctx, rollupBlockEnd)
 	if err != nil {
-		cs.logger.Error("failed to fetch active sla rollup", "error", err)
+		cs.logger.Error("failed to fetch active sla rollup", zap.Error(err))
 		return err
 	}
 
@@ -198,7 +199,7 @@ func (cs *Console) populateSlaReportsForEndpoints(ctx context.Context, endpoints
 		},
 	)
 	if err != nil {
-		cs.logger.Error("failed to get rollup reports for active endpoint", "error", err)
+		cs.logger.Error("failed to get rollup reports for active endpoint", zap.Error(err))
 		return err
 	}
 
@@ -249,7 +250,7 @@ func (cs *Console) populateSlaReportsForEndpoints(ctx context.Context, endpoints
 		},
 	)
 	if err != nil {
-		cs.logger.Error("failed to get rollup reports for all endpoints", "error", err)
+		cs.logger.Error("failed to get rollup reports for all endpoints", zap.Error(err))
 		return err
 	}
 
@@ -290,7 +291,7 @@ func (cs *Console) populateSlaReportsForEndpoints(ctx context.Context, endpoints
 		},
 	)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		cs.logger.Error("Failure getting proof of storage rollups", "error", err)
+		cs.logger.Error("Failure getting proof of storage rollups", zap.Error(err))
 		return err
 	}
 	for _, posr := range posRollups {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	_ "net/http/pprof"
 
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/console"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
@@ -13,15 +12,16 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/eth"
 	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 	"github.com/AudiusProject/audiusd/pkg/pos"
+	"go.uber.org/zap"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Run(ctx context.Context, lc *lifecycle.Lifecycle, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService, ethService *eth.EthService) error {
+func Run(ctx context.Context, lc *lifecycle.Lifecycle, logger *zap.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService, ethService *eth.EthService) error {
 	return run(ctx, lc, logger, posChannel, coreService, ethService)
 }
 
-func run(ctx context.Context, lc *lifecycle.Lifecycle, logger *common.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService, ethService *eth.EthService) error {
+func run(ctx context.Context, lc *lifecycle.Lifecycle, logger *zap.Logger, posChannel chan pos.PoSRequest, coreService *server.CoreService, ethService *eth.EthService) error {
 	logger.Info("good morning!")
 
 	config, cometConfig, err := config.SetupNode(logger)
@@ -60,7 +60,7 @@ func run(ctx context.Context, lc *lifecycle.Lifecycle, logger *common.Logger, po
 		e := s.GetEcho()
 		_, err := console.NewConsole(config, logger, e, pool, ethService, coreService)
 		if err != nil {
-			logger.Errorf("console init error: %v", err)
+			logger.Error("console init error", zap.Error(err))
 			return err
 		}
 	}
@@ -69,7 +69,7 @@ func run(ctx context.Context, lc *lifecycle.Lifecycle, logger *common.Logger, po
 	coreService.SetCore(s)
 
 	if err := s.Start(); err != nil {
-		logger.Errorf("something crashed: %v", err)
+		logger.Error("core service crashed", zap.Error(err))
 		return err
 	}
 

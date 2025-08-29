@@ -14,6 +14,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 	"github.com/cometbft/cometbft/types"
 	"github.com/maypok86/otter"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -212,7 +213,7 @@ func (s *Server) startCache(ctx context.Context) error {
 
 	s.cache.currentHeight.Store(status.SyncInfo.LatestBlockHeight)
 
-	cacheLifecycle := lifecycle.NewFromLifecycle(s.lc, s.z, "cache")
+	cacheLifecycle := lifecycle.NewFromLifecycle(s.lc, "cache")
 	cacheLifecycle.AddManagedRoutine("block event subscriber", s.startBlockEventSubscriber)
 	cacheLifecycle.AddManagedRoutine("refresher", s.startCacheRefresh)
 	cacheLifecycle.AddManagedRoutine("sync status refresher", s.refreshSyncStatus)
@@ -258,7 +259,7 @@ func (s *Server) startBlockEventSubscriber(ctx context.Context) error {
 			})
 
 		case <-subscription.Canceled():
-			s.logger.Errorf("Subscription cancelled: %v", subscription.Err())
+			s.logger.Error("Subscription cancelled", zap.Error(subscription.Err()))
 			return subscription.Err()
 		}
 	}
@@ -275,13 +276,13 @@ func (s *Server) startCacheRefresh(ctx context.Context) error {
 			go func() {
 				defer wg.Done()
 				if err := s.refreshResourceStatus(); err != nil {
-					s.logger.Errorf("error refreshing resource status: %v", err)
+					s.logger.Error("error refreshing resource status", zap.Error(err))
 				}
 			}()
 			go func() {
 				defer wg.Done()
 				if err := s.cacheSnapshots(); err != nil {
-					s.logger.Errorf("error caching snapshots: %v", err)
+					s.logger.Error("error caching snapshots", zap.Error(err))
 				}
 			}()
 			wg.Wait()

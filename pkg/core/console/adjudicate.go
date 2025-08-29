@@ -10,6 +10,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 const minimumAudioStakePerEndpoint = 200000
@@ -24,7 +25,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		connect.NewRequest(&ethv1.GetServiceProviderRequest{Address: serviceProviderAddress}),
 	)
 	if err != nil {
-		cs.logger.Error("Falled to get service provider", "address", serviceProviderAddress, "error", err)
+		cs.logger.Error("Falled to get service provider", zap.String("address", serviceProviderAddress), zap.Error(err))
 		return err
 	}
 
@@ -34,7 +35,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		connect.NewRequest(&ethv1.GetRegisteredEndpointsForServiceProviderRequest{Owner: serviceProviderAddress}),
 	)
 	if err != nil {
-		cs.logger.Error("Falled to get service provider endpoints", "address", serviceProviderAddress, "error", err)
+		cs.logger.Error("Falled to get service provider endpoints", zap.String("address", serviceProviderAddress), zap.Error(err))
 		return err
 	}
 	endpoints := endpointsResp.Msg.Endpoints
@@ -46,14 +47,14 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 	endTime := time.Date(utcEnd.Year(), utcEnd.Month(), utcEnd.Day(), 0, 0, 0, 0, time.UTC)
 	if c.QueryParam("start") != "" {
 		if parsed, err := time.Parse("2006-01-02", c.QueryParam("start")); err != nil {
-			cs.logger.Warn("failed to parse start time from query string", "error", err)
+			cs.logger.Warn("failed to parse start time from query string", zap.Error(err))
 		} else {
 			startTime = parsed
 		}
 	}
 	if c.QueryParam("end") != "" {
 		if parsed, err := time.Parse("2006-01-02", c.QueryParam("end")); err != nil {
-			cs.logger.Warn("failed to parse end time from query string", "error", err)
+			cs.logger.Warn("failed to parse end time from query string", zap.Error(err))
 		} else {
 			endTime = parsed
 		}
@@ -73,7 +74,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 			RegisteredAt:    ep.RegisteredAt.AsTime(),
 		}
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			cs.logger.Error("Falled to get rollups in time range", "start time", startTime, "end time", endTime, "error", err)
+			cs.logger.Error("Falled to get rollups in time range", zap.Time("start_time", startTime), zap.Time("end_time", endTime), zap.Error(err))
 			return err
 		}
 
@@ -81,7 +82,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		var cometAddress string
 		validator, err := cs.db.GetNodeByEndpoint(ctx, ep.Endpoint)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			cs.logger.Error("Falled to get cometbft validator for endpoint", "endpoint", ep.Endpoint, "error", err)
+			cs.logger.Error("Falled to get cometbft validator for endpoint", zap.String("endpoint", ep.Endpoint), zap.Error(err))
 			return err
 		} else if errors.Is(err, pgx.ErrNoRows) {
 			// Endpoint is registered on eth but not on comet.
@@ -94,7 +95,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 				},
 			)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				cs.logger.Error("Falled to get validator history for endpoint", "endpoint", ep.Endpoint, "error", err)
+				cs.logger.Error("Falled to get validator history for endpoint", zap.String("endpoint", ep.Endpoint), zap.Error(err))
 				return err
 			} else if err == nil {
 				cometAddress = history.CometAddress
@@ -114,7 +115,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 			},
 		)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			cs.logger.Error("Failed to get rollups from db for node", "address", cometAddress, "start time", startTime, "end time", endTime, "error", err)
+			cs.logger.Error("Failed to get rollups from db for node", zap.String("address", cometAddress), zap.Time("start_time", startTime), zap.Time("end_time", endTime), zap.Error(err))
 			return err
 		}
 		viewSlaReports := make([]*pages.SlaReport, len(slaRollups))
@@ -154,7 +155,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 				},
 			)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				cs.logger.Error("Failed to get storage proofs for validator", "validator address", cometAddress, "error", err)
+				cs.logger.Error("Failed to get storage proofs for validator", zap.String("address", cometAddress), zap.Error(err))
 				return err
 			} else if err == nil {
 				storageProofRollups[cometAddress] = &pages.StorageProofRollup{
@@ -181,7 +182,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		connect.NewRequest(&ethv1.GetStakingMetadataForServiceProviderRequest{Address: serviceProviderAddress}),
 	)
 	if err != nil {
-		cs.logger.Error("Falled to get service provider staking metadata", "address", serviceProviderAddress, "error", err)
+		cs.logger.Error("Falled to get service provider staking metadata", zap.String("address", serviceProviderAddress), zap.Error(err))
 		return err
 	}
 

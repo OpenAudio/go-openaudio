@@ -9,6 +9,7 @@ import (
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -119,7 +120,7 @@ func (s *Server) attestationHasEnoughSigners(ctx context.Context, signers []stri
 		}
 	}
 	if signersNeeded > 0 {
-		s.logger.Infof("not enough attestations. Had: %d, needed: %d more", len(signers), signersNeeded)
+		s.logger.Info("not enough attestations", zap.Strings("signers", signers), zap.Int("count", len(signers)), zap.Int("needed", len(signers)+signersNeeded))
 		return false, nil
 	}
 	return true, nil

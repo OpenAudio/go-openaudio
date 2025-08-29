@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm/clause"
 )
 
@@ -27,7 +28,7 @@ func (ss *MediorumServer) startUploadScroller(ctx context.Context) error {
 						Host: peer.Host,
 					}
 				}
-				logger := ss.logger.With("task", "upload_scroll", "host", peer.Host, "after", uploadCursor.After)
+				logger := ss.logger.With(zap.String("task", "upload_scroll"), zap.String("host", peer.Host), zap.Time("after", uploadCursor.After))
 
 				// fetch uploads from host
 				var uploads []*Upload
@@ -38,12 +39,12 @@ func (ss *MediorumServer) startUploadScroller(ctx context.Context) error {
 					Get(u)
 
 				if err != nil {
-					logger.Error("list uploads failed", "err", err)
+					logger.Error("list uploads failed", zap.Error(err))
 					continue
 				}
 				if resp.StatusCode != 200 {
 					err := fmt.Errorf("%s: %s %s", resp.Request.RawURL, resp.Status, string(resp.Bytes()))
-					logger.Error("list uploads failed", "err", err)
+					logger.Error("list uploads failed", zap.Error(err))
 					continue
 				}
 
@@ -70,14 +71,14 @@ func (ss *MediorumServer) startUploadScroller(ctx context.Context) error {
 				// write overwrites
 				err = ss.crud.DB.Clauses(clause.OnConflict{UpdateAll: true}).Create(overwrites).Error
 				if err != nil {
-					ss.logger.Warn("overwrite upload failed", "err", err)
+					logger.Warn("overwrite upload failed", zap.Error(err))
 				}
 
 				// save cursor
 				if err := ss.crud.DB.Clauses(clause.OnConflict{UpdateAll: true}).Create(uploadCursor).Error; err != nil {
-					logger.Error("save upload cursor failed", "err", err)
+					logger.Error("save upload cursor failed", zap.Error(err))
 				} else {
-					logger.Info("OK", "uploads", len(uploads), "overwrites", len(overwrites), "after", uploadCursor.After)
+					logger.Info("OK", zap.Int("uploads", len(uploads)), zap.Int("overwrites", len(overwrites)))
 				}
 
 			}

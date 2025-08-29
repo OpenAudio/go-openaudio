@@ -13,6 +13,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/console/views/sandbox"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"go.uber.org/zap"
 )
 
 func (s *Server) startEchoServer(ctx context.Context) error {
@@ -78,7 +79,7 @@ func (s *Server) startEchoServer(ctx context.Context) error {
 	go func() {
 		err := s.httpServer.Start(s.config.CoreServerAddr)
 		if err != nil && err != http.ErrServerClosed {
-			s.logger.Error("echo server error", "error", err)
+			s.logger.Error("echo server error", zap.Error(err))
 			s.ErrorProcess(ProcessStateEchoServer, fmt.Sprintf("echo server error: %v", err))
 			done <- err
 		} else {
@@ -105,7 +106,7 @@ func (s *Server) startEchoServer(ctx context.Context) error {
 
 		err := s.httpServer.Shutdown(shutdownCtx)
 		if err != nil {
-			s.logger.Error("failed to shutdown echo server", "error", err)
+			s.logger.Error("failed to shutdown echo server", zap.Error(err))
 			s.ErrorProcess(ProcessStateEchoServer, fmt.Sprintf("failed to shutdown echo server: %v", err))
 			return err
 		}

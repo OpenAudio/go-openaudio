@@ -21,10 +21,10 @@ import (
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
+	"go.uber.org/zap"
 
 	"github.com/disintegration/imaging"
 	"github.com/spf13/cast"
-	"golang.org/x/exp/slog"
 )
 
 var (
@@ -43,7 +43,7 @@ func (ss *MediorumServer) startTranscoder(ctx context.Context) error {
 	if numWorkersOverride != "" {
 		num, err := strconv.ParseInt(numWorkersOverride, 10, 64)
 		if err != nil {
-			ss.logger.Warn("failed to parse TRANSCODE_WORKERS", "err", err, "TRANSCODE_WORKERS", numWorkersOverride)
+			ss.logger.Warn("failed to parse TRANSCODE_WORKERS", zap.Error(err), zap.String("TRANSCODE_WORKERS", numWorkersOverride))
 		} else {
 			numWorkers = int(num)
 		}
@@ -60,9 +60,9 @@ func (ss *MediorumServer) startTranscoder(ctx context.Context) error {
 			}).
 			Updates(Upload{Status: resetStatus})
 		if tx.Error != nil {
-			ss.logger.Warn("reset stuck uploads error" + tx.Error.Error())
+			ss.logger.Warn("reset stuck uploads error", zap.Error(tx.Error))
 		} else if tx.RowsAffected > 0 {
-			ss.logger.Info("reset stuck uploads", "count", tx.RowsAffected)
+			ss.logger.Info("reset stuck uploads", zap.Int64("count", tx.RowsAffected))
 		}
 	}
 
@@ -130,10 +130,10 @@ func (ss *MediorumServer) startTranscodeWorker(ctx context.Context) error {
 			if !ok {
 				return nil // channel closed
 			}
-			ss.logger.Debug("transcoding", "upload", upload.ID)
+			ss.logger.Debug("transcoding", zap.String("upload", upload.ID))
 			err := ss.transcode(ctx, upload)
 			if err != nil {
-				ss.logger.Warn("transcode failed", "upload", upload, "err", err)
+				ss.logger.Warn("transcode failed", zap.Any("upload", upload), zap.Error(err))
 			}
 		case <-ctx.Done():
 			return ctx.Err()
@@ -165,7 +165,7 @@ func (ss *MediorumServer) getKeyToTempFile(fileHash string) (*os.File, error) {
 
 type errorCallback func(err error, uploadStatus string, info ...string) error
 
-func (ss *MediorumServer) transcodeAudio(_ context.Context, upload *Upload, _ string, cmd *exec.Cmd, logger *slog.Logger, onError errorCallback) error {
+func (ss *MediorumServer) transcodeAudio(_ context.Context, upload *Upload, _ string, cmd *exec.Cmd, logger *zap.Logger, onError errorCallback) error {
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return onError(err, upload.Status, "cmd.StdoutPipe")
@@ -198,9 +198,9 @@ func (ss *MediorumServer) transcodeAudio(_ context.Context, upload *Upload, _ st
 			stdoutBuf.WriteString("\n")
 		}
 		if err := stdoutLines.Err(); err != nil {
-			logger.Error("stdoutLines.Scan", "err", err)
+			logger.Error("stdoutLines.Scan", zap.Error(err))
 		}
-		logger.Info("stdout lines: " + stdoutBuf.String())
+		logger.Info("transcode stdout", zap.String("lines", stdoutBuf.String()))
 	}()
 
 	// Log stderr and parse it to update transcode progress
@@ -236,7 +236,7 @@ func (ss *MediorumServer) transcodeAudio(_ context.Context, upload *Upload, _ st
 		}
 
 		if err := stderrLines.Err(); err != nil {
-			logger.Error("stderrLines.Scan", "err", err)
+			logger.Error("stderrLines.Scan", zap.Error(err))
 		}
 		// logger.Error("stderr lines: " + stderrBuf.String())
 	}()
@@ -251,7 +251,7 @@ func (ss *MediorumServer) transcodeAudio(_ context.Context, upload *Upload, _ st
 	return nil
 }
 
-func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload, temp *os.File, logger *slog.Logger, onError errorCallback) error {
+func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload, temp *os.File, logger *zap.Logger, onError errorCallback) error {
 	srcPath := temp.Name()
 	destPath := srcPath + "_320.mp3"
 	defer os.Remove(destPath)
@@ -298,7 +298,7 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 
 	upload.TranscodeResults["320"] = resultKey
 
-	logger.Info("audio transcode done", "mirrors", upload.TranscodedMirrors)
+	logger.Info("audio transcode done", zap.Strings("mirrors", upload.TranscodedMirrors))
 
 	// if a start time is set, also transcode an audio preview from the full 320kbps downsample
 	if upload.SelectedPreview.Valid {
@@ -339,12 +339,12 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 	upload.Status = JobStatusBusy
 	fileHash := upload.OrigFileCID
 
-	logger := ss.logger.With("template", upload.Template, "cid", fileHash)
+	logger := ss.logger.With(zap.Any("template", upload.Template), zap.String("cid", fileHash))
 
 	if !ss.haveInMyBucket(fileHash) {
 		_, err := ss.findAndPullBlob(ctx, fileHash)
 		if err != nil {
-			logger.Warn("failed to find blob", "err", err)
+			logger.Warn("failed to find blob", zap.Error(err))
 			return err
 		}
 	}

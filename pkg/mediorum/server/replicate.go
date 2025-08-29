@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	"go.uber.org/zap"
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
 
@@ -48,7 +49,7 @@ func (ss *MediorumServer) replicateFileParallel(ctx context.Context, cid string,
 
 			file, err := os.Open(filePath)
 			if err != nil {
-				ss.logger.Error("failed to open file", "filePath", filePath, "err", err)
+				ss.logger.Error("failed to open file", zap.String("filePath", filePath), zap.Error(err))
 				return
 			}
 			defer file.Close()
@@ -71,19 +72,19 @@ func (ss *MediorumServer) replicateFileParallel(ctx context.Context, cid string,
 }
 
 func (ss *MediorumServer) replicateFile(ctx context.Context, fileName string, file io.ReadSeeker) ([]string, error) {
-	logger := ss.logger.With("task", "replicate", "cid", fileName)
+	logger := ss.logger.With(zap.String("task", "replicate"), zap.String("cid", fileName))
 
 	success := []string{}
 	preferred, _ := ss.rendezvousAllHosts(fileName)
 	for _, peer := range preferred {
-		logger := logger.With("to", peer)
+		logger := logger.With(zap.String("to", peer))
 
 		logger.Debug("replicating")
 
 		file.Seek(0, 0)
 		err := ss.replicateFileToHost(ctx, peer, fileName, file)
 		if err != nil {
-			logger.Error("replication failed", "err", err)
+			logger.Error("replication failed", zap.Error(err))
 		} else {
 			logger.Debug("replicated")
 			success = append(success, peer)
@@ -97,7 +98,7 @@ func (ss *MediorumServer) replicateFile(ctx context.Context, fileName string, fi
 }
 
 func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName string, file io.Reader) error {
-	logger := ss.logger.With("task", "replicateToMyBucket", "cid", fileName)
+	logger := ss.logger.With(zap.String("task", "replicateToMyBucket"), zap.String("cid", fileName))
 	logger.Debug("replicateToMyBucket")
 	key := cidutil.ShardCID(fileName)
 
@@ -115,14 +116,14 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 }
 
 func (ss *MediorumServer) dropFromMyBucket(fileName string) error {
-	logger := ss.logger.With("task", "dropFromMyBucket", "cid", fileName)
+	logger := ss.logger.With(zap.String("task", "dropFromMyBucket"), zap.String("cid", fileName))
 	logger.Debug("deleting blob")
 
 	key := cidutil.ShardCID(fileName)
 	ctx := context.Background()
 	err := ss.bucket.Delete(ctx, key)
 	if err != nil {
-		logger.Error("failed to delete", "err", err)
+		logger.Error("failed to delete", zap.Error(err))
 	}
 
 	return nil

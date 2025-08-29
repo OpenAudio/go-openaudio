@@ -22,6 +22,7 @@ import (
 	"github.com/cometbft/cometbft/p2p"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 const (
@@ -194,7 +195,7 @@ func (s *Server) getRegisteredNodes(c echo.Context) error {
 func (s *Server) managePeers(ctx context.Context) error {
 	s.StartProcess(ProcessStatePeerManager)
 
-	logger := s.logger.Child("peer_manager")
+	logger := s.logger.With(zap.String("service", "peer_manager"))
 
 	select {
 	case <-ctx.Done():
@@ -223,31 +224,31 @@ func (s *Server) managePeers(ctx context.Context) error {
 		case <-connectRPCTicker.C:
 			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Refreshing Connect RPC clients")
 			if err := s.refreshConnectRPCPeers(ctx, logger); err != nil {
-				logger.Errorf("could not refresh connectrpcs: %v", err)
+				logger.Error("could not refresh connectrpcs", zap.Error(err))
 			}
 			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
 		case <-cometRPCTicker.C:
 			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Refreshing Comet RPC clients")
 			if err := s.refreshCometRPCPeers(ctx, logger); err != nil {
-				logger.Errorf("could not refresh cometbft rpcs: %v", err)
+				logger.Error("could not refresh cometbft rpcs", zap.Error(err))
 			}
 			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
 		case <-healthcheckTicker.C:
 			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Health checking peers")
 			if err := s.refreshPeerHealth(ctx, logger); err != nil {
-				logger.Errorf("could not check health: %v", err)
+				logger.Error("could not check health", zap.Error(err))
 			}
 			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
 		case <-p2pcheckTicker.C:
 			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Checking P2P connectivity")
 			if err := s.checkPeerP2PAddr(ctx, logger); err != nil {
-				logger.Errorf("could not check p2p connectivity: %v", err)
+				logger.Error("could not check p2p connectivity", zap.Error(err))
 			}
 			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
 		case <-peerInfoTicker.C:
 			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Refreshing peer data")
 			if err := s.refreshPeerData(ctx, logger); err != nil {
-				logger.Errorf("could not refresh peer data: %v", err)
+				logger.Error("could not refresh peer data", zap.Error(err))
 			}
 			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
 		case <-ctx.Done():
@@ -258,7 +259,7 @@ func (s *Server) managePeers(ctx context.Context) error {
 	}
 }
 
-func (s *Server) refreshPeerData(ctx context.Context, _ *common.Logger) error {
+func (s *Server) refreshPeerData(ctx context.Context, _ *zap.Logger) error {
 	validators, err := s.db.GetAllRegisteredNodes(ctx)
 	if err != nil {
 		return fmt.Errorf("could not get validators from db: %v", err)
@@ -285,7 +286,7 @@ func (s *Server) refreshPeerData(ctx context.Context, _ *common.Logger) error {
 }
 
 // refreshes the clients in the server struct for connectrpc, does not test connectivity.
-func (s *Server) refreshConnectRPCPeers(ctx context.Context, _ *common.Logger) error {
+func (s *Server) refreshConnectRPCPeers(ctx context.Context, _ *zap.Logger) error {
 	validators, err := s.db.GetAllRegisteredNodes(ctx)
 	if err != nil {
 		return fmt.Errorf("could not get validators from db: %v", err)
@@ -323,7 +324,7 @@ func (s *Server) refreshConnectRPCPeers(ctx context.Context, _ *common.Logger) e
 }
 
 // refreshes the cometbft rpc clients in the server struct, does not test connectivity.
-func (s *Server) refreshCometRPCPeers(ctx context.Context, logger *common.Logger) error {
+func (s *Server) refreshCometRPCPeers(ctx context.Context, logger *zap.Logger) error {
 	validators, err := s.db.GetAllRegisteredNodes(ctx)
 	if err != nil {
 		return fmt.Errorf("could not get validators from db: %v", err)
@@ -348,7 +349,7 @@ func (s *Server) refreshCometRPCPeers(ctx context.Context, logger *common.Logger
 		endpoint := validator.Endpoint + "/core/crpc"
 		cometRPC, err := rpchttp.New(endpoint)
 		if err != nil {
-			logger.Errorf("could not create cometrpc for %s: %v", endpoint, err)
+			logger.Error("could not create cometrpc", zap.String("peer_endpoint", endpoint), zap.Error(err))
 			continue
 		}
 		s.cometRPCPeers.Set(ethAddress, cometRPC)
@@ -364,7 +365,7 @@ func (s *Server) refreshCometRPCPeers(ctx context.Context, logger *common.Logger
 
 // grabs the cometbft rpc and connectrpc clients from the server struct and tests their
 // connectivity and health. reports health status to status check.
-func (s *Server) refreshPeerHealth(ctx context.Context, logger *common.Logger) error {
+func (s *Server) refreshPeerHealth(ctx context.Context, logger *zap.Logger) error {
 	var wg sync.WaitGroup
 
 	connectPeers := s.connectRPCPeers.ToMap()
@@ -384,7 +385,7 @@ func (s *Server) refreshPeerHealth(ctx context.Context, logger *common.Logger) e
 			defer cancel()
 			_, err := rpc.Ping(pingCtx, connect.NewRequest(&v1.PingRequest{}))
 			if err != nil {
-				logger.Errorf("connect rpc unreachable for %s: %v", ethaddress, err)
+				logger.Error("connect rpc unreachable", zap.String("eth_address", ethaddress), zap.Error(err))
 			}
 
 			status, exists := s.peerStatus.Get(ethaddress)
@@ -408,7 +409,7 @@ func (s *Server) refreshPeerHealth(ctx context.Context, logger *common.Logger) e
 			defer cancel()
 			_, err := rpc.Health(healthCtx)
 			if err != nil {
-				logger.Errorf("comet rpc unreachable for %s: %v", ethaddress, err)
+				logger.Error("connect rpc unreachable", zap.String("eth_address", ethaddress), zap.Error(err))
 			}
 
 			status, exists := s.peerStatus.Get(ethaddress)
@@ -427,7 +428,7 @@ func (s *Server) refreshPeerHealth(ctx context.Context, logger *common.Logger) e
 // grabs the cometbft rpc clients in the server struct, uses the status endpoints to test
 // p2p connectivity. if not already peered will dial peers for comet. reports p2p status
 // to status check.
-func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *common.Logger) error {
+func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *zap.Logger) error {
 	var wg sync.WaitGroup
 
 	netInfoCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -469,7 +470,7 @@ func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *common.Logger) er
 			defer cancel()
 			cometStatus, err := rpc.Status(statusCtx)
 			if err != nil {
-				logger.Errorf("could not get status from %s: %v", ethaddress, err)
+				logger.Error("could not get status", zap.String("eth_address", ethaddress), zap.Error(err))
 				return
 			}
 
@@ -480,7 +481,7 @@ func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *common.Logger) er
 
 			conn, err := net.DialTimeout("tcp", listenAddr, 3*time.Second)
 			if err != nil {
-				logger.Errorf("p2p not accessible for %s: %v", ethaddress, err)
+				logger.Error("p2p not accessible", zap.String("eth_address", ethaddress), zap.Error(err))
 				p2pAccessible = false
 			} else {
 				p2pAccessible = true
@@ -511,7 +512,7 @@ func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *common.Logger) er
 		return fmt.Errorf("failed to dial peers: %v", err)
 	}
 
-	logger.Infof("dialed peers: %s", res.Log)
+	logger.Info("dialed peers", zap.String("result", res.Log))
 
 	return nil
 }

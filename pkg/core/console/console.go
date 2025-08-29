@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/console/views"
 	"github.com/AudiusProject/audiusd/pkg/core/console/views/layout"
@@ -14,6 +13,7 @@ import (
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 type Console struct {
@@ -21,7 +21,7 @@ type Console struct {
 	rpc    client.Client
 	db     *db.Queries
 	e      *echo.Echo
-	logger *common.Logger
+	logger *zap.Logger
 	eth    *eth.EthService
 	core   v1connect.CoreServiceClient
 
@@ -29,8 +29,8 @@ type Console struct {
 	views   *views.Views
 }
 
-func NewConsole(config *config.Config, logger *common.Logger, e *echo.Echo, pool *pgxpool.Pool, ethService *eth.EthService, coreService v1connect.CoreServiceClient) (*Console, error) {
-	l := logger.Child("console")
+func NewConsole(config *config.Config, logger *zap.Logger, e *echo.Echo, pool *pgxpool.Pool, ethService *eth.EthService, coreService v1connect.CoreServiceClient) (*Console, error) {
+	l := logger.With(zap.String("service", "console"))
 	db := db.New(pool)
 	httprpc, err := rpchttp.New(config.RPCladdr)
 	if err != nil {
@@ -49,7 +49,7 @@ func NewConsole(config *config.Config, logger *common.Logger, e *echo.Echo, pool
 		layouts: layout.NewLayout(config, baseURL),
 	}
 
-	c.registerRoutes(logger, e)
+	c.registerRoutes()
 
 	return c, nil
 }

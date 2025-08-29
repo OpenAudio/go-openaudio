@@ -7,12 +7,10 @@ import (
 
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/AudiusProject/audiusd/pkg/eth"
 	"github.com/AudiusProject/audiusd/pkg/lifecycle"
-	aLogger "github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/AudiusProject/audiusd/pkg/pos"
 	"github.com/AudiusProject/audiusd/pkg/pubsub"
 	"github.com/AudiusProject/audiusd/pkg/rewards"
@@ -34,8 +32,7 @@ type Server struct {
 	lc             *lifecycle.Lifecycle
 	config         *config.Config
 	cometbftConfig *cconfig.Config
-	logger         *common.Logger
-	z              *zap.Logger
+	logger         *zap.Logger
 	self           corev1connect.CoreServiceClient
 	eth            *eth.EthService
 
@@ -67,7 +64,7 @@ type Server struct {
 	awaitEthReady        chan struct{}
 }
 
-func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.Config, logger *common.Logger, pool *pgxpool.Pool, ethService *eth.EthService, posChannel chan pos.PoSRequest) (*Server, error) {
+func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.Config, logger *zap.Logger, pool *pgxpool.Pool, ethService *eth.EthService, posChannel chan pos.PoSRequest) (*Server, error) {
 	// create mempool
 	mempl := NewMempool(logger, config, db.New(pool), cconfig.Mempool.Size)
 
@@ -78,23 +75,16 @@ func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.
 	httpServer := echo.New()
 	grpcServer := grpc.NewServer()
 
-	baseLogger, err := aLogger.CreateLogger(config.Environment, config.LogLevel)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create zap logger: %v", err)
-	}
-
-	z := baseLogger.With(zap.String("service", "core"), zap.String("node", config.NodeEndpoint))
-	ethService.SetZapLogger(z)
+	z := logger.With(zap.String("service", "core"))
 	z.Info("core server starting")
 
-	coreLifecycle := lifecycle.NewFromLifecycle(lc, z, "core")
+	coreLifecycle := lifecycle.NewFromLifecycle(lc, "core")
 
 	s := &Server{
 		lc:             coreLifecycle,
 		config:         config,
 		cometbftConfig: cconfig,
-		logger:         logger.Child("server"),
-		z:              z,
+		logger:         z,
 		eth:            ethService,
 
 		pool:               pool,
@@ -137,7 +127,7 @@ func (s *Server) Start() error {
 	s.lc.AddManagedRoutine("peer manager", s.managePeers)
 	s.lc.AddManagedRoutine("tx count cache", s.cacheTxCount)
 
-	s.z.Info("routines started")
+	s.logger.Info("routines started")
 
 	s.lc.Wait()
 	return fmt.Errorf("core stopped or shut down")
@@ -155,7 +145,7 @@ func (s *Server) syncLogs(ctx context.Context) error {
 		select {
 		case <-ticker.C:
 			s.RunningProcessWithMetadata(ProcessStateLogSync, "Syncing log buffers")
-			s.z.Sync()
+			s.logger.Sync()
 			s.SleepingProcessWithMetadata(ProcessStateLogSync, "Waiting for next sync")
 		case <-ctx.Done():
 			s.CompleteProcess(ProcessStateLogSync)

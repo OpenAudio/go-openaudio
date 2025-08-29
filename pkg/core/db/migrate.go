@@ -8,14 +8,14 @@ import (
 
 	"embed"
 
-	"github.com/AudiusProject/audiusd/pkg/common"
 	migrate "github.com/rubenv/sql-migrate"
+	"go.uber.org/zap"
 )
 
 //go:embed sql/migrations/*
 var migrationsFS embed.FS
 
-func RunMigrations(logger *common.Logger, pgConnectionString string, downFirst bool) error {
+func RunMigrations(logger *zap.Logger, pgConnectionString string, downFirst bool) error {
 	tries := 10
 	db, err := sql.Open("postgres", pgConnectionString)
 	if err != nil {
@@ -28,30 +28,32 @@ func RunMigrations(logger *common.Logger, pgConnectionString string, downFirst b
 		}
 		err = db.Ping()
 		if err != nil {
-			logger.Errorf("could not ping postgres %v", err)
+			logger.Error("could not ping postgres", zap.Error(err))
 			tries = tries - 1
 			time.Sleep(2 * time.Second)
 			continue
 		}
 		err := runMigrations(logger, db, downFirst)
 		if err != nil {
-			logger.Error("issue running migrations", "error", err, "tries_left", tries)
+			logger.Error("issue running migrations", zap.Error(err), zap.Int("tries_left", tries))
 			return fmt.Errorf("can't run migrations %v", err)
 		}
 		return nil
 	}
 }
 
-func runMigrations(logger *common.Logger, db *sql.DB, downFirst bool) error {
+func runMigrations(logger *zap.Logger, db *sql.DB, downFirst bool) error {
 	// Debug: List all embedded files
 	entries, err := migrationsFS.ReadDir("sql/migrations")
 	if err != nil {
 		return fmt.Errorf("error reading migrations dir: %v", err)
 	}
-	logger.Infof("Core embedded migrations:")
-	for _, entry := range entries {
-		logger.Infof("  - %s", entry.Name())
+
+	entryNames := make([]string, len(entries))
+	for i, entry := range entries {
+		entryNames[i] = entry.Name()
 	}
+	logger.Info("Core embedded migrations", zap.Strings("files", entryNames))
 
 	migrations := migrate.EmbedFileSystemMigrationSource{
 		FileSystem: migrationsFS,
@@ -72,7 +74,7 @@ func runMigrations(logger *common.Logger, db *sql.DB, downFirst bool) error {
 		return fmt.Errorf("error running migrations %v", err)
 	}
 
-	logger.Infof("Applied %d successful migrations!", n)
+	logger.Info(fmt.Sprintf("Applied %d successful migrations!", n))
 
 	return nil
 }

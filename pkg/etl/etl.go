@@ -8,10 +8,10 @@ import (
 	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
 	v1 "github.com/AudiusProject/audiusd/pkg/api/etl/v1"
 	"github.com/AudiusProject/audiusd/pkg/api/etl/v1/v1connect"
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/etl/db"
 	"github.com/AudiusProject/audiusd/pkg/etl/location"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 )
 
 var _ v1connect.ETLServiceHandler = (*ETLService)(nil)
@@ -27,7 +27,7 @@ type ETLService struct {
 	core   corev1connect.CoreServiceClient
 	pool   *pgxpool.Pool
 	db     *db.Queries
-	logger *common.Logger
+	logger *zap.Logger
 
 	locationDB *location.LocationService
 
@@ -37,9 +37,9 @@ type ETLService struct {
 	mvRefresher *MaterializedViewRefresher
 }
 
-func NewETLService(core corev1connect.CoreServiceClient, logger *common.Logger) *ETLService {
+func NewETLService(core corev1connect.CoreServiceClient, logger *zap.Logger) *ETLService {
 	etl := &ETLService{
-		logger: logger.Child("etl"),
+		logger: logger.With(zap.String("service", "etl")),
 		core:   core,
 	}
 
@@ -91,12 +91,12 @@ func (e *ETLService) InitializeChainID(ctx context.Context) error {
 	if err != nil {
 		// Use fallback chain ID if core service is not available
 		e.ChainID = "--"
-		e.logger.Warn("Failed to get chain ID from core service, using fallback", "error", err, "chainID", e.ChainID)
+		e.logger.Warn("Failed to get chain ID from core service, using fallback", zap.Error(err), zap.String("chainID", e.ChainID))
 		return nil
 	}
 
 	e.ChainID = nodeInfoResp.Msg.Chainid
-	e.logger.Info("Initialized chain ID", "chainID", e.ChainID)
+	e.logger.Info("Initialized chain ID", zap.String("chainID", e.ChainID))
 	return nil
 }
 

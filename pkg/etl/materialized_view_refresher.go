@@ -5,23 +5,23 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/etl/db"
+	"go.uber.org/zap"
 )
 
 // MaterializedViewRefresher refreshes dashboard materialized views periodically
 type MaterializedViewRefresher struct {
 	db     db.DBTX
-	logger *common.Logger
+	logger *zap.Logger
 	ticker *time.Ticker
 	done   chan bool
 }
 
 // NewMaterializedViewRefresher creates a new refresher service
-func NewMaterializedViewRefresher(database db.DBTX, logger *common.Logger) *MaterializedViewRefresher {
+func NewMaterializedViewRefresher(database db.DBTX, logger *zap.Logger) *MaterializedViewRefresher {
 	return &MaterializedViewRefresher{
 		db:     database,
-		logger: logger.Child("mv_refresher"),
+		logger: logger.With(zap.String("service", "mv_refresher")),
 		done:   make(chan bool),
 	}
 }
@@ -32,7 +32,7 @@ func (r *MaterializedViewRefresher) Start(ctx context.Context) error {
 	r.ticker = time.NewTicker(2 * time.Minute)
 	defer r.ticker.Stop()
 
-	r.logger.Info("Starting materialized view refresher", "interval", "2m")
+	r.logger.Info("Starting materialized view refresher", zap.String("interval", "2m"))
 
 	// Initial refresh on startup
 	r.refreshViews(ctx)
@@ -98,25 +98,25 @@ func (r *MaterializedViewRefresher) refreshViews(ctx context.Context) {
 		res := <-results
 		if res.err != nil {
 			r.logger.Error("Failed to refresh materialized view",
-				"view", res.view,
-				"error", res.err,
-				"duration", res.duration)
+				zap.String("view", res.view),
+				zap.Error(res.err),
+				zap.Duration("duration", res.duration))
 			errors = append(errors, fmt.Sprintf("%s: %v", res.view, res.err))
 		} else {
 			r.logger.Debug("Refreshed materialized view",
-				"view", res.view,
-				"duration", res.duration)
+				zap.String("view", res.view),
+				zap.Duration("duration", res.duration))
 		}
 	}
 
 	totalDuration := time.Since(start)
 	if len(errors) > 0 {
 		r.logger.Warn("Some materialized views failed to refresh",
-			"errors", len(errors),
-			"total_duration", totalDuration)
+			zap.Int("errors", len(errors)),
+			zap.Duration("total_duration", totalDuration))
 	} else {
 		r.logger.Info("Successfully refreshed all materialized views",
-			"views", len(views),
-			"total_duration", totalDuration)
+			zap.Int("views", len(views)),
+			zap.Duration("total_duration", totalDuration))
 	}
 }

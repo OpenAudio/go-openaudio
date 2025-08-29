@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/crudr"
+	"go.uber.org/zap"
 
 	"github.com/labstack/echo/v4"
 )
@@ -62,7 +63,7 @@ func (ss *MediorumServer) serveCrudPush(c echo.Context) error {
 	}
 
 	if v, _ := strconv.ParseBool(os.Getenv("LOG_CRUD_PUSH")); v {
-		ss.logger.Debug("CRUD_PUSH", "op", op)
+		ss.logger.Debug("CRUD_PUSH", zap.Any("op", op))
 	}
 
 	known := ss.crud.KnownType(op)

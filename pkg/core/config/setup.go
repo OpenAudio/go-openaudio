@@ -13,6 +13,7 @@ import (
 	cconfig "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
+	"go.uber.org/zap"
 )
 
 const PrivilegedServiceSocket = "/tmp/cometbft.privileged.sock"
@@ -35,9 +36,9 @@ based on setup configuration.
 - determines env
 - gathers chain id
 */
-func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
+func SetupNode(logger *zap.Logger) (*Config, *cconfig.Config, error) {
 	// read in env / dotenv config
-	envConfig, err := ReadConfig(logger)
+	envConfig, err := ReadConfig()
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading env config: %v", err)
 	}
@@ -81,14 +82,14 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 	// set validator and state file for derived comet key
 	var pv *privval.FilePV
 	if common.FileExists(privValKeyFile) {
-		logger.Info("Found private validator", "keyFile", privValKeyFile,
-			"stateFile", privValStateFile)
+		logger.Info("Found private validator", zap.String("keyFile", privValKeyFile),
+			zap.String("stateFile", privValStateFile))
 		pv = privval.LoadFilePV(privValKeyFile, privValStateFile)
 	} else {
 		pv = privval.NewFilePV(envConfig.CometKey, privValKeyFile, privValStateFile)
 		pv.Save()
-		logger.Info("Generated private validator", "keyFile", privValKeyFile,
-			"stateFile", privValStateFile)
+		logger.Info("Generated private validator", zap.String("keyFile", privValKeyFile),
+			zap.String("stateFile", privValStateFile))
 	}
 
 	// now that we know proposer addr, set in config
@@ -97,7 +98,7 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 	// setup p2p key from derived key
 	nodeKeyFile := cometConfig.NodeKeyFile()
 	if common.FileExists(nodeKeyFile) {
-		logger.Info("Found node key", "path", nodeKeyFile)
+		logger.Info("Found node key", zap.String("path", nodeKeyFile))
 	} else {
 		p2pKey := p2p.NodeKey{
 			PrivKey: envConfig.CometKey,
@@ -105,20 +106,20 @@ func SetupNode(logger *common.Logger) (*Config, *cconfig.Config, error) {
 		if err := p2pKey.SaveAs(nodeKeyFile); err != nil {
 			return nil, nil, fmt.Errorf("creating node key %v", err)
 		}
-		logger.Info("Generated node key", "path", nodeKeyFile)
+		logger.Info("Generated node key", zap.String("path", nodeKeyFile))
 	}
 
 	// save gen file if it doesn't exist
 	genFile := cometConfig.GenesisFile()
 	if common.FileExists(genFile) {
-		logger.Info("Found genesis file", "path", genFile)
+		logger.Info("Found genesis file", zap.String("path", genFile))
 	} else {
 		if err := genDoc.SaveAs(genFile); err != nil {
 			return nil, nil, fmt.Errorf("saving gen file %v", err)
 		}
 		logger.Info("generated new genesis, running down migrations to start new")
 		envConfig.RunDownMigration = true
-		logger.Info("Generated genesis file", "path", genFile)
+		logger.Info("Generated genesis file", zap.String("path", genFile))
 	}
 
 	// after succesful setup, setup comet config.toml

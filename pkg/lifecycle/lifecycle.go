@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
@@ -20,29 +19,27 @@ type Lifecycle struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
-	logger     *common.Logger
 	z          *zap.Logger
 	childrenMU sync.RWMutex
 	children   []*Lifecycle
 	isShutDown atomic.Bool
 }
 
-func NewLifecycle(ctx context.Context, name string, logger *common.Logger, z *zap.Logger) *Lifecycle {
+func NewLifecycle(ctx context.Context, name string, z *zap.Logger) *Lifecycle {
 	new_ctx, cancel := context.WithCancel(ctx)
 	return &Lifecycle{
 		ctx:      new_ctx,
 		cancel:   cancel,
-		logger:   logger.Child(name),
-		z:        z,
+		z:        z.With(zap.String("lifecycle", name)),
 		children: []*Lifecycle{},
 	}
 }
 
-func NewFromLifecycle(lc *Lifecycle, z *zap.Logger, name string) *Lifecycle {
+func NewFromLifecycle(lc *Lifecycle, name string) *Lifecycle {
 	if lc.isShutDown.Load() {
 		panic("attempting to derive new lifecycle from already shut down lifecycle")
 	}
-	newLc := NewLifecycle(lc.ctx, name, lc.logger, z)
+	newLc := NewLifecycle(lc.ctx, name, lc.z)
 	lc.childrenMU.Lock()
 	defer lc.childrenMU.Unlock()
 	lc.children = append(lc.children, newLc)
@@ -53,12 +50,10 @@ func (l *Lifecycle) AddManagedRoutine(name string, f func(context.Context) error
 	if l.isShutDown.Load() {
 		panic("attempting to add managed routine to already shut down lifecycle")
 	}
-	l.logger.Info("starting managed routine", "routine", name)
 	l.z.Info("starting managed routine", zap.String("routine", name))
 	l.wg.Add(1)
 	go func() {
 		var err error
-		defer l.logger.Info("managed routine was shut down", "routine", name, "error", err)
 		defer func() {
 			if err != nil {
 				l.z.Info("managed routine was shut down", zap.String("routine", name), zap.Error(err))
@@ -92,21 +87,17 @@ func (l *Lifecycle) ShutdownWithTimeout(timeout time.Duration) error {
 		done <- eg.Wait()
 	}()
 
-	l.logger.Info("Lifecycle shutdown signaled. Waiting for managed goroutines to finish...")
 	l.z.Info("Lifecycle shutdown signaled. Waiting for managed goroutines to finish...")
 	timeoutCh := time.After(timeout)
 	select {
 	case err := <-done:
 		if err != nil {
-			l.logger.Errorf("error shutting down child lifecycle: %v", err)
 			l.z.Error("error shutting down child lifecycle", zap.Error(err))
 		} else {
-			l.logger.Info("Lifecycle shutdown complete")
 			l.z.Info("Lifecycle shutdown complete")
 		}
 		return err
 	case <-timeoutCh:
-		l.logger.Info("Lifecycle shutdown timed out")
 		l.z.Info("Lifecycle shutdown timed out")
 		return errors.New("lifecycle shutdown timed out")
 	}

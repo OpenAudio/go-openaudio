@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 const _qmFileKey = "_data/qm_cids.csv"
@@ -111,14 +112,14 @@ func (ss *MediorumServer) startQmSyncer(ctx context.Context) error {
 			if i == 0 { // wait one minute before writing file
 				err := ss.writeQmFile()
 				if err != nil {
-					ss.logger.Error("qmSync: failed to write qm.csv file", "err", err)
+					ss.logger.Error("qmSync: failed to write qm.csv file", zap.Error(err))
 				}
 			} else { // wait an additional minute
 				for _, peer := range ss.findHealthyPeers(time.Hour) {
 					if err := ss.pullQmFromPeer(ctx, peer); err != nil {
-						ss.logger.Error("qmSync: failed to pull qm.csv from peer", "peer", peer, "err", err)
+						ss.logger.Error("qmSync: failed to pull qm.csv from peer", zap.String("peer", peer), zap.Error(err))
 					} else {
-						ss.logger.Debug("qmSync: pulled qm.csv from peer", "peer", peer)
+						ss.logger.Debug("qmSync: pulled qm.csv from peer", zap.String("peer", peer))
 					}
 				}
 				return nil

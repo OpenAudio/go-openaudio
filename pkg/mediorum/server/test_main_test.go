@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"log/slog"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/common"
 	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	"github.com/AudiusProject/audiusd/pkg/lifecycle"
 	"github.com/AudiusProject/audiusd/pkg/pos"
@@ -41,7 +39,8 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 		})
 	}
 
-	lc := lifecycle.NewLifecycle(context.Background(), "mediorum test lifecycle", common.NewLogger(&slog.HandlerOptions{}), zap.NewNop())
+	z := zap.NewNop()
+	lc := lifecycle.NewLifecycle(context.Background(), "mediorum test lifecycle", z)
 
 	for idx, peer := range network {
 		peer := peer
@@ -58,7 +57,7 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 			},
 		}
 		posChannel := make(chan pos.PoSRequest)
-		server, err := New(lc, config, provider, posChannel, &coreServer.CoreService{})
+		server, err := New(lc, z, config, provider, posChannel, &coreServer.CoreService{})
 		if err != nil {
 			panic(err)
 		}

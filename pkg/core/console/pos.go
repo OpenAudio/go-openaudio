@@ -10,6 +10,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 const maxBlockRange = int64(1000)
@@ -36,7 +37,7 @@ func (cs *Console) posFragment(c echo.Context) error {
 
 	validators, err := cs.db.GetAllRegisteredNodes(ctx)
 	if err != nil && err != pgx.ErrNoRows {
-		cs.logger.Error("Failed to get registered nodes from db", "error", err)
+		cs.logger.Error("Failed to get registered nodes from db", zap.Error(err))
 		return err
 	}
 	validatorMap := make(map[string]string, len(validators))

@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -29,7 +30,7 @@ func (e *EthService) GetStatus(context.Context, *connect.Request[v1.GetStatusReq
 func (e *EthService) GetRegisteredEndpoints(ctx context.Context, _ *connect.Request[v1.GetRegisteredEndpointsRequest]) (*connect.Response[v1.GetRegisteredEndpointsResponse], error) {
 	eps, err := e.db.GetRegisteredEndpoints(ctx)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		e.logger.Debugf("could not get registered endpoints: %v", err)
+		e.logger.Debug("could not get registered endpoints", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get registered endpoints"))
 	}
 	peps := make([]*v1.ServiceEndpoint, 0, len(eps))
@@ -51,7 +52,7 @@ func (e *EthService) GetRegisteredEndpoints(ctx context.Context, _ *connect.Requ
 func (e *EthService) GetRegisteredEndpointsForServiceProvider(ctx context.Context, req *connect.Request[v1.GetRegisteredEndpointsForServiceProviderRequest]) (*connect.Response[v1.GetRegisteredEndpointsForServiceProviderResponse], error) {
 	eps, err := e.db.GetRegisteredEndpointsForServiceProvider(ctx, req.Msg.Owner)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		e.logger.Debugf("could not get registered endpoints for service provider %s: %v", req.Msg.Owner, err)
+		e.logger.Debug("could not get registered endpoints for service provider", zap.String("service_provider", req.Msg.Owner), zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get registered endpoints for service provider"))
 	}
 	peps := make([]*v1.ServiceEndpoint, 0, len(eps))
@@ -73,10 +74,10 @@ func (e *EthService) GetRegisteredEndpointsForServiceProvider(ctx context.Contex
 func (e *EthService) GetRegisteredEndpointInfo(ctx context.Context, req *connect.Request[v1.GetRegisteredEndpointInfoRequest]) (*connect.Response[v1.GetRegisteredEndpointInfoResponse], error) {
 	ep, err := e.db.GetRegisteredEndpoint(ctx, req.Msg.Endpoint)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		e.logger.Debugf("could not get registered endpoint: %v", err)
+		e.logger.Debug("could not get registered endpoint", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get registered endpoint"))
 	} else if errors.Is(err, pgx.ErrNoRows) {
-		e.logger.Debugf("registered endpoint not found: %v", err)
+		e.logger.Debug("registered endpoint not found", zap.Error(err))
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("could not get registered endpoint"))
 	}
 	res := &v1.GetRegisteredEndpointInfoResponse{
@@ -96,7 +97,7 @@ func (e *EthService) GetRegisteredEndpointInfo(ctx context.Context, req *connect
 func (e *EthService) GetServiceProvider(ctx context.Context, req *connect.Request[v1.GetServiceProviderRequest]) (*connect.Response[v1.GetServiceProviderResponse], error) {
 	serviceProvider, err := e.db.GetServiceProvider(ctx, req.Msg.Address)
 	if err != nil {
-		e.logger.Debugf("could not get service provider: %v", err)
+		e.logger.Debug("could not get service provider", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get service provider"))
 	}
 
@@ -117,7 +118,7 @@ func (e *EthService) GetServiceProvider(ctx context.Context, req *connect.Reques
 func (e *EthService) GetServiceProviders(ctx context.Context, _ *connect.Request[v1.GetServiceProvidersRequest]) (*connect.Response[v1.GetServiceProvidersResponse], error) {
 	sps, err := e.db.GetServiceProviders(ctx)
 	if err != nil {
-		e.logger.Debugf("could not get service providers: %v", err)
+		e.logger.Debug("could not get service providers", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get service providers"))
 	}
 	psps := make([]*v1.ServiceProvider, 0, len(sps))
@@ -141,7 +142,7 @@ func (e *EthService) GetServiceProviders(ctx context.Context, _ *connect.Request
 func (e *EthService) GetLatestFundingRound(ctx context.Context, _ *connect.Request[v1.GetLatestFundingRoundRequest]) (*connect.Response[v1.GetLatestFundingRoundResponse], error) {
 	round, err := e.db.GetLatestFundingRound(ctx)
 	if err != nil {
-		e.logger.Debugf("could not get latest funding round: %v", err)
+		e.logger.Debug("could not get latest funding round", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get latest funding round"))
 	}
 	res := &v1.GetLatestFundingRoundResponse{
@@ -155,7 +156,7 @@ func (e *EthService) GetLatestFundingRound(ctx context.Context, _ *connect.Reque
 func (e *EthService) IsDuplicateDelegateWallet(ctx context.Context, req *connect.Request[v1.IsDuplicateDelegateWalletRequest]) (*connect.Response[v1.IsDuplicateDelegateWalletResponse], error) {
 	count, err := e.db.GetCountOfEndpointsWithDelegateWallet(ctx, req.Msg.Wallet)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		e.logger.Debugf("could not check for duplicate wallet: %v", err)
+		e.logger.Debug("could not check for duplicate wallet", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not check for duplicate wallet"))
 	}
 	res := &v1.IsDuplicateDelegateWalletResponse{IsDuplicate: count > 1}
@@ -170,37 +171,37 @@ func (e *EthService) Register(ctx context.Context, req *connect.Request[v1.Regis
 
 	ethKey, err := common.EthToEthKey(req.Msg.DelegateKey)
 	if err != nil {
-		e.logger.Debugf("failed to create eth key: %v", err)
+		e.logger.Debug("failed to create eth key", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	chainID, err := e.rpc.ChainID(ctx)
 	if err != nil {
-		e.logger.Debugf("could not get chain id: %v", err)
+		e.logger.Debug("could not get chain id", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	opts, err := bind.NewKeyedTransactorWithChainID(ethKey, chainID)
 	if err != nil {
-		e.logger.Debugf("could not create keyed transactor: %v", err)
+		e.logger.Debug("could not create keyed transactor", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	token, err := e.c.GetAudioTokenContract()
 	if err != nil {
-		e.logger.Debugf("could not get token contract: %v", err)
+		e.logger.Debug("could not get token contract", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	spf, err := e.c.GetServiceProviderFactoryContract()
 	if err != nil {
-		e.logger.Debugf("could not get service provider factory contract: %v", err)
+		e.logger.Debug("could not get service provider factory contract", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	stakingAddress, err := spf.GetStakingAddress(nil)
 	if err != nil {
-		e.logger.Debugf("could not get staking address: %v", err)
+		e.logger.Debug("could not get staking address", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
@@ -209,24 +210,24 @@ func (e *EthService) Register(ctx context.Context, req *connect.Request[v1.Regis
 
 	_, err = token.Approve(opts, stakingAddress, stake)
 	if err != nil {
-		e.logger.Debugf("could not approve tokens: %v", err)
+		e.logger.Debug("could not approve tokens", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	delegateOwnerWallet := crypto.PubkeyToAddress(ethKey.PublicKey)
 	st, err := contracts.StringToServiceType(req.Msg.ServiceType)
 	if err != nil {
-		e.logger.Debugf("invalid service type: %v", err)
+		e.logger.Debug("invalid service type", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
 	_, err = spf.Register(opts, st, req.Msg.Endpoint, stake, delegateOwnerWallet)
 	if err != nil {
-		e.logger.Debugf("couldn't register node: %v", err)
+		e.logger.Debug("couldn't register node", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
 	}
 
-	e.logger.Infof("node %s registered on eth", req.Msg.Endpoint)
+	e.logger.Info("node registered on eth", zap.String("endpoint", req.Msg.Endpoint))
 
 	return connect.NewResponse(&v1.RegisterResponse{}), nil
 }
@@ -244,7 +245,7 @@ func (e *EthService) Subscribe(ctx context.Context, req *connect.Request[v1.Subs
 				e.deregPubsub.Unsubscribe(DeregistrationTopic, deregCh)
 				e.logger.Info("unsubscribed from deregistration events")
 			}
-			e.logger.Debugf("subscription canceled by context: %v", ctx.Err())
+			e.logger.Debug("subscription canceled by context", zap.Error(ctx.Err()))
 			return connect.NewError(connect.CodeInternal, errors.New("subscription canceled"))
 
 		case dereg := <-deregCh:
@@ -258,7 +259,7 @@ func (e *EthService) Subscribe(ctx context.Context, req *connect.Request[v1.Subs
 					},
 				})
 				if err != nil {
-					e.logger.Error("failed to send deregistration event", "error", err)
+					e.logger.Error("failed to send deregistration event", zap.Error(err))
 				}
 			}
 		}
@@ -268,7 +269,7 @@ func (e *EthService) Subscribe(ctx context.Context, req *connect.Request[v1.Subs
 func (e *EthService) GetStakingMetadataForServiceProvider(ctx context.Context, req *connect.Request[v1.GetStakingMetadataForServiceProviderRequest]) (*connect.Response[v1.GetStakingMetadataForServiceProviderResponse], error) {
 	staked, err := e.db.GetStakedAmountForServiceProvider(ctx, req.Msg.Address)
 	if err != nil {
-		e.logger.Debugf("could not get staked amount for service provider at address %s: %v", req.Msg.Address, err)
+		e.logger.Debug("could not get staked amount for service provider at address", zap.String("address", req.Msg.Address), zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("Could not get staking metadata"))
 	}
 	rewardsPerRound := int64(float64(staked) * float64(e.fundingRound.fundingAmountPerRound) / float64(e.fundingRound.totalStakedAmount))

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	v1 "github.com/AudiusProject/audiusd/pkg/api/eth/v1"
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/eth/contracts"
 	"github.com/AudiusProject/audiusd/pkg/eth/contracts/gen"
 	"github.com/AudiusProject/audiusd/pkg/eth/db"
@@ -41,8 +40,7 @@ type EthService struct {
 	rpc          *ethclient.Client
 	db           *db.Queries
 	pool         *pgxpool.Pool
-	logger       *common.Logger
-	z            *zap.Logger
+	logger       *zap.Logger
 	c            *contracts.AudiusContracts
 	deregPubsub  *DeregistrationPubsub
 	fundingRound *fundingRoundMetadata
@@ -56,20 +54,15 @@ type fundingRoundMetadata struct {
 	totalStakedAmount     int64
 }
 
-func NewEthService(dbURL, rpcURL, registryAddress string, logger *common.Logger, environment string) *EthService {
+func NewEthService(dbURL, rpcURL, registryAddress string, logger *zap.Logger, environment string) *EthService {
 	return &EthService{
-		logger:          logger.Child("eth"),
+		logger:          logger.With(zap.String("service", "eth")),
 		rpcURL:          rpcURL,
 		dbURL:           dbURL,
-		z:               zap.NewNop(),
 		registryAddress: registryAddress,
 		env:             environment,
 		fundingRound:    &fundingRoundMetadata{},
 	}
-}
-
-func (eth *EthService) SetZapLogger(z *zap.Logger) {
-	eth.z = z
 }
 
 func (eth *EthService) Run(ctx context.Context) error {
@@ -106,27 +99,27 @@ func (eth *EthService) Run(ctx context.Context) error {
 	}
 	ethrpc, err := ethclient.Dial(wsRpcUrl)
 	if err != nil {
-		eth.z.Error("eth client dial err", zap.Error(err))
+		eth.logger.Error("eth client dial err", zap.Error(err))
 		return fmt.Errorf("eth client dial err: %v", err)
 	}
 	eth.rpc = ethrpc
 	defer ethrpc.Close()
 
-	eth.z.Info("eth service is connected")
+	eth.logger.Info("eth service is connected")
 
 	// Init contracts
-	eth.z.Info("creating new audius contracts instance")
+	eth.logger.Info("creating new audius contracts instance")
 	c, err := contracts.NewAudiusContracts(eth.rpc, eth.registryAddress)
 	if err != nil {
-		eth.z.Info("failed to make audius contracts")
+		eth.logger.Info("failed to make audius contracts")
 		return fmt.Errorf("failed to initialize eth contracts: %v", err)
 	}
 	eth.c = c
 
-	eth.z.Info("starting eth data manager")
+	eth.logger.Info("starting eth data manager")
 
 	if err := eth.startEthDataManager(ctx); err != nil {
-		eth.z.Error("error starting eth data manager", zap.Error(err))
+		eth.logger.Error("error starting eth data manager", zap.Error(err))
 		return fmt.Errorf("error running endpoint manager: %w", err)
 	}
 
@@ -142,34 +135,31 @@ initial:
 		select {
 		case <-ticker.C:
 			if err := eth.hydrateEthData(ctx); err != nil {
-				eth.z.Error("error gathering registered eth endpoints", zap.Error(err))
-				eth.logger.Errorf("error gathering registered eth endpoints: %v", err)
+				eth.logger.Error("error gathering registered eth endpoints", zap.Error(err))
 				delay *= 2
-				eth.z.Error("retrying", zap.Int("delay", int(delay)))
-				eth.logger.Infof("retrying in %s seconds", delay)
+				eth.logger.Error("retrying", zap.Int("delay", int(delay)))
 				ticker.Reset(delay)
 			} else {
 				break initial
 			}
 		case <-ctx.Done():
-			eth.z.Info("eth context canceled")
+			eth.logger.Info("eth context canceled")
 			return errors.New("context canceled")
 		}
 	}
 
 	eth.logger.Info("eth service is ready")
-	eth.z.Info("eth service is ready")
 	eth.isReady.Store(true)
 
 	// Instantiate the contracts
 	serviceProviderFactory, err := eth.c.GetServiceProviderFactoryContract()
 	if err != nil {
-		eth.z.Error("eth failed to bind service provider factory contract", zap.Error(err))
+		eth.logger.Error("eth failed to bind service provider factory contract", zap.Error(err))
 		return fmt.Errorf("failed to bind service provider factory contract: %v", err)
 	}
 	staking, err := eth.c.GetStakingContract()
 	if err != nil {
-		eth.z.Error("eth failed to bind staking contract", zap.Error(err))
+		eth.logger.Error("eth failed to bind staking contract", zap.Error(err))
 		return fmt.Errorf("failed to bind staking contract: %v", err)
 	}
 
@@ -228,48 +218,48 @@ initial:
 			return fmt.Errorf("slashed event subscription error: %v", err)
 		case reg := <-registerChan:
 			if err := eth.addRegisteredEndpoint(ctx, reg.SpID, reg.ServiceType, reg.Endpoint, reg.Owner); err != nil {
-				eth.logger.Error("could not handle registration event: %v", err)
+				eth.logger.Error("could not handle registration event", zap.Error(err))
 				continue
 			}
 			if err := eth.updateServiceProvider(ctx, reg.Owner); err != nil {
-				eth.logger.Error("could not update service provider from registration event: %v", err)
+				eth.logger.Error("could not update service provider from registration event", zap.Error(err))
 				continue
 			}
 		case dereg := <-deregisterChan:
 			if err := eth.deleteAndDeregisterEndpoint(ctx, dereg.SpID, dereg.ServiceType, dereg.Endpoint, dereg.Owner); err != nil {
-				eth.logger.Error("could not handle deregistration event: %v", err)
+				eth.logger.Error("could not handle deregistration event", zap.Error(err))
 				continue
 			}
 			if err := eth.updateServiceProvider(ctx, dereg.Owner); err != nil {
-				eth.logger.Error("could not update service provider from deregistration event: %v", err)
+				eth.logger.Error("could not update service provider from deregistration event", zap.Error(err))
 				continue
 			}
 		case update := <-updateChan:
 			if err := eth.deleteAndDeregisterEndpoint(ctx, update.SpID, update.ServiceType, update.OldEndpoint, update.Owner); err != nil {
-				eth.logger.Error("could not handle deregistration phase of update event: %v", err)
+				eth.logger.Error("could not handle deregistration phase of update event", zap.Error(err))
 				continue
 			}
 			if err := eth.addRegisteredEndpoint(ctx, update.SpID, update.ServiceType, update.NewEndpoint, update.Owner); err != nil {
-				eth.logger.Error("could not handle registration phase of update event: %v", err)
+				eth.logger.Error("could not handle registration phase of update event", zap.Error(err))
 				continue
 			}
 			if err := eth.updateServiceProvider(ctx, update.Owner); err != nil {
-				eth.logger.Error("could not update service provider from update event: %v", err)
+				eth.logger.Error("could not update service provider from update event", zap.Error(err))
 				continue
 			}
 		case staked := <-stakedChan:
 			if err := eth.updateStakedAmountForServiceProvider(ctx, staked.User, staked.Total); err != nil {
-				eth.logger.Error("could not update service staked amount from staked event: %v", err)
+				eth.logger.Error("could not update service staked amount from staked event", zap.Error(err))
 				continue
 			}
 		case unstaked := <-unstakedChan:
 			if err := eth.updateStakedAmountForServiceProvider(ctx, unstaked.User, unstaked.Total); err != nil {
-				eth.logger.Error("could not update service staked amount from unstaked event: %v", err)
+				eth.logger.Error("could not update service staked amount from unstaked event", zap.Error(err))
 				continue
 			}
 		case slashed := <-slashedChan:
 			if err := eth.updateStakedAmountForServiceProvider(ctx, slashed.User, slashed.Total); err != nil {
-				eth.logger.Error("could not update service staked amount from slashed event: %v", err)
+				eth.logger.Error("could not update service staked amount from slashed event", zap.Error(err))
 				continue
 			}
 		case <-ticker.C:
@@ -298,7 +288,7 @@ func (eth *EthService) deleteAndDeregisterEndpoint(ctx context.Context, spID *bi
 	}
 	ep, err := eth.db.GetRegisteredEndpoint(ctx, endpoint)
 	if err != nil {
-		eth.z.Error("eth could not fetch endpoint from db", zap.String("endpoint", endpoint), zap.Error(err))
+		eth.logger.Error("eth could not fetch endpoint from db", zap.String("endpoint", endpoint), zap.Error(err))
 		return fmt.Errorf("could not fetch endpoint %s from db: %v", endpoint, err)
 	}
 	if err := eth.db.DeleteRegisteredEndpoint(
@@ -310,7 +300,7 @@ func (eth *EthService) deleteAndDeregisterEndpoint(ctx context.Context, spID *bi
 			ServiceType: st,
 		},
 	); err != nil {
-		eth.z.Error("eth could not delete registered endpoint", zap.Error(err))
+		eth.logger.Error("eth could not delete registered endpoint", zap.Error(err))
 		return err
 	}
 	eth.deregPubsub.Publish(
@@ -333,11 +323,11 @@ func (eth *EthService) updateStakedAmountForServiceProvider(ctx context.Context,
 		ctx,
 		db.UpsertStakedParams{Address: address.Hex(), TotalStaked: new(big.Int).Div(totalStaked, audConversion).Int64()},
 	); err != nil {
-		eth.z.Error("eth could not update service staked amount", zap.Error(err))
+		eth.logger.Error("eth could not update service staked amount", zap.Error(err))
 		return fmt.Errorf("could not update service staked amount: %v", err)
 	}
 	if err := eth.updateTotalStakedAmount(ctx); err != nil {
-		eth.z.Error("eth could not update total staked amount", zap.Error(err))
+		eth.logger.Error("eth could not update total staked amount", zap.Error(err))
 		return fmt.Errorf("cound not update total staked amount: %v", err)
 	}
 	return nil
@@ -346,13 +336,13 @@ func (eth *EthService) updateStakedAmountForServiceProvider(ctx context.Context,
 func (eth *EthService) updateTotalStakedAmount(ctx context.Context) error {
 	staking, err := eth.c.GetStakingContract()
 	if err != nil {
-		eth.z.Error("eth failed to bind staking contract", zap.Error(err))
+		eth.logger.Error("eth failed to bind staking contract", zap.Error(err))
 		return fmt.Errorf("failed to bind staking contract: %v", err)
 	}
 	opts := &bind.CallOpts{Context: ctx}
 	totalStaked, err := staking.TotalStaked(opts)
 	if err != nil {
-		eth.z.Error("eth could not get total staked across all delegators", zap.Error(err))
+		eth.logger.Error("eth could not get total staked across all delegators", zap.Error(err))
 		return fmt.Errorf("could not get total staked across all delegators: %v", err)
 	}
 	eth.fundingRound.totalStakedAmount = new(big.Int).Div(totalStaked, audConversion).Int64()
@@ -366,14 +356,14 @@ func (eth *EthService) addRegisteredEndpoint(ctx context.Context, spID *big.Int,
 	}
 	node, err := eth.c.GetRegisteredNode(ctx, spID, serviceType)
 	if err != nil {
-		eth.z.Error("eth could not get registered node", zap.Error(err))
+		eth.logger.Error("eth could not get registered node", zap.Error(err))
 		return err
 	}
 
 	// Grab timestamp from block when this endpoint was registered
 	registeredBlock, err := eth.rpc.HeaderByNumber(ctx, node.BlockNumber)
 	if err != nil {
-		eth.z.Error("eth failed to get block to check registration date", zap.Error(err))
+		eth.logger.Error("eth failed to get block to check registration date", zap.Error(err))
 		return fmt.Errorf("failed to get block to check registration date: %v", err)
 	}
 	registrationTimestamp := time.Unix(int64(registeredBlock.Time), 0)
@@ -398,14 +388,14 @@ func (eth *EthService) addRegisteredEndpoint(ctx context.Context, spID *big.Int,
 func (eth *EthService) updateServiceProvider(ctx context.Context, serviceProviderAddress ethcommon.Address) error {
 	serviceProviderFactory, err := eth.c.GetServiceProviderFactoryContract()
 	if err != nil {
-		eth.z.Error("eth failed to bind service provider factory contract while updating service provider", zap.Error(err))
+		eth.logger.Error("eth failed to bind service provider factory contract while updating service provider", zap.Error(err))
 		return fmt.Errorf("failed to bind service provider factory contract while updating service provider: %v", err)
 	}
 	opts := &bind.CallOpts{Context: ctx}
 
 	spDetails, err := serviceProviderFactory.GetServiceProviderDetails(opts, serviceProviderAddress)
 	if err != nil {
-		eth.z.Error("eth failed to get service provider details for address", zap.String("address", serviceProviderAddress.Hex()), zap.Error(err))
+		eth.logger.Error("eth failed to get service provider details for address", zap.String("address", serviceProviderAddress.Hex()), zap.Error(err))
 		return fmt.Errorf("failed get service provider details for address %s: %v", serviceProviderAddress.Hex(), err)
 	}
 	if err := eth.db.UpsertServiceProvider(
@@ -420,24 +410,24 @@ func (eth *EthService) updateServiceProvider(ctx context.Context, serviceProvide
 			MaxAccountStake:   spDetails.MaxAccountStake.Int64(),
 		},
 	); err != nil {
-		eth.z.Error("eth could not upsert service provider into eth service db", zap.Error(err))
+		eth.logger.Error("eth could not upsert service provider into eth service db", zap.Error(err))
 		return fmt.Errorf("could not upsert service provider into eth service db: %v", err)
 	}
 	return nil
 }
 
 func (eth *EthService) hydrateEthData(ctx context.Context) error {
-	eth.z.Info("refreshing eth data")
+	eth.logger.Info("refreshing eth data")
 
 	nodes, err := eth.c.GetAllRegisteredNodes(ctx)
 	if err != nil {
-		eth.z.Error("eth could not get registered nodes", zap.Error(err))
+		eth.logger.Error("eth could not get registered nodes", zap.Error(err))
 		return fmt.Errorf("could not get registered nodes from contracts: %w", err)
 	}
 
 	tx, err := eth.pool.Begin(ctx)
 	if err != nil {
-		eth.z.Error("eth could not begin db tx", zap.Error(err))
+		eth.logger.Error("eth could not begin db tx", zap.Error(err))
 		return fmt.Errorf("could not begin db tx: %w", err)
 	}
 	defer tx.Rollback(context.Background())
@@ -445,7 +435,7 @@ func (eth *EthService) hydrateEthData(ctx context.Context) error {
 	txq := eth.db.WithTx(tx)
 
 	if err := txq.ClearRegisteredEndpoints(ctx); err != nil {
-		eth.z.Error("eth could not clear registered endpoints", zap.Error(err))
+		eth.logger.Error("eth could not clear registered endpoints", zap.Error(err))
 		return fmt.Errorf("could not clear registered endpoints: %w", err)
 	}
 
@@ -453,24 +443,24 @@ func (eth *EthService) hydrateEthData(ctx context.Context) error {
 		return fmt.Errorf("could not clear registered endpoints: %w", err)
 	}
 	if err := txq.ClearServiceProviders(ctx); err != nil {
-		eth.z.Error("eth could not clear service providers", zap.Error(err))
+		eth.logger.Error("eth could not clear service providers", zap.Error(err))
 		return fmt.Errorf("could not clear service providers: %w", err)
 	}
 
 	allServiceProviders := make(map[string]*db.EthServiceProvider, len(nodes))
 	serviceProviderFactory, err := eth.c.GetServiceProviderFactoryContract()
 	if err != nil {
-		eth.z.Error("eth failed to bind service provider factory contract", zap.Error(err))
+		eth.logger.Error("eth failed to bind service provider factory contract", zap.Error(err))
 		return fmt.Errorf("failed to bind service provider factory contract: %v", err)
 	}
 	staking, err := eth.c.GetStakingContract()
 	if err != nil {
-		eth.z.Error("eth failed to bind staking contract", zap.Error(err))
+		eth.logger.Error("eth failed to bind staking contract", zap.Error(err))
 		return fmt.Errorf("failed to bind staking contract: %v", err)
 	}
 	claimsManager, err := eth.c.GetClaimsManagerContract()
 	if err != nil {
-		eth.z.Error("eth failed to bind claims manager contract", zap.Error(err))
+		eth.logger.Error("eth failed to bind claims manager contract", zap.Error(err))
 		return fmt.Errorf("failed to bind claims manager contract: %v", err)
 	}
 	opts := &bind.CallOpts{Context: ctx}
@@ -478,14 +468,14 @@ func (eth *EthService) hydrateEthData(ctx context.Context) error {
 	for _, node := range nodes {
 		st, err := contracts.ServiceTypeToString(node.Type)
 		if err != nil {
-			eth.z.Error("eth could not resolve service type for node", zap.Error(err))
+			eth.logger.Error("eth could not resolve service type for node", zap.Error(err))
 			return fmt.Errorf("could resolve service type for node: %v", err)
 		}
 
 		// Grab timestamp from block when this endpoint was registered
 		registeredBlock, err := eth.rpc.HeaderByNumber(ctx, node.BlockNumber)
 		if err != nil {
-			eth.z.Error("eth failed to get block to check registration date", zap.Error(err))
+			eth.logger.Error("eth failed to get block to check registration date", zap.Error(err))
 			return fmt.Errorf("failed to get block to check registration date: %v", err)
 		}
 		registrationTimestamp := time.Unix(int64(registeredBlock.Time), 0)
@@ -505,14 +495,14 @@ func (eth *EthService) hydrateEthData(ctx context.Context) error {
 				},
 			},
 		); err != nil {
-			eth.z.Error("eth could not insert registered endpoint into eth indexer db", zap.Error(err))
+			eth.logger.Error("eth could not insert registered endpoint into eth indexer db", zap.Error(err))
 			return fmt.Errorf("could not insert registered endpoint into eth indexer db: %v", err)
 		}
 
 		if _, ok := allServiceProviders[node.Owner.Hex()]; !ok {
 			spDetails, err := serviceProviderFactory.GetServiceProviderDetails(opts, node.Owner)
 			if err != nil {
-				eth.z.Error("eth failed to get service provider details", zap.String("address", node.Owner.Hex()), zap.Error(err))
+				eth.logger.Error("eth failed to get service provider details", zap.String("address", node.Owner.Hex()), zap.Error(err))
 				return fmt.Errorf("failed get service provider details for address %s: %v", node.Owner.Hex(), err)
 			}
 			allServiceProviders[node.Owner.Hex()] = &db.EthServiceProvider{
@@ -540,13 +530,13 @@ func (eth *EthService) hydrateEthData(ctx context.Context) error {
 				MaxAccountStake:   sp.MaxAccountStake,
 			},
 		); err != nil {
-			eth.z.Error("eth could not insert service provider into eth indexer db", zap.Error(err))
+			eth.logger.Error("eth could not insert service provider into eth indexer db", zap.Error(err))
 			return fmt.Errorf("could not insert service provider into eth indexer db: %v", err)
 		}
 
 		totalStakedForSp, err := staking.TotalStakedFor(opts, ethcommon.HexToAddress(sp.Address))
 		if err != nil {
-			eth.z.Error("eth could not get total staked amount for address", zap.String("address", sp.Address), zap.Error(err))
+			eth.logger.Error("eth could not get total staked amount for address", zap.String("address", sp.Address), zap.Error(err))
 			return fmt.Errorf("could not get total staked amount for address %s: %v", sp.Address, err)
 		}
 		if err = txq.UpsertStaked(
@@ -556,19 +546,19 @@ func (eth *EthService) hydrateEthData(ctx context.Context) error {
 				TotalStaked: new(big.Int).Div(totalStakedForSp, audConversion).Int64(),
 			},
 		); err != nil {
-			eth.z.Error("eth could not insert staked amount into eth indexer db", zap.Error(err))
+			eth.logger.Error("eth could not insert staked amount into eth indexer db", zap.Error(err))
 			return fmt.Errorf("could not insert staked amount into eth indexer db: %v", err)
 		}
 	}
 
 	if err := eth.updateTotalStakedAmount(ctx); err != nil {
-		eth.z.Error("eth could not update total staked amount", zap.Error(err))
+		eth.logger.Error("eth could not update total staked amount", zap.Error(err))
 		return fmt.Errorf("could not update total staked amount: %v", err)
 	}
 
 	fundingAmountPerRound, err := claimsManager.GetFundsPerRound(opts)
 	if err != nil {
-		eth.z.Error("eth could not get funding amount per round", zap.Error(err))
+		eth.logger.Error("eth could not get funding amount per round", zap.Error(err))
 		return fmt.Errorf("could not get funding amount per round: %v", err)
 	}
 

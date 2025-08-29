@@ -7,16 +7,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"go.uber.org/zap"
 )
 
 //go:embed sql/migrations/*
 var migrationsFS embed.FS
 
-func RunMigrations(logger *common.Logger, pgConnectionString string, downFirst bool) error {
+func RunMigrations(logger *zap.Logger, pgConnectionString string, downFirst bool) error {
 	tries := 10
 	var db *sql.DB
 	var err error
@@ -27,13 +27,13 @@ func RunMigrations(logger *common.Logger, pgConnectionString string, downFirst b
 		}
 		db, err = sql.Open("postgres", pgConnectionString)
 		if err != nil {
-			logger.Errorf("error opening sql db: %v", err)
+			logger.Error("error opening sql db", zap.Error(err))
 			tries--
 			time.Sleep(2 * time.Second)
 			continue
 		}
 		if err = db.Ping(); err != nil {
-			logger.Errorf("could not ping postgres: %v", err)
+			logger.Error("could not ping postgres", zap.Error(err))
 			tries--
 			time.Sleep(2 * time.Second)
 			continue
@@ -45,7 +45,7 @@ func RunMigrations(logger *common.Logger, pgConnectionString string, downFirst b
 	return runMigrations(logger, db, downFirst)
 }
 
-func runMigrations(logger *common.Logger, db *sql.DB, downFirst bool) error {
+func runMigrations(logger *zap.Logger, db *sql.DB, downFirst bool) error {
 	driver, err := postgres.WithInstance(db, &postgres.Config{
 		MigrationsTable: "etl_db_migrations",
 	})
@@ -74,6 +74,6 @@ func runMigrations(logger *common.Logger, db *sql.DB, downFirst bool) error {
 		return fmt.Errorf("error running up migrations: %w", err)
 	}
 
-	logger.Infof("Migrations applied successfully")
+	logger.Info("Migrations applied successfully")
 	return nil
 }

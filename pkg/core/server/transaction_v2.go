@@ -9,6 +9,7 @@ import (
 	ddexv1beta1 "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1"
 	"github.com/AudiusProject/audiusd/pkg/common"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -73,7 +74,7 @@ func (s *Server) finalizeV2Transaction(ctx context.Context, req *abcitypes.Final
 		return fmt.Errorf("failed to get tx hash: %w", err)
 	}
 
-	s.logger.Debugf("finalizing v2 transaction %s with %d messages", txhash, len(tx.Envelope.Messages))
+	s.logger.Debug("finalizing v2 transaction", zap.String("tx", txhash), zap.Int("messages", len(tx.Envelope.Messages)))
 
 	for i, msg := range tx.Envelope.Messages {
 		switch msg.Message.(type) {

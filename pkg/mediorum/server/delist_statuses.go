@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	"go.uber.org/zap"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
@@ -295,7 +296,7 @@ func (ss *MediorumServer) isCidBlacklisted(ctx context.Context, cid string) bool
 	            false)`
 	err := ss.pgPool.QueryRow(ctx, sql, cid).Scan(&blacklisted)
 	if err != nil {
-		ss.logger.Error("isCidBlacklisted error", "err", err, "cid", cid)
+		ss.logger.Error("isCidBlacklisted error", zap.Error(err), zap.String("cid", cid))
 	}
 	return blacklisted
 }

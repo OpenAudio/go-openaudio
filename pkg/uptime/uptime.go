@@ -17,7 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/httputil"
 	"github.com/AudiusProject/audiusd/pkg/registrar"
 	"github.com/labstack/echo/v4"
@@ -47,7 +46,7 @@ type Uptime struct {
 	DB     *bbolt.DB
 }
 
-func Run(ctx context.Context, logger *common.Logger) error {
+func Run(ctx context.Context) error {
 	env := ""      // prod || stage
 	nodeType := "" // content || discovery
 	if os.Getenv("audius_discprov_url") != "" {

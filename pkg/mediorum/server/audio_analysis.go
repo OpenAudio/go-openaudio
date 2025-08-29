@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
+	"go.uber.org/zap"
 	"gocloud.dev/gcerrors"
 	"golang.org/x/sync/errgroup"
 )
@@ -26,7 +27,7 @@ func (ss *MediorumServer) startAudioAnalyzer(ctx context.Context) error {
 	if numWorkersOverride != "" {
 		num, err := strconv.ParseInt(numWorkersOverride, 10, 64)
 		if err != nil {
-			ss.logger.Warn("failed to parse AUDIO_ANALYSIS_WORKERS", "err", err, "AUDIO_ANALYSIS_WORKERS", numWorkersOverride)
+			ss.logger.Warn("failed to parse AUDIO_ANALYSIS_WORKERS", zap.Error(err), zap.String("AUDIO_ANALYSIS_WORKERS", numWorkersOverride))
 		} else {
 			numWorkers = int(num)
 		}
@@ -64,7 +65,7 @@ func (ss *MediorumServer) findMissedAudioAnalysisJobs(ctx context.Context, work 
 		Error
 
 	if err != nil {
-		ss.logger.Warn("failed to find backlog work", "err", err)
+		ss.logger.Warn("failed to find backlog work", zap.Error(err))
 	}
 
 	for _, upload := range uploads {
@@ -98,15 +99,15 @@ func (ss *MediorumServer) startAudioAnalysisWorker(workerId int, work chan *Uplo
 				if !ok {
 					return nil // channel closed
 				}
-				logger := ss.logger.With("upload", upload.ID)
+				logger := ss.logger.With(zap.String("upload", upload.ID))
 				logger.Debug("analyzing audio")
 				startTime := time.Now().UTC()
 				err := ss.analyzeAudio(ctx, upload, time.Minute*10)
 				elapsedTime := time.Since(startTime)
-				logger = logger.With("duration", elapsedTime.String(), "start_time", startTime)
+				logger = logger.With(zap.String("duration", elapsedTime.String()), zap.Time("start_time", startTime))
 
 				if err != nil {
-					logger.Warn("audio analysis failed", "err", err)
+					logger.Warn("audio analysis failed", zap.Error(err))
 				} else {
 					logger.Info("audio analysis done")
 				}
@@ -137,7 +138,7 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 		return err
 	}
 
-	logger := ss.logger.With("upload", upload.ID)
+	logger := ss.logger.With(zap.String("upload", upload.ID))
 
 	// pull transcoded file from bucket
 	cid, ok := upload.TranscodeResults["320"]
@@ -148,13 +149,13 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 		}
 	}
 	if !ok {
-		logger.Warn("Upload missing 320 result", "id", upload.ID)
+		logger.Warn("Upload missing 320 result")
 		return nil
 	}
 
 	// do not mark the audio analysis job as failed if this node cannot pull the file from its bucket
 	// so that the next mirror may pick the job up
-	logger = logger.With("cid", cid)
+	logger = logger.With(zap.String("cid", cid))
 	key := cidutil.ShardCID(cid)
 	attrs, err := ss.bucket.Attributes(ctx, key)
 	if err != nil {
@@ -166,18 +167,18 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 	}
 	temp, err := os.CreateTemp("", "audioAnalysisTemp")
 	if err != nil {
-		logger.Error("failed to create temp file", "err", err)
+		logger.Error("failed to create temp file", zap.Error(err))
 		return err
 	}
 	r, err := ss.bucket.NewReader(ctx, key, nil)
 	if err != nil {
-		logger.Error("failed to read blob", "err", err)
+		logger.Error("failed to read blob", zap.Error(err))
 		return err
 	}
 	defer r.Close()
 	_, err = io.Copy(temp, r)
 	if err != nil {
-		logger.Error("failed to read blob content", "err", err)
+		logger.Error("failed to read blob content", zap.Error(err))
 		return err
 	}
 	temp.Sync()
@@ -193,7 +194,7 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 		defer os.Remove(wavFile)
 		err = convertToWav(inputFile, wavFile)
 		if err != nil {
-			logger.Error("failed to convert MP3 to WAV", "err", err)
+			logger.Error("failed to convert MP3 to WAV", zap.Error(err))
 			return onError(fmt.Errorf("failed to convert MP3 to WAV: %w", err))
 		}
 	}

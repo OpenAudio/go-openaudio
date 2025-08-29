@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -35,6 +34,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/eth"
 	"github.com/AudiusProject/audiusd/pkg/etl"
 	"github.com/AudiusProject/audiusd/pkg/lifecycle"
+	aLogger "github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/AudiusProject/audiusd/pkg/mediorum"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server"
 	"github.com/AudiusProject/audiusd/pkg/pos"
@@ -96,18 +96,24 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	logger := setupLogger()
 	hostUrl := setupHostUrl()
-	setupDelegateKeyPair(logger)
 	posChannel := make(chan pos.PoSRequest)
 	dbUrl := config.GetDbURL()
 
-	rootLifecycle := lifecycle.NewLifecycle(ctx, "root lifecycle", logger, zap.NewNop())
+	rootLogger, err := aLogger.CreateLogger(config.GetRuntimeEnvironment(), config.GetLogLevel())
+	if err != nil {
+		panic(fmt.Sprintf("failed to create root zap logger: %v", err))
+	}
+	rootLogger = rootLogger.With(zap.String("node", hostUrl.String()))
+	defer rootLogger.Sync() // flush logs before shutdown
+	rootLifecycle := lifecycle.NewLifecycle(ctx, "root lifecycle", rootLogger)
 
-	ethService := eth.NewEthService(dbUrl, config.GetEthRPC(), config.GetRegistryAddress(), logger, config.GetRuntimeEnvironment())
+	setupDelegateKeyPair(rootLogger)
+
+	ethService := eth.NewEthService(dbUrl, config.GetEthRPC(), config.GetRegistryAddress(), rootLogger, config.GetRuntimeEnvironment())
 	coreService := coreServer.NewCoreService()
 	storageService := server.NewStorageService()
-	etlService := etl.NewETLService(coreService, logger)
+	etlService := etl.NewETLService(coreService, rootLogger)
 	systemService := system.NewSystemService(coreService, storageService, etlService)
 
 	services := []struct {
@@ -118,23 +124,23 @@ func main() {
 		{
 			"audiusd-echo-server",
 			func() error {
-				return startEchoProxy(hostUrl, logger, coreService, storageService, etlService, systemService, ethService)
+				return startEchoProxy(hostUrl, rootLogger, coreService, storageService, etlService, systemService, ethService)
 			},
 			true,
 		},
 		{
 			"core",
-			func() error { return core.Run(ctx, rootLifecycle, logger, posChannel, coreService, ethService) },
+			func() error { return core.Run(ctx, rootLifecycle, rootLogger, posChannel, coreService, ethService) },
 			true,
 		},
 		{
 			"mediorum",
-			func() error { return mediorum.Run(rootLifecycle, posChannel, storageService, coreService) },
+			func() error { return mediorum.Run(rootLifecycle, rootLogger, posChannel, storageService, coreService) },
 			isStorageEnabled(),
 		},
 		{
 			"uptime",
-			func() error { return uptime.Run(ctx, logger) },
+			func() error { return uptime.Run(ctx) },
 			isUpTimeEnabled(hostUrl),
 		},
 		{
@@ -155,7 +161,7 @@ func main() {
 
 	for _, svc := range services {
 		if svc.enabled {
-			runWithRecover(svc.name, ctx, logger, svc.fn)
+			runWithRecover(svc.name, ctx, rootLogger, svc.fn)
 		}
 	}
 
@@ -164,13 +170,13 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 
-	logger.Info("Received termination signal, shutting down...")
+	rootLogger.Info("Received termination signal, shutting down...")
 	cancel()
 	<-ctx.Done()
-	logger.Info("Shutdown complete!")
+	rootLogger.Info("Shutdown complete!")
 }
 
-func runWithRecover(name string, ctx context.Context, logger *common.Logger, f func() error) {
+func runWithRecover(name string, ctx context.Context, logger *zap.Logger, f func() error) {
 	backoff := initialBackoff
 	retries := 0
 
@@ -178,21 +184,21 @@ func runWithRecover(name string, ctx context.Context, logger *common.Logger, f f
 	run = func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Errorf("%s goroutine panicked: %v", name, r)
-				logger.Errorf("%s stack trace: %s", name, string(debug.Stack()))
+				logger.Error("goroutine panicked", zap.String("name", name), zap.Any("error", r))
+				logger.Error("stack trace", zap.String("name", name), zap.String("stack trace", string(debug.Stack())))
 
 				select {
 				case <-ctx.Done():
-					logger.Infof("%s shutdown requested, not restarting", name)
+					logger.Info("shutdown requested, not restarting", zap.String("name", name))
 					return
 				default:
 					if retries >= maxRetries {
-						logger.Errorf("%s exceeded maximum retry attempts (%d). Not restarting.", name, maxRetries)
+						logger.Error(fmt.Sprintf("exceeded maximum retry attempts (%d). Not restarting.", maxRetries), zap.String("name", name))
 						return
 					}
 
 					retries++
-					logger.Infof("%s will restart in %v (attempt %d/%d)", name, backoff, retries, maxRetries)
+					logger.Info(fmt.Sprintf("service will restart in %v (attempt %d/%d)", backoff, retries, maxRetries), zap.String("name", name))
 					time.Sleep(backoff)
 
 					// Exponential backoff
@@ -208,31 +214,13 @@ func runWithRecover(name string, ctx context.Context, logger *common.Logger, f f
 		}()
 
 		if err := f(); err != nil {
-			logger.Errorf("%s error: %v", name, err)
+			logger.Error("error running service", zap.String("name", name), zap.Error(err))
 			// Treat errors like panics and restart the service
 			panic(fmt.Sprintf("%s error: %v", name, err))
 		}
 	}
 
 	go run()
-}
-
-func setupLogger() *common.Logger {
-	var slogLevel slog.Level
-	switch os.Getenv("AUDIUSD_LOG_LEVEL") {
-	case "debug":
-		slogLevel = slog.LevelDebug
-	case "info":
-		slogLevel = slog.LevelInfo
-	case "warn":
-		slogLevel = slog.LevelWarn
-	case "error":
-		slogLevel = slog.LevelError
-	default:
-		slogLevel = slog.LevelInfo
-	}
-
-	return common.NewLogger(&slog.HandlerOptions{Level: slogLevel})
 }
 
 func setupHostUrl() *url.URL {
@@ -251,7 +239,7 @@ func setupHostUrl() *url.URL {
 	return &url.URL{Scheme: "http", Host: "localhost"}
 }
 
-func setupDelegateKeyPair(logger *common.Logger) {
+func setupDelegateKeyPair(logger *zap.Logger) {
 	// Various applications across the protocol stack switch on these env var semantics
 	// Check both discovery and content env vars
 	// If neither discovery nor content node, (i.e. an audiusd rpc)
@@ -262,19 +250,19 @@ func setupDelegateKeyPair(logger *common.Logger) {
 	delegateOwnerWallet := os.Getenv("delegateOwnerWallet")
 
 	if audius_delegate_private_key != "" || audius_delegate_owner_wallet != "" {
-		logger.Infof("setupDelegateKeyPair: Node is discovery type")
+		logger.Info("setupDelegateKeyPair: Node is discovery type")
 		return
 	}
 
 	if delegatePrivateKey != "" || delegateOwnerWallet != "" {
-		logger.Infof("setupDelegateKeyPair: Node is content type")
+		logger.Info("setupDelegateKeyPair: Node is content type")
 		return
 	}
 
 	privKey, ownerWallet := keyGen()
 	os.Setenv("delegatePrivateKey", privKey)
 	os.Setenv("delegateOwnerWallet", ownerWallet)
-	logger.Infof("Generated and set delegate key pair for implied content node: %s", ownerWallet)
+	logger.Info("Generated and set delegate key pair for implied content node", zap.String("ownerWallet", ownerWallet))
 }
 
 func getEchoServerConfig(hostUrl *url.URL) serverConfig {
@@ -315,7 +303,7 @@ func connectGET[Req any, Res any](
 	return func(c echo.Context) error {
 		queryParams := c.QueryParams()
 		maxParams := 50
-		
+
 		if len(queryParams) > maxParams {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "too many query parameters"})
 		}
@@ -335,7 +323,7 @@ func connectGET[Req any, Res any](
 		for i := 0; i < fields.Len(); i++ {
 			field := fields.Get(i)
 			fieldName := string(field.Name())
-			
+
 			// Check if we have query params for this field
 			if queryValues, exists := queryParams[fieldName]; exists && len(queryValues) > 0 {
 				if err := setProtobufField(msgReflect, field, queryValues); err != nil {
@@ -389,7 +377,7 @@ func setProtobufField(msgReflect protoreflect.Message, field protoreflect.FieldD
 			}
 			msgReflect.Set(field, protoreflect.ValueOfInt64(i64))
 		}
-		
+
 	case protoreflect.Int32Kind:
 		if field.Cardinality() == protoreflect.Repeated {
 			list := msgReflect.NewField(field).List()
@@ -408,7 +396,7 @@ func setProtobufField(msgReflect protoreflect.Message, field protoreflect.FieldD
 			}
 			msgReflect.Set(field, protoreflect.ValueOfInt32(int32(i32)))
 		}
-		
+
 	case protoreflect.Uint64Kind:
 		if field.Cardinality() == protoreflect.Repeated {
 			list := msgReflect.NewField(field).List()
@@ -427,7 +415,7 @@ func setProtobufField(msgReflect protoreflect.Message, field protoreflect.FieldD
 			}
 			msgReflect.Set(field, protoreflect.ValueOfUint64(u64))
 		}
-		
+
 	case protoreflect.FloatKind, protoreflect.DoubleKind:
 		if field.Cardinality() == protoreflect.Repeated {
 			list := msgReflect.NewField(field).List()
@@ -454,7 +442,7 @@ func setProtobufField(msgReflect protoreflect.Message, field protoreflect.FieldD
 				msgReflect.Set(field, protoreflect.ValueOfFloat64(f64))
 			}
 		}
-		
+
 	case protoreflect.BoolKind:
 		if field.Cardinality() == protoreflect.Repeated {
 			list := msgReflect.NewField(field).List()
@@ -473,7 +461,7 @@ func setProtobufField(msgReflect protoreflect.Message, field protoreflect.FieldD
 			}
 			msgReflect.Set(field, protoreflect.ValueOfBool(b))
 		}
-		
+
 	case protoreflect.StringKind:
 		if field.Cardinality() == protoreflect.Repeated {
 			list := msgReflect.NewField(field).List()
@@ -484,15 +472,15 @@ func setProtobufField(msgReflect protoreflect.Message, field protoreflect.FieldD
 		} else {
 			msgReflect.Set(field, protoreflect.ValueOfString(values[0]))
 		}
-		
+
 	default:
 		return fmt.Errorf("unsupported field type: %v", field.Kind())
 	}
-	
+
 	return nil
 }
 
-func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreServer.CoreService, storageService *server.StorageService, etlService *etl.ETLService, systemService *system.SystemService, ethService *eth.EthService) error {
+func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServer.CoreService, storageService *server.StorageService, etlService *etl.ETLService, systemService *system.SystemService, ethService *eth.EthService) error {
 	// console requires etl to be enabled
 	consoleEnabled := os.Getenv("AUDIUSD_CONSOLE_ENABLED") == "true" && os.Getenv("AUDIUSD_ETL_ENABLED") == "true"
 	network := os.Getenv("NETWORK")
@@ -555,7 +543,7 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreSe
 		}
 
 		if err := h2cServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Errorf("grpcServer on 50051 failed: %v", err)
+			logger.Error("grpcServer on 50051 failed", zap.Error(err))
 			return
 		}
 	}()
@@ -647,7 +635,7 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreSe
 	for _, proxy := range proxies {
 		target, err := url.Parse(proxy.target)
 		if err != nil {
-			logger.Error("Failed to parse URL:", err)
+			logger.Error("Failed to parse URL", zap.Error(err))
 			continue
 		}
 		e.Any(proxy.path, echo.WrapHandler(httputil.NewSingleHostReverseProxy(target)))
@@ -661,44 +649,42 @@ func startEchoProxy(hostUrl *url.URL, logger *common.Logger, coreService *coreSe
 	return e.Start(":" + config.httpPort)
 }
 
-func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, logger *common.Logger) error {
+func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, logger *zap.Logger) error {
 	useSelfSigned := os.Getenv("AUDIUSD_TLS_SELF_SIGNED") == "true"
 
 	if useSelfSigned {
 		logger.Info("Using self-signed certificate")
 		cert, key, err := generateSelfSignedCert(hostUrl.Hostname())
 		if err != nil {
-			logger.Errorf("Failed to generate self-signed certificate: %v", err)
+			logger.Error("Failed to generate self-signed certificate", zap.Error(err))
 			return fmt.Errorf("failed to generate self-signed certificate: %v", err)
 		}
 
 		certDir := getEnvString("audius_core_root_dir", "/audius-core") + "/echo/certs"
-		logger.Infof("Creating certificate directory: %s", certDir)
+		logger.Info("Creating certificate directory", zap.String("dir", certDir))
 		if err := os.MkdirAll(certDir, 0755); err != nil {
-			logger.Errorf("Failed to create certificate directory: %v", err)
+			logger.Error("Failed to create certificate directory", zap.Error(err))
 			return fmt.Errorf("failed to create certificate directory: %v", err)
 		}
 
 		certFile := certDir + "/cert.pem"
 		keyFile := certDir + "/key.pem"
 
-		logger.Infof("Writing certificate to: %s", certFile)
+		logger.Info("Writing certificate to", zap.String("path", certFile))
 		if err := os.WriteFile(certFile, cert, 0644); err != nil {
-			logger.Errorf("Failed to write cert file: %v", err)
+			logger.Error("Failed to write cert file", zap.Error(err))
 			return fmt.Errorf("failed to write cert file: %v", err)
 		}
 
-		logger.Infof("Writing private key to: %s", keyFile)
+		logger.Info("Writing private key to", zap.String("path", keyFile))
 		if err := os.WriteFile(keyFile, key, 0600); err != nil {
-			logger.Errorf("Failed to write key file: %v", err)
+			logger.Error("Failed to write key file", zap.Error(err))
 			return fmt.Errorf("failed to write key file: %v", err)
 		}
 
-		logger.Infof("Starting HTTPS server on port %s", httpsPort)
-
 		tlsCert, err := tls.X509KeyPair(cert, key)
 		if err != nil {
-			logger.Errorf("Failed to load X509 key pair: %v", err)
+			logger.Error("Failed to load X509 key pair", zap.Error(err))
 			return fmt.Errorf("failed to load X509 key pair: %v", err)
 		}
 		go func() {
@@ -719,11 +705,11 @@ func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, lo
 			http2.ConfigureServer(server, h2Server)
 
 			if err := server.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
-				logger.Errorf("Failed to start HTTPS server: %v", err)
+				logger.Error("Failed to start HTTPS server", zap.Error(err))
 			}
 		}()
 
-		logger.Infof("Starting HTTP server on port %s", httpPort)
+		logger.Info("Starting HTTPS server", zap.String("port", httpsPort))
 		return e.Start(":" + httpPort)
 	}
 

@@ -9,6 +9,8 @@ import (
 	"connectrpc.com/connect"
 	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -56,13 +58,27 @@ type PlayEvent struct {
 	RequestSignature string
 }
 
+// Marshal a single PlayEvent
+func (e PlayEvent) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	enc.AddInt("row_id", e.RowID)
+	enc.AddString("user_id", e.UserID)
+	enc.AddString("track_id", e.TrackID)
+	enc.AddTime("play_time", e.PlayTime)
+	enc.AddString("signature", e.Signature)
+	enc.AddString("city", e.City)
+	enc.AddString("region", e.Region)
+	enc.AddString("country", e.Country)
+	enc.AddString("request_signature", e.RequestSignature)
+	return nil
+}
+
 func (ss *MediorumServer) startPlayEventQueue(ctx context.Context) error {
 	ticker := time.NewTicker(playQueueInterval)
 	for {
 		select {
 		case <-ticker.C:
 			if err := ss.processPlayRecordBatch(ctx); err != nil {
-				ss.logger.Error("error recording play batch", "error", err)
+				ss.logger.Error("error recording play batch", zap.Error(err))
 			}
 		case <-ctx.Done():
 			return ctx.Err()
@@ -76,7 +92,16 @@ func (ss *MediorumServer) processPlayRecordBatch(ctx context.Context) error {
 	defer cancel()
 
 	plays := ss.playEventQueue.popPlayEventBatch()
-	ss.logger.Info("popped plays off event queue: %v", plays)
+	ss.logger.Info(
+		"popped plays off event queue",
+		zap.Array("plays", zapcore.ArrayMarshalerFunc(func(enc zapcore.ArrayEncoder) error {
+			for _, p := range plays {
+				enc.AppendObject(p)
+			}
+			return nil
+		})),
+	)
+
 	if len(plays) == 0 {
 		return nil
 	}
@@ -108,7 +133,7 @@ func (ss *MediorumServer) processPlayRecordBatch(ctx context.Context) error {
 	// sign plays event payload with mediorum priv key
 	signedPlaysEvent, err := signature.SignCoreBytes(playsTx, ss.Config.privateKey)
 	if err != nil {
-		ss.logger.Error("core error signing plays proto event", "err", err)
+		ss.logger.Error("core error signing plays proto event", zap.Error(err))
 		return err
 	}
 
@@ -125,7 +150,7 @@ func (ss *MediorumServer) processPlayRecordBatch(ctx context.Context) error {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				ss.logger.Error("panic recovered in SendTransaction", "recover", r)
+				ss.logger.Error("panic recovered in SendTransaction", zap.Any("recover", r))
 				err = fmt.Errorf("panic in SendTransaction: %v", r)
 			}
 		}()
@@ -134,15 +159,15 @@ func (ss *MediorumServer) processPlayRecordBatch(ctx context.Context) error {
 		}))
 
 		if err != nil {
-			ss.logger.Error("core error submitting plays event", "err", err)
+			ss.logger.Error("core error submitting plays event", zap.Error(err))
 		}
 	}()
 
 	if err != nil {
-		ss.logger.Error("core error submitting plays event", "err", err)
+		ss.logger.Error("core error submitting plays event", zap.Error(err))
 		return err
 	}
 
-	ss.logger.Info("core %d plays recorded", "tx", len(corePlays), res.Msg.Transaction.Hash)
+	ss.logger.Info("core plays recorded", zap.Int("plays", len(corePlays)), zap.String("tx", res.Msg.Transaction.Hash))
 	return nil
 }

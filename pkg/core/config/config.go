@@ -160,7 +160,7 @@ type StateSyncConfig struct {
 	ChunkFetchers int32
 }
 
-func ReadConfig(logger *common.Logger) (*Config, error) {
+func ReadConfig() (*Config, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Failed to get user home directory: %v", err)
@@ -190,7 +190,7 @@ func ReadConfig(logger *common.Logger) (*Config, error) {
 	cfg.AttDeregistrationMin = 5
 	cfg.AttDeregistrationRSize = 10
 
-	cfg.LogLevel = GetEnvWithDefault("AUDIUSD_LOG_LEVEL", "info")
+	cfg.LogLevel = GetLogLevel()
 	cfg.Environment = GetRuntimeEnvironment()
 
 	ssRpcServers := ""
@@ -358,6 +358,10 @@ func GetRuntimeEnvironment() string {
 		env = os.Getenv("MEDIORUM_ENV")
 	}
 	return env
+}
+
+func GetLogLevel() string {
+	return GetEnvWithDefault("AUDIUSD_LOG_LEVEL", "info")
 }
 
 func DefaultEthRPC() string {

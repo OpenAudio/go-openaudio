@@ -17,11 +17,11 @@ import (
 
 	"connectrpc.com/connect"
 	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/sdk"
 	v1 "github.com/cometbft/cometbft/api/cometbft/abci/v1"
 	"github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/cometbft/cometbft/types"
+	"go.uber.org/zap"
 )
 
 var (
@@ -81,7 +81,7 @@ func getPgDumpPath(baseDir string) string {
 
 func (s *Server) startStateSync(ctx context.Context) error {
 	s.StartProcess(ProcessStateStateSync)
-	
+
 	select {
 	case <-ctx.Done():
 		s.CompleteProcess(ProcessStateStateSync)
@@ -89,7 +89,7 @@ func (s *Server) startStateSync(ctx context.Context) error {
 	case <-s.awaitRpcReady:
 	}
 
-	logger := s.logger.Child("state_sync")
+	logger := s.logger.With(zap.String("service", "state_sync"))
 
 	if !s.config.StateSync.ServeSnapshots {
 		logger.Info("State sync is not enabled, skipping snapshot creation")
@@ -132,23 +132,23 @@ func (s *Server) startStateSync(ctx context.Context) error {
 
 			s.RunningProcessWithMetadata(ProcessStateStateSync, fmt.Sprintf("Creating snapshot at height %d", blockHeight))
 			if err := s.createSnapshot(logger, blockHeight); err != nil {
-				logger.Errorf("error creating snapshot: %v", err)
+				logger.Error("error creating snapshot", zap.Error(err))
 			}
 
 			s.RunningProcessWithMetadata(ProcessStateStateSync, "Pruning old snapshots")
 			if err := s.pruneSnapshots(logger); err != nil {
-				logger.Errorf("error pruning snapshots: %v", err)
+				logger.Error("error pruning snapshots", zap.Error(err))
 			}
 			s.SleepingProcessWithMetadata(ProcessStateStateSync, "Waiting for next block")
 		case <-subscription.Canceled():
-			s.logger.Errorf("Subscription cancelled: %v", subscription.Err())
+			s.logger.Error("Subscription cancelled", zap.Error(subscription.Err()))
 			s.ErrorProcess(ProcessStateStateSync, fmt.Sprintf("subscription cancelled: %v", subscription.Err()))
 			return subscription.Err()
 		}
 	}
 }
 
-func (s *Server) createSnapshot(logger *common.Logger, height int64) error {
+func (s *Server) createSnapshot(logger *zap.Logger, height int64) error {
 	// create snapshot directory if it doesn't exist
 	snapshotDir := getSnapshotDir(s.config.RootDir, s.config.GenesisFile.ChainID)
 	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
@@ -173,7 +173,7 @@ func (s *Server) createSnapshot(logger *common.Logger, height int64) error {
 		return nil
 	}
 
-	logger.Info("Creating snapshot", "height", height)
+	logger.Info("Creating snapshot", zap.Int64("height", height))
 
 	blockHeight := height
 	blockHash := block.BlockID.Hash
@@ -183,26 +183,26 @@ func (s *Server) createSnapshot(logger *common.Logger, height int64) error {
 		return fmt.Errorf("error creating latest snapshot directory: %v", err)
 	}
 
-	logger.Info("Creating pg_dump", "height", blockHeight)
+	logger.Info("Creating pg_dump", zap.Int64("height", blockHeight))
 
 	if err := s.createPgDump(logger, latestSnapshotDir); err != nil {
 		return fmt.Errorf("error creating pg_dump: %v", err)
 	}
 
-	logger.Info("Chunking pg_dump", "height", blockHeight)
+	logger.Info("Chunking pg_dump", zap.Int64("height", blockHeight))
 
 	chunkCount, err := s.chunkPgDump(logger, latestSnapshotDir)
 	if err != nil {
 		return fmt.Errorf("error chunking pg_dump: %v", err)
 	}
 
-	logger.Info("Deleting pg_dump", "height", blockHeight)
+	logger.Info("Deleting pg_dump", zap.Int64("height", blockHeight))
 
 	if err := s.deletePgDump(logger, latestSnapshotDir); err != nil {
 		return fmt.Errorf("error deleting pg_dump: %v", err)
 	}
 
-	logger.Info("Writing snapshot metadata", "height", blockHeight)
+	logger.Info("Writing snapshot metadata", zap.Int64("height", blockHeight))
 
 	b, err := json.Marshal(Metadata{
 		Sender:  s.config.ProposerAddress,
@@ -230,13 +230,13 @@ func (s *Server) createSnapshot(logger *common.Logger, height int64) error {
 		return fmt.Errorf("error writing snapshot metadata: %v", err)
 	}
 
-	logger.Info("Snapshot created", "height", blockHeight)
+	logger.Info("Snapshot created", zap.Int64("height", blockHeight))
 
 	return nil
 }
 
 // createPgDump creates a pg_dump of the database and writes it to the latest snapshot directory
-func (s *Server) createPgDump(logger *common.Logger, latestSnapshotDir string) error {
+func (s *Server) createPgDump(logger *zap.Logger, latestSnapshotDir string) error {
 	pgString := s.config.PSQLConn
 	dumpPath := getPgDumpPath(latestSnapshotDir)
 
@@ -270,16 +270,16 @@ func (s *Server) createPgDump(logger *common.Logger, latestSnapshotDir string) e
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logger.Error("pg_dump failed", "error", err, "output", string(output))
+		logger.Error("pg_dump failed", zap.Error(err), zap.String("output", string(output)))
 		return fmt.Errorf("pg_dump failed: %w", err)
 	}
 
-	logger.Info("pg_dump succeeded", "output", string(output))
+	logger.Info("pg_dump succeeded", zap.String("output", string(output)))
 	return nil
 }
 
 // chunkPgDump splits the pg_dump into 16MB gzip-compressed chunks and returns the number of chunks created
-func (s *Server) chunkPgDump(logger *common.Logger, latestSnapshotDir string) (int, error) {
+func (s *Server) chunkPgDump(logger *zap.Logger, latestSnapshotDir string) (int, error) {
 	const chunkSize = 12 * 1024 * 1024 // 12MB
 	dumpPath := getPgDumpPath(latestSnapshotDir)
 
@@ -317,7 +317,7 @@ func (s *Server) chunkPgDump(logger *common.Logger, latestSnapshotDir string) (i
 		gw.Close()
 		chunkFile.Close()
 
-		logger.Info("Wrote chunk", "path", chunkPath, "size", n)
+		logger.Info("Wrote chunk", zap.String("path", chunkPath), zap.Int("size", n))
 		chunkIndex++
 
 		if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
@@ -328,7 +328,7 @@ func (s *Server) chunkPgDump(logger *common.Logger, latestSnapshotDir string) (i
 	return chunkIndex, nil
 }
 
-func (s *Server) deletePgDump(logger *common.Logger, latestSnapshotDir string) error {
+func (s *Server) deletePgDump(logger *zap.Logger, latestSnapshotDir string) error {
 	dumpPath := getPgDumpPath(latestSnapshotDir)
 	if err := os.Remove(dumpPath); err != nil {
 		return fmt.Errorf("error deleting pg_dump: %w", err)
@@ -339,7 +339,7 @@ func (s *Server) deletePgDump(logger *common.Logger, latestSnapshotDir string) e
 
 // Prunes snapshots by deleting the oldest ones while retaining the most recent ones
 // based on the configured retention count
-func (s *Server) pruneSnapshots(logger *common.Logger) error {
+func (s *Server) pruneSnapshots(logger *zap.Logger) error {
 	snapshotDir := getSnapshotDir(s.config.RootDir, s.config.GenesisFile.ChainID)
 	keep := s.config.StateSync.Keep
 
@@ -358,7 +358,7 @@ func (s *Server) pruneSnapshots(logger *common.Logger) error {
 		}
 
 		os.RemoveAll(filepath.Join(snapshotDir, files[i].Name()))
-		logger.Info("Deleted snapshot", "path", filepath.Join(snapshotDir, files[i].Name()))
+		logger.Info("Deleted snapshot", zap.String("path", filepath.Join(snapshotDir, files[i].Name())))
 	}
 
 	return nil
@@ -607,9 +607,9 @@ func (s *Server) RestoreDatabase(height int64) error {
 	err := cmd.Run()
 	if err != nil {
 		s.logger.Error("pg_restore failed",
-			"err", err,
-			"stderr", stderr.String(),
-			"stdout", stdout.String(),
+			zap.Error(err),
+			zap.String("stderr", stderr.String()),
+			zap.String("stdout", stdout.String()),
 		)
 		return fmt.Errorf("error restoring database: %w", err)
 	}
@@ -664,7 +664,7 @@ func (s *Server) stateSyncLatestBlock(rpcServers []string) (trustHeight int64, t
 		auds := sdk.NewAudiusdSDK(audsRpc)
 		snapshots, err := auds.Core.GetStoredSnapshots(context.Background(), connect.NewRequest(&corev1.GetStoredSnapshotsRequest{}))
 		if err != nil {
-			s.logger.Error("error getting stored snapshots", "rpcServer", rpcServer, "err", err)
+			s.logger.Error("error getting stored snapshots", zap.String("rpcServer", rpcServer), zap.Error(err))
 			continue
 		}
 
@@ -675,13 +675,13 @@ func (s *Server) stateSyncLatestBlock(rpcServers []string) (trustHeight int64, t
 
 		client, err := http.New(rpcServer)
 		if err != nil {
-			s.logger.Error("error creating rpc client", "rpcServer", rpcServer, "err", err)
+			s.logger.Error("error creating rpc client", zap.String("rpcServer", rpcServer), zap.Error(err))
 			continue
 		}
 
 		block, err := client.Block(context.Background(), &safeHeight)
 		if err != nil {
-			s.logger.Error("error getting latest block", "rpcServer", rpcServer, "err", err)
+			s.logger.Error("error getting latest block", zap.String("rpcServer", rpcServer), zap.Error(err))
 			continue
 		}
 

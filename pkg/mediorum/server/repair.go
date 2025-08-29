@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
+	"go.uber.org/zap"
 
 	"github.com/georgysavva/scany/v2/pgxscan"
 	"github.com/labstack/echo/v4"
@@ -34,7 +35,7 @@ type RepairTracker struct {
 }
 
 func (ss *MediorumServer) startRepairer(ctx context.Context) error {
-	logger := ss.logger.With("task", "repair")
+	logger := ss.logger.With(zap.String("task", "repair"))
 
 	// wait a minute on startup to determine healthy peers
 	ticker := time.NewTicker(1 * time.Minute)
@@ -68,23 +69,23 @@ func (ss *MediorumServer) startRepairer(ctx context.Context) error {
 				}
 			} else {
 				if !errors.Is(err, gorm.ErrRecordNotFound) {
-					logger.Error("failed to get last repair.go run", "err", err)
+					logger.Error("failed to get last repair.go run", zap.Error(err))
 				}
 			}
-			logger := logger.With("run", tracker.CursorI, "cleanupMode", tracker.CleanupMode)
+			logger := logger.With(zap.Int("run", tracker.CursorI), zap.Bool("cleanupMode", tracker.CleanupMode))
 
 			saveTracker := func() {
 				tracker.UpdatedAt = time.Now()
 				if err := ss.crud.DB.Save(tracker).Error; err != nil {
-					logger.Error("failed to save repair tracker", "err", err)
+					logger.Error("failed to save repair tracker", zap.Error(err))
 				}
 			}
 
 			// check that network is valid (should have more peers than replication factor)
 			if healthyPeers := ss.findHealthyPeers(time.Hour); len(healthyPeers) < ss.Config.ReplicationFactor {
 				logger.Warn("not enough healthy peers to run repair",
-					"R", ss.Config.ReplicationFactor,
-					"peers", len(healthyPeers))
+					zap.Int("R", ss.Config.ReplicationFactor),
+					zap.Int("peers", len(healthyPeers)))
 				tracker.AbortedReason = "NOT_ENOUGH_PEERS"
 				tracker.FinishedAt = time.Now()
 				saveTracker()
@@ -108,10 +109,10 @@ func (ss *MediorumServer) startRepairer(ctx context.Context) error {
 			err := ss.runRepair(ctx, &tracker)
 			tracker.FinishedAt = time.Now()
 			if err != nil {
-				logger.Error("repair failed", "err", err, "took", tracker.Duration)
+				logger.Error("repair failed", zap.Error(err), zap.Duration("took", tracker.Duration))
 				tracker.AbortedReason = err.Error()
 			} else {
-				logger.Info("repair OK", "took", tracker.Duration)
+				logger.Info("repair OK", zap.Duration("took", tracker.Duration))
 				ss.lastSuccessfulRepair = tracker
 				if tracker.CleanupMode {
 					ss.lastSuccessfulCleanup = tracker
@@ -128,7 +129,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 	saveTracker := func() {
 		tracker.UpdatedAt = time.Now()
 		if err := ss.crud.DB.Save(tracker).Error; err != nil {
-			ss.logger.Error("failed to save tracker", "err", err)
+			ss.logger.Error("failed to save tracker", zap.Error(err))
 		}
 	}
 
@@ -233,7 +234,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 }
 
 func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHosts []string, tracker *RepairTracker) error {
-	logger := ss.logger.With("task", "repair", "cid", cid, "cleanup", tracker.CleanupMode)
+	logger := ss.logger.With(zap.String("task", "repair"), zap.String("cid", cid), zap.Bool("cleanup", tracker.CleanupMode))
 
 	preferredHosts, isMine := ss.rendezvousAllHosts(cid)
 
@@ -272,7 +273,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 			alreadyHave = false
 		} else {
 			tracker.Counters["read_attrs_fail"]++
-			logger.Error("exist check failed", "err", err)
+			logger.Error("exist check failed", zap.Error(err))
 			return err
 		}
 	}
@@ -285,22 +286,22 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 			errClose := r.Close()
 			if err != nil {
 				tracker.Counters["delete_invalid_needed"]++
-				logger.Error("deleting invalid CID", "err", errVal)
+				logger.Error("deleting invalid CID", zap.Error(errVal))
 				if errDel := ss.bucket.Delete(ctx, key); errDel == nil {
 					tracker.Counters["delete_invalid_success"]++
 				} else {
 					tracker.Counters["delete_invalid_fail"]++
-					logger.Error("failed to delete invalid CID", "err", errDel)
+					logger.Error("failed to delete invalid CID", zap.Error(errDel))
 				}
 				return err
 			}
 
 			if errClose != nil {
-				logger.Error("failed to close blob reader", "err", errClose)
+				logger.Error("failed to close blob reader", zap.Error(errClose))
 			}
 		} else {
 			tracker.Counters["read_blob_fail"]++
-			logger.Error("failed to read blob", "err", errRead)
+			logger.Error("failed to read blob", zap.Error(errRead))
 			return errRead
 		}
 	}
@@ -310,7 +311,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 		if tracker.CleanupMode && alreadyHave {
 			err := ss.dropFromMyBucket(cid)
 			if err != nil {
-				logger.Error("delete_resized_image_failed", "err", err)
+				logger.Error("delete_resized_image_failed", zap.Error(err))
 				tracker.Counters["delete_resized_image_failed"]++
 			} else {
 				tracker.Counters["delete_resized_image_ok"]++
@@ -336,10 +337,10 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 			err := ss.pullFileFromHost(ctx, host, cid)
 			if err != nil {
 				tracker.Counters["pull_mine_fail"]++
-				logger.Error("pull failed (blob I should have)", "err", err, "host", host)
+				logger.Error("pull failed (blob I should have)", zap.Error(err), zap.String("host", host))
 			} else {
 				tracker.Counters["pull_mine_success"]++
-				logger.Debug("pull OK (blob I should have)", "host", host)
+				logger.Debug("pull OK (blob I should have)", zap.String("host", host))
 				success = true
 
 				pulledAttrs, errAttrs := ss.bucket.Attributes(ctx, key)
@@ -350,7 +351,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 			}
 		}
 		if !success {
-			logger.Warn("failed to pull from any host", "hosts", preferredHosts)
+			logger.Warn("failed to pull from any host", zap.Strings("hosts", preferredHosts))
 			return errors.New("failed to pull from any host")
 		}
 	}
@@ -380,7 +381,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 		err = ss.dropFromMyBucket(cid)
 		if err != nil {
 			tracker.Counters["delete_over_replicated_fail"]++
-			logger.Error("delete failed", "err", err)
+			logger.Error("delete failed", zap.Error(err))
 			return err
 		} else {
 			tracker.Counters["delete_over_replicated_success"]++

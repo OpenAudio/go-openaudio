@@ -18,6 +18,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/rewards"
 	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -72,12 +73,12 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 	}
 
 	if req.Msg.Transactionv2 != nil {
-		c.core.logger.Debugf("received forwarded v2 tx: %v", req.Msg.Transactionv2)
+		c.core.logger.Debug("received forwarded v2 tx", zap.Any("tx", req.Msg.Transactionv2))
 		if c.core.config.Environment != "dev" {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("received forwarded v2 tx outside of dev"))
 		}
 	} else {
-		c.core.logger.Debugf("received forwarded tx: %v", req.Msg.Transaction)
+		c.core.logger.Debug("received forwarded tx", zap.Any("tx", req.Msg.Transaction))
 	}
 
 	// TODO: intake block deadline from request
@@ -128,7 +129,7 @@ func (c *CoreService) GetBlock(ctx context.Context, req *connect.Request[v1.GetB
 			// fallback to rpc for now, remove after mainnet-alpha
 			return c.getBlockRpcFallback(ctx, req.Msg.Height)
 		}
-		c.core.logger.Errorf("error getting block: %v", err)
+		c.core.logger.Error("error getting block", zap.Error(err))
 		return nil, err
 	}
 
@@ -183,7 +184,7 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 	}
 
 	currentHeight := c.core.cache.currentHeight.Load()
-	
+
 	// Get blocks with transactions in one efficient query
 	rows, err := c.core.db.GetBlocksWithTransactions(ctx, heights)
 	if err != nil {
@@ -192,7 +193,7 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 
 	// Group results by block height
 	blockMap := make(map[int64]*v1.Block)
-	
+
 	for _, row := range rows {
 		// Initialize block if not already created
 		if _, exists := blockMap[row.Height]; !exists {
@@ -213,7 +214,7 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 			if err != nil {
 				return nil, fmt.Errorf("error unmarshaling transaction: %v", err)
 			}
-			
+
 			txResponse := &v1.Transaction{
 				Hash:        row.TxHash.String,
 				BlockHash:   row.BlockHash,
@@ -222,7 +223,7 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 				Timestamp:   timestamppb.New(row.BlockCreatedAt.Time),
 				Transaction: &transaction,
 			}
-			
+
 			blockMap[row.Height].Transactions = append(blockMap[row.Height].Transactions, txResponse)
 		}
 	}
@@ -264,14 +265,10 @@ func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *con
 	)
 	if err != nil {
 		c.core.logger.Error("Could not attest to node eth deregistration: error checking eth registration status",
-			"cometAddress",
-			dereg.CometAddress,
-			"ethAddress",
-			node.EthAddress,
-			"endpoint",
-			node.Endpoint,
-			"error",
-			err,
+			zap.String("cometAddress", dereg.CometAddress),
+			zap.String("ethAddress", node.EthAddress),
+			zap.String("endpoint", node.Endpoint),
+			zap.Error(err),
 		)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not attest to node deregistration"))
 	}
@@ -279,40 +276,33 @@ func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *con
 	shouldPurge, err := c.core.ShouldPurgeValidatorForUnderperformance(ctx, dereg.CometAddress)
 	if err != nil {
 		c.core.logger.Error("Could not attest to node eth deregistration: could not check uptime SLA history",
-			"cometAddress",
-			dereg.CometAddress,
-			"ethAddress",
-			node.EthAddress,
-			"endpoint",
-			node.Endpoint,
-			"error",
-			err,
+			zap.String("cometAddress", dereg.CometAddress),
+			zap.String("ethAddress", node.EthAddress),
+			zap.String("endpoint", node.Endpoint),
+			zap.Error(err),
 		)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not attest to node deregistration"))
 	}
 
 	if registered && !shouldPurge {
 		c.core.logger.Error("Could not attest to node eth deregistration: node is still registered and not underperforming",
-			"cometAddress",
-			dereg.CometAddress,
-			"ethAddress",
-			node.EthAddress,
-			"endpoint",
-			node.Endpoint,
+			zap.String("cometAddress", dereg.CometAddress),
+			zap.String("ethAddress", node.EthAddress),
+			zap.String("endpoint", node.Endpoint),
 		)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not attest to node deregistration"))
 	}
 
-	c.core.logger.Infof("Attesting to deregister %s because validator is down", dereg.CometAddress)
+	c.core.logger.Info("Attesting to deregister a validator because it is down", zap.String("validatorAddress", dereg.CometAddress))
 
 	deregBytes, err := proto.Marshal(dereg)
 	if err != nil {
-		c.core.logger.Error("could not marshal deregistration", "error", err)
+		c.core.logger.Error("could not marshal deregistration", zap.Error(err))
 		return nil, err
 	}
 	sig, err := common.EthSign(c.core.config.EthereumKey, deregBytes)
 	if err != nil {
-		c.core.logger.Error("could not sign deregistration", "error", err)
+		c.core.logger.Error("could not sign deregistration", zap.Error(err))
 		return nil, err
 	}
 
@@ -346,14 +336,10 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 	); !registered || err != nil {
 		c.core.logger.Error(
 			"Could not attest to node registration, failed to find endpoint on ethereum",
-			"delegate",
-			reg.DelegateWallet,
-			"endpoint",
-			reg.Endpoint,
-			"eth block",
-			reg.EthBlock,
-			"error",
-			err,
+			zap.String("delegate", reg.DelegateWallet),
+			zap.String("endpoint", reg.Endpoint),
+			zap.Int64("eth block", reg.EthBlock),
+			zap.Error(err),
 		)
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("node is not registered on ethereum"))
 	}
@@ -361,26 +347,22 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 	if shouldPurge, err := c.core.ShouldPurgeValidatorForUnderperformance(ctx, reg.CometAddress); shouldPurge || err != nil {
 		c.core.logger.Error(
 			"Could not attest to node eth registration, validator should stay purged",
-			"delegate",
-			reg.DelegateWallet,
-			"endpoint",
-			reg.Endpoint,
-			"eth block",
-			reg.EthBlock,
-			"error",
-			err,
+			zap.String("delegate", reg.DelegateWallet),
+			zap.String("endpoint", reg.Endpoint),
+			zap.Int64("eth block", reg.EthBlock),
+			zap.Error(err),
 		)
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("node is temporarily blacklisted"))
 	}
 
 	regBytes, err := proto.Marshal(reg)
 	if err != nil {
-		c.core.logger.Error("could not marshal registration", "error", err)
+		c.core.logger.Error("could not marshal registration", zap.Error(err))
 		return nil, err
 	}
 	sig, err := common.EthSign(c.core.config.EthereumKey, regBytes)
 	if err != nil {
-		c.core.logger.Error("could not sign registration", "error", err)
+		c.core.logger.Error("could not sign registration", zap.Error(err))
 		return nil, err
 	}
 
@@ -394,7 +376,7 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 func (c *CoreService) GetTransaction(ctx context.Context, req *connect.Request[v1.GetTransactionRequest]) (*connect.Response[v1.GetTransactionResponse], error) {
 	txhash := req.Msg.TxHash
 
-	c.core.logger.Debug("query", "txhash", txhash)
+	c.core.logger.Debug("query", zap.String("txhash", txhash))
 
 	tx, err := c.core.db.GetTx(ctx, txhash)
 	if err != nil {
@@ -503,7 +485,7 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 	if mempoolTx != nil {
 		err = c.core.addMempoolTransaction(txhash, mempoolTx, true)
 		if err != nil {
-			c.core.logger.Errorf("tx could not be included in mempool %s: %v", txhash, err)
+			c.core.logger.Error("tx could not be included in mempool", zap.String("tx", txhash), zap.Error(err))
 			return nil, fmt.Errorf("could not add tx to mempool %v", err)
 		}
 	}
@@ -543,13 +525,13 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 			// get ERNs, MEADs, and PIES by tx hash and use index to map to the correct message
 			ernReceipts, err := c.core.db.GetERNReceipts(ctx, txhash)
 			if err != nil {
-				c.core.logger.Errorf("error getting ERN receipts: %v", err)
+				c.core.logger.Error("error getting ERN receipts", zap.Error(err))
 			} else {
 				for _, ernReceipt := range ernReceipts {
 					ernAck := &ddexv1beta1.NewReleaseMessageAck{}
 					err = proto.Unmarshal(ernReceipt.RawAcknowledgment, ernAck)
 					if err != nil {
-						c.core.logger.Errorf("error unmarshalling ERN receipt: %v", err)
+						c.core.logger.Error("error unmarshalling ERN receipt", zap.Error(err))
 					}
 					receipt.MessageReceipts[ernReceipt.Index] = &v1beta1.MessageReceipt{
 						MessageIndex: int32(ernReceipt.Index),
@@ -562,13 +544,13 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 
 			meadReceipts, err := c.core.db.GetMEADReceipts(ctx, txhash)
 			if err != nil {
-				c.core.logger.Errorf("error getting MEAD receipts: %v", err)
+				c.core.logger.Error("error getting MEAD receipts", zap.Error(err))
 			} else {
 				for _, meadReceipt := range meadReceipts {
 					meadAck := &ddexv1beta1.MeadMessageAck{}
 					err = proto.Unmarshal(meadReceipt.RawAcknowledgment, meadAck)
 					if err != nil {
-						c.core.logger.Errorf("error unmarshalling MEAD receipt: %v", err)
+						c.core.logger.Error("error unmarshalling MEAD receipt", zap.Error(err))
 					}
 					receipt.MessageReceipts[meadReceipt.Index] = &v1beta1.MessageReceipt{
 						MessageIndex: int32(meadReceipt.Index),
@@ -581,13 +563,13 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 
 			pieReceipts, err := c.core.db.GetPIEReceipts(ctx, txhash)
 			if err != nil {
-				c.core.logger.Errorf("error getting PIE receipts: %v", err)
+				c.core.logger.Error("error getting PIE receipts", zap.Error(err))
 			} else {
 				for _, pieReceipt := range pieReceipts {
 					pieAck := &ddexv1beta1.PieMessageAck{}
 					err = proto.Unmarshal(pieReceipt.RawAcknowledgment, pieAck)
 					if err != nil {
-						c.core.logger.Errorf("error unmarshalling PIE receipt: %v", err)
+						c.core.logger.Error("error unmarshalling PIE receipt", zap.Error(err))
 					}
 					receipt.MessageReceipts[pieReceipt.Index] = &v1beta1.MessageReceipt{
 						MessageIndex: int32(pieReceipt.Index),
@@ -612,7 +594,7 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 			TransactionReceipt: receipt,
 		}), nil
 	case <-time.After(30 * time.Second):
-		c.core.logger.Errorf("tx timeout waiting to be included %s", txhash)
+		c.core.logger.Error("tx timeout waiting to be included", zap.String("tx", txhash))
 		return nil, errors.New("tx waiting timeout")
 	}
 }
@@ -632,7 +614,7 @@ func (c *CoreService) getBlockRpcFallback(ctx context.Context, height int64) (*c
 				},
 			}), nil
 		}
-		c.core.logger.Errorf("error getting block: %v", err)
+		c.core.logger.Error("error getting block", zap.Error(err))
 		return nil, err
 	}
 
@@ -673,7 +655,7 @@ func (c *CoreService) getBlockRpcFallback(ctx context.Context, height int64) (*c
 func (c *CoreService) GetStoredSnapshots(context.Context, *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error) {
 	snapshots, err := c.core.getStoredSnapshots()
 	if err != nil {
-		c.core.logger.Errorf("error getting stored snapshots: %v", err)
+		c.core.logger.Error("error getting stored snapshots", zap.Error(err))
 		return connect.NewResponse(&v1.GetStoredSnapshotsResponse{
 			Snapshots: []*v1.SnapshotMetadata{},
 		}), nil

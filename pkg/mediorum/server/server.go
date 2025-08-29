@@ -21,7 +21,6 @@ import (
 	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	audiusHttputil "github.com/AudiusProject/audiusd/pkg/httputil"
 	"github.com/AudiusProject/audiusd/pkg/lifecycle"
-	aLogger "github.com/AudiusProject/audiusd/pkg/logger"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/crudr"
 	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
@@ -38,7 +37,6 @@ import (
 	"go.uber.org/zap"
 	"gocloud.dev/blob"
 	"golang.org/x/exp/slices"
-	"golang.org/x/exp/slog"
 	"golang.org/x/sync/errgroup"
 
 	_ "gocloud.dev/blob/fileblob"
@@ -78,8 +76,7 @@ type MediorumServer struct {
 	lc               *lifecycle.Lifecycle
 	echo             *echo.Echo
 	bucket           *blob.Bucket
-	logger           *slog.Logger
-	z                *zap.Logger
+	logger           *zap.Logger
 	crud             *crudr.Crudr
 	pgPool           *pgxpool.Pool
 	quit             chan error
@@ -144,7 +141,7 @@ var (
 
 const PercentSeededThreshold = 50
 
-func New(lc *lifecycle.Lifecycle, config MediorumConfig, provider registrar.PeerProvider, posChannel chan pos.PoSRequest, core *coreServer.CoreService) (*MediorumServer, error) {
+func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, provider registrar.PeerProvider, posChannel chan pos.PoSRequest, core *coreServer.CoreService) (*MediorumServer, error) {
 	if env := os.Getenv("MEDIORUM_ENV"); env != "" {
 		config.Env = env
 	}
@@ -189,14 +186,7 @@ func New(lc *lifecycle.Lifecycle, config MediorumConfig, provider registrar.Peer
 		}
 	}
 
-	logger := slog.With("self", config.Self.Host)
-	baseLogger, err := aLogger.CreateLogger(config.Env, config.LogLevel)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create zap logger: %v", err)
-	}
-
-	z := baseLogger.With(zap.String("service", "storage"), zap.String("node", config.Self.Host))
-	z.Info("storage server starting")
+	logger.Info("storage server starting")
 
 	if config.discoveryListensEnabled() {
 		logger.Info("discovery listens enabled")
@@ -204,13 +194,13 @@ func New(lc *lifecycle.Lifecycle, config MediorumConfig, provider registrar.Peer
 
 	// ensure dir
 	if err := os.MkdirAll(config.Dir, os.ModePerm); err != nil {
-		logger.Error("failed to create local persistent storage dir", "err", err)
+		logger.Error("failed to create local persistent storage dir", zap.Error(err))
 	}
 
 	// bucket
 	bucket, err := persistence.Open(config.BlobStoreDSN)
 	if err != nil {
-		logger.Error("failed to open persistent storage bucket", "err", err)
+		logger.Error("failed to open persistent storage bucket", zap.Error(err))
 		return nil, err
 	}
 
@@ -222,14 +212,14 @@ func New(lc *lifecycle.Lifecycle, config MediorumConfig, provider registrar.Peer
 		}
 		bucketToMoveFrom, err := persistence.Open(config.MoveFromBlobStoreDSN)
 		if err != nil {
-			logger.Error("Failed to open bucket to move from. Ensure AUDIUS_STORAGE_DRIVER_URL and AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM are set (the latter can be empty if not moving data)", "err", err)
+			logger.Error("Failed to open bucket to move from. Ensure AUDIUS_STORAGE_DRIVER_URL and AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM are set (the latter can be empty if not moving data)", zap.Error(err))
 			return nil, err
 		}
 
 		logger.Info(fmt.Sprintf("Moving all files from %s to %s. This may take a few hours...", config.MoveFromBlobStoreDSN, config.BlobStoreDSN))
 		err = persistence.MoveAllFiles(bucketToMoveFrom, bucket)
 		if err != nil {
-			logger.Error("Failed to move files. Ensure AUDIUS_STORAGE_DRIVER_URL and AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM are set (the latter can be empty if not moving data)", "err", err)
+			logger.Error("Failed to move files. Ensure AUDIUS_STORAGE_DRIVER_URL and AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM are set (the latter can be empty if not moving data)", zap.Error(err))
 			return nil, err
 		}
 
@@ -254,11 +244,11 @@ func New(lc *lifecycle.Lifecycle, config MediorumConfig, provider registrar.Peer
 	pgConfig, _ := pgxpool.ParseConfig(config.PostgresDSN)
 	pgPool, err := pgxpool.NewWithConfig(context.Background(), pgConfig)
 	if err != nil {
-		logger.Error("dial postgres failed", "err", err)
+		logger.Error("dial postgres failed", zap.Error(err))
 	}
 
 	// lifecycle
-	mediorumLifecycle := lifecycle.NewFromLifecycle(lc, z, "mediorum")
+	mediorumLifecycle := lifecycle.NewFromLifecycle(lc, "mediorum")
 
 	// crud
 	peerHosts := []string{}
@@ -270,7 +260,7 @@ func New(lc *lifecycle.Lifecycle, config MediorumConfig, provider registrar.Peer
 		}
 	}
 
-	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db, mediorumLifecycle)
+	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db, mediorumLifecycle, logger)
 	dbMigrate(crud, config.Self.Host)
 
 	rendezvousHasher := NewRendezvousHasher(allHosts)
@@ -285,9 +275,9 @@ func New(lc *lifecycle.Lifecycle, config MediorumConfig, provider registrar.Peer
 	if config.TrustedNotifierID > 0 {
 		trustedNotifier, err = ethcontracts.GetNotifierForID(strconv.Itoa(config.TrustedNotifierID), config.Self.Wallet)
 		if err == nil {
-			logger.Info("got trusted notifier from chain", "endpoint", trustedNotifier.Endpoint, "wallet", trustedNotifier.Wallet)
+			logger.Info("got trusted notifier from chain", zap.String("endpoint", trustedNotifier.Endpoint), zap.String("wallet", trustedNotifier.Wallet))
 		} else {
-			logger.Error("failed to get trusted notifier from chain, not polling delist statuses", "err", err)
+			logger.Error("failed to get trusted notifier from chain, not polling delist statuses", zap.Error(err))
 		}
 	} else {
 		logger.Warn("trusted notifier id not set, not polling delist statuses or serving /contact route")
@@ -311,7 +301,6 @@ func New(lc *lifecycle.Lifecycle, config MediorumConfig, provider registrar.Peer
 		pgPool:           pgPool,
 		reqClient:        reqClient,
 		logger:           logger,
-		z:                z,
 		quit:             make(chan error, 1),
 		g:                provider,
 		trustedNotifier:  &trustedNotifier,
@@ -522,7 +511,7 @@ func (ss *MediorumServer) MustStart() error {
 			for {
 				select {
 				case <-ticker.C:
-					ss.z.Sync()
+					ss.logger.Sync()
 				case <-ctx.Done():
 					return ctx.Err()
 				}
@@ -559,7 +548,7 @@ func (ss *MediorumServer) Stop() {
 
 	if db, err := ss.crud.DB.DB(); err == nil {
 		if err := db.Close(); err != nil {
-			ss.logger.Error("db shutdown", "err", err)
+			ss.logger.Error("db shutdown", zap.Error(err))
 		}
 	}
 	ss.logger.Info("bye")
@@ -591,7 +580,7 @@ func (ss *MediorumServer) startEchoServer(ctx context.Context) error {
 	go func() {
 		err := ss.echo.Start(":" + ss.Config.ListenPort)
 		if err != nil && err != http.ErrServerClosed {
-			ss.logger.Error("echo server error", "error", err)
+			ss.logger.Error("echo server error", zap.Error(err))
 			done <- err
 		} else {
 			done <- nil
@@ -606,7 +595,7 @@ func (ss *MediorumServer) startEchoServer(ctx context.Context) error {
 
 		err := ss.echo.Shutdown(shutdownCtx)
 		if err != nil {
-			ss.logger.Error("failed to shutdown echo server", "error", err)
+			ss.logger.Error("failed to shutdown echo server", zap.Error(err))
 			return err
 		}
 		return ctx.Err()
@@ -619,7 +608,7 @@ func (ss *MediorumServer) startPprofServer(ctx context.Context) error {
 	go func() {
 		err := srv.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
-			ss.logger.Error("pprof server error", "error", err)
+			ss.logger.Error("pprof server error", zap.Error(err))
 			done <- err
 		} else {
 			done <- nil
@@ -634,7 +623,7 @@ func (ss *MediorumServer) startPprofServer(ctx context.Context) error {
 			defer cancel()
 
 			if err := srv.Shutdown(shutdownCtx); err != nil {
-				ss.logger.Error("failed to shutdown pprof server", "error", err)
+				ss.logger.Error("failed to shutdown pprof server", zap.Error(err))
 				return err
 			}
 			return ctx.Err()
@@ -664,7 +653,7 @@ func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
 				return err
 			})
 			if err := eg.Wait(); err != nil {
-				ss.logger.Error("failed to fetch registered nodes", "err", err)
+				ss.logger.Error("failed to fetch registered nodes", zap.Error(err))
 				continue
 			}
 
@@ -681,7 +670,7 @@ func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
 			slices.Sort(combined)
 			slices.Sort(configCombined)
 			if !slices.Equal(combined, configCombined) {
-				ss.logger.Info("peers or signers changed on chain. restarting...", "peers", len(peers), "signers", len(signers), "combined", combined, "configCombined", configCombined)
+				ss.logger.Info("peers or signers changed on chain. restarting...", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)), zap.Strings("combined", combined), zap.Strings("configCombined", configCombined))
 				go ss.Stop()
 				return nil
 			}

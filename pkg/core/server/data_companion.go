@@ -9,6 +9,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/cometbft/cometbft/rpc/grpc/client/privileged"
 	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
 )
 
 // calculateLowestRetainHeight returns the next retain height (or 0 for "no change").
@@ -29,7 +30,7 @@ func (s *Server) calculateLowestRetainHeight(ctx context.Context) int64 {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0 // chain is empty, nothing to prune
 		}
-		s.logger.Errorf("could not get latest block, can't prune: %v", err)
+		s.logger.Error("could not get latest block, can't prune", zap.Error(err))
 		return 0
 	}
 	latestHeight := latestBlock.Height
@@ -95,7 +96,7 @@ func (s *Server) calculateLowestRetainHeight(ctx context.Context) int64 {
 
 func (s *Server) startDataCompanion(ctx context.Context) error {
 	s.StartProcess(ProcessStateDataCompanion)
-	
+
 	if s.config.Archive {
 		s.CompleteProcess(ProcessStateDataCompanion)
 		return nil
@@ -125,7 +126,7 @@ func (s *Server) startDataCompanion(ctx context.Context) error {
 			s.RunningProcessWithMetadata(ProcessStateDataCompanion, "Managing block retention")
 			blockRetainHeight, err := conn.GetBlockRetainHeight(ctx)
 			if err != nil {
-				s.logger.Errorf("dc could not get block retain height: %v", err)
+				s.logger.Error("dc could not get block retain height", zap.Error(err))
 				s.SleepingProcessWithMetadata(ProcessStateDataCompanion, "Waiting after error")
 				continue
 			}
@@ -136,11 +137,11 @@ func (s *Server) startDataCompanion(ctx context.Context) error {
 			}
 
 			if err := conn.SetBlockRetainHeight(ctx, blockRetainHeight.App); err != nil {
-				s.logger.Errorf("dc could not set block retain height: %v", err)
+				s.logger.Error("dc could not set block retain height", zap.Error(err))
 			}
 
 			if err := conn.SetBlockResultsRetainHeight(ctx, blockRetainHeight.App); err != nil {
-				s.logger.Errorf("dc could not set block results retain height: %v", err)
+				s.logger.Error("dc could not set block results retain height", zap.Error(err))
 			}
 			s.SleepingProcessWithMetadata(ProcessStateDataCompanion, "Waiting for next cycle")
 		case <-ctx.Done():

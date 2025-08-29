@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -54,12 +56,11 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		s.z.Error("abci ctx done")
+		s.logger.Error("abci ctx done")
 		return ctx.Err()
 	case <-s.awaitEthReady:
 	}
 	s.logger.Info("starting abci")
-	s.z.Info("starting abci")
 
 	cometConfig := s.cometbftConfig
 	pv := privval.LoadFilePV(
@@ -72,7 +73,7 @@ func (s *Server) startABCI(ctx context.Context) error {
 		return fmt.Errorf("failed to load node's key: %v", err)
 	}
 
-	nodeLogger, err := cmtflags.ParseLogLevel(s.config.CometLogLevel, s.logger, "error")
+	nodeLogger, err := cmtflags.ParseLogLevel(s.config.CometLogLevel, setupNodeLogger(), "error")
 	if err != nil {
 		return fmt.Errorf("failed to parse log level: %v", err)
 	}
@@ -86,17 +87,16 @@ func (s *Server) startABCI(ctx context.Context) error {
 		return fmt.Errorf("db not ready for ABCI: %v", err)
 	}
 
-	s.z.Info("got latest block", zap.Bool("ss_enabled", s.config.StateSync.Enable), zap.Bool("already_synced", alreadySynced), zap.Int("rpc_servers", len(s.config.StateSync.RPCServers)))
+	s.logger.Info("got latest block", zap.Bool("ss_enabled", s.config.StateSync.Enable), zap.Bool("already_synced", alreadySynced), zap.Int("rpc_servers", len(s.config.StateSync.RPCServers)))
 
 	if s.config.StateSync.Enable && !alreadySynced && len(s.config.StateSync.RPCServers) > 1 {
 		cometConfig.StateSync.Enable = true
 		rpcServers := s.config.StateSync.RPCServers
-		s.logger.Info("state sync enabled, using rpc servers", "rpcServers", rpcServers)
-		s.z.Info("state sync enabled", zap.Any("rpcservers", rpcServers))
+		s.logger.Info("state sync enabled", zap.Any("rpcservers", rpcServers))
 		cometConfig.StateSync.RPCServers = rpcServers
 		latestBlockHeight, latestBlockHash, err := s.stateSyncLatestBlock(rpcServers)
 		if err != nil {
-			s.z.Error("could not get latest block for state sync", zap.Error(err))
+			s.logger.Error("could not get latest block for state sync", zap.Error(err))
 			return fmt.Errorf("getting latest block for state sync: %v", err)
 		}
 		cometConfig.StateSync.TrustHeight = latestBlockHeight
@@ -117,20 +117,20 @@ func (s *Server) startABCI(ctx context.Context) error {
 	)
 
 	if err != nil {
-		s.logger.Errorf("error creating node: %v", err)
+		s.logger.Error("error creating node", zap.Error(err))
 		s.ErrorProcess(ProcessStateABCI, fmt.Sprintf("error creating node: %v", err))
-		return fmt.Errorf("creating node: %v", err)
+		return fmt.Errorf("error creating node: %v", err)
 	}
 
 	s.node = node
 	s.rpc = local.New(s.node)
 	close(s.awaitRpcReady)
-	s.z.Info("rpc ready")
+	s.logger.Info("rpc ready")
 
 	s.logger.Info("core CometBFT node starting")
 
 	if err := s.node.Start(); err != nil {
-		s.logger.Errorf("cometbft failed to start: %v", err)
+		s.logger.Error("cometbft failed to start", zap.Error(err))
 		s.ErrorProcess(ProcessStateABCI, fmt.Sprintf("cometbft failed to start: %v", err))
 		return err
 	}
@@ -154,11 +154,11 @@ func (s *Server) Info(ctx context.Context, info *abcitypes.InfoRequest) (*abcity
 	latest, err := s.db.GetLatestAppState(ctx)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		// Log the error and return a default response
-		s.logger.Errorf("Error retrieving app state: %v", err)
+		s.logger.Error("Error retrieving app state", zap.Error(err))
 		return &abcitypes.InfoResponse{}, nil
 	}
 
-	s.logger.Infof("app starting at block %d with hash %s", latest.BlockHeight, hex.EncodeToString(latest.AppHash))
+	s.logger.Info("app starting", zap.Int64("block", latest.BlockHeight), zap.String("app_hash", hex.EncodeToString(latest.AppHash)))
 
 	res := &abcitypes.InfoResponse{
 		LastBlockHeight:  latest.BlockHeight,
@@ -193,7 +193,7 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 	if shouldProposeNewRollup {
 		rollupTx, err := s.createRollupTx(ctx, proposal.Time, proposal.Height)
 		if err != nil {
-			s.logger.Error("Failed to create rollup transaction", "error", err)
+			s.logger.Error("Failed to create rollup transaction", zap.Error(err))
 		} else {
 			proposalTxs = append(proposalTxs, rollupTx)
 		}
@@ -201,7 +201,7 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 	for _, mb := range proposal.Misbehavior {
 		deregTx, err := s.createDeregisterTransaction(mb.Validator.Address)
 		if err != nil {
-			s.logger.Error("Failed to create deregistration transaction", "error", err)
+			s.logger.Error("Failed to create deregistration transaction", zap.Error(err))
 		} else {
 			proposalTxs = append(proposalTxs, deregTx)
 		}
@@ -225,15 +225,15 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 			txBytes, err = proto.Marshal(tx.Tx)
 		}
 		if err != nil {
-			s.logger.Errorf("tx made it into prepare but couldn't be marshalled: %v", err)
+			s.logger.Error("tx made it into prepare but couldn't be marshalled", zap.Error(err))
 			continue
 		}
 		valid, err := s.validateBlockTx(ctx, proposal.Time, proposal.Height, proposal.Misbehavior, txBytes)
 		if err != nil {
-			s.logger.Errorf("tx made it into prepare but couldn't be validated: %v", err)
+			s.logger.Error("tx made it into prepare but couldn't be validated", zap.Error(err))
 			continue
 		} else if !valid {
-			s.logger.Errorf("invalid tx made it into prepare: %v", tx)
+			s.logger.Error("invalid tx made it into prepare", zap.Any("tx", tx))
 			continue
 		}
 		proposalTxs = append(proposalTxs, txBytes)
@@ -244,7 +244,7 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 func (s *Server) ProcessProposal(ctx context.Context, proposal *abcitypes.ProcessProposalRequest) (*abcitypes.ProcessProposalResponse, error) {
 	valid, err := s.validateBlockTxs(ctx, proposal.Time, proposal.Height, proposal.Misbehavior, proposal.Txs)
 	if err != nil {
-		s.logger.Error("Reporting unknown proposal status due to validation error", "error", err)
+		s.logger.Error("Reporting unknown proposal status due to validation error", zap.Error(err))
 		return &abcitypes.ProcessProposalResponse{Status: abcitypes.PROCESS_PROPOSAL_STATUS_UNKNOWN}, err
 	} else if !valid {
 		return &abcitypes.ProcessProposalResponse{Status: abcitypes.PROCESS_PROPOSAL_STATUS_REJECT}, nil
@@ -268,7 +268,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 		ChainID:   s.config.GenesisFile.ChainID,
 		CreatedAt: s.db.ToPgxTimestamp(req.Time),
 	}); err != nil {
-		s.logger.Errorf("could not store block: %v", err)
+		s.logger.Error("could not store block", zap.Error(err))
 	}
 
 	for i, tx := range req.Txs {
@@ -280,7 +280,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 			txhash := s.toTxHash(signedTx)
 			finalizedTx, err := s.finalizeTransaction(ctx, req, signedTx, txhash, req.Height)
 			if err != nil {
-				s.logger.Errorf("error finalizing event: %v", err)
+				s.logger.Error("error finalizing event", zap.Error(err))
 				txs[i] = &abcitypes.ExecTxResult{Code: 2}
 			} else if vr := signedTx.GetValidatorRegistration(); vr != nil { // TODO: delete legacy registration after chain rollover
 				vrPubKey := ed25519.PubKey(vr.GetPubKey())
@@ -305,7 +305,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				}
 				if err := s.appendRegistrationToValidatorHistory(ctx, vr, req.Time, req.Height); err != nil {
 					// do not halt on validator history
-					s.logger.Errorf("failed to append registration event to validator history: %v", err)
+					s.logger.Error("failed to append registration event to validator history", zap.Error(err))
 				}
 			} else if att := signedTx.GetAttestation(); att != nil && att.GetValidatorDeregistration() != nil {
 				vr := att.GetValidatorDeregistration()
@@ -319,7 +319,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				}
 				if err := s.appendDeregistrationToValidatorHistory(ctx, vr, req.Time, req.Height); err != nil {
 					// do not halt on validator history
-					s.logger.Errorf("failed to append deregistration event to validator history: %v", err)
+					s.logger.Error("failed to append deregistration event to validator history", zap.Error(err))
 				}
 			} else if vd := signedTx.GetValidatorDeregistration(); vd != nil { // TODO: delete legacy deregistration after chain rollover
 				vdPubKey := ed25519.PubKey(vd.GetPubKey())
@@ -339,12 +339,12 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				Transaction: tx,
 				CreatedAt:   s.db.ToPgxTimestamp(req.Time),
 			}); err != nil {
-				s.logger.Errorf("failed to store transaction: %v", err)
+				s.logger.Error("failed to store transaction", zap.Error(err))
 			}
 
 			if err := s.persistTxStat(ctx, finalizedTx, txhash, req.Height, req.Time); err != nil {
 				// don't halt consensus on this
-				s.logger.Errorf("failed to persist tx stat: %v", err)
+				s.logger.Error("failed to persist tx stat", zap.Error(err))
 			}
 
 			// set finalized txs in finalize step to remove from mempool during commit step
@@ -358,7 +358,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				// Calculate hash from envelope only, to match connect.go
 				txhash, err := common.ToTxHash(v2Tx)
 				if err != nil {
-					s.logger.Errorf("failed to get tx hash: %v", err)
+					s.logger.Error("failed to get tx hash", zap.Error(err))
 					txs[i] = &abcitypes.ExecTxResult{Code: 2}
 					continue
 				}
@@ -366,7 +366,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				// finalize v2 transaction and get receipt data
 				err = s.finalizeV2Transaction(ctx, req, v2Tx)
 				if err != nil {
-					s.logger.Errorf("failed to finalize v2 transaction %s: %v", txhash, err)
+					s.logger.Error("failed to finalize v2 transaction", zap.String("txhash", txhash), zap.Error(err))
 					txs[i] = &abcitypes.ExecTxResult{Code: 2}
 				}
 
@@ -377,14 +377,14 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 					Transaction: tx,
 					CreatedAt:   s.db.ToPgxTimestamp(req.Time),
 				}); err != nil {
-					s.logger.Errorf("failed to store transaction %s: %v", txhash, err)
+					s.logger.Error("failed to store transaction", zap.String("txhash", txhash), zap.Error(err))
 				}
 
 				state.finalizedTxs = append(state.finalizedTxs, txhash)
 				continue
 			}
 
-			logger.Errorf("Error: invalid transaction index %v", i)
+			logger.Error("invalid transaction index", zap.Int("index", i))
 			txs[i] = &abcitypes.ExecTxResult{Code: 1}
 		}
 	}
@@ -397,7 +397,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 		BlockHeight: req.Height,
 		AppHash:     nextAppHash,
 	}); err != nil {
-		s.logger.Errorf("error upserting app state %v", err)
+		s.logger.Error("error upserting app state", zap.Error(err))
 	}
 
 	// increment number of proposed blocks for sla auditor
@@ -405,10 +405,8 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 	if err := s.getDb().UpsertSlaRollupReport(ctx, addr); err != nil {
 		s.logger.Error(
 			"Error attempting to increment blocks proposed by node",
-			"address",
-			addr,
-			"error",
-			err,
+			zap.String("address", addr),
+			zap.Error(err),
 		)
 	}
 
@@ -433,7 +431,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 		resp.ValidatorUpdates = validatorUpdates
 	}
 
-	s.z.Info("block finalized", zap.Int64("height", req.Height), zap.Int("txs", len(req.Txs)))
+	s.logger.Info("block finalized", zap.Int64("height", req.Height), zap.Int("txs", len(req.Txs)))
 
 	return resp, nil
 }
@@ -442,7 +440,7 @@ func (s *Server) Commit(ctx context.Context, commit *abcitypes.CommitRequest) (*
 	state := s.abciState
 
 	if err := s.commitInProgressTx(ctx); err != nil {
-		s.logger.Error("failure to commit tx", "error", err)
+		s.logger.Error("failure to commit tx", zap.Error(err))
 		return &abcitypes.CommitResponse{}, err
 	}
 
@@ -488,7 +486,7 @@ func (s *Server) ListSnapshots(_ context.Context, snapshots *abcitypes.ListSnaps
 func (s *Server) LoadSnapshotChunk(_ context.Context, chunk *abcitypes.LoadSnapshotChunkRequest) (*abcitypes.LoadSnapshotChunkResponse, error) {
 	chunkData, err := s.GetChunkByHeight(int64(chunk.Height), int(chunk.Chunk))
 	if err != nil {
-		s.logger.Error("failed to get chunk", "height", chunk.Height, "chunk", chunk.Chunk, "err", err)
+		s.logger.Error("failed to get chunk", zap.Uint64("height", chunk.Height), zap.Uint32("chunk", chunk.Chunk), zap.Error(err))
 		return nil, err
 	}
 
@@ -544,27 +542,27 @@ func (s *Server) ApplySnapshotChunk(_ context.Context, req *abcitypes.ApplySnaps
 	// Store the chunk on disk
 	err = s.StoreChunkForReconstruction(height, chunkIndex, req.Chunk)
 	if err != nil {
-		s.logger.Error("failed to store chunk", "index", chunkIndex, "err", err)
+		s.logger.Error("failed to store chunk", zap.Int("index", chunkIndex), zap.Error(err))
 		return &abcitypes.ApplySnapshotChunkResponse{
 			Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
 		}, nil
 	}
 
-	s.logger.Info("snapshot chunk stored", "height", height, "chunkIndex", chunkIndex, "totalChunks", totalChunks)
+	s.logger.Info("snapshot chunk stored", zap.Int64("height", height), zap.Int("chunkIndex", chunkIndex), zap.Int("totalChunks", totalChunks))
 
 	// Check if all chunks are now present on disk
 	if s.haveAllChunks(uint64(height), totalChunks) {
-		s.logger.Info("all snapshot chunks received, beginning reassembly and restore", "height", height)
+		s.logger.Info("all snapshot chunks received, beginning reassembly and restore", zap.Int64("height", height))
 
 		if err := s.ReassemblePgDump(height); err != nil {
-			s.logger.Error("failed to reassemble pg_dump", "err", err)
+			s.logger.Error("failed to reassemble pg_dump", zap.Error(err))
 			return &abcitypes.ApplySnapshotChunkResponse{
 				Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
 			}, nil
 		}
 
 		if err := s.RestoreDatabase(height); err != nil {
-			s.logger.Error("failed to restore database", "err", err)
+			s.logger.Error("failed to restore database", zap.Error(err))
 			return &abcitypes.ApplySnapshotChunkResponse{
 				Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
 			}, nil
@@ -572,7 +570,7 @@ func (s *Server) ApplySnapshotChunk(_ context.Context, req *abcitypes.ApplySnaps
 
 		if err := s.CleanupStateSync(); err != nil {
 			// don't need to fail the snapshot chunk if cleanup fails
-			s.logger.Warn("failed to cleanup state sync", "err", err)
+			s.logger.Warn("failed to cleanup state sync", zap.Error(err))
 		}
 
 		return &abcitypes.ApplySnapshotChunkResponse{
@@ -686,17 +684,17 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 	case *v1.SignedTransaction_Plays:
 	case *v1.SignedTransaction_Attestation:
 		if err := s.isValidAttestation(ctx, signedTx, blockHeight); err != nil {
-			s.logger.Error("Invalid block: invalid attestation tx", "error", err)
+			s.logger.Error("Invalid block: invalid attestation tx", zap.Error(err))
 			return false, nil
 		}
 	case *v1.SignedTransaction_ValidatorDeregistration:
 		if err := s.isValidDeregisterMisbehavingNodeTx(signedTx, misbehavior); err != nil {
-			s.logger.Error("Invalid block: invalid deregister node tx", "error", err)
+			s.logger.Error("Invalid block: invalid deregister node tx", zap.Error(err))
 			return false, nil
 		}
 	case *v1.SignedTransaction_SlaRollup:
 		if valid, err := s.isValidRollup(ctx, blockTime, blockHeight, signedTx.GetSlaRollup()); err != nil {
-			s.logger.Error("Invalid block: error validating sla rollup", "error", err)
+			s.logger.Error("Invalid block: error validating sla rollup", zap.Error(err))
 			return false, err
 		} else if !valid {
 			s.logger.Error("Invalid block: invalid rollup")
@@ -704,17 +702,17 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 		}
 	case *v1.SignedTransaction_StorageProof:
 		if err := s.isValidStorageProofTx(ctx, signedTx, blockHeight, true); err != nil {
-			s.logger.Error("Invalid block: invalid storage proof tx", "error", err)
+			s.logger.Error("Invalid block: invalid storage proof tx", zap.Error(err))
 			return false, nil
 		}
 	case *v1.SignedTransaction_StorageProofVerification:
 		if err := s.isValidStorageProofVerificationTx(ctx, signedTx, blockHeight); err != nil {
-			s.logger.Error("Invalid block: invalid storage proof verification tx", "error", err)
+			s.logger.Error("Invalid block: invalid storage proof verification tx", zap.Error(err))
 			return false, nil
 		}
 	case *v1.SignedTransaction_Release:
 		if err := s.isValidReleaseTx(ctx, signedTx); err != nil {
-			s.logger.Error("Invalid block: invalid release tx", "error", err)
+			s.logger.Error("Invalid block: invalid release tx", zap.Error(err))
 			return false, nil
 		}
 	}
@@ -760,7 +758,7 @@ func (s *Server) persistTxStat(ctx context.Context, tx proto.Message, txhash str
 			Valid: true,
 		},
 	}); err != nil {
-		s.logger.Error("error inserting tx stat", "error", err)
+		s.logger.Error("error inserting tx stat", zap.Error(err))
 	}
 	return nil
 }
@@ -781,8 +779,26 @@ func (s *Server) serializeAppState(prevHash []byte, txs [][]byte) []byte {
 func (s *Server) toTxHash(msg proto.Message) string {
 	hash, err := common.ToTxHash(msg)
 	if err != nil {
-		s.logger.Errorf("could not get txhash of msg: %v %v", msg, err)
+		s.logger.Error("could not get txhash of msg", zap.Any("msg", msg), zap.Error(err))
 		return ""
 	}
 	return hash
+}
+
+func setupNodeLogger() *common.Logger {
+	var slogLevel slog.Level
+	switch os.Getenv("AUDIUSD_LOG_LEVEL") {
+	case "debug":
+		slogLevel = slog.LevelDebug
+	case "info":
+		slogLevel = slog.LevelInfo
+	case "warn":
+		slogLevel = slog.LevelWarn
+	case "error":
+		slogLevel = slog.LevelError
+	default:
+		slogLevel = slog.LevelInfo
+	}
+
+	return common.NewLogger(&slog.HandlerOptions{Level: slogLevel})
 }
