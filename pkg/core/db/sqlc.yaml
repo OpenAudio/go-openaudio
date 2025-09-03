@@ -13,6 +13,9 @@ sql:
             go_type:
               import: "time"
               type: "time.Time"
+          - db_type: "validator_event"
+            go_type: 
+              type: "ValidatorEventType"
 
   - engine: "postgresql"
     queries: "sql/writes.sql"
@@ -27,6 +30,9 @@ sql:
             go_type:
               import: "time"
               type: "time.Time"
+          - db_type: "validator_event"
+            go_type: 
+              type: "ValidatorEventType"
 
   - engine: "postgresql"
     queries: "sql/setup.sql"
@@ -41,3 +47,6 @@ sql:
             go_type:
               import: "time"
               type: "time.Time"
+          - db_type: "validator_event"
+            go_type: 
+              type: "ValidatorEventType"

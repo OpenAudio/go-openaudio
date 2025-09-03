@@ -1,5 +1,6 @@
 -- +migrate Up
-create type validator_event as enum ('registered', 'deregistered');
+
+do $$ begin if not exists ( select 1 from pg_type where typname = 'validator_event') then create type validator_event as enum ('registered', 'deregistered'); end if; end $$;
 
 create table if not exists validator_history (
     rowid serial primary key,
