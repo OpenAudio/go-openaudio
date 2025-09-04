@@ -360,14 +360,21 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 				"detail": err.Error(),
 			})
 		} else {
-			// check it was signed by a registered node
+			// check it was signed by a registered node / mediorum peer
 			isRegistered := slices.ContainsFunc(s.Config.Signers, func(peer registrar.Peer) bool {
 				return strings.EqualFold(peer.Wallet, sig.SignerWallet)
+			}) || slices.ContainsFunc(s.Config.Peers, func(peer registrar.Peer) bool {
+				return strings.EqualFold(peer.Wallet, sig.SignerWallet)
 			})
-			wallets := make([]string, len(s.Config.Signers))
+
+			wallets := make([]string, len(s.Config.Signers)+len(s.Config.Peers))
 			for i, peer := range s.Config.Signers {
 				wallets[i] = peer.Wallet
 			}
+			for i, peer := range s.Config.Peers {
+				wallets[len(s.Config.Signers)+i] = peer.Wallet
+			}
+
 			if !isRegistered {
 				s.logger.Debug("sig no match", zap.String("signed by", sig.SignerWallet))
 				return c.JSON(401, map[string]string{
