@@ -481,7 +481,6 @@ func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *zap.Logger) error
 
 			conn, err := net.DialTimeout("tcp", listenAddr, 3*time.Second)
 			if err != nil {
-				logger.Error("p2p not accessible", zap.String("eth_address", ethaddress), zap.Error(err))
 				p2pAccessible = false
 			} else {
 				p2pAccessible = true

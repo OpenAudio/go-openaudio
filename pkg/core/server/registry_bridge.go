@@ -350,22 +350,24 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 }
 
 func (s *Server) awaitNodeCatchup(ctx context.Context) error {
-	retries := 60
-	for tries := retries; tries >= 0; tries-- {
-		res, err := s.rpc.Status(ctx)
-		if err != nil {
-			s.logger.Error("error getting comet health", zap.Error(err))
-		} else if !res.SyncInfo.CatchingUp {
-			return nil
-		}
-
+	timeout := time.After(4 * time.Hour)
+	ticker := time.NewTicker(10 * time.Second)
+	for {
 		select {
+		case <-ticker.C:
+			res, err := s.rpc.Status(ctx)
+			if err != nil {
+				s.logger.Error("error getting comet health", zap.Error(err))
+			} else if !res.SyncInfo.CatchingUp {
+				return nil
+			}
+			s.logger.Info("registry bridge still waiting for comet to catch up")
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(10 * time.Second):
+		case <-timeout:
+			return errors.New("timeout waiting for comet to catch up")
 		}
 	}
-	return errors.New("timeout waiting for comet to catch up")
 }
 
 func (s *Server) isSelfAlreadyRegistered(ctx context.Context) bool {
