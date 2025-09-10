@@ -63,6 +63,9 @@ const (
 	EthServiceRegisterProcedure = "/eth.v1.EthService/Register"
 	// EthServiceSubscribeProcedure is the fully-qualified name of the EthService's Subscribe RPC.
 	EthServiceSubscribeProcedure = "/eth.v1.EthService/Subscribe"
+	// EthServiceGetActiveSlashProposalForAddressProcedure is the fully-qualified name of the
+	// EthService's GetActiveSlashProposalForAddress RPC.
+	EthServiceGetActiveSlashProposalForAddressProcedure = "/eth.v1.EthService/GetActiveSlashProposalForAddress"
 )
 
 // EthServiceClient is a client for the eth.v1.EthService service.
@@ -78,6 +81,7 @@ type EthServiceClient interface {
 	IsDuplicateDelegateWallet(context.Context, *connect.Request[v1.IsDuplicateDelegateWalletRequest]) (*connect.Response[v1.IsDuplicateDelegateWalletResponse], error)
 	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error)
 	Subscribe(context.Context, *connect.Request[v1.SubscriptionRequest]) (*connect.ServerStreamForClient[v1.SubscriptionResponse], error)
+	GetActiveSlashProposalForAddress(context.Context, *connect.Request[v1.GetActiveSlashProposalForAddressRequest]) (*connect.Response[v1.GetActiveSlashProposalForAddressResponse], error)
 }
 
 // NewEthServiceClient constructs a client for the eth.v1.EthService service. By default, it uses
@@ -157,6 +161,12 @@ func NewEthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(ethServiceMethods.ByName("Subscribe")),
 			connect.WithClientOptions(opts...),
 		),
+		getActiveSlashProposalForAddress: connect.NewClient[v1.GetActiveSlashProposalForAddressRequest, v1.GetActiveSlashProposalForAddressResponse](
+			httpClient,
+			baseURL+EthServiceGetActiveSlashProposalForAddressProcedure,
+			connect.WithSchema(ethServiceMethods.ByName("GetActiveSlashProposalForAddress")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -173,6 +183,7 @@ type ethServiceClient struct {
 	isDuplicateDelegateWallet                *connect.Client[v1.IsDuplicateDelegateWalletRequest, v1.IsDuplicateDelegateWalletResponse]
 	register                                 *connect.Client[v1.RegisterRequest, v1.RegisterResponse]
 	subscribe                                *connect.Client[v1.SubscriptionRequest, v1.SubscriptionResponse]
+	getActiveSlashProposalForAddress         *connect.Client[v1.GetActiveSlashProposalForAddressRequest, v1.GetActiveSlashProposalForAddressResponse]
 }
 
 // GetStatus calls eth.v1.EthService.GetStatus.
@@ -232,6 +243,11 @@ func (c *ethServiceClient) Subscribe(ctx context.Context, req *connect.Request[v
 	return c.subscribe.CallServerStream(ctx, req)
 }
 
+// GetActiveSlashProposalForAddress calls eth.v1.EthService.GetActiveSlashProposalForAddress.
+func (c *ethServiceClient) GetActiveSlashProposalForAddress(ctx context.Context, req *connect.Request[v1.GetActiveSlashProposalForAddressRequest]) (*connect.Response[v1.GetActiveSlashProposalForAddressResponse], error) {
+	return c.getActiveSlashProposalForAddress.CallUnary(ctx, req)
+}
+
 // EthServiceHandler is an implementation of the eth.v1.EthService service.
 type EthServiceHandler interface {
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
@@ -245,6 +261,7 @@ type EthServiceHandler interface {
 	IsDuplicateDelegateWallet(context.Context, *connect.Request[v1.IsDuplicateDelegateWalletRequest]) (*connect.Response[v1.IsDuplicateDelegateWalletResponse], error)
 	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error)
 	Subscribe(context.Context, *connect.Request[v1.SubscriptionRequest], *connect.ServerStream[v1.SubscriptionResponse]) error
+	GetActiveSlashProposalForAddress(context.Context, *connect.Request[v1.GetActiveSlashProposalForAddressRequest]) (*connect.Response[v1.GetActiveSlashProposalForAddressResponse], error)
 }
 
 // NewEthServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -320,6 +337,12 @@ func NewEthServiceHandler(svc EthServiceHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(ethServiceMethods.ByName("Subscribe")),
 		connect.WithHandlerOptions(opts...),
 	)
+	ethServiceGetActiveSlashProposalForAddressHandler := connect.NewUnaryHandler(
+		EthServiceGetActiveSlashProposalForAddressProcedure,
+		svc.GetActiveSlashProposalForAddress,
+		connect.WithSchema(ethServiceMethods.ByName("GetActiveSlashProposalForAddress")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/eth.v1.EthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case EthServiceGetStatusProcedure:
@@ -344,6 +367,8 @@ func NewEthServiceHandler(svc EthServiceHandler, opts ...connect.HandlerOption) 
 			ethServiceRegisterHandler.ServeHTTP(w, r)
 		case EthServiceSubscribeProcedure:
 			ethServiceSubscribeHandler.ServeHTTP(w, r)
+		case EthServiceGetActiveSlashProposalForAddressProcedure:
+			ethServiceGetActiveSlashProposalForAddressHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -395,4 +420,8 @@ func (UnimplementedEthServiceHandler) Register(context.Context, *connect.Request
 
 func (UnimplementedEthServiceHandler) Subscribe(context.Context, *connect.Request[v1.SubscriptionRequest], *connect.ServerStream[v1.SubscriptionResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("eth.v1.EthService.Subscribe is not implemented"))
+}
+
+func (UnimplementedEthServiceHandler) GetActiveSlashProposalForAddress(context.Context, *connect.Request[v1.GetActiveSlashProposalForAddressRequest]) (*connect.Response[v1.GetActiveSlashProposalForAddressResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("eth.v1.EthService.GetActiveSlashProposalForAddress is not implemented"))
 }

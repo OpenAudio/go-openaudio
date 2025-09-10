@@ -36,3 +36,14 @@ insert into eth_staked (address, total_staked)
 values ($1, $2)
 on conflict (address) do update
 set total_staked = $2;
+
+-- name: ClearActiveProposals :exec
+delete from eth_active_proposals;
+
+-- name: InsertActiveProposal :exec
+insert into eth_active_proposals (id, proposer, submission_block_number, target_contract_registry_key, target_contract_address, call_value, function_signature, call_data)
+values ($1, $2, $3, $4, $5, $6, $7, $8);
+
+-- name: DeleteActiveProposal :exec
+delete from eth_active_proposals
+where id = $1;

@@ -25,7 +25,7 @@ var file_eth_v1_service_proto_rawDesc = []byte{
 	0x0a, 0x14, 0x65, 0x74, 0x68, 0x2f, 0x76, 0x31, 0x2f, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65,
 	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x06, 0x65, 0x74, 0x68, 0x2e, 0x76, 0x31, 0x1a, 0x12,
 	0x65, 0x74, 0x68, 0x2f, 0x76, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x32, 0x91, 0x09, 0x0a, 0x0a, 0x45, 0x74, 0x68, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63,
+	0x74, 0x6f, 0x32, 0x9b, 0x0a, 0x0a, 0x0a, 0x45, 0x74, 0x68, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63,
 	0x65, 0x12, 0x42, 0x0a, 0x09, 0x47, 0x65, 0x74, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x18,
 	0x2e, 0x65, 0x74, 0x68, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x53, 0x74, 0x61, 0x74, 0x75,
 	0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x19, 0x2e, 0x65, 0x74, 0x68, 0x2e, 0x76,
@@ -98,11 +98,19 @@ var file_eth_v1_service_proto_rawDesc = []byte{
 	0x2e, 0x53, 0x75, 0x62, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71,
 	0x75, 0x65, 0x73, 0x74, 0x1a, 0x1c, 0x2e, 0x65, 0x74, 0x68, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x75,
 	0x62, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
-	0x73, 0x65, 0x22, 0x00, 0x30, 0x01, 0x42, 0x31, 0x5a, 0x2f, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62,
-	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41, 0x75, 0x64, 0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65,
-	0x63, 0x74, 0x2f, 0x61, 0x75, 0x64, 0x69, 0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61,
-	0x70, 0x69, 0x2f, 0x65, 0x74, 0x68, 0x2f, 0x76, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x33,
+	0x73, 0x65, 0x22, 0x00, 0x30, 0x01, 0x12, 0x87, 0x01, 0x0a, 0x20, 0x47, 0x65, 0x74, 0x41, 0x63,
+	0x74, 0x69, 0x76, 0x65, 0x53, 0x6c, 0x61, 0x73, 0x68, 0x50, 0x72, 0x6f, 0x70, 0x6f, 0x73, 0x61,
+	0x6c, 0x46, 0x6f, 0x72, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x2f, 0x2e, 0x65, 0x74,
+	0x68, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x41, 0x63, 0x74, 0x69, 0x76, 0x65, 0x53, 0x6c,
+	0x61, 0x73, 0x68, 0x50, 0x72, 0x6f, 0x70, 0x6f, 0x73, 0x61, 0x6c, 0x46, 0x6f, 0x72, 0x41, 0x64,
+	0x64, 0x72, 0x65, 0x73, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x30, 0x2e, 0x65,
+	0x74, 0x68, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x41, 0x63, 0x74, 0x69, 0x76, 0x65, 0x53,
+	0x6c, 0x61, 0x73, 0x68, 0x50, 0x72, 0x6f, 0x70, 0x6f, 0x73, 0x61, 0x6c, 0x46, 0x6f, 0x72, 0x41,
+	0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00,
+	0x42, 0x31, 0x5a, 0x2f, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41,
+	0x75, 0x64, 0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x2f, 0x61, 0x75, 0x64,
+	0x69, 0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x65, 0x74, 0x68,
+	0x2f, 0x76, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var file_eth_v1_service_proto_goTypes = []interface{}{
@@ -117,17 +125,19 @@ var file_eth_v1_service_proto_goTypes = []interface{}{
 	(*IsDuplicateDelegateWalletRequest)(nil),                 // 8: eth.v1.IsDuplicateDelegateWalletRequest
 	(*RegisterRequest)(nil),                                  // 9: eth.v1.RegisterRequest
 	(*SubscriptionRequest)(nil),                              // 10: eth.v1.SubscriptionRequest
-	(*GetStatusResponse)(nil),                                // 11: eth.v1.GetStatusResponse
-	(*GetRegisteredEndpointsResponse)(nil),                   // 12: eth.v1.GetRegisteredEndpointsResponse
-	(*GetRegisteredEndpointsForServiceProviderResponse)(nil), // 13: eth.v1.GetRegisteredEndpointsForServiceProviderResponse
-	(*GetRegisteredEndpointInfoResponse)(nil),                // 14: eth.v1.GetRegisteredEndpointInfoResponse
-	(*GetServiceProviderResponse)(nil),                       // 15: eth.v1.GetServiceProviderResponse
-	(*GetServiceProvidersResponse)(nil),                      // 16: eth.v1.GetServiceProvidersResponse
-	(*GetStakingMetadataForServiceProviderResponse)(nil),     // 17: eth.v1.GetStakingMetadataForServiceProviderResponse
-	(*GetLatestFundingRoundResponse)(nil),                    // 18: eth.v1.GetLatestFundingRoundResponse
-	(*IsDuplicateDelegateWalletResponse)(nil),                // 19: eth.v1.IsDuplicateDelegateWalletResponse
-	(*RegisterResponse)(nil),                                 // 20: eth.v1.RegisterResponse
-	(*SubscriptionResponse)(nil),                             // 21: eth.v1.SubscriptionResponse
+	(*GetActiveSlashProposalForAddressRequest)(nil),          // 11: eth.v1.GetActiveSlashProposalForAddressRequest
+	(*GetStatusResponse)(nil),                                // 12: eth.v1.GetStatusResponse
+	(*GetRegisteredEndpointsResponse)(nil),                   // 13: eth.v1.GetRegisteredEndpointsResponse
+	(*GetRegisteredEndpointsForServiceProviderResponse)(nil), // 14: eth.v1.GetRegisteredEndpointsForServiceProviderResponse
+	(*GetRegisteredEndpointInfoResponse)(nil),                // 15: eth.v1.GetRegisteredEndpointInfoResponse
+	(*GetServiceProviderResponse)(nil),                       // 16: eth.v1.GetServiceProviderResponse
+	(*GetServiceProvidersResponse)(nil),                      // 17: eth.v1.GetServiceProvidersResponse
+	(*GetStakingMetadataForServiceProviderResponse)(nil),     // 18: eth.v1.GetStakingMetadataForServiceProviderResponse
+	(*GetLatestFundingRoundResponse)(nil),                    // 19: eth.v1.GetLatestFundingRoundResponse
+	(*IsDuplicateDelegateWalletResponse)(nil),                // 20: eth.v1.IsDuplicateDelegateWalletResponse
+	(*RegisterResponse)(nil),                                 // 21: eth.v1.RegisterResponse
+	(*SubscriptionResponse)(nil),                             // 22: eth.v1.SubscriptionResponse
+	(*GetActiveSlashProposalForAddressResponse)(nil),         // 23: eth.v1.GetActiveSlashProposalForAddressResponse
 }
 var file_eth_v1_service_proto_depIdxs = []int32{
 	0,  // 0: eth.v1.EthService.GetStatus:input_type -> eth.v1.GetStatusRequest
@@ -141,19 +151,21 @@ var file_eth_v1_service_proto_depIdxs = []int32{
 	8,  // 8: eth.v1.EthService.IsDuplicateDelegateWallet:input_type -> eth.v1.IsDuplicateDelegateWalletRequest
 	9,  // 9: eth.v1.EthService.Register:input_type -> eth.v1.RegisterRequest
 	10, // 10: eth.v1.EthService.Subscribe:input_type -> eth.v1.SubscriptionRequest
-	11, // 11: eth.v1.EthService.GetStatus:output_type -> eth.v1.GetStatusResponse
-	12, // 12: eth.v1.EthService.GetRegisteredEndpoints:output_type -> eth.v1.GetRegisteredEndpointsResponse
-	13, // 13: eth.v1.EthService.GetRegisteredEndpointsForServiceProvider:output_type -> eth.v1.GetRegisteredEndpointsForServiceProviderResponse
-	14, // 14: eth.v1.EthService.GetRegisteredEndpointInfo:output_type -> eth.v1.GetRegisteredEndpointInfoResponse
-	15, // 15: eth.v1.EthService.GetServiceProvider:output_type -> eth.v1.GetServiceProviderResponse
-	16, // 16: eth.v1.EthService.GetServiceProviders:output_type -> eth.v1.GetServiceProvidersResponse
-	17, // 17: eth.v1.EthService.GetStakingMetadataForServiceProvider:output_type -> eth.v1.GetStakingMetadataForServiceProviderResponse
-	18, // 18: eth.v1.EthService.GetLatestFundingRound:output_type -> eth.v1.GetLatestFundingRoundResponse
-	19, // 19: eth.v1.EthService.IsDuplicateDelegateWallet:output_type -> eth.v1.IsDuplicateDelegateWalletResponse
-	20, // 20: eth.v1.EthService.Register:output_type -> eth.v1.RegisterResponse
-	21, // 21: eth.v1.EthService.Subscribe:output_type -> eth.v1.SubscriptionResponse
-	11, // [11:22] is the sub-list for method output_type
-	0,  // [0:11] is the sub-list for method input_type
+	11, // 11: eth.v1.EthService.GetActiveSlashProposalForAddress:input_type -> eth.v1.GetActiveSlashProposalForAddressRequest
+	12, // 12: eth.v1.EthService.GetStatus:output_type -> eth.v1.GetStatusResponse
+	13, // 13: eth.v1.EthService.GetRegisteredEndpoints:output_type -> eth.v1.GetRegisteredEndpointsResponse
+	14, // 14: eth.v1.EthService.GetRegisteredEndpointsForServiceProvider:output_type -> eth.v1.GetRegisteredEndpointsForServiceProviderResponse
+	15, // 15: eth.v1.EthService.GetRegisteredEndpointInfo:output_type -> eth.v1.GetRegisteredEndpointInfoResponse
+	16, // 16: eth.v1.EthService.GetServiceProvider:output_type -> eth.v1.GetServiceProviderResponse
+	17, // 17: eth.v1.EthService.GetServiceProviders:output_type -> eth.v1.GetServiceProvidersResponse
+	18, // 18: eth.v1.EthService.GetStakingMetadataForServiceProvider:output_type -> eth.v1.GetStakingMetadataForServiceProviderResponse
+	19, // 19: eth.v1.EthService.GetLatestFundingRound:output_type -> eth.v1.GetLatestFundingRoundResponse
+	20, // 20: eth.v1.EthService.IsDuplicateDelegateWallet:output_type -> eth.v1.IsDuplicateDelegateWalletResponse
+	21, // 21: eth.v1.EthService.Register:output_type -> eth.v1.RegisterResponse
+	22, // 22: eth.v1.EthService.Subscribe:output_type -> eth.v1.SubscriptionResponse
+	23, // 23: eth.v1.EthService.GetActiveSlashProposalForAddress:output_type -> eth.v1.GetActiveSlashProposalForAddressResponse
+	12, // [12:24] is the sub-list for method output_type
+	0,  // [0:12] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name

@@ -1251,6 +1251,156 @@ type SubscriptionResponse_Deregistration struct {
 
 func (*SubscriptionResponse_Deregistration) isSubscriptionResponse_Event() {}
 
+type GetActiveSlashProposalForAddressRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Address string `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+}
+
+func (x *GetActiveSlashProposalForAddressRequest) Reset() {
+	*x = GetActiveSlashProposalForAddressRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_eth_v1_types_proto_msgTypes[24]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetActiveSlashProposalForAddressRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetActiveSlashProposalForAddressRequest) ProtoMessage() {}
+
+func (x *GetActiveSlashProposalForAddressRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_eth_v1_types_proto_msgTypes[24]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetActiveSlashProposalForAddressRequest.ProtoReflect.Descriptor instead.
+func (*GetActiveSlashProposalForAddressRequest) Descriptor() ([]byte, []int) {
+	return file_eth_v1_types_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *GetActiveSlashProposalForAddressRequest) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+type GetActiveSlashProposalForAddressResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ProposalId                int64  `protobuf:"varint,1,opt,name=proposalId,proto3" json:"proposalId,omitempty"`
+	Proposer                  string `protobuf:"bytes,2,opt,name=proposer,proto3" json:"proposer,omitempty"`
+	SubmissionBlockNumber     int64  `protobuf:"varint,3,opt,name=submissionBlockNumber,proto3" json:"submissionBlockNumber,omitempty"`
+	TargetContractRegistryKey string `protobuf:"bytes,4,opt,name=targetContractRegistryKey,proto3" json:"targetContractRegistryKey,omitempty"`
+	TargetContractAddress     string `protobuf:"bytes,5,opt,name=targetContractAddress,proto3" json:"targetContractAddress,omitempty"`
+	CallValue                 int64  `protobuf:"varint,6,opt,name=callValue,proto3" json:"callValue,omitempty"`
+	FunctionSignature         string `protobuf:"bytes,7,opt,name=functionSignature,proto3" json:"functionSignature,omitempty"`
+	CallData                  string `protobuf:"bytes,8,opt,name=callData,proto3" json:"callData,omitempty"`
+}
+
+func (x *GetActiveSlashProposalForAddressResponse) Reset() {
+	*x = GetActiveSlashProposalForAddressResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_eth_v1_types_proto_msgTypes[25]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetActiveSlashProposalForAddressResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetActiveSlashProposalForAddressResponse) ProtoMessage() {}
+
+func (x *GetActiveSlashProposalForAddressResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_eth_v1_types_proto_msgTypes[25]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetActiveSlashProposalForAddressResponse.ProtoReflect.Descriptor instead.
+func (*GetActiveSlashProposalForAddressResponse) Descriptor() ([]byte, []int) {
+	return file_eth_v1_types_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *GetActiveSlashProposalForAddressResponse) GetProposalId() int64 {
+	if x != nil {
+		return x.ProposalId
+	}
+	return 0
+}
+
+func (x *GetActiveSlashProposalForAddressResponse) GetProposer() string {
+	if x != nil {
+		return x.Proposer
+	}
+	return ""
+}
+
+func (x *GetActiveSlashProposalForAddressResponse) GetSubmissionBlockNumber() int64 {
+	if x != nil {
+		return x.SubmissionBlockNumber
+	}
+	return 0
+}
+
+func (x *GetActiveSlashProposalForAddressResponse) GetTargetContractRegistryKey() string {
+	if x != nil {
+		return x.TargetContractRegistryKey
+	}
+	return ""
+}
+
+func (x *GetActiveSlashProposalForAddressResponse) GetTargetContractAddress() string {
+	if x != nil {
+		return x.TargetContractAddress
+	}
+	return ""
+}
+
+func (x *GetActiveSlashProposalForAddressResponse) GetCallValue() int64 {
+	if x != nil {
+		return x.CallValue
+	}
+	return 0
+}
+
+func (x *GetActiveSlashProposalForAddressResponse) GetFunctionSignature() string {
+	if x != nil {
+		return x.FunctionSignature
+	}
+	return ""
+}
+
+func (x *GetActiveSlashProposalForAddressResponse) GetCallData() string {
+	if x != nil {
+		return x.CallData
+	}
+	return ""
+}
+
 type SubscriptionResponse_DeregistrationEvent struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -1262,7 +1412,7 @@ type SubscriptionResponse_DeregistrationEvent struct {
 func (x *SubscriptionResponse_DeregistrationEvent) Reset() {
 	*x = SubscriptionResponse_DeregistrationEvent{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_eth_v1_types_proto_msgTypes[24]
+		mi := &file_eth_v1_types_proto_msgTypes[26]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1275,7 +1425,7 @@ func (x *SubscriptionResponse_DeregistrationEvent) String() string {
 func (*SubscriptionResponse_DeregistrationEvent) ProtoMessage() {}
 
 func (x *SubscriptionResponse_DeregistrationEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_eth_v1_types_proto_msgTypes[24]
+	mi := &file_eth_v1_types_proto_msgTypes[26]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1443,7 +1593,35 @@ var file_eth_v1_types_proto_rawDesc = []byte{
 	0x6f, 0x69, 0x6e, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x17, 0x2e, 0x65, 0x74, 0x68,
 	0x2e, 0x76, 0x31, 0x2e, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x45, 0x6e, 0x64, 0x70, 0x6f,
 	0x69, 0x6e, 0x74, 0x52, 0x0f, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x45, 0x6e, 0x64, 0x70,
-	0x6f, 0x69, 0x6e, 0x74, 0x42, 0x07, 0x0a, 0x05, 0x65, 0x76, 0x65, 0x6e, 0x74, 0x42, 0x31, 0x5a,
+	0x6f, 0x69, 0x6e, 0x74, 0x42, 0x07, 0x0a, 0x05, 0x65, 0x76, 0x65, 0x6e, 0x74, 0x22, 0x43, 0x0a,
+	0x27, 0x47, 0x65, 0x74, 0x41, 0x63, 0x74, 0x69, 0x76, 0x65, 0x53, 0x6c, 0x61, 0x73, 0x68, 0x50,
+	0x72, 0x6f, 0x70, 0x6f, 0x73, 0x61, 0x6c, 0x46, 0x6f, 0x72, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73,
+	0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72,
+	0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65,
+	0x73, 0x73, 0x22, 0xf8, 0x02, 0x0a, 0x28, 0x47, 0x65, 0x74, 0x41, 0x63, 0x74, 0x69, 0x76, 0x65,
+	0x53, 0x6c, 0x61, 0x73, 0x68, 0x50, 0x72, 0x6f, 0x70, 0x6f, 0x73, 0x61, 0x6c, 0x46, 0x6f, 0x72,
+	0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12,
+	0x1e, 0x0a, 0x0a, 0x70, 0x72, 0x6f, 0x70, 0x6f, 0x73, 0x61, 0x6c, 0x49, 0x64, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x03, 0x52, 0x0a, 0x70, 0x72, 0x6f, 0x70, 0x6f, 0x73, 0x61, 0x6c, 0x49, 0x64, 0x12,
+	0x1a, 0x0a, 0x08, 0x70, 0x72, 0x6f, 0x70, 0x6f, 0x73, 0x65, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x08, 0x70, 0x72, 0x6f, 0x70, 0x6f, 0x73, 0x65, 0x72, 0x12, 0x34, 0x0a, 0x15, 0x73,
+	0x75, 0x62, 0x6d, 0x69, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x42, 0x6c, 0x6f, 0x63, 0x6b, 0x4e, 0x75,
+	0x6d, 0x62, 0x65, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x03, 0x52, 0x15, 0x73, 0x75, 0x62, 0x6d,
+	0x69, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x42, 0x6c, 0x6f, 0x63, 0x6b, 0x4e, 0x75, 0x6d, 0x62, 0x65,
+	0x72, 0x12, 0x3c, 0x0a, 0x19, 0x74, 0x61, 0x72, 0x67, 0x65, 0x74, 0x43, 0x6f, 0x6e, 0x74, 0x72,
+	0x61, 0x63, 0x74, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x72, 0x79, 0x4b, 0x65, 0x79, 0x18, 0x04,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x19, 0x74, 0x61, 0x72, 0x67, 0x65, 0x74, 0x43, 0x6f, 0x6e, 0x74,
+	0x72, 0x61, 0x63, 0x74, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x72, 0x79, 0x4b, 0x65, 0x79, 0x12,
+	0x34, 0x0a, 0x15, 0x74, 0x61, 0x72, 0x67, 0x65, 0x74, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63,
+	0x74, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x15,
+	0x74, 0x61, 0x72, 0x67, 0x65, 0x74, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x41, 0x64,
+	0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x1c, 0x0a, 0x09, 0x63, 0x61, 0x6c, 0x6c, 0x56, 0x61, 0x6c,
+	0x75, 0x65, 0x18, 0x06, 0x20, 0x01, 0x28, 0x03, 0x52, 0x09, 0x63, 0x61, 0x6c, 0x6c, 0x56, 0x61,
+	0x6c, 0x75, 0x65, 0x12, 0x2c, 0x0a, 0x11, 0x66, 0x75, 0x6e, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53,
+	0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x18, 0x07, 0x20, 0x01, 0x28, 0x09, 0x52, 0x11,
+	0x66, 0x75, 0x6e, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72,
+	0x65, 0x12, 0x1a, 0x0a, 0x08, 0x63, 0x61, 0x6c, 0x6c, 0x44, 0x61, 0x74, 0x61, 0x18, 0x08, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x08, 0x63, 0x61, 0x6c, 0x6c, 0x44, 0x61, 0x74, 0x61, 0x42, 0x31, 0x5a,
 	0x2f, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41, 0x75, 0x64, 0x69,
 	0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x2f, 0x61, 0x75, 0x64, 0x69, 0x75, 0x73,
 	0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x65, 0x74, 0x68, 0x2f, 0x76, 0x31,
@@ -1462,7 +1640,7 @@ func file_eth_v1_types_proto_rawDescGZIP() []byte {
 	return file_eth_v1_types_proto_rawDescData
 }
 
-var file_eth_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_eth_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_eth_v1_types_proto_goTypes = []interface{}{
 	(*GetStatusRequest)(nil),                                 // 0: eth.v1.GetStatusRequest
 	(*GetStatusResponse)(nil),                                // 1: eth.v1.GetStatusResponse
@@ -1488,18 +1666,20 @@ var file_eth_v1_types_proto_goTypes = []interface{}{
 	(*RegisterResponse)(nil),                                 // 21: eth.v1.RegisterResponse
 	(*SubscriptionRequest)(nil),                              // 22: eth.v1.SubscriptionRequest
 	(*SubscriptionResponse)(nil),                             // 23: eth.v1.SubscriptionResponse
-	(*SubscriptionResponse_DeregistrationEvent)(nil),         // 24: eth.v1.SubscriptionResponse.DeregistrationEvent
-	(*timestamppb.Timestamp)(nil),                            // 25: google.protobuf.Timestamp
+	(*GetActiveSlashProposalForAddressRequest)(nil),          // 24: eth.v1.GetActiveSlashProposalForAddressRequest
+	(*GetActiveSlashProposalForAddressResponse)(nil),         // 25: eth.v1.GetActiveSlashProposalForAddressResponse
+	(*SubscriptionResponse_DeregistrationEvent)(nil),         // 26: eth.v1.SubscriptionResponse.DeregistrationEvent
+	(*timestamppb.Timestamp)(nil),                            // 27: google.protobuf.Timestamp
 }
 var file_eth_v1_types_proto_depIdxs = []int32{
 	8,  // 0: eth.v1.GetRegisteredEndpointsResponse.endpoints:type_name -> eth.v1.ServiceEndpoint
 	8,  // 1: eth.v1.GetRegisteredEndpointsForServiceProviderResponse.endpoints:type_name -> eth.v1.ServiceEndpoint
 	8,  // 2: eth.v1.GetRegisteredEndpointInfoResponse.se:type_name -> eth.v1.ServiceEndpoint
-	25, // 3: eth.v1.ServiceEndpoint.registered_at:type_name -> google.protobuf.Timestamp
+	27, // 3: eth.v1.ServiceEndpoint.registered_at:type_name -> google.protobuf.Timestamp
 	15, // 4: eth.v1.GetServiceProviderResponse.serviceProvider:type_name -> eth.v1.ServiceProvider
 	15, // 5: eth.v1.GetServiceProvidersResponse.serviceProviders:type_name -> eth.v1.ServiceProvider
-	25, // 6: eth.v1.GetLatestFundingRoundResponse.timestamp:type_name -> google.protobuf.Timestamp
-	24, // 7: eth.v1.SubscriptionResponse.deregistration:type_name -> eth.v1.SubscriptionResponse.DeregistrationEvent
+	27, // 6: eth.v1.GetLatestFundingRoundResponse.timestamp:type_name -> google.protobuf.Timestamp
+	26, // 7: eth.v1.SubscriptionResponse.deregistration:type_name -> eth.v1.SubscriptionResponse.DeregistrationEvent
 	8,  // 8: eth.v1.SubscriptionResponse.DeregistrationEvent.service_endpoint:type_name -> eth.v1.ServiceEndpoint
 	9,  // [9:9] is the sub-list for method output_type
 	9,  // [9:9] is the sub-list for method input_type
@@ -1803,6 +1983,30 @@ func file_eth_v1_types_proto_init() {
 			}
 		}
 		file_eth_v1_types_proto_msgTypes[24].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetActiveSlashProposalForAddressRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_eth_v1_types_proto_msgTypes[25].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetActiveSlashProposalForAddressResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_eth_v1_types_proto_msgTypes[26].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SubscriptionResponse_DeregistrationEvent); i {
 			case 0:
 				return &v.state
@@ -1824,7 +2028,7 @@ func file_eth_v1_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_eth_v1_types_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   25,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

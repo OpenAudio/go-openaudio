@@ -38,6 +38,7 @@ require (
 
 require (
 	connectrpc.com/connect v1.18.1
+	github.com/Oudwins/tailwind-merge-go v0.2.1
 	github.com/axiomhq/axiom-go v0.23.0
 	github.com/cockroachdb/pebble v1.1.2
 	github.com/cometbft/cometbft/api v1.0.0

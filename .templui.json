@@ -1,0 +1,7 @@
+{
+  "componentsDir": "pkg/core/console/templui/components",
+  "utilsDir": "pkg/core/console/templui/utils",
+  "moduleName": "github.com/AudiusProject/audiusd",
+  "jsDir": "pkg/core/console/assets/js",
+  "jsPublicPath": "/console/assets/js"
+}

@@ -6,22 +6,28 @@ import (
     "time"
 
     "github.com/dustin/go-humanize"
+	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/progress"
+	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/datepicker"
+	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/calendar"
+	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/popover"
 )
 
 const unearnedRewardsThreshold = int64(10000)
 
 type AdjudicatePageView struct {
-    ServiceProvider        *ServiceProvider
-    StartTime              time.Time
-    EndTime                time.Time
-    MetSlas                int
-    PartialSlas            int
-    DeadSlas               int
-    TotalSlas              int
-    TotalStaked            int64
-    TotalChallenges        int64
-    FailedChallenges       int64
-    SlashRecommendation    int64
+    ServiceProvider       *ServiceProvider
+    StartTime             time.Time
+    EndTime               time.Time
+    MetSlas               int
+    PartialSlas           int
+    DeadSlas              int
+    TotalSlas             int
+    TotalStaked           int64
+    TotalChallenges       int64
+    FailedChallenges      int64
+    SlashRecommendation   int64
+    ActiveSlashProposalId int64
+    DashboardURL          string
 }
 
 type ServiceProvider struct {
@@ -33,6 +39,11 @@ type ServiceProvider struct {
 type StorageProofRollup struct {
     ChallengesReceived int64
     ChallengesFailed   int64
+}
+
+type CopyButtonProps struct {
+    Size int
+    CustomId string
 }
 
 func getTimeRangeQueryString(start time.Time, end time.Time) string {
@@ -86,9 +97,13 @@ templ staticAdjudicateStyles() {
             cursor: pointer;
         }
 
-        #openSlashProposalModal:hover {
+        .slashBtn:hover {
             cursor: pointer;
-            background-color: black;
+            background-color: #ddd;
+        }
+
+        .copyBtn:hover {
+            cursor: pointer;
         }
 
         .adjudicateToolTip {
@@ -103,6 +118,15 @@ templ staticAdjudicateStyles() {
             z-index: 1;
         }
 
+        .progressRow {
+            --primary: 0 0 60%;
+            --secondary: 0 74.4% 84.7%;
+        }
+
+        :root {
+            --card: 0 0 100%;
+        }
+
     </style>
 }
 
@@ -110,54 +134,53 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
 	@c.layout.SiteFrame() {
         @staticUptimeStyles()
         @staticAdjudicateStyles()
-        <div>
-            <h1 class="text-xl w-full p-3 text-center bg-red-100 text-red-400 my-3">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-8 p-1 inline">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
-                </svg>
-                <span class="align-middle">UI currently under development</span>
-            </h1>
 
+        @progress.Script()
+        @datepicker.Script()
+        @calendar.Script()
+        @popover.Script()
+
+        <div>
             <h2 class="text-lg text-gray-400">
                 Node Operator
             </h2>
             <h1 class="text-xl p-4">
                 { props.ServiceProvider.Address }
-                <svg xmlns="http://www.w3.org/2000/svg" id="copyAdjudicateLinkButton" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="copyAdjudicateLink size-6 inline text-gray-600">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
-                </svg>
             </h1>
+
+            <h2 class="text-lg text-gray-400 px-4 py-2">
+                <span>SLA Performance Overview from </span>
+                <div id="startDatePicker" class="datePicker inline-block w-1/5">
+                    @datepicker.DatePicker(datepicker.Props{
+                        Value: props.StartTime,
+                    })
+                </div>
+                <span>&nbsp; to &nbsp;</span>
+                <div id="endDatePicker" class="datePicker inline-block w-1/5">
+                    @datepicker.DatePicker(datepicker.Props{
+                        Value: props.EndTime,
+                    })
+                </div>
+                <div class="inline-block px-4">
+                    @copyButton(CopyButtonProps{
+                        Size:     6,
+                        CustomId: "copyAdjudicateLinkButton",
+                    })
+                </div>
+            </h2>
         </div>
         <input type="text" id="timeRangeQueryStringInput" class="hidden" value={ getTimeRangeQueryString(props.StartTime, props.EndTime) }>
 
-        <script>
-            document.getElementById("copyAdjudicateLinkButton").addEventListener("click", () => {
-              timeRangeInput = document.getElementById("timeRangeQueryStringInput")
-              const link = window.location.origin + window.location.pathname + "?" + timeRangeInput.value;
-              
-              navigator.clipboard.writeText(link)
-                .then(() => {
-                  console.log("Link copied to clipboard!");
-                  alert("Copied to clipboard!");
-                })
-                .catch(err => {
-                  console.error("Failed to copy: ", err);
-                });
-              });
-        </script>
-
         <div class="flex flex-row text-center p-2">
             <div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
-                <dt class="text-lg">
-                    { props.StartTime.Format("2006-01-02") }
+                <dt class="text-xl">
+                    Proof of Work
                 </dt>
-                <dd class="text-sm">Start</dd>
             </div>
             <div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
-                <dt class="text-lg">
-                    { props.EndTime.Format("2006-01-02") }
+                <dt class="text-xl">
+                    Proof of Storage
                 </dt>
-                <dd class="text-sm">End</dd>
             </div>
         </div>
 
@@ -183,7 +206,37 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
             </div>
 
         </div>
-        @adjudicateProposalRecommendation(props.SlashRecommendation)
+
+        <div class="progressRow flex flex-row text-center p-2">
+            <div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
+                if props.TotalSlas > 0 {
+                    @progress.Progress(progress.Props{
+                        Value: props.TotalSlas - props.DeadSlas,
+                        Max: props.TotalSlas,
+                        Size: progress.SizeLg,
+                        Class: "px-10",
+                        ShowValue: true,
+                    })
+                } else {
+                    <dt class="text-4xl">N/A</dt>
+                }
+            </div>
+            <div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
+                if props.TotalChallenges > 0 {
+                    @progress.Progress(progress.Props{
+                        Value: int(props.TotalChallenges - props.FailedChallenges),
+                        Max: int(props.TotalChallenges),
+                        Size: progress.SizeLg,
+                        Class: "px-10",
+                        ShowValue: true,
+                    })
+                } else {
+                    <dt class="text-4xl">N/A</dt>
+                }
+            </div>
+        </div>
+
+        @adjudicateProposalRecommendation(props.SlashRecommendation, props.DashboardURL, props.ActiveSlashProposalId)
 
 
         <table class="bg-slate-50 p-2 rounded validatorReports text-left m-4">
@@ -192,7 +245,6 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
                 <col class="bg-white" />
                 <col />
                 <col class="bg-white" />
-                <col />
             </colgroup>
             <tr>
                 <th>Endpoint</th>
@@ -203,7 +255,7 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
                         <div class="basis-1/2">Failed</div>
                     </div>
                 </th>
-                <th>SLA History</th>
+                <th>Proof of Work History</th>
             </tr>
             for _, ep := range props.ServiceProvider.Endpoints {
                 @endpointRowReport(ep, props.ServiceProvider.StorageProofRollups[ep.CometAddress])
@@ -212,63 +264,69 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
 
         <div id="slashProposalModal" class="slashProposalModal">
           <div class="slashProposalModalContent">
-            <span id="closeSlashProposalModal" class="slashProposalModalCloseButton">&times;</span>
+            <span id="closeSlashProposalModal" class="slashProposalModalCloseButton px-3">&times;</span>
             <h2 class="text-lg">Create Slash Proposal for Delinquent Node Operator</h2>
 
             <div class="py-2">
+                <h3 class="text-sm text-gray-400">Proposal Name</h3>
+                <div class="flex">
+                    @copyButton(CopyButtonProps{Size:4})
+                    <p class="text-sm px-2">{ fmt.Sprintf("Slash %s", props.ServiceProvider.Address) }</p>
+                </div>
+            </div>
+
+            <div class="py-2">
+                <h3 class="text-sm text-gray-400">Target Contract</h3>
+                <div class="flex">
+                    @copyButton(CopyButtonProps{Size:4})
+                    <p class="text-sm px-2">DelegateManager</p>
+                </div>
+            </div>
+
+            <div class="py-2">
                 <h3 class="text-sm text-gray-400">Signature</h3>
-                <p class="text-sm px-2">slash(uint256,address)</p>
+                <div class="flex">
+                    @copyButton(CopyButtonProps{Size:4})
+                    <p class="text-sm px-2">slash(uint256,address)</p>
+                </div>
             </div>
 
             <div class="py-2">
                 <h3 class="text-sm text-gray-400">Call Data</h3>
-                <p class="text-sm px-2">{ fmt.Sprintf("%d,%s", props.SlashRecommendation, props.ServiceProvider.Address) }</p>
-            </div>
-
-            <div class="py-2">
-                <h3 class="text-sm text-gray-400">Name</h3>
-                <p class="text-sm px-2">{ fmt.Sprintf("Slash %s", props.ServiceProvider.Address) }</p>
+                <div class="flex">
+                    @copyButton(CopyButtonProps{Size:4})
+                    <p class="text-sm px-2">{ fmt.Sprintf("%d,%s", props.SlashRecommendation, props.ServiceProvider.Address) }</p>
+                </div>
             </div>
 
             <div class="py-2">
                 <h3 class="text-sm text-gray-400">Description</h3>
-                <p class="text-sm px-2" id="slashProposalDescription">
-                    { fmt.Sprintf("Slash %s $AUDIO from %s for consistently failing to meet SLA. See ", humanize.Comma(props.SlashRecommendation), props.ServiceProvider.Address) }
-                </p>
+                <div class="flex">
+                    @copyButton(CopyButtonProps{Size:4})
+                    <p class="text-sm px-2 w-4/5" id="slashProposalDescription">
+                        { fmt.Sprintf("Slash %s $AUDIO from %s for consistently failing to meet SLA. See ", humanize.Comma(props.SlashRecommendation), props.ServiceProvider.Address) }
+                    </p>
+                </div>
             </div>
 
             <div class="p-4 text-right">
-                <a class="text-blue-800" href="https://dashboard.audius.co/#/governance" target="_blank">
+                <a class="text-blue-800 hover:text-blue-600" href={ fmt.Sprintf("%s/#/governance", props.DashboardURL) } target="_blank">
                     Open Protocol Dashboard
                 </a>
             </div>
           </div>
         </div>
 
-        <script>
-            const modal = document.getElementById("slashProposalModal");
-            const openBtn = document.getElementById("openSlashProposalModal");
-            const closeBtn = document.getElementById("closeSlashProposalModal");
-
-            openBtn.onclick = () => modal.style.display = "block";
-            closeBtn.onclick = () => modal.style.display = "none";
-
-            window.onclick = (e) => {
-                if (e.target === modal) modal.style.display = "none";
-            };
-
-            timeRangeInput = document.getElementById("timeRangeQueryStringInput")
-            const link = window.location.origin + window.location.pathname + "?" + timeRangeInput.value;
-            const slashDesc = document.getElementById("slashProposalDescription")
-            slashDesc.textContent += link
-        </script>
+        @copyButtonScript()
+        @datePickerScript()
+        @modalScript()
 	}
 }
 
 templ endpointRowReport(endpoint *Endpoint, proofRollup *StorageProofRollup) {
     <tr>
         <td>
-            <a href={ templ.URL(fmt.Sprintf("%s/console/uptime", endpoint.Endpoint)) }>
+            <a href={ templ.URL(fmt.Sprintf("/console/uptime/latest/%s", strippedEndpoint(endpoint.Endpoint))) }>
                 { strippedEndpoint(endpoint.Endpoint) }
             </a>
         </td>
@@ -290,16 +348,125 @@ templ endpointSlaHistory(report *SlaReport, endpoint string) {
     </li>
 }
 
-templ adjudicateProposalRecommendation(unearnedRewards int64) {
+templ adjudicateProposalRecommendation(unearnedRewards int64, dashboardURL string, activeSlashProposalId int64) {
     if unearnedRewards > unearnedRewardsThreshold {
-        <div id="openSlashProposalModal" class={ "flex-row rounded-md bg-slate-100 mx-3 p-1", slaDeadClass() }>
-            <dt>
+        <div class="flex justify-between items-center rounded-md text-lg bg-red-100 text-red-400 m-3 p-1">
+            <span>
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-8 p-1 inline">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
                 </svg>
-                <span class="align-middle">Node performance appears to be delinquent. Action is recommended.</span>
-            </dt>
-
+                <span class="align-middle">Node(s) appear to be delinquent. Action is recommended.</span>
+            </span>
+            if activeSlashProposalId > 0 {
+                <a class="slashBtn rounded-md px-4 py-2 m-1 shadow bg-slate-100" href={ fmt.Sprintf("%s/#/governance/proposal/%d", dashboardURL, activeSlashProposalId) }>
+                    Vote on Proposal { fmt.Sprint(activeSlashProposalId) }
+                </a>
+            } else {
+                <button id="openSlashProposalModal" class="slashBtn rounded-md px-4 py-2 m-1 shadow bg-slate-100">
+                    Create Proposal
+                </button>
+            }
         </div>
     }
+}
+
+templ copyButton(props CopyButtonProps) {
+    <div class="relative">
+        <svg xmlns="http://www.w3.org/2000/svg" id={ props.CustomId } fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={ "copyBtn my-1 inline text-gray-400 hover:text-gray-600", fmt.Sprintf("size-%d", props.Size) }>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+        </svg>
+        <span class="tooltip absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs text-white bg-gray-800 rounded opacity-0 transition-opacity duration-300">
+          Copied!
+        </span>
+    </div>
+}
+
+templ copyButtonScript() {
+    <script>
+        document.querySelectorAll(".copyBtn").forEach((btn) => {
+            if (btn.id != "") { // skip customized copy logic
+                return
+            }
+            btn.addEventListener("click", async () => {
+                const container = btn.closest("div.flex");
+                const text = container.querySelector("p").innerText;
+                try {
+                    await navigator.clipboard.writeText(text);
+                    const tooltip = btn.nextElementSibling;
+                    tooltip.classList.remove("opacity-0");
+                    tooltip.classList.add("opacity-100");
+
+                    setTimeout(() => {
+                        tooltip.classList.remove("opacity-100");
+                        tooltip.classList.add("opacity-0");
+                    }, 1500);
+                } catch (err) {
+                    console.error("Failed to copy text: ", err);
+                }
+            });
+        });
+    </script>
+}
+
+templ datePickerScript() {
+    <script>
+        const startDateInput = document.querySelector("#startDatePicker input");
+        const endDateInput = document.querySelector("#endDatePicker input");
+        if (!startDateInput || !endDateInput) {
+            console.error("start and end date inputs don't exist");
+        }
+
+        const getStaticAdjudicationLink = () => {
+            const queryParams = new URLSearchParams(window.location.search);
+            queryParams.set("start", startDateInput.value);
+            queryParams.set("end", endDateInput.value);
+            return window.location.origin + window.location.pathname + "?" + queryParams.toString();
+        }
+
+        const refreshToSelectedTimeRange = () => {
+            window.location.href = getStaticAdjudicationLink()
+        };
+
+
+        startDateInput.addEventListener("change", refreshToSelectedTimeRange);
+        endDateInput.addEventListener("change", refreshToSelectedTimeRange);
+
+        const copyLinkBtn = document.getElementById("copyAdjudicateLinkButton");
+        copyLinkBtn.addEventListener("click", () => {
+            const link = getStaticAdjudicationLink()
+            navigator.clipboard.writeText(link)
+                .then(() => {
+                    const tooltip = copyLinkBtn.nextElementSibling;
+                    tooltip.classList.remove("opacity-0");
+                    tooltip.classList.add("opacity-100");
+
+                    setTimeout(() => {
+                        tooltip.classList.remove("opacity-100");
+                        tooltip.classList.add("opacity-0");
+                    }, 1500);
+                })
+                .catch(err => {
+                    console.error("Failed to copy: ", err);
+                });
+        });
+    </script>
+}
+
+templ modalScript() {
+    <script>
+        const modal = document.getElementById("slashProposalModal");
+        const openBtn = document.getElementById("openSlashProposalModal");
+        const closeBtn = document.getElementById("closeSlashProposalModal");
+
+        openBtn.onclick = () => modal.style.display = "block";
+        closeBtn.onclick = () => modal.style.display = "none";
+
+        window.onclick = (e) => {
+            if (e.target === modal) modal.style.display = "none";
+        };
+
+        const link = getStaticAdjudicationLink()
+        const slashDesc = document.getElementById("slashProposalDescription")
+        slashDesc.textContent += link
+    </script>
 }

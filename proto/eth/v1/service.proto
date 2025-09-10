@@ -18,4 +18,5 @@ service EthService {
   rpc IsDuplicateDelegateWallet(IsDuplicateDelegateWalletRequest) returns (IsDuplicateDelegateWalletResponse) {}
   rpc Register(RegisterRequest) returns (RegisterResponse) {}
   rpc Subscribe(SubscriptionRequest) returns (stream SubscriptionResponse) {}
+  rpc GetActiveSlashProposalForAddress(GetActiveSlashProposalForAddressRequest) returns (GetActiveSlashProposalForAddressResponse) {}
 }

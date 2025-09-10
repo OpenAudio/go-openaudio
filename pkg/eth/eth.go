@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	v1 "github.com/AudiusProject/audiusd/pkg/api/eth/v1"
+	"github.com/AudiusProject/audiusd/pkg/common"
 	"github.com/AudiusProject/audiusd/pkg/eth/contracts"
 	"github.com/AudiusProject/audiusd/pkg/eth/contracts/gen"
 	"github.com/AudiusProject/audiusd/pkg/eth/db"
@@ -119,8 +121,8 @@ func (eth *EthService) Run(ctx context.Context) error {
 	eth.logger.Info("starting eth data manager")
 
 	if err := eth.startEthDataManager(ctx); err != nil {
-		eth.logger.Error("error starting eth data manager", zap.Error(err))
-		return fmt.Errorf("error running endpoint manager: %w", err)
+		eth.logger.Error("error running eth data manager", zap.Error(err))
+		return fmt.Errorf("error running eth data manager: %w", err)
 	}
 
 	return nil
@@ -162,6 +164,11 @@ initial:
 		eth.logger.Error("eth failed to bind staking contract", zap.Error(err))
 		return fmt.Errorf("failed to bind staking contract: %v", err)
 	}
+	governance, err := eth.c.GetGovernanceContract()
+	if err != nil {
+		eth.logger.Error("eth could not get governance contract", zap.Error(err))
+		return fmt.Errorf("eth could not get governance contract: %v", err)
+	}
 
 	watchOpts := &bind.WatchOpts{Context: ctx}
 
@@ -172,6 +179,9 @@ initial:
 	stakedChan := make(chan *gen.StakingStaked)
 	unstakedChan := make(chan *gen.StakingUnstaked)
 	slashedChan := make(chan *gen.StakingSlashed)
+
+	proposalSubmittedChan := make(chan *gen.GovernanceProposalSubmitted)
+	proposalOutcomeChan := make(chan *gen.GovernanceProposalOutcomeEvaluated)
 
 	registerSub, err := serviceProviderFactory.WatchRegisteredServiceProvider(watchOpts, registerChan, nil, nil, nil)
 	if err != nil {
@@ -199,6 +209,15 @@ initial:
 		return fmt.Errorf("failed to subscribe to slashing events: %v", err)
 	}
 
+	proposalSubmittedSub, err := governance.WatchProposalSubmitted(watchOpts, proposalSubmittedChan, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to proposal submission events: %v", err)
+	}
+	proposalOutcomeSub, err := governance.WatchProposalOutcomeEvaluated(watchOpts, proposalOutcomeChan, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to proposal outcome events: %v", err)
+	}
+
 	// interval to clean refresh all indexed data
 	ticker = time.NewTicker(1 * time.Hour)
 
@@ -216,6 +235,10 @@ initial:
 			return fmt.Errorf("unstaked event subscription error: %v", err)
 		case err := <-slashedSub.Err():
 			return fmt.Errorf("slashed event subscription error: %v", err)
+		case err := <-proposalSubmittedSub.Err():
+			return fmt.Errorf("proposal submission event subscription error: %v", err)
+		case err := <-proposalOutcomeSub.Err():
+			return fmt.Errorf("proposal outcome event subscription error: %v", err)
 		case reg := <-registerChan:
 			if err := eth.addRegisteredEndpoint(ctx, reg.SpID, reg.ServiceType, reg.Endpoint, reg.Owner); err != nil {
 				eth.logger.Error("could not handle registration event", zap.Error(err))
@@ -260,6 +283,16 @@ initial:
 		case slashed := <-slashedChan:
 			if err := eth.updateStakedAmountForServiceProvider(ctx, slashed.User, slashed.Total); err != nil {
 				eth.logger.Error("could not update service staked amount from slashed event", zap.Error(err))
+				continue
+			}
+		case submission := <-proposalSubmittedChan:
+			if err := eth.addActiveProposal(ctx, governance, submission.ProposalId); err != nil {
+				eth.logger.Error("could not add new proposal", zap.Int64("proposal_id", submission.ProposalId.Int64()), zap.Error(err))
+				continue
+			}
+		case outcome := <-proposalOutcomeChan:
+			if err := eth.db.DeleteActiveProposal(ctx, outcome.ProposalId.Int64()); err != nil {
+				eth.logger.Error("could not remove proposal", zap.Int64("proposal_id", outcome.ProposalId.Int64()), zap.Error(err))
 				continue
 			}
 		case <-ticker.C:
@@ -419,6 +452,13 @@ func (eth *EthService) updateServiceProvider(ctx context.Context, serviceProvide
 func (eth *EthService) hydrateEthData(ctx context.Context) error {
 	eth.logger.Info("refreshing eth data")
 
+	// refresh proposals asynchronously, ignoring failures until data becomes mission critical
+	go func() {
+		if err := eth.refreshInProgressProposals(ctx); err != nil {
+			eth.logger.Error("eth failed to refresh in progress proposals", zap.Error(err))
+		}
+	}()
+
 	nodes, err := eth.c.GetAllRegisteredNodes(ctx)
 	if err != nil {
 		eth.logger.Error("eth could not get registered nodes", zap.Error(err))
@@ -566,4 +606,148 @@ func (eth *EthService) hydrateEthData(ctx context.Context) error {
 	eth.fundingRound.initialized = true
 
 	return tx.Commit(ctx)
+}
+
+func (eth *EthService) refreshInProgressProposals(ctx context.Context) error {
+	eth.db.ClearActiveProposals(ctx)
+	governance, err := eth.c.GetGovernanceContract()
+	if err != nil {
+		eth.logger.Error("eth could not get governance contract", zap.Error(err))
+		return fmt.Errorf("eth could not get governance contract: %v", err)
+	}
+	opts := &bind.CallOpts{Context: ctx}
+	proposalIds, err := governance.GetInProgressProposals(opts)
+	if err != nil {
+		eth.logger.Error("eth could not get in progress proposals", zap.Error(err))
+		return fmt.Errorf("eth could not get in progress proposals: %v", err)
+	}
+
+	for _, id := range proposalIds {
+		if err := eth.addActiveProposal(ctx, governance, id); err != nil {
+			eth.logger.Error("could not add active proposal", zap.Int64("proposal_id", id.Int64()), zap.Error(err))
+		}
+	}
+
+	return nil
+}
+
+func (eth *EthService) addActiveProposal(ctx context.Context, governance *gen.Governance, proposalId *big.Int) error {
+	opts := &bind.CallOpts{Context: ctx}
+	proposal, err := governance.GetProposalById(opts, proposalId)
+	if err != nil {
+		return fmt.Errorf("eth could not get proposal by id: %v", err)
+	}
+	return eth.db.InsertActiveProposal(
+		ctx,
+		db.InsertActiveProposalParams{
+			ID:                        proposal.ProposalId.Int64(),
+			Proposer:                  proposal.Proposer.Hex(),
+			SubmissionBlockNumber:     proposal.SubmissionBlockNumber.Int64(),
+			TargetContractRegistryKey: common.HexToUtf8(proposal.TargetContractRegistryKey),
+			TargetContractAddress:     proposal.TargetContractAddress.Hex(),
+			CallValue:                 proposal.CallValue.Int64(),
+			FunctionSignature:         proposal.FunctionSignature,
+			CallData:                  hex.EncodeToString(proposal.CallData),
+		},
+	)
+}
+
+// Get an active slash proposal against a given address. Returns nil if there are none.
+// In the case of multiple active slash proposals, returns the proposal with the highest slash amount
+func (eth *EthService) getSlashProposalForAddress(ctx context.Context, address string) (*db.EthActiveProposal, error) {
+	var foundProposal *db.EthActiveProposal
+	var foundProposalAmount *big.Int
+
+	activeProposals, err := eth.db.GetActiveProposals(ctx)
+	if err != nil {
+		eth.logger.Error("could not get active proposals from db", zap.Error(err))
+		return foundProposal, fmt.Errorf("could not get slash proposals from db: %v", err)
+	}
+
+	// ensure delegate manager contract address is initialized
+	if _, err := eth.c.GetDelegateManagerContract(); err != nil {
+		eth.logger.Error("eth failed to bind delegate manager contract", zap.Error(err))
+		return foundProposal, fmt.Errorf("failed to bind delegate manager contract: %v", err)
+	}
+
+	for _, prop := range activeProposals {
+		// Ignore proposals that aren't slash method from staking contract
+		if !strings.HasPrefix(prop.FunctionSignature, "slash(") || prop.TargetContractAddress != eth.c.DelegateManagerAddress.String() {
+			continue
+		}
+
+		slashAddr, slashAmount, err := DecodeSlashProposalArguments(prop.CallData)
+		if err != nil {
+			eth.logger.Error("failed to decode arguments from proposal call data", zap.String("call_data", prop.CallData), zap.Error(err))
+			continue
+		}
+
+		// Ignore proposals not affecting target address
+		if slashAddr.String() != address {
+			continue
+		}
+
+		// Found a matching active proposal that slashes the target address
+		if foundProposal == nil {
+			foundProposal = &prop
+			foundProposalAmount = slashAmount
+			continue
+		}
+
+		// If more than one slash proposal exists for this address,
+		// select the proposal with the highest slash amount
+		if foundProposalAmount.Cmp(slashAmount) == -1 {
+			foundProposal = &prop
+			foundProposalAmount = slashAmount
+			continue
+		}
+	}
+
+	return foundProposal, nil
+}
+
+func DecodeSlashProposalArguments(callData string) (address ethcommon.Address, amount *big.Int, err error) {
+	// Get bound ABI
+	parsedABI, err := gen.DelegateManagerMetaData.GetAbi()
+	if err != nil {
+		return address, amount, fmt.Errorf("failed to parse staking contract abi: %v", err)
+	}
+
+	// Get bound method
+	data := ethcommon.FromHex(callData)
+	method, err := parsedABI.MethodById(data[:4])
+	if err != nil || method == nil {
+		return address, amount, fmt.Errorf("failed to get method from proposal call data: %v", err)
+	}
+	if method.Name != "slash" {
+		return address, amount, errors.New("got wrong method from proposal call data")
+	}
+
+	// Decode arguments
+	args := map[string]interface{}{}
+	err = method.Inputs.UnpackIntoMap(args, data[4:])
+	if err != nil {
+		return address, amount, fmt.Errorf("failed unpack arguments: %v", err)
+	}
+
+	// Extract account address and slash amount from unpacked values
+	slashAddrRaw, ok := args["_slashAddress"]
+	if !ok {
+		return address, amount, fmt.Errorf("failed get slash address from unpacked call data: %v", err)
+	}
+	address, ok = slashAddrRaw.(ethcommon.Address)
+	if !ok {
+		return address, amount, fmt.Errorf("incompatible type for slash address from unpacked call data: %v", err)
+	}
+
+	slashAmountRaw, ok := args["_amount"]
+	if !ok {
+		return address, amount, fmt.Errorf("failed get slash amount from unpacked call data: %v", err)
+	}
+	amount, ok = slashAmountRaw.(*big.Int)
+	if !ok {
+		return address, amount, fmt.Errorf("incompatible type for slash amount from unpacked call data: %v", err)
+	}
+
+	return address, amount, nil
 }

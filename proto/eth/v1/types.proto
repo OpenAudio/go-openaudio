@@ -67,8 +67,6 @@ message GetStakingMetadataForServiceProviderResponse {
   int64 rewards_per_round = 2;
 }
 
-
-
 message ServiceProvider {
   string wallet = 1;
   int64 deployer_stake = 2; 
@@ -113,4 +111,19 @@ message SubscriptionResponse {
   oneof event {
     DeregistrationEvent deregistration = 1;
   }
+}
+
+message GetActiveSlashProposalForAddressRequest {
+  string address = 1;
+}
+
+message GetActiveSlashProposalForAddressResponse {
+  int64 proposalId = 1;
+  string proposer = 2;
+  int64 submissionBlockNumber = 3;
+  string targetContractRegistryKey = 4;
+  string targetContractAddress = 5;
+  int64 callValue = 6;
+  string functionSignature = 7;
+  string callData = 8;
 }

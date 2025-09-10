@@ -280,3 +280,25 @@ func (e *EthService) GetStakingMetadataForServiceProvider(ctx context.Context, r
 		},
 	), nil
 }
+
+func (e *EthService) GetActiveSlashProposalForAddress(ctx context.Context, req *connect.Request[v1.GetActiveSlashProposalForAddressRequest]) (*connect.Response[v1.GetActiveSlashProposalForAddressResponse], error) {
+	proposal, err := e.getSlashProposalForAddress(ctx, req.Msg.Address)
+	if err != nil {
+		e.logger.Debug("could not get active slash proposal for address", zap.String("address", req.Msg.Address), zap.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get active slash proposal"))
+	} else if proposal == nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no active slash proposal for address"))
+	}
+	return connect.NewResponse(
+		&v1.GetActiveSlashProposalForAddressResponse{
+			ProposalId:                proposal.ID,
+			Proposer:                  proposal.Proposer,
+			SubmissionBlockNumber:     proposal.SubmissionBlockNumber,
+			TargetContractRegistryKey: proposal.TargetContractRegistryKey,
+			TargetContractAddress:     proposal.TargetContractAddress,
+			CallValue:                 proposal.CallValue,
+			FunctionSignature:         proposal.FunctionSignature,
+			CallData:                  proposal.CallData,
+		},
+	), nil
+}

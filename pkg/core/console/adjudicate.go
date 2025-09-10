@@ -6,6 +6,7 @@ import (
 
 	"connectrpc.com/connect"
 	ethv1 "github.com/AudiusProject/audiusd/pkg/api/eth/v1"
+	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
 	"github.com/jackc/pgx/v5"
@@ -186,22 +187,45 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		return err
 	}
 
+	// Check for open slash proposals against service provider
+	var slashProposalId int64
+	if slashProposalResp, err := cs.eth.GetActiveSlashProposalForAddress(
+		ctx,
+		connect.NewRequest(&ethv1.GetActiveSlashProposalForAddressRequest{
+			Address: serviceProviderAddress,
+		}),
+	); err != nil {
+		var connectErr *connect.Error
+		if errors.As(err, &connectErr) {
+			// Skip error if no active slash proposal exists, otherwise log error
+			if connectErr.Code() != connect.CodeNotFound {
+				cs.logger.Error("Falled to get active slash proposal for service provider", zap.String("address", serviceProviderAddress), zap.Error(err))
+			}
+		} else { // Log unknown error
+			cs.logger.Error("Falled to get active slash proposal for service provider", zap.String("address", serviceProviderAddress), zap.Error(err))
+		}
+	} else {
+		slashProposalId = slashProposalResp.Msg.ProposalId
+	}
+
 	view := &pages.AdjudicatePageView{
 		ServiceProvider: &pages.ServiceProvider{
 			Address:             serviceProviderAddress,
 			Endpoints:           viewEndpoints,
 			StorageProofRollups: storageProofRollups,
 		},
-		StartTime:           startTime,
-		EndTime:             endTime,
-		MetSlas:             totalMetSlas,
-		PartialSlas:         totalPartialSlas,
-		DeadSlas:            totalDeadSlas,
-		TotalSlas:           totalSlas,
-		TotalStaked:         stakingResp.Msg.TotalStaked,
-		TotalChallenges:     totalChallenges,
-		FailedChallenges:    failedChallenges,
-		SlashRecommendation: slashRecommendation,
+		StartTime:             startTime,
+		EndTime:               endTime,
+		MetSlas:               totalMetSlas,
+		PartialSlas:           totalPartialSlas,
+		DeadSlas:              totalDeadSlas,
+		TotalSlas:             totalSlas,
+		TotalStaked:           stakingResp.Msg.TotalStaked,
+		TotalChallenges:       totalChallenges,
+		FailedChallenges:      failedChallenges,
+		SlashRecommendation:   slashRecommendation,
+		ActiveSlashProposalId: slashProposalId,
+		DashboardURL:          config.GetProtocolDashboardURL(),
 	}
 
 	return cs.views.RenderAdjudicateView(c, view)

@@ -80,6 +80,7 @@ install-go-deps:
 	go install -v github.com/a-h/templ/cmd/templ@latest
 	go install -v github.com/ethereum/go-ethereum/cmd/abigen@latest
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/templui/templui/cmd/templui@latest
 
 .PHONY: lint
 lint:

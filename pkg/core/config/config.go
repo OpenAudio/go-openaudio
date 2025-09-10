@@ -53,6 +53,10 @@ const (
 
 	DiscoveryDbURL = "postgresql://postgres:postgres@localhost:5432/audius_discovery"
 	ContentDbURL   = "postgresql://postgres:postgres@localhost:5432/audius_creator_node"
+
+	ProdDashboardURL  = "https://dashboard.audius.org"
+	StageDashboardURL = "https://dashboard.staging.audius.org"
+	DevDashboardURL   = "http://localhost"
 )
 
 const (
@@ -420,4 +424,17 @@ func (c *Config) NewSandboxVars(env ...string) *SandboxVars {
 
 	sandboxVars.EthRpcURL = fmt.Sprintf("%s/core/erpc", c.NodeEndpoint)
 	return &sandboxVars
+}
+
+func GetProtocolDashboardURL() string {
+	switch GetRuntimeEnvironment() {
+	case "prod", "production", "mainnet":
+		return ProdDashboardURL
+	case "stage", "staging", "testnet":
+		return StageDashboardURL
+	case "dev", "development", "devnet", "local", "sandbox":
+		return DevDashboardURL
+	default:
+		return ""
+	}
 }

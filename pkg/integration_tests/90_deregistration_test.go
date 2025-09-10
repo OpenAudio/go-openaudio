@@ -22,9 +22,9 @@ import (
 )
 
 const (
-	contentThreeKey = "1166189cdf129cdcb011f2ad0e5be24f967f7b7026d162d7c36073b12020b61c"
-	contentThreeEp  = "https://node4.audiusd.devnet"
-	contentTwoEp    = "https://node3.audiusd.devnet"
+	contentThreeKey     = "1166189cdf129cdcb011f2ad0e5be24f967f7b7026d162d7c36073b12020b61c"
+	contentThreeAddress = "0x1B569e8f1246907518Ff3386D523dcF373e769B6"
+	contentThreeEp      = "https://node4.audiusd.devnet"
 )
 
 type CometRPCResponse struct {
