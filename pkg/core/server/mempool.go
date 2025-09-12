@@ -181,7 +181,7 @@ func (s *Server) broadcastMempoolTransaction(key string, tx *MempoolTransaction)
 	// but we can add it here later if needed
 
 	s.connectRPCPeers.Range(func(addr EthAddress, peer corev1connect.CoreServiceClient) bool {
-		go func(logger *zap.Logger, peer corev1connect.CoreServiceClient) {
+		go func(addr EthAddress, logger *zap.Logger, peer corev1connect.CoreServiceClient) {
 			var err error
 			if tx.Tx != nil {
 				_, err = peer.ForwardTransaction(context.Background(), connect.NewRequest(&v1.ForwardTransactionRequest{
@@ -201,7 +201,7 @@ func (s *Server) broadcastMempoolTransaction(key string, tx *MempoolTransaction)
 				return
 			}
 			s.logger.Info("broadcasted tx to peer", zap.String("tx", key), zap.String("peer", addr))
-		}(s.logger, peer)
+		}(addr, s.logger, peer)
 		return true
 	})
 }
