@@ -21,6 +21,7 @@ import (
 var (
 	DiscoveryNode = common.Utf8ToHex("discovery-node")
 	ContentNode   = common.Utf8ToHex("content-node")
+	audConversion = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 )
 
 // contract keys
@@ -443,4 +444,18 @@ func ServiceTypeToString(serviceType [32]byte) (string, error) {
 	} else {
 		return "", fmt.Errorf("no matching service type found for '%v'", serviceType)
 	}
+}
+
+func WeiToAudio(wei *big.Int) *big.Int {
+	if wei == nil {
+		return big.NewInt(0)
+	}
+	return new(big.Int).Div(wei, audConversion)
+}
+
+func AudioToWei(audio *big.Int) *big.Int {
+	if audio == nil {
+		return big.NewInt(0)
+	}
+	return new(big.Int).Mul(audio, audConversion)
 }

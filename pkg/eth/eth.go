@@ -29,8 +29,6 @@ const (
 	DeregistrationTopic = "deregistration-subscriber"
 )
 
-var audConversion = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
-
 type DeregistrationPubsub = pubsub.Pubsub[*v1.ServiceEndpoint]
 
 type EthService struct {
@@ -118,11 +116,27 @@ func (eth *EthService) Run(ctx context.Context) error {
 	}
 	eth.c = c
 
-	eth.logger.Info("starting eth data manager")
-
-	if err := eth.startEthDataManager(ctx); err != nil {
-		eth.logger.Error("error running eth data manager", zap.Error(err))
-		return fmt.Errorf("error running eth data manager: %w", err)
+	delay := 1 * time.Second
+	ticker := time.NewTicker(delay)
+	for {
+		select {
+		case <-ticker.C:
+			eth.logger.Info("starting eth data manager")
+			if err := eth.startEthDataManager(ctx); err != nil {
+				eth.logger.Error("error running eth data manager", zap.Error(err))
+				delay *= 2
+				if delay > 30*time.Minute {
+					return errors.New("eth service shutting down, too many retries")
+				}
+				eth.logger.Info("retrying eth data manager after delay", zap.Int("delay", int(delay.Seconds())))
+				ticker.Reset(delay)
+			} else {
+				return nil
+			}
+		case <-ctx.Done():
+			eth.logger.Info("eth context canceled")
+			return ctx.Err()
+		}
 	}
 
 	return nil
@@ -130,24 +144,8 @@ func (eth *EthService) Run(ctx context.Context) error {
 
 func (eth *EthService) startEthDataManager(ctx context.Context) error {
 	// hydrate eth data at startup
-	delay := 2 * time.Second
-	ticker := time.NewTicker(delay)
-initial:
-	for {
-		select {
-		case <-ticker.C:
-			if err := eth.hydrateEthData(ctx); err != nil {
-				eth.logger.Error("error gathering registered eth endpoints", zap.Error(err))
-				delay *= 2
-				eth.logger.Error("retrying", zap.Int("delay", int(delay)))
-				ticker.Reset(delay)
-			} else {
-				break initial
-			}
-		case <-ctx.Done():
-			eth.logger.Info("eth context canceled")
-			return errors.New("context canceled")
-		}
+	if err := eth.hydrateEthData(ctx); err != nil {
+		return fmt.Errorf("error hydrating eth data: %v", err)
 	}
 
 	eth.logger.Info("eth service is ready")
@@ -187,6 +185,7 @@ initial:
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to endpoint registration events: %v", err)
 	}
+	defer registerSub.Unsubscribe()
 	deregisterSub, err := serviceProviderFactory.WatchDeregisteredServiceProvider(watchOpts, deregisterChan, nil, nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to endpoint deregistration events: %v", err)
@@ -195,50 +194,105 @@ initial:
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to endpoint update events: %v", err)
 	}
+	defer updateSub.Unsubscribe()
 
 	stakedSub, err := staking.WatchStaked(watchOpts, stakedChan, nil)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to staking events: %v", err)
 	}
+	defer stakedSub.Unsubscribe()
 	unstakedSub, err := staking.WatchUnstaked(watchOpts, unstakedChan, nil)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to unstaking events: %v", err)
 	}
+	defer unstakedSub.Unsubscribe()
 	slashedSub, err := staking.WatchSlashed(watchOpts, slashedChan, nil)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to slashing events: %v", err)
 	}
+	defer slashedSub.Unsubscribe()
 
 	proposalSubmittedSub, err := governance.WatchProposalSubmitted(watchOpts, proposalSubmittedChan, nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to proposal submission events: %v", err)
 	}
+	defer proposalSubmittedSub.Unsubscribe()
 	proposalOutcomeSub, err := governance.WatchProposalOutcomeEvaluated(watchOpts, proposalOutcomeChan, nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to proposal outcome events: %v", err)
 	}
+	defer proposalOutcomeSub.Unsubscribe()
 
 	// interval to clean refresh all indexed data
-	ticker = time.NewTicker(1 * time.Hour)
+	ticker := time.NewTicker(1 * time.Hour)
 
 	for {
 		select {
 		case err := <-registerSub.Err():
-			return fmt.Errorf("register event subscription error: %v", err)
+			eth.logger.Error("register event subscription error", zap.Error(err))
+			registerSub.Unsubscribe()
+			registerSub, err = serviceProviderFactory.WatchRegisteredServiceProvider(watchOpts, registerChan, nil, nil, nil)
+			if err != nil {
+				return fmt.Errorf("failed to subscribe to endpoint registration events: %v", err)
+			}
+			defer registerSub.Unsubscribe()
 		case err := <-deregisterSub.Err():
-			return fmt.Errorf("deregister event subscription error: %v", err)
+			eth.logger.Error("deregister event subscription error", zap.Error(err))
+			deregisterSub.Unsubscribe()
+			deregisterSub, err = serviceProviderFactory.WatchDeregisteredServiceProvider(watchOpts, deregisterChan, nil, nil, nil)
+			if err != nil {
+				return fmt.Errorf("failed to subscribe to endpoint deregistration events: %v", err)
+			}
+			defer deregisterSub.Unsubscribe()
 		case err := <-updateSub.Err():
-			return fmt.Errorf("update event subscription error: %v", err)
+			eth.logger.Error("update event subscription error", zap.Error(err))
+			updateSub.Unsubscribe()
+			updateSub, err = serviceProviderFactory.WatchEndpointUpdated(watchOpts, updateChan, nil, nil, nil)
+			if err != nil {
+				return fmt.Errorf("failed to subscribe to endpoint update events: %v", err)
+			}
+			defer updateSub.Unsubscribe()
 		case err := <-stakedSub.Err():
-			return fmt.Errorf("staked event subscription error: %v", err)
+			eth.logger.Error("staked event subscription error", zap.Error(err))
+			stakedSub.Unsubscribe()
+			stakedSub, err = staking.WatchStaked(watchOpts, stakedChan, nil)
+			if err != nil {
+				return fmt.Errorf("failed to subscribe to staking events: %v", err)
+			}
+			defer stakedSub.Unsubscribe()
 		case err := <-unstakedSub.Err():
-			return fmt.Errorf("unstaked event subscription error: %v", err)
+			eth.logger.Error("unstaked event subscription error", zap.Error(err))
+			unstakedSub.Unsubscribe()
+			unstakedSub, err = staking.WatchUnstaked(watchOpts, unstakedChan, nil)
+			if err != nil {
+				return fmt.Errorf("failed to subscribe to unstaking events: %v", err)
+			}
+			defer unstakedSub.Unsubscribe()
 		case err := <-slashedSub.Err():
-			return fmt.Errorf("slashed event subscription error: %v", err)
+			eth.logger.Error("slashed event subscription error", zap.Error(err))
+			slashedSub.Unsubscribe()
+			slashedSub, err = staking.WatchSlashed(watchOpts, slashedChan, nil)
+			if err != nil {
+				return fmt.Errorf("failed to subscribe to slashing events: %v", err)
+			}
+			defer slashedSub.Unsubscribe()
 		case err := <-proposalSubmittedSub.Err():
-			return fmt.Errorf("proposal submission event subscription error: %v", err)
+			eth.logger.Error("proposal submission event subscription error", zap.Error(err))
+			proposalSubmittedSub.Unsubscribe()
+			proposalSubmittedSub, err = governance.WatchProposalSubmitted(watchOpts, proposalSubmittedChan, nil, nil)
+			if err != nil {
+				return fmt.Errorf("failed to subscribe to proposal submission events: %v", err)
+			}
+			defer proposalSubmittedSub.Unsubscribe()
 		case err := <-proposalOutcomeSub.Err():
-			return fmt.Errorf("proposal outcome event subscription error: %v", err)
+			eth.logger.Error("proposal outcome event subscription error", zap.Error(err))
+			proposalOutcomeSub.Unsubscribe()
+			proposalOutcomeSub, err = governance.WatchProposalOutcomeEvaluated(watchOpts, proposalOutcomeChan, nil, nil)
+			if err != nil {
+				return fmt.Errorf("failed to subscribe to proposal outcome events: %v", err)
+			}
+			defer proposalOutcomeSub.Unsubscribe()
+
 		case reg := <-registerChan:
 			if err := eth.addRegisteredEndpoint(ctx, reg.SpID, reg.ServiceType, reg.Endpoint, reg.Owner); err != nil {
 				eth.logger.Error("could not handle registration event", zap.Error(err))
@@ -354,7 +408,7 @@ func (eth *EthService) deleteAndDeregisterEndpoint(ctx context.Context, spID *bi
 func (eth *EthService) updateStakedAmountForServiceProvider(ctx context.Context, address ethcommon.Address, totalStaked *big.Int) error {
 	if err := eth.db.UpsertStaked(
 		ctx,
-		db.UpsertStakedParams{Address: address.Hex(), TotalStaked: new(big.Int).Div(totalStaked, audConversion).Int64()},
+		db.UpsertStakedParams{Address: address.Hex(), TotalStaked: contracts.WeiToAudio(totalStaked).Int64()},
 	); err != nil {
 		eth.logger.Error("eth could not update service staked amount", zap.Error(err))
 		return fmt.Errorf("could not update service staked amount: %v", err)
@@ -378,7 +432,7 @@ func (eth *EthService) updateTotalStakedAmount(ctx context.Context) error {
 		eth.logger.Error("eth could not get total staked across all delegators", zap.Error(err))
 		return fmt.Errorf("could not get total staked across all delegators: %v", err)
 	}
-	eth.fundingRound.totalStakedAmount = new(big.Int).Div(totalStaked, audConversion).Int64()
+	eth.fundingRound.totalStakedAmount = contracts.WeiToAudio(totalStaked).Int64()
 	return nil
 }
 
@@ -583,7 +637,7 @@ func (eth *EthService) hydrateEthData(ctx context.Context) error {
 			ctx,
 			db.UpsertStakedParams{
 				Address:     sp.Address,
-				TotalStaked: new(big.Int).Div(totalStakedForSp, audConversion).Int64(),
+				TotalStaked: contracts.WeiToAudio(totalStakedForSp).Int64(),
 			},
 		); err != nil {
 			eth.logger.Error("eth could not insert staked amount into eth indexer db", zap.Error(err))
@@ -602,7 +656,7 @@ func (eth *EthService) hydrateEthData(ctx context.Context) error {
 		return fmt.Errorf("could not get funding amount per round: %v", err)
 	}
 
-	eth.fundingRound.fundingAmountPerRound = new(big.Int).Div(fundingAmountPerRound, audConversion).Int64()
+	eth.fundingRound.fundingAmountPerRound = contracts.WeiToAudio(fundingAmountPerRound).Int64()
 	eth.fundingRound.initialized = true
 
 	return tx.Commit(ctx)
