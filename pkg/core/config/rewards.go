@@ -3,9 +3,24 @@ package config
 import "github.com/AudiusProject/audiusd/pkg/rewards"
 
 var (
-	DevClaimAuthorities   = []rewards.ClaimAuthority{{Address: "0x73EB6d82CFB20bA669e9c178b718d770C49BB52f", Name: "TikiLabsDiscovery"}, {Address: "0xfc3916B97489d2eFD81DDFDf11bad8E33ad5b87a", Name: "TikiLabsBridge"}}
-	StageClaimAuthorities = []rewards.ClaimAuthority{{Address: "0x8fcFA10Bd3808570987dbb5B1EF4AB74400FbfDA", Name: "TikiLabsDiscovery"}, {Address: "0x788aab45F3D4b7e44dBE71c688589942a9261651", Name: "TikiLabsBridge"}}
-	ProdClaimAuthorities  = []rewards.ClaimAuthority{{Address: "0xf1a1Bd34b2Bc73629aa69E50E3249E89A3c16786", Name: "TikiLabsDiscovery"}, {Address: "0x66C72FC7D7b36c7691ed72CA243dd427880C8ec8", Name: "TikiLabsBridge"}}
+	DevClaimAuthorities = []rewards.ClaimAuthority{
+		{
+			Address: "0xfc3916B97489d2eFD81DDFDf11bad8E33ad5b87a",
+			Name:    "Audius",
+		},
+	}
+	StageClaimAuthorities = []rewards.ClaimAuthority{
+		{
+			Address: "0xDC2BDF1F23381CA2eC9e9c70D4FD96CD8645D090",
+			Name:    "Audius",
+		},
+	}
+	ProdClaimAuthorities = []rewards.ClaimAuthority{
+		{
+			Address: "0xc8d0C29B6d540295e8fc8ac72456F2f4D41088c8",
+			Name:    "Audius",
+		},
+	}
 )
 
 var (

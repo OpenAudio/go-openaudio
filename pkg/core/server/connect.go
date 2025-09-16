@@ -831,7 +831,6 @@ func (c *CoreService) GetRewards(context.Context, *connect.Request[v1.GetRewards
 		for _, claimAuthority := range reward.ClaimAuthorities {
 			claimAuthorities = append(claimAuthorities, &v1.ClaimAuthority{
 				Address: claimAuthority.Address,
-				Name:    claimAuthority.Name,
 			})
 		}
 		rewardResponses = append(rewardResponses, &v1.Reward{
