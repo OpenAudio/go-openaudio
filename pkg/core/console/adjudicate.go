@@ -5,13 +5,16 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
 	ethv1 "github.com/AudiusProject/audiusd/pkg/api/eth/v1"
 	"github.com/AudiusProject/audiusd/pkg/core/config"
 	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
 	"github.com/AudiusProject/audiusd/pkg/core/db"
+	"github.com/AudiusProject/audiusd/pkg/core/server"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const minimumAudioStakePerEndpoint = 200000
@@ -26,7 +29,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		connect.NewRequest(&ethv1.GetServiceProviderRequest{Address: serviceProviderAddress}),
 	)
 	if err != nil {
-		cs.logger.Error("Falled to get service provider", zap.String("address", serviceProviderAddress), zap.Error(err))
+		cs.logger.Error("Failed to get service provider", zap.String("address", serviceProviderAddress), zap.Error(err))
 		return err
 	}
 
@@ -36,7 +39,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		connect.NewRequest(&ethv1.GetRegisteredEndpointsForServiceProviderRequest{Owner: serviceProviderAddress}),
 	)
 	if err != nil {
-		cs.logger.Error("Falled to get service provider endpoints", zap.String("address", serviceProviderAddress), zap.Error(err))
+		cs.logger.Error("Failed to get service provider endpoints", zap.String("address", serviceProviderAddress), zap.Error(err))
 		return err
 	}
 	endpoints := endpointsResp.Msg.Endpoints
@@ -74,16 +77,12 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 			IsEthRegistered: true,
 			RegisteredAt:    ep.RegisteredAt.AsTime(),
 		}
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			cs.logger.Error("Falled to get rollups in time range", zap.Time("start_time", startTime), zap.Time("end_time", endTime), zap.Error(err))
-			return err
-		}
 
 		// Get the comet address for each endpoint, if possible
 		var cometAddress string
 		validator, err := cs.db.GetNodeByEndpoint(ctx, ep.Endpoint)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			cs.logger.Error("Falled to get cometbft validator for endpoint", zap.String("endpoint", ep.Endpoint), zap.Error(err))
+			cs.logger.Error("Failed to get cometbft validator for endpoint", zap.String("endpoint", ep.Endpoint), zap.Error(err))
 			return err
 		} else if errors.Is(err, pgx.ErrNoRows) {
 			// Endpoint is registered on eth but not on comet.
@@ -96,7 +95,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 				},
 			)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				cs.logger.Error("Falled to get validator history for endpoint", zap.String("endpoint", ep.Endpoint), zap.Error(err))
+				cs.logger.Error("Failed to get validator history for endpoint", zap.String("endpoint", ep.Endpoint), zap.Error(err))
 				return err
 			} else if err == nil {
 				cometAddress = history.CometAddress
@@ -169,21 +168,14 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		}
 	}
 
-	// Calculate slash recommendation based on SLA performance.
-	// Explanation:
-	//   200k AUDIO is the minimum stake per endpoint.
-	//   We therefore recommend slashing 200k AUDIO for a full year of zero sla performance
-	//   from a single endpoint.
-	//   $AUDIO to slash = $200k * number of endpoints * (days in selected interval / 365) * (zeroed SLAs / total SLAs)
-	periodDays := int64(endTime.Sub(startTime).Hours() / 24)
-	slashRecommendation := int64(200000.0 * float64(len(endpoints)) * (float64(periodDays) / 365.0) * (float64(totalDeadSlas) / float64(totalSlas)))
+	slashAmount := server.CalculateSlashRecommendation(startTime, endTime, len(endpoints), totalSlas, totalDeadSlas)
 
 	stakingResp, err := cs.eth.GetStakingMetadataForServiceProvider(
 		ctx,
 		connect.NewRequest(&ethv1.GetStakingMetadataForServiceProviderRequest{Address: serviceProviderAddress}),
 	)
 	if err != nil {
-		cs.logger.Error("Falled to get service provider staking metadata", zap.String("address", serviceProviderAddress), zap.Error(err))
+		cs.logger.Error("Failed to get service provider staking metadata", zap.String("address", serviceProviderAddress), zap.Error(err))
 		return err
 	}
 
@@ -199,13 +191,45 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		if errors.As(err, &connectErr) {
 			// Skip error if no active slash proposal exists, otherwise log error
 			if connectErr.Code() != connect.CodeNotFound {
-				cs.logger.Error("Falled to get active slash proposal for service provider", zap.String("address", serviceProviderAddress), zap.Error(err))
+				cs.logger.Error("Failed to get active slash proposal for service provider", zap.String("address", serviceProviderAddress), zap.Error(err))
 			}
 		} else { // Log unknown error
-			cs.logger.Error("Falled to get active slash proposal for service provider", zap.String("address", serviceProviderAddress), zap.Error(err))
+			cs.logger.Error("Failed to get active slash proposal for service provider", zap.String("address", serviceProviderAddress), zap.Error(err))
 		}
 	} else {
 		slashProposalId = slashProposalResp.Msg.ProposalId
+	}
+
+	// Sign the currently displayed data
+	slashRecommendation := &corev1.SlashRecommendation{
+		Address:    serviceProviderAddress,
+		Start:      timestamppb.New(startTime),
+		End:        timestamppb.New(endTime),
+		MissedSLAs: int32(totalDeadSlas),
+		Amount:     slashAmount,
+	}
+	signature, err := server.SignSlashRecommendation(cs.config.EthereumKey, slashRecommendation)
+	if err != nil {
+		// log but don't fail to render
+		cs.logger.Error("Failed to sign active adjudication data")
+	}
+
+	slashAttestors := make(map[string]string, cs.config.AttRegistrationRSize)
+	if slashAmount > pages.UnearnedRewardsThreshold {
+		resp, err := cs.core.GetSlashAttestations(
+			ctx,
+			connect.NewRequest(&corev1.GetSlashAttestationsRequest{
+				Request: &corev1.GetSlashAttestationRequest{
+					Data: slashRecommendation,
+				},
+			}),
+		)
+		if err != nil {
+			cs.logger.Error("Failed to get slash attestations")
+		}
+		for _, attestation := range resp.Msg.Attestations {
+			slashAttestors[attestation.Endpoint] = attestation.Signature
+		}
 	}
 
 	view := &pages.AdjudicatePageView{
@@ -214,18 +238,27 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 			Endpoints:           viewEndpoints,
 			StorageProofRollups: storageProofRollups,
 		},
-		StartTime:             startTime,
-		EndTime:               endTime,
-		MetSlas:               totalMetSlas,
-		PartialSlas:           totalPartialSlas,
-		DeadSlas:              totalDeadSlas,
-		TotalSlas:             totalSlas,
-		TotalStaked:           stakingResp.Msg.TotalStaked,
-		TotalChallenges:       totalChallenges,
-		FailedChallenges:      failedChallenges,
-		SlashRecommendation:   slashRecommendation,
+		StartTime:        startTime,
+		EndTime:          endTime,
+		MetSlas:          totalMetSlas,
+		PartialSlas:      totalPartialSlas,
+		DeadSlas:         totalDeadSlas,
+		TotalSlas:        totalSlas,
+		TotalStaked:      stakingResp.Msg.TotalStaked,
+		TotalChallenges:  totalChallenges,
+		FailedChallenges: failedChallenges,
+		Slash: pages.SlashRecommendation{
+			Amount:    slashAmount,
+			Signature: signature,
+			Attestors: slashAttestors,
+		},
 		ActiveSlashProposalId: slashProposalId,
 		DashboardURL:          config.GetProtocolDashboardURL(),
+		ReportingEndpoint: &pages.Endpoint{
+			EthAddress:   cs.config.WalletAddress,
+			CometAddress: cs.config.ProposerAddress,
+			Endpoint:     cs.config.NodeEndpoint,
+		},
 	}
 
 	return cs.views.RenderAdjudicateView(c, view)

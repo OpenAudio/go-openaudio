@@ -68,6 +68,12 @@ const (
 	// CoreServiceGetRewardAttestationProcedure is the fully-qualified name of the CoreService's
 	// GetRewardAttestation RPC.
 	CoreServiceGetRewardAttestationProcedure = "/core.v1.CoreService/GetRewardAttestation"
+	// CoreServiceGetSlashAttestationProcedure is the fully-qualified name of the CoreService's
+	// GetSlashAttestation RPC.
+	CoreServiceGetSlashAttestationProcedure = "/core.v1.CoreService/GetSlashAttestation"
+	// CoreServiceGetSlashAttestationsProcedure is the fully-qualified name of the CoreService's
+	// GetSlashAttestations RPC.
+	CoreServiceGetSlashAttestationsProcedure = "/core.v1.CoreService/GetSlashAttestations"
 	// CoreServiceGetERNProcedure is the fully-qualified name of the CoreService's GetERN RPC.
 	CoreServiceGetERNProcedure = "/core.v1.CoreService/GetERN"
 	// CoreServiceGetMEADProcedure is the fully-qualified name of the CoreService's GetMEAD RPC.
@@ -92,6 +98,8 @@ type CoreServiceClient interface {
 	GetStoredSnapshots(context.Context, *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error)
 	GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error)
 	GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error)
+	GetSlashAttestation(context.Context, *connect.Request[v1.GetSlashAttestationRequest]) (*connect.Response[v1.GetSlashAttestationResponse], error)
+	GetSlashAttestations(context.Context, *connect.Request[v1.GetSlashAttestationsRequest]) (*connect.Response[v1.GetSlashAttestationsResponse], error)
 	GetERN(context.Context, *connect.Request[v1.GetERNRequest]) (*connect.Response[v1.GetERNResponse], error)
 	GetMEAD(context.Context, *connect.Request[v1.GetMEADRequest]) (*connect.Response[v1.GetMEADResponse], error)
 	GetPIE(context.Context, *connect.Request[v1.GetPIERequest]) (*connect.Response[v1.GetPIEResponse], error)
@@ -192,6 +200,18 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("GetRewardAttestation")),
 			connect.WithClientOptions(opts...),
 		),
+		getSlashAttestation: connect.NewClient[v1.GetSlashAttestationRequest, v1.GetSlashAttestationResponse](
+			httpClient,
+			baseURL+CoreServiceGetSlashAttestationProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetSlashAttestation")),
+			connect.WithClientOptions(opts...),
+		),
+		getSlashAttestations: connect.NewClient[v1.GetSlashAttestationsRequest, v1.GetSlashAttestationsResponse](
+			httpClient,
+			baseURL+CoreServiceGetSlashAttestationsProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetSlashAttestations")),
+			connect.WithClientOptions(opts...),
+		),
 		getERN: connect.NewClient[v1.GetERNRequest, v1.GetERNResponse](
 			httpClient,
 			baseURL+CoreServiceGetERNProcedure,
@@ -229,6 +249,8 @@ type coreServiceClient struct {
 	getStoredSnapshots           *connect.Client[v1.GetStoredSnapshotsRequest, v1.GetStoredSnapshotsResponse]
 	getRewards                   *connect.Client[v1.GetRewardsRequest, v1.GetRewardsResponse]
 	getRewardAttestation         *connect.Client[v1.GetRewardAttestationRequest, v1.GetRewardAttestationResponse]
+	getSlashAttestation          *connect.Client[v1.GetSlashAttestationRequest, v1.GetSlashAttestationResponse]
+	getSlashAttestations         *connect.Client[v1.GetSlashAttestationsRequest, v1.GetSlashAttestationsResponse]
 	getERN                       *connect.Client[v1.GetERNRequest, v1.GetERNResponse]
 	getMEAD                      *connect.Client[v1.GetMEADRequest, v1.GetMEADResponse]
 	getPIE                       *connect.Client[v1.GetPIERequest, v1.GetPIEResponse]
@@ -304,6 +326,16 @@ func (c *coreServiceClient) GetRewardAttestation(ctx context.Context, req *conne
 	return c.getRewardAttestation.CallUnary(ctx, req)
 }
 
+// GetSlashAttestation calls core.v1.CoreService.GetSlashAttestation.
+func (c *coreServiceClient) GetSlashAttestation(ctx context.Context, req *connect.Request[v1.GetSlashAttestationRequest]) (*connect.Response[v1.GetSlashAttestationResponse], error) {
+	return c.getSlashAttestation.CallUnary(ctx, req)
+}
+
+// GetSlashAttestations calls core.v1.CoreService.GetSlashAttestations.
+func (c *coreServiceClient) GetSlashAttestations(ctx context.Context, req *connect.Request[v1.GetSlashAttestationsRequest]) (*connect.Response[v1.GetSlashAttestationsResponse], error) {
+	return c.getSlashAttestations.CallUnary(ctx, req)
+}
+
 // GetERN calls core.v1.CoreService.GetERN.
 func (c *coreServiceClient) GetERN(ctx context.Context, req *connect.Request[v1.GetERNRequest]) (*connect.Response[v1.GetERNResponse], error) {
 	return c.getERN.CallUnary(ctx, req)
@@ -335,6 +367,8 @@ type CoreServiceHandler interface {
 	GetStoredSnapshots(context.Context, *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error)
 	GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error)
 	GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error)
+	GetSlashAttestation(context.Context, *connect.Request[v1.GetSlashAttestationRequest]) (*connect.Response[v1.GetSlashAttestationResponse], error)
+	GetSlashAttestations(context.Context, *connect.Request[v1.GetSlashAttestationsRequest]) (*connect.Response[v1.GetSlashAttestationsResponse], error)
 	GetERN(context.Context, *connect.Request[v1.GetERNRequest]) (*connect.Response[v1.GetERNResponse], error)
 	GetMEAD(context.Context, *connect.Request[v1.GetMEADRequest]) (*connect.Response[v1.GetMEADResponse], error)
 	GetPIE(context.Context, *connect.Request[v1.GetPIERequest]) (*connect.Response[v1.GetPIEResponse], error)
@@ -431,6 +465,18 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("GetRewardAttestation")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceGetSlashAttestationHandler := connect.NewUnaryHandler(
+		CoreServiceGetSlashAttestationProcedure,
+		svc.GetSlashAttestation,
+		connect.WithSchema(coreServiceMethods.ByName("GetSlashAttestation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceGetSlashAttestationsHandler := connect.NewUnaryHandler(
+		CoreServiceGetSlashAttestationsProcedure,
+		svc.GetSlashAttestations,
+		connect.WithSchema(coreServiceMethods.ByName("GetSlashAttestations")),
+		connect.WithHandlerOptions(opts...),
+	)
 	coreServiceGetERNHandler := connect.NewUnaryHandler(
 		CoreServiceGetERNProcedure,
 		svc.GetERN,
@@ -479,6 +525,10 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceGetRewardsHandler.ServeHTTP(w, r)
 		case CoreServiceGetRewardAttestationProcedure:
 			coreServiceGetRewardAttestationHandler.ServeHTTP(w, r)
+		case CoreServiceGetSlashAttestationProcedure:
+			coreServiceGetSlashAttestationHandler.ServeHTTP(w, r)
+		case CoreServiceGetSlashAttestationsProcedure:
+			coreServiceGetSlashAttestationsHandler.ServeHTTP(w, r)
 		case CoreServiceGetERNProcedure:
 			coreServiceGetERNHandler.ServeHTTP(w, r)
 		case CoreServiceGetMEADProcedure:
@@ -548,6 +598,14 @@ func (UnimplementedCoreServiceHandler) GetRewards(context.Context, *connect.Requ
 
 func (UnimplementedCoreServiceHandler) GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetRewardAttestation is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetSlashAttestation(context.Context, *connect.Request[v1.GetSlashAttestationRequest]) (*connect.Response[v1.GetSlashAttestationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetSlashAttestation is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetSlashAttestations(context.Context, *connect.Request[v1.GetSlashAttestationsRequest]) (*connect.Response[v1.GetSlashAttestationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetSlashAttestations is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) GetERN(context.Context, *connect.Request[v1.GetERNRequest]) (*connect.Response[v1.GetERNResponse], error) {

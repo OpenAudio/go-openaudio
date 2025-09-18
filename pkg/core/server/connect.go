@@ -922,3 +922,31 @@ func (c *CoreService) GetPIE(ctx context.Context, req *connect.Request[v1.GetPIE
 		Pie: &pie,
 	}), nil
 }
+
+func (c *CoreService) GetSlashAttestation(ctx context.Context, req *connect.Request[v1.GetSlashAttestationRequest]) (*connect.Response[v1.GetSlashAttestationResponse], error) {
+	signature, err := c.core.getSlashAttestation(ctx, req.Msg.Data)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&v1.GetSlashAttestationResponse{
+		Signature: signature,
+		Endpoint:  c.core.config.NodeEndpoint,
+	}), nil
+}
+
+func (c *CoreService) GetSlashAttestations(ctx context.Context, req *connect.Request[v1.GetSlashAttestationsRequest]) (*connect.Response[v1.GetSlashAttestationsResponse], error) {
+	attestations, err := c.core.gatherSlashAttestations(ctx, req.Msg.Request.Data)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	attestationResponses := make([]*v1.GetSlashAttestationResponse, 0, len(attestations))
+	for endpoint, signature := range attestations {
+		attestationResponses = append(
+			attestationResponses,
+			&v1.GetSlashAttestationResponse{Signature: signature, Endpoint: endpoint},
+		)
+	}
+	return connect.NewResponse(&v1.GetSlashAttestationsResponse{
+		Attestations: attestationResponses,
+	}), nil
+}

@@ -2,9 +2,10 @@ package pages
 
 import (
     "fmt"
-    "net/url"
-    "time"
     "math/big"
+    "net/url"
+    "strings"
+    "time"
 
     "github.com/dustin/go-humanize"
 	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/progress"
@@ -14,7 +15,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/eth/contracts"
 )
 
-const unearnedRewardsThreshold = int64(10000)
+const UnearnedRewardsThreshold = int64(10000)
 
 type AdjudicatePageView struct {
     ServiceProvider       *ServiceProvider
@@ -27,9 +28,16 @@ type AdjudicatePageView struct {
     TotalStaked           int64
     TotalChallenges       int64
     FailedChallenges      int64
-    SlashRecommendation   int64
+    Slash                 SlashRecommendation
     ActiveSlashProposalId int64
     DashboardURL          string
+    ReportingEndpoint     *Endpoint
+}
+
+type SlashRecommendation struct {
+    Amount int64
+    Signature   string
+    Attestors   map[string]string
 }
 
 type ServiceProvider struct {
@@ -46,6 +54,69 @@ type StorageProofRollup struct {
 type CopyButtonProps struct {
     Size int
     CustomId string
+}
+
+func buildProposalSubscription(props *AdjudicatePageView) string {
+    return fmt.Sprintf(`We recommend slashing %s $AUDIO from %s, owner of
+%s
+for consistently failing to meet SLA.
+
+Proof:
+{
+  start: %s,
+  end: %s,
+  missedSLAs: %d,
+  amount: %d,
+}
+Signature: %s
+Produced by [%s](%s)
+
+Additional Proofs
+
+%s`,
+        humanize.Comma(props.Slash.Amount),
+        props.ServiceProvider.Address,
+        formatEndpoints(props.ServiceProvider.Endpoints),
+        props.StartTime.Format("2006-01-02"),
+        props.EndTime.Format("2006-01-02"),
+        props.DeadSlas,
+        props.Slash.Amount,
+        props.Slash.Signature,
+        strippedEndpoint(props.ReportingEndpoint.Endpoint),
+        fmt.Sprintf(
+            "%s/adjudicate/%s%s",
+            props.ReportingEndpoint.Endpoint,
+            props.ServiceProvider.Address,
+            getTimeRangeQueryString(props.StartTime, props.EndTime),
+        ),
+        formatAdditionalProofs(props),
+    )
+}
+
+func formatEndpoints(endpoints []*Endpoint) string {
+    epBullets := make([]string, len(endpoints))
+    for i, ep := range endpoints {
+        epBullets[i] = fmt.Sprintf("* %s", ep.Endpoint)
+    }
+    return strings.Join(epBullets, "\n")
+}
+
+func formatAdditionalProofs(props *AdjudicatePageView) string {
+    proofList := make([]string, 0, len(props.Slash.Attestors))
+    for endpoint, signature := range props.Slash.Attestors {
+        proofList = append(proofList, fmt.Sprintf(
+            "* %s,[%s](%s)", 
+            signature,
+            strippedEndpoint(endpoint),
+            fmt.Sprintf(
+                "%s/adjudicate/%s%s",
+                endpoint,
+                props.ServiceProvider.Address,
+                getTimeRangeQueryString(props.StartTime, props.EndTime),
+            ),
+        ))
+    }
+    return strings.Join(proofList, "\n")
 }
 
 func getTimeRangeQueryString(start time.Time, end time.Time) string {
@@ -81,15 +152,20 @@ templ staticAdjudicateStyles() {
             left: 0; top: 0;
             width: 100%; height: 100%;
             background: rgba(0,0,0,0.5);
+            overflow: auto;
         }
 
         .slashProposalModalContent {
             background: #fff;
             padding: 20px;
-            margin: 15% auto;
+            margin: 10% auto;
             width: 800px;
             border-radius: 8px;
             position: relative;
+        }
+
+        .slashProposalModalBody {
+            overflow: auto;
         }
 
         .slashProposalModalCloseButton {
@@ -170,6 +246,13 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
                     })
                 </div>
             </h2>
+            <h3 class="text-md overflow-auto text-gray-400 px-4 py-2">
+                { fmt.Sprintf(
+                    "Proof Signature from %s: %s",
+                    strippedEndpoint(props.ReportingEndpoint.Endpoint),
+                    props.Slash.Signature,
+                 ) }
+            </h3>
         </div>
         <input type="text" id="timeRangeQueryStringInput" class="hidden" value={ getTimeRangeQueryString(props.StartTime, props.EndTime) }>
 
@@ -238,7 +321,7 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
             </div>
         </div>
 
-        @adjudicateProposalRecommendation(props.SlashRecommendation, props.DashboardURL, props.ActiveSlashProposalId)
+        @adjudicateProposalRecommendation(props.Slash, props.DashboardURL, props.ActiveSlashProposalId)
 
 
         <table class="bg-slate-50 p-2 rounded validatorReports text-left m-4">
@@ -269,45 +352,45 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
             <span id="closeSlashProposalModal" class="slashProposalModalCloseButton px-3">&times;</span>
             <h2 class="text-lg">Create Slash Proposal for Delinquent Node Operator</h2>
 
-            <div class="py-2">
-                <h3 class="text-sm text-gray-400">Proposal Name</h3>
-                <div class="flex">
-                    @copyButton(CopyButtonProps{Size:4})
-                    <p class="text-sm px-2">{ fmt.Sprintf("Slash %s", props.ServiceProvider.Address) }</p>
+            <div class="slashProposalModalBody">
+                <div class="py-2">
+                    <h3 class="text-sm text-gray-400">Proposal Name</h3>
+                    <div class="flex">
+                        @copyButton(CopyButtonProps{Size:4})
+                        <p class="text-sm px-2">{ fmt.Sprintf("Slash %s", props.ServiceProvider.Address) }</p>
+                    </div>
                 </div>
-            </div>
 
-            <div class="py-2">
-                <h3 class="text-sm text-gray-400">Target Contract</h3>
-                <div class="flex">
-                    @copyButton(CopyButtonProps{Size:4})
-                    <p class="text-sm px-2">DelegateManager</p>
+                <div class="py-2">
+                    <h3 class="text-sm text-gray-400">Target Contract</h3>
+                    <div class="flex">
+                        @copyButton(CopyButtonProps{Size:4})
+                        <p class="text-sm px-2">DelegateManager</p>
+                    </div>
                 </div>
-            </div>
 
-            <div class="py-2">
-                <h3 class="text-sm text-gray-400">Signature</h3>
-                <div class="flex">
-                    @copyButton(CopyButtonProps{Size:4})
-                    <p class="text-sm px-2">slash(uint256,address)</p>
+                <div class="py-2">
+                    <h3 class="text-sm text-gray-400">Signature</h3>
+                    <div class="flex">
+                        @copyButton(CopyButtonProps{Size:4})
+                        <p class="text-sm px-2">slash(uint256,address)</p>
+                    </div>
                 </div>
-            </div>
 
-            <div class="py-2">
-                <h3 class="text-sm text-gray-400">Call Data</h3>
-                <div class="flex">
-                    @copyButton(CopyButtonProps{Size:4})
-                    <p class="text-sm px-2">{ fmt.Sprintf("%s,%s", contracts.AudioToWei(big.NewInt(props.SlashRecommendation)).String(), props.ServiceProvider.Address) }</p>
+                <div class="py-2">
+                    <h3 class="text-sm text-gray-400">Call Data</h3>
+                    <div class="flex">
+                        @copyButton(CopyButtonProps{Size:4})
+                        <p class="text-sm px-2">{ fmt.Sprintf("%s,%s", contracts.AudioToWei(big.NewInt(props.Slash.Amount)).String(), props.ServiceProvider.Address) }</p>
+                    </div>
                 </div>
-            </div>
 
-            <div class="py-2">
-                <h3 class="text-sm text-gray-400">Description</h3>
-                <div class="flex">
-                    @copyButton(CopyButtonProps{Size:4})
-                    <p class="text-sm px-2 w-4/5" id="slashProposalDescription">
-                        { fmt.Sprintf("Slash %s $AUDIO from %s for consistently failing to meet SLA. See ", humanize.Comma(props.SlashRecommendation), props.ServiceProvider.Address) }
-                    </p>
+                <div class="py-2">
+                    <h3 class="text-sm text-gray-400">Description</h3>
+                    <div class="flex">
+                        @copyButton(CopyButtonProps{Size:4})
+                        <p class="whitespace-pre-wrap text-sm px-2 w-4/5">{ buildProposalSubscription(props) }</p>
+                    </div>
                 </div>
             </div>
 
@@ -350,8 +433,8 @@ templ endpointSlaHistory(report *SlaReport, endpoint string) {
     </li>
 }
 
-templ adjudicateProposalRecommendation(unearnedRewards int64, dashboardURL string, activeSlashProposalId int64) {
-    if unearnedRewards > unearnedRewardsThreshold {
+templ adjudicateProposalRecommendation(slash SlashRecommendation, dashboardURL string, activeSlashProposalId int64) {
+    if slash.Amount > UnearnedRewardsThreshold {
         <div class="flex justify-between items-center rounded-md text-lg bg-red-100 text-red-400 m-3 p-1">
             <span>
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-8 p-1 inline">
@@ -466,9 +549,5 @@ templ modalScript() {
         window.onclick = (e) => {
             if (e.target === modal) modal.style.display = "none";
         };
-
-        const link = getStaticAdjudicationLink()
-        const slashDesc = document.getElementById("slashProposalDescription")
-        slashDesc.textContent += link
     </script>
 }

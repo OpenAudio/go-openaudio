@@ -409,6 +409,31 @@ message GetRewardAttestationResponse {
   string attestation = 2;
 }
 
+message SlashRecommendation {
+  string address = 1;
+  google.protobuf.Timestamp start = 2;
+  google.protobuf.Timestamp end = 3;
+  int32 missedSLAs = 4;
+  int64 Amount = 5;
+}
+
+message GetSlashAttestationRequest {
+  SlashRecommendation data = 1;
+}
+
+message GetSlashAttestationResponse {
+  string signature = 1;
+  string endpoint = 2;
+}
+
+message GetSlashAttestationsRequest {
+  GetSlashAttestationRequest request = 1;
+}
+
+message GetSlashAttestationsResponse {
+  repeated GetSlashAttestationResponse attestations = 1;
+}
+
 message GetERNRequest {
   string address = 1;
 }
