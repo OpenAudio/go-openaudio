@@ -56,10 +56,11 @@ func TestSubmitAndReadPlayThroughGRPC(t *testing.T) {
 		},
 	}
 
-	expectedTxHash, err := common.ToTxHash(playEvent)
+	txBytes, err := protob.Marshal(playEvent)
 	if err != nil {
-		t.Fatalf("Failed to get transaction hash: %v", err)
+		t.Fatalf("Failed to marshal transaction: %v", err)
 	}
+	expectedTxHash := common.ToTxHashFromBytes(txBytes)
 
 	req := &corev1.SendTransactionRequest{
 		Transaction: playEvent,

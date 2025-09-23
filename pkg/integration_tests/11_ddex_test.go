@@ -13,6 +13,7 @@ import (
 	"github.com/AudiusProject/audiusd/pkg/integration_tests/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -67,8 +68,9 @@ func TestDDEX(t *testing.T) {
 		}
 
 		// Calculate expected transaction hash
-		expectedTxHash, err := common.ToTxHash(transaction)
+		txBytes, err := proto.Marshal(transaction)
 		require.NoError(t, err)
+		expectedTxHash := common.ToTxHashFromBytes(txBytes)
 
 		// Submit the transaction
 		req := &corev1.SendTransactionRequest{
@@ -134,8 +136,9 @@ func TestDDEX(t *testing.T) {
 		}
 
 		// Calculate expected transaction hash
-		expectedTxHash, err := common.ToTxHash(transaction)
+		txBytes, err := proto.Marshal(transaction)
 		require.NoError(t, err)
+		expectedTxHash := common.ToTxHashFromBytes(txBytes)
 
 		// Submit the transaction
 		req := &corev1.SendTransactionRequest{
@@ -201,8 +204,9 @@ func TestDDEX(t *testing.T) {
 		}
 
 		// Calculate expected transaction hash
-		expectedTxHash, err := common.ToTxHash(transaction)
+		txBytes, err := proto.Marshal(transaction)
 		require.NoError(t, err)
+		expectedTxHash := common.ToTxHashFromBytes(txBytes)
 
 		// Submit the transaction
 		req := &corev1.SendTransactionRequest{
@@ -280,8 +284,9 @@ func TestDDEX(t *testing.T) {
 		}
 
 		// Calculate expected transaction hash
-		expectedTxHash, err := common.ToTxHash(transaction)
+		txBytes, err := proto.Marshal(transaction)
 		require.NoError(t, err)
+		expectedTxHash := common.ToTxHashFromBytes(txBytes)
 
 		// Submit the transaction
 		req := &corev1.SendTransactionRequest{

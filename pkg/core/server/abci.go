@@ -277,7 +277,8 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 			// set tx to ok and set to not okay later if error occurs
 			txs[i] = &abcitypes.ExecTxResult{Code: abcitypes.CodeTypeOK}
 
-			txhash := s.toTxHash(signedTx)
+			// Use raw transaction bytes for consistent hashing during block sync
+			txhash := common.ToTxHashFromBytes(tx)
 			finalizedTx, err := s.finalizeTransaction(ctx, req, signedTx, txhash, req.Height)
 			if err != nil {
 				s.logger.Error("error finalizing event", zap.Error(err))
@@ -355,16 +356,11 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 			v2Tx, err := s.isValidV2Transaction(tx)
 			if err == nil {
 				txs[i] = &abcitypes.ExecTxResult{Code: abcitypes.CodeTypeOK}
-				// Calculate hash from envelope only, to match connect.go
-				txhash, err := common.ToTxHash(v2Tx)
-				if err != nil {
-					s.logger.Error("failed to get tx hash", zap.Error(err))
-					txs[i] = &abcitypes.ExecTxResult{Code: 2}
-					continue
-				}
+				// Use raw transaction bytes for consistent hashing during block sync
+				txhash := common.ToTxHashFromBytes(tx)
 
 				// finalize v2 transaction and get receipt data
-				err = s.finalizeV2Transaction(ctx, req, v2Tx)
+				err = s.finalizeV2Transaction(ctx, req, v2Tx, txhash)
 				if err != nil {
 					s.logger.Error("failed to finalize v2 transaction", zap.String("txhash", txhash), zap.Error(err))
 					txs[i] = &abcitypes.ExecTxResult{Code: 2}
@@ -776,14 +772,7 @@ func (s *Server) serializeAppState(prevHash []byte, txs [][]byte) []byte {
 	return newAppHashBytes[:]
 }
 
-func (s *Server) toTxHash(msg proto.Message) string {
-	hash, err := common.ToTxHash(msg)
-	if err != nil {
-		s.logger.Error("could not get txhash of msg", zap.Any("msg", msg), zap.Error(err))
-		return ""
-	}
-	return hash
-}
+
 
 func setupNodeLogger() *common.Logger {
 	var slogLevel slog.Level

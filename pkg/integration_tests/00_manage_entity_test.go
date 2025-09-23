@@ -37,8 +37,9 @@ func TestEntityManager(t *testing.T) {
 		},
 	}
 
-	expectedTxHash, err := common.ToTxHash(signedManageEntity)
+	txBytes, err := proto.Marshal(signedManageEntity)
 	assert.NoError(t, err)
+	expectedTxHash := common.ToTxHashFromBytes(txBytes)
 
 	err = utils.WaitForDevnetHealthy(60 * time.Second)
 	assert.NoError(t, err)

@@ -7,7 +7,6 @@ import (
 
 	"github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
 	ddexv1beta1 "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1"
-	"github.com/AudiusProject/audiusd/pkg/common"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -58,7 +57,7 @@ func (s *Server) validateV2Transaction(ctx context.Context, currentHeight int64,
 	return eg.Wait()
 }
 
-func (s *Server) finalizeV2Transaction(ctx context.Context, req *abcitypes.FinalizeBlockRequest, tx *v1beta1.Transaction) error {
+func (s *Server) finalizeV2Transaction(ctx context.Context, req *abcitypes.FinalizeBlockRequest, tx *v1beta1.Transaction, txhash string) error {
 	header := tx.Envelope.Header
 	if header.ChainId != s.config.GenesisFile.ChainID {
 		return fmt.Errorf("invalid chain id: %s", header.ChainId)
@@ -68,15 +67,12 @@ func (s *Server) finalizeV2Transaction(ctx context.Context, req *abcitypes.Final
 		return fmt.Errorf("transaction expired")
 	}
 
-	// Calculate transaction hash for receipt
-	txhash, err := common.ToTxHash(tx)
-	if err != nil {
-		return fmt.Errorf("failed to get tx hash: %w", err)
-	}
+	// Use pre-calculated transaction hash for consistency
 
 	s.logger.Debug("finalizing v2 transaction", zap.String("tx", txhash), zap.Int("messages", len(tx.Envelope.Messages)))
 
 	for i, msg := range tx.Envelope.Messages {
+		var err error
 		switch msg.Message.(type) {
 		case *v1beta1.Message_Ern:
 			err = s.finalizeERN(ctx, req, txhash, tx, int64(i))
@@ -93,10 +89,6 @@ func (s *Server) finalizeV2Transaction(ctx context.Context, req *abcitypes.Final
 			if err != nil {
 				return fmt.Errorf("failed to finalize PIE message: %w", err)
 			}
-		}
-
-		if err != nil {
-			return fmt.Errorf("failed to finalize message: %w", err)
 		}
 	}
 	return nil
