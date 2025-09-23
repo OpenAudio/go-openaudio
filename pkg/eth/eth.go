@@ -355,7 +355,8 @@ func (eth *EthService) startEthDataManager(ctx context.Context) error {
 				return fmt.Errorf("error gathering eth endpoints: %v", err)
 			}
 		case <-ctx.Done():
-			return errors.New("context canceled")
+			eth.logger.Info("eth context canceled")
+			return ctx.Err()
 		}
 	}
 }
