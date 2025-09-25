@@ -47,6 +47,10 @@ const (
 	StageAcdcAddress = "0x1Cd8a543596D499B9b6E7a6eC15ECd2B7857Fd64"
 	DevAcdcAddress   = "0x254dffcd3277C0b1660F6d42EFbB754edaBAbC2B"
 
+	ProdAcdcChainID  = 31524
+	StageAcdcChainID = 1056801
+	DevAcdcChainID   = 1337
+
 	ProdEthRpc  = "https://eth-validator.audius.co"
 	StageEthRpc = "https://eth-validator.staging.audius.co"
 	DevEthRpc   = "http://eth-ganache:8545"
@@ -121,6 +125,10 @@ type Config struct {
 	UseHttpsForSdk       bool
 
 	StateSync *StateSyncConfig
+
+	/* Entity Manager Config */
+	AcdcEntityManagerAddress string
+	AcdcChainID              uint
 
 	/* Derived Config */
 	GenesisFile *types.GenesisDoc
@@ -258,6 +266,8 @@ func ReadConfig() (*Config, error) {
 		cfg.ValidatorVotingPower = mainnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(ProdClaimAuthorities, ProdRewardExtensions)
 		cfg.ERNAccessControlEnabled = false
+		cfg.AcdcChainID = ProdAcdcChainID
+		cfg.AcdcEntityManagerAddress = ProdAcdcAddress
 
 	case "stage", "staging", "testnet":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", StagePersistentPeers)
@@ -265,6 +275,8 @@ func ReadConfig() (*Config, error) {
 		cfg.ValidatorVotingPower = testnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(StageClaimAuthorities, StageRewardExtensions)
 		cfg.ERNAccessControlEnabled = false
+		cfg.AcdcChainID = StageAcdcChainID
+		cfg.AcdcEntityManagerAddress = StageAcdcAddress
 
 	case "dev", "development", "devnet", "local", "sandbox":
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", DevPersistentPeers)
@@ -273,6 +285,8 @@ func ReadConfig() (*Config, error) {
 		cfg.ValidatorVotingPower = devnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(DevClaimAuthorities, DevRewardExtensions)
 		cfg.ERNAccessControlEnabled = true
+		cfg.AcdcChainID = DevAcdcChainID
+		cfg.AcdcEntityManagerAddress = DevAcdcAddress
 	}
 
 	// Disable ssl for local postgres db connection

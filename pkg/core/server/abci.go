@@ -772,8 +772,6 @@ func (s *Server) serializeAppState(prevHash []byte, txs [][]byte) []byte {
 	return newAppHashBytes[:]
 }
 
-
-
 func setupNodeLogger() *common.Logger {
 	var slogLevel slog.Level
 	switch os.Getenv("AUDIUSD_LOG_LEVEL") {

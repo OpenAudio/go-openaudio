@@ -71,6 +71,14 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		}
 		mempoolKey = common.ToTxHashFromBytes(txBytes)
 	} else {
+		tx := req.Msg.Transaction
+		em := tx.GetManageEntity()
+		if em != nil {
+			err := InjectSigner(c.core.config, em)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, errors.Join(errors.New("signer not recoverable"), err))
+			}
+		}
 		txBytes, marshalErr := proto.Marshal(req.Msg.Transaction)
 		if marshalErr != nil {
 			return nil, fmt.Errorf("could not marshal transaction: %v", marshalErr)
@@ -463,6 +471,14 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 			return nil, fmt.Errorf("transactionv2 validation failed: %v", err)
 		}
 	} else {
+		tx := req.Msg.Transaction
+		em := tx.GetManageEntity()
+		if em != nil {
+			err := InjectSigner(c.core.config, em)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, errors.Join(errors.New("signer not recoverable"), err))
+			}
+		}
 		// Use consistent hashing by marshaling to bytes first, matching abci.go behavior
 		txBytes, marshalErr := proto.Marshal(req.Msg.Transaction)
 		if marshalErr != nil {
