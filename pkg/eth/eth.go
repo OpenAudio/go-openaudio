@@ -770,17 +770,14 @@ func DecodeSlashProposalArguments(callData string) (address ethcommon.Address, a
 
 	// Get bound method
 	data := ethcommon.FromHex(callData)
-	method, err := parsedABI.MethodById(data[:4])
-	if err != nil || method == nil {
-		return address, amount, fmt.Errorf("failed to get method from proposal call data: %v", err)
-	}
-	if method.Name != "slash" {
-		return address, amount, errors.New("got wrong method from proposal call data")
+	method, ok := parsedABI.Methods["slash"]
+	if !ok {
+		return address, amount, errors.New("failed to get slash method from DelegateManager contract")
 	}
 
 	// Decode arguments
 	args := map[string]interface{}{}
-	err = method.Inputs.UnpackIntoMap(args, data[4:])
+	err = method.Inputs.UnpackIntoMap(args, data)
 	if err != nil {
 		return address, amount, fmt.Errorf("failed unpack arguments: %v", err)
 	}

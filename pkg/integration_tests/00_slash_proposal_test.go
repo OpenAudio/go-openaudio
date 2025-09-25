@@ -61,13 +61,16 @@ func TestCanRetrieveSlashProposal(t *testing.T) {
 	delegateManagerABI, err := gen.DelegateManagerMetaData.GetAbi()
 	require.NoError(t, err, "failed to get governance abi")
 
+	slashMethod, ok := delegateManagerABI.Methods["slash"]
+	require.True(t, ok, "could not retrieve slash method from DelegateManager abi")
+
 	contentThreeAddr := ethcommon.HexToAddress(contentThreeAddress)
 
-	callData1, err := delegateManagerABI.Pack("slash", big.NewInt(10), contentThreeAddr)
+	callData1, err := slashMethod.Inputs.Pack(contracts.AudioToWei(big.NewInt(10)), contentThreeAddr)
 	require.NoError(t, err, "failed to pack callData1")
-	callData2, err := delegateManagerABI.Pack("slash", big.NewInt(100), contentThreeAddr)
+	callData2, err := slashMethod.Inputs.Pack(contracts.AudioToWei(big.NewInt(100000)), contentThreeAddr)
 	require.NoError(t, err, "failed to pack callData2")
-	callData3, err := delegateManagerABI.Pack("slash", big.NewInt(5), contentThreeAddr)
+	callData3, err := slashMethod.Inputs.Pack(contracts.AudioToWei(big.NewInt(5)), contentThreeAddr)
 	require.NoError(t, err, "failed to pack callData3")
 
 	_, err = governanceContract.SubmitProposal(
@@ -117,5 +120,5 @@ func TestCanRetrieveSlashProposal(t *testing.T) {
 	slashAddr, slashAmount, err := eth.DecodeSlashProposalArguments(resp.Msg.CallData)
 	require.NoError(t, err, "failed to decode slash proposal arguments")
 	require.Equal(t, slashAddr.Cmp(contentThreeAddr), 0)
-	require.Equal(t, slashAmount.Int64(), int64(100))
+	require.Equal(t, contracts.WeiToAudio(slashAmount).Int64(), int64(100000))
 }
