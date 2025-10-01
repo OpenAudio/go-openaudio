@@ -261,3 +261,7 @@ test-down:
 		--profile=mediorum-unittests \
 		--profile=unittests \
 		down -v
+
+.PHONY: example/programmable-distribution
+example/programmable-distribution:
+	cd examples/programmable-distribution && go run .

@@ -18,6 +18,7 @@ import (
 	_ "embed"
 	_ "net/http/pprof"
 
+	"github.com/AudiusProject/audiusd/pkg/common"
 	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
 	audiusHttputil "github.com/AudiusProject/audiusd/pkg/httputil"
 	"github.com/AudiusProject/audiusd/pkg/lifecycle"
@@ -65,6 +66,8 @@ type MediorumConfig struct {
 	VersionJson               version.VersionJson
 	DiscoveryListensEndpoints []string
 	LogLevel                  string
+
+	ProgrammableDistributionEnabled bool
 
 	// should have a basedir type of thing
 	// by default will put db + blobs there
@@ -145,6 +148,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pro
 	if env := os.Getenv("MEDIORUM_ENV"); env != "" {
 		config.Env = env
 	}
+	config.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(config.Env)
 
 	var isAudiusdManaged bool
 	if audiusdGenerated := os.Getenv("AUDIUS_D_GENERATED"); audiusdGenerated != "" {

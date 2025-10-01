@@ -113,6 +113,10 @@ func main() {
 	ethService := eth.NewEthService(dbUrl, config.GetEthRPC(), config.GetRegistryAddress(), rootLogger, config.GetRuntimeEnvironment())
 	coreService := coreServer.NewCoreService()
 	storageService := server.NewStorageService()
+	// Only set storage service on core if storage is enabled
+	if isStorageEnabled() {
+		coreService.SetStorageService(storageService)
+	}
 	etlService := etl.NewETLService(coreService, rootLogger)
 	systemService := system.NewSystemService(coreService, storageService, etlService)
 
@@ -471,6 +475,41 @@ func setProtobufField(msgReflect protoreflect.Message, field protoreflect.FieldD
 			msgReflect.Set(field, protoreflect.ValueOfList(list))
 		} else {
 			msgReflect.Set(field, protoreflect.ValueOfString(values[0]))
+		}
+
+	case protoreflect.MessageKind:
+		// Handle specific message types we need for GET endpoints
+		if field.Message().FullName() == "google.protobuf.Timestamp" {
+			timestampStr := values[0]
+
+			// Try multiple timestamp formats to maintain precision
+			var parsedTime time.Time
+			var err error
+
+			// Try RFC3339 with nanoseconds first
+			if parsedTime, err = time.Parse(time.RFC3339Nano, timestampStr); err != nil {
+				// Fall back to RFC3339 without nanoseconds
+				if parsedTime, err = time.Parse(time.RFC3339, timestampStr); err != nil {
+					return fmt.Errorf("invalid timestamp format '%s': %v", timestampStr, err)
+				}
+				// If parsed without nanoseconds, ensure nanoseconds are 0
+				// to match what would have been signed originally
+				parsedTime = parsedTime.Truncate(time.Second)
+			}
+
+			// Create a new Timestamp message
+			timestampMsg := msgReflect.NewField(field).Message()
+
+			// Set seconds and nanos fields
+			secondsField := timestampMsg.Descriptor().Fields().ByName("seconds")
+			nanosField := timestampMsg.Descriptor().Fields().ByName("nanos")
+
+			timestampMsg.Set(secondsField, protoreflect.ValueOfInt64(parsedTime.Unix()))
+			timestampMsg.Set(nanosField, protoreflect.ValueOfInt32(int32(parsedTime.Nanosecond())))
+
+			msgReflect.Set(field, protoreflect.ValueOfMessage(timestampMsg))
+		} else {
+			return fmt.Errorf("unsupported message type: %v", field.Message().FullName())
 		}
 
 	default:

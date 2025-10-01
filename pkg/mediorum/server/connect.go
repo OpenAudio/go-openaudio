@@ -187,6 +187,32 @@ func (s *StorageService) GetStreamURL(ctx context.Context, req *connect.Request[
 	return nil, connect.NewError(connect.CodeNotFound, errors.New("unimplemented"))
 }
 
+// GetRendezvousNodes implements v1connect.StorageServiceHandler.
+func (s *StorageService) GetRendezvousNodes(ctx context.Context, req *connect.Request[v1.GetRendezvousNodesRequest]) (*connect.Response[v1.GetRendezvousNodesResponse], error) {
+	cid := req.Msg.Cid
+	if cid == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("cid is required"))
+	}
+
+	replicationFactor := int(req.Msg.ReplicationFactor)
+	if replicationFactor <= 0 {
+		replicationFactor = s.mediorum.Config.ReplicationFactor
+	}
+
+	// Use the existing rendezvous hasher to get all nodes in ranked order
+	orderedHosts := s.mediorum.rendezvousHasher.Rank(cid)
+
+	// Return the top N nodes based on replication factor
+	topNodes := orderedHosts
+	if replicationFactor < len(orderedHosts) {
+		topNodes = orderedHosts[:replicationFactor]
+	}
+
+	return connect.NewResponse(&v1.GetRendezvousNodesResponse{
+		Nodes: topNodes,
+	}), nil
+}
+
 // GetIPData implements v1connect.StorageServiceHandler.
 func (s *StorageService) GetIPData(ctx context.Context, req *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error) {
 	ip := req.Msg.Ip

@@ -588,3 +588,40 @@ select *
 from core_rewards
 where $1::text = any(claim_authorities)
 order by address;
+
+-- name: GetCoreUpload :one
+select * from core_uploads where cid = $1 OR transcoded_cid = $1;
+
+-- name: GetERNContainingAddress :one
+SELECT
+    ern.address as ern_address,
+    ern.sender,
+    CASE
+        WHEN r.address IS NOT NULL THEN 'resource'
+        WHEN rel.address IS NOT NULL THEN 'release'
+        WHEN p.address IS NOT NULL THEN 'party'
+        WHEN d.address IS NOT NULL THEN 'deal'
+        ELSE 'unknown'
+    END::text as entity_type,
+    COALESCE(r.entity_index, rel.entity_index, p.entity_index, d.entity_index, 0)::int as entity_index,
+    ern.raw_message
+FROM core_ern ern
+LEFT JOIN core_resources r ON r.address = $1::text AND r.ern_address = ern.address
+LEFT JOIN core_releases rel ON rel.address = $1::text AND rel.ern_address = ern.address
+LEFT JOIN core_parties p ON p.address = $1::text AND p.ern_address = ern.address
+LEFT JOIN core_deals d ON d.address = $1::text AND d.ern_address = ern.address
+WHERE r.address IS NOT NULL OR rel.address IS NOT NULL OR p.address IS NOT NULL OR d.address IS NOT NULL
+ORDER BY ern.block_height DESC
+LIMIT 1;
+
+-- name: GetERNResources :many
+select * from core_resources where ern_address = $1 order by entity_index;
+
+-- name: GetERNReleases :many
+select * from core_releases where ern_address = $1 order by entity_index;
+
+-- name: GetERNParties :many
+select * from core_parties where ern_address = $1 order by entity_index;
+
+-- name: GetERNDeals :many
+select * from core_deals where ern_address = $1 order by entity_index;

@@ -43,3 +43,28 @@ func HexToBytes(addr string) ([]byte, error) {
 func BytesToHex(bytes []byte) string {
 	return "0x" + hex.EncodeToString(bytes)
 }
+
+// CreateERNAddress creates a deterministic address for an ERN entity
+func CreateERNAddress(txhash []byte, chainId string, blockHeight int64, txindex int64, messageID string) string {
+	return CreateAddress(txhash, chainId, blockHeight, txindex, "ern:"+messageID)
+}
+
+// CreatePartyAddress creates a deterministic address for a Party entity
+func CreatePartyAddress(txhash []byte, chainId string, blockHeight int64, txindex int64, partyReference string) string {
+	return CreateAddress(txhash, chainId, blockHeight, txindex, "party:"+partyReference)
+}
+
+// CreateResourceAddress creates a deterministic address for a Resource entity
+func CreateResourceAddress(txhash []byte, chainId string, blockHeight int64, txindex int64, resourceReference string) string {
+	return CreateAddress(txhash, chainId, blockHeight, txindex, "resource:"+resourceReference)
+}
+
+// CreateReleaseAddress creates a deterministic address for a Release entity
+func CreateReleaseAddress(txhash []byte, chainId string, blockHeight int64, txindex int64, releaseReference string) string {
+	return CreateAddress(txhash, chainId, blockHeight, txindex, "release:"+releaseReference)
+}
+
+// CreateDealAddress creates a deterministic address for a Deal entity
+func CreateDealAddress(txhash []byte, chainId string, blockHeight int64, txindex int64, dealReference string) string {
+	return CreateAddress(txhash, chainId, blockHeight, txindex, "deal:"+dealReference)
+}

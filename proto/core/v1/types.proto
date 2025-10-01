@@ -271,6 +271,7 @@ message SignedTransaction {
     Attestation attestation = 1007;
     ddex.v1beta1.NewReleaseMessage release = 1008;
     RewardMessage reward = 1009;
+    FileUpload file_upload = 1010;
   }
 }
 
@@ -538,4 +539,74 @@ message RewardAttestationSignature {
   string reward_id = 4;
   string specifier = 5;
   string claim_authority = 6;
+}
+
+message UploadSignature {
+  string cid = 1;
+}
+
+// reported by validators to chain on a file upload that contains a signature
+// this tx is used to tie ERNs to CIDs and confirm ownership
+message FileUpload {
+  // address that was recovered from the signature
+  string uploader_address = 1;
+  // hex stringified signature that was passed to mediorum on upload
+  string upload_signature = 2;
+  // cid of file that was uploaded, orig_cid in mediorum
+  string cid = 3;
+  // mediorum specific upload id
+  string upload_id = 4;
+  // transcoded cid (e.g., 320kbps version for audio)
+  string transcoded_cid = 5;
+  // validator address that processed the upload
+  string validator_address = 6;
+  // signature from the validator node
+  string validator_signature = 7;
+}
+
+message GetStreamURLsSignature {
+  // addresses to stream (can be ERN, release, or resource addresses)
+  repeated string addresses = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// requests stream urls from the content node
+// signature signed by owner of ERN
+message GetStreamURLsRequest {
+  string signature = 1;
+  // addresses to stream (can be ERN, release, or resource addresses)
+  // - ERN address: returns all streamable resources in the ERN
+  // - release address: returns all resources associated with that release
+  // - resource address: returns that specific resource
+  // all addresses are resolved back to their parent ERN to verify ownership
+  repeated string addresses = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message GetStreamURLsResponse {
+  message EntityStreamURLs {
+    // type of entity (ern, release, or resource)
+    string entity_type = 1;
+    // reference from the ERN (e.g., "R1" for release or "A1" for resource)
+    string entity_reference = 2;
+    // signed content URLs to stream the content
+    repeated string urls = 3;
+    // parent ERN address this entity belongs to
+    string ern_address = 4;
+  }
+
+  // Key is the entity address (ERN, release, or resource address)
+  // Value contains the streaming URLs and metadata for that entity
+  map<string, EntityStreamURLs> entity_stream_urls = 1;
+}
+
+message GetUploadByCIDRequest {
+  string cid = 1;
+}
+
+message GetUploadByCIDResponse {
+  bool exists = 1;
+  string uploader_address = 2;
+  string original_cid = 3;
+  string transcoded_cid = 4;
 }

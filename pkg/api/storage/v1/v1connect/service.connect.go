@@ -53,6 +53,9 @@ const (
 	// StorageServiceGetIPDataProcedure is the fully-qualified name of the StorageService's GetIPData
 	// RPC.
 	StorageServiceGetIPDataProcedure = "/storage.v1.StorageService/GetIPData"
+	// StorageServiceGetRendezvousNodesProcedure is the fully-qualified name of the StorageService's
+	// GetRendezvousNodes RPC.
+	StorageServiceGetRendezvousNodesProcedure = "/storage.v1.StorageService/GetRendezvousNodes"
 )
 
 // StorageServiceClient is a client for the storage.v1.StorageService service.
@@ -64,6 +67,7 @@ type StorageServiceClient interface {
 	StreamTrack(context.Context, *connect.Request[v1.StreamTrackRequest]) (*connect.ServerStreamForClient[v1.StreamTrackResponse], error)
 	GetStreamURL(context.Context, *connect.Request[v1.GetStreamURLRequest]) (*connect.Response[v1.GetStreamURLResponse], error)
 	GetIPData(context.Context, *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error)
+	GetRendezvousNodes(context.Context, *connect.Request[v1.GetRendezvousNodesRequest]) (*connect.Response[v1.GetRendezvousNodesResponse], error)
 }
 
 // NewStorageServiceClient constructs a client for the storage.v1.StorageService service. By
@@ -119,18 +123,25 @@ func NewStorageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(storageServiceMethods.ByName("GetIPData")),
 			connect.WithClientOptions(opts...),
 		),
+		getRendezvousNodes: connect.NewClient[v1.GetRendezvousNodesRequest, v1.GetRendezvousNodesResponse](
+			httpClient,
+			baseURL+StorageServiceGetRendezvousNodesProcedure,
+			connect.WithSchema(storageServiceMethods.ByName("GetRendezvousNodes")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // storageServiceClient implements StorageServiceClient.
 type storageServiceClient struct {
-	ping         *connect.Client[v1.PingRequest, v1.PingResponse]
-	getHealth    *connect.Client[v1.GetHealthRequest, v1.GetHealthResponse]
-	uploadFiles  *connect.Client[v1.UploadFilesRequest, v1.UploadFilesResponse]
-	getUpload    *connect.Client[v1.GetUploadRequest, v1.GetUploadResponse]
-	streamTrack  *connect.Client[v1.StreamTrackRequest, v1.StreamTrackResponse]
-	getStreamURL *connect.Client[v1.GetStreamURLRequest, v1.GetStreamURLResponse]
-	getIPData    *connect.Client[v1.GetIPDataRequest, v1.GetIPDataResponse]
+	ping               *connect.Client[v1.PingRequest, v1.PingResponse]
+	getHealth          *connect.Client[v1.GetHealthRequest, v1.GetHealthResponse]
+	uploadFiles        *connect.Client[v1.UploadFilesRequest, v1.UploadFilesResponse]
+	getUpload          *connect.Client[v1.GetUploadRequest, v1.GetUploadResponse]
+	streamTrack        *connect.Client[v1.StreamTrackRequest, v1.StreamTrackResponse]
+	getStreamURL       *connect.Client[v1.GetStreamURLRequest, v1.GetStreamURLResponse]
+	getIPData          *connect.Client[v1.GetIPDataRequest, v1.GetIPDataResponse]
+	getRendezvousNodes *connect.Client[v1.GetRendezvousNodesRequest, v1.GetRendezvousNodesResponse]
 }
 
 // Ping calls storage.v1.StorageService.Ping.
@@ -168,6 +179,11 @@ func (c *storageServiceClient) GetIPData(ctx context.Context, req *connect.Reque
 	return c.getIPData.CallUnary(ctx, req)
 }
 
+// GetRendezvousNodes calls storage.v1.StorageService.GetRendezvousNodes.
+func (c *storageServiceClient) GetRendezvousNodes(ctx context.Context, req *connect.Request[v1.GetRendezvousNodesRequest]) (*connect.Response[v1.GetRendezvousNodesResponse], error) {
+	return c.getRendezvousNodes.CallUnary(ctx, req)
+}
+
 // StorageServiceHandler is an implementation of the storage.v1.StorageService service.
 type StorageServiceHandler interface {
 	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error)
@@ -177,6 +193,7 @@ type StorageServiceHandler interface {
 	StreamTrack(context.Context, *connect.Request[v1.StreamTrackRequest], *connect.ServerStream[v1.StreamTrackResponse]) error
 	GetStreamURL(context.Context, *connect.Request[v1.GetStreamURLRequest]) (*connect.Response[v1.GetStreamURLResponse], error)
 	GetIPData(context.Context, *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error)
+	GetRendezvousNodes(context.Context, *connect.Request[v1.GetRendezvousNodesRequest]) (*connect.Response[v1.GetRendezvousNodesResponse], error)
 }
 
 // NewStorageServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -228,6 +245,12 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 		connect.WithSchema(storageServiceMethods.ByName("GetIPData")),
 		connect.WithHandlerOptions(opts...),
 	)
+	storageServiceGetRendezvousNodesHandler := connect.NewUnaryHandler(
+		StorageServiceGetRendezvousNodesProcedure,
+		svc.GetRendezvousNodes,
+		connect.WithSchema(storageServiceMethods.ByName("GetRendezvousNodes")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/storage.v1.StorageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case StorageServicePingProcedure:
@@ -244,6 +267,8 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 			storageServiceGetStreamURLHandler.ServeHTTP(w, r)
 		case StorageServiceGetIPDataProcedure:
 			storageServiceGetIPDataHandler.ServeHTTP(w, r)
+		case StorageServiceGetRendezvousNodesProcedure:
+			storageServiceGetRendezvousNodesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -279,4 +304,8 @@ func (UnimplementedStorageServiceHandler) GetStreamURL(context.Context, *connect
 
 func (UnimplementedStorageServiceHandler) GetIPData(context.Context, *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("storage.v1.StorageService.GetIPData is not implemented"))
+}
+
+func (UnimplementedStorageServiceHandler) GetRendezvousNodes(context.Context, *connect.Request[v1.GetRendezvousNodesRequest]) (*connect.Response[v1.GetRendezvousNodesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("storage.v1.StorageService.GetRendezvousNodes is not implemented"))
 }

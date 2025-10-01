@@ -150,7 +150,7 @@ type Config struct {
 	AttDeregistrationRSize int // rendezvous size for deregistration attestations (should be >= to AttDeregistrationMin)
 
 	/* Feature flags */
-	ERNAccessControlEnabled bool
+	ProgrammableDistributionEnabled bool
 }
 
 func (c *Config) IsDev() bool {
@@ -204,6 +204,7 @@ func ReadConfig() (*Config, error) {
 
 	cfg.LogLevel = GetLogLevel()
 	cfg.Environment = GetRuntimeEnvironment()
+	cfg.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(cfg.Environment)
 
 	ssRpcServers := ""
 	switch cfg.Environment {
@@ -265,7 +266,6 @@ func ReadConfig() (*Config, error) {
 		cfg.SlaRollupInterval = mainnetRollupInterval
 		cfg.ValidatorVotingPower = mainnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(ProdClaimAuthorities, ProdRewardExtensions)
-		cfg.ERNAccessControlEnabled = false
 		cfg.AcdcChainID = ProdAcdcChainID
 		cfg.AcdcEntityManagerAddress = ProdAcdcAddress
 
@@ -274,7 +274,6 @@ func ReadConfig() (*Config, error) {
 		cfg.SlaRollupInterval = testnetRollupInterval
 		cfg.ValidatorVotingPower = testnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(StageClaimAuthorities, StageRewardExtensions)
-		cfg.ERNAccessControlEnabled = false
 		cfg.AcdcChainID = StageAcdcChainID
 		cfg.AcdcEntityManagerAddress = StageAcdcAddress
 
@@ -284,7 +283,6 @@ func ReadConfig() (*Config, error) {
 		cfg.SlaRollupInterval = devnetRollupInterval
 		cfg.ValidatorVotingPower = devnetValidatorVotingPower
 		cfg.Rewards = MakeRewards(DevClaimAuthorities, DevRewardExtensions)
-		cfg.ERNAccessControlEnabled = true
 		cfg.AcdcChainID = DevAcdcChainID
 		cfg.AcdcEntityManagerAddress = DevAcdcAddress
 	}

@@ -1320,6 +1320,108 @@ func (x *GetIPDataResponse) GetLongitude() float32 {
 	return 0
 }
 
+type GetRendezvousNodesRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Cid               string `protobuf:"bytes,1,opt,name=cid,proto3" json:"cid,omitempty"`
+	ReplicationFactor int32  `protobuf:"varint,2,opt,name=replication_factor,json=replicationFactor,proto3" json:"replication_factor,omitempty"` // Optional, defaults to 3 if not specified
+}
+
+func (x *GetRendezvousNodesRequest) Reset() {
+	*x = GetRendezvousNodesRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_storage_v1_types_proto_msgTypes[20]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetRendezvousNodesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRendezvousNodesRequest) ProtoMessage() {}
+
+func (x *GetRendezvousNodesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_storage_v1_types_proto_msgTypes[20]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRendezvousNodesRequest.ProtoReflect.Descriptor instead.
+func (*GetRendezvousNodesRequest) Descriptor() ([]byte, []int) {
+	return file_storage_v1_types_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *GetRendezvousNodesRequest) GetCid() string {
+	if x != nil {
+		return x.Cid
+	}
+	return ""
+}
+
+func (x *GetRendezvousNodesRequest) GetReplicationFactor() int32 {
+	if x != nil {
+		return x.ReplicationFactor
+	}
+	return 0
+}
+
+type GetRendezvousNodesResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Nodes []string `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"` // List of node endpoints in rendezvous order
+}
+
+func (x *GetRendezvousNodesResponse) Reset() {
+	*x = GetRendezvousNodesResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_storage_v1_types_proto_msgTypes[21]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetRendezvousNodesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRendezvousNodesResponse) ProtoMessage() {}
+
+func (x *GetRendezvousNodesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_storage_v1_types_proto_msgTypes[21]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRendezvousNodesResponse.ProtoReflect.Descriptor instead.
+func (*GetRendezvousNodesResponse) Descriptor() ([]byte, []int) {
+	return file_storage_v1_types_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *GetRendezvousNodesResponse) GetNodes() []string {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
 type FFProbeResult_Format struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -1336,7 +1438,7 @@ type FFProbeResult_Format struct {
 func (x *FFProbeResult_Format) Reset() {
 	*x = FFProbeResult_Format{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_storage_v1_types_proto_msgTypes[21]
+		mi := &file_storage_v1_types_proto_msgTypes[23]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1349,7 +1451,7 @@ func (x *FFProbeResult_Format) String() string {
 func (*FFProbeResult_Format) ProtoMessage() {}
 
 func (x *FFProbeResult_Format) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_v1_types_proto_msgTypes[21]
+	mi := &file_storage_v1_types_proto_msgTypes[23]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1603,11 +1705,20 @@ var file_storage_v1_types_proto_rawDesc = []byte{
 	0x43, 0x6f, 0x64, 0x65, 0x12, 0x1a, 0x0a, 0x08, 0x6c, 0x61, 0x74, 0x69, 0x74, 0x75, 0x64, 0x65,
 	0x18, 0x06, 0x20, 0x01, 0x28, 0x02, 0x52, 0x08, 0x6c, 0x61, 0x74, 0x69, 0x74, 0x75, 0x64, 0x65,
 	0x12, 0x1c, 0x0a, 0x09, 0x6c, 0x6f, 0x6e, 0x67, 0x69, 0x74, 0x75, 0x64, 0x65, 0x18, 0x07, 0x20,
-	0x01, 0x28, 0x02, 0x52, 0x09, 0x6c, 0x6f, 0x6e, 0x67, 0x69, 0x74, 0x75, 0x64, 0x65, 0x42, 0x35,
-	0x5a, 0x33, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41, 0x75, 0x64,
-	0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x2f, 0x61, 0x75, 0x64, 0x69, 0x75,
-	0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f, 0x72, 0x61,
-	0x67, 0x65, 0x2f, 0x76, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x01, 0x28, 0x02, 0x52, 0x09, 0x6c, 0x6f, 0x6e, 0x67, 0x69, 0x74, 0x75, 0x64, 0x65, 0x22, 0x5c,
+	0x0a, 0x19, 0x47, 0x65, 0x74, 0x52, 0x65, 0x6e, 0x64, 0x65, 0x7a, 0x76, 0x6f, 0x75, 0x73, 0x4e,
+	0x6f, 0x64, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x10, 0x0a, 0x03, 0x63,
+	0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x63, 0x69, 0x64, 0x12, 0x2d, 0x0a,
+	0x12, 0x72, 0x65, 0x70, 0x6c, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x66, 0x61, 0x63,
+	0x74, 0x6f, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x05, 0x52, 0x11, 0x72, 0x65, 0x70, 0x6c, 0x69,
+	0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x46, 0x61, 0x63, 0x74, 0x6f, 0x72, 0x22, 0x32, 0x0a, 0x1a,
+	0x47, 0x65, 0x74, 0x52, 0x65, 0x6e, 0x64, 0x65, 0x7a, 0x76, 0x6f, 0x75, 0x73, 0x4e, 0x6f, 0x64,
+	0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x14, 0x0a, 0x05, 0x6e, 0x6f,
+	0x64, 0x65, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x05, 0x6e, 0x6f, 0x64, 0x65, 0x73,
+	0x42, 0x35, 0x5a, 0x33, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41,
+	0x75, 0x64, 0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x2f, 0x61, 0x75, 0x64,
+	0x69, 0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f,
+	0x72, 0x61, 0x67, 0x65, 0x2f, 0x76, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1622,31 +1733,33 @@ func file_storage_v1_types_proto_rawDescGZIP() []byte {
 	return file_storage_v1_types_proto_rawDescData
 }
 
-var file_storage_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_storage_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_storage_v1_types_proto_goTypes = []interface{}{
-	(*PingRequest)(nil),              // 0: storage.v1.PingRequest
-	(*PingResponse)(nil),             // 1: storage.v1.PingResponse
-	(*GetHealthRequest)(nil),         // 2: storage.v1.GetHealthRequest
-	(*GetHealthResponse)(nil),        // 3: storage.v1.GetHealthResponse
-	(*UploadFilesRequest)(nil),       // 4: storage.v1.UploadFilesRequest
-	(*File)(nil),                     // 5: storage.v1.File
-	(*UploadFilesResponse)(nil),      // 6: storage.v1.UploadFilesResponse
-	(*GetUploadRequest)(nil),         // 7: storage.v1.GetUploadRequest
-	(*GetUploadResponse)(nil),        // 8: storage.v1.GetUploadResponse
-	(*StreamTrackRequest)(nil),       // 9: storage.v1.StreamTrackRequest
-	(*StreamTrackResponse)(nil),      // 10: storage.v1.StreamTrackResponse
-	(*StreamTrackSignatureData)(nil), // 11: storage.v1.StreamTrackSignatureData
-	(*StreamTrackSignature)(nil),     // 12: storage.v1.StreamTrackSignature
-	(*Upload)(nil),                   // 13: storage.v1.Upload
-	(*FFProbeResult)(nil),            // 14: storage.v1.FFProbeResult
-	(*AudioAnalysisResult)(nil),      // 15: storage.v1.AudioAnalysisResult
-	(*GetStreamURLRequest)(nil),      // 16: storage.v1.GetStreamURLRequest
-	(*GetStreamURLResponse)(nil),     // 17: storage.v1.GetStreamURLResponse
-	(*GetIPDataRequest)(nil),         // 18: storage.v1.GetIPDataRequest
-	(*GetIPDataResponse)(nil),        // 19: storage.v1.GetIPDataResponse
-	nil,                              // 20: storage.v1.Upload.TranscodeResultsEntry
-	(*FFProbeResult_Format)(nil),     // 21: storage.v1.FFProbeResult.Format
-	(*timestamppb.Timestamp)(nil),    // 22: google.protobuf.Timestamp
+	(*PingRequest)(nil),                // 0: storage.v1.PingRequest
+	(*PingResponse)(nil),               // 1: storage.v1.PingResponse
+	(*GetHealthRequest)(nil),           // 2: storage.v1.GetHealthRequest
+	(*GetHealthResponse)(nil),          // 3: storage.v1.GetHealthResponse
+	(*UploadFilesRequest)(nil),         // 4: storage.v1.UploadFilesRequest
+	(*File)(nil),                       // 5: storage.v1.File
+	(*UploadFilesResponse)(nil),        // 6: storage.v1.UploadFilesResponse
+	(*GetUploadRequest)(nil),           // 7: storage.v1.GetUploadRequest
+	(*GetUploadResponse)(nil),          // 8: storage.v1.GetUploadResponse
+	(*StreamTrackRequest)(nil),         // 9: storage.v1.StreamTrackRequest
+	(*StreamTrackResponse)(nil),        // 10: storage.v1.StreamTrackResponse
+	(*StreamTrackSignatureData)(nil),   // 11: storage.v1.StreamTrackSignatureData
+	(*StreamTrackSignature)(nil),       // 12: storage.v1.StreamTrackSignature
+	(*Upload)(nil),                     // 13: storage.v1.Upload
+	(*FFProbeResult)(nil),              // 14: storage.v1.FFProbeResult
+	(*AudioAnalysisResult)(nil),        // 15: storage.v1.AudioAnalysisResult
+	(*GetStreamURLRequest)(nil),        // 16: storage.v1.GetStreamURLRequest
+	(*GetStreamURLResponse)(nil),       // 17: storage.v1.GetStreamURLResponse
+	(*GetIPDataRequest)(nil),           // 18: storage.v1.GetIPDataRequest
+	(*GetIPDataResponse)(nil),          // 19: storage.v1.GetIPDataResponse
+	(*GetRendezvousNodesRequest)(nil),  // 20: storage.v1.GetRendezvousNodesRequest
+	(*GetRendezvousNodesResponse)(nil), // 21: storage.v1.GetRendezvousNodesResponse
+	nil,                                // 22: storage.v1.Upload.TranscodeResultsEntry
+	(*FFProbeResult_Format)(nil),       // 23: storage.v1.FFProbeResult.Format
+	(*timestamppb.Timestamp)(nil),      // 24: google.protobuf.Timestamp
 }
 var file_storage_v1_types_proto_depIdxs = []int32{
 	5,  // 0: storage.v1.UploadFilesRequest.files:type_name -> storage.v1.File
@@ -1655,13 +1768,13 @@ var file_storage_v1_types_proto_depIdxs = []int32{
 	12, // 3: storage.v1.StreamTrackRequest.signature:type_name -> storage.v1.StreamTrackSignature
 	11, // 4: storage.v1.StreamTrackSignature.data:type_name -> storage.v1.StreamTrackSignatureData
 	14, // 5: storage.v1.Upload.probe:type_name -> storage.v1.FFProbeResult
-	22, // 6: storage.v1.Upload.created_at:type_name -> google.protobuf.Timestamp
-	22, // 7: storage.v1.Upload.updated_at:type_name -> google.protobuf.Timestamp
-	22, // 8: storage.v1.Upload.transcoded_at:type_name -> google.protobuf.Timestamp
-	20, // 9: storage.v1.Upload.transcode_results:type_name -> storage.v1.Upload.TranscodeResultsEntry
-	22, // 10: storage.v1.Upload.audio_analyzed_at:type_name -> google.protobuf.Timestamp
+	24, // 6: storage.v1.Upload.created_at:type_name -> google.protobuf.Timestamp
+	24, // 7: storage.v1.Upload.updated_at:type_name -> google.protobuf.Timestamp
+	24, // 8: storage.v1.Upload.transcoded_at:type_name -> google.protobuf.Timestamp
+	22, // 9: storage.v1.Upload.transcode_results:type_name -> storage.v1.Upload.TranscodeResultsEntry
+	24, // 10: storage.v1.Upload.audio_analyzed_at:type_name -> google.protobuf.Timestamp
 	15, // 11: storage.v1.Upload.audio_analysis_results:type_name -> storage.v1.AudioAnalysisResult
-	21, // 12: storage.v1.FFProbeResult.format:type_name -> storage.v1.FFProbeResult.Format
+	23, // 12: storage.v1.FFProbeResult.format:type_name -> storage.v1.FFProbeResult.Format
 	13, // [13:13] is the sub-list for method output_type
 	13, // [13:13] is the sub-list for method input_type
 	13, // [13:13] is the sub-list for extension type_name
@@ -1915,7 +2028,31 @@ func file_storage_v1_types_proto_init() {
 				return nil
 			}
 		}
+		file_storage_v1_types_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetRendezvousNodesRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 		file_storage_v1_types_proto_msgTypes[21].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetRendezvousNodesResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_storage_v1_types_proto_msgTypes[23].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*FFProbeResult_Format); i {
 			case 0:
 				return &v.state
@@ -1934,7 +2071,7 @@ func file_storage_v1_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_storage_v1_types_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   22,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
