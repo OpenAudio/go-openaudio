@@ -63,9 +63,12 @@ func (s *Server) validateMEADNewMessage(_ context.Context, mead *ddexv1beta1.Mea
 }
 
 func (s *Server) finalizeMEADNewMessage(ctx context.Context, req *abcitypes.FinalizeBlockRequest, txhash string, messageIndex int64, mead *ddexv1beta1.MeadMessage, sender string) error {
-	nonce := txhash
+	txhashBytes, err := common.HexToBytes(txhash)
+	if err != nil {
+		return fmt.Errorf("invalid txhash: %w", err)
+	}
 	// the MEAD address is the location of the message on the chain
-	meadAddress := common.CreateAddress(mead, s.config.GenesisFile.ChainID, req.Height, nonce)
+	meadAddress := common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, "")
 
 	rawMessage, err := proto.Marshal(mead)
 	if err != nil {

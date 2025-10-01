@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"strings"
 
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -99,4 +100,51 @@ func LoadPrivateKey(path string) (*ecdsa.PrivateKey, error) {
 		return nil, fmt.Errorf("invalid private key: %w", err)
 	}
 	return key, nil
+}
+
+// TxHashSign signs a transaction hash with the given private key
+// Validates that txHash is a proper hex-encoded hash
+func TxHashSign(pkey *ecdsa.PrivateKey, txHash string) (string, error) {
+	// Validate txHash format (should be hex string, typically 64 characters)
+	if !strings.HasPrefix(txHash, "0x") && len(txHash) != 64 {
+		return "", fmt.Errorf("invalid txHash format: expected 64-character hex string")
+	}
+
+	// Remove 0x prefix if present
+	cleanHash := strings.TrimPrefix(txHash, "0x")
+
+	// Validate hex encoding
+	hashBytes, err := hex.DecodeString(cleanHash)
+	if err != nil {
+		return "", fmt.Errorf("invalid txHash: not valid hex: %w", err)
+	}
+
+	if len(hashBytes) != 32 {
+		return "", fmt.Errorf("invalid txHash: expected 32 bytes, got %d", len(hashBytes))
+	}
+
+	return EthSign(pkey, hashBytes)
+}
+
+// TxHashRecover recovers the signer address from a transaction hash and signature
+func TxHashRecover(txHash, signature string) (*ecdsa.PublicKey, string, error) {
+	// Validate txHash format
+	if !strings.HasPrefix(txHash, "0x") && len(txHash) != 64 {
+		return nil, "", fmt.Errorf("invalid txHash format: expected 64-character hex string")
+	}
+
+	// Remove 0x prefix if present
+	cleanHash := strings.TrimPrefix(txHash, "0x")
+
+	// Validate hex encoding
+	hashBytes, err := hex.DecodeString(cleanHash)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid txHash: not valid hex: %w", err)
+	}
+
+	if len(hashBytes) != 32 {
+		return nil, "", fmt.Errorf("invalid txHash: expected 32 bytes, got %d", len(hashBytes))
+	}
+
+	return EthRecover(signature, hashBytes)
 }

@@ -90,30 +90,33 @@ func (s *Server) validateERNNewMessage(_ context.Context, _ *ddexv1beta1.NewRele
 }
 
 func (s *Server) finalizeERNNewMessage(ctx context.Context, req *abcitypes.FinalizeBlockRequest, txhash string, messageIndex int64, ern *ddexv1beta1.NewReleaseMessage, sender string) error {
-	// TODO: use a better nonce
-	nonce := txhash
+	txhashBytes, err := common.HexToBytes(txhash)
+	if err != nil {
+		return fmt.Errorf("invalid txhash: %w", err)
+	}
+
 	// the ERN address is the location of the message on the chain
-	ernAddress := common.CreateAddress(ern, s.config.GenesisFile.ChainID, req.Height, txhash)
+	ernAddress := common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, "")
 
 	// Collect all addresses, all underlying objects use the same source ERN nonce
 	partyAddresses := make([]string, len(ern.PartyList))
-	for i, party := range ern.PartyList {
-		partyAddresses[i] = common.CreateAddress(party, s.config.GenesisFile.ChainID, req.Height, nonce)
+	for i := range ern.PartyList {
+		partyAddresses[i] = common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, fmt.Sprintf("party:%d", i))
 	}
 
 	resourceAddresses := make([]string, len(ern.ResourceList))
-	for i, resource := range ern.ResourceList {
-		resourceAddresses[i] = common.CreateAddress(resource, s.config.GenesisFile.ChainID, req.Height, nonce)
+	for i := range ern.ResourceList {
+		resourceAddresses[i] = common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, fmt.Sprintf("resource:%d", i))
 	}
 
 	releaseAddresses := make([]string, len(ern.ReleaseList))
-	for i, release := range ern.ReleaseList {
-		releaseAddresses[i] = common.CreateAddress(release, s.config.GenesisFile.ChainID, req.Height, nonce)
+	for i := range ern.ReleaseList {
+		releaseAddresses[i] = common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, fmt.Sprintf("release:%d", i))
 	}
 
 	dealAddresses := make([]string, len(ern.DealList))
-	for i, deal := range ern.DealList {
-		dealAddresses[i] = common.CreateAddress(deal, s.config.GenesisFile.ChainID, req.Height, nonce)
+	for i := range ern.DealList {
+		dealAddresses[i] = common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, fmt.Sprintf("deal:%d", i))
 	}
 
 	rawMessage, err := proto.Marshal(ern)

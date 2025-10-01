@@ -534,10 +534,10 @@ select raw_acknowledgment, index from core_mead where tx_hash = $1;
 select raw_acknowledgment, index from core_pie where tx_hash = $1;
 
 -- name: GetBlocksWithTransactions :many
-select 
+select
     b.rowid as block_rowid,
     b.height,
-    b.chain_id, 
+    b.chain_id,
     b.hash as block_hash,
     b.proposer,
     b.created_at as block_created_at,
@@ -548,6 +548,43 @@ select
     t.transaction,
     t.created_at as tx_created_at
 from core_blocks b
-left join core_transactions t on b.height = t.block_id  
+left join core_transactions t on b.height = t.block_id
 where b.height = any($1::bigint[])
 order by b.height, t.created_at desc;
+
+-- name: GetReward :one
+select * from core_rewards
+where address = $1
+order by block_height desc
+limit 1;
+
+-- name: GetRewardByID :one
+select * from core_rewards
+where reward_id = $1
+order by block_height desc
+limit 1;
+
+-- name: GetRewardByTxHash :one
+select * from core_rewards
+where tx_hash = $1
+order by block_height desc
+limit 1;
+
+-- name: GetAllRewards :many
+select * from core_rewards
+where address in (
+    select distinct address
+    from core_rewards
+)
+order by block_height desc;
+
+-- name: GetActiveRewards :many
+select *
+from core_rewards
+order by address;
+
+-- name: GetRewardsByClaimAuthority :many
+select *
+from core_rewards
+where $1::text = any(claim_authorities)
+order by address;

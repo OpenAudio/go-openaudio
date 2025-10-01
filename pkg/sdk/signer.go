@@ -20,6 +20,7 @@ func (s *AudiusdSDK) ReadPrivKey(path string) error {
 
 func (s *AudiusdSDK) SetPrivKey(privKey *ecdsa.PrivateKey) {
 	s.privKey = privKey
+	s.Rewards.SetPrivKey(privKey)
 }
 
 func (s *AudiusdSDK) Sign(msg []byte) (string, error) {

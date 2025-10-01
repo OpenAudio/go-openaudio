@@ -279,3 +279,31 @@ insert into validator_history (
     event_time,
     event_block
 ) values ($1, $2, $3, $4, $5, $6, $7, $8);
+
+-- name: InsertCoreReward :exec
+insert into core_rewards (
+    address,
+    tx_hash,
+    index,
+    sender,
+    reward_id,
+    name,
+    amount,
+    claim_authorities,
+    raw_message,
+    block_height
+) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+
+-- name: UpdateCoreReward :exec
+update core_rewards
+set name = $2,
+    amount = $3,
+    claim_authorities = $4,
+    raw_message = $5,
+    block_height = $6,
+    updated_at = now()
+where address = $1;
+
+-- name: DeleteCoreReward :exec
+delete from core_rewards
+where address = $1;

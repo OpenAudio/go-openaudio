@@ -29,7 +29,7 @@ func main() {
 	auds := sdk.NewAudiusdSDK("audius-content-12.cultur3stake.com")
 
 	// pass core client to etl service
-	etl := etl.NewETLService(auds.Core, logger)
+	etl := etl.NewETLService(auds.Core, nil)
 	etl.SetDBURL(dbURL)
 	etl.SetRunDownMigrations(true)
 	// index 500 blocks

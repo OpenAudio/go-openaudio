@@ -33,7 +33,7 @@ func main() {
 
 	auds := sdk.NewAudiusdSDK("rpc.audius.engineering")
 
-	etl := etl.NewETLService(auds.Core, logger)
+	etl := etl.NewETLService(auds.Core, nil)
 	etl.SetDBURL(dbURL)
 	etl.SetCheckReadiness(false)
 

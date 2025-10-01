@@ -16,7 +16,6 @@ import (
 	v1beta1 "github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
 	ddexv1beta1 "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1"
 	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/rewards"
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
@@ -485,6 +484,12 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 			return nil, fmt.Errorf("could not marshal transaction: %v", marshalErr)
 		}
 		txhash = common.ToTxHashFromBytes(txBytes)
+
+		// Validate v1 transactions
+		err = c.core.validateV1Transaction(ctx, c.core.cache.currentHeight.Load(), req.Msg.Transaction)
+		if err != nil {
+			return nil, fmt.Errorf("transaction validation failed: %v", err)
+		}
 	}
 
 	// create mempool transaction for both v1 and v2
@@ -796,17 +801,20 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 	if ethRecipientAddress == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("eth_recipient_address is required"))
 	}
-	rewardID := req.Msg.RewardId
-	if rewardID == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward_id is required"))
+
+	// Only support programmatic rewards via reward_address
+	rewardAddress := req.Msg.RewardAddress
+	if rewardAddress == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward_address is required"))
 	}
+
 	specifier := req.Msg.Specifier
 	if specifier == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("specifier is required"))
 	}
-	oracleAddress := req.Msg.OracleAddress
-	if oracleAddress == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("oracle_address is required"))
+	claimAuthority := req.Msg.ClaimAuthority
+	if claimAuthority == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority is required"))
 	}
 	signature := req.Msg.Signature
 	if signature == "" {
@@ -817,27 +825,45 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount is required"))
 	}
 
-	claim := rewards.RewardClaim{
-		RecipientEthAddress:       ethRecipientAddress,
-		Amount:                    amount,
-		RewardID:                  rewardID,
-		Specifier:                 specifier,
-		AntiAbuseOracleEthAddress: oracleAddress,
+	// Get programmatic reward by deployed address
+	reward, err := c.core.db.GetReward(ctx, rewardAddress)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("programmatic reward not found"))
 	}
 
-	err := c.core.rewards.Validate(claim)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	sigData := &v1.RewardAttestationSignature{
+		EthRecipientAddress: req.Msg.EthRecipientAddress,
+		Amount:              req.Msg.Amount,
+		RewardAddress:       req.Msg.RewardAddress,
+		RewardId:            req.Msg.RewardId,
+		Specifier:           req.Msg.Specifier,
+		ClaimAuthority:      req.Msg.ClaimAuthority,
 	}
 
-	err = c.core.rewards.Authenticate(claim, signature)
+	signer, err := common.ProtoRecover(sigData, req.Msg.Signature)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("signature recovery failure"))
 	}
 
-	_, attestation, err := c.core.rewards.Attest(claim)
+	// Verify claim authority is authorized to sign for this reward
+	authorized := false
+	for _, ca := range reward.ClaimAuthorities {
+		if strings.EqualFold(ca, signer) {
+			authorized = true
+			break
+		}
+	}
+	if !authorized {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("claim authority not authorized for this programmatic reward"))
+	}
+
+	if !strings.EqualFold(req.Msg.GetClaimAuthority(), signer) {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("claim authority and signer mismatch"))
+	}
+
+	attestation, err := common.ProtoSign(c.core.config.EthereumKey, sigData)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("error signing attestation"))
 	}
 
 	res := &v1.GetRewardAttestationResponse{
@@ -849,29 +875,88 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 }
 
 // GetRewards implements v1connect.CoreServiceHandler.
-func (c *CoreService) GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error) {
-	rewards := c.core.rewards.Rewards
-	rewardResponses := make([]*v1.Reward, 0, len(rewards))
+func (c *CoreService) GetRewards(ctx context.Context, req *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error) {
+	claimAuthority := req.Msg.ClaimAuthority
+	if claimAuthority == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority required"))
+	}
+
+	rewards, err := c.core.db.GetRewardsByClaimAuthority(ctx, claimAuthority)
+	if err != nil {
+		return nil, err
+	}
+
+	responseRewards := make([]*v1.GetRewardResponse, 0, len(rewards))
 	for _, reward := range rewards {
-		claimAuthorities := make([]*v1.ClaimAuthority, 0, len(reward.ClaimAuthorities))
-		for _, claimAuthority := range reward.ClaimAuthorities {
-			claimAuthorities = append(claimAuthorities, &v1.ClaimAuthority{
-				Address: claimAuthority.Address,
-			})
-		}
-		rewardResponses = append(rewardResponses, &v1.Reward{
-			RewardId:         reward.RewardId,
-			Amount:           reward.Amount,
+		responseRewards = append(responseRewards, &v1.GetRewardResponse{
+			Address:          reward.Address,
+			RewardId:         reward.RewardID,
 			Name:             reward.Name,
-			ClaimAuthorities: claimAuthorities,
+			Amount:           uint64(reward.Amount),
+			ClaimAuthorities: reward.ClaimAuthorities,
+			Sender:           reward.Sender,
+			BlockHeight:      reward.BlockHeight,
 		})
 	}
 
-	res := &v1.GetRewardsResponse{
-		Rewards: rewardResponses,
+	return connect.NewResponse(&v1.GetRewardsResponse{
+		Rewards: responseRewards,
+	}), nil
+}
+
+// GetReward implements v1connect.CoreServiceHandler.
+func (c *CoreService) GetReward(ctx context.Context, req *connect.Request[v1.GetRewardRequest]) (*connect.Response[v1.GetRewardResponse], error) {
+	address := req.Msg.Address
+	txhash := req.Msg.Txhash
+	if address == "" && txhash == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address or txhash is required"))
 	}
 
-	return connect.NewResponse(res), nil
+	if address != "" {
+		reward, err := c.core.db.GetReward(ctx, address)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("reward not found for address: %s", address))
+			}
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get reward: %w", err))
+		}
+
+		res := &v1.GetRewardResponse{
+			Address:          reward.Address,
+			RewardId:         reward.RewardID,
+			Name:             reward.Name,
+			Amount:           uint64(reward.Amount),
+			ClaimAuthorities: reward.ClaimAuthorities,
+			Sender:           reward.Sender,
+			BlockHeight:      reward.BlockHeight,
+		}
+
+		return connect.NewResponse(res), nil
+	}
+
+	if txhash != "" {
+		reward, err := c.core.db.GetRewardByTxHash(ctx, txhash)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("reward not found for address: %s", address))
+			}
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get reward: %w", err))
+		}
+
+		res := &v1.GetRewardResponse{
+			Address:          reward.Address,
+			RewardId:         reward.RewardID,
+			Name:             reward.Name,
+			Amount:           uint64(reward.Amount),
+			ClaimAuthorities: reward.ClaimAuthorities,
+			Sender:           reward.Sender,
+			BlockHeight:      reward.BlockHeight,
+		}
+
+		return connect.NewResponse(res), nil
+	}
+
+	return nil, connect.NewError(connect.CodeNotFound, nil)
 }
 
 // GetERN implements v1connect.CoreServiceHandler.
@@ -975,4 +1060,45 @@ func (c *CoreService) GetSlashAttestations(ctx context.Context, req *connect.Req
 	return connect.NewResponse(&v1.GetSlashAttestationsResponse{
 		Attestations: attestationResponses,
 	}), nil
+}
+
+// authenticateProgrammaticRewardClaim validates signatures for programmatic rewards
+// using the structured protobuf signature format to prevent cross-reward attacks
+func (c *CoreService) authenticateProgrammaticRewardClaim(
+	ethRecipientAddress string,
+	amount uint64,
+	rewardAddress string,
+	rewardID string,
+	specifier string,
+	claimAuthority string,
+	signature string,
+) error {
+	// Create the structured signature payload that claim authorities must sign
+	sigPayload := &v1.RewardAttestationSignature{
+		EthRecipientAddress: ethRecipientAddress,
+		Amount:              amount,
+		RewardAddress:       rewardAddress, // This prevents cross-reward signature reuse
+		RewardId:            rewardID,
+		Specifier:           specifier,
+		ClaimAuthority:      claimAuthority,
+	}
+
+	// Marshal the protobuf message to get the bytes that should be signed
+	sigBytes, err := proto.Marshal(sigPayload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal signature payload: %w", err)
+	}
+
+	// Verify the signature using the common signature verification
+	_, sender, err := common.EthRecover(signature, sigBytes)
+	if err != nil {
+		return fmt.Errorf("failed to recover signature: %w", err)
+	}
+
+	// Ensure the recovered address matches the claim authority address
+	if !strings.EqualFold(sender, claimAuthority) {
+		return fmt.Errorf("signature sender %s does not match claim authority %s", sender, claimAuthority)
+	}
+
+	return nil
 }

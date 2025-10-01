@@ -270,6 +270,7 @@ message SignedTransaction {
     StorageProofVerification storage_proof_verification = 1006;
     Attestation attestation = 1007;
     ddex.v1beta1.NewReleaseMessage release = 1008;
+    RewardMessage reward = 1009;
   }
 }
 
@@ -389,19 +390,22 @@ message Reward {
   repeated ClaimAuthority claim_authorities = 4;
 }
 
-message GetRewardsRequest {}
+message GetRewardsRequest {
+  string claim_authority = 1;
+}
 
 message GetRewardsResponse {
-  repeated Reward rewards = 1;
+  repeated GetRewardResponse rewards = 1;
 }
 
 message GetRewardAttestationRequest {
   string eth_recipient_address = 1;
-  string reward_id = 2;
+  string reward_address = 2; // The deployed reward address (new programmatic rewards)
   string specifier = 3;
-  string oracle_address = 4;
+  string claim_authority = 4;
   string signature = 5;
   uint64 amount = 6;
+  string reward_id = 7; // Legacy reward_id (for backwards compatibility)
 }
 
 message GetRewardAttestationResponse {
@@ -488,4 +492,50 @@ message GetPIERequest {
 
 message GetPIEResponse {
   ddex.v1beta1.PieMessage pie = 1;
+}
+
+message RewardMessage {
+  oneof action {
+    CreateReward create = 1000;
+    DeleteReward delete = 1001;
+  }
+}
+
+message CreateReward {
+  string reward_id = 1;
+  string name = 2;
+  uint64 amount = 3;
+  repeated ClaimAuthority claim_authorities = 4;
+  int64 deadline_block_height = 5;
+  string signature = 6; // Signature over deterministic reward data
+}
+
+message DeleteReward {
+  string address = 1; // The deployed reward address
+  int64 deadline_block_height = 2;
+  string signature = 3; // Signature over deterministic delete data
+}
+
+message GetRewardRequest {
+  string address = 1; // The deployed reward address
+  string txhash = 2;
+}
+
+message GetRewardResponse {
+  string address = 1;
+  string reward_id = 2;
+  string name = 3;
+  uint64 amount = 4;
+  repeated string claim_authorities = 5;
+  string sender = 6;
+  int64 block_height = 7;
+}
+
+message RewardAttestationSignature {
+  string eth_recipient_address = 1;
+  uint64 amount = 2;
+  string reward_address = 3; // Binds signature to specific deployed reward
+  string reward_id = 4;
+  string specifier = 5;
+  string claim_authority = 6;
 }

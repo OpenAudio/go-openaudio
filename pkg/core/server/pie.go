@@ -62,9 +62,12 @@ func (s *Server) validatePIENewMessage(_ context.Context, pie *ddexv1beta1.PieMe
 }
 
 func (s *Server) finalizePIENewMessage(ctx context.Context, req *abcitypes.FinalizeBlockRequest, txhash string, messageIndex int64, pie *ddexv1beta1.PieMessage, sender string) error {
-	nonce := txhash
+	txhashBytes, err := common.HexToBytes(txhash)
+	if err != nil {
+		return fmt.Errorf("invalid txhash: %w", err)
+	}
 	// the PIE address is the location of the message on the chain
-	pieAddress := common.CreateAddress(pie, s.config.GenesisFile.ChainID, req.Height, nonce)
+	pieAddress := common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, "")
 
 	rawMessage, err := proto.Marshal(pie)
 	if err != nil {
