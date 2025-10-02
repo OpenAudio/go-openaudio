@@ -660,9 +660,9 @@ func (s *Server) cacheSnapshots() error {
 
 func (s *Server) stateSyncLatestBlock(rpcServers []string) (trustHeight int64, trustHash string, err error) {
 	for _, rpcServer := range rpcServers {
-		audsRpc := strings.TrimSuffix(rpcServer, "/core/crpc")
-		auds := sdk.NewOpenAudioSDK(audsRpc)
-		snapshots, err := auds.Core.GetStoredSnapshots(context.Background(), connect.NewRequest(&corev1.GetStoredSnapshotsRequest{}))
+		oapRPC := strings.TrimSuffix(rpcServer, "/core/crpc")
+		oap := sdk.NewOpenAudioSDK(oapRPC)
+		snapshots, err := oap.Core.GetStoredSnapshots(context.Background(), connect.NewRequest(&corev1.GetStoredSnapshotsRequest{}))
 		if err != nil {
 			s.logger.Error("error getting stored snapshots", zap.String("rpcServer", rpcServer), zap.Error(err))
 			continue
