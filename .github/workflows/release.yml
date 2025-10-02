@@ -23,19 +23,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-
-      - name: Build binaries
-        run: |
-          mkdir -p dist
-          GOOS=linux GOARCH=amd64 go build -o dist/openaudio-linux-amd64 ./cmd/openaudio
-          GOOS=linux GOARCH=arm64 go build -o dist/openaudio-linux-arm64 ./cmd/openaudio
-          GOOS=darwin GOARCH=amd64 go build -o dist/openaudio-darwin-amd64 ./cmd/openaudio
-          GOOS=darwin GOARCH=arm64 go build -o dist/openaudio-darwin-arm64 ./cmd/openaudio
-
       - name: Create tag
         run: |
           git config user.name github-actions
@@ -52,11 +39,6 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
-          files: |
-            dist/openaudio-linux-amd64
-            dist/openaudio-linux-arm64
-            dist/openaudio-darwin-amd64
-            dist/openaudio-darwin-arm64
 
   build-docker-amd64:
     needs: create-release
