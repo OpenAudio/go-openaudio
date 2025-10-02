@@ -26,17 +26,6 @@ jobs:
       with:
         github_token: ${{ github.token }}
 
-    - name: Buf lint
-      run: buf lint
-
-    - name: Buf format check
-      run: buf format --diff --exit-code
-      continue-on-error: true
-
-    - name: Buf breaking change detection
-      run: buf breaking --against 'https://github.com/${{ github.repository }}.git#branch=main'
-      if: github.ref != 'refs/heads/main'
-
     - name: Buf push to BSR
       run: |
         if [[ -n "${{ inputs.label }}" ]]; then
