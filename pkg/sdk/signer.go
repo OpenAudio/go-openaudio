@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func (s *AudiusdSDK) ReadPrivKey(path string) error {
+func (s *OpenAudioSDK) ReadPrivKey(path string) error {
 	privKey, err := common.LoadPrivateKey(path)
 	if err != nil {
 		return err
@@ -18,12 +18,12 @@ func (s *AudiusdSDK) ReadPrivKey(path string) error {
 	return nil
 }
 
-func (s *AudiusdSDK) SetPrivKey(privKey *ecdsa.PrivateKey) {
+func (s *OpenAudioSDK) SetPrivKey(privKey *ecdsa.PrivateKey) {
 	s.privKey = privKey
 	s.Rewards.SetPrivKey(privKey)
 }
 
-func (s *AudiusdSDK) Sign(msg []byte) (string, error) {
+func (s *OpenAudioSDK) Sign(msg []byte) (string, error) {
 	if s.privKey == nil {
 		return "", errors.New("private key not set")
 	}
@@ -36,7 +36,7 @@ func (s *AudiusdSDK) Sign(msg []byte) (string, error) {
 	return signature, nil
 }
 
-func (s *AudiusdSDK) RecoverSigner(msg []byte, signature string) (string, error) {
+func (s *OpenAudioSDK) RecoverSigner(msg []byte, signature string) (string, error) {
 	_, address, err := common.EthRecover(signature, msg)
 	if err != nil {
 		return "", err
@@ -45,18 +45,18 @@ func (s *AudiusdSDK) RecoverSigner(msg []byte, signature string) (string, error)
 	return address, nil
 }
 
-func (s *AudiusdSDK) Address() string {
+func (s *OpenAudioSDK) Address() string {
 	if s.privKey == nil {
 		return ""
 	}
 	return crypto.PubkeyToAddress(s.privKey.PublicKey).Hex()
 }
 
-func (s *AudiusdSDK) PrivKey() *ecdsa.PrivateKey {
+func (s *OpenAudioSDK) PrivKey() *ecdsa.PrivateKey {
 	return s.privKey
 }
 
-func (s *AudiusdSDK) Pubkey() *ecdsa.PublicKey {
+func (s *OpenAudioSDK) Pubkey() *ecdsa.PublicKey {
 	if s.privKey == nil {
 		return nil
 	}

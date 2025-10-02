@@ -34,7 +34,7 @@ type UploadAndReleaseResult struct {
 	StreamURLs map[string]*corev1.GetStreamURLsResponse_EntityStreamURLs
 }
 
-func (s *AudiusdSDK) UploadAndRelease(
+func (s *OpenAudioSDK) UploadAndRelease(
 	ctx context.Context,
 	file io.ReadSeeker,
 	filename string,

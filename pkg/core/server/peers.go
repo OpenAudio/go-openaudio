@@ -310,8 +310,8 @@ func (s *Server) refreshConnectRPCPeers(ctx context.Context, _ *zap.Logger) erro
 		}
 
 		endpoint := validator.Endpoint
-		auds := sdk.NewAudiusdSDK(endpoint)
-		connectRPC := auds.Core
+		oap := sdk.NewOpenAudioSDK(endpoint)
+		connectRPC := oap.Core
 		s.connectRPCPeers.Set(ethAddress, connectRPC)
 
 		if exists {

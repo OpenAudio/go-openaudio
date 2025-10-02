@@ -23,7 +23,7 @@ func main() {
 	serverAddr := "node3.audiusd.devnet"
 	privKeyPath := "./pkg/integration_tests/assets/demo_key.txt"
 
-	sdk := auds.NewAudiusdSDK(serverAddr)
+	sdk := auds.NewOpenAudioSDK(serverAddr)
 	if err := sdk.ReadPrivKey(privKeyPath); err != nil {
 		log.Fatalf("failed to read private key: %w", err)
 	}

@@ -10,11 +10,11 @@ import (
 )
 
 func main() {
-	sdk := sdk.NewAudiusdSDK("node1.audiusd.devnet")
+	oap := sdk.NewOpenAudioSDK("node1.oap.devnet")
 
 	height := int64(1)
 	for {
-		block, err := sdk.Core.GetBlock(context.Background(), connect.NewRequest(&v1.GetBlockRequest{
+		block, err := oap.Core.GetBlock(context.Background(), connect.NewRequest(&v1.GetBlockRequest{
 			Height: height,
 		}))
 		if err != nil {

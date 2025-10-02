@@ -15,13 +15,13 @@ import (
 type GeolocationHandler struct {
 	privateKey        *ecdsa.PrivateKey
 	allowedCity       string
-	auds              *sdk.AudiusdSDK
+	auds              *sdk.OpenAudioSDK
 	ernAddress        string
 	resourceAddresses []string
 	releaseAddresses  []string
 }
 
-func NewGeolocationHandler(privateKey *ecdsa.PrivateKey, allowedCity string, auds *sdk.AudiusdSDK) *GeolocationHandler {
+func NewGeolocationHandler(privateKey *ecdsa.PrivateKey, allowedCity string, auds *sdk.OpenAudioSDK) *GeolocationHandler {
 	return &GeolocationHandler{
 		privateKey:        privateKey,
 		allowedCity:       allowedCity,
@@ -44,15 +44,15 @@ func main() {
 		log.Fatalf("Failed to generate private key: %v", err)
 	}
 
-	auds := sdk.NewAudiusdSDK(*validatorEndpoint)
-	auds.Init(ctx)
-	auds.SetPrivKey(privateKey)
+	oap := sdk.NewOpenAudioSDK(*validatorEndpoint)
+	oap.Init(ctx)
+	oap.SetPrivKey(privateKey)
 
-	handler := NewGeolocationHandler(privateKey, "Bozeman", auds)
+	handler := NewGeolocationHandler(privateKey, "Bozeman", oap)
 
 	// Upload a demo track in the background
 	go func() {
-		if err := uploadTrackExample(ctx, auds, handler); err != nil {
+		if err := uploadTrackExample(ctx, oap, handler); err != nil {
 			fmt.Printf("track upload failed: %v\n", err)
 		}
 	}()

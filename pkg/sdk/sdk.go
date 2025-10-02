@@ -17,7 +17,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/sdk/rewards"
 )
 
-type AudiusdSDK struct {
+type OpenAudioSDK struct {
 	privKey *ecdsa.PrivateKey
 	chainID string
 
@@ -39,7 +39,7 @@ func ensureURLProtocol(url string) string {
 	return url
 }
 
-func NewAudiusdSDK(nodeURL string) *AudiusdSDK {
+func NewOpenAudioSDK(nodeURL string) *OpenAudioSDK {
 	httpClient := http.DefaultClient
 	url := ensureURLProtocol(nodeURL)
 
@@ -51,7 +51,7 @@ func NewAudiusdSDK(nodeURL string) *AudiusdSDK {
 	mediorumClient := mediorum.NewWithCore(url, coreClient)
 	rewardsClient := rewards.NewRewards(coreClient)
 
-	sdk := &AudiusdSDK{
+	sdk := &OpenAudioSDK{
 		Core:     coreClient,
 		Storage:  storageClient,
 		ETL:      etlClient,
@@ -64,7 +64,7 @@ func NewAudiusdSDK(nodeURL string) *AudiusdSDK {
 	return sdk
 }
 
-func (s *AudiusdSDK) Init(ctx context.Context) error {
+func (s *OpenAudioSDK) Init(ctx context.Context) error {
 	nodeInfoResp, err := s.Core.GetNodeInfo(ctx, connect.NewRequest(&corev1.GetNodeInfoRequest{}))
 	if err != nil {
 		return err
@@ -74,6 +74,6 @@ func (s *AudiusdSDK) Init(ctx context.Context) error {
 	return nil
 }
 
-func (s *AudiusdSDK) ChainID() string {
+func (s *OpenAudioSDK) ChainID() string {
 	return s.chainID
 }
