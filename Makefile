@@ -46,7 +46,7 @@ bin/openaudio-arm64-linux: $(BUILD_SRCS)
 .PHONY: ignore-code-gen
 ignore-code-gen:
 	@echo "Warning: not regenerating .go files from sql, templ, proto, etc. Using existing artifacts instead."
-	@touch $(SQL_ARTIFACTS) $(LOCATION_SQL_ARTIFACTS) $(TEMPL_ARTIFACTS) $(PROTO_ARTIFACTS) go.mod
+	@touch $(SQL_ARTIFACTS) $(TEMPL_ARTIFACTS) $(PROTO_ARTIFACTS) go.mod
 
 .PHONY: build-push-cpp
 docker-push-cpp:
@@ -96,12 +96,14 @@ gen: regen-templ regen-proto regen-sql
 
 .PHONY: regen-templ
 regen-templ: $(TEMPL_ARTIFACTS)
+
 $(TEMPL_ARTIFACTS): $(TEMPL_SRCS)
 	@echo Regenerating templ code
 	cd pkg/core/console && templ generate -log-level error
 
 .PHONY: regen-proto
 regen-proto: $(PROTO_ARTIFACTS)
+
 $(PROTO_ARTIFACTS): $(PROTO_SRCS)
 	@echo Regenerating protobuf code
 	buf --version
@@ -112,13 +114,14 @@ regen-sql: regen-core-sql regen-eth-sql
 
 .PHONY: regen-core-sql
 regen-core-sql: $(CORE_SQL_ARTIFACTS)
+
 $(CORE_SQL_ARTIFACTS): $(CORE_SQL_SRCS)
 	@echo Regenerating sql code
 	cd pkg/core/db && sqlc generate
 
-
 .PHONY: regen-eth-sql
 regen-eth-sql: $(ETH_SQL_ARTIFACTS)
+
 $(ETH_SQL_ARTIFACTS): $(ETH_SQL_SRCS)
 	@echo Regenerating eth sql code
 	cd pkg/eth/db && sqlc generate

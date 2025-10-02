@@ -1,0 +1,11 @@
+# protobuf generated Go files
+*.pb.go linguist-generated=true
+
+# connect-rpc generated Go files
+*.connect.go linguist-generated=true
+
+# templ generated Go files
+*_templ.go linguist-generated=true
+
+# sqlc generated Go files
+*.sql.go linguist-generated=true
