@@ -22,7 +22,7 @@ const (
 
 func CreateLogger(env, level string) (*zap.Logger, error) {
 	enableAxiomDefault := strconv.FormatBool(env != "dev")
-	enableAxiom := config.GetEnvWithDefault("AUDIUSD_ENABLE_AXIOM", enableAxiomDefault) == "true"
+	enableAxiom := config.GetEnvWithDefault("OPENAUDIO_ENABLE_AXIOM", enableAxiomDefault) == "true"
 
 	consoleEncoder := zapcore.NewConsoleEncoder(zap.NewProductionEncoderConfig())
 

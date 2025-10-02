@@ -7,12 +7,12 @@ services:
       - ./dev/tls/cert.pem:/etc/nginx/ssl/cert.pem:ro
       - ./dev/tls/key.pem:/etc/nginx/ssl/key.pem:ro
     extra_hosts:
-      - 'node1.audiusd.devnet:host-gateway'
-      - 'node2.audiusd.devnet:host-gateway'
-      - 'node3.audiusd.devnet:host-gateway'
-      - 'node4.audiusd.devnet:host-gateway'
+      - 'node1.oap.devnet:host-gateway'
+      - 'node2.oap.devnet:host-gateway'
+      - 'node3.oap.devnet:host-gateway'
+      - 'node4.oap.devnet:host-gateway'
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://node1.audiusd.devnet/" ]
+      test: [ "CMD", "curl", "-f", "http://node1.oap.devnet/" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -21,7 +21,7 @@ services:
       - 80:80
       - 443:443
     profiles:
-      - audiusd-dev
+      - openaudio-dev
       - integration-tests
 
   eth-ganache:
@@ -36,21 +36,21 @@ services:
     ports:
       - 8545:8545
     profiles:
-      - audiusd-dev
+      - openaudio-dev
       - integration-tests
 
-  audiusd-1:
-    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
+  openaudio-1:
+    image: ${OPENAUDIO_IMAGE:-audius/openaudio:dev}
     restart: unless-stopped
     env_file:
-      - ./dev/env/audiusd-1.env
+      - ./dev/env/openaudio-1.env
     extra_hosts:
-      - 'node1.audiusd.devnet:host-gateway'
-      - 'node2.audiusd.devnet:host-gateway'
-      - 'node3.audiusd.devnet:host-gateway'
-      - 'node4.audiusd.devnet:host-gateway'
+      - 'node1.oap.devnet:host-gateway'
+      - 'node2.oap.devnet:host-gateway'
+      - 'node3.oap.devnet:host-gateway'
+      - 'node4.oap.devnet:host-gateway'
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://node1.audiusd.devnet/" ]
+      test: [ "CMD", "curl", "-f", "http://node1.oap.devnet/" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -61,21 +61,21 @@ services:
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
     profiles:
-      - audiusd-dev
+      - openaudio-dev
       - integration-tests
 
-  audiusd-2:
-    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
+  openaudio-2:
+    image: ${OPENAUDIO_IMAGE:-audius/openaudio:dev}
     restart: unless-stopped
     env_file:
-      - ./dev/env/audiusd-2.env
+      - ./dev/env/openaudio-2.env
     extra_hosts:
-      - 'node1.audiusd.devnet:host-gateway'
-      - 'node2.audiusd.devnet:host-gateway'
-      - 'node3.audiusd.devnet:host-gateway'
-      - 'node4.audiusd.devnet:host-gateway'
+      - 'node1.oap.devnet:host-gateway'
+      - 'node2.oap.devnet:host-gateway'
+      - 'node3.oap.devnet:host-gateway'
+      - 'node4.oap.devnet:host-gateway'
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://node2.audiusd.devnet/" ]
+      test: [ "CMD", "curl", "-f", "http://node2.oap.devnet/" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -86,21 +86,21 @@ services:
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
     profiles:
-      - audiusd-dev
+      - openaudio-dev
       - integration-tests
 
-  audiusd-3:
-    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
+  openaudio-3:
+    image: ${OPENAUDIO_IMAGE:-audius/openaudio:dev}
     restart: unless-stopped
     env_file:
-      - ./dev/env/audiusd-3.env
+      - ./dev/env/openaudio-3.env
     extra_hosts:
-      - 'node1.audiusd.devnet:host-gateway'
-      - 'node2.audiusd.devnet:host-gateway'
-      - 'node3.audiusd.devnet:host-gateway'
-      - 'node4.audiusd.devnet:host-gateway'
+      - 'node1.oap.devnet:host-gateway'
+      - 'node2.oap.devnet:host-gateway'
+      - 'node3.oap.devnet:host-gateway'
+      - 'node4.oap.devnet:host-gateway'
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://node3.audiusd.devnet/" ]
+      test: [ "CMD", "curl", "-f", "http://node3.oap.devnet/" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -111,21 +111,21 @@ services:
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
     profiles:
-      - audiusd-dev
+      - openaudio-dev
       - integration-tests
 
-  audiusd-4:
-    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
+  openaudio-4:
+    image: ${OPENAUDIO_IMAGE:-audius/openaudio:dev}
     restart: unless-stopped
     env_file:
-      - ./dev/env/audiusd-4.env
+      - ./dev/env/openaudio-4.env
     extra_hosts:
-      - 'node1.audiusd.devnet:host-gateway'
-      - 'node2.audiusd.devnet:host-gateway'
-      - 'node3.audiusd.devnet:host-gateway'
-      - 'node4.audiusd.devnet:host-gateway'
+      - 'node1.oap.devnet:host-gateway'
+      - 'node2.oap.devnet:host-gateway'
+      - 'node3.oap.devnet:host-gateway'
+      - 'node4.oap.devnet:host-gateway'
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://node4.audiusd.devnet/" ]
+      test: [ "CMD", "curl", "-f", "http://node4.oap.devnet/" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -136,49 +136,8 @@ services:
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
     profiles:
-      - audiusd-dev
+      - openaudio-dev
       - integration-tests
-
-  audiusd-console:
-    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
-    restart: unless-stopped
-    env_file:
-      - ./dev/env/audiusd-console.env
-    extra_hosts:
-      - 'node1.audiusd.devnet:host-gateway'
-      - 'node2.audiusd.devnet:host-gateway'
-      - 'node3.audiusd.devnet:host-gateway'
-      - 'node4.audiusd.devnet:host-gateway'
-    ports:
-      - 8081:80
-    profiles:
-      - audiusd-dev
-
-  audiusd-ss:
-    image: ${AUDIUSD_IMAGE:-audius/audiusd:dev}
-    restart: unless-stopped
-    env_file:
-      - ./dev/env/audiusd-ss.env
-    extra_hosts:
-      - 'node1.audiusd.devnet:host-gateway'
-      - 'node2.audiusd.devnet:host-gateway'
-      - 'node3.audiusd.devnet:host-gateway'
-      - 'node4.audiusd.devnet:host-gateway'
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://audiusd-ss:26656/" ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-    ports:
-      - 26660:80
-    volumes:
-      - ./cmd:/app/cmd
-      - ./pkg:/app/pkg
-      - ./go.mod:/app/go.mod
-      - ./go.sum:/app/go.sum
-    profiles:
-      - state-sync-tests
 
   adminer:
     image: adminer
@@ -189,15 +148,15 @@ services:
     volumes:
       - ./dev/adminer/plugins-enabled/login-servers.php:/var/www/html/plugins-enabled/login-servers.php
     extra_hosts:
-      - 'node1.audiusd.devnet:host-gateway'
-      - 'node2.audiusd.devnet:host-gateway'
-      - 'node3.audiusd.devnet:host-gateway'
-      - 'node4.audiusd.devnet:host-gateway'
+      - 'node1.oap.devnet:host-gateway'
+      - 'node2.oap.devnet:host-gateway'
+      - 'node3.oap.devnet:host-gateway'
+      - 'node4.oap.devnet:host-gateway'
     profiles:
-      - audiusd-dev
+      - openaudio-dev
 
   test-integration:
-    image: ${AUDIUSD_TEST_HARNESS_IMAGE:-audius/audiusd:harness}
+    image: ${OPENAUDIO_TEST_HARNESS_IMAGE:-audius/openaudio:harness}
     command: go test -v -count=1 -timeout=60s ./pkg/integration_tests/...
     volumes:
       - ./cmd:/app/cmd
@@ -207,18 +166,18 @@ services:
     env_file:
       - ./dev/env/test-core.env
     extra_hosts:
-      - 'node1.audiusd.devnet:host-gateway'
-      - 'node2.audiusd.devnet:host-gateway'
-      - 'node3.audiusd.devnet:host-gateway'
-      - 'node4.audiusd.devnet:host-gateway'
+      - 'node1.oap.devnet:host-gateway'
+      - 'node2.oap.devnet:host-gateway'
+      - 'node3.oap.devnet:host-gateway'
+      - 'node4.oap.devnet:host-gateway'
     depends_on:
-      audiusd-1:
+      openaudio-1:
         condition: service_started
-      audiusd-2:
+      openaudio-2:
         condition: service_started
-      audiusd-3:
+      openaudio-3:
         condition: service_started
-      audiusd-4:
+      openaudio-4:
         condition: service_started
       eth-ganache:
         condition: service_healthy
@@ -228,7 +187,7 @@ services:
       - integration-tests
 
   test-mediorum-unittests:
-    image: ${AUDIUSD_TEST_HARNESS_IMAGE:-audius/audiusd:harness}
+    image: ${OPENAUDIO_TEST_HARNESS_IMAGE:-audius/openaudio:harness}
     command: go test -v -count=1 -timeout=60s ./pkg/mediorum/...
     volumes:
       - ./cmd:/app/cmd
@@ -243,7 +202,7 @@ services:
       - mediorum-unittests
 
   test-unittests:
-    image: ${AUDIUSD_TEST_HARNESS_IMAGE:-audius/audiusd:harness}
+    image: ${OPENAUDIO_TEST_HARNESS_IMAGE:-audius/openaudio:harness}
     command:
       - go
       - test

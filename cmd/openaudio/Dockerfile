@@ -28,9 +28,9 @@ COPY --from=audius/cpp:bookworm /usr/local/lib/libkeyfinder.so* /usr/local/lib/
 RUN ldconfig
 
 RUN mkdir -p /env
-COPY ./cmd/audiusd/env/* /env/
+COPY ./cmd/openaudio/env/* /env/
 
-COPY ./cmd/audiusd/entrypoint.sh /bin/entrypoint.sh
+COPY ./cmd/openaudio/entrypoint.sh /bin/entrypoint.sh
 RUN chmod +x /bin/entrypoint.sh
 
 ARG GIT_SHA
@@ -43,8 +43,8 @@ EXPOSE 26656
 VOLUME ["/data"]
 
 ARG PREBUILT_BINARY
-COPY ${PREBUILT_BINARY} /bin/audiusd
-RUN chmod +x /bin/audiusd
+COPY ${PREBUILT_BINARY} /bin/openaudio
+RUN chmod +x /bin/openaudio
 
 ENTRYPOINT ["/bin/entrypoint.sh"]
 
@@ -60,7 +60,7 @@ RUN chmod 644 /usr/share/ca-certificates/devnet.crt && \
 
 
 # Image from which go tests can be executed in the same network
-# with all the audiusd deps installed
+# with all the openaudio deps installed
 FROM toolbase AS harness
 
 COPY --from=golang:alpine /usr/local/go/ /usr/local/go/
@@ -69,22 +69,22 @@ ENV GOPATH="/go"
 ENV GOROOT="/usr/local/go"
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-COPY ./cmd/audiusd/.initdb /app/audiusd/.initdb
+COPY ./cmd/openaudio/.initdb /app/openaudio/.initdb
 
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-ENV AUDIUSD_TEST_HARNESS_MODE="true"
+ENV OPENAUDIO_TEST_HARNESS_MODE="true"
 
 
-# Image for running audiusd during CI tests.
+# Image for running openaudio during CI tests.
 # Ideally nothing should be added here unless strictly necessary.
 FROM toolbase AS ci
 # no-op
 
 
-# Image for running audiusd for development.
+# Image for running openaudio for development.
 # Add any developer convenience tools or state here that don't belong in CI
 FROM toolbase AS dev
 # no-op

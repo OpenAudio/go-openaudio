@@ -257,8 +257,8 @@ func setupDelegateKeyPair(logger *zap.Logger) {
 }
 
 func getEchoServerConfig(hostUrl *url.URL) serverConfig {
-	httpPort := getEnvString("AUDIUSD_HTTP_PORT", "80")
-	httpsPort := getEnvString("AUDIUSD_HTTPS_PORT", "443")
+	httpPort := getEnvString("OPENAUDIO_HTTP_PORT", "80")
+	httpsPort := getEnvString("OPENAUDIO_HTTPS_PORT", "443")
 	hostname := hostUrl.Hostname()
 
 	// TODO: this is all gross
@@ -268,14 +268,14 @@ func getEchoServerConfig(hostUrl *url.URL) serverConfig {
 
 	tlsEnabled := true
 	switch {
-	case os.Getenv("AUDIUSD_TLS_DISABLED") == "true":
+	case os.Getenv("OPENAUDIO_TLS_DISABLED") == "true":
 		tlsEnabled = false
 	case hasSuffix(hostname, []string{"altego.net", "bdnodes.net", "staked.cloud"}):
 		tlsEnabled = false
 	case hostname == "localhost":
 		tlsEnabled = true
-		if os.Getenv("AUDIUSD_TLS_SELF_SIGNED") == "" {
-			os.Setenv("AUDIUSD_TLS_SELF_SIGNED", "true")
+		if os.Getenv("OPENAUDIO_TLS_SELF_SIGNED") == "" {
+			os.Setenv("OPENAUDIO_TLS_SELF_SIGNED", "true")
 		}
 	}
 	// end gross
@@ -655,7 +655,7 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 }
 
 func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, logger *zap.Logger) error {
-	useSelfSigned := os.Getenv("AUDIUSD_TLS_SELF_SIGNED") == "true"
+	useSelfSigned := os.Getenv("OPENAUDIO_TLS_SELF_SIGNED") == "true"
 
 	if useSelfSigned {
 		logger.Info("Using self-signed certificate")
@@ -800,7 +800,7 @@ func generateSelfSignedCert(hostname string) ([]byte, []byte, error) {
 
 // TODO: I don't love this, but it is kinof the only way to make this work rn
 func isCoreOnly() bool {
-	return os.Getenv("AUDIUSD_CORE_ONLY") == "true"
+	return os.Getenv("OPENAUDIO_CORE_ONLY") == "true"
 }
 
 func isUpTimeEnabled(hostUrl *url.URL) bool {
@@ -815,7 +815,7 @@ func isStorageEnabled() bool {
 	if os.Getenv("audius_discprov_url") != "" {
 		return false
 	}
-	if os.Getenv("AUDIUSD_STORAGE_ENABLED") == "true" {
+	if os.Getenv("OPENAUDIO_STORAGE_ENABLED") == "true" {
 		return true
 	}
 	return os.Getenv("creatorNodeEndpoint") != ""

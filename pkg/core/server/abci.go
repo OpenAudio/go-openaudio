@@ -801,7 +801,7 @@ func (s *Server) serializeAppState(prevHash []byte, txs [][]byte) []byte {
 
 func setupNodeLogger() *common.Logger {
 	var slogLevel slog.Level
-	switch os.Getenv("AUDIUSD_LOG_LEVEL") {
+	switch os.Getenv("OPENAUDIO_LOG_LEVEL") {
 	case "debug":
 		slogLevel = slog.LevelDebug
 	case "info":

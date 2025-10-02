@@ -34,7 +34,7 @@ elif [ -n "$audius_discprov_url" ]; then
     POSTGRES_DB="audius_discovery"
     POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/discovery-provider-db}"
 else
-    POSTGRES_DB="${POSTGRES_DB:-audiusd}"
+    POSTGRES_DB="${POSTGRES_DB:-openaudio}"
     POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/postgres}"
 fi
 
@@ -65,9 +65,9 @@ setup_postgres() {
                 s|#logging_collector = on|logging_collector = off|" \
                 "$POSTGRES_DATA_DIR/postgresql.conf"
 
-        if [ "${AUDIUSD_PGALL:-false}" = "true" ]; then
+        if [ "${OPENAUDIO_PGALL:-false}" = "true" ]; then
             # WARNING: use only with `-p "127.0.0.1:5432:5432"`
-            echo "WARNING: AUDIUSD_PGALL is set to true, this will allow all connections from any host"
+            echo "WARNING: OPENAUDIO_PGALL is set to true, this will allow all connections from any host"
             echo "host all all 0.0.0.0/0 trust" >> "$POSTGRES_DATA_DIR/pg_hba.conf"
             sed -i "s|#listen_addresses = 'localhost'|listen_addresses = '*'|" "$POSTGRES_DATA_DIR/postgresql.conf"
         fi
@@ -95,14 +95,14 @@ setup_postgres() {
     done
 }
 
-if [ "${AUDIUSD_CORE_ONLY:-false}" = "true" ]; then
+if [ "${OPENAUDIO_CORE_ONLY:-false}" = "true" ]; then
     echo "Running in core only mode, skipping PostgreSQL setup..."
-    echo "Starting audiusd..."
-    exec /bin/audiusd "$@"
-elif [ "${AUDIUSD_TEST_HARNESS_MODE:-false}" = "true" ]; then
+    echo "Starting openaudio..."
+    exec /bin/openaudio "$@"
+elif [ "${OPENAUDIO_TEST_HARNESS_MODE:-false}" = "true" ]; then
     setup_postgres
-    echo "Starting audiusd in test mode..."
-    for sql_file in /app/audiusd/.initdb/*.sql; do
+    echo "Starting openaudio in test mode..."
+    for sql_file in /app/openaudio/.initdb/*.sql; do
         if [ -f "$sql_file" ]; then
             echo "Executing $sql_file..."
             su - postgres -c "psql -f $sql_file"
@@ -112,6 +112,6 @@ elif [ "${AUDIUSD_TEST_HARNESS_MODE:-false}" = "true" ]; then
     exec "$@"
 else
     setup_postgres
-    echo "Starting audiusd..."
-    exec /bin/audiusd "$@"
+    echo "Starting openaudio..."
+    exec /bin/openaudio "$@"
 fi

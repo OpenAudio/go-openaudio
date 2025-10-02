@@ -138,7 +138,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		StoreAll:                  os.Getenv("STORE_ALL") == "true",
 		VersionJson:               version.Version,
 		DiscoveryListensEndpoints: discoveryListensEndpoints(),
-		LogLevel:                  getenvWithDefault("AUDIUSD_LOG_LEVEL", "info"),
+		LogLevel:                  getenvWithDefault("OPENAUDIO_LOG_LEVEL", "info"),
 	}
 
 	ss, err := server.New(lc, logger, config, g, posChannel, core)

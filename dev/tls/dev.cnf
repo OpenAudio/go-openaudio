@@ -8,15 +8,15 @@ x509_extensions = req_ext
 distinguished_name = dn
 
 [dn]
-CN = audiusd.devnet
+CN = oap.devnet
 
 [req_ext]
 subjectAltName = @alt_names
 
 [alt_names]
-DNS.1 = *.audiusd.devnet
-DNS.2 = audiusd.devnet
-DNS.3 = node1.audiusd.devnet
-DNS.4 = node2.audiusd.devnet
-DNS.5 = node3.audiusd.devnet
-DNS.6 = node4.audiusd.devnet
+DNS.1 = *.oap.devnet
+DNS.2 = oap.devnet
+DNS.3 = node1.oap.devnet
+DNS.4 = node2.oap.devnet
+DNS.5 = node3.oap.devnet
+DNS.6 = node4.oap.devnet

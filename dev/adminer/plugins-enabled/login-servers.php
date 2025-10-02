@@ -2,37 +2,30 @@
 require_once('plugins/login-servers.php');
 
 return new AdminerLoginServers([
-    "[Node 1] audiusd-1" => [
+    "[Node 1] openaudio-1" => [
         "driver" => "pgsql",
-        "server" => "audiusd-1",
+        "server" => "openaudio-1",
         "username" => "postgres",
         "password" => "postgres",
         "db" => "postgres"
     ],
-    "[Node 2] audiusd-2" => [
+    "[Node 2] openaudio-2" => [
         "driver" => "pgsql",
-        "server" => "audiusd-2",
+        "server" => "openaudio-2",
         "username" => "postgres",
         "password" => "postgres",
         "db" => "postgres"
     ],
-    "[Node 3] audiusd-3" => [
+    "[Node 3] openaudio-3" => [
         "driver" => "pgsql",
-        "server" => "audiusd-3",
+        "server" => "openaudio-3",
         "username" => "postgres",
         "password" => "postgres",
         "db" => "postgres"
     ],
-    "[Node 4] audiusd-4" => [
+    "[Node 4] openaudio-4" => [
         "driver" => "pgsql",
-        "server" => "audiusd-4",
-        "username" => "postgres",
-        "password" => "postgres",
-        "db" => "postgres"
-    ],
-    "[Node State Sync] audiusd-ss" => [
-        "driver" => "pgsql",
-        "server" => "audiusd-ss",
+        "server" => "openaudio-4",
         "username" => "postgres",
         "password" => "postgres",
         "db" => "postgres"
