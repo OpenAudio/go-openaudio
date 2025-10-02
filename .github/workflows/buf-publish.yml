@@ -1,0 +1,50 @@
+name: Buf Publish
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      label:
+        description: 'Custom label for buf push'
+        required: false
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Buf CLI
+      uses: bufbuild/buf-setup-action@v1
+      with:
+        github_token: ${{ github.token }}
+
+    - name: Buf lint
+      run: buf lint
+
+    - name: Buf format check
+      run: buf format --diff --exit-code
+      continue-on-error: true
+
+    - name: Buf breaking change detection
+      run: buf breaking --against 'https://github.com/${{ github.repository }}.git#branch=main'
+      if: github.ref != 'refs/heads/main'
+
+    - name: Buf push to BSR
+      run: |
+        if [[ -n "${{ inputs.label }}" ]]; then
+          buf push --label main --label "${{ inputs.label }}"
+        elif [[ "${{ github.ref }}" =~ ^refs/tags/v.* ]]; then
+          buf push --label main --label "${{ github.ref_name }}"
+        else
+          buf push --label main --label ${{ github.sha }}
+        fi
+      env:
+        BUF_TOKEN: ${{ secrets.BUF_TOKEN }}
