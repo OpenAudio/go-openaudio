@@ -25,7 +25,7 @@ type StorageAndDbSize struct {
 	DbUsed             uint64    `gorm:"not null"`
 	MediorumDiskUsed   uint64    `gorm:"not null"`
 	MediorumDiskSize   uint64    `gorm:"not null"`
-	StorageExpectation uint64    `gorm:"not null"`
+	StorageExpectation uint64    `gorm:"not null;default:0"`
 	LastRepairSize     int64     `gorm:"not null"`
 	LastCleanupSize    int64     `gorm:"not null"`
 }
