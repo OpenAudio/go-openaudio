@@ -1422,6 +1422,91 @@ func (x *GetRendezvousNodesResponse) GetNodes() []string {
 	return nil
 }
 
+type GetStatusRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *GetStatusRequest) Reset() {
+	*x = GetStatusRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_storage_v1_types_proto_msgTypes[22]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetStatusRequest) ProtoMessage() {}
+
+func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_storage_v1_types_proto_msgTypes[22]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetStatusRequest) Descriptor() ([]byte, []int) {
+	return file_storage_v1_types_proto_rawDescGZIP(), []int{22}
+}
+
+type GetStatusResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	StorageExpectation int64 `protobuf:"varint,1,opt,name=storage_expectation,json=storageExpectation,proto3" json:"storage_expectation,omitempty"`
+}
+
+func (x *GetStatusResponse) Reset() {
+	*x = GetStatusResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_storage_v1_types_proto_msgTypes[23]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GetStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetStatusResponse) ProtoMessage() {}
+
+func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_storage_v1_types_proto_msgTypes[23]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetStatusResponse) Descriptor() ([]byte, []int) {
+	return file_storage_v1_types_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *GetStatusResponse) GetStorageExpectation() int64 {
+	if x != nil {
+		return x.StorageExpectation
+	}
+	return 0
+}
+
 type FFProbeResult_Format struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -1438,7 +1523,7 @@ type FFProbeResult_Format struct {
 func (x *FFProbeResult_Format) Reset() {
 	*x = FFProbeResult_Format{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_storage_v1_types_proto_msgTypes[23]
+		mi := &file_storage_v1_types_proto_msgTypes[25]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1451,7 +1536,7 @@ func (x *FFProbeResult_Format) String() string {
 func (*FFProbeResult_Format) ProtoMessage() {}
 
 func (x *FFProbeResult_Format) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_v1_types_proto_msgTypes[23]
+	mi := &file_storage_v1_types_proto_msgTypes[25]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1715,10 +1800,16 @@ var file_storage_v1_types_proto_rawDesc = []byte{
 	0x47, 0x65, 0x74, 0x52, 0x65, 0x6e, 0x64, 0x65, 0x7a, 0x76, 0x6f, 0x75, 0x73, 0x4e, 0x6f, 0x64,
 	0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x14, 0x0a, 0x05, 0x6e, 0x6f,
 	0x64, 0x65, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x05, 0x6e, 0x6f, 0x64, 0x65, 0x73,
-	0x42, 0x35, 0x5a, 0x33, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41,
-	0x75, 0x64, 0x69, 0x75, 0x73, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x2f, 0x61, 0x75, 0x64,
-	0x69, 0x75, 0x73, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f,
-	0x72, 0x61, 0x67, 0x65, 0x2f, 0x76, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x22, 0x12, 0x0a, 0x10, 0x47, 0x65, 0x74, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x71,
+	0x75, 0x65, 0x73, 0x74, 0x22, 0x44, 0x0a, 0x11, 0x47, 0x65, 0x74, 0x53, 0x74, 0x61, 0x74, 0x75,
+	0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x2f, 0x0a, 0x13, 0x73, 0x74, 0x6f,
+	0x72, 0x61, 0x67, 0x65, 0x5f, 0x65, 0x78, 0x70, 0x65, 0x63, 0x74, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x52, 0x12, 0x73, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x45,
+	0x78, 0x70, 0x65, 0x63, 0x74, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x42, 0x35, 0x5a, 0x33, 0x67, 0x69,
+	0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x41, 0x75, 0x64, 0x69, 0x75, 0x73, 0x50,
+	0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x2f, 0x61, 0x75, 0x64, 0x69, 0x75, 0x73, 0x64, 0x2f, 0x70,
+	0x6b, 0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x2f, 0x76,
+	0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1733,7 +1824,7 @@ func file_storage_v1_types_proto_rawDescGZIP() []byte {
 	return file_storage_v1_types_proto_rawDescData
 }
 
-var file_storage_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_storage_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_storage_v1_types_proto_goTypes = []interface{}{
 	(*PingRequest)(nil),                // 0: storage.v1.PingRequest
 	(*PingResponse)(nil),               // 1: storage.v1.PingResponse
@@ -1757,9 +1848,11 @@ var file_storage_v1_types_proto_goTypes = []interface{}{
 	(*GetIPDataResponse)(nil),          // 19: storage.v1.GetIPDataResponse
 	(*GetRendezvousNodesRequest)(nil),  // 20: storage.v1.GetRendezvousNodesRequest
 	(*GetRendezvousNodesResponse)(nil), // 21: storage.v1.GetRendezvousNodesResponse
-	nil,                                // 22: storage.v1.Upload.TranscodeResultsEntry
-	(*FFProbeResult_Format)(nil),       // 23: storage.v1.FFProbeResult.Format
-	(*timestamppb.Timestamp)(nil),      // 24: google.protobuf.Timestamp
+	(*GetStatusRequest)(nil),           // 22: storage.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),          // 23: storage.v1.GetStatusResponse
+	nil,                                // 24: storage.v1.Upload.TranscodeResultsEntry
+	(*FFProbeResult_Format)(nil),       // 25: storage.v1.FFProbeResult.Format
+	(*timestamppb.Timestamp)(nil),      // 26: google.protobuf.Timestamp
 }
 var file_storage_v1_types_proto_depIdxs = []int32{
 	5,  // 0: storage.v1.UploadFilesRequest.files:type_name -> storage.v1.File
@@ -1768,13 +1861,13 @@ var file_storage_v1_types_proto_depIdxs = []int32{
 	12, // 3: storage.v1.StreamTrackRequest.signature:type_name -> storage.v1.StreamTrackSignature
 	11, // 4: storage.v1.StreamTrackSignature.data:type_name -> storage.v1.StreamTrackSignatureData
 	14, // 5: storage.v1.Upload.probe:type_name -> storage.v1.FFProbeResult
-	24, // 6: storage.v1.Upload.created_at:type_name -> google.protobuf.Timestamp
-	24, // 7: storage.v1.Upload.updated_at:type_name -> google.protobuf.Timestamp
-	24, // 8: storage.v1.Upload.transcoded_at:type_name -> google.protobuf.Timestamp
-	22, // 9: storage.v1.Upload.transcode_results:type_name -> storage.v1.Upload.TranscodeResultsEntry
-	24, // 10: storage.v1.Upload.audio_analyzed_at:type_name -> google.protobuf.Timestamp
+	26, // 6: storage.v1.Upload.created_at:type_name -> google.protobuf.Timestamp
+	26, // 7: storage.v1.Upload.updated_at:type_name -> google.protobuf.Timestamp
+	26, // 8: storage.v1.Upload.transcoded_at:type_name -> google.protobuf.Timestamp
+	24, // 9: storage.v1.Upload.transcode_results:type_name -> storage.v1.Upload.TranscodeResultsEntry
+	26, // 10: storage.v1.Upload.audio_analyzed_at:type_name -> google.protobuf.Timestamp
 	15, // 11: storage.v1.Upload.audio_analysis_results:type_name -> storage.v1.AudioAnalysisResult
-	23, // 12: storage.v1.FFProbeResult.format:type_name -> storage.v1.FFProbeResult.Format
+	25, // 12: storage.v1.FFProbeResult.format:type_name -> storage.v1.FFProbeResult.Format
 	13, // [13:13] is the sub-list for method output_type
 	13, // [13:13] is the sub-list for method input_type
 	13, // [13:13] is the sub-list for extension type_name
@@ -2052,7 +2145,31 @@ func file_storage_v1_types_proto_init() {
 				return nil
 			}
 		}
+		file_storage_v1_types_proto_msgTypes[22].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetStatusRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 		file_storage_v1_types_proto_msgTypes[23].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GetStatusResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_storage_v1_types_proto_msgTypes[25].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*FFProbeResult_Format); i {
 			case 0:
 				return &v.state
@@ -2071,7 +2188,7 @@ func file_storage_v1_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_storage_v1_types_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

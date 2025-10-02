@@ -90,11 +90,12 @@ type MediorumServer struct {
 	g                registrar.PeerProvider
 
 	// stats
-	statsMutex       sync.RWMutex
-	transcodeStats   *TranscodeStats
-	mediorumPathUsed uint64
-	mediorumPathSize uint64
-	mediorumPathFree uint64
+	statsMutex         sync.RWMutex
+	transcodeStats     *TranscodeStats
+	mediorumPathUsed   uint64
+	mediorumPathSize   uint64
+	mediorumPathFree   uint64
+	storageExpectation uint64
 
 	databaseSize          uint64
 	dbSizeErr             string

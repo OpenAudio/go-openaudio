@@ -53,6 +53,9 @@ const (
 	// StorageServiceGetIPDataProcedure is the fully-qualified name of the StorageService's GetIPData
 	// RPC.
 	StorageServiceGetIPDataProcedure = "/storage.v1.StorageService/GetIPData"
+	// StorageServiceGetStatusProcedure is the fully-qualified name of the StorageService's GetStatus
+	// RPC.
+	StorageServiceGetStatusProcedure = "/storage.v1.StorageService/GetStatus"
 	// StorageServiceGetRendezvousNodesProcedure is the fully-qualified name of the StorageService's
 	// GetRendezvousNodes RPC.
 	StorageServiceGetRendezvousNodesProcedure = "/storage.v1.StorageService/GetRendezvousNodes"
@@ -67,6 +70,7 @@ type StorageServiceClient interface {
 	StreamTrack(context.Context, *connect.Request[v1.StreamTrackRequest]) (*connect.ServerStreamForClient[v1.StreamTrackResponse], error)
 	GetStreamURL(context.Context, *connect.Request[v1.GetStreamURLRequest]) (*connect.Response[v1.GetStreamURLResponse], error)
 	GetIPData(context.Context, *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error)
+	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
 	GetRendezvousNodes(context.Context, *connect.Request[v1.GetRendezvousNodesRequest]) (*connect.Response[v1.GetRendezvousNodesResponse], error)
 }
 
@@ -123,6 +127,12 @@ func NewStorageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(storageServiceMethods.ByName("GetIPData")),
 			connect.WithClientOptions(opts...),
 		),
+		getStatus: connect.NewClient[v1.GetStatusRequest, v1.GetStatusResponse](
+			httpClient,
+			baseURL+StorageServiceGetStatusProcedure,
+			connect.WithSchema(storageServiceMethods.ByName("GetStatus")),
+			connect.WithClientOptions(opts...),
+		),
 		getRendezvousNodes: connect.NewClient[v1.GetRendezvousNodesRequest, v1.GetRendezvousNodesResponse](
 			httpClient,
 			baseURL+StorageServiceGetRendezvousNodesProcedure,
@@ -141,6 +151,7 @@ type storageServiceClient struct {
 	streamTrack        *connect.Client[v1.StreamTrackRequest, v1.StreamTrackResponse]
 	getStreamURL       *connect.Client[v1.GetStreamURLRequest, v1.GetStreamURLResponse]
 	getIPData          *connect.Client[v1.GetIPDataRequest, v1.GetIPDataResponse]
+	getStatus          *connect.Client[v1.GetStatusRequest, v1.GetStatusResponse]
 	getRendezvousNodes *connect.Client[v1.GetRendezvousNodesRequest, v1.GetRendezvousNodesResponse]
 }
 
@@ -179,6 +190,11 @@ func (c *storageServiceClient) GetIPData(ctx context.Context, req *connect.Reque
 	return c.getIPData.CallUnary(ctx, req)
 }
 
+// GetStatus calls storage.v1.StorageService.GetStatus.
+func (c *storageServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
+	return c.getStatus.CallUnary(ctx, req)
+}
+
 // GetRendezvousNodes calls storage.v1.StorageService.GetRendezvousNodes.
 func (c *storageServiceClient) GetRendezvousNodes(ctx context.Context, req *connect.Request[v1.GetRendezvousNodesRequest]) (*connect.Response[v1.GetRendezvousNodesResponse], error) {
 	return c.getRendezvousNodes.CallUnary(ctx, req)
@@ -193,6 +209,7 @@ type StorageServiceHandler interface {
 	StreamTrack(context.Context, *connect.Request[v1.StreamTrackRequest], *connect.ServerStream[v1.StreamTrackResponse]) error
 	GetStreamURL(context.Context, *connect.Request[v1.GetStreamURLRequest]) (*connect.Response[v1.GetStreamURLResponse], error)
 	GetIPData(context.Context, *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error)
+	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
 	GetRendezvousNodes(context.Context, *connect.Request[v1.GetRendezvousNodesRequest]) (*connect.Response[v1.GetRendezvousNodesResponse], error)
 }
 
@@ -245,6 +262,12 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 		connect.WithSchema(storageServiceMethods.ByName("GetIPData")),
 		connect.WithHandlerOptions(opts...),
 	)
+	storageServiceGetStatusHandler := connect.NewUnaryHandler(
+		StorageServiceGetStatusProcedure,
+		svc.GetStatus,
+		connect.WithSchema(storageServiceMethods.ByName("GetStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
 	storageServiceGetRendezvousNodesHandler := connect.NewUnaryHandler(
 		StorageServiceGetRendezvousNodesProcedure,
 		svc.GetRendezvousNodes,
@@ -267,6 +290,8 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 			storageServiceGetStreamURLHandler.ServeHTTP(w, r)
 		case StorageServiceGetIPDataProcedure:
 			storageServiceGetIPDataHandler.ServeHTTP(w, r)
+		case StorageServiceGetStatusProcedure:
+			storageServiceGetStatusHandler.ServeHTTP(w, r)
 		case StorageServiceGetRendezvousNodesProcedure:
 			storageServiceGetRendezvousNodesHandler.ServeHTTP(w, r)
 		default:
@@ -304,6 +329,10 @@ func (UnimplementedStorageServiceHandler) GetStreamURL(context.Context, *connect
 
 func (UnimplementedStorageServiceHandler) GetIPData(context.Context, *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("storage.v1.StorageService.GetIPData is not implemented"))
+}
+
+func (UnimplementedStorageServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("storage.v1.StorageService.GetStatus is not implemented"))
 }
 
 func (UnimplementedStorageServiceHandler) GetRendezvousNodes(context.Context, *connect.Request[v1.GetRendezvousNodesRequest]) (*connect.Response[v1.GetRendezvousNodesResponse], error) {

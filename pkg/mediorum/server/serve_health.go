@@ -34,9 +34,10 @@ type HealthCheckResponseData struct {
 	SPOwnerWallet             string                     `json:"spOwnerWallet"`
 	Git                       string                     `json:"git"`
 	AudiusDockerCompose       string                     `json:"audiusDockerCompose"`
-	MediorumPathUsed          uint64                     `json:"mediorumPathUsed"` // bytes
-	MediorumPathSize          uint64                     `json:"mediorumPathSize"` // bytes
-	DatabaseSize              uint64                     `json:"databaseSize"`     // bytes
+	MediorumPathUsed          uint64                     `json:"mediorumPathUsed"`   // bytes
+	MediorumPathSize          uint64                     `json:"mediorumPathSize"`   // bytes
+	StorageExpectation        uint64                     `json:"storageExpectation"` // bytes
+	DatabaseSize              uint64                     `json:"databaseSize"`       // bytes
 	DbSizeErr                 string                     `json:"dbSizeErr"`
 	LastSuccessfulRepair      RepairTracker              `json:"lastSuccessfulRepair"`
 	LastSuccessfulCleanup     RepairTracker              `json:"lastSuccessfulCleanup"`
@@ -101,6 +102,7 @@ func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
 		AudiusDockerCompose:       ss.Config.AudiusDockerCompose,
 		MediorumPathUsed:          ss.mediorumPathUsed,
 		MediorumPathSize:          ss.mediorumPathSize,
+		StorageExpectation:        ss.storageExpectation,
 		DatabaseSize:              ss.databaseSize,
 		DbSizeErr:                 ss.dbSizeErr,
 		LastSuccessfulRepair:      ss.lastSuccessfulRepair,

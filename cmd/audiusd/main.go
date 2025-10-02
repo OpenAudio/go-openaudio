@@ -558,6 +558,7 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 
 	// storage GET routes
 	rpcGroup.GET(storagev1connect.StorageServiceGetIPDataProcedure, connectGET(storageService.GetIPData))
+	rpcGroup.GET(storagev1connect.StorageServiceGetStatusProcedure, connectGET(storageService.GetStatus))
 
 	if consoleEnabled {
 		// start indexing immediately

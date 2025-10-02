@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,14 +19,15 @@ import (
 )
 
 type StorageAndDbSize struct {
-	LoggedAt         time.Time `gorm:"primaryKey;not null"`
-	Host             string    `gorm:"primaryKey;not null"`
-	StorageBackend   string    `gorm:"not null"`
-	DbUsed           uint64    `gorm:"not null"`
-	MediorumDiskUsed uint64    `gorm:"not null"`
-	MediorumDiskSize uint64    `gorm:"not null"`
-	LastRepairSize   int64     `gorm:"not null"`
-	LastCleanupSize  int64     `gorm:"not null"`
+	LoggedAt           time.Time `gorm:"primaryKey;not null"`
+	Host               string    `gorm:"primaryKey;not null"`
+	StorageBackend     string    `gorm:"not null"`
+	DbUsed             uint64    `gorm:"not null"`
+	MediorumDiskUsed   uint64    `gorm:"not null"`
+	MediorumDiskSize   uint64    `gorm:"not null"`
+	StorageExpectation uint64    `gorm:"not null"`
+	LastRepairSize     int64     `gorm:"not null"`
+	LastCleanupSize    int64     `gorm:"not null"`
 }
 
 func (ss *MediorumServer) recordStorageAndDbSize(ctx context.Context) error {
@@ -50,14 +52,15 @@ func (ss *MediorumServer) recordStorageAndDbSize(ctx context.Context) error {
 			blobStorePrefix = ""
 		}
 		status := StorageAndDbSize{
-			LoggedAt:         time.Now(),
-			Host:             ss.Config.Self.Host,
-			StorageBackend:   blobStorePrefix,
-			DbUsed:           ss.databaseSize,
-			MediorumDiskUsed: ss.mediorumPathUsed,
-			MediorumDiskSize: ss.mediorumPathSize,
-			LastRepairSize:   ss.lastSuccessfulRepair.ContentSize,
-			LastCleanupSize:  ss.lastSuccessfulCleanup.ContentSize,
+			LoggedAt:           time.Now(),
+			Host:               ss.Config.Self.Host,
+			StorageBackend:     blobStorePrefix,
+			DbUsed:             ss.databaseSize,
+			MediorumDiskUsed:   ss.mediorumPathUsed,
+			MediorumDiskSize:   ss.mediorumPathSize,
+			StorageExpectation: ss.storageExpectation,
+			LastRepairSize:     ss.lastSuccessfulRepair.ContentSize,
+			LastCleanupSize:    ss.lastSuccessfulCleanup.ContentSize,
 		}
 
 		err = ss.crud.Create(&status, crudr.WithSkipBroadcast())
@@ -184,6 +187,13 @@ func (ss *MediorumServer) updateDiskAndDbStatus(ctx context.Context) {
 	} else {
 		slog.Error("Error getting mediorum disk status", "err", err)
 	}
+	ss.storageExpectation, err = getStorageExpectation(ctx, ss.pgPool, ss.Config.ReplicationFactor)
+	slog.Info("Storage expectation", "size", ss.storageExpectation)
+	slog.Info("Replication factor", "replicationFactor", ss.Config.ReplicationFactor)
+	slog.Info("running job")
+	if err != nil {
+		slog.Error("Error getting storage expectation", "err", err.Error())
+	}
 }
 
 func getDiskStatus(path string) (total uint64, free uint64, err error) {
@@ -196,6 +206,41 @@ func getDiskStatus(path string) (total uint64, free uint64, err error) {
 	total = uint64(s.Bsize) * s.Blocks
 	free = uint64(s.Bsize) * s.Bfree
 	return
+}
+
+func getStorageExpectation(ctx context.Context, p *pgxpool.Pool, replicationFactor int) (uint64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	var size uint64
+	// Calculate storage expectation as
+	//   (total_size * 2 * replication_factor) / validator_count
+	// * 2 because we store transcode files in addition to original files
+	query := fmt.Sprintf(`
+WITH total_size AS (
+  SELECT
+    COALESCE(SUM((ff_probe::jsonb->'format'->>'size')::bigint), 0) AS s
+  FROM uploads
+),
+validator_count AS (
+  SELECT COUNT(*) AS n
+  FROM core_validators
+  WHERE node_type = 'content-node' OR node_type = 'validator'
+)
+SELECT
+	CASE
+		WHEN n > 0 THEN ((s * 2) * %d) / n
+		ELSE 0
+	END
+FROM total_size, validator_count
+`, replicationFactor)
+	var result int64
+	if err := p.QueryRow(ctx, query).Scan(&result); err != nil {
+		return 0, err
+	}
+	size = uint64(result)
+
+	return size, nil
 }
 
 func getDatabaseSize(ctx context.Context, p *pgxpool.Pool) (size uint64, errStr string) {
