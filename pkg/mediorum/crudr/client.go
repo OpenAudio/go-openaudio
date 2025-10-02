@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/httputil"
-	"github.com/AudiusProject/audiusd/pkg/lifecycle"
+	"github.com/OpenAudio/go-openaudio/pkg/httputil"
+	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/oklog/ulid/v2"
 	"golang.org/x/exp/slog"
 	"gorm.io/gorm"

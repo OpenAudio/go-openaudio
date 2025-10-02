@@ -8,7 +8,7 @@ package pages
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "github.com/AudiusProject/audiusd/pkg/core/db"
+import "github.com/OpenAudio/go-openaudio/pkg/core/db"
 
 type NodesView struct {
 	Nodes []db.CoreValidator

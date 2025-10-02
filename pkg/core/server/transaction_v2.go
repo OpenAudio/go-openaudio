@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
-	ddexv1beta1 "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1"
+	"github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
+	ddexv1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/ddex/v1beta1"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"

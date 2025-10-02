@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"google.golang.org/protobuf/proto"
 
-	storagev1 "github.com/AudiusProject/audiusd/pkg/api/storage/v1"
+	storagev1 "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
 )
 
 func GeneratePlaySignature(privKey *ecdsa.PrivateKey, data *storagev1.StreamTrackSignatureData) (signatureHex string, dataHash []byte, err error) {

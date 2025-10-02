@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	ethv1 "github.com/AudiusProject/audiusd/pkg/api/eth/v1"
-	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
-	"github.com/AudiusProject/audiusd/pkg/core/db"
+	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/pages"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"

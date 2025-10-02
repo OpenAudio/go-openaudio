@@ -1,10 +1,10 @@
 package views
 
 import (
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/core/config"
-	"github.com/AudiusProject/audiusd/pkg/core/console/views/layout"
-	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/layout"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/pages"
 	"github.com/labstack/echo/v4"
 )
 

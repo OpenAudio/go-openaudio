@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	v1storage "github.com/AudiusProject/audiusd/pkg/api/storage/v1"
-	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	v1storage "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"go.uber.org/zap"
 	"gocloud.dev/gcerrors"
 )

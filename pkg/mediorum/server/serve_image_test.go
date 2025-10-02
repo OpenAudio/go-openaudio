@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"

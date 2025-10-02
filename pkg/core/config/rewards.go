@@ -1,6 +1,6 @@
 package config
 
-import "github.com/AudiusProject/audiusd/pkg/rewards"
+import "github.com/OpenAudio/go-openaudio/pkg/rewards"
 
 var (
 	DevClaimAuthorities = []rewards.ClaimAuthority{

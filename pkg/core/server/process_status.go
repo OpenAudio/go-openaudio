@@ -1,7 +1,7 @@
 package server
 
 import (
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 )
 
 func (s *Server) StartProcess(processKey string) error {

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/core/config"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/stretchr/testify/require"
 )
 

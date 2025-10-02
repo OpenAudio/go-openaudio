@@ -3,7 +3,7 @@ package common_test
 import (
 	"testing"
 
-	"github.com/AudiusProject/audiusd/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 )

@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"go.uber.org/zap"
 
 	"github.com/jackc/pgx/v5"

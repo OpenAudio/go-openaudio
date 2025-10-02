@@ -7,14 +7,14 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
-	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
-	ethv1connect "github.com/AudiusProject/audiusd/pkg/api/eth/v1/v1connect"
-	etlv1connect "github.com/AudiusProject/audiusd/pkg/api/etl/v1/v1connect"
-	storagev1connect "github.com/AudiusProject/audiusd/pkg/api/storage/v1/v1connect"
-	systemv1connect "github.com/AudiusProject/audiusd/pkg/api/system/v1/v1connect"
-	"github.com/AudiusProject/audiusd/pkg/sdk/mediorum"
-	"github.com/AudiusProject/audiusd/pkg/sdk/rewards"
+	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
+	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
+	etlv1connect "github.com/OpenAudio/go-openaudio/pkg/api/etl/v1/v1connect"
+	storagev1connect "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
+	systemv1connect "github.com/OpenAudio/go-openaudio/pkg/api/system/v1/v1connect"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk/mediorum"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk/rewards"
 )
 
 type AudiusdSDK struct {

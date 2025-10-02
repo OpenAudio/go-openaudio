@@ -1,8 +1,8 @@
 package layout
 
 import (
-	"github.com/AudiusProject/audiusd/pkg/core/config"
-	"github.com/AudiusProject/audiusd/pkg/core/console/views/components"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/components"
 )
 
 type Layout struct {

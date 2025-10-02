@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/core/db"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 )

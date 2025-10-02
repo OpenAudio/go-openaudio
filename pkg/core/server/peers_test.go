@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/AudiusProject/audiusd/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 )
 
 func TestIsNonRoutableAddress(t *testing.T) {

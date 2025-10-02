@@ -4,22 +4,16 @@ WRAPPER_TAG ?= default
 UPGRADE_TYPE ?= patch
 
 GIT_SHA := $(shell git rev-parse HEAD)
-VERSION_LDFLAG := -X github.com/AudiusProject/audius-protocol/core/config.Version=$(GIT_SHA)
+VERSION_LDFLAG := -X github.com/OpenAudio/go-openaudio/pkg/core/config.Version=$(GIT_SHA)
 
 ###### SQL
 CORE_SQL_SRCS := $(shell find pkg/core/db/sql -type f -name '*.sql') pkg/core/db/sqlc.yaml
 CORE_SQL_ARTIFACTS := $(wildcard pkg/core/db/*.sql.go)
 
-ETL_SQL_SRCS := $(shell find pkg/etl/db/sql -type f -name '*.sql') pkg/etl/db/sqlc.yaml
-ETL_SQL_ARTIFACTS := $(wildcard pkg/etl/db/*.sql.go)
-
-LOCATION_SQL_SRCS := $(shell find pkg/etl/location -type f -name '*.sql') pkg/etl/location/sqlc.yaml
-LOCATION_SQL_ARTIFACTS := $(wildcard pkg/etl/location/*.sql.go)
-
 ETH_SQL_SRCS := $(shell find pkg/eth/db/sql -type f -name '*.sql') pkg/eth/db/sqlc.yaml
 ETH_SQL_ARTIFACTS := $(wildcard pkg/eth/db/*.sql.go)
 
-SQL_ARTIFACTS := $(CORE_SQL_ARTIFACTS) $(ETL_SQL_ARTIFACTS) $(ETH_SQL_ARTIFACTS)
+SQL_ARTIFACTS := $(CORE_SQL_ARTIFACTS) $(ETH_SQL_ARTIFACTS)
 
 ###### PROTO
 PROTO_SRCS := $(shell find proto -type f -name '*.proto')
@@ -37,26 +31,26 @@ GO_SRCS := $(shell find pkg cmd -type f -name '*.go')
 
 BUILD_SRCS := $(GO_SRCS) $(JS_SRCS) $(JSON_SRCS) go.mod go.sum
 
-bin/audiusd-native: $(BUILD_SRCS)
-	@echo "Building audiusd for local platform and architecture..."
-	@bash scripts/build-audiusd.sh $@
+bin/openaudio-native: $(BUILD_SRCS)
+	@echo "Building openaudio for local platform and architecture..."
+	@bash scripts/build-openaudio.sh $@
 
-bin/audiusd-x86_64-linux: $(BUILD_SRCS)
-	@echo "Building x86 audiusd for linux..."
-	@bash scripts/build-audiusd.sh $@ amd64 linux
+bin/openaudio-x86_64-linux: $(BUILD_SRCS)
+	@echo "Building x86 openaudio for linux..."
+	@bash scripts/build-openaudio.sh $@ amd64 linux
 
-bin/audiusd-arm64-linux: $(BUILD_SRCS)
-	@echo "Building arm audiusd for linux..."
-	@bash scripts/build-audiusd.sh $@ arm64 linux
+bin/openaudio-arm64-linux: $(BUILD_SRCS)
+	@echo "Building arm openaudio for linux..."
+	@bash scripts/build-openaudio.sh $@ arm64 linux
 
 .PHONY: ignore-code-gen
 ignore-code-gen:
 	@echo "Warning: not regenerating .go files from sql, templ, proto, etc. Using existing artifacts instead."
-	@touch $(SQL_ARTIFACTS) $(ETL_SQL_ARTIFACTS) $(LOCATION_SQL_ARTIFACTS) $(TEMPL_ARTIFACTS) $(PROTO_ARTIFACTS) go.mod
+	@touch $(SQL_ARTIFACTS) $(LOCATION_SQL_ARTIFACTS) $(TEMPL_ARTIFACTS) $(PROTO_ARTIFACTS) go.mod
 
 .PHONY: build-push-cpp
 docker-push-cpp:
-	docker buildx build --platform linux/amd64,linux/arm64 --push -t audius/cpp:bookworm -f ./cmd/audiusd/Dockerfile.deps ./
+	docker buildx build --platform linux/amd64,linux/arm64 --push -t audius/cpp:bookworm -f ./cmd/openaudio/Dockerfile.deps ./
 
 .PHONY: clean
 clean:
@@ -114,28 +108,13 @@ $(PROTO_ARTIFACTS): $(PROTO_SRCS)
 	buf generate
 
 .PHONY: regen-sql
-regen-sql: regen-core-sql regen-etl-sql regen-eth-sql
+regen-sql: regen-core-sql regen-eth-sql
 
 .PHONY: regen-core-sql
 regen-core-sql: $(CORE_SQL_ARTIFACTS)
 $(CORE_SQL_ARTIFACTS): $(CORE_SQL_SRCS)
 	@echo Regenerating sql code
 	cd pkg/core/db && sqlc generate
-
-.PHONY: regen-etl-sql
-regen-etl-sql: $(ETL_SQL_ARTIFACTS)
-$(ETL_SQL_ARTIFACTS): $(ETL_SQL_SRCS)
-	@echo Regenerating etl sql code
-	cd pkg/etl/db && sqlc generate
-
-.PHONY: regen-location-sql
-regen-location-sql:
-	@echo Regenerating location sql code
-	cd pkg/etl/location && sqlc generate
-
-$(LOCATION_SQL_ARTIFACTS): $(LOCATION_SQL_SRCS)
-	@echo Regenerating location sql code
-	cd pkg/etl/location && sqlc generate
 
 
 .PHONY: regen-eth-sql
@@ -150,22 +129,22 @@ regen-contracts:
 	cd pkg/eth/contracts && sh -c "./generate_contract.sh"
 
 .PHONY: docker-harness docker-dev
-docker-harness: docker-dev bin/audiusd-arm64-linux
+docker-harness: docker-dev bin/openaudio-arm64-linux
 	docker build \
 		--target harness \
 		--build-arg GIT_SHA=$(GIT_SHA) \
-		--build-arg PREBUILT_BINARY=bin/audiusd-arm64-linux \
-		-t audius/audiusd:harness \
-		-f ./cmd/audiusd/Dockerfile \
+		--build-arg PREBUILT_BINARY=bin/openaudio-arm64-linux \
+		-t audius/openaudio:harness \
+		-f ./cmd/openaudio/Dockerfile \
 		./
 
-docker-dev: bin/audiusd-arm64-linux
+docker-dev: bin/openaudio-arm64-linux
 	docker build \
 		--target dev \
 		--build-arg GIT_SHA=$(GIT_SHA) \
-		--build-arg PREBUILT_BINARY=bin/audiusd-arm64-linux \
-		-t audius/audiusd:dev \
-		-f ./cmd/audiusd/Dockerfile \
+		--build-arg PREBUILT_BINARY=bin/openaudio-arm64-linux \
+		-t audius/openaudio:dev \
+		-f ./cmd/openaudio/Dockerfile \
 		./
 
 
@@ -175,7 +154,7 @@ up: down docker-dev
 		--file='dev/docker-compose.yml' \
 		--project-name='dev' \
 		--project-directory='./' \
-		--profile=audiusd-dev \
+		--profile=openaudio-dev \
 		up -d
 
 .PHONY: ss
@@ -201,7 +180,7 @@ down: ss-down
 		--file='dev/docker-compose.yml' \
 		--project-name='dev' \
 		--project-directory='./' \
-		--profile=audiusd-dev \
+		--profile=openaudio-dev \
 		down -v
 
 .PHONY: test
@@ -209,7 +188,7 @@ test: test-mediorum test-integration test-unit
 
 .PHONY: test-unit
 test-unit:
-	@if [ -z "$(AUDIUSD_CI)" ]; then \
+	@if [ -z "$(openaudio_CI)" ]; then \
 		$(MAKE) docker-harness; \
 	fi
 	@docker compose \
@@ -221,7 +200,7 @@ test-unit:
 
 .PHONY: test-mediorum
 test-mediorum:
-	@if [ -z "$(AUDIUSD_CI)" ]; then \
+	@if [ -z "$(openaudio_CI)" ]; then \
 		$(MAKE) docker-harness; \
 	fi
 	@docker compose \
@@ -233,7 +212,7 @@ test-mediorum:
 
 .PHONY: test-integration
 test-integration:
-	@if [ -z "$(AUDIUSD_CI)" ]; then \
+	@if [ -z "$(openaudio_CI)" ]; then \
 		$(MAKE) docker-harness; \
 	fi
 	@docker compose \

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/httputil"
+	"github.com/OpenAudio/go-openaudio/pkg/httputil"
 )
 
 func NewGraphStaging() PeerProvider {

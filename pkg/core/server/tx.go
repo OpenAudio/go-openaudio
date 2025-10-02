@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/pubsub"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/pubsub"
 	"go.uber.org/zap"
 )
 

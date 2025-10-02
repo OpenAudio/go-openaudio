@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"go.uber.org/zap"
 	"gocloud.dev/gcerrors"
 	"golang.org/x/sync/errgroup"

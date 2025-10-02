@@ -1,63 +1,63 @@
 package pages
 
 import (
-    "fmt"
-    "math/big"
-    "net/url"
-    "strings"
-    "time"
+	"fmt"
+	"math/big"
+	"net/url"
+	"strings"
+	"time"
 
-    "github.com/dustin/go-humanize"
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/progress"
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/datepicker"
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/calendar"
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/popover"
-	"github.com/AudiusProject/audiusd/pkg/eth/contracts"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/components/calendar"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/components/datepicker"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/components/popover"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/components/progress"
+	"github.com/OpenAudio/go-openaudio/pkg/eth/contracts"
+	"github.com/dustin/go-humanize"
 )
 
 const UnearnedRewardsThreshold = int64(10000)
 
 type AdjudicatePageView struct {
-    ServiceProvider       *ServiceProvider
-    StartTime             time.Time
-    EndTime               time.Time
-    MetSlas               int
-    PartialSlas           int
-    DeadSlas              int
-    TotalSlas             int
-    TotalStaked           int64
-    TotalChallenges       int64
-    FailedChallenges      int64
-    Slash                 SlashRecommendation
-    ActiveSlashProposalId int64
-    DashboardURL          string
-    ReportingEndpoint     *Endpoint
+	ServiceProvider       *ServiceProvider
+	StartTime             time.Time
+	EndTime               time.Time
+	MetSlas               int
+	PartialSlas           int
+	DeadSlas              int
+	TotalSlas             int
+	TotalStaked           int64
+	TotalChallenges       int64
+	FailedChallenges      int64
+	Slash                 SlashRecommendation
+	ActiveSlashProposalId int64
+	DashboardURL          string
+	ReportingEndpoint     *Endpoint
 }
 
 type SlashRecommendation struct {
-    Amount int64
-    Signature   string
-    Attestors   map[string]string
+	Amount    int64
+	Signature string
+	Attestors map[string]string
 }
 
 type ServiceProvider struct {
-    Address   string
-    Endpoints []*Endpoint
-    StorageProofRollups map[string]*StorageProofRollup
+	Address             string
+	Endpoints           []*Endpoint
+	StorageProofRollups map[string]*StorageProofRollup
 }
 
 type StorageProofRollup struct {
-    ChallengesReceived int64
-    ChallengesFailed   int64
+	ChallengesReceived int64
+	ChallengesFailed   int64
 }
 
 type CopyButtonProps struct {
-    Size int
-    CustomId string
+	Size     int
+	CustomId string
 }
 
 func buildProposalSubscription(props *AdjudicatePageView) string {
-    return fmt.Sprintf(`We recommend slashing %s $AUDIO from %s, owner of
+	return fmt.Sprintf(`We recommend slashing %s $AUDIO from %s, owner of
 %s
 for consistently failing to meet SLA.
 
@@ -74,74 +74,74 @@ Produced by [%s](%s)
 Additional Proofs
 
 %s`,
-        humanize.Comma(props.Slash.Amount),
-        props.ServiceProvider.Address,
-        formatEndpoints(props.ServiceProvider.Endpoints),
-        props.StartTime.Format("2006-01-02"),
-        props.EndTime.Format("2006-01-02"),
-        props.DeadSlas,
-        props.Slash.Amount,
-        props.Slash.Signature,
-        strippedEndpoint(props.ReportingEndpoint.Endpoint),
-        fmt.Sprintf(
-            "%s/console/adjudicate/%s?%s",
-            props.ReportingEndpoint.Endpoint,
-            props.ServiceProvider.Address,
-            getTimeRangeQueryString(props.StartTime, props.EndTime),
-        ),
-        formatAdditionalProofs(props),
-    )
+		humanize.Comma(props.Slash.Amount),
+		props.ServiceProvider.Address,
+		formatEndpoints(props.ServiceProvider.Endpoints),
+		props.StartTime.Format("2006-01-02"),
+		props.EndTime.Format("2006-01-02"),
+		props.DeadSlas,
+		props.Slash.Amount,
+		props.Slash.Signature,
+		strippedEndpoint(props.ReportingEndpoint.Endpoint),
+		fmt.Sprintf(
+			"%s/console/adjudicate/%s?%s",
+			props.ReportingEndpoint.Endpoint,
+			props.ServiceProvider.Address,
+			getTimeRangeQueryString(props.StartTime, props.EndTime),
+		),
+		formatAdditionalProofs(props),
+	)
 }
 
 func formatEndpoints(endpoints []*Endpoint) string {
-    epBullets := make([]string, len(endpoints))
-    for i, ep := range endpoints {
-        epBullets[i] = fmt.Sprintf("* %s", ep.Endpoint)
-    }
-    return strings.Join(epBullets, "\n")
+	epBullets := make([]string, len(endpoints))
+	for i, ep := range endpoints {
+		epBullets[i] = fmt.Sprintf("* %s", ep.Endpoint)
+	}
+	return strings.Join(epBullets, "\n")
 }
 
 func formatAdditionalProofs(props *AdjudicatePageView) string {
-    proofList := make([]string, 0, len(props.Slash.Attestors))
-    for endpoint, signature := range props.Slash.Attestors {
-        proofList = append(proofList, fmt.Sprintf(
-            "* %s,[%s](%s)", 
-            signature,
-            strippedEndpoint(endpoint),
-            fmt.Sprintf(
-                "%s/console/adjudicate/%s?%s",
-                endpoint,
-                props.ServiceProvider.Address,
-                getTimeRangeQueryString(props.StartTime, props.EndTime),
-            ),
-        ))
-    }
-    return strings.Join(proofList, "\n")
+	proofList := make([]string, 0, len(props.Slash.Attestors))
+	for endpoint, signature := range props.Slash.Attestors {
+		proofList = append(proofList, fmt.Sprintf(
+			"* %s,[%s](%s)",
+			signature,
+			strippedEndpoint(endpoint),
+			fmt.Sprintf(
+				"%s/console/adjudicate/%s?%s",
+				endpoint,
+				props.ServiceProvider.Address,
+				getTimeRangeQueryString(props.StartTime, props.EndTime),
+			),
+		))
+	}
+	return strings.Join(proofList, "\n")
 }
 
 func getTimeRangeQueryString(start time.Time, end time.Time) string {
-    v := url.Values{}
-    v.Set("start", start.Format("2006-01-02"))
-    v.Set("end", end.Format("2006-01-02"))
-    return v.Encode()
+	v := url.Values{}
+	v.Set("start", start.Format("2006-01-02"))
+	v.Set("end", end.Format("2006-01-02"))
+	return v.Encode()
 }
 
 func getReceivedChallengesFromProofRollup(rollup *StorageProofRollup) int64 {
-    if rollup != nil {
-        return rollup.ChallengesReceived
-    }
-    return int64(0)
+	if rollup != nil {
+		return rollup.ChallengesReceived
+	}
+	return int64(0)
 }
 
 func getFailedChallengesFromProofRollup(rollup *StorageProofRollup) int64 {
-    if rollup != nil {
-        return rollup.ChallengesFailed
-    }
-    return int64(0)
+	if rollup != nil {
+		return rollup.ChallengesFailed
+	}
+	return int64(0)
 }
 
 templ staticAdjudicateStyles() {
-    <style type="text/css">
+	<style type="text/css">
         .copyAdjudicateLink {
             cursor: pointer;
         }
@@ -210,264 +210,243 @@ templ staticAdjudicateStyles() {
 
 templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
 	@c.layout.SiteFrame() {
-        @staticUptimeStyles()
-        @staticAdjudicateStyles()
-
-        @progress.Script()
-        @datepicker.Script()
-        @calendar.Script()
-        @popover.Script()
-
-        <div>
-            <h2 class="text-lg text-gray-400">
-                Node Operator
-            </h2>
-            <h1 class="text-xl p-4">
-                { props.ServiceProvider.Address }
-            </h1>
-
-            <h2 class="text-lg text-gray-400 px-4 py-2">
-                <span>SLA Performance Overview from </span>
-                <div id="startDatePicker" class="datePicker inline-block w-1/5">
-                    @datepicker.DatePicker(datepicker.Props{
-                        Value: props.StartTime,
-                    })
-                </div>
-                <span>&nbsp; to &nbsp;</span>
-                <div id="endDatePicker" class="datePicker inline-block w-1/5">
-                    @datepicker.DatePicker(datepicker.Props{
-                        Value: props.EndTime,
-                    })
-                </div>
-                <div class="inline-block px-4">
-                    @copyButton(CopyButtonProps{
-                        Size:     6,
-                        CustomId: "copyAdjudicateLinkButton",
-                    })
-                </div>
-            </h2>
-            <h3 class="text-md overflow-auto text-gray-400 px-4 py-2">
-                { fmt.Sprintf(
+		@staticUptimeStyles()
+		@staticAdjudicateStyles()
+		@progress.Script()
+		@datepicker.Script()
+		@calendar.Script()
+		@popover.Script()
+		<div>
+			<h2 class="text-lg text-gray-400">
+				Node Operator
+			</h2>
+			<h1 class="text-xl p-4">
+				{ props.ServiceProvider.Address }
+			</h1>
+			<h2 class="text-lg text-gray-400 px-4 py-2">
+				<span>SLA Performance Overview from </span>
+				<div id="startDatePicker" class="datePicker inline-block w-1/5">
+					@datepicker.DatePicker(datepicker.Props{
+						Value: props.StartTime,
+					})
+				</div>
+				<span>&nbsp; to &nbsp;</span>
+				<div id="endDatePicker" class="datePicker inline-block w-1/5">
+					@datepicker.DatePicker(datepicker.Props{
+						Value: props.EndTime,
+					})
+				</div>
+				<div class="inline-block px-4">
+					@copyButton(CopyButtonProps{
+						Size:     6,
+						CustomId: "copyAdjudicateLinkButton",
+					})
+				</div>
+			</h2>
+			<h3 class="text-md overflow-auto text-gray-400 px-4 py-2">
+				{ fmt.Sprintf(
                     "Proof Signature from %s: %s",
                     strippedEndpoint(props.ReportingEndpoint.Endpoint),
                     props.Slash.Signature,
                  ) }
-            </h3>
-        </div>
-        <input type="text" id="timeRangeQueryStringInput" class="hidden" value={ getTimeRangeQueryString(props.StartTime, props.EndTime) }>
-
-        <div class="flex flex-row text-center p-2">
-            <div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
-                <dt class="text-xl">
-                    Proof of Work
-                </dt>
-            </div>
-            <div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
-                <dt class="text-xl">
-                    Proof of Storage
-                </dt>
-            </div>
-        </div>
-
-        <div class="flex flex-row text-center p-2">
-            <div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
-                <dt class="text-4xl">{ humanize.Comma(int64(props.TotalSlas)) }</dt>
-                <dd class="text-sm">Total SLAs</dd>
-            </div>
-
-            <div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaDeadClass(), props.DeadSlas > 0) }>
-                <dt class="text-4xl">{ humanize.Comma(int64(props.DeadSlas)) }</dt>
-                <dd class="text-sm">SLAs Missed</dd>
-            </div>
-
-            <div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
-                <dt class="text-4xl">{ humanize.Comma(int64(props.TotalChallenges)) }</dt>
-                <dd class="text-sm">Challenges Received</dd>
-            </div>
-
-            <div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissClass(), props.FailedChallenges > 0) }>
-                <dt class="text-4xl">{ humanize.Comma(int64(props.FailedChallenges)) }</dt>
-                <dd class="text-sm">Challenges Failed</dd>
-            </div>
-
-        </div>
-
-        <div class="progressRow flex flex-row text-center p-2">
-            <div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
-                if props.TotalSlas > 0 {
-                    @progress.Progress(progress.Props{
-                        Value: props.TotalSlas - props.DeadSlas,
-                        Max: props.TotalSlas,
-                        Size: progress.SizeLg,
-                        Class: "px-10",
-                        ShowValue: true,
-                    })
-                } else {
-                    <dt class="text-4xl">N/A</dt>
-                }
-            </div>
-            <div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
-                if props.TotalChallenges > 0 {
-                    @progress.Progress(progress.Props{
-                        Value: int(props.TotalChallenges - props.FailedChallenges),
-                        Max: int(props.TotalChallenges),
-                        Size: progress.SizeLg,
-                        Class: "px-10",
-                        ShowValue: true,
-                    })
-                } else {
-                    <dt class="text-4xl">N/A</dt>
-                }
-            </div>
-        </div>
-
-        @adjudicateProposalRecommendation(props.Slash, props.DashboardURL, props.ActiveSlashProposalId)
-
-
-        <table class="bg-slate-50 p-2 rounded validatorReports text-left m-4">
-            <colgroup>
-                <col />
-                <col class="bg-white" />
-                <col />
-                <col class="bg-white" />
-            </colgroup>
-            <tr>
-                <th>Endpoint</th>
-                <th colspan="2" class="text-center">
-                    Proof of Storage Challenges
-                    <div class="flex flex-row text-left">
-                        <div class="basis-1/2">Received</div>
-                        <div class="basis-1/2">Failed</div>
-                    </div>
-                </th>
-                <th>Proof of Work History</th>
-            </tr>
-            for _, ep := range props.ServiceProvider.Endpoints {
-                @endpointRowReport(ep, props.ServiceProvider.StorageProofRollups[ep.CometAddress])
-            }
-        </table>
-
-        <div id="slashProposalModal" class="slashProposalModal">
-          <div class="slashProposalModalContent">
-            <span id="closeSlashProposalModal" class="slashProposalModalCloseButton px-3">&times;</span>
-            <h2 class="text-lg">Create Slash Proposal for Delinquent Node Operator</h2>
-
-            <div class="slashProposalModalBody">
-                <div class="py-2">
-                    <h3 class="text-sm text-gray-400">Proposal Name</h3>
-                    <div class="flex">
-                        @copyButton(CopyButtonProps{Size:4})
-                        <p class="text-sm px-2">{ fmt.Sprintf("Slash %s", props.ServiceProvider.Address) }</p>
-                    </div>
-                </div>
-
-                <div class="py-2">
-                    <h3 class="text-sm text-gray-400">Target Contract</h3>
-                    <div class="flex">
-                        @copyButton(CopyButtonProps{Size:4})
-                        <p class="text-sm px-2">DelegateManager</p>
-                    </div>
-                </div>
-
-                <div class="py-2">
-                    <h3 class="text-sm text-gray-400">Signature</h3>
-                    <div class="flex">
-                        @copyButton(CopyButtonProps{Size:4})
-                        <p class="text-sm px-2">slash(uint256,address)</p>
-                    </div>
-                </div>
-
-                <div class="py-2">
-                    <h3 class="text-sm text-gray-400">Call Data</h3>
-                    <div class="flex">
-                        @copyButton(CopyButtonProps{Size:4})
-                        <p class="text-sm px-2">{ fmt.Sprintf("%s,%s", contracts.AudioToWei(big.NewInt(props.Slash.Amount)).String(), props.ServiceProvider.Address) }</p>
-                    </div>
-                </div>
-
-                <div class="py-2">
-                    <h3 class="text-sm text-gray-400">Description</h3>
-                    <div class="flex">
-                        @copyButton(CopyButtonProps{Size:4})
-                        <p class="whitespace-pre-wrap text-sm px-2 w-4/5">{ buildProposalSubscription(props) }</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="p-4 text-right">
-                <a class="text-blue-800 hover:text-blue-600" href={ fmt.Sprintf("%s/#/governance", props.DashboardURL) } target="_blank">
-                    Open Protocol Dashboard
-                </a>
-            </div>
-          </div>
-        </div>
-
-        @copyButtonScript()
-        @datePickerScript()
-        @modalScript()
+			</h3>
+		</div>
+		<input type="text" id="timeRangeQueryStringInput" class="hidden" value={ getTimeRangeQueryString(props.StartTime, props.EndTime) }/>
+		<div class="flex flex-row text-center p-2">
+			<div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
+				<dt class="text-xl">
+					Proof of Work
+				</dt>
+			</div>
+			<div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
+				<dt class="text-xl">
+					Proof of Storage
+				</dt>
+			</div>
+		</div>
+		<div class="flex flex-row text-center p-2">
+			<div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
+				<dt class="text-4xl">{ humanize.Comma(int64(props.TotalSlas)) }</dt>
+				<dd class="text-sm">Total SLAs</dd>
+			</div>
+			<div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaDeadClass(), props.DeadSlas > 0) }>
+				<dt class="text-4xl">{ humanize.Comma(int64(props.DeadSlas)) }</dt>
+				<dd class="text-sm">SLAs Missed</dd>
+			</div>
+			<div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
+				<dt class="text-4xl">{ humanize.Comma(int64(props.TotalChallenges)) }</dt>
+				<dd class="text-sm">Challenges Received</dd>
+			</div>
+			<div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissClass(), props.FailedChallenges > 0) }>
+				<dt class="text-4xl">{ humanize.Comma(int64(props.FailedChallenges)) }</dt>
+				<dd class="text-sm">Challenges Failed</dd>
+			</div>
+		</div>
+		<div class="progressRow flex flex-row text-center p-2">
+			<div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
+				if props.TotalSlas > 0 {
+					@progress.Progress(progress.Props{
+						Value:     props.TotalSlas - props.DeadSlas,
+						Max:       props.TotalSlas,
+						Size:      progress.SizeLg,
+						Class:     "px-10",
+						ShowValue: true,
+					})
+				} else {
+					<dt class="text-4xl">N/A</dt>
+				}
+			</div>
+			<div class="basis-1/2 rounded-md bg-slate-100 py-8 mx-1">
+				if props.TotalChallenges > 0 {
+					@progress.Progress(progress.Props{
+						Value:     int(props.TotalChallenges - props.FailedChallenges),
+						Max:       int(props.TotalChallenges),
+						Size:      progress.SizeLg,
+						Class:     "px-10",
+						ShowValue: true,
+					})
+				} else {
+					<dt class="text-4xl">N/A</dt>
+				}
+			</div>
+		</div>
+		@adjudicateProposalRecommendation(props.Slash, props.DashboardURL, props.ActiveSlashProposalId)
+		<table class="bg-slate-50 p-2 rounded validatorReports text-left m-4">
+			<colgroup>
+				<col/>
+				<col class="bg-white"/>
+				<col/>
+				<col class="bg-white"/>
+			</colgroup>
+			<tr>
+				<th>Endpoint</th>
+				<th colspan="2" class="text-center">
+					Proof of Storage Challenges
+					<div class="flex flex-row text-left">
+						<div class="basis-1/2">Received</div>
+						<div class="basis-1/2">Failed</div>
+					</div>
+				</th>
+				<th>Proof of Work History</th>
+			</tr>
+			for _, ep := range props.ServiceProvider.Endpoints {
+				@endpointRowReport(ep, props.ServiceProvider.StorageProofRollups[ep.CometAddress])
+			}
+		</table>
+		<div id="slashProposalModal" class="slashProposalModal">
+			<div class="slashProposalModalContent">
+				<span id="closeSlashProposalModal" class="slashProposalModalCloseButton px-3">&times;</span>
+				<h2 class="text-lg">Create Slash Proposal for Delinquent Node Operator</h2>
+				<div class="slashProposalModalBody">
+					<div class="py-2">
+						<h3 class="text-sm text-gray-400">Proposal Name</h3>
+						<div class="flex">
+							@copyButton(CopyButtonProps{Size: 4})
+							<p class="text-sm px-2">{ fmt.Sprintf("Slash %s", props.ServiceProvider.Address) }</p>
+						</div>
+					</div>
+					<div class="py-2">
+						<h3 class="text-sm text-gray-400">Target Contract</h3>
+						<div class="flex">
+							@copyButton(CopyButtonProps{Size: 4})
+							<p class="text-sm px-2">DelegateManager</p>
+						</div>
+					</div>
+					<div class="py-2">
+						<h3 class="text-sm text-gray-400">Signature</h3>
+						<div class="flex">
+							@copyButton(CopyButtonProps{Size: 4})
+							<p class="text-sm px-2">slash(uint256,address)</p>
+						</div>
+					</div>
+					<div class="py-2">
+						<h3 class="text-sm text-gray-400">Call Data</h3>
+						<div class="flex">
+							@copyButton(CopyButtonProps{Size: 4})
+							<p class="text-sm px-2">{ fmt.Sprintf("%s,%s", contracts.AudioToWei(big.NewInt(props.Slash.Amount)).String(), props.ServiceProvider.Address) }</p>
+						</div>
+					</div>
+					<div class="py-2">
+						<h3 class="text-sm text-gray-400">Description</h3>
+						<div class="flex">
+							@copyButton(CopyButtonProps{Size: 4})
+							<p class="whitespace-pre-wrap text-sm px-2 w-4/5">{ buildProposalSubscription(props) }</p>
+						</div>
+					</div>
+				</div>
+				<div class="p-4 text-right">
+					<a class="text-blue-800 hover:text-blue-600" href={ fmt.Sprintf("%s/#/governance", props.DashboardURL) } target="_blank">
+						Open Protocol Dashboard
+					</a>
+				</div>
+			</div>
+		</div>
+		@copyButtonScript()
+		@datePickerScript()
+		@modalScript()
 	}
 }
 
 templ endpointRowReport(endpoint *Endpoint, proofRollup *StorageProofRollup) {
-    <tr>
-        <td>
-            <a href={ templ.URL(fmt.Sprintf("/console/uptime/latest/%s", strippedEndpoint(endpoint.Endpoint))) }>
-                { strippedEndpoint(endpoint.Endpoint) }
-            </a>
-        </td>
-        <td>{ fmt.Sprintf("%d", getReceivedChallengesFromProofRollup(proofRollup)) }</td>
-        <td class={ templ.KV(slaMissClass(), getFailedChallengesFromProofRollup(proofRollup) > 100) }>
-            { fmt.Sprintf("%d", getFailedChallengesFromProofRollup(proofRollup)) }
-        </td>
-        <td class="bg-white">
-            for _, r := range endpoint.SlaReports {
-                @endpointSlaHistory(r, endpoint.Endpoint)
-            }
-        </td>
-    </tr>
+	<tr>
+		<td>
+			<a href={ templ.URL(fmt.Sprintf("/console/uptime/latest/%s", strippedEndpoint(endpoint.Endpoint))) }>
+				{ strippedEndpoint(endpoint.Endpoint) }
+			</a>
+		</td>
+		<td>{ fmt.Sprintf("%d", getReceivedChallengesFromProofRollup(proofRollup)) }</td>
+		<td class={ templ.KV(slaMissClass(), getFailedChallengesFromProofRollup(proofRollup) > 100) }>
+			{ fmt.Sprintf("%d", getFailedChallengesFromProofRollup(proofRollup)) }
+		</td>
+		<td class="bg-white">
+			for _, r := range endpoint.SlaReports {
+				@endpointSlaHistory(r, endpoint.Endpoint)
+			}
+		</td>
+	</tr>
 }
 
 templ endpointSlaHistory(report *SlaReport, endpoint string) {
-    <li class={ "slaBarMini",  getSlaClassFromStatus(report.Status) }>
-        <a class="reportLink" href={ templ.URL(fmt.Sprintf("/console/uptime/%d/%s", report.BlockEnd, strippedEndpoint(endpoint))) }></a>
-    </li>
+	<li class={ "slaBarMini",  getSlaClassFromStatus(report.Status) }>
+		<a class="reportLink" href={ templ.URL(fmt.Sprintf("/console/uptime/%d/%s", report.BlockEnd, strippedEndpoint(endpoint))) }></a>
+	</li>
 }
 
 templ adjudicateProposalRecommendation(slash SlashRecommendation, dashboardURL string, activeSlashProposalId int64) {
-    if slash.Amount > UnearnedRewardsThreshold {
-        <div class="flex justify-between items-center rounded-md text-lg bg-red-100 text-red-400 m-3 p-1">
-            <span>
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-8 p-1 inline">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
-                </svg>
-                <span class="align-middle">Node(s) appear to be delinquent. Action is recommended.</span>
-            </span>
-            if activeSlashProposalId > 0 {
-                <a class="slashBtn rounded-md px-4 py-2 m-1 shadow bg-slate-100" href={ fmt.Sprintf("%s/#/governance/proposal/%d", dashboardURL, activeSlashProposalId) }>
-                    Vote on Proposal { fmt.Sprint(activeSlashProposalId) }
-                </a>
-            } else {
-                <button id="openSlashProposalModal" class="slashBtn rounded-md px-4 py-2 m-1 shadow bg-slate-100">
-                    Create Proposal
-                </button>
-            }
-        </div>
-    }
+	if slash.Amount > UnearnedRewardsThreshold {
+		<div class="flex justify-between items-center rounded-md text-lg bg-red-100 text-red-400 m-3 p-1">
+			<span>
+				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-8 p-1 inline">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"></path>
+				</svg>
+				<span class="align-middle">Node(s) appear to be delinquent. Action is recommended.</span>
+			</span>
+			if activeSlashProposalId > 0 {
+				<a class="slashBtn rounded-md px-4 py-2 m-1 shadow bg-slate-100" href={ fmt.Sprintf("%s/#/governance/proposal/%d", dashboardURL, activeSlashProposalId) }>
+					Vote on Proposal { fmt.Sprint(activeSlashProposalId) }
+				</a>
+			} else {
+				<button id="openSlashProposalModal" class="slashBtn rounded-md px-4 py-2 m-1 shadow bg-slate-100">
+					Create Proposal
+				</button>
+			}
+		</div>
+	}
 }
 
 templ copyButton(props CopyButtonProps) {
-    <div class="relative">
-        <svg xmlns="http://www.w3.org/2000/svg" id={ props.CustomId } fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={ "copyBtn my-1 inline text-gray-400 hover:text-gray-600", fmt.Sprintf("size-%d", props.Size) }>
-            <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
-        </svg>
-        <span class="tooltip absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs text-white bg-gray-800 rounded opacity-0 transition-opacity duration-300">
-          Copied!
-        </span>
-    </div>
+	<div class="relative">
+		<svg xmlns="http://www.w3.org/2000/svg" id={ props.CustomId } fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={ "copyBtn my-1 inline text-gray-400 hover:text-gray-600", fmt.Sprintf("size-%d", props.Size) }>
+			<path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244"></path>
+		</svg>
+		<span class="tooltip absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs text-white bg-gray-800 rounded opacity-0 transition-opacity duration-300">
+			Copied!
+		</span>
+	</div>
 }
 
 templ copyButtonScript() {
-    <script>
+	<script>
         document.querySelectorAll(".copyBtn").forEach((btn) => {
             if (btn.id != "") { // skip customized copy logic
                 return
@@ -494,7 +473,7 @@ templ copyButtonScript() {
 }
 
 templ datePickerScript() {
-    <script>
+	<script>
         const startDateInput = document.querySelector("#startDatePicker input");
         const endDateInput = document.querySelector("#endDatePicker input");
         if (!startDateInput || !endDateInput) {
@@ -538,7 +517,7 @@ templ datePickerScript() {
 }
 
 templ modalScript() {
-    <script>
+	<script>
         const modal = document.getElementById("slashProposalModal");
         const openBtn = document.getElementById("openSlashProposalModal");
         const closeBtn = document.getElementById("closeSlashProposalModal");

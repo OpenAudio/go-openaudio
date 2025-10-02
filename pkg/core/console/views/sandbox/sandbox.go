@@ -5,7 +5,7 @@ import (
 	"html/template"
 	"net/http"
 
-	"github.com/AudiusProject/audiusd/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 )
 
 //go:embed editor.html

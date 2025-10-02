@@ -2,7 +2,7 @@
 package popover
 
 import (
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/utils"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/utils"
 	"strconv"
 )
 
@@ -115,8 +115,8 @@ templ Content(props ...ContentProps) {
 			{ children... }
 		</div>
 		if p.ShowArrow {
-			<div 
-				data-tui-popover-arrow 
+			<div
+				data-tui-popover-arrow
 				class="absolute h-2.5 w-2.5 rotate-45 bg-popover border border-border
 					data-[tui-popover-placement^=top]:-bottom-[5px] data-[tui-popover-placement^=top]:border-t-transparent data-[tui-popover-placement^=top]:border-l-transparent
 					data-[tui-popover-placement^=bottom]:-top-[5px] data-[tui-popover-placement^=bottom]:border-b-transparent data-[tui-popover-placement^=bottom]:border-r-transparent

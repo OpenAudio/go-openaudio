@@ -10,7 +10,7 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"fmt"
-	"github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 )
 
 func formatBytes(bytes int64) string {

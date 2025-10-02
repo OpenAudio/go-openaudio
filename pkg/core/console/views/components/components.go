@@ -1,6 +1,6 @@
 package components
 
-import "github.com/AudiusProject/audiusd/pkg/core/config"
+import "github.com/OpenAudio/go-openaudio/pkg/core/config"
 
 type Components struct {
 	config  *config.Config

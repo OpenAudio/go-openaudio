@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	coreServer "github.com/AudiusProject/audiusd/pkg/core/server"
-	"github.com/AudiusProject/audiusd/pkg/lifecycle"
-	"github.com/AudiusProject/audiusd/pkg/pos"
-	"github.com/AudiusProject/audiusd/pkg/registrar"
-	"github.com/AudiusProject/audiusd/pkg/version"
+	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
+	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
+	"github.com/OpenAudio/go-openaudio/pkg/pos"
+	"github.com/OpenAudio/go-openaudio/pkg/registrar"
+	"github.com/OpenAudio/go-openaudio/pkg/version"
 	"go.uber.org/zap"
 )
 

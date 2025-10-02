@@ -1,9 +1,9 @@
 package pages
 
 import (
-	"github.com/AudiusProject/audiusd/pkg/core/config"
-	"github.com/AudiusProject/audiusd/pkg/core/console/views/components"
-	"github.com/AudiusProject/audiusd/pkg/core/console/views/layout"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/components"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/layout"
 )
 
 type Pages struct {

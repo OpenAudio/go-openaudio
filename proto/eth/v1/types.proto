@@ -4,7 +4,7 @@ package eth.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/AudiusProject/audiusd/pkg/api/eth/v1";
+option go_package = "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1";
 
 message GetStatusRequest {}
 

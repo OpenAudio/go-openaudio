@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/lifecycle"
+	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"gorm.io/gorm"

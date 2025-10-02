@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/AudiusProject/audiusd/pkg/sdk"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 

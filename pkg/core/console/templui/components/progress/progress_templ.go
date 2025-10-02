@@ -12,7 +12,7 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"fmt"
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/utils"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/utils"
 )
 
 type Size string

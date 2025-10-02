@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	corev1beta1 "github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
-	ddexv1beta1 "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1"
-	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/hashes"
-	"github.com/AudiusProject/audiusd/pkg/sdk/mediorum"
+	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	corev1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
+	ddexv1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/ddex/v1beta1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/hashes"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk/mediorum"
 	"google.golang.org/protobuf/proto"
 )
 

@@ -4,7 +4,7 @@ import (
 	"crypto/ecdsa"
 	"errors"
 
-	"github.com/AudiusProject/audiusd/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 

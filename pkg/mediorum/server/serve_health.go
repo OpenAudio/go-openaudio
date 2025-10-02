@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
-	"github.com/AudiusProject/audiusd/pkg/registrar"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/ethcontracts"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
+	"github.com/OpenAudio/go-openaudio/pkg/registrar"
 	"github.com/gowebpki/jcs"
 	"github.com/labstack/echo/v4"
 )

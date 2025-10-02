@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/pages"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 )

@@ -2,7 +2,7 @@ package console
 
 import (
 	"connectrpc.com/connect"
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/labstack/echo/v4"
 )
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"

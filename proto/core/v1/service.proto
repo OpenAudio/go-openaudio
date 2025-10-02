@@ -3,7 +3,7 @@ package core.v1;
 
 import "core/v1/types.proto";
 
-option go_package = "github.com/AudiusProject/audiusd/pkg/api/core/v1";
+option go_package = "github.com/OpenAudio/go-openaudio/pkg/api/core/v1";
 
 service CoreService {
   rpc Ping(PingRequest) returns (PingResponse) {}
