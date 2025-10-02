@@ -28,12 +28,12 @@ Or run directly with custom flags:
 
 ```bash
 cd examples/programmable-distribution
-go run . -validator node3.audiusd.devnet -port 8800
+go run . -validator node3.openaudio.devnet -port 8800
 ```
 
 ### Flags
 
-- `-validator` - Validator endpoint URL (default: `node3.audiusd.devnet`)
+- `-validator` - Validator endpoint URL (default: `node3.openaudio.devnet`)
 - `-port` - Server port (default: `8800`)
 
 ## Testing

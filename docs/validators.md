@@ -34,7 +34,7 @@ Run your node.
 
 ```bash
 docker run -d \
-  --name audiusd-cn1.operator.xyz \
+  --name openaudio-cn1.operator.xyz \
   --restart unless-stopped \
   --env-file /home/ubuntu/override.env \
   -v /var/k8s/creator-node-db-15:/data/creator-node-db-15 \
@@ -43,7 +43,7 @@ docker run -d \
   -p 80:80 \
   -p 443:443 \
   -p 26656:26656 \
-  audius/audiusd:current
+  audius/openaudio:v1.0.0
 ```
 
 ### Existing Discovery Nodes
@@ -63,14 +63,14 @@ Run your node.
 
 ```bash
 docker run -d \
-  --name audiusd-dn1.operator.xyz \
+  --name openaudio-dn1.operator.xyz \
   --restart unless-stopped \
   --env-file /home/ubuntu/override.env \
   -v /var/k8s:/data \
   -p 80:80 \
   -p 443:443 \
   -p 26656:26656 \
-  audius/audiusd:current
+  audius/openaudio:v1.0.0
 ```
 
 ## Health Check
@@ -109,31 +109,32 @@ curl https://node.operator.xyz/health-check | jq .
 To create the update script, copy and paste this.
 
 ```bash
-cat << 'EOF' > /home/ubuntu/audiusd-update.sh
+cat << 'EOF' > /home/ubuntu/openaudio-update.sh
 #!/bin/bash
 
-AUDIUSD_HOSTNAME="PLACEHOLDER_HOSTNAME"
+OPENAUDIO_HOSTNAME="PLACEHOLDER_HOSTNAME"
 OVERRIDE_ENV_PATH="PLACEHOLDER_ENV_PATH"
+OPENAUDIO_VERSION="${OPENAUDIO_VERSION:-v1.0.0}"
 
 FORCE_UPDATE=false
 if [[ "$1" == "--force" ]]; then
     FORCE_UPDATE=true
 fi
 
-PULL_STATUS=$(docker pull audius/audiusd:current | tee /dev/stderr)
+PULL_STATUS=$(docker pull audius/openaudio:${OPENAUDIO_VERSION} | tee /dev/stderr)
 if $FORCE_UPDATE || ! echo "$PULL_STATUS" | grep -q 'Status: Image is up to date'; then
     echo "New version found or force update requested, updating container..."
-    docker stop audiusd-${AUDIUSD_HOSTNAME}
-    docker rm audiusd-${AUDIUSD_HOSTNAME}
+    docker stop openaudio-${OPENAUDIO_HOSTNAME}
+    docker rm openaudio-${OPENAUDIO_HOSTNAME}
     docker run -d \
-        --name audiusd-${AUDIUSD_HOSTNAME} \
+        --name openaudio-${OPENAUDIO_HOSTNAME} \
         --restart unless-stopped \
         --env-file ${OVERRIDE_ENV_PATH} \
         -v /var/k8s:/data \
         -p 80:80 \
         -p 443:443 \
         -p 26656:26656 \
-        audius/audiusd:current
+        audius/openaudio:${OPENAUDIO_VERSION}
     echo "Update complete"
 else
     echo "Already running latest version"
@@ -144,26 +145,26 @@ EOF
 Copy the below command and replace `node.operator.xyz` with your actual node hostname.
 
 ```bash
-sed -i "s/PLACEHOLDER_HOSTNAME/node.operator.xyz/" /home/ubuntu/audiusd-update.sh
+sed -i "s/PLACEHOLDER_HOSTNAME/node.operator.xyz/" /home/ubuntu/openaudio-update.sh
 ```
 
 Copy the below command and replace `/home/ubuntu/override.env` with the full path to your node's override.env file that you created earlier.
 
 ```bash
-sed -i "s|PLACEHOLDER_ENV_PATH|/home/ubuntu/override.env|" /home/ubuntu/audiusd-update.sh
+sed -i "s|PLACEHOLDER_ENV_PATH|/home/ubuntu/override.env|" /home/ubuntu/openaudio-update.sh
 ```
 
 Make the script executable and install it system-wide.
 
 ```bash
-chmod +x /home/ubuntu/audiusd-update.sh
-sudo mv /home/ubuntu/audiusd-update.sh /usr/local/bin/audiusd-update
+chmod +x /home/ubuntu/openaudio-update.sh
+sudo mv /home/ubuntu/openaudio-update.sh /usr/local/bin/openaudio-update
 ```
 
 Add a cron to run the update script on a random minute of each hour (staggers updates across network):
 
 ```bash
-(crontab -l | grep -v "# audiusd auto-update"; echo "$(shuf -i 0-59 -n 1) * * * * /usr/local/bin/audiusd-update >> /home/ubuntu/audiusd-update.log 2>&1 # audiusd auto-update") | crontab -
+(crontab -l | grep -v "# openaudio auto-update"; echo "$(shuf -i 0-59 -n 1) * * * * /usr/local/bin/openaudio-update >> /home/ubuntu/openaudio-update.log 2>&1 # openaudio auto-update") | crontab -
 ```
 
 Check the cron job was added successfully.
@@ -174,7 +175,7 @@ crontab -l
 
 The output should look something like...
 ```bash
-54 * * * * /usr/local/bin/audiusd-update >> /home/ubuntu/audiusd-update.log 2>&1 # audiusd update
+54 * * * * /usr/local/bin/openaudio-update >> /home/ubuntu/openaudio-update.log 2>&1 # openaudio auto-update
 ```
 
 **Done!**
@@ -182,13 +183,13 @@ The output should look something like...
 Additionally, you can run the update script manually:
 
 ```bash
-audiusd-update [--force]
+openaudio-update [--force]
 ```
 
 Check the auto-update logs:
 
 ```bash
-tail -f /home/ubuntu/audiusd-update.log
+tail -f /home/ubuntu/openaudio-update.log
 ```
 
 ## Additional Configuration
