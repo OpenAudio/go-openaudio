@@ -1,2 +1,2 @@
-# the audiusd sdk
+# OpenAudio SDK
 

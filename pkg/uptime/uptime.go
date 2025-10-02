@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/httputil"
-	"github.com/AudiusProject/audiusd/pkg/registrar"
+	"github.com/OpenAudio/go-openaudio/pkg/httputil"
+	"github.com/OpenAudio/go-openaudio/pkg/registrar"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"go.etcd.io/bbolt"

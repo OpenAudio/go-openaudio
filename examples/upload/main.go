@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	corev1beta1 "github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
-	ddexv1beta1 "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1"
-	v1storage "github.com/AudiusProject/audiusd/pkg/api/storage/v1"
-	auds "github.com/AudiusProject/audiusd/pkg/sdk"
+	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	corev1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
+	ddexv1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/ddex/v1beta1"
+	v1storage "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
+	auds "github.com/OpenAudio/go-openaudio/pkg/sdk"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -23,7 +23,7 @@ func main() {
 	serverAddr := "node3.audiusd.devnet"
 	privKeyPath := "./pkg/integration_tests/assets/demo_key.txt"
 
-	sdk := auds.NewAudiusdSDK(serverAddr)
+	sdk := auds.NewOpenAudioSDK(serverAddr)
 	if err := sdk.ReadPrivKey(privKeyPath); err != nil {
 		log.Fatalf("failed to read private key: %w", err)
 	}

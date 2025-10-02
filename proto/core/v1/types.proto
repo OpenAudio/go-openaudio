@@ -12,7 +12,7 @@ import "ddex/v1beta1/release.proto";
 import "ddex/v1beta1/resource.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/AudiusProject/audiusd/pkg/api/core/v1";
+option go_package = "github.com/OpenAudio/go-openaudio/pkg/api/core/v1";
 
 message PingRequest {}
 

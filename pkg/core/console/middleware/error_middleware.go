@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"github.com/AudiusProject/audiusd/pkg/core/console/views"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"

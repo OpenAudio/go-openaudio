@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/integration_tests/utils"
-	"github.com/AudiusProject/audiusd/pkg/sdk"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/integration_tests/utils"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -28,7 +28,7 @@ func TestRewardsLifecycle(t *testing.T) {
 			t.Fatalf("Failed to generate creator key: %v", err)
 		}
 		creatorAddr := common.PrivKeyToAddress(creatorKey)
-		creator := sdk.NewAudiusdSDK(nodeUrl)
+		creator := sdk.NewOpenAudioSDK(nodeUrl)
 		creator.SetPrivKey(creatorKey)
 
 		deleterKey, err := crypto.GenerateKey()
@@ -36,7 +36,7 @@ func TestRewardsLifecycle(t *testing.T) {
 			t.Fatalf("Failed to generate deleter key: %v", err)
 		}
 		deleterAddr := common.PrivKeyToAddress(deleterKey)
-		deleter := sdk.NewAudiusdSDK(nodeUrl)
+		deleter := sdk.NewOpenAudioSDK(nodeUrl)
 		deleter.SetPrivKey(deleterKey)
 
 		t.Logf("creator key: %s", creatorAddr)
@@ -142,7 +142,7 @@ func TestRewardsLifecycle(t *testing.T) {
 			t.Fatalf("Failed to generate authority1 key: %v", err)
 		}
 		authority1Addr := common.PrivKeyToAddress(authority1Key)
-		authority1 := sdk.NewAudiusdSDK(nodeUrl)
+		authority1 := sdk.NewOpenAudioSDK(nodeUrl)
 		authority1.SetPrivKey(authority1Key)
 
 		authority2Key, err := crypto.GenerateKey()
@@ -150,7 +150,7 @@ func TestRewardsLifecycle(t *testing.T) {
 			t.Fatalf("Failed to generate authority2 key: %v", err)
 		}
 		authority2Addr := common.PrivKeyToAddress(authority2Key)
-		authority2 := sdk.NewAudiusdSDK(nodeUrl)
+		authority2 := sdk.NewOpenAudioSDK(nodeUrl)
 		authority2.SetPrivKey(authority2Key)
 
 		unauthorizedKey, err := crypto.GenerateKey()
@@ -158,7 +158,7 @@ func TestRewardsLifecycle(t *testing.T) {
 			t.Fatalf("Failed to generate unauthorized key: %v", err)
 		}
 		unauthorizedAddr := common.PrivKeyToAddress(unauthorizedKey)
-		unauthorized := sdk.NewAudiusdSDK(nodeUrl)
+		unauthorized := sdk.NewOpenAudioSDK(nodeUrl)
 		unauthorized.SetPrivKey(unauthorizedKey)
 
 		t.Logf("authority1 address: %s", authority1Addr)

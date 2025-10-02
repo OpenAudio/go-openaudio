@@ -3,8 +3,8 @@ package console
 import (
 	"strings"
 
-	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
-	"github.com/AudiusProject/audiusd/pkg/core/db"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/pages"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/labstack/echo/v4"
 )
 

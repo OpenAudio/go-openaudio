@@ -10,8 +10,8 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"encoding/json"
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	v1beta1 "github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	v1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
 	"github.com/dustin/go-humanize"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"

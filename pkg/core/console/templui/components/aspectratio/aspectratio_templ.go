@@ -10,7 +10,7 @@ package aspectratio
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "github.com/AudiusProject/audiusd/pkg/core/console/templui/utils"
+import "github.com/OpenAudio/go-openaudio/pkg/core/console/templui/utils"
 
 type Ratio string
 

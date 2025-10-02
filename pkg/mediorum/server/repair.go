@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"go.uber.org/zap"
 
 	"github.com/georgysavva/scany/v2/pgxscan"

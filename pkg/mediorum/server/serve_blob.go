@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
-	"github.com/AudiusProject/audiusd/pkg/registrar"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
+	"github.com/OpenAudio/go-openaudio/pkg/registrar"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 
 	"github.com/erni27/imcache"
 	"github.com/labstack/echo/v4"

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/crudr"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/crudr"
 	"go.uber.org/zap"
 
 	"github.com/labstack/echo/v4"

@@ -7,7 +7,7 @@ import "ddex/v1beta1/party.proto";
 import "ddex/v1beta1/release.proto";
 import "ddex/v1beta1/resource.proto";
 
-option go_package = "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1";
+option go_package = "github.com/OpenAudio/go-openaudio/pkg/api/ddex/v1beta1";
 
 // Media Enrichment and Description (MEAD) message from the DDEX standard
 message MeadMessage {

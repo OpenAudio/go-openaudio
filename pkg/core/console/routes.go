@@ -4,7 +4,7 @@ import (
 	"embed"
 	"net/http"
 
-	"github.com/AudiusProject/audiusd/pkg/core/console/middleware"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/middleware"
 	"github.com/labstack/echo/v4"
 )
 

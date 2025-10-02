@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 )
 
 // generateAudioPreviewForUpload exists for the initial preview impl

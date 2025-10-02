@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/core/config"
-	"github.com/AudiusProject/audiusd/pkg/lifecycle"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"github.com/cometbft/cometbft/types"
 	"github.com/maypok86/otter"
 	"go.uber.org/zap"

@@ -7,17 +7,17 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
-	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
-	ethv1connect "github.com/AudiusProject/audiusd/pkg/api/eth/v1/v1connect"
-	etlv1connect "github.com/AudiusProject/audiusd/pkg/api/etl/v1/v1connect"
-	storagev1connect "github.com/AudiusProject/audiusd/pkg/api/storage/v1/v1connect"
-	systemv1connect "github.com/AudiusProject/audiusd/pkg/api/system/v1/v1connect"
-	"github.com/AudiusProject/audiusd/pkg/sdk/mediorum"
-	"github.com/AudiusProject/audiusd/pkg/sdk/rewards"
+	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
+	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
+	etlv1connect "github.com/OpenAudio/go-openaudio/pkg/api/etl/v1/v1connect"
+	storagev1connect "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
+	systemv1connect "github.com/OpenAudio/go-openaudio/pkg/api/system/v1/v1connect"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk/mediorum"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk/rewards"
 )
 
-type AudiusdSDK struct {
+type OpenAudioSDK struct {
 	privKey *ecdsa.PrivateKey
 	chainID string
 
@@ -39,7 +39,7 @@ func ensureURLProtocol(url string) string {
 	return url
 }
 
-func NewAudiusdSDK(nodeURL string) *AudiusdSDK {
+func NewOpenAudioSDK(nodeURL string) *OpenAudioSDK {
 	httpClient := http.DefaultClient
 	url := ensureURLProtocol(nodeURL)
 
@@ -51,7 +51,7 @@ func NewAudiusdSDK(nodeURL string) *AudiusdSDK {
 	mediorumClient := mediorum.NewWithCore(url, coreClient)
 	rewardsClient := rewards.NewRewards(coreClient)
 
-	sdk := &AudiusdSDK{
+	sdk := &OpenAudioSDK{
 		Core:     coreClient,
 		Storage:  storageClient,
 		ETL:      etlClient,
@@ -64,7 +64,7 @@ func NewAudiusdSDK(nodeURL string) *AudiusdSDK {
 	return sdk
 }
 
-func (s *AudiusdSDK) Init(ctx context.Context) error {
+func (s *OpenAudioSDK) Init(ctx context.Context) error {
 	nodeInfoResp, err := s.Core.GetNodeInfo(ctx, connect.NewRequest(&corev1.GetNodeInfoRequest{}))
 	if err != nil {
 		return err
@@ -74,6 +74,6 @@ func (s *AudiusdSDK) Init(ctx context.Context) error {
 	return nil
 }
 
-func (s *AudiusdSDK) ChainID() string {
+func (s *OpenAudioSDK) ChainID() string {
 	return s.chainID
 }

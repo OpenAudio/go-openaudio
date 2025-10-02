@@ -4,7 +4,7 @@ package ddex.v1beta1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1";
+option go_package = "github.com/OpenAudio/go-openaudio/pkg/api/ddex/v1beta1";
 
 message Deal {
   message ReleaseDeal {

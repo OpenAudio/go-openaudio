@@ -8,27 +8,27 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/sdk"
+	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 )
 
 var (
-	DiscoveryOneRPC = getEnvWithDefault("discoveryOneRPC", "node1.audiusd.devnet")
-	ContentOneRPC   = getEnvWithDefault("contentOneRPC", "node2.audiusd.devnet")
-	ContentTwoRPC   = getEnvWithDefault("contentTwoRPC", "node3.audiusd.devnet")
-	ContentThreeRPC = getEnvWithDefault("contentThreeRPC", "node4.audiusd.devnet")
+	DiscoveryOneRPC = getEnvWithDefault("discoveryOneRPC", "node1.oap.devnet")
+	ContentOneRPC   = getEnvWithDefault("contentOneRPC", "node2.oap.devnet")
+	ContentTwoRPC   = getEnvWithDefault("contentTwoRPC", "node3.oap.devnet")
+	ContentThreeRPC = getEnvWithDefault("contentThreeRPC", "node4.oap.devnet")
 
-	DiscoveryOne *sdk.AudiusdSDK
-	ContentOne   *sdk.AudiusdSDK
-	ContentTwo   *sdk.AudiusdSDK
-	ContentThree *sdk.AudiusdSDK
+	DiscoveryOne *sdk.OpenAudioSDK
+	ContentOne   *sdk.OpenAudioSDK
+	ContentTwo   *sdk.OpenAudioSDK
+	ContentThree *sdk.OpenAudioSDK
 )
 
 func init() {
-	DiscoveryOne = sdk.NewAudiusdSDK(DiscoveryOneRPC)
-	ContentOne = sdk.NewAudiusdSDK(ContentOneRPC)
-	ContentTwo = sdk.NewAudiusdSDK(ContentTwoRPC)
-	ContentThree = sdk.NewAudiusdSDK(ContentThreeRPC)
+	DiscoveryOne = sdk.NewOpenAudioSDK(DiscoveryOneRPC)
+	ContentOne = sdk.NewOpenAudioSDK(ContentOneRPC)
+	ContentTwo = sdk.NewOpenAudioSDK(ContentTwoRPC)
+	ContentThree = sdk.NewOpenAudioSDK(ContentThreeRPC)
 }
 
 func getEnvWithDefault(key, defaultValue string) string {
@@ -48,7 +48,7 @@ func EnsureProtocol(endpoint string) string {
 
 func WaitForDevnetHealthy(timeout time.Duration) error {
 	timeoutChan := time.After(timeout)
-	nodes := []*sdk.AudiusdSDK{
+	nodes := []*sdk.OpenAudioSDK{
 		DiscoveryOne,
 		ContentOne,
 		ContentTwo,

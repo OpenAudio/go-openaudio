@@ -6,8 +6,8 @@ import (
 	"errors"
 	"io"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
-	"github.com/AudiusProject/audiusd/pkg/pos"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/pos"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )

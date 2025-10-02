@@ -5,7 +5,7 @@ import (
 	"io/ioutil"
 	"strings"
 
-	"github.com/AudiusProject/audiusd/pkg/httputil"
+	"github.com/OpenAudio/go-openaudio/pkg/httputil"
 )
 
 type NodeResponse struct {

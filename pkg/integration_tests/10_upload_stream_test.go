@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	corev1beta1 "github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
-	ddexv1beta1 "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1"
-	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/hashes"
-	"github.com/AudiusProject/audiusd/pkg/integration_tests/utils"
-	auds "github.com/AudiusProject/audiusd/pkg/sdk"
-	"github.com/AudiusProject/audiusd/pkg/sdk/mediorum"
+	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	corev1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
+	ddexv1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/ddex/v1beta1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/hashes"
+	"github.com/OpenAudio/go-openaudio/pkg/integration_tests/utils"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk/mediorum"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -32,13 +32,13 @@ func TestUploadStream(t *testing.T) {
 	privKeyPath := "./assets/demo_key.txt"
 	privKeyPath2 := "./assets/demo_key2.txt"
 
-	sdk := auds.NewAudiusdSDK(serverAddr)
-	if err := sdk.ReadPrivKey(privKeyPath); err != nil {
+	oap := sdk.NewOpenAudioSDK(serverAddr)
+	if err := oap.ReadPrivKey(privKeyPath); err != nil {
 		require.Nil(t, err, "failed to read private key: %w", err)
 	}
 
 	// Initialize SDK to get chain ID
-	if err := sdk.Init(ctx); err != nil {
+	if err := oap.Init(ctx); err != nil {
 		require.Nil(t, err, "failed to initialize SDK: %w", err)
 	}
 
@@ -59,7 +59,7 @@ func TestUploadStream(t *testing.T) {
 					ProprietaryIds: []*ddexv1beta1.Party_ProprietaryId{
 						{
 							Namespace: common.OAPNamespace,
-							Id:        sdk.Address(), // Must match upload signature address
+							Id:        oap.Address(), // Must match upload signature address
 						},
 					},
 				},
@@ -71,7 +71,7 @@ func TestUploadStream(t *testing.T) {
 			{
 				PartyReference: "P_UPLOADER",
 				PartyId: &ddexv1beta1.Party_PartyId{
-					Dpid: sdk.Address(),
+					Dpid: oap.Address(),
 				},
 				PartyName: &ddexv1beta1.Party_PartyName{
 					FullName: "Test Uploader",
@@ -174,7 +174,7 @@ func TestUploadStream(t *testing.T) {
 	uploadSigBytes, err := proto.Marshal(uploadSigData)
 	require.NoError(t, err, "failed to marshal upload signature")
 
-	uploadSignature, err := common.EthSign(sdk.PrivKey(), uploadSigBytes)
+	uploadSignature, err := common.EthSign(oap.PrivKey(), uploadSigBytes)
 	require.NoError(t, err, "failed to generate upload signature")
 
 	uploadOpts.Signature = uploadSignature
@@ -182,7 +182,7 @@ func TestUploadStream(t *testing.T) {
 	uploadOpts.WaitForFileUpload = true
 	uploadOpts.OriginalCID = fileCID
 
-	uploads, err := sdk.Mediorum.UploadFile(ctx, audioFile, "anxiety-upgrade.mp3", uploadOpts)
+	uploads, err := oap.Mediorum.UploadFile(ctx, audioFile, "anxiety-upgrade.mp3", uploadOpts)
 	require.NoError(t, err, "failed to upload file")
 	require.NotEmpty(t, uploads, "no uploads returned")
 
@@ -225,8 +225,8 @@ func TestUploadStream(t *testing.T) {
 	t.Log("Sending ERN transaction...")
 	envelope := &corev1beta1.Envelope{
 		Header: &corev1beta1.EnvelopeHeader{
-			ChainId:    sdk.ChainID(),
-			From:       sdk.Address(),
+			ChainId:    oap.ChainID(),
+			From:       oap.Address(),
 			Nonce:      upload.ID, // Use upload ID as nonce
 			Expiration: time.Now().Add(time.Hour).Unix(),
 		},
@@ -241,7 +241,7 @@ func TestUploadStream(t *testing.T) {
 
 	transaction := &corev1beta1.Transaction{Envelope: envelope}
 
-	submitRes, err := sdk.Core.SendTransaction(ctx, connect.NewRequest(&corev1.SendTransactionRequest{
+	submitRes, err := oap.Core.SendTransaction(ctx, connect.NewRequest(&corev1.SendTransactionRequest{
 		Transactionv2: transaction,
 	}))
 	require.NoError(t, err, "failed to send ERN transaction")
@@ -277,7 +277,7 @@ func TestUploadStream(t *testing.T) {
 	streamSigBytes, err := proto.Marshal(streamSigData)
 	require.Nil(t, err, "failed to marshal stream signature data")
 
-	streamSignature, err := common.EthSign(sdk.PrivKey(), streamSigBytes)
+	streamSignature, err := common.EthSign(oap.PrivKey(), streamSigBytes)
 	require.Nil(t, err, "failed to generate stream signature")
 
 	// Request stream URLs from core
@@ -287,7 +287,7 @@ func TestUploadStream(t *testing.T) {
 		ExpiresAt: timestamppb.New(streamExpiry),
 	}
 
-	streamRes, err := sdk.Core.GetStreamURLs(ctx, connect.NewRequest(streamReq))
+	streamRes, err := oap.Core.GetStreamURLs(ctx, connect.NewRequest(streamReq))
 	if err != nil {
 		t.Logf("GetStreamURLs error: %v", err)
 		t.Logf("GetStreamURLs error details: %+v", err)
@@ -337,7 +337,7 @@ func TestUploadStream(t *testing.T) {
 
 	// Test that non-owner cannot get stream URLs
 	t.Log("\n=== Testing access control ===")
-	sdk2 := auds.NewAudiusdSDK(serverAddr)
+	sdk2 := sdk.NewOpenAudioSDK(serverAddr)
 	if err := sdk2.ReadPrivKey(privKeyPath2); err != nil {
 		require.Nil(t, err, "failed to read private key: %w", err)
 	}
@@ -365,7 +365,7 @@ func TestUploadStream(t *testing.T) {
 	expiredSigBytes, err := proto.Marshal(expiredSigData)
 	require.Nil(t, err, "failed to marshal expired signature data")
 
-	expiredSig, err := common.EthSign(sdk.PrivKey(), expiredSigBytes)
+	expiredSig, err := common.EthSign(oap.PrivKey(), expiredSigBytes)
 	require.Nil(t, err, "failed to generate expired signature")
 
 	expiredReq := &corev1.GetStreamURLsRequest{
@@ -374,7 +374,7 @@ func TestUploadStream(t *testing.T) {
 		ExpiresAt: timestamppb.New(time.Now().Add(-1 * time.Hour)),
 	}
 
-	expiredRes, err := sdk.Core.GetStreamURLs(ctx, connect.NewRequest(expiredReq))
+	expiredRes, err := oap.Core.GetStreamURLs(ctx, connect.NewRequest(expiredReq))
 	require.Error(t, err, "expired signature should be rejected")
 	require.Nil(t, expiredRes, "should not return stream URLs for expired signature")
 	t.Log("✓ Expired signature rejected")

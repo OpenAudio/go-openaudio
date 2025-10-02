@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 )
 
 func (s *Server) isValidReleaseTx(ctx context.Context, tx *v1.SignedTransaction) error {

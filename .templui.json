@@ -1,7 +1,7 @@
 {
   "componentsDir": "pkg/core/console/templui/components",
   "utilsDir": "pkg/core/console/templui/utils",
-  "moduleName": "github.com/AudiusProject/audiusd",
+  "moduleName": "github.com/OpenAudio/go-openaudio",
   "jsDir": "pkg/core/console/assets/js",
   "jsPublicPath": "/console/assets/js"
 }

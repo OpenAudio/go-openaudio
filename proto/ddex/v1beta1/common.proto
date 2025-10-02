@@ -5,7 +5,7 @@ package ddex.v1beta1;
 import "ddex/v1beta1/party.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1";
+option go_package = "github.com/OpenAudio/go-openaudio/pkg/api/ddex/v1beta1";
 
 message MessageHeader {
   optional string message_thread_id = 1;

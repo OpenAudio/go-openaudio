@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/cometbft/cometbft/rpc/grpc/client/privileged"
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"

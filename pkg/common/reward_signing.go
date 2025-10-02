@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sort"
 
-	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 )
 
 // CreateDeterministicCreateRewardData creates deterministic hex data for signing CreateReward

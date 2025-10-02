@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/erni27/imcache"
 
 	"github.com/labstack/echo/v4"

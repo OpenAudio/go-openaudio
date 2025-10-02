@@ -4,7 +4,7 @@ package storage.v1;
 
 import "storage/v1/types.proto";
 
-option go_package = "github.com/AudiusProject/audiusd/pkg/api/storage/v1";
+option go_package = "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1";
 
 service StorageService {
   rpc Ping(PingRequest) returns (PingResponse) {}

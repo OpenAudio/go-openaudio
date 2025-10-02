@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/AudiusProject/audiusd/pkg/registrar"
+	"github.com/OpenAudio/go-openaudio/pkg/registrar"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )

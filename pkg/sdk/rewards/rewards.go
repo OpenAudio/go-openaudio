@@ -6,9 +6,9 @@ import (
 	"errors"
 
 	"connectrpc.com/connect"
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
-	"github.com/AudiusProject/audiusd/pkg/common"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
 )
 
 type Rewards struct {

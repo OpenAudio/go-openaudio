@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	systemv1 "github.com/AudiusProject/audiusd/pkg/api/system/v1"
-	connectv1system "github.com/AudiusProject/audiusd/pkg/api/system/v1/v1connect"
-	"github.com/AudiusProject/audiusd/pkg/integration_tests/utils"
+	systemv1 "github.com/OpenAudio/go-openaudio/pkg/api/system/v1"
+	connectv1system "github.com/OpenAudio/go-openaudio/pkg/api/system/v1/v1connect"
+	"github.com/OpenAudio/go-openaudio/pkg/integration_tests/utils"
 )
 
 func TestConnectRPC(t *testing.T) {

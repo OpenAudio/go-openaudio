@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
-	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/core/db"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto/ed25519"
@@ -801,7 +801,7 @@ func (s *Server) serializeAppState(prevHash []byte, txs [][]byte) []byte {
 
 func setupNodeLogger() *common.Logger {
 	var slogLevel slog.Level
-	switch os.Getenv("AUDIUSD_LOG_LEVEL") {
+	switch os.Getenv("OPENAUDIO_LOG_LEVEL") {
 	case "debug":
 		slogLevel = slog.LevelDebug
 	case "info":

@@ -4,7 +4,7 @@ package server
 import (
 	"reflect"
 
-	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/iancoleman/strcase"
 	"google.golang.org/protobuf/proto"
 )

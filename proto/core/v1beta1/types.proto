@@ -6,7 +6,7 @@ import "ddex/v1beta1/ern.proto";
 import "ddex/v1beta1/mead.proto";
 import "ddex/v1beta1/pie.proto";
 
-option go_package = "github.com/AudiusProject/audiusd/pkg/api/core/v1beta1";
+option go_package = "github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1";
 
 message Signature {
   enum SignatureType {

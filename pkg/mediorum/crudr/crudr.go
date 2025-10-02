@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/AudiusProject/audiusd/pkg/httputil"
-	"github.com/AudiusProject/audiusd/pkg/lifecycle"
+	"github.com/OpenAudio/go-openaudio/pkg/httputil"
+	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"go.uber.org/zap"
 
 	"github.com/oklog/ulid/v2"

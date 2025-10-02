@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )

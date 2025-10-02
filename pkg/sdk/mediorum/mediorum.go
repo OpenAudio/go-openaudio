@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	corev1connect "github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
+	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 )
 
 type Mediorum struct {

@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/crudr"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/crudr"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/exp/slices"

@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"go.uber.org/zap"
 
 	"github.com/disintegration/imaging"

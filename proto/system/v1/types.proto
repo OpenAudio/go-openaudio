@@ -3,10 +3,9 @@ syntax = "proto3";
 package system.v1;
 
 import "core/v1/types.proto";
-import "etl/v1/types.proto";
 import "storage/v1/types.proto";
 
-option go_package = "github.com/AudiusProject/audiusd/pkg/api/system/v1";
+option go_package = "github.com/OpenAudio/go-openaudio/pkg/api/system/v1";
 
 message PingRequest {}
 
@@ -14,7 +13,6 @@ message PingResponse {
   string message = 1;
   core.v1.PingResponse core_ping = 2;
   storage.v1.PingResponse storage_ping = 3;
-  etl.v1.PingResponse etl_ping = 4;
 }
 
 message GetHealthRequest {}
@@ -23,5 +21,4 @@ message GetHealthResponse {
   string status = 1;
   core.v1.GetHealthResponse core_health = 2;
   storage.v1.GetHealthResponse storage_health = 3;
-  etl.v1.GetHealthResponse etl_health = 4;
 }

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 )
 
 func (s *Server) isValidPlayTransaction(_ context.Context, _ *v1.SignedTransaction) error {

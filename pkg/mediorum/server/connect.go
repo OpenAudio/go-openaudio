@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
-	v1 "github.com/AudiusProject/audiusd/pkg/api/storage/v1"
-	"github.com/AudiusProject/audiusd/pkg/api/storage/v1/v1connect"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

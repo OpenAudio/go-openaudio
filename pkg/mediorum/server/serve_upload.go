@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	v1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
-	"github.com/AudiusProject/audiusd/pkg/mediorum/server/signature"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 

@@ -7,7 +7,7 @@ import (
 	"math/big"
 	"net/http"
 
-	"github.com/AudiusProject/audiusd/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/jackc/pgx/v5"

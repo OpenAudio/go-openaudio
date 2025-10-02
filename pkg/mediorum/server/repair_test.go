@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 
 	"github.com/stretchr/testify/assert"
 )

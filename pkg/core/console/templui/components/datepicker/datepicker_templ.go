@@ -11,12 +11,12 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/button"
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/calendar"
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/card"
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/icon"
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/components/popover"
-	"github.com/AudiusProject/audiusd/pkg/core/console/templui/utils"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/components/button"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/components/calendar"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/components/card"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/components/icon"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/components/popover"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/templui/utils"
 	"time"
 )
 

@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
-	ddexv1beta1 "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1"
-	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/core/db"
+	"github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
+	ddexv1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/ddex/v1beta1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	"google.golang.org/protobuf/proto"
 )

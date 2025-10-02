@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/AudiusProject/audiusd/pkg/core/console/views/pages"
-	"github.com/AudiusProject/audiusd/pkg/core/db"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/pages"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"

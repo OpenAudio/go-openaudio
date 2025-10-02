@@ -3,12 +3,12 @@ package console
 import (
 	"fmt"
 
-	"github.com/AudiusProject/audiusd/pkg/api/core/v1/v1connect"
-	"github.com/AudiusProject/audiusd/pkg/core/config"
-	"github.com/AudiusProject/audiusd/pkg/core/console/views"
-	"github.com/AudiusProject/audiusd/pkg/core/console/views/layout"
-	"github.com/AudiusProject/audiusd/pkg/core/db"
-	"github.com/AudiusProject/audiusd/pkg/eth"
+	"github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/layout"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
+	"github.com/OpenAudio/go-openaudio/pkg/eth"
 	"github.com/cometbft/cometbft/rpc/client"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/jackc/pgx/v5/pgxpool"

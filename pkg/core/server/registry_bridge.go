@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	ethv1 "github.com/AudiusProject/audiusd/pkg/api/eth/v1"
-	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/core/config"
-	"github.com/AudiusProject/audiusd/pkg/eth/contracts"
+	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/eth/contracts"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"go.uber.org/zap"
 

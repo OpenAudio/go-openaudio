@@ -7,19 +7,19 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	corev1 "github.com/AudiusProject/audiusd/pkg/api/core/v1"
-	corev1beta1 "github.com/AudiusProject/audiusd/pkg/api/core/v1beta1"
-	ddexv1beta1 "github.com/AudiusProject/audiusd/pkg/api/ddex/v1beta1"
-	"github.com/AudiusProject/audiusd/pkg/common"
-	"github.com/AudiusProject/audiusd/pkg/hashes"
-	"github.com/AudiusProject/audiusd/pkg/sdk"
-	"github.com/AudiusProject/audiusd/pkg/sdk/mediorum"
+	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	corev1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
+	ddexv1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/ddex/v1beta1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/hashes"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk/mediorum"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func uploadTrackExample(ctx context.Context, auds *sdk.AudiusdSDK, handler *GeolocationHandler) error {
+func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK, handler *GeolocationHandler) error {
 	audioFile, err := os.Open("../../pkg/integration_tests/assets/anxiety-upgrade.mp3")
 	if err != nil {
 		return fmt.Errorf("failed to open audio file: %w", err)

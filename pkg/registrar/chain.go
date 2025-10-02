@@ -4,8 +4,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/AudiusProject/audiusd/pkg/httputil"
-	"github.com/AudiusProject/audiusd/pkg/mediorum/ethcontracts"
+	"github.com/OpenAudio/go-openaudio/pkg/httputil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/ethcontracts"
 )
 
 func NewEthChainProvider() PeerProvider {
