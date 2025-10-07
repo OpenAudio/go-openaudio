@@ -425,8 +425,10 @@ func (s *Server) registerSelfOnEth(ctx context.Context) error {
 				switch s.config.NodeType {
 				case config.Discovery:
 					st = "discovery-node"
-				default:
+				case config.Content:
 					st = "content-node"
+				default:
+					st = "validator"
 				}
 
 				if _, err := s.eth.Register(
@@ -558,6 +560,8 @@ func serviceType(nt config.NodeType) ([32]byte, error) {
 		return contracts.DiscoveryNode, nil
 	case config.Content:
 		return contracts.ContentNode, nil
+	case config.Validator:
+		return contracts.Validator, nil
 	}
 	return [32]byte{}, fmt.Errorf("node type provided not valid: %v", nt)
 }

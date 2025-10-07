@@ -20,7 +20,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	serverAddr := "node3.audiusd.devnet"
+	serverAddr := "node1.oap.devnet"
 	privKeyPath := "./pkg/integration_tests/assets/demo_key.txt"
 
 	sdk := auds.NewOpenAudioSDK(serverAddr)
@@ -74,7 +74,7 @@ func main() {
 	// create ERN track release with upload cid
 	envelope := &corev1beta1.Envelope{
 		Header: &corev1beta1.EnvelopeHeader{
-			ChainId:    "audius-devnet",
+			ChainId:    "openaudio-devnet",
 			From:       sdk.Address(),
 			Nonce:      uuid.New().String(),
 			Expiration: time.Now().Add(time.Hour).Unix(),

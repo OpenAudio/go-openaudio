@@ -216,6 +216,7 @@ func runWithRecover(name string, ctx context.Context, logger *zap.Logger, f func
 
 func setupHostUrl() *url.URL {
 	endpoints := []string{
+		os.Getenv("nodeEndpoint"),
 		os.Getenv("creatorNodeEndpoint"),
 		os.Getenv("audius_discprov_url"),
 	}
@@ -560,6 +561,10 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 		}
 	}()
 
+	e.GET("/", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]int{"a": 440})
+	})
+
 	e.GET("/health-check", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl))
 	})
@@ -818,7 +823,7 @@ func isStorageEnabled() bool {
 	if os.Getenv("OPENAUDIO_STORAGE_ENABLED") == "true" {
 		return true
 	}
-	return os.Getenv("creatorNodeEndpoint") != ""
+	return os.Getenv("creatorNodeEndpoint") != "" || os.Getenv("nodeEndpoint") != ""
 }
 
 func keyGen() (string, string) {

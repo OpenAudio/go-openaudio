@@ -28,7 +28,7 @@ func TestUploadStream(t *testing.T) {
 
 	require.NoError(t, utils.WaitForDevnetHealthy(30*time.Second))
 
-	serverAddr := "node3.audiusd.devnet"
+	serverAddr := "node3.oap.devnet"
 	privKeyPath := "./assets/demo_key.txt"
 	privKeyPath2 := "./assets/demo_key2.txt"
 

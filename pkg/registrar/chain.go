@@ -16,10 +16,15 @@ type ethChainProvider struct {
 }
 
 func (p *ethChainProvider) Peers() ([]Peer, error) {
-	serviceProviders, err := ethcontracts.GetServiceProviderList("content-node")
+	contentNodes, err := ethcontracts.GetServiceProviderList("content-node")
 	if err != nil {
 		return nil, err
 	}
+	validators, err := ethcontracts.GetServiceProviderList("validator")
+	if err != nil {
+		return nil, err
+	}
+	serviceProviders := append(contentNodes, validators...)
 	peers := make([]Peer, len(serviceProviders))
 	for i, sp := range serviceProviders {
 		peers[i] = Peer{

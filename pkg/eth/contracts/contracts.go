@@ -21,6 +21,7 @@ import (
 var (
 	DiscoveryNode = common.Utf8ToHex("discovery-node")
 	ContentNode   = common.Utf8ToHex("content-node")
+	Validator     = common.Utf8ToHex("validator")
 	audConversion = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 )
 
@@ -431,6 +432,8 @@ func StringToServiceType(s string) ([32]byte, error) {
 		return DiscoveryNode, nil
 	} else if strings.HasPrefix(strings.ToLower(s), "content") {
 		return ContentNode, nil
+	} else if s == "validator" {
+		return Validator, nil
 	} else {
 		return [32]byte{}, fmt.Errorf("No matching service type found for '%s'", s)
 	}
@@ -441,6 +444,8 @@ func ServiceTypeToString(serviceType [32]byte) (string, error) {
 		return "discovery-node", nil
 	} else if bytes.Equal(serviceType[:], ContentNode[:]) {
 		return "content-node", nil
+	} else if bytes.Equal(serviceType[:], Validator[:]) {
+		return "validator", nil
 	} else {
 		return "", fmt.Errorf("no matching service type found for '%v'", serviceType)
 	}

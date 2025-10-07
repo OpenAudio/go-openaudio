@@ -144,11 +144,15 @@ func (s *Server) getRegisteredNodes(c echo.Context) error {
 	}
 
 	if contentQuery {
-		res, err := queries.GetRegisteredNodesByType(ctx, common.HexToUtf8(contracts.ContentNode))
+		contentNodes, err := queries.GetRegisteredNodesByType(ctx, common.HexToUtf8(contracts.ContentNode))
 		if err != nil {
-			return fmt.Errorf("could not get discovery nodes: %v", err)
+			return fmt.Errorf("could not get content nodes: %v", err)
 		}
-		for _, node := range res {
+		validators, err := queries.GetRegisteredNodesByType(ctx, common.HexToUtf8(contracts.Validator))
+		if err != nil {
+			return fmt.Errorf("could not get validators: %v", err)
+		}
+		for _, node := range append(contentNodes, validators...) {
 			spID, err := strconv.ParseUint(node.SpID, 10, 32)
 			if err != nil {
 				return fmt.Errorf("could not convert spid to int: %v", err)
