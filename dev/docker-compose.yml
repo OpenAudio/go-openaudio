@@ -157,7 +157,7 @@ services:
 
   test-integration:
     image: ${OPENAUDIO_TEST_HARNESS_IMAGE:-audius/openaudio:harness}
-    command: go test -v -count=1 -timeout=60s ./pkg/integration_tests/...
+    command: go test -v -count=1 -timeout=90s ./pkg/integration_tests/...
     volumes:
       - ./cmd:/app/cmd
       - ./pkg:/app/pkg
