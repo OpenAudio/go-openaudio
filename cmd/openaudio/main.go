@@ -509,9 +509,10 @@ func setProtobufField(msgReflect protoreflect.Message, field protoreflect.FieldD
 func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServer.CoreService, storageService *server.StorageService, systemService *system.SystemService, ethService *eth.EthService) error {
 	e := echo.New()
 	e.HideBanner = true
-	e.Use(middleware.Logger(), middleware.Recover(), common.InjectRealIP(), common.CORS())
+	e.Use(middleware.Logger(), middleware.Recover(), common.InjectRealIP())
 
 	rpcGroup := e.Group("")
+	rpcGroup.Use(common.CORS())
 	corePath, coreHandler := corev1connect.NewCoreServiceHandler(coreService, connectJSONOpt)
 	rpcGroup.POST(corePath+"*", echo.WrapHandler(coreHandler))
 
