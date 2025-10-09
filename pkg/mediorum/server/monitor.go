@@ -229,7 +229,7 @@ validator_count AS (
 )
 SELECT
 	CASE
-		WHEN n > 0 THEN ((s * 2) * %d) / n
+		WHEN n > 0 THEN (((s * 2) * %d) / n)::bigint
 		ELSE 0
 	END
 FROM total_size, validator_count
