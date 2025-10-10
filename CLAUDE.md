@@ -142,6 +142,12 @@ The main entry point (`cmd/openaudio/main.go`) starts multiple services:
 
 ### Node Types
 
+**Validators**: Run both core + mediorum storage
+- Identified by `nodeEndpoint` env var
+- Store and serve audio content
+- Require more resources (storage, bandwidth)
+- Are meant to be the replacement for content nodes and the sole supported node type
+
 **Content Nodes**: Run both core + mediorum storage
 - Identified by `creatorNodeEndpoint` env var
 - Store and serve audio content
@@ -151,6 +157,7 @@ The main entry point (`cmd/openaudio/main.go`) starts multiple services:
 - Identified by `audius_discprov_url` env var
 - Do not store content
 - Lighter resource requirements
+- Are deprecated
 
 ### Database
 
@@ -163,6 +170,7 @@ The main entry point (`cmd/openaudio/main.go`) starts multiple services:
 ### Configuration
 
 Node configuration is primarily environment-variable driven:
+- **Validators**: `nodeEndpoint`, `delegatePrivateKey`, `delegateOwnerWallet`, `spOwnerWallet`
 - **Content nodes**: `creatorNodeEndpoint`, `delegatePrivateKey`, `delegateOwnerWallet`, `spOwnerWallet`
 - **Discovery nodes**: `audius_discprov_url`, `audius_delegate_private_key`, `audius_delegate_owner_wallet`
 - **Network**: `NETWORK` (prod/stage/dev)

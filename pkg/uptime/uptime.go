@@ -55,6 +55,9 @@ func Run(ctx context.Context) error {
 	} else if os.Getenv("creatorNodeEndpoint") != "" {
 		env = os.Getenv("MEDIORUM_ENV")
 		nodeType = "content"
+	} else if os.Getenv("nodeEndpoint") != "" {
+		env = os.Getenv("MEDIORUM_ENV")
+		nodeType = "validator"
 	} else {
 		slog.Info("no envs set. sleeping forever...")
 		// block forever so container doesn't restart constantly
@@ -328,6 +331,8 @@ func startStagingOrProd(isProd bool, nodeType, env string) {
 		myEndpoint = mustGetenv("creatorNodeEndpoint")
 	} else if nodeType == "discovery" {
 		myEndpoint = mustGetenv("audius_discprov_url")
+	} else if nodeType == "validator" {
+		myEndpoint = mustGetenv("nodeEndpoint")
 	}
 
 	logger := slog.With("endpoint", myEndpoint)
@@ -343,7 +348,7 @@ func startStagingOrProd(isProd bool, nodeType, env string) {
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
 		switch nodeType {
-		case "content":
+		case "content", "validator":
 			peers, err = g.Peers()
 		case "discovery":
 			peers, err = g.Signers()

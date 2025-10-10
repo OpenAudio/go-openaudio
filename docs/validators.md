@@ -9,7 +9,7 @@ Create an `override.env` file.
 ```bash
 # /home/ubuntu/override.env
 
-creatorNodeEndpoint=https://cn1.operator.xyz
+nodeEndpoint=https://cn1.operator.xyz
 delegateOwnerWallet=0x01234567890abcdef01234567890abcdef012345
 delegatePrivateKey=01234567890abcdef01234567890abcdef01234567890abcdef01234567890ab
 spOwnerWallet=0x01234567890abcdef01234567890abcdef012345
@@ -227,6 +227,18 @@ AUDIUSD_TLS_DISABLED=true
 # Optional: Configure custom ports
 AUDIUSD_HTTP_PORT=80     # Default
 AUDIUSD_HTTPS_PORT=443   # Default
+```
+
+### Blob Storage
+
+Validators support cloud blob storage such as s3, gcs, and azure as an efficient, scalable, and reliable alternative to local disk storage.
+
+If using s3-compatible blob storage with a cloud provider other than AWS, please note that the `AWS_REGION`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY` environment variables are still required to be set in your config and will function similarly using your custom provider's application access key and region.
+
+In addition, please ensure the `AUDIUS_STORAGE_DRIVER_URL` environment variable is set using the following format:
+
+```bash
+AUDIUS_STORAGE_DRIVER_URL=s3://<bucket-name>?endpoint=https://<provider-hostname>
 ```
 
 ### Node Participation Levels

@@ -48,7 +48,7 @@ func TestDDEX(t *testing.T) {
 		// Create transaction envelope
 		envelope := &corev1beta1.Envelope{
 			Header: &corev1beta1.EnvelopeHeader{
-				ChainId:    "audius-devnet",
+				ChainId:    "openaudio-devnet",
 				From:       "PADPIDA2024010501X",
 				To:         "PADPIDA202401120D9",
 				Nonce:      "1",
@@ -116,7 +116,7 @@ func TestDDEX(t *testing.T) {
 		// Create transaction envelope
 		envelope := &corev1beta1.Envelope{
 			Header: &corev1beta1.EnvelopeHeader{
-				ChainId:    "audius-devnet",
+				ChainId:    "openaudio-devnet",
 				From:       "PADPIDA2024010501X",
 				To:         "PADPIDA202401120D9",
 				Nonce:      "2",
@@ -184,7 +184,7 @@ func TestDDEX(t *testing.T) {
 		// Create transaction envelope
 		envelope := &corev1beta1.Envelope{
 			Header: &corev1beta1.EnvelopeHeader{
-				ChainId:    "audius-devnet",
+				ChainId:    "openaudio-devnet",
 				From:       "PADPIDA2024010501X",
 				To:         "PADPIDA202401120D9",
 				Nonce:      "3",
@@ -254,7 +254,7 @@ func TestDDEX(t *testing.T) {
 		// Create transaction envelope with multiple messages
 		envelope := &corev1beta1.Envelope{
 			Header: &corev1beta1.EnvelopeHeader{
-				ChainId:    "audius-devnet",
+				ChainId:    "openaudio-devnet",
 				From:       "PADPIDA2024010501X",
 				To:         "PADPIDA202401120D9",
 				Nonce:      "4",
@@ -338,7 +338,7 @@ func TestDDEX(t *testing.T) {
 		// Submit all messages in a single transaction for getter testing
 		envelope := &corev1beta1.Envelope{
 			Header: &corev1beta1.EnvelopeHeader{
-				ChainId:    "audius-devnet",
+				ChainId:    "openaudio-devnet",
 				From:       "PADPIDA2024010501X",
 				To:         "PADPIDA202401120D9",
 				Nonce:      "5",

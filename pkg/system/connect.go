@@ -31,8 +31,7 @@ func (s *SystemService) GetHealth(ctx context.Context, req *connect.Request[v1.G
 
 	var wg sync.WaitGroup
 
-	wg.Add(3)
-
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		coreHealth, err := s.core.GetHealth(ctx, connect.NewRequest(&coreV1.GetHealthRequest{}))
@@ -42,6 +41,7 @@ func (s *SystemService) GetHealth(ctx context.Context, req *connect.Request[v1.G
 		res.CoreHealth = coreHealth.Msg
 	}()
 
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		storageHealth, err := s.storage.GetHealth(ctx, connect.NewRequest(&storageV1.GetHealthRequest{}))

@@ -21,6 +21,7 @@ const (
 	Discovery NodeType = iota
 	Content
 	Identity
+	Validator
 )
 
 const (
@@ -225,19 +226,21 @@ func ReadConfig() (*Config, error) {
 
 	cfg.EthRPCUrl = GetEthRPC()
 
-	// check if discovery specific key is set
-	isDiscovery := os.Getenv("audius_delegate_private_key") != ""
+	cfg.NodeType = getNodeType()
 	var delegatePrivateKey string
-	if isDiscovery {
+	switch cfg.NodeType {
+	case Discovery:
 		delegatePrivateKey = os.Getenv("audius_delegate_private_key")
-		cfg.NodeType = Discovery
 		cfg.NodeEndpoint = os.Getenv("audius_discprov_url")
 		cfg.PSQLConn = GetEnvWithDefault("audius_db_url", "postgresql://postgres:postgres@localhost:5432/audius_discovery")
-	} else {
+	case Content:
 		delegatePrivateKey = os.Getenv("delegatePrivateKey")
-		cfg.NodeType = Content
 		cfg.PSQLConn = GetEnvWithDefault("dbUrl", "postgresql://postgres:postgres@localhost:5432/audius_creator_node")
 		cfg.NodeEndpoint = os.Getenv("creatorNodeEndpoint")
+	case Validator:
+		delegatePrivateKey = os.Getenv("delegatePrivateKey")
+		cfg.PSQLConn = GetEnvWithDefault("dbUrl", "postgresql://postgres:postgres@localhost:5432/openaudio")
+		cfg.NodeEndpoint = os.Getenv("nodeEndpoint")
 	}
 
 	ethKey, err := common.EthToEthKey(delegatePrivateKey)
@@ -311,6 +314,16 @@ func enableModules(config *Config) {
 		case ModuleConsole:
 			config.ConsoleModule = true
 		}
+	}
+}
+
+func getNodeType() NodeType {
+	if os.Getenv("audius_delegate_private_key") != "" {
+		return Discovery
+	} else if os.Getenv("creatorNodeEndpoint") != "" {
+		return Content
+	} else {
+		return Validator
 	}
 }
 

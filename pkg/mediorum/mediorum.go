@@ -65,9 +65,12 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	}
 	logger.Info("fetched registered nodes", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)))
 
-	creatorNodeEndpoint := os.Getenv("creatorNodeEndpoint")
-	if creatorNodeEndpoint == "" {
-		return errors.New("missing required env variable 'creatorNodeEndpoint'")
+	nodeEndpoint := os.Getenv("nodeEndpoint")
+	if nodeEndpoint == "" {
+		nodeEndpoint = os.Getenv("creatorNodeEndpoint")
+	}
+	if nodeEndpoint == "" {
+		return errors.New("missing required env variable 'nodeEndpoint'")
 	}
 	privateKeyHex := os.Getenv("delegatePrivateKey")
 	if privateKeyHex == "" {
@@ -90,7 +93,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	if err != nil {
 		logger.Warn("failed to parse trustedNotifierID", zap.Error(err))
 	}
-	spID, err := ethcontracts.GetServiceProviderIdFromEndpoint(creatorNodeEndpoint, walletAddress)
+	spID, err := ethcontracts.GetServiceProviderIdFromEndpoint(nodeEndpoint, walletAddress)
 	if err != nil || spID == 0 {
 		go func() {
 			for range time.Tick(10 * time.Second) {
@@ -117,7 +120,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 
 	config := server.MediorumConfig{
 		Self: registrar.Peer{
-			Host:   httputil.RemoveTrailingSlash(strings.ToLower(creatorNodeEndpoint)),
+			Host:   httputil.RemoveTrailingSlash(strings.ToLower(nodeEndpoint)),
 			Wallet: strings.ToLower(walletAddress),
 		},
 		ListenPort:                "1991",
