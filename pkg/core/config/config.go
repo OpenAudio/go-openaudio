@@ -32,7 +32,6 @@ const (
 	ModuleGraphQL = "graphql"
 )
 
-// once completely released, remove debug and comet
 var defaultModules = []string{ModuleConsole, ModuleDebug, ModulePprof, ModuleComet, ModuleGraphQL}
 
 type RollupInterval struct {
@@ -146,6 +145,7 @@ type Config struct {
 
 	/* Feature flags */
 	ProgrammableDistributionEnabled bool
+	SkipEthRegistration             bool
 }
 
 func (c *Config) IsDev() bool {
@@ -177,6 +177,7 @@ func ReadConfig() (*Config, error) {
 	// comet config
 	cfg.CometLogLevel = GetEnvWithDefault("audius_comet_log_level", "statesync:info,p2p:none,mempool:none,rpc:none,*:error")
 	cfg.RootDir = GetEnvWithDefault("audius_core_root_dir", homeDir+"/.audiusd")
+	cfg.RPCladdr = GetEnvWithDefault("rpcLaddr", "unix:///tmp/cometbft.rpc.sock")
 	cfg.P2PLaddr = GetEnvWithDefault("p2pLaddr", "tcp://0.0.0.0:26656")
 
 	cfg.GRPCladdr = GetEnvWithDefault("grpcLaddr", "0.0.0.0:50051")
@@ -199,6 +200,8 @@ func ReadConfig() (*Config, error) {
 	cfg.LogLevel = GetLogLevel()
 	cfg.Environment = GetRuntimeEnvironment()
 	cfg.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(cfg.Environment)
+
+	cfg.SkipEthRegistration = GetEnvWithDefault("skipEthRegistration", "false") == "true"
 
 	ssRpcServers := ""
 	switch cfg.Environment {

@@ -1,152 +1,153 @@
+// Request forward for the internal cometbft rpc. Debug info and to be turned off by default.
 package server
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
-	"strconv"
+	"strings"
+	"time"
 
+	"github.com/AudiusProject/audiusd/pkg/core/config"
+	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
-func (s *Server) registerCRPCRoutes(g *echo.Group) {
-	// Explicit REST-style endpoints
-	g.GET("/crpc/status", s.getStatus)
-	g.GET("/crpc/health", s.getHealth)
-	g.GET("/crpc/block", s.getBlock)
-
-	// JSON-RPC endpoint
-	g.POST("/crpc", s.handleJSONRPC)
+// allowedMethods defines the allowed RPC methods for state sync
+// This is read-only after initialization, making it safe for concurrent access
+var allowedMethods = map[string]struct{}{
+	"status":           {},
+	"block":            {},
+	"commit":           {},
+	"validators":       {},
+	"consensus_params": {}, // Required for state sync to fetch consensus parameters
+	"health":           {},
 }
 
-// ---------- Plain GET endpoints ----------
+// maxRequestBodySize limits request size to 64KB - RPC requests should be tiny
+const maxRequestBodySize = 64 * 1024
 
-func (s *Server) getStatus(c echo.Context) error {
-	ctx := c.Request().Context()
-	res, err := s.rpc.Status(ctx)
-	if err != nil {
-		return respondWithError(c, 502, err.Error())
+func (s *Server) proxyCometRequest(c echo.Context) error {
+	if !s.config.StateSync.ServeSnapshots {
+		return respondWithError(c, http.StatusForbidden, "state sync not enabled")
 	}
-	return c.JSON(http.StatusOK, wrapJSONRPC(res))
-}
 
-func (s *Server) getHealth(c echo.Context) error {
-	ctx := c.Request().Context()
-	res, err := s.rpc.Health(ctx)
-	if err != nil {
-		return respondWithError(c, 502, err.Error())
+	// Only allow GET and POST methods
+	if c.Request().Method != "GET" && c.Request().Method != "POST" {
+		return respondWithError(c, http.StatusMethodNotAllowed, "method not allowed")
 	}
-	return c.JSON(http.StatusOK, wrapJSONRPC(res))
-}
 
-func (s *Server) getBlock(c echo.Context) error {
-	ctx := c.Request().Context()
-	heightParam := c.QueryParam("height")
+	// Handle validation based on request method
+	var bodyToForward io.Reader = c.Request().Body
 
-	var height *int64
-	if heightParam != "" {
-		h, err := strconv.ParseInt(heightParam, 10, 64)
+	if c.Request().Method == "POST" {
+		// Read the body to validate JSONRPC method (with size limit)
+		body, err := io.ReadAll(io.LimitReader(c.Request().Body, maxRequestBodySize))
 		if err != nil {
-			return respondWithError(c, 400, "invalid height")
+			s.logger.Error("failed to read request body", zap.Error(err))
+			return respondWithError(c, http.StatusBadRequest, "failed to read request")
 		}
-		height = &h
+
+		// Check if request was too large (if we read exactly the limit, there might be more)
+		if len(body) == maxRequestBodySize {
+			s.logger.Warn("request body too large", zap.Int("size", len(body)))
+			return respondWithError(c, http.StatusRequestEntityTooLarge, "request body too large")
+		}
+
+		// Parse JSONRPC request
+		var rpcReq rpctypes.RPCRequest
+		if err := json.Unmarshal(body, &rpcReq); err != nil {
+			s.logger.Error("failed to parse JSONRPC request", zap.Error(err))
+			return respondWithError(c, http.StatusBadRequest, "invalid JSONRPC request")
+		}
+
+		// Check if method is allowed
+		if _, ok := allowedMethods[rpcReq.Method]; !ok {
+			s.logger.Warn("blocked unauthorized RPC method",
+				zap.String("method", rpcReq.Method))
+			return respondWithError(c, http.StatusForbidden, "RPC method not allowed")
+		}
+
+		// Create new reader from body for forwarding
+		bodyToForward = bytes.NewReader(body)
+	} else if c.Request().Method == "GET" {
+		// For GET requests, check the path
+		rpcPath := strings.TrimPrefix(c.Request().RequestURI, "/core/crpc")
+		basePath := strings.TrimPrefix(rpcPath, "/")
+		if idx := strings.Index(basePath, "?"); idx != -1 {
+			basePath = basePath[:idx]
+		}
+
+		// Check if method is allowed
+		if _, ok := allowedMethods[basePath]; !ok {
+			s.logger.Warn("blocked unauthorized RPC method",
+				zap.String("method", basePath))
+			return respondWithError(c, http.StatusForbidden, "RPC method not allowed")
+		}
 	}
 
-	res, err := s.rpc.Block(ctx, height)
-	if err != nil {
-		return respondWithError(c, 502, err.Error())
-	}
-	return c.JSON(http.StatusOK, wrapJSONRPC(res))
-}
-
-// ---------- JSON-RPC endpoint ----------
-
-func (s *Server) handleJSONRPC(c echo.Context) error {
-	ctx := c.Request().Context()
-
-	var req struct {
-		JSONRPC string          `json:"jsonrpc"`
-		ID      any             `json:"id"`
-		Method  string          `json:"method"`
-		Params  json.RawMessage `json:"params"`
-	}
-	if err := c.Bind(&req); err != nil {
-		return respondWithError(c, 400, "bad request")
-	}
-
-	switch req.Method {
-	case "status":
-		res, err := s.rpc.Status(ctx)
-		if err != nil {
-			return respondWithError(c, 502, err.Error())
-		}
-		return c.JSON(http.StatusOK, newJSONRPCResponse(req.ID, res))
-
-	case "health":
-		res, err := s.rpc.Health(ctx)
-		if err != nil {
-			return respondWithError(c, 502, err.Error())
-		}
-		return c.JSON(http.StatusOK, newJSONRPCResponse(req.ID, res))
-
-	case "block":
-		var params []any
-		_ = json.Unmarshal(req.Params, &params)
-
-		var height *int64
-		if len(params) > 0 {
-			switch v := params[0].(type) {
-			case float64:
-				h := int64(v)
-				height = &h
-			case string:
-				if h, err := strconv.ParseInt(v, 10, 64); err == nil {
-					height = &h
-				}
-			}
-		}
-		res, err := s.rpc.Block(ctx, height)
-		if err != nil {
-			return respondWithError(c, 502, err.Error())
-		}
-		return c.JSON(http.StatusOK, newJSONRPCResponse(req.ID, res))
-
-	default:
-		return c.JSON(http.StatusOK, map[string]any{
-			"jsonrpc": "2.0",
-			"id":      req.ID,
-			"error": map[string]any{
-				"code":    -32601,
-				"message": "method not found",
+	// Create HTTP client with Unix socket transport
+	httpClient := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				dialer := net.Dialer{}
+				return dialer.DialContext(ctx, "unix", config.CometRPCSocket)
 			},
-		})
+		},
+	}
+
+	s.logger.Info("request", zap.String("socket", config.CometRPCSocket), zap.String("method", c.Request().Method), zap.String("url", c.Request().RequestURI))
+
+	// For Unix sockets, the host is ignored, but we need to provide one
+	path := "http://localhost" + strings.TrimPrefix(c.Request().RequestURI, "/core/crpc")
+
+	req, err := http.NewRequest(c.Request().Method, path, bodyToForward)
+	if err != nil {
+		s.logger.Error("failed to create internal comet api request", zap.Error(err))
+		return respondWithError(c, http.StatusInternalServerError, "failed to create internal comet request")
+	}
+
+	copyHeaders(c.Request().Header, req.Header)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		s.logger.Error("failed to forward comet api request", zap.Error(err))
+		return respondWithError(c, http.StatusInternalServerError, "failed to forward request")
+	}
+	defer resp.Body.Close()
+
+	c.Response().Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	c.Response().WriteHeader(resp.StatusCode)
+	_, err = io.Copy(c.Response().Writer, resp.Body)
+	if err != nil {
+		return respondWithError(c, http.StatusInternalServerError, "failed to stream response")
+	}
+
+	return nil
+}
+
+func copyHeaders(source http.Header, destination http.Header) {
+	// Only copy safe headers for RPC requests
+	safeHeaders := map[string]bool{
+		"Content-Type":  true,
+		"Accept":        true,
+		"Cache-Control": true,
+		"User-Agent":    true,
+	}
+
+	for k, v := range source {
+		// Only copy whitelisted headers
+		if safeHeaders[k] {
+			destination[k] = v
+		}
 	}
 }
 
-// ---------- Helpers ----------
-
-func newJSONRPCResponse(id any, result any) map[string]any {
-	return map[string]any{
-		"jsonrpc": "2.0",
-		"id":      idOrDefault(id),
-		"result":  result,
-	}
-}
-
-func idOrDefault(id any) any {
-	if id == nil {
-		return -1
-	}
-	return id
-}
-
-func wrapJSONRPC(result any) map[string]any {
-	return map[string]any{
-		"jsonrpc": "2.0",
-		"id":      -1,
-		"result":  result,
-	}
-}
-
-func respondWithError(c echo.Context, status int, msg string) error {
-	return c.JSON(status, map[string]string{"error": msg})
+func respondWithError(c echo.Context, statusCode int, message string) error {
+	return c.JSON(statusCode, map[string]string{"error": message})
 }

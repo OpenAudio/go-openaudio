@@ -53,7 +53,7 @@ ethstatus:
 		}
 	}
 
-	if s.isDevEnvironment() {
+	if s.isDevEnvironment() && !s.config.SkipEthRegistration {
 		s.logger.Info("running in dev, registering on ethereum")
 		if err := s.registerSelfOnEth(ctx); err != nil {
 			s.logger.Error("error registering onto eth", zap.Error(err))

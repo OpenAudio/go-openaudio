@@ -47,7 +47,7 @@ func (s *Server) startEchoServer(ctx context.Context) error {
 		return c.JSON(http.StatusOK, res.Msg)
 	})
 
-	s.registerCRPCRoutes(g)
+	g.Any("/crpc*", s.proxyCometRequest)
 	s.createEthRPC()
 
 	g.GET("/sdk", echo.WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
