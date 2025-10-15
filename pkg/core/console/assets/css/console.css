@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Play:wght@400;700&display=swap');
+
+body {
+    font-family: "Play", sans-serif;
+    color: white;
+}
+
+.text-primary {
+    color: white;
+}
+
+.text-secondary {
+    color: #b3b3b3;
+}
+
+.text-tertiary {
+    color: #ededed;
+}
+
+.bg-primary {
+    background-color: black;
+}
+
+.bg-secondary {
+    background-color: #383838;
+}
+
+.bg-tertiary {
+    background-color: #141414;
+}

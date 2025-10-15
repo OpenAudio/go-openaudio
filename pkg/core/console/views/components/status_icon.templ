@@ -1,0 +1,58 @@
+package components
+
+import "github.com/OpenAudio/go-openaudio/pkg/core/console/assets"
+
+func StatusGreen(altText string, extraClasses ...string) templ.Component {
+    all := append([]string{"h-4", "w-4"}, extraClasses...)
+    return statusIcon(assets.OvalGreen, altText, all...)
+}
+
+func StatusOrange(altText string, extraClasses ...string) templ.Component {
+    all := append([]string{"h-4", "w-4"}, extraClasses...)
+    return statusIcon(assets.OvalOrange, altText, all...)
+}
+
+func StatusRed(altText string, extraClasses ...string) templ.Component {
+    all := append([]string{"h-4", "w-4"}, extraClasses...)
+    return statusIcon(assets.OvalRed, altText, all...)
+}
+
+func StatusGray(altText string, extraClasses ...string) templ.Component {
+    all := append([]string{"h-4", "w-4"}, extraClasses...)
+    return statusIcon(assets.OvalGray, altText, all...)
+}
+
+func StatusComplete(altText string, extraClasses ...string) templ.Component {
+    all := append([]string{"h-4", "w-4"}, extraClasses...)
+    return statusIcon(assets.OvalCheck, altText, all...)
+}
+
+func StatusGreenLg(altText string, extraClasses ...string) templ.Component {
+    all := append([]string{"h-6", "w-6"}, extraClasses...)
+    return statusIcon(assets.OvalGreen, altText, all...)
+}
+
+func StatusOrangeLg(altText string, extraClasses ...string) templ.Component {
+    all := append([]string{"h-6", "w-6"}, extraClasses...)
+    return statusIcon(assets.OvalOrange, altText, all...)
+}
+
+func StatusRedLg(altText string, extraClasses ...string) templ.Component {
+    all := append([]string{"h-6", "w-6"}, extraClasses...)
+    return statusIcon(assets.OvalRed, altText, all...)
+}
+
+func StatusGrayLg(altText string, extraClasses ...string) templ.Component {
+    all := append([]string{"h-6", "w-6"}, extraClasses...)
+    return statusIcon(assets.OvalGray, altText, all...)
+}
+
+func StatusCompleteLg(altText string, extraClasses ...string) templ.Component {
+    all := append([]string{"h-6", "w-6"}, extraClasses...)
+    return statusIcon(assets.OvalCheck, altText, all...)
+}
+
+
+templ statusIcon(src, altText string, extraClasses ...string) {
+    <img src={ src } alt="synced" class={ extraClasses, "inline", "align-middle" }/>
+}

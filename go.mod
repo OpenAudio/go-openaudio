@@ -7,7 +7,6 @@ require (
 	github.com/cometbft/cometbft v1.0.0
 	github.com/cosmos/gogoproto v1.7.0 // indirect
 	github.com/disintegration/imaging v1.6.2
-	github.com/docker/docker v28.0.1+incompatible // indirect
 	github.com/dustin/go-humanize v1.0.1
 	github.com/erni27/imcache v1.2.0
 	github.com/ethereum/go-ethereum v1.14.9
@@ -114,6 +113,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/dgraph-io/badger/v4 v4.5.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.0.0 // indirect
+	github.com/docker/docker v28.0.1+incompatible // indirect
 	github.com/dolthub/maphash v0.1.0 // indirect
 	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/ethereum/c-kzg-4844 v1.0.0 // indirect

@@ -11,6 +11,7 @@ import (
 const baseURL = "/console"
 
 //go:embed assets/js/*
+//go:embed assets/css/*
 //go:embed assets/images/*
 var embeddedAssets embed.FS
 

@@ -27,7 +27,7 @@ spOwnerWallet=0x01234567890abcdef01234567890abcdef012345
 #GOOGLE_APPLICATION_CREDENTIALS=/tmp/google-application-credentials.json
 
 # uncomment if using cloudflare proxy
-#AUDIUSD_TLS_SELF_SIGNED=true
+#OPENAUDIO_TLS_SELF_SIGNED=true
 ```
 
 Run your node.
@@ -56,7 +56,7 @@ audius_delegate_owner_wallet=0x01234567890abcdef01234567890abcdef012345
 audius_delegate_private_key=01234567890abcdef01234567890abcdef01234567890abcdef01234567890ab
 
 # uncomment if using cloudflare proxy
-#AUDIUSD_TLS_SELF_SIGNED=true
+#OPENAUDIO_TLS_SELF_SIGNED=true
 ```
 
 Run your node.
@@ -216,17 +216,17 @@ On first boot, nodes will attempt to use LetsEncrypt for TLS certification.
 
 ```bash
 # LetsEncrypt challenges cannot pass under Cloudflare's strict proxy mode
-AUDIUSD_TLS_SELF_SIGNED=true
+OPENAUDIO_TLS_SELF_SIGNED=true
 ```
 
 **Option 3: Custom SSL Setup**
 ```bash
 # Disable built-in TLS if using your own SSL termination
-AUDIUSD_TLS_DISABLED=true
+OPENAUDIO_TLS_DISABLED=true
 
 # Optional: Configure custom ports
-AUDIUSD_HTTP_PORT=80     # Default
-AUDIUSD_HTTPS_PORT=443   # Default
+OPENAUDIO_HTTP_PORT=80     # Default
+OPENAUDIO_HTTPS_PORT=443   # Default
 ```
 
 ### Blob Storage
