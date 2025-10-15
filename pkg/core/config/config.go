@@ -298,6 +298,16 @@ func GetEnvWithDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
+func getNodeType() NodeType {
+	if os.Getenv("audius_delegate_private_key") != "" {
+		return Discovery
+	} else if os.Getenv("creatorNodeEndpoint") != "" {
+		return Content
+	} else {
+		return Validator
+	}
+}
+
 func getEnvIntWithDefault(key string, defaultValue int) int {
 	if value, exists := os.LookupEnv(key); exists {
 		val, err := strconv.Atoi(value)
