@@ -138,12 +138,6 @@ type Config struct {
 	NodeType    NodeType
 	Rewards     []rewards.Reward
 
-	/* Optional Modules */
-	ConsoleModule bool
-	DebugModule   bool
-	CometModule   bool
-	PprofModule   bool
-
 	/* Attestation Thresholds */
 	AttRegistrationMin     int // minimum number of attestations needed to register a new node
 	AttRegistrationRSize   int // rendezvous size for registration attestations (should be >= to AttRegistrationMin)
@@ -183,7 +177,6 @@ func ReadConfig() (*Config, error) {
 	// comet config
 	cfg.CometLogLevel = GetEnvWithDefault("audius_comet_log_level", "statesync:info,p2p:none,mempool:none,rpc:none,*:error")
 	cfg.RootDir = GetEnvWithDefault("audius_core_root_dir", homeDir+"/.audiusd")
-	cfg.RPCladdr = GetEnvWithDefault("rpcLaddr", "tcp://0.0.0.0:26657")
 	cfg.P2PLaddr = GetEnvWithDefault("p2pLaddr", "tcp://0.0.0.0:26656")
 
 	cfg.GRPCladdr = GetEnvWithDefault("grpcLaddr", "0.0.0.0:50051")
@@ -295,36 +288,7 @@ func ReadConfig() (*Config, error) {
 		cfg.PSQLConn += "?sslmode=disable"
 	}
 
-	enableModules(&cfg)
-
 	return &cfg, nil
-}
-
-func enableModules(config *Config) {
-	moduleSettings := defaultModules
-	// TODO: set module settings from env var
-	for _, module := range moduleSettings {
-		switch module {
-		case ModuleComet:
-			config.CometModule = true
-		case ModuleDebug:
-			config.DebugModule = true
-		case ModulePprof:
-			config.PprofModule = true
-		case ModuleConsole:
-			config.ConsoleModule = true
-		}
-	}
-}
-
-func getNodeType() NodeType {
-	if os.Getenv("audius_delegate_private_key") != "" {
-		return Discovery
-	} else if os.Getenv("creatorNodeEndpoint") != "" {
-		return Content
-	} else {
-		return Validator
-	}
 }
 
 func GetEnvWithDefault(key, defaultValue string) string {

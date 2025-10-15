@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/http/pprof"
 	"time"
 
 	"connectrpc.com/connect"
@@ -48,32 +47,12 @@ func (s *Server) startEchoServer(ctx context.Context) error {
 		return c.JSON(http.StatusOK, res.Msg)
 	})
 
-	// proxy cometbft requests
-	g.Any("/crpc*", s.proxyCometRequest)
-
-	// kind of weird pattern
+	s.registerCRPCRoutes(g)
 	s.createEthRPC()
 
 	g.GET("/sdk", echo.WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sandbox.ServeSandbox(s.config, w, r)
 	})))
-
-	if s.config.DebugModule {
-		g.GET("/debug/mempl", s.getMempl)
-	}
-
-	if s.config.PprofModule {
-		g.GET("/debug/pprof/", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
-		g.GET("/debug/pprof/cmdline", echo.WrapHandler(http.HandlerFunc(pprof.Cmdline)))
-		g.GET("/debug/pprof/profile", echo.WrapHandler(http.HandlerFunc(pprof.Profile)))
-		g.GET("/debug/pprof/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
-		g.POST("/debug/pprof/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
-		g.GET("/debug/pprof/trace", echo.WrapHandler(http.HandlerFunc(pprof.Trace)))
-		g.GET("/debug/pprof/heap", echo.WrapHandler(pprof.Handler("heap")))
-		g.GET("/debug/pprof/goroutine", echo.WrapHandler(pprof.Handler("goroutine")))
-		g.GET("/debug/pprof/threadcreate", echo.WrapHandler(pprof.Handler("threadcreate")))
-		g.GET("/debug/pprof/block", echo.WrapHandler(pprof.Handler("block")))
-	}
 
 	done := make(chan error, 1)
 	go func() {

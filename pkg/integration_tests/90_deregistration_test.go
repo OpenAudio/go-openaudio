@@ -30,7 +30,7 @@ const (
 type CometRPCResponse struct {
 	Result struct {
 		ValidatorInfo struct {
-			VotingPower string `json:"voting_power"`
+			VotingPower int32 `json:"voting_power"`
 		} `json:"validator_info"`
 	} `json:"result"`
 }
@@ -101,13 +101,13 @@ func TestDeregisterNode(t *testing.T) {
 		var r CometRPCResponse
 		err = json.Unmarshal(body, &r)
 		require.NoError(t, err, "failed to marshall comet rpc response body")
-		if r.Result.ValidatorInfo.VotingPower != "0" {
+		if r.Result.ValidatorInfo.VotingPower != 0 {
 			err = errors.New("Voting power is still non-zero")
 			time.Sleep(2 * time.Second)
 			continue
 		}
 
-		require.Equal(t, "0", r.Result.ValidatorInfo.VotingPower)
+		require.Equal(t, int32(0), r.Result.ValidatorInfo.VotingPower)
 
 		break
 	}

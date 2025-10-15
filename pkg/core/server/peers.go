@@ -17,9 +17,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/eth/contracts"
-	"github.com/OpenAudio/go-openaudio/pkg/safemap"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
-	"github.com/cometbft/cometbft/p2p"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
@@ -217,9 +215,6 @@ func (s *Server) managePeers(ctx context.Context) error {
 	healthcheckTicker := time.NewTicker(healthcheckInterval)
 	defer healthcheckTicker.Stop()
 
-	p2pcheckTicker := time.NewTicker(p2pcheckInterval)
-	defer p2pcheckTicker.Stop()
-
 	peerInfoTicker := time.NewTicker(peerInfoInterval)
 	defer peerInfoTicker.Stop()
 
@@ -241,12 +236,6 @@ func (s *Server) managePeers(ctx context.Context) error {
 			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Health checking peers")
 			if err := s.refreshPeerHealth(ctx, logger); err != nil {
 				logger.Error("could not check health", zap.Error(err))
-			}
-			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
-		case <-p2pcheckTicker.C:
-			s.RunningProcessWithMetadata(ProcessStatePeerManager, "Checking P2P connectivity")
-			if err := s.checkPeerP2PAddr(ctx, logger); err != nil {
-				logger.Error("could not check p2p connectivity", zap.Error(err))
 			}
 			s.SleepingProcessWithMetadata(ProcessStatePeerManager, "Waiting for next cycle")
 		case <-peerInfoTicker.C:
@@ -425,97 +414,6 @@ func (s *Server) refreshPeerHealth(ctx context.Context, logger *zap.Logger) erro
 	}
 
 	wg.Wait()
-
-	return nil
-}
-
-// grabs the cometbft rpc clients in the server struct, uses the status endpoints to test
-// p2p connectivity. if not already peered will dial peers for comet. reports p2p status
-// to status check.
-func (s *Server) checkPeerP2PAddr(ctx context.Context, logger *zap.Logger) error {
-	var wg sync.WaitGroup
-
-	netInfoCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	netInfo, err := s.rpc.NetInfo(netInfoCtx)
-	if err != nil {
-		return fmt.Errorf("could not get self net info: %v", err)
-	}
-
-	isPeered := func(nodeid p2p.ID) bool {
-		for _, peer := range netInfo.Peers {
-			if peer.NodeInfo.DefaultNodeID == nodeid {
-				return true
-			}
-		}
-		return false
-	}
-
-	peersToDial := safemap.New[CometP2PConnectionString, struct{}]()
-
-	cometPeers := s.cometRPCPeers.ToMap()
-	wg.Add(len(cometPeers))
-	for ethaddress, rpc := range cometPeers {
-		go func(ethaddress EthAddress, rpc *CometBFTRPC) {
-			defer wg.Done()
-
-			self := s.config.WalletAddress
-			if ethaddress == self {
-				return
-			}
-
-			status, ok := s.peerStatus.Get(ethaddress)
-			if ok && status.P2PAccessible && status.P2PConnected {
-				return
-			}
-
-			statusCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
-			cometStatus, err := rpc.Status(statusCtx)
-			if err != nil {
-				logger.Error("could not get status", zap.String("eth_address", ethaddress), zap.Error(err))
-				return
-			}
-
-			nodeid := cometStatus.NodeInfo.DefaultNodeID
-			listenAddr := cometStatus.NodeInfo.ListenAddr
-
-			var p2pAccessible bool
-
-			conn, err := net.DialTimeout("tcp", listenAddr, 3*time.Second)
-			if err != nil {
-				p2pAccessible = false
-			} else {
-				p2pAccessible = true
-				_ = conn.Close()
-			}
-
-			status, exists := s.peerStatus.Get(ethaddress)
-			if exists {
-				status.P2PAccessible = p2pAccessible
-				s.peerStatus.Set(ethaddress, status)
-
-				if status.P2PConnected {
-					return
-				}
-			}
-
-			if !isPeered(nodeid) {
-				connectionString := fmt.Sprintf("%s@%s", nodeid, listenAddr)
-				peersToDial.Set(connectionString, struct{}{})
-			}
-		}(ethaddress, rpc)
-	}
-
-	wg.Wait()
-
-	res, err := s.rpc.DialPeers(ctx, peersToDial.Keys(), true, true, false)
-	if err != nil {
-		return fmt.Errorf("failed to dial peers: %v", err)
-	}
-
-	logger.Info("dialed peers", zap.String("result", res.Log))
 
 	return nil
 }
