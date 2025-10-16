@@ -1,58 +1,152 @@
-// Request forward for the internal cometbft rpc. Debug info and to be turned off by default.
 package server
 
 import (
-	"io"
+	"encoding/json"
 	"net/http"
-	"strings"
-	"time"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
-	"go.uber.org/zap"
 )
 
-var httpClient = &http.Client{
-	Timeout: 10 * time.Second,
+func (s *Server) registerCRPCRoutes(g *echo.Group) {
+	// Explicit REST-style endpoints
+	g.GET("/crpc/status", s.getStatus)
+	g.GET("/crpc/health", s.getHealth)
+	g.GET("/crpc/block", s.getBlock)
+
+	// JSON-RPC endpoint
+	g.POST("/crpc", s.handleJSONRPC)
 }
 
-func (s *Server) proxyCometRequest(c echo.Context) error {
-	rpcUrl := strings.ReplaceAll(s.config.RPCladdr, "tcp", "http")
+// ---------- Plain GET endpoints ----------
 
-	s.logger.Info("request", zap.String("url", rpcUrl), zap.String("method", c.Request().Method), zap.String("url", c.Request().RequestURI))
-
-	path := rpcUrl + strings.TrimPrefix(c.Request().RequestURI, "/core/crpc")
-
-	req, err := http.NewRequest(c.Request().Method, path, c.Request().Body)
+func (s *Server) getStatus(c echo.Context) error {
+	ctx := c.Request().Context()
+	res, err := s.rpc.Status(ctx)
 	if err != nil {
-		s.logger.Error("failed to create internal comet api request", zap.Error(err))
-		return respondWithError(c, http.StatusInternalServerError, "failed to create internal comet request")
+		return respondWithError(c, 502, err.Error())
 	}
-
-	copyHeaders(c.Request().Header, req.Header)
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		s.logger.Error("failed to forward comet api request", zap.Error(err))
-		return respondWithError(c, http.StatusInternalServerError, "failed to forward request")
-	}
-	defer resp.Body.Close()
-
-	c.Response().Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-	c.Response().WriteHeader(resp.StatusCode)
-	_, err = io.Copy(c.Response().Writer, resp.Body)
-	if err != nil {
-		return respondWithError(c, http.StatusInternalServerError, "failed to stream response")
-	}
-
-	return nil
+	return c.JSON(http.StatusOK, wrapJSONRPC(res))
 }
 
-func copyHeaders(source http.Header, destination http.Header) {
-	for k, v := range source {
-		destination[k] = v
+func (s *Server) getHealth(c echo.Context) error {
+	ctx := c.Request().Context()
+	res, err := s.rpc.Health(ctx)
+	if err != nil {
+		return respondWithError(c, 502, err.Error())
+	}
+	return c.JSON(http.StatusOK, wrapJSONRPC(res))
+}
+
+func (s *Server) getBlock(c echo.Context) error {
+	ctx := c.Request().Context()
+	heightParam := c.QueryParam("height")
+
+	var height *int64
+	if heightParam != "" {
+		h, err := strconv.ParseInt(heightParam, 10, 64)
+		if err != nil {
+			return respondWithError(c, 400, "invalid height")
+		}
+		height = &h
+	}
+
+	res, err := s.rpc.Block(ctx, height)
+	if err != nil {
+		return respondWithError(c, 502, err.Error())
+	}
+	return c.JSON(http.StatusOK, wrapJSONRPC(res))
+}
+
+// ---------- JSON-RPC endpoint ----------
+
+func (s *Server) handleJSONRPC(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	var req struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      any             `json:"id"`
+		Method  string          `json:"method"`
+		Params  json.RawMessage `json:"params"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return respondWithError(c, 400, "bad request")
+	}
+
+	switch req.Method {
+	case "status":
+		res, err := s.rpc.Status(ctx)
+		if err != nil {
+			return respondWithError(c, 502, err.Error())
+		}
+		return c.JSON(http.StatusOK, newJSONRPCResponse(req.ID, res))
+
+	case "health":
+		res, err := s.rpc.Health(ctx)
+		if err != nil {
+			return respondWithError(c, 502, err.Error())
+		}
+		return c.JSON(http.StatusOK, newJSONRPCResponse(req.ID, res))
+
+	case "block":
+		var params []any
+		_ = json.Unmarshal(req.Params, &params)
+
+		var height *int64
+		if len(params) > 0 {
+			switch v := params[0].(type) {
+			case float64:
+				h := int64(v)
+				height = &h
+			case string:
+				if h, err := strconv.ParseInt(v, 10, 64); err == nil {
+					height = &h
+				}
+			}
+		}
+		res, err := s.rpc.Block(ctx, height)
+		if err != nil {
+			return respondWithError(c, 502, err.Error())
+		}
+		return c.JSON(http.StatusOK, newJSONRPCResponse(req.ID, res))
+
+	default:
+		return c.JSON(http.StatusOK, map[string]any{
+			"jsonrpc": "2.0",
+			"id":      req.ID,
+			"error": map[string]any{
+				"code":    -32601,
+				"message": "method not found",
+			},
+		})
 	}
 }
 
-func respondWithError(c echo.Context, statusCode int, message string) error {
-	return c.JSON(statusCode, map[string]string{"error": message})
+// ---------- Helpers ----------
+
+func newJSONRPCResponse(id any, result any) map[string]any {
+	return map[string]any{
+		"jsonrpc": "2.0",
+		"id":      idOrDefault(id),
+		"result":  result,
+	}
+}
+
+func idOrDefault(id any) any {
+	if id == nil {
+		return -1
+	}
+	return id
+}
+
+func wrapJSONRPC(result any) map[string]any {
+	return map[string]any{
+		"jsonrpc": "2.0",
+		"id":      -1,
+		"result":  result,
+	}
+}
+
+func respondWithError(c echo.Context, status int, msg string) error {
+	return c.JSON(status, map[string]string{"error": msg})
 }

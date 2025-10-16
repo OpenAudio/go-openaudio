@@ -56,13 +56,11 @@ func run(ctx context.Context, lc *lifecycle.Lifecycle, logger *zap.Logger, posCh
 
 	// console gets run from core(main).go since it is an isolated go module
 	// unlike the other modules that register themselves on the echo http server
-	if config.ConsoleModule {
-		e := s.GetEcho()
-		_, err := console.NewConsole(config, logger, e, pool, ethService, coreService)
-		if err != nil {
-			logger.Error("console init error", zap.Error(err))
-			return err
-		}
+	e := s.GetEcho()
+	_, err = console.NewConsole(config, logger, e, pool, ethService, coreService)
+	if err != nil {
+		logger.Error("console init error", zap.Error(err))
+		return err
 	}
 
 	// create core service
