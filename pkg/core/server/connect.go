@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -27,6 +28,7 @@ import (
 )
 
 type CoreService struct {
+	coreMu         sync.RWMutex
 	core           *Server
 	storageService storagev1connect.StorageServiceHandler
 }
@@ -36,6 +38,8 @@ func NewCoreService() *CoreService {
 }
 
 func (c *CoreService) SetCore(core *Server) {
+	c.coreMu.Lock()
+	defer c.coreMu.Unlock()
 	c.core = core
 	c.core.setSelf(c)
 }
@@ -45,6 +49,12 @@ func (c *CoreService) SetStorageService(storageService storagev1connect.StorageS
 }
 
 var _ v1connect.CoreServiceHandler = (*CoreService)(nil)
+
+func (c *CoreService) IsReady() bool {
+	c.coreMu.RLock()
+	defer c.coreMu.RUnlock()
+	return c.core != nil
+}
 
 // GetNodeInfo implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetNodeInfo(ctx context.Context, req *connect.Request[v1.GetNodeInfoRequest]) (*connect.Response[v1.GetNodeInfoResponse], error) {
@@ -66,7 +76,7 @@ func (c *CoreService) GetNodeInfo(ctx context.Context, req *connect.Request[v1.G
 // ForwardTransaction implements v1connect.CoreServiceHandler.
 func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Request[v1.ForwardTransactionRequest]) (*connect.Response[v1.ForwardTransactionResponse], error) {
 	// Check feature flag for programmable distribution features
-	if !c.core.config.ProgrammableDistributionEnabled {
+	if c.core.config != nil && !c.core.config.ProgrammableDistributionEnabled {
 		// Check if transaction uses programmable distribution features
 		if req.Msg != nil && req.Msg.Transaction != nil && req.Msg.Transaction.GetFileUpload() != nil {
 			return nil, connect.NewError(connect.CodeUnimplemented, errors.New("programmable distribution is not enabled in this environment"))
@@ -118,7 +128,10 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		c.core.logger.Debug("received forwarded tx", zap.Any("tx", req.Msg.Transaction))
 	}
 
-	// TODO: intake block deadline from request
+	if c.core.rpc == nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("local rpc not ready"))
+	}
+
 	status, err := c.core.rpc.Status(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("chain not healthy: %v", err)
@@ -671,6 +684,9 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 
 // Utilities
 func (c *CoreService) getBlockRpcFallback(ctx context.Context, height int64) (*connect.Response[v1.GetBlockResponse], error) {
+	if c.core.rpc == nil {
+		return nil, errors.New("rpc not available")
+	}
 	block, err := c.core.rpc.Block(ctx, &height)
 	if err != nil {
 		blockInFutureMsg := "must be less than or equal to the current blockchain height"
@@ -758,10 +774,6 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 		Ready: ready,
 	}
 
-	if c.core == nil {
-		return connect.NewResponse(res), nil
-	}
-
 	peerStatuses := c.core.peerStatus.Values()
 	sort.Slice(peerStatuses, func(i, j int) bool {
 		return peerStatuses[i].CometAddress < peerStatuses[j].CometAddress
@@ -791,7 +803,7 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 	mempoolCacheState, _ := c.core.cache.mempoolCacheState.Get(ProcessStateMempoolCache)
 
 	// data companion state
-	if c.core != nil && c.core.rpc != nil {
+	if c.core.rpc != nil {
 		status, err := c.core.rpc.Status(ctx)
 		if err == nil {
 			pruningInfo.EarliestHeight = status.SyncInfo.EarliestBlockHeight
@@ -1520,4 +1532,15 @@ func (c *CoreService) authenticateProgrammaticRewardClaim(
 	}
 
 	return nil
+}
+
+func ReadyCheckInterceptor(c *CoreService) connect.UnaryInterceptorFunc {
+	return func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			if !c.IsReady() {
+				return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("service not ready"))
+			}
+			return next(ctx, req)
+		}
+	}
 }
