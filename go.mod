@@ -114,6 +114,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/dgraph-io/badger/v4 v4.5.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.0.0 // indirect
+	github.com/docker/docker v28.0.1+incompatible // indirect
 	github.com/dolthub/maphash v0.1.0 // indirect
 	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/ethereum/c-kzg-4844 v1.0.0 // indirect

@@ -348,7 +348,7 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 
 // checks signature from discovery node
 // used for cidstream endpoint + gated content and audio analysis post endpoints
-// based on: https://github.com/AudiusProject/audius-protocol/blob/main/creator-node/src/middlewares/contentAccess/contentAccessMiddleware.ts
+// based on: https://github.com/AudiusProject/apps/blob/main/creator-node/src/middlewares/contentAccess/contentAccessMiddleware.ts
 func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		cid := c.Param("cid")

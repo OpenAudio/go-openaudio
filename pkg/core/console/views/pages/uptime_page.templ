@@ -49,9 +49,7 @@ type SlaReport struct {
 const (
     slaMeetsThreshold = 0.8
     slaMissThreshold = 0.4
-    slaGreen = "#9ef19e"
-    slaRed = "#f5bbbb"
-    slaDead = "#442222"
+    slaRed = "#f9344c"
     slaExempt = "#a9a9a9"
 )
 
@@ -68,6 +66,22 @@ func strippedEndpoint(endpoint string) string {
     res = strings.TrimPrefix(res, "http://")
     return res
 }
+
+func getSlaBarClassFromStatus(status SlaStatus) templ.CSSClass {
+    switch status {
+    case SlaDead:
+        return slaBarDeadClass()
+    case SlaPartial:
+        return slaBarPartialClass()
+    case SlaExempt:
+        return slaBarExemptClass()
+    case SlaMet:
+        return slaBarMetClass()
+    default:
+        return templ.Class("")
+    }
+}
+
 
 func getSlaClassFromStatus(status SlaStatus) templ.CSSClass {
     switch status {
@@ -93,6 +107,24 @@ func getPoSSlaClass(report *SlaReport) templ.CSSClass {
 }
 
 
+css slaBarMetClass() {
+}
+
+css slaBarPartialClass() {
+}
+
+css slaBarMissClass() {
+    background-color: { templ.SafeCSSProperty(slaRed) };
+}
+
+css slaBarDeadClass() {
+    background-color: { templ.SafeCSSProperty(slaRed) };
+}
+
+css slaBarExemptClass() {
+    background-color: { templ.SafeCSSProperty(slaExempt) };
+}
+
 css slaMetClass() {
 }
 
@@ -100,11 +132,11 @@ css slaPartialClass() {
 }
 
 css slaMissClass() {
-    background-color: { templ.SafeCSSProperty(slaRed) };
+    color: { templ.SafeCSSProperty(slaRed) };
 }
 
 css slaDeadClass() {
-    background-color: { templ.SafeCSSProperty(slaRed) };
+    color: { templ.SafeCSSProperty(slaRed) };
 }
 
 css slaExemptClass() {
@@ -120,7 +152,7 @@ templ staticUptimeStyles() {
             display: inline-block;
             margin: 3px;
             border-radius: 0.5rem;
-            background-color: #9ef19e;
+            background-color: #15d864;
         }
 
         .slaBarMini {
@@ -130,7 +162,7 @@ templ staticUptimeStyles() {
             margin: 1px;
             border-radius: 0.5rem;
             vertical-align: middle;
-            background-color: #9ef19e;
+            background-color: #15d864;
         }
 
 
@@ -141,7 +173,7 @@ templ staticUptimeStyles() {
         }
 
         .activeSlaBar {
-            border: #666666 solid 2px;
+            border: #fff solid 1px;
         }
 
         table.validatorReports tr {
@@ -193,7 +225,7 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
 
             <ul class="m-2">
                 for _, r := range props.ActiveEndpoint.SlaReports {
-                    <li class={ "slaBar", templ.KV("activeSlaBar", props.ActiveEndpoint.ActiveReport.BlockEnd == r.BlockEnd), getSlaClassFromStatus(r.Status) }>
+                    <li class={ "slaBar", templ.KV("activeSlaBar", props.ActiveEndpoint.ActiveReport.BlockEnd == r.BlockEnd), getSlaBarClassFromStatus(r.Status) }>
                         <a class="reportLink" href={ templ.URL(fmt.Sprintf("/console/uptime/%d/%s", r.BlockEnd, strippedEndpoint(props.ActiveEndpoint.Endpoint))) }></a>
                         <span class="slaBarTooltip">{ r.Time.Format("06-01-02 15:04:05 MST") }</span>
                     </li>
@@ -205,7 +237,7 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
             </h2>
 
             <div class="flex flex-row text-center p-2">
-                <div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
+                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
                     <dt class="text-lg">
                         { props.ActiveEndpoint.ActiveReport.Time.Format("06-01-02") }
                         <br />
@@ -214,29 +246,29 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                     <dd class="text-sm">Date Finalized</dd>
                 </div>
 
-                <div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
+                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
                     <dt class="text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlockStart) }</dt>
                     <dd class="text-sm">Start Block</dd>
                 </div>
 
-                <div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
+                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
                     <dt class="text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlockEnd) }</dt>
                     <dd class="text-sm">End Block</dd>
                 </div>
 
-                <div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
+                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
                     <dt class="text-4xl">{ fmt.Sprintf("%.1fs", float64(props.AvgBlockTimeMs)/1000.0) }</dt>
                     <dd class="text-sm">Avg Block Time</dd>
                 </div>
             </div>
 
             <div class="flex flex-row text-center p-2">
-                <div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
+                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
                     <dt class="text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.Quota) }</dt>
                     <dd class="text-sm">Block Quota</dd>
                 </div>
 
-                <div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", getSlaClassFromStatus(props.ActiveEndpoint.ActiveReport.Status) }>
+                <div class={ "basis-1/4 rounded-md bg-secondary py-8 mx-1", getSlaClassFromStatus(props.ActiveEndpoint.ActiveReport.Status) }>
                     if props.ActiveEndpoint.ActiveReport.Status == SlaExempt {
                         <dt class="text-4xl">N/A</dt>
                     } else {
@@ -245,12 +277,12 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                     <dd class="text-sm">Blocks Proposed</dd>
                 </div>
 
-                <div class="basis-1/4 rounded-md bg-slate-100 py-8 mx-1">
+                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
                     <dt class="text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.PoSChallengesTotal) }</dt>
                     <dd class="text-sm">Challenges Received</dd>
                 </div>
 
-                <div class={ "basis-1/4 rounded-md bg-slate-100 py-8 mx-1", templ.KV(slaMissClass(), props.ActiveEndpoint.IsEthRegistered && !meetsPoSSla(props.ActiveEndpoint.ActiveReport)) }>
+                <div class={ "basis-1/4 rounded-md bg-secondary py-8 mx-1", templ.KV(slaMissClass(), props.ActiveEndpoint.IsEthRegistered && !meetsPoSSla(props.ActiveEndpoint.ActiveReport)) }>
                     <a href={ 
                         templ.URL(
                             fmt.Sprintf(
@@ -271,29 +303,31 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                 </div>
             </div>
 
-            <table class="bg-slate-50 p-2 rounded validatorReports text-left m-4">
+            <table class="bg-tertiary p-2 rounded validatorReports text-left m-4">
                 <colgroup>
                     <col />
-                    <col class="bg-white" />
+                    <col class="bg-primary" />
                     <col />
-                    <col class="bg-white" />
+                    <col class="bg-primary" />
                     <col />
                 </colgroup>
-                <tr>
-                    <th>Validator</th>
-                    <th>Blocks Proposed</th>
-                    <th colspan="2" class="text-center">
-                        Proof of Storage Challenges
-                        <div class="flex flex-row text-left">
-                            <div class="basis-1/2">Received</div>
-                            <div class="basis-1/2">Failed</div>
-                        </div>
-                    </th>
-                    <th>History</th>
-                </tr>
-                for _, ep := range props.Endpoints {
-                    @validatorRowReport(ep)
-                }
+                <tbody class="divide-gray-800">
+                    <tr>
+                        <th>Validator</th>
+                        <th>Blocks Proposed</th>
+                        <th colspan="2" class="text-center">
+                            Proof of Storage Challenges
+                            <div class="flex flex-row text-left">
+                                <div class="basis-1/2">Received</div>
+                                <div class="basis-1/2">Failed</div>
+                            </div>
+                        </th>
+                        <th>History</th>
+                    </tr>
+                    for _, ep := range props.Endpoints {
+                        @validatorRowReport(ep)
+                    }
+                </tbody>
             </table>
         }
 	}
@@ -314,7 +348,7 @@ templ validatorRowReport(ep *Endpoint) {
         <td class={ getPoSSlaClass(ep.ActiveReport) }>
             { fmt.Sprintf("%d", ep.ActiveReport.PoSChallengesFailed) }
         </td>
-        <td class="bg-white">
+        <td>
             for i := max(0, len(ep.SlaReports) - 6); i < len(ep.SlaReports); i++ {
                 @validatorMiniHistory(ep.SlaReports[i], ep.Endpoint)
             }
@@ -323,7 +357,7 @@ templ validatorRowReport(ep *Endpoint) {
 }
 
 templ validatorMiniHistory(report *SlaReport, endpoint string) {
-    <li class={ "slaBarMini", getSlaClassFromStatus(report.Status) }>
+    <li class={ "slaBarMini", getSlaBarClassFromStatus(report.Status) }>
         <a class="reportLink" href={ templ.URL(fmt.Sprintf("/console/uptime/%d/%s", report.BlockEnd, strippedEndpoint(endpoint))) }></a>
     </li>
 }

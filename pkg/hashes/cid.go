@@ -7,9 +7,6 @@ import (
 	"github.com/multiformats/go-multihash"
 )
 
-// copy pasted from
-// https://github.com/AudiusProject/audius-protocol/blob/main/mediorum/cidutil/cidutil.go#L39
-//
 // sadly we did not set up the cid builder correctly
 // so our cids use 0x00 (raw identity) instead of 0x12 (SHA2_256)
 // (see: https://github.com/multiformats/multihash)
