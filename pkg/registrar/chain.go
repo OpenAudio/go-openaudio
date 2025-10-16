@@ -40,7 +40,7 @@ func (p *ethChainProvider) Signers() ([]Peer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if os.Getenv("MEDIORUM_ENV") == "dev" {
+	if os.Getenv("OPENAUDIO_ENV") == "dev" {
 		additionalServiceProviders, err := ethcontracts.GetServiceProviderList("content-node")
 		if err != nil {
 			return nil, err

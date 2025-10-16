@@ -1,8 +1,6 @@
 # Validator Setup
 
-This guide provides migration instructions for existing nodes that are currently using `audius-docker-compose` or `audius-ctl`. If you're setting up a new node, please refer to the [New Nodes](#new-nodes) section.
-
-### Existing Content Nodes
+This guide provides migration instructions for existing nodes that are currently using `audiusd`.
 
 Create an `override.env` file.
 
@@ -40,33 +38,6 @@ docker run -d \
   -v /var/k8s/creator-node-db-15:/data/creator-node-db-15 \
   -v /var/k8s/bolt:/data/bolt \
   -v /var/k8s/mediorum:/tmp/mediorum \
-  -p 80:80 \
-  -p 443:443 \
-  -p 26656:26656 \
-  audius/openaudio:v1.0.0
-```
-
-### Existing Discovery Nodes
-
-```bash
-# /home/ubuntu/override.env
-
-audius_discprov_url=https://dn1.operator.xyz
-audius_delegate_owner_wallet=0x01234567890abcdef01234567890abcdef012345
-audius_delegate_private_key=01234567890abcdef01234567890abcdef01234567890abcdef01234567890ab
-
-# uncomment if using cloudflare proxy
-#OPENAUDIO_TLS_SELF_SIGNED=true
-```
-
-Run your node.
-
-```bash
-docker run -d \
-  --name openaudio-dn1.operator.xyz \
-  --restart unless-stopped \
-  --env-file /home/ubuntu/override.env \
-  -v /var/k8s:/data \
   -p 80:80 \
   -p 443:443 \
   -p 26656:26656 \
@@ -246,7 +217,7 @@ AUDIUS_STORAGE_DRIVER_URL=s3://<bucket-name>?endpoint=https://<provider-hostname
 **Validators**
 - Participates in consensus, block proposals, and transaction relay
 - Requires peering over port `26656`
-- Requires [registration](https://docs.audius.org/node-operator/setup/registration/)
+- Requires [registration](https://docs.openaudio.org/tutorials/run-a-node#node-registration)
 
 **Peers**
 - Does not participate in consensus, able to download blocks and serve RPC queries

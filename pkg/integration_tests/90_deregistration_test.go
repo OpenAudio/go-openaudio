@@ -68,7 +68,7 @@ func TestDeregisterNode(t *testing.T) {
 	opts, err := bind.NewKeyedTransactorWithChainID(ethKey, chainID)
 	require.NoError(t, err, "failed to create keyed transactor")
 
-	_, err = serviceProviderFactoryContract.Deregister(opts, contracts.ContentNode, contentThreeEp)
+	_, err = serviceProviderFactoryContract.Deregister(opts, contracts.Validator, contentThreeEp)
 	require.NoError(t, err, "failed to deregister node4")
 
 	time.Sleep(1 * time.Second)

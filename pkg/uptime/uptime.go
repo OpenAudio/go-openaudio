@@ -47,23 +47,8 @@ type Uptime struct {
 }
 
 func Run(ctx context.Context) error {
-	env := ""      // prod || stage
-	nodeType := "" // content || discovery
-	if os.Getenv("audius_discprov_url") != "" {
-		env = os.Getenv("audius_discprov_env")
-		nodeType = "discovery"
-	} else if os.Getenv("creatorNodeEndpoint") != "" {
-		env = os.Getenv("MEDIORUM_ENV")
-		nodeType = "content"
-	} else if os.Getenv("nodeEndpoint") != "" {
-		env = os.Getenv("MEDIORUM_ENV")
-		nodeType = "validator"
-	} else {
-		slog.Info("no envs set. sleeping forever...")
-		// block forever so container doesn't restart constantly
-		c := make(chan struct{})
-		<-c
-	}
+	env := os.Getenv("OPENAUDIO_ENV")
+	nodeType := "validator"
 	slog.Info("starting", "env", env, "nodeType", nodeType)
 
 	switch env {
@@ -325,15 +310,7 @@ func apiPath(parts ...string) string {
 
 func startStagingOrProd(isProd bool, nodeType, env string) {
 	// must have either a CN or DN endpoint configured, along with other env vars
-	myEndpoint := ""
-
-	if nodeType == "content" {
-		myEndpoint = mustGetenv("creatorNodeEndpoint")
-	} else if nodeType == "discovery" {
-		myEndpoint = mustGetenv("audius_discprov_url")
-	} else if nodeType == "validator" {
-		myEndpoint = mustGetenv("nodeEndpoint")
-	}
+	myEndpoint := mustGetenv("nodeEndpoint")
 
 	logger := slog.With("endpoint", myEndpoint)
 
@@ -347,12 +324,7 @@ func startStagingOrProd(isProd bool, nodeType, env string) {
 
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
-		switch nodeType {
-		case "content", "validator":
-			peers, err = g.Peers()
-		case "discovery":
-			peers, err = g.Signers()
-		}
+		peers, err = g.Peers()
 		return err
 	})
 	if err := eg.Wait(); err != nil {
@@ -391,12 +363,7 @@ func refreshPeersAndSigners(ph *Uptime, g registrar.PeerProvider, nodeType strin
 
 		eg := new(errgroup.Group)
 		eg.Go(func() error {
-			switch nodeType {
-			case "content":
-				peers, err = g.Peers()
-			case "discovery":
-				peers, err = g.Signers()
-			}
+			peers, err = g.Peers()
 			return err
 		})
 		if err := eg.Wait(); err != nil {

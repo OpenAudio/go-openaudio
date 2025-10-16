@@ -24,10 +24,10 @@ import (
 )
 
 func Run(lc *lifecycle.Lifecycle, logger *zap.Logger, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService) error {
-	mediorumEnv := os.Getenv("MEDIORUM_ENV")
-	logger.Info("starting mediorum", zap.String("MEDIORUM_ENV", mediorumEnv))
+	env := os.Getenv("OPENAUDIO_ENV")
+	logger.Info("starting mediorum", zap.String("OPENAUDIO_ENV", env))
 
-	return runMediorum(lc, logger, mediorumEnv, posChannel, storageService, core)
+	return runMediorum(lc, logger, env, posChannel, storageService, core)
 }
 
 func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService) error {
@@ -66,9 +66,6 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	logger.Info("fetched registered nodes", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)))
 
 	nodeEndpoint := os.Getenv("nodeEndpoint")
-	if nodeEndpoint == "" {
-		nodeEndpoint = os.Getenv("creatorNodeEndpoint")
-	}
 	if nodeEndpoint == "" {
 		return errors.New("missing required env variable 'nodeEndpoint'")
 	}

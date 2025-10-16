@@ -27,18 +27,13 @@ source_env_file() {
 
 source_env_file "$ENV_FILE"
 
-if [ -n "$creatorNodeEndpoint" ]; then
+if [ -d "/data/creator-node-db-15" ] && [ "$(ls -A /data/creator-node-db-15)" ]; then
+    # use existing db
     POSTGRES_DB="audius_creator_node"
     POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/creator-node-db-15}"
-elif [ -n "$nodeEndpoint" ]; then
-    POSTGRES_DB="openaudio"
-    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/openaudio-validator-db}"
-elif [ -n "$audius_discprov_url" ]; then
-    POSTGRES_DB="audius_discovery"
-    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/discovery-provider-db}"
 else
     POSTGRES_DB="${POSTGRES_DB:-openaudio}"
-    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/postgres}"
+    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/openaudio-validator-db}"
 fi
 
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
