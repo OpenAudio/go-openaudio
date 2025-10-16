@@ -125,7 +125,7 @@ func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
 		FailsPeerReachability:     ss.failsPeerReachability,
 		Signers:                   ss.Config.Signers,
 		StoreAll:                  ss.Config.StoreAll,
-		IsDbLocalhost:             ss.Config.PostgresDSN == "postgres://postgres:postgres@db:5432/audius_creator_node" || ss.Config.PostgresDSN == "postgresql://postgres:postgres@db:5432/audius_creator_node" || ss.Config.PostgresDSN == "localhost",
+		IsDbLocalhost:             isDbLocalhost(ss.Config.PostgresDSN),
 		IsDiscoveryListensEnabled: ss.Config.discoveryListensEnabled(),
 		DiskHasSpace:              ss.diskHasSpace(),
 		TranscodeQueueLength:      len(ss.transcodeWork),
@@ -164,6 +164,15 @@ func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
 		Signature: signatureHex,
 		Timestamp: time.Now(),
 	})
+}
+
+func isDbLocalhost(postgresDSN string) bool {
+	switch postgresDSN {
+	case "postgres://postgres:postgres@db:5432/audius_creator_node", "postgresql://postgres:postgres@db:5432/audius_creator_node", "postgres://postgres:postgres@db:5432/openaudio", "postgresql://postgres:postgres@db:5432/openaudio", "localhost":
+		return true
+	default:
+		return false
+	}
 }
 
 func (ss *MediorumServer) requireHealthy(next echo.HandlerFunc) echo.HandlerFunc {

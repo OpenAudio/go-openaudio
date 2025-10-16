@@ -15,15 +15,6 @@ import (
 	"github.com/cometbft/cometbft/types"
 )
 
-type NodeType = int
-
-const (
-	Discovery NodeType = iota
-	Content
-	Identity
-	Validator
-)
-
 const (
 	ModuleConsole = "console"
 	ModuleDebug   = "debug"
@@ -55,8 +46,7 @@ const (
 	StageEthRpc = "https://eth-validator.staging.audius.co"
 	DevEthRpc   = "http://eth-ganache:8545"
 
-	DiscoveryDbURL = "postgresql://postgres:postgres@localhost:5432/audius_discovery"
-	ContentDbURL   = "postgresql://postgres:postgres@localhost:5432/audius_creator_node"
+	DbURL = "postgresql://postgres:postgres@localhost:5432/openaudio"
 
 	ProdDashboardURL  = "https://dashboard.audius.org"
 	StageDashboardURL = "https://dashboard.staging.audius.org"
@@ -134,7 +124,6 @@ type Config struct {
 	GenesisFile *types.GenesisDoc
 	EthereumKey *ecdsa.PrivateKey
 	CometKey    *ed25519.PrivKey
-	NodeType    NodeType
 	Rewards     []rewards.Reward
 
 	/* Attestation Thresholds */
@@ -222,22 +211,9 @@ func ReadConfig() (*Config, error) {
 
 	cfg.EthRPCUrl = GetEthRPC()
 
-	cfg.NodeType = getNodeType()
-	var delegatePrivateKey string
-	switch cfg.NodeType {
-	case Discovery:
-		delegatePrivateKey = os.Getenv("audius_delegate_private_key")
-		cfg.NodeEndpoint = os.Getenv("audius_discprov_url")
-		cfg.PSQLConn = GetEnvWithDefault("audius_db_url", "postgresql://postgres:postgres@localhost:5432/audius_discovery")
-	case Content:
-		delegatePrivateKey = os.Getenv("delegatePrivateKey")
-		cfg.PSQLConn = GetEnvWithDefault("dbUrl", "postgresql://postgres:postgres@localhost:5432/audius_creator_node")
-		cfg.NodeEndpoint = os.Getenv("creatorNodeEndpoint")
-	case Validator:
-		delegatePrivateKey = os.Getenv("delegatePrivateKey")
-		cfg.PSQLConn = GetEnvWithDefault("dbUrl", "postgresql://postgres:postgres@localhost:5432/openaudio")
-		cfg.NodeEndpoint = os.Getenv("nodeEndpoint")
-	}
+	delegatePrivateKey := os.Getenv("delegatePrivateKey")
+	cfg.PSQLConn = GetEnvWithDefault("dbUrl", "postgresql://postgres:postgres@localhost:5432/openaudio")
+	cfg.NodeEndpoint = os.Getenv("nodeEndpoint")
 
 	ethKey, err := common.EthToEthKey(delegatePrivateKey)
 	if err != nil {
@@ -301,16 +277,6 @@ func GetEnvWithDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-func getNodeType() NodeType {
-	if os.Getenv("audius_delegate_private_key") != "" {
-		return Discovery
-	} else if os.Getenv("creatorNodeEndpoint") != "" {
-		return Content
-	} else {
-		return Validator
-	}
-}
-
 func getEnvIntWithDefault(key string, defaultValue int) int {
 	if value, exists := os.LookupEnv(key); exists {
 		val, err := strconv.Atoi(value)
@@ -323,22 +289,11 @@ func getEnvIntWithDefault(key string, defaultValue int) int {
 }
 
 func GetEthRPC() string {
-	isDiscovery := os.Getenv("audius_delegate_private_key") != ""
-	if isDiscovery {
-		return GetEnvWithDefault("audius_web3_eth_provider_url", DefaultEthRPC())
-	}
 	return GetEnvWithDefault("ethProviderUrl", DefaultEthRPC())
 }
 
 func GetDbURL() string {
-	isDiscovery := os.Getenv("audius_delegate_private_key") != ""
-	var dbUrl string
-	if isDiscovery {
-		dbUrl = GetEnvWithDefault("audius_db_url", DiscoveryDbURL)
-	} else {
-		dbUrl = GetEnvWithDefault("dbUrl", ContentDbURL)
-	}
-
+	dbUrl := GetEnvWithDefault("dbUrl", DbURL)
 	if !strings.HasSuffix(dbUrl, "?sslmode=disable") && isLocalDbUrlRegex.MatchString(dbUrl) {
 		dbUrl += "?sslmode=disable"
 	}
@@ -346,24 +301,11 @@ func GetDbURL() string {
 }
 
 func GetRegistryAddress() string {
-	return GetEnvWithDefault(
-		"ethRegistryAddress",
-		GetEnvWithDefault(
-			"audius_eth_contracts_registry",
-			DefaultRegistryAddress(),
-		),
-	)
+	return GetEnvWithDefault("ethRegistryAddress", DefaultRegistryAddress())
 }
 
 func GetRuntimeEnvironment() string {
-	var env string
-	isDiscovery := os.Getenv("audius_delegate_private_key") != ""
-	if isDiscovery {
-		env = os.Getenv("audius_discprov_env")
-	} else {
-		env = os.Getenv("MEDIORUM_ENV")
-	}
-	return env
+	return GetEnvWithDefault("OPENAUDIO_ENV", "prod")
 }
 
 func GetLogLevel() string {

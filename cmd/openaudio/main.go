@@ -215,46 +215,23 @@ func runWithRecover(name string, ctx context.Context, logger *zap.Logger, f func
 }
 
 func setupHostUrl() *url.URL {
-	endpoints := []string{
-		os.Getenv("nodeEndpoint"),
-		os.Getenv("creatorNodeEndpoint"),
-		os.Getenv("audius_discprov_url"),
+	if u, err := url.Parse(os.Getenv("nodeEndpoint")); err != nil {
+		return &url.URL{Scheme: "http", Host: "localhost"}
+	} else {
+		return u
 	}
-
-	for _, ep := range endpoints {
-		if ep != "" {
-			if u, err := url.Parse(ep); err == nil {
-				return u
-			}
-		}
-	}
-	return &url.URL{Scheme: "http", Host: "localhost"}
 }
 
 func setupDelegateKeyPair(logger *zap.Logger) {
-	// Various applications across the protocol stack switch on these env var semantics
-	// Check both discovery and content env vars
-	// If neither discovery nor content node, (i.e. an audiusd rpc)
-	// generate new keys and set as an implied "content node"
-	audius_delegate_private_key := os.Getenv("audius_delegate_private_key")
-	audius_delegate_owner_wallet := os.Getenv("audius_delegate_owner_wallet")
 	delegatePrivateKey := os.Getenv("delegatePrivateKey")
-	delegateOwnerWallet := os.Getenv("delegateOwnerWallet")
-
-	if audius_delegate_private_key != "" || audius_delegate_owner_wallet != "" {
-		logger.Info("setupDelegateKeyPair: Node is discovery type")
-		return
-	}
-
-	if delegatePrivateKey != "" || delegateOwnerWallet != "" {
-		logger.Info("setupDelegateKeyPair: Node is content type")
+	if delegatePrivateKey != "" {
 		return
 	}
 
 	privKey, ownerWallet := keyGen()
 	os.Setenv("delegatePrivateKey", privKey)
 	os.Setenv("delegateOwnerWallet", ownerWallet)
-	logger.Info("Generated and set delegate key pair for implied content node", zap.String("ownerWallet", ownerWallet))
+	logger.Info("Generated and set delegate key pair", zap.String("ownerWallet", ownerWallet))
 }
 
 func getEchoServerConfig(hostUrl *url.URL) serverConfig {
@@ -818,13 +795,10 @@ func isStorageEnabled() bool {
 	if isCoreOnly() {
 		return false
 	}
-	if os.Getenv("audius_discprov_url") != "" {
+	if os.Getenv("OPENAUDIO_STORAGE_ENABLED") == "false" {
 		return false
 	}
-	if os.Getenv("OPENAUDIO_STORAGE_ENABLED") == "true" {
-		return true
-	}
-	return os.Getenv("creatorNodeEndpoint") != "" || os.Getenv("nodeEndpoint") != ""
+	return true
 }
 
 func keyGen() (string, string) {

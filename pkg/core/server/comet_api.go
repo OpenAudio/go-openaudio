@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AudiusProject/audiusd/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"

@@ -16,7 +16,6 @@ import (
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
-	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/eth/contracts"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"go.uber.org/zap"
@@ -264,11 +263,7 @@ func (s *Server) registerSelfOnComet(ctx context.Context, delegateOwnerWallet ge
 		return errors.New("not in genesis and no peers, retrying to register on comet later")
 	}
 
-	serviceType, err := serviceType(s.config.NodeType)
-	if err != nil {
-		return fmt.Errorf("invalid node type: %v", err)
-	}
-
+	serviceType := contracts.Validator
 	addrs, err := s.db.GetAllEthAddressesOfRegisteredNodes(ctx)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("failed to get all registered nodes: %v", err)
@@ -421,22 +416,13 @@ func (s *Server) registerSelfOnEth(ctx context.Context) error {
 			if connectErr.Code() == connect.CodeNotFound {
 				keyBytes := crypto.FromECDSA(s.config.EthereumKey)
 				keyHex := hex.EncodeToString(keyBytes)
-				var st string
-				switch s.config.NodeType {
-				case config.Discovery:
-					st = "discovery-node"
-				case config.Content:
-					st = "content-node"
-				default:
-					st = "validator"
-				}
 
 				if _, err := s.eth.Register(
 					ctx,
 					connect.NewRequest(&ethv1.RegisterRequest{
 						DelegateKey: keyHex,
 						Endpoint:    s.config.NodeEndpoint,
-						ServiceType: st,
+						ServiceType: "validator",
 					}),
 				); err != nil {
 					s.logger.Error("could not register on eth", zap.Error(err))
@@ -552,16 +538,4 @@ func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 	}
 
 	s.logger.Info("deregistered validator", zap.String("endpoint", s.config.NodeEndpoint), zap.String("receipt", txhash.Msg.Transaction.Hash))
-}
-
-func serviceType(nt config.NodeType) ([32]byte, error) {
-	switch nt {
-	case config.Discovery:
-		return contracts.DiscoveryNode, nil
-	case config.Content:
-		return contracts.ContentNode, nil
-	case config.Validator:
-		return contracts.Validator, nil
-	}
-	return [32]byte{}, fmt.Errorf("node type provided not valid: %v", nt)
 }
