@@ -1,4 +1,4 @@
 {
-  "version": "0.7.112",
-  "service": "content-node"
+  "version": "1.0.0",
+  "service": "validator"
 }
