@@ -340,6 +340,7 @@ func (ac *AudiusContracts) GetRegisteredNode(ctx context.Context, id *big.Int, n
 }
 
 func (ac *AudiusContracts) GetAllRegisteredNodes(ctx context.Context) ([]*Node, error) {
+	mu := sync.Mutex{}
 	nodes := []*Node{}
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -349,6 +350,8 @@ func (ac *AudiusContracts) GetAllRegisteredNodes(ctx context.Context) ([]*Node, 
 		if err != nil {
 			return err
 		}
+		mu.Lock()
+		defer mu.Unlock()
 		nodes = append(nodes, discoveryNodes...)
 		return nil
 	})
@@ -358,7 +361,20 @@ func (ac *AudiusContracts) GetAllRegisteredNodes(ctx context.Context) ([]*Node, 
 		if err != nil {
 			return err
 		}
+		mu.Lock()
+		defer mu.Unlock()
 		nodes = append(nodes, contentNodes...)
+		return nil
+	})
+
+	g.Go(func() error {
+		validators, err := ac.GetAllRegisteredNodesForType(ctx, Validator)
+		if err != nil {
+			return err
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		nodes = append(nodes, validators...)
 		return nil
 	})
 
