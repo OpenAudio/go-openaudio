@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1500,6 +1501,46 @@ func (c *CoreService) GetSlashAttestations(ctx context.Context, req *connect.Req
 	}
 	return connect.NewResponse(&v1.GetSlashAttestationsResponse{
 		Attestations: attestationResponses,
+	}), nil
+}
+
+// GetRewardSenderAttestation implements v1connect.CoreServiceHandler.
+func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
+	address := req.Msg.Address
+	if address == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is required"))
+	}
+
+	rewardsManagerPubkey := req.Msg.RewardsManagerPubkey
+	if rewardsManagerPubkey == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
+	}
+
+	validators, err := c.core.db.GetAllEthAddressesOfRegisteredNodes(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("error finding validators: %w", err))
+	}
+
+	notValidator := !slices.ContainsFunc(validators, func(validator string) bool {
+		return strings.EqualFold(validator, address)
+	})
+
+	if notValidator {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address not a validator"))
+	}
+
+	owner, attestation, err := rewards.GetCreateSenderAttestation(c.core.config.EthereumKey, &rewards.CreateSenderAttestationParams{
+		NewSenderAddress:            address,
+		RewardsManagerAccountPubKey: rewardsManagerPubkey,
+	})
+
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("could not create attestation"))
+	}
+
+	return connect.NewResponse(&v1.GetRewardSenderAttestationResponse{
+		Owner:       owner,
+		Attestation: attestation,
 	}), nil
 }
 

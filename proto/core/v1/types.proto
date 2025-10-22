@@ -610,3 +610,13 @@ message GetUploadByCIDResponse {
   string original_cid = 3;
   string transcoded_cid = 4;
 }
+
+message GetRewardSenderAttestationRequest {
+  string address = 1;
+  string rewards_manager_pubkey = 2;
+}
+
+message GetRewardSenderAttestationResponse {
+  string owner = 1;
+  string attestation = 2;
+}
