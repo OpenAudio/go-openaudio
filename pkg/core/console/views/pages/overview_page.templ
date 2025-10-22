@@ -582,7 +582,7 @@ templ (p *Pages) OverviewPage(status *v1.GetStatusResponse) {
 												<th class="px-2 py-1 text-left text-xs font-medium">Chain ID</th>
 											</tr>
 										</thead>
-										<tbody class="bg-white divide-y divide-gray-800">
+										<tbody class="divide-y divide-gray-800">
 											for _, snapshot := range status.SnapshotInfo.Snapshots {
 												<tr>
 													<td class="px-2 py-1 text-xs">{ fmt.Sprintf("%d", snapshot.Height) }</td>
