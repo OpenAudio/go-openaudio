@@ -30,10 +30,9 @@ source_env_file "$ENV_FILE"
 if [ -d "/data/creator-node-db-15" ] && [ "$(ls -A /data/creator-node-db-15)" ]; then
     # use existing db
     POSTGRES_DB="audius_creator_node"
-    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/creator-node-db-15}"
+    POSTGRES_DATA_DIR="/data/creator-node-db-15"
 else
     POSTGRES_DB="${POSTGRES_DB:-openaudio}"
-    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/openaudio-validator-db}"
 fi
 
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
