@@ -1664,7 +1664,7 @@ func (p *Pages) OverviewPage(status *v1.GetStatusResponse) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 164, "</div><div class=\"overflow-x-auto\"><table class=\"min-w-full text-xs text-tertiary\"><thead class=\"bg-secondary\"><tr><th class=\"px-2 py-1 text-left text-xs font-medium\">Height</th><th class=\"px-2 py-1 text-left text-xs font-medium\">Hash</th><th class=\"px-2 py-1 text-left text-xs font-medium\">Chunks</th><th class=\"px-2 py-1 text-left text-xs font-medium\">Chain ID</th></tr></thead> <tbody class=\"bg-white divide-y divide-gray-800\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 164, "</div><div class=\"overflow-x-auto\"><table class=\"min-w-full text-xs text-tertiary\"><thead class=\"bg-secondary\"><tr><th class=\"px-2 py-1 text-left text-xs font-medium\">Height</th><th class=\"px-2 py-1 text-left text-xs font-medium\">Hash</th><th class=\"px-2 py-1 text-left text-xs font-medium\">Chunks</th><th class=\"px-2 py-1 text-left text-xs font-medium\">Chain ID</th></tr></thead> <tbody class=\"divide-y divide-gray-800\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
