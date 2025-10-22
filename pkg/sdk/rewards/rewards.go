@@ -9,6 +9,7 @@ import (
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
+	pkgrewards "github.com/OpenAudio/go-openaudio/pkg/rewards"
 )
 
 type Rewards struct {
@@ -113,21 +114,22 @@ func (r *Rewards) GetRewards(ctx context.Context, claim_authority string) (*v1.G
 }
 
 func (r *Rewards) GetRewardAttestation(ctx context.Context, req *v1.GetRewardAttestationRequest) (*v1.GetRewardAttestationResponse, error) {
-	sigData := &v1.RewardAttestationSignature{
-		EthRecipientAddress: req.EthRecipientAddress,
+	// Create a RewardClaim to compile the data in the correct format
+	claim := pkgrewards.RewardClaim{
+		RecipientEthAddress: req.EthRecipientAddress,
 		Amount:              req.Amount,
-		RewardAddress:       req.RewardAddress,
-		RewardId:            req.RewardId,
+		RewardID:            req.RewardId,
 		Specifier:           req.Specifier,
-		ClaimAuthority:      req.ClaimAuthority,
+		ClaimAuthority:      req.ClaimAuthority, // Use claim authority as oracle
 	}
 
-	sig, err := common.ProtoSign(r.privKey, sigData)
+	// Use the utility function to sign the claim
+	signature, err := pkgrewards.SignClaim(claim, r.privKey)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Signature = sig
+	req.Signature = signature
 
 	connectReq := connect.NewRequest(req)
 	resp, err := r.core.GetRewardAttestation(ctx, connectReq)

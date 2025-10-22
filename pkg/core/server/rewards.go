@@ -53,11 +53,11 @@ func (s *Server) getRewardAttestation(c echo.Context) error {
 	}
 
 	claim := rewards.RewardClaim{
-		RecipientEthAddress:       ethRecipientAddress,
-		Amount:                    amountUint,
-		RewardID:                  rewardID,
-		Specifier:                 specifier,
-		AntiAbuseOracleEthAddress: oracleAddress,
+		RecipientEthAddress: ethRecipientAddress,
+		Amount:              amountUint,
+		RewardID:            rewardID,
+		Specifier:           specifier,
+		ClaimAuthority:      oracleAddress,
 	}
 
 	err = s.rewards.Validate(claim)

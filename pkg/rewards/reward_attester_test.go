@@ -24,48 +24,48 @@ var (
 func TestValidate(t *testing.T) {
 	attester := rewards.NewRewardAttester(nil, TestRewards)
 	claim := rewards.RewardClaim{
-		RewardID:                  "xxx",
-		Specifier:                 "b9256e3:202515",
-		Amount:                    uint64(1),
-		RecipientEthAddress:       "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
-		AntiAbuseOracleEthAddress: "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
+		RewardID:            "xxx",
+		Specifier:           "b9256e3:202515",
+		Amount:              uint64(1),
+		RecipientEthAddress: "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
+		ClaimAuthority:      "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
 	}
 	err := attester.Validate((claim))
 	require.Error(t, err, "should error if challenge ID isn't configured")
 
 	claim = rewards.RewardClaim{
-		RewardID:                  "c",
-		Amount:                    uint64(1),
-		RecipientEthAddress:       "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
-		AntiAbuseOracleEthAddress: "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
+		RewardID:            "c",
+		Amount:              uint64(1),
+		RecipientEthAddress: "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
+		ClaimAuthority:      "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
 	}
 	err = attester.Validate((claim))
 	require.Error(t, err, "should error if specifier is missing")
 
 	claim = rewards.RewardClaim{
-		RewardID:                  "c",
-		Specifier:                 "b9256e3:202515",
-		RecipientEthAddress:       "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
-		AntiAbuseOracleEthAddress: "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
+		RewardID:            "c",
+		Specifier:           "b9256e3:202515",
+		RecipientEthAddress: "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
+		ClaimAuthority:      "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
 	}
 	err = attester.Validate((claim))
 	require.Error(t, err, "should error if amount is missing")
 
 	claim = rewards.RewardClaim{
-		RewardID:                  "c",
-		Specifier:                 "b9256e3:202515",
-		Amount:                    uint64(10000),
-		AntiAbuseOracleEthAddress: "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
+		RewardID:       "c",
+		Specifier:      "b9256e3:202515",
+		Amount:         uint64(10000),
+		ClaimAuthority: "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
 	}
 	err = attester.Validate(claim)
 	require.Error(t, err, "should error if recipient eth address is missing")
 
 	claim = rewards.RewardClaim{
-		RewardID:                  "c",
-		Specifier:                 "b9256e3:202515",
-		Amount:                    uint64(10000),
-		RecipientEthAddress:       "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
-		AntiAbuseOracleEthAddress: "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
+		RewardID:            "c",
+		Specifier:           "b9256e3:202515",
+		Amount:              uint64(10000),
+		RecipientEthAddress: "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
+		ClaimAuthority:      "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
 	}
 	err = attester.Validate(claim)
 	require.Error(t, err, "should error if amount doesn't match config")
@@ -73,11 +73,11 @@ func TestValidate(t *testing.T) {
 
 func TestAuthenticate(t *testing.T) {
 	claim := rewards.RewardClaim{
-		RewardID:                  "c",
-		Specifier:                 "b9256e3:202515",
-		Amount:                    uint64(1),
-		RecipientEthAddress:       "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
-		AntiAbuseOracleEthAddress: "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
+		RewardID:            "c",
+		Specifier:           "b9256e3:202515",
+		Amount:              uint64(1),
+		RecipientEthAddress: "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
+		ClaimAuthority:      "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
 	}
 	signature := "0x661327f5968ac95063dff94dcedbcfcf8dd464461aceffba5071dcf05b3287dc3dd69d86ba3b8776ad4b7e2116c71e148938a539403975ae8439b2acdd93348901"
 
@@ -113,11 +113,11 @@ func TestAttest(t *testing.T) {
 	attester := rewards.NewRewardAttester(privKey, TestRewards)
 
 	claim := rewards.RewardClaim{
-		RewardID:                  "c",
-		Specifier:                 "b9256e3:202515",
-		Amount:                    uint64(1),
-		RecipientEthAddress:       "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
-		AntiAbuseOracleEthAddress: "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
+		RewardID:            "c",
+		Specifier:           "b9256e3:202515",
+		Amount:              uint64(1),
+		RecipientEthAddress: "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
+		ClaimAuthority:      "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
 	}
 	message, signature, err := attester.Attest(claim)
 
