@@ -48,12 +48,12 @@ templ (c *Pages) PoSPageHTML(props *PoSPageView) {
         <h3 class="text-sm text-gray-400 px-3">
             Blocks: { fmt.Sprintf("%d - %d", props.BlockStart, props.BlockEnd) }
         </h3>
-        <table class="bg-slate-50 p-2 rounded posReports text-left m-4">
+        <table class="p-2 rounded posReports text-left m-4">
             <colgroup>
                 <col />
-                <col class="bg-white" />
+                <col class="bg-tertiary" />
                 <col />
-                <col class="bg-white" />
+                <col class="bg-tertiary" />
             </colgroup>
             <tr>
                 <th>Challenge Block</th>

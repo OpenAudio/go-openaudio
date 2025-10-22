@@ -119,7 +119,7 @@ func (c *Pages) PoSPageHTML(props *PoSPageView) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</h3><table class=\"bg-slate-50 p-2 rounded posReports text-left m-4\"><colgroup><col> <col class=\"bg-white\"> <col> <col class=\"bg-white\"></colgroup><tr><th>Challenge Block</th><th>Prover</th><th>Status</th><th>CID</th></tr>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</h3><table class=\"p-2 rounded posReports text-left m-4\"><colgroup><col> <col class=\"bg-tertiary\"> <col> <col class=\"bg-tertiary\"></colgroup><tr><th>Challenge Block</th><th>Prover</th><th>Status</th><th>CID</th></tr>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
