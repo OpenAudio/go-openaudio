@@ -15,16 +15,6 @@ import (
 	"github.com/cometbft/cometbft/types"
 )
 
-const (
-	ModuleConsole = "console"
-	ModuleDebug   = "debug"
-	ModulePprof   = "pprof"
-	ModuleComet   = "comet"
-	ModuleGraphQL = "graphql"
-)
-
-var defaultModules = []string{ModuleConsole, ModuleDebug, ModulePprof, ModuleComet, ModuleGraphQL}
-
 type RollupInterval struct {
 	BlockInterval int
 }
@@ -60,8 +50,8 @@ const (
 )
 
 const (
-	ProdStateSyncRpcs  = "creatornode.audius.co,creatornode2.audius.co"
-	StageStateSyncRpcs = "creatornode11.audius.co,creatornode5.audius.co"
+	ProdStateSyncRpcs  = "https://creatornode.audius.co,https://creatornode2.audius.co"
+	StageStateSyncRpcs = "https://creatornode11.audius.co,https://creatornode5.audius.co"
 )
 
 const (

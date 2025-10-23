@@ -98,30 +98,14 @@ func (rs *RewardAttester) getRewardById(rewardID string) (*Reward, error) {
 }
 
 func recoverSigner(claim RewardClaim, signature string) (string, error) {
-	claimData, err := claim.Compile()
-	if err != nil {
-		return "", fmt.Errorf("failed to get attestation bytes: %w", err)
-	}
-
-	// Remove any existing 0x prefix
-	sigHex := strings.TrimPrefix(signature, "0x")
-	sigBytes, err := hex.DecodeString(sigHex)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode signature: %w", err)
-	}
-
-	hash := crypto.Keccak256(claimData)
-	recoveredWallet, err := crypto.SigToPub(hash[:], sigBytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to recover wallet from signature: %w", err)
-	}
-
-	return crypto.PubkeyToAddress(*recoveredWallet).String(), nil
+	// Use the VerifyClaim utility function
+	return VerifyClaim(claim, signature)
 }
 
 func validClaimAuthority(claimAuthorities []ClaimAuthority, address string) bool {
 	for _, authority := range claimAuthorities {
-		if authority.Address == address {
+		// Case-insensitive comparison for Ethereum addresses
+		if strings.EqualFold(authority.Address, address) {
 			return true
 		}
 	}

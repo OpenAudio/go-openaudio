@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	storagev1connect "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
+	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
@@ -877,48 +879,57 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 	}
 
 	// Get programmatic reward by deployed address
-	reward, err := c.core.db.GetReward(ctx, rewardAddress)
+	dbReward, err := c.core.db.GetReward(ctx, rewardAddress)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("programmatic reward not found"))
 	}
 
-	sigData := &v1.RewardAttestationSignature{
-		EthRecipientAddress: req.Msg.EthRecipientAddress,
-		Amount:              req.Msg.Amount,
-		RewardAddress:       req.Msg.RewardAddress,
-		RewardId:            req.Msg.RewardId,
-		Specifier:           req.Msg.Specifier,
-		ClaimAuthority:      req.Msg.ClaimAuthority,
-	}
-
-	signer, err := common.ProtoRecover(sigData, req.Msg.Signature)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("signature recovery failure"))
-	}
-
-	// Verify claim authority is authorized to sign for this reward
-	authorized := false
-	for _, ca := range reward.ClaimAuthorities {
-		if strings.EqualFold(ca, signer) {
-			authorized = true
-			break
+	// Convert DB reward to rewards package format
+	claimAuthorities := make([]rewards.ClaimAuthority, len(dbReward.ClaimAuthorities))
+	for i, ca := range dbReward.ClaimAuthorities {
+		claimAuthorities[i] = rewards.ClaimAuthority{
+			Address: ca,
+			Name:    "", // Name not stored in DB
 		}
 	}
-	if !authorized {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("claim authority not authorized for this programmatic reward"))
+
+	reward := rewards.Reward{
+		ClaimAuthorities: claimAuthorities,
+		Amount:           uint64(dbReward.Amount),
+		RewardId:         dbReward.RewardID,
+		Name:             dbReward.Name,
 	}
 
-	if !strings.EqualFold(req.Msg.GetClaimAuthority(), signer) {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("claim authority and signer mismatch"))
+	// Create claim for validation (without RewardAddress to maintain backward compatibility)
+	claim := rewards.RewardClaim{
+		RecipientEthAddress: ethRecipientAddress,
+		Amount:              amount,
+		RewardID:            req.Msg.RewardId,
+		Specifier:           specifier,
+		ClaimAuthority:      claimAuthority, // Using claimAuthority as oracle for programmatic rewards
 	}
 
-	attestation, err := common.ProtoSign(c.core.config.EthereumKey, sigData)
+	// Create a temporary RewardAttester for validation
+	attester := rewards.NewRewardAttester(c.core.config.EthereumKey, []rewards.Reward{reward})
+
+	// Validate the claim
+	if err := attester.Validate(claim); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("claim validation failed: %w", err))
+	}
+
+	// Authenticate the claim using the rewards package logic
+	if err := attester.Authenticate(claim, signature); err != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("authentication failed: %w", err))
+	}
+
+	// Generate attestation using the rewards package logic
+	_, attestation, err := attester.Attest(claim)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("error signing attestation"))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("attestation generation failed: %w", err))
 	}
 
 	res := &v1.GetRewardAttestationResponse{
-		Owner:       c.core.rewards.EthereumAddress,
+		Owner:       attester.EthereumAddress,
 		Attestation: attestation,
 	}
 
@@ -1493,45 +1504,44 @@ func (c *CoreService) GetSlashAttestations(ctx context.Context, req *connect.Req
 	}), nil
 }
 
-// authenticateProgrammaticRewardClaim validates signatures for programmatic rewards
-// using the structured protobuf signature format to prevent cross-reward attacks
-func (c *CoreService) authenticateProgrammaticRewardClaim(
-	ethRecipientAddress string,
-	amount uint64,
-	rewardAddress string,
-	rewardID string,
-	specifier string,
-	claimAuthority string,
-	signature string,
-) error {
-	// Create the structured signature payload that claim authorities must sign
-	sigPayload := &v1.RewardAttestationSignature{
-		EthRecipientAddress: ethRecipientAddress,
-		Amount:              amount,
-		RewardAddress:       rewardAddress, // This prevents cross-reward signature reuse
-		RewardId:            rewardID,
-		Specifier:           specifier,
-		ClaimAuthority:      claimAuthority,
+// GetRewardSenderAttestation implements v1connect.CoreServiceHandler.
+func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
+	address := req.Msg.Address
+	if address == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is required"))
 	}
 
-	// Marshal the protobuf message to get the bytes that should be signed
-	sigBytes, err := proto.Marshal(sigPayload)
+	rewardsManagerPubkey := req.Msg.RewardsManagerPubkey
+	if rewardsManagerPubkey == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
+	}
+
+	validators, err := c.core.db.GetAllEthAddressesOfRegisteredNodes(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to marshal signature payload: %w", err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("error finding validators: %w", err))
 	}
 
-	// Verify the signature using the common signature verification
-	_, sender, err := common.EthRecover(signature, sigBytes)
+	notValidator := !slices.ContainsFunc(validators, func(validator string) bool {
+		return strings.EqualFold(validator, address)
+	})
+
+	if notValidator {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address not a validator"))
+	}
+
+	owner, attestation, err := rewards.GetCreateSenderAttestation(c.core.config.EthereumKey, &rewards.CreateSenderAttestationParams{
+		NewSenderAddress:            address,
+		RewardsManagerAccountPubKey: rewardsManagerPubkey,
+	})
+
 	if err != nil {
-		return fmt.Errorf("failed to recover signature: %w", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("could not create attestation"))
 	}
 
-	// Ensure the recovered address matches the claim authority address
-	if !strings.EqualFold(sender, claimAuthority) {
-		return fmt.Errorf("signature sender %s does not match claim authority %s", sender, claimAuthority)
-	}
-
-	return nil
+	return connect.NewResponse(&v1.GetRewardSenderAttestationResponse{
+		Owner:       owner,
+		Attestation: attestation,
+	}), nil
 }
 
 func ReadyCheckInterceptor(c *CoreService) connect.UnaryInterceptorFunc {

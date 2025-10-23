@@ -29,6 +29,7 @@ services:
     restart: unless-stopped
     command: bash /tmp/scripts/eth-ganache.sh
     stop_grace_period: 0s
+    pull_policy: always
     volumes:
       - ./dev/scripts/eth-ganache.sh:/tmp/scripts/eth-ganache.sh
     deploy:

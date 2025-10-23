@@ -30,10 +30,10 @@ source_env_file "$ENV_FILE"
 if [ -d "/data/creator-node-db-15" ] && [ "$(ls -A /data/creator-node-db-15)" ]; then
     # use existing db
     POSTGRES_DB="audius_creator_node"
-    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/creator-node-db-15}"
+    POSTGRES_DATA_DIR="/data/creator-node-db-15"
 else
     POSTGRES_DB="${POSTGRES_DB:-openaudio}"
-    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/openaudio-validator-db}"
+    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/postgres}"
 fi
 
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
@@ -52,10 +52,16 @@ setup_postgres() {
     chown -R postgres:postgres "$POSTGRES_DATA_DIR"
     chmod -R 700 "$POSTGRES_DATA_DIR"
 
+    # Ensure locale environment variables are set for PostgreSQL
+    export LANG=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
+    export LC_CTYPE=en_US.UTF-8
+
     # Initialize if needed
     if [ -z "$(ls -A $POSTGRES_DATA_DIR)" ] || ! [ -f "$POSTGRES_DATA_DIR/PG_VERSION" ]; then
         echo "Initializing PostgreSQL data directory at $POSTGRES_DATA_DIR..."
-        su - postgres -c "$PG_BIN/initdb -D $POSTGRES_DATA_DIR"
+        # Initialize with explicit UTF-8 encoding
+        su - postgres -c "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 $PG_BIN/initdb -D $POSTGRES_DATA_DIR --encoding=UTF8 --locale=en_US.UTF-8"
         
         # Configure authentication and logging
         sed -i "s/peer/trust/g; s/md5/trust/g" "$POSTGRES_DATA_DIR/pg_hba.conf"
@@ -86,7 +92,8 @@ setup_postgres() {
         su - postgres -c "$PG_BIN/pg_ctl -D $POSTGRES_DATA_DIR stop"
     fi
     echo "Starting PostgreSQL service..."
-    su - postgres -c "$PG_BIN/pg_ctl -D $POSTGRES_DATA_DIR start"
+    # Ensure locale is set when starting PostgreSQL
+    su - postgres -c "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 $PG_BIN/pg_ctl -D $POSTGRES_DATA_DIR start"
     until su - postgres -c "$PG_BIN/pg_isready -q"; do
         echo "Waiting for PostgreSQL to start..."
         sleep 2
