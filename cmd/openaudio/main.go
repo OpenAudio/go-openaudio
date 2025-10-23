@@ -514,6 +514,7 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 	rpcGroup.GET(corev1connect.CoreServiceGetStoredSnapshotsProcedure, connectGET(coreService.GetStoredSnapshots))
 	rpcGroup.GET(corev1connect.CoreServiceGetRewardAttestationProcedure, connectGET(coreService.GetRewardAttestation))
 	rpcGroup.GET(corev1connect.CoreServiceGetRewardsProcedure, connectGET(coreService.GetRewards))
+	rpcGroup.GET(corev1connect.CoreServiceGetRewardSenderAttestationProcedure, connectGET(coreService.GetRewardSenderAttestation))
 
 	// storage GET routes
 	rpcGroup.GET(storagev1connect.StorageServiceGetIPDataProcedure, connectGET(storageService.GetIPData))

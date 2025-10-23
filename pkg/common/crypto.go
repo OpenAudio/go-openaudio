@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/cometbft/cometbft/crypto/ed25519"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -29,6 +30,13 @@ func EthToEthKey(privKey string) (*ecdsa.PrivateKey, error) {
 		return nil, fmt.Errorf("private key is not secp256k1 curve")
 	}
 	return privateKey, nil
+}
+
+func EthPublicKeyAndAddress(priv *ecdsa.PrivateKey) (pubBytes []byte, addr common.Address) {
+	pubKey := priv.Public().(*ecdsa.PublicKey)
+	pubBytes = crypto.FromECDSAPub(pubKey)
+	addr = crypto.PubkeyToAddress(*pubKey)
+	return pubBytes, addr
 }
 
 func EthSign(pkey *ecdsa.PrivateKey, data []byte) (string, error) {
@@ -58,6 +66,36 @@ func EthRecover(signatureStr string, data []byte) (*ecdsa.PublicKey, string, err
 
 	address := crypto.PubkeyToAddress(*pubKey).Hex()
 
+	return pubKey, address, nil
+}
+
+// EthSignKeccak signs arbitrary data using Ethereum's keccak256 hash (same as Web3.keccak)
+func EthSignKeccak(pkey *ecdsa.PrivateKey, data []byte) (string, error) {
+	hash := crypto.Keccak256(data)
+	signature, err := crypto.Sign(hash, pkey)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign data with keccak256: %w", err)
+	}
+	return hex.EncodeToString(signature), nil
+}
+
+// EthRecoverKeccak recovers the public key and address from a keccak256-signed message.
+func EthRecoverKeccak(sigHex string, data []byte) (*ecdsa.PublicKey, string, error) {
+	sigBytes, err := hex.DecodeString(sigHex)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid signature hex: %w", err)
+	}
+	if len(sigBytes) != 65 {
+		return nil, "", fmt.Errorf("invalid signature length: %d", len(sigBytes))
+	}
+
+	hash := crypto.Keccak256(data)
+	pubKey, err := crypto.SigToPub(hash, sigBytes)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to recover public key: %w", err)
+	}
+
+	address := crypto.PubkeyToAddress(*pubKey).Hex()
 	return pubKey, address, nil
 }
 
