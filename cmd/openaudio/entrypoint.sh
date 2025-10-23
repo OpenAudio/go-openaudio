@@ -33,11 +33,12 @@ if [ -d "/data/creator-node-db-15" ] && [ "$(ls -A /data/creator-node-db-15)" ];
     POSTGRES_DATA_DIR="/data/creator-node-db-15"
 else
     POSTGRES_DB="${POSTGRES_DB:-openaudio}"
+    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/postgres}"
 fi
 
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"
-dbUrl="${dbUrl:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?sslmode=disable&client_encoding=UTF8}"
+dbUrl="${dbUrl:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?sslmode=disable}"
 uptimeDataDir="${uptimeDataDir:-/data/bolt}"
 audius_core_root_dir="${audius_core_root_dir:-/data/bolt}"
 
