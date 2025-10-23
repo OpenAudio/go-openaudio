@@ -172,37 +172,37 @@ func (e *EthService) Register(ctx context.Context, req *connect.Request[v1.Regis
 	ethKey, err := common.EthToEthKey(req.Msg.DelegateKey)
 	if err != nil {
 		e.logger.Debug("failed to create eth key", zap.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("registration failed: invalid delegate key"))
 	}
 
 	chainID, err := e.rpc.ChainID(ctx)
 	if err != nil {
 		e.logger.Debug("could not get chain id", zap.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("registration failed: unable to get chain ID"))
 	}
 
 	opts, err := bind.NewKeyedTransactorWithChainID(ethKey, chainID)
 	if err != nil {
 		e.logger.Debug("could not create keyed transactor", zap.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("registration failed: unable to create transaction signer"))
 	}
 
 	token, err := e.c.GetAudioTokenContract()
 	if err != nil {
 		e.logger.Debug("could not get token contract", zap.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("registration failed: unable to connect to AUDIO token contract"))
 	}
 
 	spf, err := e.c.GetServiceProviderFactoryContract()
 	if err != nil {
 		e.logger.Debug("could not get service provider factory contract", zap.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("registration failed: unable to connect to ServiceProviderFactory contract"))
 	}
 
 	stakingAddress, err := spf.GetStakingAddress(nil)
 	if err != nil {
 		e.logger.Debug("could not get staking address", zap.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("registration failed: unable to retrieve staking address"))
 	}
 
 	decimals := 18
@@ -211,20 +211,20 @@ func (e *EthService) Register(ctx context.Context, req *connect.Request[v1.Regis
 	_, err = token.Approve(opts, stakingAddress, stake)
 	if err != nil {
 		e.logger.Debug("could not approve tokens", zap.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("registration failed: token approval transaction failed"))
 	}
 
 	delegateOwnerWallet := crypto.PubkeyToAddress(ethKey.PublicKey)
 	st, err := contracts.StringToServiceType(req.Msg.ServiceType)
 	if err != nil {
 		e.logger.Debug("invalid service type", zap.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("registration failed: invalid service type specified"))
 	}
 
 	_, err = spf.Register(opts, st, req.Msg.Endpoint, stake, delegateOwnerWallet)
 	if err != nil {
 		e.logger.Debug("couldn't register node", zap.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not register endpoint"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("registration failed: registration transaction failed on-chain"))
 	}
 
 	e.logger.Info("node registered on eth", zap.String("endpoint", req.Msg.Endpoint))
