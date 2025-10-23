@@ -58,7 +58,7 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Version check passed: $JSON_VERSION"
+          echo "Version check passed: $JSON_VERSION"
 
       - name: Create tag
         run: |
