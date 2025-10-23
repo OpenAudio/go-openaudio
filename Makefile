@@ -137,7 +137,7 @@ docker-harness: docker-dev bin/openaudio-arm64-linux
 		--target harness \
 		--build-arg GIT_SHA=$(GIT_SHA) \
 		--build-arg PREBUILT_BINARY=bin/openaudio-arm64-linux \
-		-t audius/openaudio:harness \
+		-t openaudio/go-openaudio:harness \
 		-f ./cmd/openaudio/Dockerfile \
 		./
 
@@ -146,7 +146,7 @@ docker-dev: bin/openaudio-arm64-linux
 		--target dev \
 		--build-arg GIT_SHA=$(GIT_SHA) \
 		--build-arg PREBUILT_BINARY=bin/openaudio-arm64-linux \
-		-t audius/openaudio:dev \
+		-t openaudio/go-openaudio:dev \
 		-f ./cmd/openaudio/Dockerfile \
 		./
 
@@ -191,7 +191,7 @@ test: test-mediorum test-integration test-unit
 
 .PHONY: test-unit
 test-unit:
-	@if [ -z "$(openaudio_CI)" ]; then \
+	@if [ -z "$(OPENAUDIO_CI)" ]; then \
 		$(MAKE) docker-harness; \
 	fi
 	@docker compose \
@@ -203,7 +203,7 @@ test-unit:
 
 .PHONY: test-mediorum
 test-mediorum:
-	@if [ -z "$(openaudio_CI)" ]; then \
+	@if [ -z "$(OPENAUDIO_CI)" ]; then \
 		$(MAKE) docker-harness; \
 	fi
 	@docker compose \
@@ -215,7 +215,7 @@ test-mediorum:
 
 .PHONY: test-integration
 test-integration:
-	@if [ -z "$(openaudio_CI)" ]; then \
+	@if [ -z "$(OPENAUDIO_CI)" ]; then \
 		$(MAKE) docker-harness; \
 	fi
 	@docker compose \
