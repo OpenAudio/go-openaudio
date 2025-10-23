@@ -1,0 +1,40 @@
+name: Update Docker Tags
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_version:
+        description: 'Source version to tag (e.g., v1.0.0)'
+        required: true
+        type: string
+      target_tag:
+        description: 'Target tag to apply'
+        required: true
+        type: choice
+        options:
+          - stable
+          - prerelease
+          - edge
+
+jobs:
+  retag-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create and push manifests with new tag
+        run: |
+          docker buildx imagetools create \
+            -t openaudio/go-openaudio:${{ inputs.target_tag }} \
+            openaudio/go-openaudio:${{ inputs.source_version }}
+
+          echo "Successfully updated openaudio/go-openaudio:${{ inputs.target_tag }} to point to ${{ inputs.source_version }}"
+
+          
