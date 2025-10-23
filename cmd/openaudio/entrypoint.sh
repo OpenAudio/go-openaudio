@@ -33,7 +33,7 @@ if [ -d "/data/creator-node-db-15" ] && [ "$(ls -A /data/creator-node-db-15)" ];
     POSTGRES_DATA_DIR="/data/creator-node-db-15"
 else
     POSTGRES_DB="${POSTGRES_DB:-openaudio}"
-    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/postgres-15}"
+    POSTGRES_DATA_DIR="${POSTGRES_DATA_DIR:-/data/postgres}"
 fi
 
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
