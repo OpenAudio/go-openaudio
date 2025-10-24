@@ -1,17 +1,30 @@
-name: Docker Build
+name: Docker Build Test and Push
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_call:
+    inputs:
+      tag:
+        description: "Docker image tag (e.g., version or commit SHA)"
+        required: true
+        type: string
+      ref:
+        description: "Git reference to checkout (branch, tag, or SHA)"
+        required: false
+        type: string
+      push:
+        description: "Whether to push the image"
+        required: false
+        default: true
+        type: boolean
 
 jobs:
-  build-amd64:
+  build-and-test-amd64:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -37,18 +50,76 @@ jobs:
           context: .
           file: ./cmd/openaudio/Dockerfile
           platforms: linux/amd64
-          push: true
-          tags: openaudio/go-openaudio:${{ github.sha }}-amd64
+          push: ${{ inputs.push }}
+          tags: openaudio/go-openaudio:${{ inputs.tag }}-amd64
           build-args: |
             PREBUILT_BINARY=openaudio-amd64
             GIT_SHA=${{ github.sha }}
           target: prod
+
+      - name: Build ci-test base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./cmd/openaudio/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: openaudio/go-openaudio:${{ inputs.tag }}-test
+          build-args: |
+            PREBUILT_BINARY=openaudio-amd64
+            GIT_SHA=${{ github.sha }}
+          target: ci
+
+      - name: Build test harness
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./cmd/openaudio/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: openaudio/go-openaudio:${{ inputs.tag }}-harness
+          build-args: |
+            PREBUILT_BINARY=openaudio-amd64
+            GIT_SHA=${{ github.sha }}
+          target: harness
+
+      - name: Run mediorum unit tests
+        run: |
+          OPENAUDIO_CI=true \
+          OPENAUDIO_IMAGE=openaudio/go-openaudio:${{ inputs.tag }}-test \
+          OPENAUDIO_TEST_HARNESS_IMAGE=openaudio/go-openaudio:${{ inputs.tag }}-harness \
+          TTY_FLAG="--no-TTY" \
+          make test-mediorum
+
+      - name: Run unit tests
+        run: |
+          OPENAUDIO_CI=true \
+          OPENAUDIO_IMAGE=openaudio/go-openaudio:${{ inputs.tag }}-test \
+          OPENAUDIO_TEST_HARNESS_IMAGE=openaudio/go-openaudio:${{ inputs.tag }}-harness \
+          TTY_FLAG="--no-TTY" \
+          make test-unit
+
+      - name: Run integration tests
+        run: |
+          OPENAUDIO_CI=true \
+          OPENAUDIO_IMAGE=openaudio/go-openaudio:${{ inputs.tag }}-test \
+          OPENAUDIO_TEST_HARNESS_IMAGE=openaudio/go-openaudio:${{ inputs.tag }}-harness \
+          TTY_FLAG="--no-TTY" \
+          make test-integration
+
+      - name: Shutdown
+        if: always()
+        run: make test-down
 
   build-arm64:
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -74,15 +145,15 @@ jobs:
           context: .
           file: ./cmd/openaudio/Dockerfile
           platforms: linux/arm64
-          push: true
-          tags: openaudio/go-openaudio:${{ github.sha }}-arm64
+          push: ${{ inputs.push }}
+          tags: openaudio/go-openaudio:${{ inputs.tag }}-arm64
           build-args: |
             PREBUILT_BINARY=openaudio-arm64
             GIT_SHA=${{ github.sha }}
           target: prod
 
   merge-manifests:
-    needs: [build-amd64, build-arm64]
+    needs: [build-and-test-amd64, build-arm64]
     runs-on: ubuntu-latest
     steps:
       - name: Set up Docker Buildx
@@ -96,6 +167,6 @@ jobs:
 
       - name: Create and push multi-platform manifest
         run: |
-          docker buildx imagetools create -t openaudio/go-openaudio:${{ github.sha }} \
-            openaudio/go-openaudio:${{ github.sha }}-amd64 \
-            openaudio/go-openaudio:${{ github.sha }}-arm64
+          docker buildx imagetools create -t openaudio/go-openaudio:${{ inputs.tag }} \
+            openaudio/go-openaudio:${{ inputs.tag }}-amd64 \
+            openaudio/go-openaudio:${{ inputs.tag }}-arm64
