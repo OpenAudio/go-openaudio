@@ -64,6 +64,7 @@ jobs:
           file: ./cmd/openaudio/Dockerfile
           platforms: linux/amd64
           push: false
+          load: true
           tags: openaudio/go-openaudio:${{ inputs.tag }}-test
           build-args: |
             PREBUILT_BINARY=openaudio-amd64
@@ -77,6 +78,7 @@ jobs:
           file: ./cmd/openaudio/Dockerfile
           platforms: linux/amd64
           push: false
+          load: true
           tags: openaudio/go-openaudio:${{ inputs.tag }}-harness
           build-args: |
             PREBUILT_BINARY=openaudio-amd64
