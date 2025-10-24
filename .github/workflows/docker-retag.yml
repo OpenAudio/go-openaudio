@@ -12,9 +12,9 @@ on:
         required: true
         type: choice
         options:
-          - stable
           - prerelease
           - edge
+          - stable
 
 jobs:
   retag-docker:

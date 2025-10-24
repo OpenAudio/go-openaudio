@@ -1,0 +1,16 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, mainnet-alpha-beta ]
+  pull_request:
+    branches: [ main, mainnet-alpha-beta ]
+
+jobs:
+  build-test-push:
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      tag: ${{ github.sha }}
+      ref: ${{ github.ref }}
+      push: true
+    secrets: inherit
