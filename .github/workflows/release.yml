@@ -66,6 +66,7 @@ jobs:
       tag: ${{ inputs.version }}
       ref: ${{ inputs.version }}
       push: true
+    secrets: inherit
 
   publish-to-buf:
     needs: create-release
@@ -73,4 +74,3 @@ jobs:
     with:
       label: ${{ inputs.version }}
     secrets: inherit
-    

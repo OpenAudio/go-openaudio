@@ -13,3 +13,4 @@ jobs:
       tag: ${{ github.sha }}
       ref: ${{ github.ref }}
       push: true
+    secrets: inherit
