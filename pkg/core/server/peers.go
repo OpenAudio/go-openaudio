@@ -362,7 +362,6 @@ func (s *Server) refreshPeerHealth(ctx context.Context, logger *zap.Logger) erro
 	var wg sync.WaitGroup
 
 	connectPeers := s.connectRPCPeers.ToMap()
-	cometPeers := s.cometRPCPeers.ToMap()
 
 	for ethaddress, rpc := range connectPeers {
 		wg.Add(1)
