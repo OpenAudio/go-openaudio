@@ -25,7 +25,7 @@ require (
 	github.com/storyicon/sigverify v1.1.0
 	github.com/stretchr/testify v1.10.0
 	go.etcd.io/bbolt v1.4.0-alpha.0.0.20240404170359-43604f3112c5
-	gocloud.dev v0.39.0
+	gocloud.dev v0.40.0
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
 	golang.org/x/sync v0.14.0
 	google.golang.org/grpc v1.70.0
