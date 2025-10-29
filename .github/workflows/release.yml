@@ -32,6 +32,34 @@ jobs:
         with:
           ref: ${{ inputs.branch }}
 
+      - name: Verify version matches .version.json
+        run: |
+          # Read version from .version.json
+          VERSION_FILE="pkg/version/.version.json"
+          if [ ! -f "$VERSION_FILE" ]; then
+            echo "Error: $VERSION_FILE not found"
+            exit 1
+          fi
+
+          # Extract version from JSON file
+          JSON_VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$VERSION_FILE" | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+
+          # Remove 'v' prefix from input version if present for comparison
+          INPUT_VERSION="${{ inputs.version }}"
+          INPUT_VERSION_NO_V="${INPUT_VERSION#v}"
+
+          # Check if versions match (comparing without 'v' prefix)
+          if [ "$JSON_VERSION" != "$INPUT_VERSION_NO_V" ]; then
+            echo "Error: Version mismatch!"
+            echo "  Release version: $INPUT_VERSION_NO_V"
+            echo "  .version.json:   $JSON_VERSION"
+            echo ""
+            echo "Please update $VERSION_FILE to match the release version before creating a release."
+            exit 1
+          fi
+
+          echo "Version check passed: $JSON_VERSION"
+
       - name: Create tag
         run: |
           git config user.name github-actions

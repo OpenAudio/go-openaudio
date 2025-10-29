@@ -362,10 +362,9 @@ func (s *Server) refreshPeerHealth(ctx context.Context, logger *zap.Logger) erro
 	var wg sync.WaitGroup
 
 	connectPeers := s.connectRPCPeers.ToMap()
-	cometPeers := s.cometRPCPeers.ToMap()
-	wg.Add(len(connectPeers) + len(cometPeers))
 
 	for ethaddress, rpc := range connectPeers {
+		wg.Add(1)
 		go func(ethaddress EthAddress, rpc v1connect.CoreServiceClient) {
 			defer wg.Done()
 
@@ -384,30 +383,6 @@ func (s *Server) refreshPeerHealth(ctx context.Context, logger *zap.Logger) erro
 			status, exists := s.peerStatus.Get(ethaddress)
 			if exists {
 				status.ConnectrpcHealthy = (err == nil)
-				s.peerStatus.Set(ethaddress, status)
-			}
-		}(ethaddress, rpc)
-	}
-
-	for ethaddress, rpc := range cometPeers {
-		go func(ethaddress EthAddress, rpc *CometBFTRPC) {
-			defer wg.Done()
-
-			self := s.config.WalletAddress
-			if ethaddress == self {
-				return
-			}
-
-			healthCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
-			_, err := rpc.Health(healthCtx)
-			if err != nil {
-				logger.Error("connect rpc unreachable", zap.String("eth_address", ethaddress), zap.Error(err))
-			}
-
-			status, exists := s.peerStatus.Get(ethaddress)
-			if exists {
-				status.CometrpcHealthy = (err == nil)
 				s.peerStatus.Set(ethaddress, status)
 			}
 		}(ethaddress, rpc)

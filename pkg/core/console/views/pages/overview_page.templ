@@ -372,7 +372,6 @@ templ (p *Pages) OverviewNetworkFragment(status *v1.GetStatusResponse) {
 							<th class="px-4 py-2 text-left text-sm font-medium">Endpoint</th>
 							<th class="px-4 py-2 text-left text-sm font-medium">Type</th>
 							<th class="px-4 py-2 text-left text-sm font-medium">Connect RPC</th>
-							<th class="px-4 py-2 text-left text-sm font-medium">Comet RPC</th>
 							<th class="px-4 py-2 text-left text-sm font-medium">P2P</th>
 						</tr>
 					</thead>
@@ -390,18 +389,6 @@ templ (p *Pages) OverviewNetworkFragment(status *v1.GetStatusResponse) {
                                         @components.StatusGreen("Healthy")
                                         <span>&nbsp;Healthy</span>
 									} else if peer.ConnectrpcClient {
-                                        @components.StatusOrange("Connected")
-                                        <span>&nbsp;Connected</span>
-									} else {
-                                        @components.StatusRed("Disconnected")
-                                        <span>&nbsp;Disconnected</span>
-									}
-								</td>
-								<td class="px-4 py-2 text-sm">
-									if peer.CometrpcHealthy {
-                                        @components.StatusGreen("Healthy")
-                                        <span>&nbsp;Healthy</span>
-									} else if peer.CometrpcClient {
                                         @components.StatusOrange("Connected")
                                         <span>&nbsp;Connected</span>
 									} else {
