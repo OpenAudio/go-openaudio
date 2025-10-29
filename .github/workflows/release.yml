@@ -89,7 +89,7 @@ jobs:
           generate_release_notes: true
 
   build-test-push:
-    uses: ./.github/workflows/docker-build.yaml
+    uses: ./.github/workflows/docker-build.yml
     with:
       tag: ${{ inputs.version }}
       ref: ${{ inputs.version }}
