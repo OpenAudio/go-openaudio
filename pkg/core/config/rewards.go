@@ -131,6 +131,11 @@ var (
 			RewardId: "t",
 			Name:     "tastemaker",
 		},
+		{
+			Amount:   10000,
+			RewardId: "dvl",
+			Name:     "daily volume leader",
+		},
 	}
 
 	// Environment-specific reward extensions
