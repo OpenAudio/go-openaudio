@@ -89,19 +89,32 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 	s.logger.Info("got latest block", zap.Bool("ss_enabled", s.config.StateSync.Enable), zap.Bool("already_synced", alreadySynced), zap.Int("rpc_servers", len(s.config.StateSync.RPCServers)))
 
-	if s.config.StateSync.Enable && !alreadySynced && len(s.config.StateSync.RPCServers) > 1 {
-		cometConfig.StateSync.Enable = true
+	if s.config.StateSync.Enable && !alreadySynced {
 		rpcServers := s.config.StateSync.RPCServers
-		s.logger.Info("state sync enabled", zap.Any("rpcservers", rpcServers))
-		cometConfig.StateSync.RPCServers = rpcServers
+
+		// CometBFT requires at least 2 rpc servers, but we can still get away with duplicating the same one
+		if len(rpcServers) == 1 {
+			rpcServers = append(rpcServers, rpcServers[0])
+		}
+
+		// Normalize servers to point to the comet RPC endpoint
+		for i, server := range rpcServers {
+			if !strings.HasSuffix(server, "/core/crpc") {
+				rpcServers[i] = fmt.Sprintf("%s/core/crpc", server)
+			}
+		}
+
 		latestBlockHeight, latestBlockHash, err := s.stateSyncLatestBlock(rpcServers)
 		if err != nil {
-			s.logger.Error("could not get latest block for state sync", zap.Error(err))
-			return fmt.Errorf("getting latest block for state sync: %v", err)
+			s.logger.Error("skipping state sync: could not get latest block for state sync", zap.Error(err))
+		} else {
+			s.logger.Info("state sync enabled", zap.Any("rpcservers", rpcServers))
+			cometConfig.StateSync.Enable = true
+			cometConfig.StateSync.RPCServers = rpcServers
+			cometConfig.StateSync.TrustHeight = latestBlockHeight
+			cometConfig.StateSync.TrustHash = latestBlockHash
+			cometConfig.StateSync.ChunkFetchers = s.config.StateSync.ChunkFetchers
 		}
-		cometConfig.StateSync.TrustHeight = latestBlockHeight
-		cometConfig.StateSync.TrustHash = latestBlockHash
-		cometConfig.StateSync.ChunkFetchers = s.config.StateSync.ChunkFetchers
 	}
 
 	node, err := nm.NewNode(
