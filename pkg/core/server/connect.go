@@ -802,13 +802,54 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 	snapshotCreatorState, _ := c.core.cache.snapshotCreatorState.Get(ProcessStateSnapshotCreator)
 	mempoolCacheState, _ := c.core.cache.mempoolCacheState.Get(ProcessStateMempoolCache)
 
-	// data companion state
+	// pruning state
+	pruningInfo.Enabled = !c.core.config.Archive
+	pruningInfo.RetainBlocks = c.core.config.RetainHeight
+	pruningInfo.LastSetRetainHeight = c.core.abciState.lastRetainHeight
+	
 	if c.core.rpc != nil {
 		status, err := c.core.rpc.Status(ctx)
 		if err == nil {
 			pruningInfo.EarliestHeight = status.SyncInfo.EarliestBlockHeight
-			pruningInfo.Enabled = status.SyncInfo.EarliestBlockHeight != 1
-			pruningInfo.RetainBlocks = c.core.config.RetainHeight
+			
+			// Calculate target retain height (what it should be)
+			if chainInfo != nil && !c.core.config.Archive {
+				latestHeight := chainInfo.CurrentHeight
+				retainWindow := c.core.config.RetainHeight
+				if latestHeight > retainWindow {
+					pruningInfo.TargetRetainHeight = latestHeight - retainWindow
+				}
+			}
+			
+			// Current retain height would come from CometBFT's data companion
+			// For now, use lastSetRetainHeight as approximation
+			pruningInfo.CurrentRetainHeight = c.core.abciState.lastRetainHeight
+		}
+	}
+	
+	// Data companion status from process state
+	if dataCompanionState != nil {
+		switch dataCompanionState.State {
+		case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED:
+			pruningInfo.DataCompanionStatus = "Archive mode (pruning disabled)"
+		case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_RUNNING:
+			pruningInfo.DataCompanionStatus = "Active"
+		case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_SLEEPING:
+			if dataCompanionState.Metadata != "" {
+				pruningInfo.DataCompanionStatus = dataCompanionState.Metadata
+			} else {
+				pruningInfo.DataCompanionStatus = "Sleeping"
+			}
+		case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_ERROR:
+			pruningInfo.DataCompanionStatus = "Error: " + dataCompanionState.Error
+		case v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_STARTING:
+			pruningInfo.DataCompanionStatus = "Starting"
+		default:
+			pruningInfo.DataCompanionStatus = "Unknown"
+		}
+		
+		if dataCompanionState.StartedAt != nil {
+			pruningInfo.LastUpdateTime = dataCompanionState.StartedAt.Seconds
 		}
 	}
 

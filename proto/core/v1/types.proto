@@ -111,6 +111,11 @@ message GetStatusResponse {
     bool enabled = 1;
     int64 retain_blocks = 2;
     int64 earliest_height = 3;
+    int64 current_retain_height = 4;  // What's been sent to CometBFT
+    int64 target_retain_height = 5;   // What should be retained based on current height
+    int64 last_set_retain_height = 6; // The lastRetainHeight from ABCIState
+    string data_companion_status = 7; // Status of data companion communication
+    int64 last_update_time = 8;       // Unix timestamp of last successful update
   }
 
   message ResourceInfo {
