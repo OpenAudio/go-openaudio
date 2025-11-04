@@ -695,7 +695,7 @@ func (p *Pages) OverviewProcessesFragment(status *v1.GetStatusResponse) templ.Co
 					}
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "</div><div class=\"bg-secondary rounded-lg p-4\"><div class=\"flex items-center justify-between mb-2\"><span class=\"font-medium\">State Sync</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "</div><div class=\"bg-secondary rounded-lg p-4\"><div class=\"flex items-center justify-between mb-2\"><span class=\"font-medium\">Snapshot Creator</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -19,16 +19,16 @@ import (
 )
 
 const (
-	ProcessStateABCI           = "abci"
-	ProcessStateRegistryBridge = "registryBridge"
-	ProcessStateEchoServer     = "echoServer"
-	ProcessStateSyncTasks      = "syncTasks"
-	ProcessStatePeerManager    = "peerManager"
-	ProcessStateDataCompanion  = "dataCompanion"
-	ProcessStateCache          = "cache"
-	ProcessStateLogSync        = "logSync"
-	ProcessStateStateSync      = "stateSync"
-	ProcessStateMempoolCache   = "mempoolCache"
+	ProcessStateABCI            = "abci"
+	ProcessStateRegistryBridge  = "registryBridge"
+	ProcessStateEchoServer      = "echoServer"
+	ProcessStateSyncTasks       = "syncTasks"
+	ProcessStatePeerManager     = "peerManager"
+	ProcessStateDataCompanion   = "dataCompanion"
+	ProcessStateCache           = "cache"
+	ProcessStateLogSync         = "logSync"
+	ProcessStateSnapshotCreator = "snapshotCreator"
+	ProcessStateMempoolCache    = "mempoolCache"
 
 	NodeInfoKey      = "nodeInfo"
 	PeersKey         = "peers"
@@ -50,16 +50,16 @@ type Cache struct {
 	catchingUp     atomic.Bool
 
 	// process states
-	abciState           otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
-	registryBridgeState otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
-	echoServerState     otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
-	syncTasksState      otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
-	peerManagerState    otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
-	dataCompanionState  otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
-	cacheState          otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
-	logSyncState        otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
-	stateSyncState      otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
-	mempoolCacheState   otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	abciState            otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	registryBridgeState  otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	echoServerState      otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	syncTasksState       otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	peerManagerState     otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	dataCompanionState   otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	cacheState           otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	logSyncState         otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	snapshotCreatorState otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	mempoolCacheState    otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
 
 	// info
 	nodeInfo     otter.Cache[string, *v1.GetStatusResponse_NodeInfo]
@@ -156,7 +156,7 @@ func (c *Cache) initCaches(config *config.Config) error {
 		StartedAt: timestamppb.New(time.Now()),
 	})
 
-	c.stateSyncState = initCache(ProcessStateStateSync, &v1.GetStatusResponse_ProcessInfo_ProcessStateInfo{
+	c.snapshotCreatorState = initCache(ProcessStateSnapshotCreator, &v1.GetStatusResponse_ProcessInfo_ProcessStateInfo{
 		State:     v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_STARTING,
 		StartedAt: timestamppb.New(time.Now()),
 	})
@@ -337,8 +337,8 @@ func (c *Cache) UpdateProcessState(processKey string, state v1.GetStatusResponse
 		processCache = c.cacheState
 	case ProcessStateLogSync:
 		processCache = c.logSyncState
-	case ProcessStateStateSync:
-		processCache = c.stateSyncState
+	case ProcessStateSnapshotCreator:
+		processCache = c.snapshotCreatorState
 	case ProcessStateMempoolCache:
 		processCache = c.mempoolCacheState
 	default:

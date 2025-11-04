@@ -122,7 +122,7 @@ func (s *Server) Start() error {
 	s.lc.AddManagedRoutine("cache", s.startCache)
 	s.lc.AddManagedRoutine("data companion", s.startDataCompanion)
 	s.lc.AddManagedRoutine("log sync", s.syncLogs)
-	s.lc.AddManagedRoutine("state sync", s.startStateSync)
+	s.lc.AddManagedRoutine("snapshot creator", s.startSnapshotCreator)
 	s.lc.AddManagedRoutine("mempool cache", s.startMempoolCache)
 	s.lc.AddManagedRoutine("peer manager", s.managePeers)
 	s.lc.AddManagedRoutine("tx count cache", s.cacheTxCount)

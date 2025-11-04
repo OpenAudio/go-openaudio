@@ -744,9 +744,7 @@ func (c *CoreService) GetStoredSnapshots(context.Context, *connect.Request[v1.Ge
 	snapshots, err := c.core.getStoredSnapshots()
 	if err != nil {
 		c.core.logger.Error("error getting stored snapshots", zap.Error(err))
-		return connect.NewResponse(&v1.GetStoredSnapshotsResponse{
-			Snapshots: []*v1.SnapshotMetadata{},
-		}), nil
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get stored snapshots"))
 	}
 
 	snapshotResponses := make([]*v1.SnapshotMetadata, 0, len(snapshots))
@@ -801,7 +799,7 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 	dataCompanionState, _ := c.core.cache.dataCompanionState.Get(ProcessStateDataCompanion)
 	cacheState, _ := c.core.cache.cacheState.Get(ProcessStateCache)
 	logSyncState, _ := c.core.cache.logSyncState.Get(ProcessStateLogSync)
-	stateSyncState, _ := c.core.cache.stateSyncState.Get(ProcessStateStateSync)
+	snapshotCreatorState, _ := c.core.cache.snapshotCreatorState.Get(ProcessStateSnapshotCreator)
 	mempoolCacheState, _ := c.core.cache.mempoolCacheState.Get(ProcessStateMempoolCache)
 
 	// data companion state
@@ -823,7 +821,7 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 		DataCompanion:  dataCompanionState,
 		Cache:          cacheState,
 		LogSync:        logSyncState,
-		StateSync:      stateSyncState,
+		StateSync:      snapshotCreatorState,
 		MempoolCache:   mempoolCacheState,
 	}
 

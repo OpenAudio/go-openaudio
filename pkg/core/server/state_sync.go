@@ -79,12 +79,12 @@ func getPgDumpPath(baseDir string) string {
 	return filepath.Join(baseDir, pgDumpFileName)
 }
 
-func (s *Server) startStateSync(ctx context.Context) error {
-	s.StartProcess(ProcessStateStateSync)
+func (s *Server) startSnapshotCreator(ctx context.Context) error {
+	s.StartProcess(ProcessStateSnapshotCreator)
 
 	select {
 	case <-ctx.Done():
-		s.CompleteProcess(ProcessStateStateSync)
+		s.CompleteProcess(ProcessStateSnapshotCreator)
 		return ctx.Err()
 	case <-s.awaitRpcReady:
 	}
@@ -92,8 +92,8 @@ func (s *Server) startStateSync(ctx context.Context) error {
 	logger := s.logger.With(zap.String("service", "state_sync"))
 
 	if !s.config.StateSync.ServeSnapshots {
-		logger.Info("State sync is not enabled, skipping snapshot creation")
-		s.CompleteProcess(ProcessStateStateSync)
+		logger.Info("ServeSnapshots is not enabled, skipping snapshot creation")
+		s.CompleteProcess(ProcessStateSnapshotCreator)
 		return nil
 	}
 
@@ -101,7 +101,7 @@ func (s *Server) startStateSync(ctx context.Context) error {
 	eb := node.EventBus()
 
 	if eb == nil {
-		s.ErrorProcess(ProcessStateStateSync, "event bus not ready")
+		s.ErrorProcess(ProcessStateSnapshotCreator, "event bus not ready")
 		return errors.New("event bus not ready")
 	}
 
@@ -110,39 +110,49 @@ func (s *Server) startStateSync(ctx context.Context) error {
 	query := types.EventQueryNewBlock
 	subscription, err := eb.Subscribe(ctx, subscriberID, query)
 	if err != nil {
-		s.ErrorProcess(ProcessStateStateSync, fmt.Sprintf("failed to subscribe to NewBlock events: %v", err))
+		s.ErrorProcess(ProcessStateSnapshotCreator, fmt.Sprintf("failed to subscribe to NewBlock events: %v", err))
 		return fmt.Errorf("failed to subscribe to NewBlock events: %v", err)
 	}
 
-	s.RunningProcessWithMetadata(ProcessStateStateSync, "Listening for new blocks")
+	s.SleepingProcessWithMetadata(ProcessStateSnapshotCreator, "Waiting for snapshot interval")
+
+	// Only run one snapshot creation job at a time
+	snapshotSemaphore := make(chan struct{}, 1)
+	snapshotSemaphore <- struct{}{}
 
 	for {
 		select {
 		case <-ctx.Done():
 			s.logger.Info("Stopping block event subscription")
-			s.CompleteProcess(ProcessStateStateSync)
+			s.CompleteProcess(ProcessStateSnapshotCreator)
 			return ctx.Err()
 		case msg := <-subscription.Out():
 			blockEvent := msg.Data().(types.EventDataNewBlock)
 			blockHeight := blockEvent.Block.Height
 			if blockHeight%s.config.StateSync.BlockInterval != 0 {
-				s.SleepingProcessWithMetadata(ProcessStateStateSync, "Waiting for snapshot interval")
 				continue
 			}
 
-			s.RunningProcessWithMetadata(ProcessStateStateSync, fmt.Sprintf("Creating snapshot at height %d", blockHeight))
-			if err := s.createSnapshot(logger, blockHeight); err != nil {
-				logger.Error("error creating snapshot", zap.Error(err))
+			select {
+			case <-snapshotSemaphore:
+				go func(height int64) {
+					s.RunningProcessWithMetadata(ProcessStateSnapshotCreator, fmt.Sprintf("Creating snapshot at height %d", height))
+					if err := s.createSnapshot(logger, height); err != nil {
+						logger.Error("error creating snapshot", zap.Error(err))
+					}
+					s.RunningProcessWithMetadata(ProcessStateSnapshotCreator, "Pruning old snapshots")
+					if err := s.pruneSnapshots(logger); err != nil {
+						logger.Error("error pruning snapshots", zap.Error(err))
+					}
+					snapshotSemaphore <- struct{}{}
+					s.SleepingProcessWithMetadata(ProcessStateSnapshotCreator, "Waiting for snapshot interval")
+				}(blockHeight)
+			default:
+				s.SleepingProcessWithMetadata(ProcessStateSnapshotCreator, "Snapshot creation still in progress")
 			}
-
-			s.RunningProcessWithMetadata(ProcessStateStateSync, "Pruning old snapshots")
-			if err := s.pruneSnapshots(logger); err != nil {
-				logger.Error("error pruning snapshots", zap.Error(err))
-			}
-			s.SleepingProcessWithMetadata(ProcessStateStateSync, "Waiting for next block")
 		case <-subscription.Canceled():
 			s.logger.Error("Subscription cancelled", zap.Error(subscription.Err()))
-			s.ErrorProcess(ProcessStateStateSync, fmt.Sprintf("subscription cancelled: %v", subscription.Err()))
+			s.ErrorProcess(ProcessStateSnapshotCreator, fmt.Sprintf("subscription cancelled: %v", subscription.Err()))
 			return subscription.Err()
 		}
 	}
@@ -665,6 +675,10 @@ func (s *Server) stateSyncLatestBlock(rpcServers []string) (trustHeight int64, t
 		snapshots, err := oap.Core.GetStoredSnapshots(context.Background(), connect.NewRequest(&corev1.GetStoredSnapshotsRequest{}))
 		if err != nil {
 			s.logger.Error("error getting stored snapshots", zap.String("rpcServer", rpcServer), zap.Error(err))
+			continue
+		}
+		if len(snapshots.Msg.Snapshots) == 0 {
+			s.logger.Warn("no snapshots returned from host %s", zap.String("rpcServer", rpcServer))
 			continue
 		}
 
