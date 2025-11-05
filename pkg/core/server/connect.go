@@ -875,6 +875,10 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 	if amount == 0 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount is required"))
 	}
+	rewardId := req.Msg.RewardId
+	if rewardId == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward_id is required"))
+	}
 
 	// Get programmatic reward by deployed address
 	dbReward, err := c.core.db.GetReward(ctx, rewardAddress)
