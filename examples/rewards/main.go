@@ -22,6 +22,11 @@ func main() {
 		log.Fatalf("Failed to convert private key: %v", err)
 	}
 
+	recipient := os.Getenv("RECIPIENT")
+	if recipient == "" {
+		log.Fatalf("RECIPIENT environment variable is not set")
+	}
+
 	oap := sdk.NewOpenAudioSDK("creatornode11.staging.audius.co")
 	oap.SetPrivKey(privateKey)
 
@@ -46,4 +51,18 @@ func main() {
 		log.Fatalf("Failed to create reward: %v", err)
 	}
 	fmt.Println("reward created at address: ", reward.Address)
+
+	attestation, err := oap.Rewards.GetRewardAttestation(context.Background(), &v1.GetRewardAttestationRequest{
+		EthRecipientAddress: recipient,
+		Amount:              1000,
+		RewardAddress:       reward.Address,
+		RewardId:            "reward1",
+		Specifier:           "test_specifier",
+		ClaimAuthority:      oap.Address(),
+	})
+
+	if err != nil {
+		log.Fatalf("Failed to get reward attestation: %v", err)
+	}
+	fmt.Println("reward attestation: ", attestation.Attestation)
 }
