@@ -26,9 +26,15 @@ docker compose \
 	--profile=openaudio-dev \
 	up -d --force-recreate openaudio-3
 
-# Wait for state sync to complete
-echo "Waiting for state sync..."
-sleep 30
+# animate?
+echo "opening console..."
+spinner="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+for i in {1..60}; do
+	echo -n "${spinner:$i:1}"
+	sleep 0.1
+done
+echo
+open https://node3.oap.devnet/console
 
 # Restore original config
 mv ./dev/env/openaudio-3.env.backup ./dev/env/openaudio-3.env
