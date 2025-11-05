@@ -41,6 +41,8 @@ const (
 	ProdDashboardURL  = "https://dashboard.audius.org"
 	StageDashboardURL = "https://dashboard.staging.audius.org"
 	DevDashboardURL   = "http://localhost"
+
+	DefaultCoreRootDir = "/data/core"
 )
 
 const (
