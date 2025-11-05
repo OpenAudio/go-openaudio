@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"connectrpc.com/connect"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
@@ -24,6 +25,14 @@ func main() {
 	oap := sdk.NewOpenAudioSDK("creatornode11.staging.audius.co")
 	oap.SetPrivKey(privateKey)
 
+	resp, err := oap.Core.GetStatus(context.Background(), connect.NewRequest(&v1.GetStatusRequest{}))
+	if err != nil {
+		log.Fatalf("Failed to get status: %v", err)
+	}
+
+	currentHeight := resp.Msg.ChainInfo.CurrentHeight
+	deadline := currentHeight + 100
+
 	reward, err := oap.Rewards.CreateReward(context.Background(), &v1.CreateReward{
 		RewardId: "reward1",
 		Name:     "Test Reward 1",
@@ -31,7 +40,7 @@ func main() {
 		ClaimAuthorities: []*v1.ClaimAuthority{
 			{Address: oap.Address(), Name: "Alec"},
 		},
-		DeadlineBlockHeight: 22291878 + 100,
+		DeadlineBlockHeight: deadline,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create reward: %v", err)
