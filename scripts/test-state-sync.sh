@@ -30,7 +30,7 @@ docker compose \
 echo "opening console..."
 spinner="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 for i in {1..60}; do
-	echo -n "${spinner:$i:1}"
+	printf "\b${spinner:$i:1}"
 	sleep 0.1
 done
 echo
