@@ -863,6 +863,9 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 	if specifier == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("specifier is required"))
 	}
+	if len(specifier) > 256 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("specifier too long"))
+	}
 	claimAuthority := req.Msg.ClaimAuthority
 	if claimAuthority == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority is required"))
@@ -874,6 +877,9 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 	amount := req.Msg.Amount
 	if amount == 0 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount is required"))
+	}
+	if req.Msg.AmountDecimals > 18 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount_decimals too large; max 18"))
 	}
 
 	// Get programmatic reward by deployed address
@@ -905,6 +911,7 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 		RewardID:            req.Msg.RewardId,
 		Specifier:           specifier,
 		ClaimAuthority:      claimAuthority, // Using claimAuthority as oracle for programmatic rewards
+		Decimals:            req.Msg.AmountDecimals,
 	}
 
 	// Create a temporary RewardAttester for validation

@@ -1,11 +1,13 @@
 package rewards_test
 
 import (
-	"encoding/hex"
-	"testing"
+    "bytes"
+    "encoding/binary"
+    "encoding/hex"
+    "testing"
 
-	"github.com/OpenAudio/go-openaudio/pkg/rewards"
-	"github.com/stretchr/testify/require"
+    "github.com/OpenAudio/go-openaudio/pkg/rewards"
+    "github.com/stretchr/testify/require"
 )
 
 func TestCompile(t *testing.T) {
@@ -43,4 +45,47 @@ func TestCompile(t *testing.T) {
 	asBytes, err = claim.Compile()
 	require.NoError(t, err)
 	require.Equal(t, expected, asBytes, "should compile without anti abuse oracle address")
+}
+
+func TestCompileWithDecimals(t *testing.T) {
+    // Base claim values
+    baseClaim := rewards.RewardClaim{
+        RewardID:            "c",
+        Specifier:           "b9256e3:202515",
+        Amount:              uint64(1),
+        RecipientEthAddress: "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
+    }
+
+    // Helper to extract amount bytes (second component, split by '_')
+    getAmountBytes := func(b []byte) []byte {
+        parts := bytes.Split(b, []byte("_"))
+        require.GreaterOrEqual(t, len(parts), 2)
+        return parts[1]
+    }
+
+    // Decimals = 8 (default), expect 1 * 10^8
+    c8 := baseClaim
+    c8.Decimals = 8
+    out8, err := c8.Compile()
+    require.NoError(t, err)
+    amt8 := getAmountBytes(out8)
+    expected8 := make([]byte, 8)
+    binary.LittleEndian.PutUint64(expected8, 100_000_000)
+    require.Equal(t, expected8, amt8)
+
+    // Decimals = 6, expect 1 * 10^6
+    c6 := baseClaim
+    c6.Decimals = 6
+    out6, err := c6.Compile()
+    require.NoError(t, err)
+    amt6 := getAmountBytes(out6)
+    expected6 := make([]byte, 8)
+    binary.LittleEndian.PutUint64(expected6, 1_000_000)
+    require.Equal(t, expected6, amt6)
+
+    // Decimals too large should error
+    cBad := baseClaim
+    cBad.Decimals = 19
+    _, err = cBad.Compile()
+    require.Error(t, err)
 }

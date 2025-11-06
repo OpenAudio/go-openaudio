@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -18,6 +19,7 @@ type RewardClaim struct {
 	RewardAddress       string // Optional - for programmatic rewards
 	Specifier           string
 	ClaimAuthority      string
+	Decimals            uint32
 }
 
 func (claim RewardClaim) Compile() ([]byte, error) {
@@ -31,8 +33,23 @@ func (claim RewardClaim) Compile() ([]byte, error) {
 	}
 	combinedIDBytes := []byte(combinedID)
 
-	// Encode the claim amount as wAUDIO Wei
-	encodedAmount := claim.Amount * 1e8
+	// Scale the claim amount by token decimals (default 8) with bounds and overflow checks
+	decimals := claim.Decimals
+	if decimals == 0 {
+		decimals = 8
+	}
+	if decimals > 18 {
+		return nil, fmt.Errorf("amount_decimals too large; max 18")
+	}
+
+	// Compute scale = 10^decimals using big.Int, multiply and check bounds
+	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil)
+	amountBig := new(big.Int).SetUint64(claim.Amount)
+	amountBig.Mul(amountBig, scale)
+	if !amountBig.IsUint64() {
+		return nil, fmt.Errorf("amount overflows after scaling")
+	}
+	encodedAmount := amountBig.Uint64()
 	amountBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(amountBytes, uint64(encodedAmount))
 

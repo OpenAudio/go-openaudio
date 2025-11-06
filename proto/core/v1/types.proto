@@ -407,6 +407,7 @@ message GetRewardAttestationRequest {
   string signature = 5;
   uint64 amount = 6;
   string reward_id = 7; // Legacy reward_id (for backwards compatibility)
+  uint32 amount_decimals = 8; // Number of decimals to scale amount by
 }
 
 message GetRewardAttestationResponse {
