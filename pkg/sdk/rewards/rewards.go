@@ -121,6 +121,7 @@ func (r *Rewards) GetRewardAttestation(ctx context.Context, req *v1.GetRewardAtt
 		RewardID:            req.RewardId,
 		Specifier:           req.Specifier,
 		ClaimAuthority:      req.ClaimAuthority, // Use claim authority as oracle
+		Decimals:            req.AmountDecimals,
 	}
 
 	// Use the utility function to sign the claim
