@@ -19,6 +19,10 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	abortContextCanceled = "CONTEXT_CANCELED"
+)
+
 type RepairTracker struct {
 	StartedAt        time.Time `gorm:"primaryKey;not null"`
 	UpdatedAt        time.Time `gorm:"not null"`
@@ -138,7 +142,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 	for {
 		// abort if context is canceled
 		if ctx.Err() != nil {
-			tracker.AbortedReason = "CONTEXT_CANCELED"
+			tracker.AbortedReason = abortContextCanceled
 			saveTracker()
 			return ctx.Err()
 		}
@@ -161,7 +165,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 		}
 		for _, u := range uploads {
 			if ctx.Err() != nil {
-				tracker.AbortedReason = "CONTEXT_CANCELED"
+				tracker.AbortedReason = abortContextCanceled
 				break
 			}
 
@@ -185,7 +189,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 	for {
 		// abort if context is canceled
 		if ctx.Err() != nil {
-			tracker.AbortedReason = "CONTEXT_CANCELED"
+			tracker.AbortedReason = abortContextCanceled
 			saveTracker()
 			return ctx.Err()
 		}
@@ -208,7 +212,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 		}
 		for _, u := range previews {
 			if ctx.Err() != nil {
-				tracker.AbortedReason = "CONTEXT_CANCELED"
+				tracker.AbortedReason = abortContextCanceled
 				break
 			}
 
@@ -224,7 +228,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 	for {
 		// abort if context is canceled
 		if ctx.Err() != nil {
-			tracker.AbortedReason = "CONTEXT_CANCELED"
+			tracker.AbortedReason = abortContextCanceled
 			saveTracker()
 			return ctx.Err()
 		}
@@ -254,7 +258,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 		}
 		for _, cid := range cidBatch {
 			if ctx.Err() != nil {
-				tracker.AbortedReason = "CONTEXT_CANCELED"
+				tracker.AbortedReason = abortContextCanceled
 				break
 			}
 
