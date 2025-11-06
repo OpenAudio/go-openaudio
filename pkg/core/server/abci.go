@@ -108,6 +108,7 @@ func (s *Server) startABCI(ctx context.Context) error {
 		latestBlockHeight, latestBlockHash, err := s.stateSyncLatestBlock(rpcServers)
 		if err != nil {
 			s.logger.Error("could not get latest block for state sync", zap.Error(err))
+			s.ErrorProcess(ProcessStateABCI, fmt.Sprintf("could not get latest block for state sync: %v", err))
 			return err // do not attempt to block sync if state sync is enabled but failed
 		} else {
 			cometConfig.StateSync.Enable = true
