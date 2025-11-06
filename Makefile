@@ -185,9 +185,14 @@ down: ss-down
 		--project-directory='./' \
 		--profile=openaudio-dev \
 		down -v
+	rm -rf tmp/oap*
 
 .PHONY: test
 test: test-mediorum test-integration test-unit
+
+.PHONY: test-state-sync
+test-state-sync:
+	@bash scripts/test-state-sync.sh
 
 .PHONY: test-unit
 test-unit:
