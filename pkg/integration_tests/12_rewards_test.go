@@ -186,13 +186,14 @@ func TestRewardsLifecycle(t *testing.T) {
 		specifier := "test_specifier_123"
 
 		// Test 1: authority1 should be able to get attestation
-		attestation1, err := authority1.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
+        attestation1, err := authority1.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
 			EthRecipientAddress: recipientAddr,
 			Amount:              5000,
 			RewardAddress:       reward.Address,
 			RewardId:            "attestation_test_reward",
 			Specifier:           specifier,
-			ClaimAuthority:      authority1Addr,
+            ClaimAuthority:      authority1Addr,
+            AmountDecimals:      8,
 		})
 		if err != nil {
 			t.Fatalf("authority1 should be able to get attestation: %v", err)
@@ -200,13 +201,14 @@ func TestRewardsLifecycle(t *testing.T) {
 		t.Logf("authority1 successfully got attestation: %s", attestation1.Attestation)
 
 		// Test 2: authority2 should be able to get attestation
-		attestation2, err := authority2.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
+        attestation2, err := authority2.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
 			EthRecipientAddress: recipientAddr,
 			Amount:              5000,
 			RewardAddress:       reward.Address,
 			RewardId:            "attestation_test_reward",
 			Specifier:           specifier,
-			ClaimAuthority:      authority2Addr,
+            ClaimAuthority:      authority2Addr,
+            AmountDecimals:      8,
 		})
 		if err != nil {
 			t.Fatalf("authority2 should be able to get attestation: %v", err)
@@ -214,13 +216,14 @@ func TestRewardsLifecycle(t *testing.T) {
 		t.Logf("authority2 successfully got attestation: %s", attestation2.Attestation)
 
 		// Test 3: unauthorized user should NOT be able to get attestation
-		_, err = unauthorized.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
+        _, err = unauthorized.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
 			EthRecipientAddress: recipientAddr,
 			Amount:              1000,
 			RewardAddress:       reward.Address,
 			RewardId:            "attestation_test_reward",
 			Specifier:           specifier,
-			ClaimAuthority:      unauthorizedAddr,
+            ClaimAuthority:      unauthorizedAddr,
+            AmountDecimals:      8,
 		})
 		if err == nil {
 			t.Fatalf("unauthorized user should NOT be able to get attestation, but it succeeded")
@@ -244,13 +247,14 @@ func TestRewardsLifecycle(t *testing.T) {
 		t.Logf("Created reward2 at address: %s", reward2.Address)
 
 		// authority1 should NOT be able to get attestation for reward2
-		_, err = authority1.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
+        _, err = authority1.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
 			EthRecipientAddress: recipientAddr,
 			Amount:              500,
 			RewardAddress:       reward2.Address,
 			RewardId:            "attestation_test_reward_2",
 			Specifier:           specifier,
-			ClaimAuthority:      authority1Addr,
+            ClaimAuthority:      authority1Addr,
+            AmountDecimals:      8,
 		})
 		if err == nil {
 			t.Fatalf("authority1 should NOT be able to get attestation for reward2, but it succeeded")
@@ -298,13 +302,14 @@ func TestRewardsLifecycle(t *testing.T) {
 		specifier := "test_specifier_amount"
 
 		// Test 1: Correct amount should succeed
-		attestation, err := authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
+        attestation, err := authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
 			EthRecipientAddress: recipientAddr,
 			Amount:              100, // Matches reward amount
 			RewardAddress:       reward.Address,
 			RewardId:            "amount_test",
 			Specifier:           specifier,
-			ClaimAuthority:      authorityAddr,
+            ClaimAuthority:      authorityAddr,
+            AmountDecimals:      8,
 		})
 		if err != nil {
 			t.Fatalf("Should succeed with correct amount: %v", err)
@@ -312,13 +317,14 @@ func TestRewardsLifecycle(t *testing.T) {
 		t.Logf("Successfully got attestation with correct amount: %s", attestation.Attestation)
 
 		// Test 2: Wrong amount should fail
-		_, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
+        _, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
 			EthRecipientAddress: recipientAddr,
 			Amount:              50, // Wrong amount
 			RewardAddress:       reward.Address,
 			RewardId:            "amount_test",
 			Specifier:           specifier,
-			ClaimAuthority:      authorityAddr,
+            ClaimAuthority:      authorityAddr,
+            AmountDecimals:      8,
 		})
 		if err == nil {
 			t.Fatalf("Should have failed with wrong amount")
@@ -326,14 +332,34 @@ func TestRewardsLifecycle(t *testing.T) {
 		t.Logf("Correctly failed with wrong amount: %v", err)
 
 		// Test 3: Zero amount should fail
-		_, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
+        _, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
 			EthRecipientAddress: recipientAddr,
 			Amount:              0, // Zero amount
 			RewardAddress:       reward.Address,
 			RewardId:            "amount_test",
 			Specifier:           specifier,
-			ClaimAuthority:      authorityAddr,
+            ClaimAuthority:      authorityAddr,
+            AmountDecimals:      8,
 		})
+        if err == nil {
+            t.Fatalf("Should have failed with zero amount")
+        }
+        t.Logf("Correctly failed with zero amount: %v", err)
+
+        // Test 4: Invalid decimals should fail
+        _, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
+            EthRecipientAddress: recipientAddr,
+            Amount:              100,
+            RewardAddress:       reward.Address,
+            RewardId:            "amount_test",
+            Specifier:           specifier,
+            ClaimAuthority:      authorityAddr,
+            AmountDecimals:      19,
+        })
+        if err == nil {
+            t.Fatalf("Should have failed with invalid amount_decimals")
+        }
+        t.Logf("Correctly failed with invalid amount_decimals: %v", err)
 		if err == nil {
 			t.Fatalf("Should have failed with zero amount")
 		}
