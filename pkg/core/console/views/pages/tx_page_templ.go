@@ -190,14 +190,14 @@ func (p *Pages) TxPageHTML(view *TxView) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div><div class=\"text-small p-4 rounded-lg\"><pre class=\"bg-gray-100 p-4 rounded-lg overflow-x-scroll\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div><div class=\"text-small p-4 rounded-lg\"><pre class=\"bg-secondary p-4 rounded-lg overflow-x-scroll\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(p.renderJSON(p.toJSON(view.Tx)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 84, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 84, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
