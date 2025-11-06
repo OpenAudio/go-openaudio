@@ -91,6 +91,7 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 	if s.config.StateSync.Enable && !alreadySynced {
 		rpcServers := s.config.StateSync.RPCServers
+		s.logger.Info("state sync enabled", zap.Any("rpcservers", rpcServers))
 
 		// CometBFT requires at least 2 rpc servers, but we can still get away with duplicating the same one
 		if len(rpcServers) == 1 {
@@ -106,9 +107,10 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 		latestBlockHeight, latestBlockHash, err := s.stateSyncLatestBlock(rpcServers)
 		if err != nil {
-			s.logger.Error("skipping state sync: could not get latest block for state sync", zap.Error(err))
+			s.logger.Error("could not get latest block for state sync", zap.Error(err))
+			s.ErrorProcess(ProcessStateABCI, fmt.Sprintf("could not get latest block for state sync: %v", err))
+			return err // do not attempt to block sync if state sync is enabled but failed
 		} else {
-			s.logger.Info("state sync enabled", zap.Any("rpcservers", rpcServers))
 			cometConfig.StateSync.Enable = true
 			cometConfig.StateSync.RPCServers = rpcServers
 			cometConfig.StateSync.TrustHeight = latestBlockHeight
