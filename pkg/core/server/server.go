@@ -99,7 +99,7 @@ func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.
 		txPubsub:         txPubsub,
 		blockNumPubsub:   blockNumPubsub,
 		cache:            NewCache(config),
-		abciState:        NewABCIState(config.RetainHeight),
+		abciState:        NewABCIState(0), // Start at 0, will be calculated during Commit
 
 		httpServer: httpServer,
 		grpcServer: grpcServer,

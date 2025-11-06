@@ -111,6 +111,11 @@ message GetStatusResponse {
     bool enabled = 1;
     int64 retain_blocks = 2;
     int64 earliest_height = 3;
+    int64 current_retain_height = 4;
+    int64 target_retain_height = 5;
+    int64 last_set_retain_height = 6;
+    string data_companion_status = 7;
+    int64 last_update_time = 8;
   }
 
   message ResourceInfo {
