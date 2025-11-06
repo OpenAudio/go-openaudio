@@ -649,7 +649,7 @@ func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, lo
 			return fmt.Errorf("failed to generate self-signed certificate: %v", err)
 		}
 
-		certDir := getEnvString("audius_core_root_dir", "/audius-core") + "/echo/certs"
+		certDir := getEnvString("audius_core_root_dir", config.DefaultCoreRootDir) + "/echo/certs"
 		logger.Info("Creating certificate directory", zap.String("dir", certDir))
 		if err := os.MkdirAll(certDir, 0755); err != nil {
 			logger.Error("Failed to create certificate directory", zap.Error(err))
@@ -714,7 +714,7 @@ func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, lo
 
 	logger.Info("TLS host whitelist: " + strings.Join(whitelist, ", "))
 	e.AutoTLSManager.HostPolicy = autocert.HostWhitelist(whitelist...)
-	e.AutoTLSManager.Cache = autocert.DirCache(getEnvString("audius_core_root_dir", "/audius-core") + "/echo/cache")
+	e.AutoTLSManager.Cache = autocert.DirCache(getEnvString("audius_core_root_dir", config.DefaultCoreRootDir) + "/echo/cache")
 	e.Pre(middleware.HTTPSRedirect())
 
 	eg := errgroup.Group{}

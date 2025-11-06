@@ -806,12 +806,12 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 	pruningInfo.Enabled = !c.core.config.Archive
 	pruningInfo.RetainBlocks = c.core.config.RetainHeight
 	pruningInfo.LastSetRetainHeight = c.core.abciState.lastRetainHeight
-	
+
 	if c.core.rpc != nil {
 		status, err := c.core.rpc.Status(ctx)
 		if err == nil {
 			pruningInfo.EarliestHeight = status.SyncInfo.EarliestBlockHeight
-			
+
 			// Calculate target retain height (what it should be)
 			if chainInfo != nil && !c.core.config.Archive {
 				latestHeight := chainInfo.CurrentHeight
@@ -820,13 +820,13 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 					pruningInfo.TargetRetainHeight = latestHeight - retainWindow
 				}
 			}
-			
+
 			// Current retain height would come from CometBFT's data companion
 			// For now, use lastSetRetainHeight as approximation
 			pruningInfo.CurrentRetainHeight = c.core.abciState.lastRetainHeight
 		}
 	}
-	
+
 	// Data companion status from process state
 	if dataCompanionState != nil {
 		switch dataCompanionState.State {
@@ -847,7 +847,7 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 		default:
 			pruningInfo.DataCompanionStatus = "Unknown"
 		}
-		
+
 		if dataCompanionState.StartedAt != nil {
 			pruningInfo.LastUpdateTime = dataCompanionState.StartedAt.Seconds
 		}
@@ -918,6 +918,10 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 	amount := req.Msg.Amount
 	if amount == 0 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount is required"))
+	}
+	rewardId := req.Msg.RewardId
+	if rewardId == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward_id is required"))
 	}
 	if req.Msg.AmountDecimals > 18 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount_decimals too large; max 18"))
