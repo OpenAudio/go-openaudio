@@ -136,6 +136,13 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 	// scroll uploads and repair CIDs
 	// (later this can clean up "derivative" images if we make image resizing dynamic)
 	for {
+		// abort if context is canceled
+		if ctx.Err() != nil {
+			tracker.AbortedReason = "CONTEXT_CANCELED"
+			saveTracker()
+			return ctx.Err()
+		}
+
 		// abort if disk is filling up
 		if !ss.diskHasSpace() && !tracker.CleanupMode {
 			tracker.AbortedReason = "DISK_FULL"
@@ -153,6 +160,11 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 			break
 		}
 		for _, u := range uploads {
+			if ctx.Err() != nil {
+				tracker.AbortedReason = "CONTEXT_CANCELED"
+				break
+			}
+
 			tracker.CursorUploadID = u.ID
 			ss.repairCid(ctx, u.OrigFileCID, u.PlacementHosts, tracker)
 			// images are resized dynamically
@@ -171,6 +183,13 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 
 	// scroll audio_previews for repair
 	for {
+		// abort if context is canceled
+		if ctx.Err() != nil {
+			tracker.AbortedReason = "CONTEXT_CANCELED"
+			saveTracker()
+			return ctx.Err()
+		}
+
 		// abort if disk is filling up
 		if !ss.diskHasSpace() && !tracker.CleanupMode {
 			tracker.AbortedReason = "DISK_FULL"
@@ -188,6 +207,11 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 			break
 		}
 		for _, u := range previews {
+			if ctx.Err() != nil {
+				tracker.AbortedReason = "CONTEXT_CANCELED"
+				break
+			}
+
 			tracker.CursorPreviewCID = u.CID
 			ss.repairCid(ctx, u.CID, nil, tracker)
 		}
@@ -198,6 +222,13 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 
 	// scroll older qm_cids table and repair
 	for {
+		// abort if context is canceled
+		if ctx.Err() != nil {
+			tracker.AbortedReason = "CONTEXT_CANCELED"
+			saveTracker()
+			return ctx.Err()
+		}
+
 		// abort if disk is filling up
 		if !ss.diskHasSpace() && !tracker.CleanupMode {
 			tracker.AbortedReason = "DISK_FULL"
@@ -222,6 +253,11 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 			break
 		}
 		for _, cid := range cidBatch {
+			if ctx.Err() != nil {
+				tracker.AbortedReason = "CONTEXT_CANCELED"
+				break
+			}
+
 			tracker.CursorQmCID = cid
 			ss.repairCid(ctx, cid, nil, tracker)
 		}
@@ -230,7 +266,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 		saveTracker()
 	}
 
-	return nil
+	return ctx.Err()
 }
 
 func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHosts []string, tracker *RepairTracker) error {
