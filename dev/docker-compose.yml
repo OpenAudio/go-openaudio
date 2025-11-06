@@ -61,6 +61,7 @@ services:
       - ./pkg:/app/pkg
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
+      - ./tmp/oap1-data:/data
     profiles:
       - openaudio-dev
       - integration-tests
@@ -86,6 +87,7 @@ services:
       - ./pkg:/app/pkg
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
+      - ./tmp/oap2-data:/data
     profiles:
       - openaudio-dev
       - integration-tests
@@ -111,6 +113,7 @@ services:
       - ./pkg:/app/pkg
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
+      - ./tmp/oap3-data:/data
     profiles:
       - openaudio-dev
       - integration-tests
@@ -136,6 +139,7 @@ services:
       - ./pkg:/app/pkg
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
+      - ./tmp/oap4-data:/data
     profiles:
       - openaudio-dev
       - integration-tests

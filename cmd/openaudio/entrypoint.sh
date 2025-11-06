@@ -39,8 +39,6 @@ fi
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"
 dbUrl="${dbUrl:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?sslmode=disable}"
-uptimeDataDir="${uptimeDataDir:-/data/bolt}"
-audius_core_root_dir="${audius_core_root_dir:-/data/bolt}"
 
 export POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DATA_DIR dbUrl uptimeDataDir audius_core_root_dir
 
