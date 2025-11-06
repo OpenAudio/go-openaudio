@@ -340,47 +340,25 @@ func (ac *AudiusContracts) GetRegisteredNode(ctx context.Context, id *big.Int, n
 }
 
 func (ac *AudiusContracts) GetAllRegisteredNodes(ctx context.Context) ([]*Node, error) {
-	mu := sync.Mutex{}
 	nodes := []*Node{}
 
-	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		discoveryNodes, err := ac.GetAllRegisteredNodesForType(ctx, DiscoveryNode)
-		if err != nil {
-			return err
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		nodes = append(nodes, discoveryNodes...)
-		return nil
-	})
-
-	g.Go(func() error {
-		contentNodes, err := ac.GetAllRegisteredNodesForType(ctx, ContentNode)
-		if err != nil {
-			return err
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		nodes = append(nodes, contentNodes...)
-		return nil
-	})
-
-	g.Go(func() error {
-		validators, err := ac.GetAllRegisteredNodesForType(ctx, Validator)
-		if err != nil {
-			return err
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		nodes = append(nodes, validators...)
-		return nil
-	})
-
-	if err := g.Wait(); err != nil {
+	discoveryNodes, err := ac.GetAllRegisteredNodesForType(ctx, DiscoveryNode)
+	if err != nil {
 		return nodes, err
 	}
+	nodes = append(nodes, discoveryNodes...)
+
+	contentNodes, err := ac.GetAllRegisteredNodesForType(ctx, ContentNode)
+	if err != nil {
+		return nodes, err
+	}
+	nodes = append(nodes, contentNodes...)
+
+	validators, err := ac.GetAllRegisteredNodesForType(ctx, Validator)
+	if err != nil {
+		return nodes, err
+	}
+	nodes = append(nodes, validators...)
 
 	return nodes, nil
 }
