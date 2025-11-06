@@ -52,6 +52,12 @@ func main() {
 	}
 	fmt.Println("reward created at address: ", reward.Address)
 
+	reward, err = oap.Rewards.GetReward(context.Background(), reward.Address)
+	if err != nil {
+		log.Fatalf("Failed to get reward: %v", err)
+	}
+	fmt.Println("reward: ", reward)
+
 	attestation, err := oap.Rewards.GetRewardAttestation(context.Background(), &v1.GetRewardAttestationRequest{
 		EthRecipientAddress: recipient,
 		Amount:              1000,
