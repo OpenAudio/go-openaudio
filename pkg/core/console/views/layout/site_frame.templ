@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/console/assets"
-	"github.com/OpenAudio/go-openaudio/pkg/core/console/assets"
 	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/components"
 )
 
@@ -12,13 +11,13 @@ var gitCommit = templ.URL(fmt.Sprintf("https://github.com/OpenAudio/go-openaudio
 
 templ (l *Layout) NavBlockData(totalBlocks string, syncing bool) {
 	<div>
-        if syncing {
-            @components.StatusOrange("syncing")
-        } else {
-            @components.StatusGreen("synced")
-        }
-        <span>&nbsp;{ totalBlocks } BLOCKS</span>
-    </div>
+		if syncing {
+			@components.StatusOrange("syncing")
+		} else {
+			@components.StatusGreen("synced")
+		}
+		<span>&nbsp;{ totalBlocks } BLOCKS</span>
+	</div>
 }
 
 templ (l *Layout) SiteFrame() {
@@ -28,7 +27,7 @@ templ (l *Layout) SiteFrame() {
 				<div class="flex justify-between space-y-2">
 					<div class="uk-navbar-item flex flex-col items-start space-y-4">
 						<a href="/console" class="flex items-center">
-							<img src={ assets.OAPLogoInverse} alt="audius logo" class="mx-4 h-12 w-12 object-contain"/>
+							<img src={ assets.OAPLogoInverse } alt="audius logo" class="mx-4 h-12 w-12 object-contain"/>
 							<h1 class="text-2xl font-bold tracking-tight">Open Audio Console</h1>
 						</a>
 						<div class="space-y-4">
@@ -53,7 +52,7 @@ templ (l *Layout) SiteFrame() {
 					</div>
 					<div class="flex space-x-2">
 						<div class="text-right text-sm text-secondary tracking-tight">
-                            <div>
+							<div>
 								<span>
 									@l.components.Link("/genesis") {
 										<span>{ l.config.GenesisFile.ChainID }</span>

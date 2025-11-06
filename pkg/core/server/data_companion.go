@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
@@ -111,42 +110,56 @@ func (s *Server) startDataCompanion(ctx context.Context) error {
 	case <-s.awaitRpcReady:
 	}
 
-	conn, err := privileged.New(ctx, "unix://"+config.PrivilegedServiceSocket, privileged.WithPruningServiceEnabled(true), privileged.WithInsecure())
-	if err != nil {
-		s.ErrorProcess(ProcessStateDataCompanion, fmt.Sprintf("could not create privileged rpc connection: %v", err))
-		return fmt.Errorf("dc could not create privileged rpc connection: %v", err)
-	}
-	defer conn.Close()
-
 	s.RunningProcess(ProcessStateDataCompanion)
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ticker.C:
-			s.RunningProcessWithMetadata(ProcessStateDataCompanion, "Managing block retention")
-			blockRetainHeight, err := conn.GetBlockRetainHeight(ctx)
-			if err != nil {
-				s.logger.Error("dc could not get block retain height", zap.Error(err))
-				s.SleepingProcessWithMetadata(ProcessStateDataCompanion, "Waiting after error")
-				continue
-			}
-
-			if blockRetainHeight.App <= 1 {
-				s.SleepingProcessWithMetadata(ProcessStateDataCompanion, "Waiting for blocks to accumulate")
-				continue
-			}
-
-			if err := conn.SetBlockRetainHeight(ctx, blockRetainHeight.App); err != nil {
-				s.logger.Error("dc could not set block retain height", zap.Error(err))
-			}
-
-			if err := conn.SetBlockResultsRetainHeight(ctx, blockRetainHeight.App); err != nil {
-				s.logger.Error("dc could not set block results retain height", zap.Error(err))
-			}
-			s.SleepingProcessWithMetadata(ProcessStateDataCompanion, "Waiting for next cycle")
+			s.manageBlockRetention(ctx)
 		case <-ctx.Done():
 			s.CompleteProcess(ProcessStateDataCompanion)
 			return ctx.Err()
 		}
 	}
+}
+
+func (s *Server) manageBlockRetention(ctx context.Context) {
+	s.RunningProcessWithMetadata(ProcessStateDataCompanion, "Managing block retention")
+
+	// Create fresh connection each cycle to diagnose issues
+	conn, err := privileged.New(ctx, config.PrivilegedServiceSocketURI, privileged.WithPruningServiceEnabled(true), privileged.WithInsecure())
+	if err != nil {
+		s.logger.Error("dc could not connect to privileged socket",
+			zap.String("socket", config.PrivilegedServiceSocketURI),
+			zap.Error(err))
+		s.SleepingProcessWithMetadata(ProcessStateDataCompanion, "Waiting after connection error")
+		return
+	}
+	defer conn.Close()
+
+	blockRetainHeight, err := conn.GetBlockRetainHeight(ctx)
+	if err != nil {
+		s.logger.Error("dc could not get block retain height",
+			zap.String("socket", config.PrivilegedServiceSocketURI),
+			zap.Error(err))
+		s.SleepingProcessWithMetadata(ProcessStateDataCompanion, "Waiting after error")
+		return
+	}
+
+	if blockRetainHeight.App <= 1 {
+		s.SleepingProcessWithMetadata(ProcessStateDataCompanion, "Waiting for blocks to accumulate")
+		return
+	}
+
+	if err := conn.SetBlockRetainHeight(ctx, blockRetainHeight.App); err != nil {
+		s.logger.Error("dc could not set block retain height", zap.Error(err))
+	}
+
+	if err := conn.SetBlockResultsRetainHeight(ctx, blockRetainHeight.App); err != nil {
+		s.logger.Error("dc could not set block results retain height", zap.Error(err))
+	}
+
+	s.SleepingProcessWithMetadata(ProcessStateDataCompanion, "Waiting for next cycle")
 }
