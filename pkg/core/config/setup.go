@@ -17,6 +17,7 @@ import (
 )
 
 const PrivilegedServiceSocket = "/tmp/cometbft.privileged.sock"
+const PrivilegedServiceSocketURI = "unix://" + PrivilegedServiceSocket
 const CometRPCSocket = "/tmp/cometbft.rpc.sock"
 
 func ensureSocketNotExists(socketPath string) error {
@@ -191,15 +192,19 @@ func SetupNode(logger *zap.Logger) (*Config, *cconfig.Config, error) {
 	}
 
 	// Clean up old sockets if they exist
-	ensureSocketNotExists(CometRPCSocket)
+	if err := ensureSocketNotExists(CometRPCSocket); err != nil {
+		logger.Error("could not ensure rpc socket not exists", zap.String("socket", CometRPCSocket), zap.Error(err))
+	}
 
 	if !envConfig.Archive {
-		ensureSocketNotExists(PrivilegedServiceSocket)
+		if err := ensureSocketNotExists(PrivilegedServiceSocket); err != nil {
+			logger.Error("could not ensure privileged socket not exists", zap.String("socket", PrivilegedServiceSocket), zap.Error(err))
+		}
 		cometConfig.Storage.Compact = true
 		cometConfig.Storage.CompactionInterval = 1
 		cometConfig.Storage.DiscardABCIResponses = true
 		cometConfig.GRPC.Privileged = &cconfig.GRPCPrivilegedConfig{
-			ListenAddress: "unix://" + PrivilegedServiceSocket,
+			ListenAddress: PrivilegedServiceSocketURI,
 			PruningService: &cconfig.GRPCPruningServiceConfig{
 				Enabled: true,
 			},
