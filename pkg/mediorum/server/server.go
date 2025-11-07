@@ -547,7 +547,7 @@ func (ss *MediorumServer) MustStart() error {
 
 func (ss *MediorumServer) Stop() {
 	ss.logger.Info("stopping")
-	if err := ss.lc.ShutdownWithTimeout(time.Minute); err != nil {
+	if err := ss.lc.ShutdownWithTimeout(2 * time.Minute); err != nil {
 		panic("could not shutdown gracefully, timed out")
 	}
 

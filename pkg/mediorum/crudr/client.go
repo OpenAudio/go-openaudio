@@ -106,7 +106,7 @@ func (p *PeerClient) startSweeper(ctx context.Context) error {
 		select {
 		case <-ticker.C:
 			ticker.Reset(10 * time.Minute) // do subsequent sweeps every 10 min
-			err := p.doSweep()
+			err := p.doSweep(ctx)
 			if err != nil {
 				p.logger.Warn("sweep failed", "err", err)
 			}
@@ -116,7 +116,7 @@ func (p *PeerClient) startSweeper(ctx context.Context) error {
 	}
 }
 
-func (p *PeerClient) doSweep() error {
+func (p *PeerClient) doSweep(ctx context.Context) error {
 
 	host := p.Host
 	bulkEndpoint := "/internal/crud/sweep" // hardcoded
@@ -172,6 +172,11 @@ func (p *PeerClient) doSweep() error {
 		if op.Table == "blobs" {
 			lastUlid = op.ULID
 			continue
+		}
+
+		// cancel early from context
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 
 		err := p.crudr.ApplyOp(op)

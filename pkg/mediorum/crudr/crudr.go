@@ -1,6 +1,7 @@
 package crudr
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
@@ -129,7 +130,7 @@ func (c *Crudr) StartClients() {
 // used for testing
 func (c *Crudr) ForceSweep() {
 	for _, p := range c.peerClients {
-		p.doSweep()
+		p.doSweep(context.Background())
 	}
 }
 

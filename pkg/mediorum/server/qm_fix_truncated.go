@@ -83,7 +83,16 @@ func (ss *MediorumServer) startFixTruncatedQmWorker(ctx context.Context) error {
 				}()
 			}
 
-			wg.Wait()
+			done := make(chan struct{})
+			go func() {
+				wg.Wait()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 
 			_, err = ss.pgPool.Exec(ctx, `update cursors set last_ulid = $1 where host = 'qm_fix_truncated'`, cidBatch[len(cidBatch)-1])
 			if err != nil {
