@@ -1,7 +1,7 @@
 -- +migrate Up
 -- This migration ensures tables exist for nodes that state synced from snapshots
--- created after the original migrations (22, 23, 26, 27) but before these tables
--- were added to the state sync dump list (lines 269-275 in state_sync.go).
+-- created after the original migrations (22, 23, 25, 26, 27) but before these tables
+-- were added to the state sync dump list (lines 269-278 in state_sync.go).
 --
 -- Nodes that state synced during that window have the migration records but not
 -- the actual tables, so this migration recreates them safely using IF NOT EXISTS.
@@ -23,6 +23,41 @@ CREATE INDEX IF NOT EXISTS idx_core_ern_address on core_ern (address);
 CREATE INDEX IF NOT EXISTS idx_core_ern_block_height on core_ern (block_height);
 CREATE INDEX IF NOT EXISTS idx_core_ern_message_control_type on core_ern (message_control_type);
 CREATE INDEX IF NOT EXISTS idx_core_ern_sender on core_ern (sender);
+
+-- From migration 00022 - MEAD (Music Encoding and Archival Data) messages
+CREATE TABLE IF NOT EXISTS core_mead(
+    id bigserial primary key,
+    address text not null,
+    tx_hash text not null,
+    index bigint not null,
+    sender text not null,
+    resource_addresses text[] default '{}',
+    release_addresses text[] default '{}',
+    raw_message bytea not null,
+    raw_acknowledgment bytea not null,
+    block_height bigint not null
+);
+
+CREATE INDEX IF NOT EXISTS idx_core_mead_address on core_mead (address);
+CREATE INDEX IF NOT EXISTS idx_core_mead_block_height on core_mead (block_height);
+CREATE INDEX IF NOT EXISTS idx_core_mead_sender on core_mead (sender);
+
+-- From migration 00022 - PIE (Party Information Entity) messages
+CREATE TABLE IF NOT EXISTS core_pie(
+    id bigserial primary key,
+    address text not null,
+    tx_hash text not null,
+    index bigint not null,
+    sender text not null,
+    party_addresses text[] default '{}',
+    raw_message bytea not null,
+    raw_acknowledgment bytea not null,
+    block_height bigint not null
+);
+
+CREATE INDEX IF NOT EXISTS idx_core_pie_address on core_pie (address);
+CREATE INDEX IF NOT EXISTS idx_core_pie_block_height on core_pie (block_height);
+CREATE INDEX IF NOT EXISTS idx_core_pie_sender on core_pie (sender);
 
 -- From migration 00023 - normalized entity tables
 CREATE TABLE IF NOT EXISTS core_resources (
