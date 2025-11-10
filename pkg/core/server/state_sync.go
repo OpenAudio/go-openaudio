@@ -266,6 +266,13 @@ func (s *Server) createPgDump(logger *zap.Logger, latestSnapshotDir string) erro
 		"storage_proof_peers",
 		"storage_proofs",
 		"track_releases",
+		"core_ern",
+		"core_resources",
+		"core_releases",
+		"core_parties",
+		"core_deals",
+		"core_rewards",
+		"core_uploads",
 	}
 
 	// Start building the args
