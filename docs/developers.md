@@ -1,29 +1,38 @@
 # Development
 
-> Assumes development is done on macOS with apple silicon.
+## Prerequisites
 
-**Prerequisites:**
+Ensure the following are installed:
 
-1. Clone the repo
+* Docker
+* Docker Compose
+* Go v1.25
+
+The remaining dependencies can then be automatically installed with `make`:
 
 ```bash
-git clone git@github.com:OpenAudio/go-openaudio.git
-cd go-openaudio
+make install-deps
 ```
 
-2. Add the devnet hosts to your `/etc/hosts` file:
+## Running local devnet
+
+You can simulate an openaudio network by running multiple nodes on your machine. This makes developing certain features fast and easy.
+
+### Setup
+
+Add the following hosts to your `/etc/hosts` file:
 
 ```bash
 echo "127.0.0.1       node1.oap.devnet node2.oap.devnet node3.oap.devnet node4.oap.devnet" | sudo tee -a /etc/hosts
 ```
 
-3. Add the local dev x509 cert to your keychain so you will have green ssl in your browser.
+Then add the local dev x509 cert to your keychain so you will have green ssl in your browser.
 
 ```bash
 sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain dev/tls/cert.pem
 ```
 
-## Build and Run
+### Run
 
 Build and run a local devnet with 4 nodes.
 
@@ -79,31 +88,46 @@ Cleanup.
 make down
 ```
 
-### Develop against stage or prod
+## Develop against stage or prod
+
+Build a local docker image
 
 ```bash
-# build a local node
 make docker-dev
+```
 
-# peer with prod
-docker run --rm -it -p 80:80 -p 443:443 -e NETWORK=prod audius/openaudio:dev
+Peer with mainnet
 
-# peer with stage with hot reloading
-docker run --rm -it \
-  -p 80:80 \
-  -p 443:443 \
-  -e NETWORK="stage" \
-  -v $(pwd)/cmd:/app/cmd \
-  -v $(pwd)/pkg:/app/pkg \
-  audius/openaudio:dev
+```bash
+docker run --rm -it -p 80:80 -p 443:443 -e NETWORK=prod openaudio/go-openaudio:dev
+```
+
+Peer with testnest
+
+```bash
+docker run --rm -it -p 80:80 -p 443:443 -e NETWORK="stage" openaudio/go-openaudio:dev
 ```
 
 ## Run tests
 
-```bash
-# "unit" tests
-make mediorum-test
+Run all tests
 
-# "integration" tests
-make core-test
+```bash
+make test
+```
+
+Run only storage service tests
+
+```bash
+make test-mediorum
+```
+
+Run only unittests
+```bash
+make test-unit
+```
+
+Run only integration tests
+```bash
+make test-integration
 ```
