@@ -136,6 +136,21 @@ var (
 			RewardId: "dvl",
 			Name:     "daily volume leader",
 		},
+		{
+			Amount:   10,
+			RewardId: "cp",
+			Name:     "comment pin",
+		},
+		{
+			Amount:   1000,
+			RewardId: "cs",
+			Name:     "cosign challenge",
+		},
+		{
+			Amount:   1000,
+			RewardId: "w",
+			Name:     "remix contest winner",
+		},
 	}
 
 	// Environment-specific reward extensions
