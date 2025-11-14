@@ -132,7 +132,7 @@ var (
 			Name:     "tastemaker",
 		},
 		{
-			Amount:   10000,
+			Amount:   1000,
 			RewardId: "dvl",
 			Name:     "daily volume leader",
 		},
