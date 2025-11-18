@@ -552,6 +552,25 @@ left join core_transactions t on b.height = t.block_id
 where b.height = any($1::bigint[])
 order by b.height, t.created_at desc;
 
+-- name: GetBlockWithTransactions :many
+select
+    b.rowid as block_rowid,
+    b.height,
+    b.chain_id,
+    b.hash as block_hash,
+    b.proposer,
+    b.created_at as block_created_at,
+    t.rowid as tx_rowid,
+    t.block_id,
+    t.index as tx_index,
+    t.tx_hash,
+    t.transaction,
+    t.created_at as tx_created_at
+from core_blocks b
+left join core_transactions t on b.height = t.block_id
+where b.height = $1
+order by b.height, t.index asc;
+
 -- name: GetReward :one
 select * from core_rewards
 where address = $1
