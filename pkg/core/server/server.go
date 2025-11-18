@@ -33,7 +33,7 @@ type Server struct {
 	config         *config.Config
 	cometbftConfig *cconfig.Config
 	logger         *zap.Logger
-	self           corev1connect.CoreServiceClient
+	self           corev1connect.CoreServiceHandler
 	eth            *eth.EthService
 
 	httpServer         *echo.Echo
@@ -133,7 +133,7 @@ func (s *Server) Start() error {
 	return fmt.Errorf("core stopped or shut down")
 }
 
-func (s *Server) setSelf(self corev1connect.CoreServiceClient) {
+func (s *Server) setSelf(self corev1connect.CoreServiceHandler) {
 	s.self = self
 }
 

@@ -23,13 +23,13 @@ type Console struct {
 	e      *echo.Echo
 	logger *zap.Logger
 	eth    *eth.EthService
-	core   v1connect.CoreServiceClient
+	core   v1connect.CoreServiceHandler
 
 	layouts *layout.Layout
 	views   *views.Views
 }
 
-func NewConsole(config *config.Config, logger *zap.Logger, e *echo.Echo, pool *pgxpool.Pool, ethService *eth.EthService, coreService v1connect.CoreServiceClient) (*Console, error) {
+func NewConsole(config *config.Config, logger *zap.Logger, e *echo.Echo, pool *pgxpool.Pool, ethService *eth.EthService, coreService v1connect.CoreServiceHandler) (*Console, error) {
 	l := logger.With(zap.String("service", "console"))
 	db := db.New(pool)
 	httprpc, err := rpchttp.New(config.RPCladdr)

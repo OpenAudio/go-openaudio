@@ -33,4 +33,6 @@ service CoreService {
   rpc GetStreamURLs(GetStreamURLsRequest) returns (GetStreamURLsResponse) {}
 
   rpc GetUploadByCID(GetUploadByCIDRequest) returns (GetUploadByCIDResponse) {}
+
+  rpc StreamBlocks(StreamBlocksRequest) returns (stream StreamBlocksResponse) {}
 }

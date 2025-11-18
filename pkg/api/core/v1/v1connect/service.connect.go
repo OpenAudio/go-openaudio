@@ -91,6 +91,9 @@ const (
 	// CoreServiceGetUploadByCIDProcedure is the fully-qualified name of the CoreService's
 	// GetUploadByCID RPC.
 	CoreServiceGetUploadByCIDProcedure = "/core.v1.CoreService/GetUploadByCID"
+	// CoreServiceStreamBlocksProcedure is the fully-qualified name of the CoreService's StreamBlocks
+	// RPC.
+	CoreServiceStreamBlocksProcedure = "/core.v1.CoreService/StreamBlocks"
 )
 
 // CoreServiceClient is a client for the core.v1.CoreService service.
@@ -118,6 +121,7 @@ type CoreServiceClient interface {
 	GetRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error)
 	GetStreamURLs(context.Context, *connect.Request[v1.GetStreamURLsRequest]) (*connect.Response[v1.GetStreamURLsResponse], error)
 	GetUploadByCID(context.Context, *connect.Request[v1.GetUploadByCIDRequest]) (*connect.Response[v1.GetUploadByCIDResponse], error)
+	StreamBlocks(context.Context, *connect.Request[v1.StreamBlocksRequest]) (*connect.ServerStreamForClient[v1.StreamBlocksResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the core.v1.CoreService service. By default, it uses
@@ -269,6 +273,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("GetUploadByCID")),
 			connect.WithClientOptions(opts...),
 		),
+		streamBlocks: connect.NewClient[v1.StreamBlocksRequest, v1.StreamBlocksResponse](
+			httpClient,
+			baseURL+CoreServiceStreamBlocksProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("StreamBlocks")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -297,6 +307,7 @@ type coreServiceClient struct {
 	getRewardSenderAttestation   *connect.Client[v1.GetRewardSenderAttestationRequest, v1.GetRewardSenderAttestationResponse]
 	getStreamURLs                *connect.Client[v1.GetStreamURLsRequest, v1.GetStreamURLsResponse]
 	getUploadByCID               *connect.Client[v1.GetUploadByCIDRequest, v1.GetUploadByCIDResponse]
+	streamBlocks                 *connect.Client[v1.StreamBlocksRequest, v1.StreamBlocksResponse]
 }
 
 // Ping calls core.v1.CoreService.Ping.
@@ -414,6 +425,11 @@ func (c *coreServiceClient) GetUploadByCID(ctx context.Context, req *connect.Req
 	return c.getUploadByCID.CallUnary(ctx, req)
 }
 
+// StreamBlocks calls core.v1.CoreService.StreamBlocks.
+func (c *coreServiceClient) StreamBlocks(ctx context.Context, req *connect.Request[v1.StreamBlocksRequest]) (*connect.ServerStreamForClient[v1.StreamBlocksResponse], error) {
+	return c.streamBlocks.CallServerStream(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the core.v1.CoreService service.
 type CoreServiceHandler interface {
 	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error)
@@ -439,6 +455,7 @@ type CoreServiceHandler interface {
 	GetRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error)
 	GetStreamURLs(context.Context, *connect.Request[v1.GetStreamURLsRequest]) (*connect.Response[v1.GetStreamURLsResponse], error)
 	GetUploadByCID(context.Context, *connect.Request[v1.GetUploadByCIDRequest]) (*connect.Response[v1.GetUploadByCIDResponse], error)
+	StreamBlocks(context.Context, *connect.Request[v1.StreamBlocksRequest], *connect.ServerStream[v1.StreamBlocksResponse]) error
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -586,6 +603,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("GetUploadByCID")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceStreamBlocksHandler := connect.NewServerStreamHandler(
+		CoreServiceStreamBlocksProcedure,
+		svc.StreamBlocks,
+		connect.WithSchema(coreServiceMethods.ByName("StreamBlocks")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/core.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServicePingProcedure:
@@ -634,6 +657,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceGetStreamURLsHandler.ServeHTTP(w, r)
 		case CoreServiceGetUploadByCIDProcedure:
 			coreServiceGetUploadByCIDHandler.ServeHTTP(w, r)
+		case CoreServiceStreamBlocksProcedure:
+			coreServiceStreamBlocksHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -733,4 +758,8 @@ func (UnimplementedCoreServiceHandler) GetStreamURLs(context.Context, *connect.R
 
 func (UnimplementedCoreServiceHandler) GetUploadByCID(context.Context, *connect.Request[v1.GetUploadByCIDRequest]) (*connect.Response[v1.GetUploadByCIDResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetUploadByCID is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) StreamBlocks(context.Context, *connect.Request[v1.StreamBlocksRequest], *connect.ServerStream[v1.StreamBlocksResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.StreamBlocks is not implemented"))
 }
