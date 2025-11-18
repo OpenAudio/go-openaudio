@@ -51,8 +51,8 @@ type Server struct {
 	cometListenAddrs *safemap.SafeMap[CometBFTAddress, CometBFTListener]
 	peerStatus       *safemap.SafeMap[EthAddress, *v1.GetStatusResponse_PeerInfo_Peer]
 
-	txPubsub       *TransactionHashPubsub
-	blockNumPubsub *BlockNumPubsub
+	txPubsub    *TransactionHashPubsub
+	blockPubsub *BlockPubsub
 
 	cache     *Cache
 	abciState *ABCIState
@@ -70,7 +70,7 @@ func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.
 
 	// create pubsubs
 	txPubsub := pubsub.NewPubsub[struct{}]()
-	blockNumPubsub := pubsub.NewPubsub[int64]()
+	blockPubsub := pubsub.NewPubsub[*v1.Block]()
 
 	httpServer := echo.New()
 	grpcServer := grpc.NewServer()
@@ -97,7 +97,7 @@ func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.
 		cometListenAddrs: safemap.New[CometBFTAddress, CometBFTListener](),
 		peerStatus:       safemap.New[EthAddress, *v1.GetStatusResponse_PeerInfo_Peer](),
 		txPubsub:         txPubsub,
-		blockNumPubsub:   blockNumPubsub,
+		blockPubsub:      blockPubsub,
 		cache:            NewCache(config),
 		abciState:        NewABCIState(0), // Start at 0, will be calculated during Commit
 
