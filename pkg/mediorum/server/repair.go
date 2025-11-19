@@ -111,11 +111,14 @@ func (ss *MediorumServer) startRepairer(ctx context.Context) error {
 
 			logger.Info("repair starting")
 			err := ss.runRepair(ctx, &tracker)
-			tracker.FinishedAt = time.Now()
-			if err != nil {
+			if err != nil && !errors.Is(err, context.Canceled) {
+				tracker.FinishedAt = time.Now()
 				logger.Error("repair failed", zap.Error(err), zap.Duration("took", tracker.Duration))
 				tracker.AbortedReason = err.Error()
+			} else if errors.Is(err, context.Canceled) {
+				logger.Warn("repair interrupted", zap.Error(err), zap.Duration("took", tracker.Duration))
 			} else {
+				tracker.FinishedAt = time.Now()
 				logger.Info("repair OK", zap.Duration("took", tracker.Duration))
 				ss.lastSuccessfulRepair = tracker
 				if tracker.CleanupMode {
