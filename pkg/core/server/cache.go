@@ -229,6 +229,7 @@ func (s *Server) startCache(ctx context.Context) error {
 func (s *Server) startBlockEventSubscriber(ctx context.Context) error {
 	node := s.node
 	eb := node.EventBus()
+	var blockMU sync.Mutex
 
 	if eb == nil {
 		return errors.New("event bus not ready")
@@ -250,7 +251,20 @@ func (s *Server) startBlockEventSubscriber(ctx context.Context) error {
 			blockEvent := msg.Data().(types.EventDataNewBlock)
 			blockHeight := blockEvent.Block.Height
 			s.cache.currentHeight.Store(blockHeight)
-			s.blockNumPubsub.Publish(ctx, BlockNumPubsubTopic, blockHeight)
+
+			go func(height int64) {
+				// hold lock to keep order of blocks but not hold up cometbft subscription
+				blockMU.Lock()
+				defer blockMU.Unlock()
+
+				block, err := s.GetBlock(ctx, height, true)
+				if err != nil {
+					s.logger.Error("error getting block", zap.Error(err))
+					return
+				}
+
+				s.blockPubsub.Publish(ctx, BlockPubsubTopic, block)
+			}(blockHeight)
 
 			upsertCache(s.cache.chainInfo, ChainInfoKey, func(chainInfo *v1.GetStatusResponse_ChainInfo) *v1.GetStatusResponse_ChainInfo {
 				chainInfo.CurrentHeight = blockHeight

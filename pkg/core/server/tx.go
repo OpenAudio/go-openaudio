@@ -11,9 +11,9 @@ import (
 	"go.uber.org/zap"
 )
 
-const BlockNumPubsubTopic = "block-num-topic"
+const BlockPubsubTopic = "block-topic"
 
-type BlockNumPubsub = pubsub.Pubsub[int64]
+type BlockPubsub = pubsub.Pubsub[*v1.Block]
 
 // stringToUint32 generates a deterministic uint32 hash from a string
 func stringToUint32(s string) uint32 {
@@ -80,15 +80,15 @@ func (s *Server) cacheTxCount(ctx context.Context) error {
 	case <-s.awaitRpcReady:
 	}
 
-	blockNumChan := s.blockNumPubsub.Subscribe(BlockNumPubsubTopic)
+	blockChan := s.blockPubsub.Subscribe(BlockPubsubTopic)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case blockNum := <-blockNumChan:
+		case block := <-blockChan:
 			// every 5 blocks, recache tx count so it looks the same across nodes
-			if blockNum%5 == 0 {
+			if block.Height%5 == 0 {
 				totalTxs, err := s.db.TotalTransactions(ctx)
 				if err != nil {
 					s.logger.Error("could not count txs in db", zap.Error(err))

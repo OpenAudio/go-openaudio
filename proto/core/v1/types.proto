@@ -626,3 +626,11 @@ message GetRewardSenderAttestationResponse {
   string owner = 1;
   string attestation = 2;
 }
+
+message StreamBlocksRequest {
+  bool canon = 1;
+}
+
+message StreamBlocksResponse {
+  Block block = 1;
+}
