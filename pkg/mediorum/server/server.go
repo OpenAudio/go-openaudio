@@ -338,6 +338,16 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pro
 		return c.Redirect(http.StatusFound, "/dashboard/#/nodes/content-node?endpoint="+config.Self.Host)
 	})
 
+	// Setup embedded tusd handler
+	tusdHandler, err := ss.setupTusdHandler()
+	if err != nil {
+		logger.Error("failed to setup tusd handler", zap.Error(err))
+		return nil, err
+	}
+
+	// Mount tusd routes
+	routes.Any("/files/*", echo.WrapHandler(http.StripPrefix("/files", tusdHandler)))
+
 	// public: uploads
 	routes.GET("/uploads", ss.serveUploadList)
 	routes.GET("/uploads/:id", ss.serveUploadDetail, ss.requireHealthy)
