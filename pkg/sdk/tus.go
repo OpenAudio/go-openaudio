@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -23,7 +23,7 @@ type StorageServiceClient interface {
 
 type StorageServiceClientWithTUS struct {
 	storagev1connect.StorageServiceClient
-	sdk *OpenAudioSDK
+	tusClient *tusgo.Client
 }
 
 // UploadFilesTus implements StorageServiceClient.UploadFilesTus.
@@ -63,22 +63,6 @@ func (s *StorageServiceClientWithTUS) UploadFilesTus(ctx context.Context, req *c
 	}
 	fileSize := fileInfo.Size()
 
-	serverURL := s.sdk.getServerURL()
-	if serverURL == "" {
-		return nil, fmt.Errorf("server URL not available")
-	}
-
-	tusBaseURL, err := url.Parse(fmt.Sprintf("%s/files/", serverURL))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse TUS base URL: %w", err)
-	}
-	tusClient := tusgo.NewClient(http.DefaultClient, tusBaseURL)
-
-	tusClient.Capabilities = &tusgo.ServerCapabilities{
-		Extensions:       []string{"creation", "creation-with-upload", "termination"},
-		ProtocolVersions: []string{"1.0.0"},
-	}
-
 	uploadMeta := map[string]string{
 		"filename":   file.Filename,
 		"userWallet": req.Msg.UserWallet,
@@ -93,12 +77,12 @@ func (s *StorageServiceClientWithTUS) UploadFilesTus(ctx context.Context, req *c
 
 	tusUpload := tusgo.Upload{}
 
-	_, err = tusClient.CreateUpload(&tusUpload, fileSize, false, uploadMeta)
+	_, err = s.tusClient.CreateUpload(&tusUpload, fileSize, false, uploadMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TUS upload: %w", err)
 	}
 
-	uploadStream := tusgo.NewUploadStream(tusClient, &tusUpload)
+	uploadStream := tusgo.NewUploadStream(s.tusClient, &tusUpload)
 	if _, err = tmpFile.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("failed to seek file: %w", err)
 	}
@@ -117,12 +101,10 @@ func (s *StorageServiceClientWithTUS) UploadFilesTus(ctx context.Context, req *c
 		return nil, fmt.Errorf("failed to parse upload location: %w", err)
 	}
 
-	path := strings.TrimRight(locURL.Path, "/")
-	parts := strings.Split(path, "/")
-	if len(parts) == 0 {
+	uploadID := filepath.Base(strings.TrimRight(locURL.Path, "/"))
+	if uploadID == "" || uploadID == "/" {
 		return nil, fmt.Errorf("invalid upload location: %s", tusUpload.Location)
 	}
-	uploadID := parts[len(parts)-1]
 
 	// Poll for upload CID until timeout
 	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
@@ -136,7 +118,7 @@ func (s *StorageServiceClientWithTUS) UploadFilesTus(ctx context.Context, req *c
 		case <-timeoutCtx.Done():
 			return nil, fmt.Errorf("timeout waiting for upload CID after 10 minutes")
 		case <-ticker.C:
-			getUploadRes, err := s.StorageServiceClient.GetUpload(ctx, &connect.Request[v1storage.GetUploadRequest]{
+			getUploadRes, err := s.StorageServiceClient.GetUpload(timeoutCtx, &connect.Request[v1storage.GetUploadRequest]{
 				Msg: &v1storage.GetUploadRequest{
 					Id: uploadID,
 				},
@@ -159,3 +141,4 @@ func (s *StorageServiceClientWithTUS) UploadFilesTus(ctx context.Context, req *c
 		}
 	}
 }
+

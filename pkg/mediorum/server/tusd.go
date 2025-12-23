@@ -98,7 +98,7 @@ func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
 
 	// Extract and validate template from metadata
 	template := JobTemplateAudio
-	if templateMeta, ok := event.Upload.MetaData["template"]; ok && templateMeta != "" {
+	if templateMeta, ok := event.Upload.MetaData["template"]; ok {
 		template = JobTemplate(templateMeta)
 	}
 	if err := validateJobTemplate(template); err != nil {

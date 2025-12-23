@@ -3,7 +3,9 @@ package sdk
 import (
 	"context"
 	"crypto/ecdsa"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -14,6 +16,7 @@ import (
 	systemv1connect "github.com/OpenAudio/go-openaudio/pkg/api/system/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk/mediorum"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk/rewards"
+	"github.com/bdragon300/tusgo"
 )
 
 type OpenAudioSDK struct {
@@ -40,30 +43,38 @@ func ensureURLProtocol(url string) string {
 
 func NewOpenAudioSDK(nodeURL string) *OpenAudioSDK {
 	httpClient := http.DefaultClient
-	url := ensureURLProtocol(nodeURL)
+	baseURL := ensureURLProtocol(nodeURL)
 
-	coreClient := corev1connect.NewCoreServiceClient(httpClient, url)
-	storageClientBase := storagev1connect.NewStorageServiceClient(httpClient, url)
-	systemClient := systemv1connect.NewSystemServiceClient(httpClient, url)
-	ethClient := ethv1connect.NewEthServiceClient(httpClient, url)
-	mediorumClient := mediorum.NewWithCore(url, coreClient)
+	coreClient := corev1connect.NewCoreServiceClient(httpClient, baseURL)
+	storageClientBase := storagev1connect.NewStorageServiceClient(httpClient, baseURL)
+	systemClient := systemv1connect.NewSystemServiceClient(httpClient, baseURL)
+	ethClient := ethv1connect.NewEthServiceClient(httpClient, baseURL)
+	mediorumClient := mediorum.NewWithCore(baseURL, coreClient)
 	rewardsClient := rewards.NewRewards(coreClient)
 
+	// Initialize TUS client
+	tusBaseURL, err := url.Parse(fmt.Sprintf("%s/files/", baseURL))
+	if err != nil {
+		panic(fmt.Errorf("invalid base URL: %w", err))
+	}
+	tusClient := tusgo.NewClient(httpClient, tusBaseURL)
+	tusClient.Capabilities = &tusgo.ServerCapabilities{
+		Extensions:       []string{"creation", "creation-with-upload", "termination"},
+		ProtocolVersions: []string{"1.0.0"},
+	}
+
 	sdk := &OpenAudioSDK{
-		baseURL: url,
+		baseURL: baseURL,
 		Core:    coreClient,
 		Storage: &StorageServiceClientWithTUS{
 			StorageServiceClient: storageClientBase,
-			sdk:                  nil, // Will be set below
+			tusClient:            tusClient,
 		},
 		System:   systemClient,
 		Eth:      ethClient,
 		Mediorum: mediorumClient,
 		Rewards:  rewardsClient,
 	}
-
-	// Set SDK reference for the storage wrapper
-	sdk.Storage.sdk = sdk
 
 	return sdk
 }
@@ -80,8 +91,4 @@ func (s *OpenAudioSDK) Init(ctx context.Context) error {
 
 func (s *OpenAudioSDK) ChainID() string {
 	return s.chainID
-}
-
-func (s *OpenAudioSDK) getServerURL() string {
-	return s.baseURL
 }
