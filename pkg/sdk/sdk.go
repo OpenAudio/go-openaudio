@@ -19,9 +19,10 @@ import (
 type OpenAudioSDK struct {
 	privKey *ecdsa.PrivateKey
 	chainID string
+	baseURL string
 
 	Core    corev1connect.CoreServiceClient
-	Storage storagev1connect.StorageServiceClient
+	Storage *StorageServiceClientWithTUS
 	System  systemv1connect.SystemServiceClient
 	Eth     ethv1connect.EthServiceClient
 
@@ -42,20 +43,27 @@ func NewOpenAudioSDK(nodeURL string) *OpenAudioSDK {
 	url := ensureURLProtocol(nodeURL)
 
 	coreClient := corev1connect.NewCoreServiceClient(httpClient, url)
-	storageClient := storagev1connect.NewStorageServiceClient(httpClient, url)
+	storageClientBase := storagev1connect.NewStorageServiceClient(httpClient, url)
 	systemClient := systemv1connect.NewSystemServiceClient(httpClient, url)
 	ethClient := ethv1connect.NewEthServiceClient(httpClient, url)
 	mediorumClient := mediorum.NewWithCore(url, coreClient)
 	rewardsClient := rewards.NewRewards(coreClient)
 
 	sdk := &OpenAudioSDK{
-		Core:     coreClient,
-		Storage:  storageClient,
+		baseURL: url,
+		Core:    coreClient,
+		Storage: &StorageServiceClientWithTUS{
+			StorageServiceClient: storageClientBase,
+			sdk:                  nil, // Will be set below
+		},
 		System:   systemClient,
 		Eth:      ethClient,
 		Mediorum: mediorumClient,
 		Rewards:  rewardsClient,
 	}
+
+	// Set SDK reference for the storage wrapper
+	sdk.Storage.sdk = sdk
 
 	return sdk
 }
@@ -72,4 +80,8 @@ func (s *OpenAudioSDK) Init(ctx context.Context) error {
 
 func (s *OpenAudioSDK) ChainID() string {
 	return s.chainID
+}
+
+func (s *OpenAudioSDK) getServerURL() string {
+	return s.baseURL
 }

@@ -70,6 +70,142 @@ type FileReader interface {
 	Open() (io.ReadCloser, error)
 }
 
+// validatePlacementHosts validates that:
+// 1. If placement hosts are specified, self must be included
+// 2. All placement hosts must be registered peers
+func (ss *MediorumServer) validatePlacementHosts(placementHosts []string) error {
+	if len(placementHosts) == 0 {
+		return nil
+	}
+
+	if !slices.Contains(placementHosts, ss.Config.Self.Host) {
+		return ErrUploadToPlacementHosts
+	}
+
+	for _, host := range placementHosts {
+		isRegistered := false
+		for _, peer := range ss.Config.Peers {
+			if peer.Host == host {
+				isRegistered = true
+				break
+			}
+		}
+		if !isRegistered {
+			return ErrAllPlacementHostsMustBeRegisteredSigners
+		}
+	}
+
+	return nil
+}
+
+// parseSelectedPreview parses previewStart string and formats it for storage.
+// Returns a valid sql.NullString if previewStart is non-empty, otherwise invalid.
+func parseSelectedPreview(previewStart string) (sql.NullString, error) {
+	if previewStart == "" {
+		return sql.NullString{Valid: false}, nil
+	}
+
+	previewStartSeconds, err := strconv.ParseFloat(previewStart, 64)
+	if err != nil {
+		return sql.NullString{Valid: false}, ErrInvalidPreviewStartSeconds
+	}
+
+	return sql.NullString{
+		Valid:  true,
+		String: fmt.Sprintf("320_preview|%g", previewStartSeconds),
+	}, nil
+}
+
+// processUploadedFile handles the common file processing logic for both
+// regular uploads and TUS uploads. It:
+// 1. Computes the CID
+// 2. Runs ffprobe
+// 3. Replicates to local bucket and peers
+// 4. Handles image templates immediately or queues audio for transcoding
+//
+// The upload record must already exist in the database (for TUS) or will be created (for regular uploads).
+// On error, upload.Error is set and the record is updated.
+func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Upload, filePath string, shouldCreate bool) error {
+	// Open the file
+	tmpFile, err := os.Open(filePath)
+	if err != nil {
+		return ss.handleUploadError(upload, err, shouldCreate)
+	}
+	defer tmpFile.Close()
+
+	// Compute CID
+	formFileCID, err := cidutil.ComputeFileCID(tmpFile)
+	if err != nil {
+		return ss.handleUploadError(upload, err, shouldCreate)
+	}
+	upload.OrigFileCID = formFileCID
+
+	// Reset file pointer for subsequent operations
+	tmpFile.Seek(0, 0)
+
+	// Run ffprobe
+	upload.FFProbe, err = ffprobe(filePath)
+	if err != nil {
+		return ss.handleUploadError(upload, err, shouldCreate)
+	}
+	// Restore original filename in ffprobe result
+	upload.FFProbe.Format.Filename = upload.OrigFileName
+
+	// Replicate to my bucket + others
+	ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
+	ss.logger.Info("replicating to my bucket", zap.String("name", filePath), zap.String("cid", formFileCID))
+
+	upload.Mirrors, err = ss.replicateFileParallel(ctx, formFileCID, filePath, upload.PlacementHosts)
+	if err != nil {
+		return ss.handleUploadError(upload, err, shouldCreate)
+	}
+
+	ss.logger.Info("mirrored",
+		zap.String("name", upload.OrigFileName),
+		zap.String("uploadID", upload.ID),
+		zap.String("cid", formFileCID),
+		zap.Strings("mirrors", upload.Mirrors),
+	)
+
+	// Handle image uploads immediately
+	if upload.Template == JobTemplateImgSquare || upload.Template == JobTemplateImgBackdrop {
+		upload.TranscodeResults["original.jpg"] = formFileCID
+		upload.TranscodeProgress = 1
+		upload.TranscodedAt = time.Now().UTC()
+		upload.Status = JobStatusDone
+		if shouldCreate {
+			return ss.crud.Create(upload)
+		}
+		return ss.crud.Update(upload)
+	}
+
+	// Save and queue for transcoding
+	if shouldCreate {
+		if err := ss.crud.Create(upload); err != nil {
+			return err
+		}
+	} else {
+		if err := ss.crud.Update(upload); err != nil {
+			return err
+		}
+	}
+
+	ss.transcodeWork <- upload
+	return nil
+}
+
+// handleUploadError sets the error on the upload and persists it
+func (ss *MediorumServer) handleUploadError(upload *Upload, err error, shouldCreate bool) error {
+	upload.Error = err.Error()
+	upload.Status = JobStatusError
+	if shouldCreate {
+		ss.crud.Create(upload)
+	} else {
+		ss.crud.Update(upload)
+	}
+	return err
+}
+
 func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalletHeader string, ftemplate string, previewStart string, fPlacementHosts string, files []*multipart.FileHeader) ([]*Upload, error) {
 	if !ss.diskHasSpace() {
 		ss.logger.Warn("disk is too full to accept new uploads")
@@ -82,7 +218,7 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 
 	// updateUpload uses the requireUserSignature c.Get("signer-wallet")
 	// but requireUserSignature will fail request if missing
-	// so parse direclty here
+	// so parse directly here
 	if sig, err := signature.ParseFromQueryString(qsig); err == nil {
 		userWallet = sql.NullString{
 			String: sig.SignerWallet,
@@ -98,7 +234,6 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 	}
 
 	template := JobTemplate(ftemplate)
-	selectedPreview := sql.NullString{Valid: false}
 
 	if err := validateJobTemplate(template); err != nil {
 		return nil, err
@@ -109,35 +244,13 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 		placementHosts = strings.Split(fPlacementHosts, ",")
 	}
 
-	if placementHosts != nil {
-		if !slices.Contains(placementHosts, ss.Config.Self.Host) {
-			return nil, ErrUploadToPlacementHosts
-		}
-		// validate that the placement hosts are all registered nodes
-		for _, host := range placementHosts {
-			isRegistered := false
-			for _, peer := range ss.Config.Peers {
-				if peer.Host == host {
-					isRegistered = true
-					break
-				}
-			}
-			if !isRegistered {
-				return nil, ErrAllPlacementHostsMustBeRegisteredSigners
-			}
-		}
+	if err := ss.validatePlacementHosts(placementHosts); err != nil {
+		return nil, err
 	}
 
-	if previewStart != "" {
-		previewStartSeconds, err := strconv.ParseFloat(previewStart, 64)
-		if err != nil {
-			return nil, ErrInvalidPreviewStartSeconds
-		}
-		selectedPreviewString := fmt.Sprintf("320_preview|%g", previewStartSeconds)
-		selectedPreview = sql.NullString{
-			Valid:  true,
-			String: selectedPreviewString,
-		}
+	selectedPreview, err := parseSelectedPreview(previewStart)
+	if err != nil {
+		return nil, err
 	}
 
 	// each file:
@@ -178,47 +291,8 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 			}
 			defer os.Remove(tmpFile.Name())
 
-			formFileCID, err := cidutil.ComputeFileCID(tmpFile)
-			if err != nil {
-				upload.Error = err.Error()
-				return err
-			}
-
-			upload.OrigFileCID = formFileCID
-
-			// ffprobe:
-			upload.FFProbe, err = ffprobe(tmpFile.Name())
-			if err != nil {
-				// fail upload if ffprobe fails
-				upload.Error = err.Error()
-				return err
-			}
-
-			// ffprobe: restore orig filename
-			upload.FFProbe.Format.Filename = filename
-
-			// replicate to my bucket + others
-			ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
-			ss.logger.Info("replicating to my bucket", zap.String("name", tmpFile.Name()), zap.String("cid", formFileCID))
-			upload.Mirrors, err = ss.replicateFileParallel(ctx, formFileCID, tmpFile.Name(), placementHosts)
-			if err != nil {
-				upload.Error = err.Error()
-				return err
-			}
-
-			ss.logger.Info("mirrored", zap.String("name", filename), zap.String("uploadID", upload.ID), zap.String("cid", formFileCID), zap.Strings("mirrors", upload.Mirrors))
-
-			if template == JobTemplateImgSquare || template == JobTemplateImgBackdrop {
-				upload.TranscodeResults["original.jpg"] = formFileCID
-				upload.TranscodeProgress = 1
-				upload.TranscodedAt = time.Now().UTC()
-				upload.Status = JobStatusDone
-				return ss.crud.Create(upload)
-			}
-
-			ss.crud.Create(upload)
-			ss.transcodeWork <- upload
-			return nil
+			// Use shared processing logic
+			return ss.processUploadedFile(ctx, upload, tmpFile.Name(), true)
 		})
 	}
 

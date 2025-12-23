@@ -5,13 +5,12 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tus/tusd/v2/pkg/filestore"
 	"github.com/tus/tusd/v2/pkg/handler"
 	"go.uber.org/zap"
-
-	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 )
 
 func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
@@ -72,34 +71,88 @@ func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
 		zap.Any("metadata", event.Upload.MetaData),
 	)
 
-	// Extract metadata
+	if !ss.diskHasSpace() {
+		ss.logger.Warn("disk is too full to accept new uploads", zap.String("id", event.Upload.ID))
+		now := time.Now().UTC()
+		upload := &Upload{
+			ID:        event.Upload.ID,
+			Status:    JobStatusError,
+			Error:     ErrDiskFull.Error(),
+			CreatedBy: ss.Config.Self.Host,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		ss.crud.Create(upload)
+		return
+	}
+
 	filename := event.Upload.MetaData["filename"]
 	if filename == "" {
 		filename = event.Upload.ID
 	}
 
-	// Extract user wallet from metadata
 	userWallet := sql.NullString{Valid: false}
 	if wallet, ok := event.Upload.MetaData["userWallet"]; ok && wallet != "" {
 		userWallet = sql.NullString{String: wallet, Valid: true}
 	}
 
-	// Extract template from metadata
-	template := JobTemplateAudio // default to audio
-	if templateMeta, ok := event.Upload.MetaData["template"]; ok {
+	// Extract and validate template from metadata
+	template := JobTemplateAudio
+	if templateMeta, ok := event.Upload.MetaData["template"]; ok && templateMeta != "" {
 		template = JobTemplate(templateMeta)
 	}
-
-	// Extract preview settings from metadata
-	selectedPreview := sql.NullString{Valid: false}
-	if previewStart, ok := event.Upload.MetaData["previewStartSeconds"]; ok && previewStart != "" {
-		selectedPreview = sql.NullString{Valid: true, String: previewStart}
+	if err := validateJobTemplate(template); err != nil {
+		ss.logger.Error("invalid template for tusd upload", zap.String("id", event.Upload.ID), zap.String("template", string(template)), zap.Error(err))
+		now := time.Now().UTC()
+		upload := &Upload{
+			ID:        event.Upload.ID,
+			Status:    JobStatusError,
+			Error:     err.Error(),
+			CreatedBy: ss.Config.Self.Host,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		ss.crud.Create(upload)
+		return
 	}
 
-	// Extract placement hosts from metadata
 	var placementHosts []string
 	if hostsStr, ok := event.Upload.MetaData["placementHosts"]; ok && hostsStr != "" {
-		placementHosts = append(placementHosts, hostsStr)
+		placementHosts = strings.Split(hostsStr, ",")
+	}
+	if err := ss.validatePlacementHosts(placementHosts); err != nil {
+		ss.logger.Error("invalid placement hosts for tusd upload", zap.String("id", event.Upload.ID), zap.Error(err))
+		now := time.Now().UTC()
+		upload := &Upload{
+			ID:        event.Upload.ID,
+			Status:    JobStatusError,
+			Error:     err.Error(),
+			CreatedBy: ss.Config.Self.Host,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		ss.crud.Create(upload)
+		return
+	}
+
+	selectedPreview := sql.NullString{Valid: false}
+	if previewStart, ok := event.Upload.MetaData["previewStartSeconds"]; ok && previewStart != "" {
+		parsed, err := parseSelectedPreview(previewStart)
+		if err != nil {
+			ss.logger.Error("invalid preview start for tusd upload", zap.String("id", event.Upload.ID), zap.Error(err))
+			now := time.Now().UTC()
+			upload := &Upload{
+				ID:        event.Upload.ID,
+				Status:    JobStatusError,
+				Error:     err.Error(),
+				CreatedBy: ss.Config.Self.Host,
+				CreatedAt: now,
+				UpdatedAt: now,
+			}
+			ss.crud.Create(upload)
+			return
+		}
+		selectedPreview = parsed
 	}
 
 	now := time.Now().UTC()
@@ -131,11 +184,9 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 		zap.Any("metadata", event.Upload.MetaData),
 	)
 
-	// Construct file path
 	filePath := filepath.Join(uploadDir, event.Upload.ID)
 	infoPath := filePath + ".info"
 
-	// Ensure we clean up the files after processing
 	defer func() {
 		if err := os.Remove(filePath); err != nil {
 			ss.logger.Warn("failed to remove tusd upload file", zap.String("path", filePath), zap.Error(err))
@@ -153,73 +204,14 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 		return
 	}
 
-	filename := upload.OrigFileName
-	template := upload.Template
-	placementHosts := upload.PlacementHosts
-
-	// Open the uploaded file
-	tmpFile, err := os.Open(filePath)
-	if err != nil {
-		upload.Error = err.Error()
-		ss.logger.Error("failed to open tusd upload file", zap.Error(err))
-		return
-	}
-	defer tmpFile.Close()
-
-	// Compute CID
-	formFileCID, err := cidutil.ComputeFileCID(tmpFile)
-	if err != nil {
-		upload.Error = err.Error()
-		ss.logger.Error("failed to compute CID", zap.Error(err))
-		return
-	}
-	upload.OrigFileCID = formFileCID
-
-	// Reset file pointer for subsequent operations
-	tmpFile.Seek(0, 0)
-
-	// Run ffprobe
-	upload.FFProbe, err = ffprobe(filePath)
-	if err != nil {
-		upload.Error = err.Error()
-		ss.logger.Error("ffprobe failed", zap.Error(err))
-		return
-	}
-	upload.FFProbe.Format.Filename = filename
-
-	// Replicate to my bucket + others
-	ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
-	upload.Mirrors, err = ss.replicateFileParallel(ctx, formFileCID, filePath, placementHosts)
-	if err != nil {
-		upload.Error = err.Error()
-		ss.logger.Error("failed to replicate file", zap.Error(err))
+	// Skip processing if upload already failed during creation (validation errors)
+	if upload.Status == JobStatusError {
+		ss.logger.Warn("skipping processing for failed tusd upload", zap.String("id", event.Upload.ID), zap.String("error", upload.Error))
 		return
 	}
 
-	ss.logger.Info("mirrored tusd upload",
-		zap.String("name", filename),
-		zap.String("uploadID", upload.ID),
-		zap.String("cid", formFileCID),
-		zap.Strings("mirrors", upload.Mirrors),
-	)
-
-	// Handle image uploads immediately
-	if template == JobTemplateImgSquare || template == JobTemplateImgBackdrop {
-		upload.TranscodeResults["original.jpg"] = formFileCID
-		upload.TranscodeProgress = 1
-		upload.TranscodedAt = time.Now().UTC()
-		upload.Status = JobStatusDone
-		if err := ss.crud.Update(upload); err != nil {
-			ss.logger.Error("failed to update upload", zap.Error(err))
-		}
+	if err := ss.processUploadedFile(ctx, upload, filePath, false); err != nil {
+		ss.logger.Error("failed to process tusd upload", zap.String("id", event.Upload.ID), zap.Error(err))
 		return
 	}
-
-	// Update upload record and queue for transcoding
-	if err := ss.crud.Update(upload); err != nil {
-		ss.logger.Error("failed to update upload", zap.Error(err))
-		return
-	}
-
-	ss.transcodeWork <- upload
 }

@@ -55,17 +55,23 @@ func main() {
 		log.Fatalf("failed to upload file on test side: %v", err)
 	}
 
-	upload := uploadFileRes.Msg.Uploads[0]
+	uploadID := uploadFileRes.Msg.Uploads[0].Id
 
 	// get the upload info
-	_, err = sdk.Storage.GetUpload(ctx, &connect.Request[v1storage.GetUploadRequest]{
+	getUploadRes, err := sdk.Storage.GetUpload(ctx, &connect.Request[v1storage.GetUploadRequest]{
 		Msg: &v1storage.GetUploadRequest{
-			Id: upload.Id,
+			Id: uploadID,
 		},
 	})
 	if err != nil {
 		log.Fatalf("failed to get upload: %v", err)
 	}
+
+	upload := getUploadRes.Msg.Upload
+	if upload == nil {
+		log.Fatalf("upload not found")
+	}
+	fmt.Printf("uploaded cid: %s\n", upload.OrigFileCid)
 
 	// release the track
 	title := "Anxiety Upgrade"
