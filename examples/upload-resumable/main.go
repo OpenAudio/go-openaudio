@@ -25,7 +25,7 @@ func main() {
 
 	sdk := auds.NewOpenAudioSDK(serverAddr)
 	if err := sdk.ReadPrivKey(privKeyPath); err != nil {
-		log.Fatalf("failed to read private key: %w", err)
+		log.Fatalf("failed to read private key: %v", err)
 	}
 
 	audioFile, err := os.Open("./pkg/integration_tests/assets/anxiety-upgrade.mp3")
@@ -38,8 +38,7 @@ func main() {
 		log.Fatalf("failed to read file: %v", err)
 	}
 
-	// upload the track
-	uploadFileRes, err := sdk.Storage.UploadFiles(ctx, &connect.Request[v1storage.UploadFilesRequest]{
+	uploadFileRes, err := sdk.Storage.UploadFilesTus(ctx, &connect.Request[v1storage.UploadFilesRequest]{
 		Msg: &v1storage.UploadFilesRequest{
 			UserWallet: sdk.Address(),
 			Template:   "audio",
@@ -55,22 +54,7 @@ func main() {
 		log.Fatalf("failed to upload file on test side: %v", err)
 	}
 
-	uploadID := uploadFileRes.Msg.Uploads[0].Id
-
-	// get the upload info
-	getUploadRes, err := sdk.Storage.GetUpload(ctx, &connect.Request[v1storage.GetUploadRequest]{
-		Msg: &v1storage.GetUploadRequest{
-			Id: uploadID,
-		},
-	})
-	if err != nil {
-		log.Fatalf("failed to get upload: %v", err)
-	}
-
-	upload := getUploadRes.Msg.Upload
-	if upload == nil {
-		log.Fatalf("upload not found")
-	}
+	upload := uploadFileRes.Msg.Uploads[0]
 	fmt.Printf("uploaded cid: %s\n", upload.OrigFileCid)
 
 	// release the track
@@ -140,10 +124,22 @@ func main() {
 													BitsPerSample:        16,
 													IsProvidedInDelivery: true,
 													File: &ddexv1beta1.Resource_SoundRecording_SoundRecordingEdition_TechnicalDetails_DeliveryFile_File{
-														Uri: upload.TranscodeResults["320"], // Use transcoded file CID as URI
+														Uri: func() string {
+															// Use transcoded file CID if available, otherwise fall back to original
+															if cid, ok := upload.TranscodeResults["320"]; ok && cid != "" {
+																return cid
+															}
+															return upload.OrigFileCid
+														}(),
 														HashSum: &ddexv1beta1.Resource_SoundRecording_SoundRecordingEdition_TechnicalDetails_DeliveryFile_File_HashSum{
-															Algorithm:    "IPFS",
-															HashSumValue: upload.TranscodeResults["320"],
+															Algorithm: "IPFS",
+															HashSumValue: func() string {
+																// Use transcoded file CID if available, otherwise fall back to original
+																if cid, ok := upload.TranscodeResults["320"]; ok && cid != "" {
+																	return cid
+																}
+																return upload.OrigFileCid
+															}(),
 														},
 														FileSize: 1000000, // Placeholder file size
 													},

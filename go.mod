@@ -18,7 +18,7 @@ require (
 	github.com/labstack/echo/v4 v4.12.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/oklog/ulid/v2 v2.1.0
-	github.com/onsi/ginkgo/v2 v2.19.0 // indirect
+	github.com/onsi/ginkgo/v2 v2.21.0 // indirect
 	github.com/orandin/slog-gorm v1.1.0
 	github.com/speps/go-hashids/v2 v2.0.1
 	github.com/spf13/cast v1.7.0
@@ -38,6 +38,7 @@ require (
 	connectrpc.com/connect v1.18.1
 	github.com/Oudwins/tailwind-merge-go v0.2.1
 	github.com/axiomhq/axiom-go v0.23.0
+	github.com/bdragon300/tusgo v0.1.2
 	github.com/cockroachdb/pebble v1.1.2
 	github.com/cometbft/cometbft/api v1.0.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
