@@ -104,7 +104,7 @@ make lint-fix
 
 2. **Mediorum** (`pkg/mediorum/`): Optional content storage service
    - Decentralized blob storage for audio files and metadata
-   - Implements replication across multiple nodes (default: 3x replication)
+   - Implements replication across multiple nodes (default: 4x replication)
    - Supports multiple storage backends (local filesystem, S3, GCS)
    - Only runs on "content nodes" (not "discovery nodes")
    - Runs on port 1991

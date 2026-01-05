@@ -1479,7 +1479,7 @@ func (c *CoreService) generateStreamURLs(cid string) []string {
 	if c.storageService != nil {
 		req := &storagev1.GetRendezvousNodesRequest{
 			Cid:               cid,
-			ReplicationFactor: 3, // Default replication factor
+			ReplicationFactor: 4, // Default replication factor
 		}
 
 		resp, err := c.storageService.GetRendezvousNodes(ctx, connect.NewRequest(req))

@@ -7,11 +7,12 @@
 package v1
 
 import (
+	reflect "reflect"
+	sync "sync"
+
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	reflect "reflect"
-	sync "sync"
 )
 
 const (
@@ -1326,7 +1327,7 @@ type GetRendezvousNodesRequest struct {
 	unknownFields protoimpl.UnknownFields
 
 	Cid               string `protobuf:"bytes,1,opt,name=cid,proto3" json:"cid,omitempty"`
-	ReplicationFactor int32  `protobuf:"varint,2,opt,name=replication_factor,json=replicationFactor,proto3" json:"replication_factor,omitempty"` // Optional, defaults to 3 if not specified
+	ReplicationFactor int32  `protobuf:"varint,2,opt,name=replication_factor,json=replicationFactor,proto3" json:"replication_factor,omitempty"` // Optional, defaults to 4 if not specified
 }
 
 func (x *GetRendezvousNodesRequest) Reset() {

@@ -140,7 +140,7 @@ message GetIPDataResponse {
 
 message GetRendezvousNodesRequest {
   string cid = 1;
-  int32 replication_factor = 2; // Optional, defaults to 3 if not specified
+  int32 replication_factor = 2; // Optional, defaults to 4 if not specified
 }
 
 message GetRendezvousNodesResponse {

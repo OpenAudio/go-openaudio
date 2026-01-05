@@ -100,7 +100,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	}
 
 	// set dev defaults
-	replicationFactor := 3
+	replicationFactor := 4
 	spOwnerWallet := walletAddress
 	dir := fmt.Sprintf("/tmp/mediorum_dev_%d", spID)
 	blobStoreDSN := ""
@@ -108,7 +108,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 
 	notDev := isProd || isStage
 	if notDev {
-		replicationFactor = 3
+		replicationFactor = 4
 		spOwnerWallet = os.Getenv("spOwnerWallet")
 		dir = "/tmp/mediorum"
 		blobStoreDSN = os.Getenv("AUDIUS_STORAGE_DRIVER_URL")
