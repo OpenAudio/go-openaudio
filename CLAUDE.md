@@ -43,6 +43,12 @@ Before running the devnet, add to `/etc/hosts`:
 echo "127.0.0.1       node1.oap.devnet node2.oap.devnet node3.oap.devnet node4.oap.devnet" | sudo tee -a /etc/hosts
 ```
 
+Then add the local dev x509 cert to your keychain so you will have green ssl in your browser.
+
+```bash
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain dev/tls/cert.pem
+```
+
 ### Testing
 ```bash
 # Run all tests
