@@ -85,11 +85,10 @@ func (ss *MediorumServer) startRepairer(ctx context.Context) error {
 				}
 			}
 
-			// check that network is valid (should have more peers than replication factor)
-			if healthyPeers := ss.findHealthyPeers(time.Hour); len(healthyPeers) < ss.Config.ReplicationFactor {
+			healthyPeers := ss.findHealthyPeers(time.Hour)
+			if len(healthyPeers) < 1 {
 				logger.Warn("not enough healthy peers to run repair",
-					zap.Int("R", ss.Config.ReplicationFactor),
-					zap.Int("peers", len(healthyPeers)))
+					zap.Int("healthyPeers", len(healthyPeers)))
 				tracker.AbortedReason = "NOT_ENOUGH_PEERS"
 				tracker.FinishedAt = time.Now()
 				saveTracker()
