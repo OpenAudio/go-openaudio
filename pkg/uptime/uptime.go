@@ -10,19 +10,20 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"connectrpc.com/connect"
+	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
+	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/registrar"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"go.etcd.io/bbolt"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -46,16 +47,25 @@ type Uptime struct {
 	DB     *bbolt.DB
 }
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context, ethService ethv1connect.EthServiceHandler) error {
+	if ethService == nil {
+		return fmt.Errorf("ethService is required")
+	}
 	env := os.Getenv("OPENAUDIO_ENV")
 	nodeType := "validator"
 	slog.Info("starting", "env", env, "nodeType", nodeType)
 
 	switch env {
 	case "prod":
-		startStagingOrProd(true, nodeType, env)
+		err := startStagingOrProd(ctx, true, nodeType, env, ethService)
+		if err != nil {
+			return err
+		}
 	case "stage":
-		startStagingOrProd(false, nodeType, env)
+		err := startStagingOrProd(ctx, false, nodeType, env, ethService)
+		if err != nil {
+			return err
+		}
 	case "single":
 		slog.Info("no need to monitor peers when running a single node. sleeping forever...")
 		// block forever so container doesn't restart constantly
@@ -308,27 +318,31 @@ func apiPath(parts ...string) string {
 	return u.String()
 }
 
-func startStagingOrProd(isProd bool, nodeType, env string) {
+func startStagingOrProd(ctx context.Context, isProd bool, nodeType, env string, ethService ethv1connect.EthServiceHandler) error {
 	// must have either a CN or DN endpoint configured, along with other env vars
 	myEndpoint := mustGetenv("nodeEndpoint")
 
 	logger := slog.With("endpoint", myEndpoint)
 
-	// fetch peers
-	g := registrar.NewMultiStaging()
-	if isProd {
-		g = registrar.NewMultiProd()
-	}
-	var peers []registrar.Peer
-	var err error
+	// fetch peers using ethService
+	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
-	eg := new(errgroup.Group)
-	eg.Go(func() error {
-		peers, err = g.Peers()
-		return err
-	})
-	if err := eg.Wait(); err != nil {
-		panic(err)
+	endpointsResp, err := ethService.GetRegisteredEndpoints(reqCtx, connect.NewRequest(&ethv1.GetRegisteredEndpointsRequest{}))
+	if err != nil {
+		return fmt.Errorf("failed to get registered endpoints from eth service: %w", err)
+	}
+
+	// Filter endpoints by service type and convert to registrar.Peer format
+	// Only include content-nodes and validators as peers (for uptime monitoring)
+	var peers []registrar.Peer
+	for _, ep := range endpointsResp.Msg.Endpoints {
+		if strings.EqualFold(ep.ServiceType, "content-node") || strings.EqualFold(ep.ServiceType, "validator") {
+			peers = append(peers, registrar.Peer{
+				Host:   httputil.RemoveTrailingSlash(strings.ToLower(ep.Endpoint)),
+				Wallet: strings.ToLower(ep.DelegateWallet),
+			})
+		}
 	}
 
 	logger.Info("fetched registered nodes", "peers", len(peers), "nodeType", nodeType, "env", env)
@@ -346,48 +360,11 @@ func startStagingOrProd(isProd bool, nodeType, env string) {
 
 	ph, err := New(config)
 	if err != nil {
-		logger.Error("failed to init Uptime server", "err", err)
+		return fmt.Errorf("failed to init Uptime server: %w", err)
 	}
-
-	// go refreshPeersAndSigners(ph, g, nodeType)
 
 	ph.Start()
-}
-
-// fetch registered nodes from chain / The Graph every 30 minutes and restart if they've changed
-func refreshPeersAndSigners(ph *Uptime, g registrar.PeerProvider, nodeType string) {
-	ticker := time.NewTicker(30 * time.Minute)
-	for range ticker.C {
-		var peers []registrar.Peer
-		var err error
-
-		eg := new(errgroup.Group)
-		eg.Go(func() error {
-			peers, err = g.Peers()
-			return err
-		})
-		if err := eg.Wait(); err != nil {
-			slog.Error("failed to fetch registered nodes", "err", err)
-			continue
-		}
-
-		var combined, configCombined []string
-
-		for _, peer := range peers {
-			combined = append(combined, fmt.Sprintf("%s,%s", httputil.RemoveTrailingSlash(strings.ToLower(peer.Host)), strings.ToLower(peer.Wallet)))
-		}
-
-		for _, configPeer := range ph.Config.Peers {
-			configCombined = append(configCombined, fmt.Sprintf("%s,%s", httputil.RemoveTrailingSlash(strings.ToLower(configPeer.Host)), strings.ToLower(configPeer.Wallet)))
-		}
-
-		slices.Sort(combined)
-		slices.Sort(configCombined)
-		if !slices.Equal(combined, configCombined) {
-			slog.Info("peers changed on chain. restarting...", "peers", len(peers), "combined", combined, "configCombined", configCombined)
-			os.Exit(0) // restarting from inside the app is too error-prone so we'll let docker compose autoheal handle it
-		}
-	}
+	return nil
 }
 
 func mustGetenv(key string) string {

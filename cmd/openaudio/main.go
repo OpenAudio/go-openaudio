@@ -135,12 +135,14 @@ func main() {
 		},
 		{
 			"mediorum",
-			func() error { return mediorum.Run(rootLifecycle, rootLogger, posChannel, storageService, coreService) },
+			func() error {
+				return mediorum.Run(rootLifecycle, rootLogger, posChannel, storageService, coreService, ethService)
+			},
 			isStorageEnabled(),
 		},
 		{
 			"uptime",
-			func() error { return uptime.Run(ctx) },
+			func() error { return uptime.Run(ctx, ethService) },
 			isUpTimeEnabled(hostUrl),
 		},
 		{

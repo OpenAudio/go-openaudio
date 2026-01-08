@@ -89,7 +89,6 @@ type MediorumServer struct {
 	reqClient        *req.Client
 	rendezvousHasher *common.RendezvousHasher
 	transcodeWork    chan *Upload
-	g                registrar.PeerProvider
 	ethService       ethv1connect.EthServiceHandler
 
 	// stats
@@ -148,7 +147,7 @@ var (
 
 const PercentSeededThreshold = 50
 
-func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, provider registrar.PeerProvider, posChannel chan pos.PoSRequest, core *coreServer.CoreService, ethService ethv1connect.EthServiceHandler) (*MediorumServer, error) {
+func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer.CoreService, ethService ethv1connect.EthServiceHandler) (*MediorumServer, error) {
 	if env := os.Getenv("OPENAUDIO_ENV"); env != "" {
 		config.Env = env
 	}
@@ -314,7 +313,6 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pro
 		reqClient:        reqClient,
 		logger:           logger,
 		quit:             make(chan error, 1),
-		g:                provider,
 		ethService:       ethService,
 		trustedNotifier:  &trustedNotifier,
 		isSeeding:        config.Env == "stage" || config.Env == "prod",

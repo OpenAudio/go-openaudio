@@ -13,6 +13,7 @@ import (
 
 	"connectrpc.com/connect"
 	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
+	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
@@ -25,27 +26,22 @@ import (
 	"golang.org/x/exp/slog"
 )
 
-func Run(lc *lifecycle.Lifecycle, logger *zap.Logger, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService) error {
+func Run(lc *lifecycle.Lifecycle, logger *zap.Logger, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService, ethService ethv1connect.EthServiceHandler) error {
+	if ethService == nil {
+		return errors.New("ethService is required")
+	}
 	env := os.Getenv("OPENAUDIO_ENV")
 	logger.Info("starting mediorum", zap.String("OPENAUDIO_ENV", env))
 
-	return runMediorum(lc, logger, env, posChannel, storageService, core)
+	return runMediorum(lc, logger, env, posChannel, storageService, core, ethService)
 }
 
-func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService) error {
+func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService, ethService ethv1connect.EthServiceHandler) error {
 	logger = logger.With(zap.String("service", "mediorum"))
 
 	isProd := mediorumEnv == "prod"
 	isStage := mediorumEnv == "stage"
-	isDev := mediorumEnv == "dev"
 
-	// Get eth service from core
-	ethService := core.GetEthService()
-	if ethService == nil {
-		return errors.New("eth service not available from core")
-	}
-
-	// Fetch registered endpoints from eth service
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -74,18 +70,6 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	}
 
 	logger.Info("fetched registered nodes", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)))
-
-	// Keep registrar provider for backward compatibility (used in refreshPeersAndSigners legacy path)
-	var g registrar.PeerProvider
-	if isProd {
-		g = registrar.NewMultiProd()
-	}
-	if isStage {
-		g = registrar.NewMultiStaging()
-	}
-	if isDev {
-		g = registrar.NewMultiDev()
-	}
 
 	nodeEndpoint := os.Getenv("nodeEndpoint")
 	if nodeEndpoint == "" {
@@ -164,7 +148,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		DeadHosts:                 []string{},
 	}
 
-	ss, err := server.New(lc, logger, config, g, posChannel, core, ethService)
+	ss, err := server.New(lc, logger, config, posChannel, core, ethService)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %v", err)
 	}
