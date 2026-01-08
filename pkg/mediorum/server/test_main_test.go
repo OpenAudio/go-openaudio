@@ -57,7 +57,7 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 			},
 		}
 		posChannel := make(chan pos.PoSRequest)
-		server, err := New(lc, z, config, provider, posChannel, &coreServer.CoreService{})
+		server, err := New(lc, z, config, provider, posChannel, &coreServer.CoreService{}, nil)
 		if err != nil {
 			panic(err)
 		}

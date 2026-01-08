@@ -1,6 +1,7 @@
 package mediorum
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 
 	_ "embed"
 
+	"connectrpc.com/connect"
+	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
@@ -20,7 +23,6 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/version"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slog"
-	"golang.org/x/sync/errgroup"
 )
 
 func Run(lc *lifecycle.Lifecycle, logger *zap.Logger, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService) error {
@@ -37,6 +39,43 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	isStage := mediorumEnv == "stage"
 	isDev := mediorumEnv == "dev"
 
+	// Get eth service from core
+	ethService := core.GetEthService()
+	if ethService == nil {
+		return errors.New("eth service not available from core")
+	}
+
+	// Fetch registered endpoints from eth service
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	endpointsResp, err := ethService.GetRegisteredEndpoints(ctx, connect.NewRequest(&ethv1.GetRegisteredEndpointsRequest{}))
+	if err != nil {
+		return fmt.Errorf("failed to get registered endpoints from eth service: %v", err)
+	}
+
+	// Filter endpoints by service type and convert to registrar.Peer format
+	var peers, signers []registrar.Peer
+	for _, ep := range endpointsResp.Msg.Endpoints {
+		peer := registrar.Peer{
+			Host:   httputil.RemoveTrailingSlash(strings.ToLower(ep.Endpoint)),
+			Wallet: strings.ToLower(ep.DelegateWallet),
+		}
+
+		// Content nodes and validators are peers
+		if strings.EqualFold(ep.ServiceType, "content-node") || strings.EqualFold(ep.ServiceType, "validator") {
+			peers = append(peers, peer)
+		}
+
+		// Discovery nodes are signers
+		if strings.EqualFold(ep.ServiceType, "discovery-node") {
+			signers = append(signers, peer)
+		}
+	}
+
+	logger.Info("fetched registered nodes", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)))
+
+	// Keep registrar provider for backward compatibility (used in refreshPeersAndSigners legacy path)
 	var g registrar.PeerProvider
 	if isProd {
 		g = registrar.NewMultiProd()
@@ -47,23 +86,6 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	if isDev {
 		g = registrar.NewMultiDev()
 	}
-
-	var peers, signers []registrar.Peer
-	var err error
-
-	eg := new(errgroup.Group)
-	eg.Go(func() error {
-		peers, err = g.Peers()
-		return err
-	})
-	eg.Go(func() error {
-		signers, err = g.Signers()
-		return err
-	})
-	if err := eg.Wait(); err != nil {
-		panic(err)
-	}
-	logger.Info("fetched registered nodes", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)))
 
 	nodeEndpoint := os.Getenv("nodeEndpoint")
 	if nodeEndpoint == "" {
@@ -139,9 +161,10 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		VersionJson:               version.Version,
 		DiscoveryListensEndpoints: discoveryListensEndpoints(),
 		LogLevel:                  getenvWithDefault("OPENAUDIO_LOG_LEVEL", "info"),
+		DeadHosts:                 []string{},
 	}
 
-	ss, err := server.New(lc, logger, config, g, posChannel, core)
+	ss, err := server.New(lc, logger, config, g, posChannel, core, ethService)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %v", err)
 	}

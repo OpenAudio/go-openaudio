@@ -160,7 +160,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 		startIter := time.Now()
 
 		var uploads []Upload
-		if err := ss.crud.DB.Where("id > ?", tracker.CursorUploadID).Order("id").Limit(1000).Find(&uploads).Error; err != nil {
+		if err := ss.crud.DB.Where("id > ?", tracker.CursorUploadID).Order("id DESC").Limit(1000).Find(&uploads).Error; err != nil {
 			return err
 		}
 		if len(uploads) == 0 {
@@ -299,9 +299,6 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 		return nil
 	}
 
-	// wait 100ms to avoid too many IOPS if using disk or bandwidth if using cloud storage
-	time.Sleep(time.Millisecond * 100)
-
 	tracker.Counters["total_checked"]++
 
 	myRank := slices.Index(preferredHosts, ss.Config.Self.Host)
@@ -371,6 +368,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	// get blobs that I should have (regardless of health of other nodes)
 	if isMine && !alreadyHave && ss.diskHasSpace() {
 		tracker.Counters["pull_mine_needed"]++
+
 		success := false
 		// loop preferredHosts (not preferredHealthyHosts) because pullFileFromHost can still give us a file even if we thought the host was unhealthy
 		for _, host := range preferredHosts {
