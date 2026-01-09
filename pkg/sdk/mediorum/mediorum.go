@@ -21,23 +21,33 @@ type Mediorum struct {
 	coreClient corev1connect.CoreServiceClient
 }
 
-func New(baseURL string) *Mediorum {
-	return &Mediorum{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+type Option func(*Mediorum)
+
+func WithHTTPClient(client *http.Client) Option {
+	return func(m *Mediorum) {
+		m.httpClient = client
 	}
 }
 
-func NewWithCore(baseURL string, coreClient corev1connect.CoreServiceClient) *Mediorum {
-	return &Mediorum{
+func WithCoreClient(client corev1connect.CoreServiceClient) Option {
+	return func(m *Mediorum) {
+		m.coreClient = client
+	}
+}
+
+func New(baseURL string, opts ...Option) *Mediorum {
+	m := &Mediorum{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		coreClient: coreClient,
 	}
+
+	for _, opt := range opts {
+		opt(m)
+	}
+
+	return m
 }
 
 // Upload represents an upload response from mediorum

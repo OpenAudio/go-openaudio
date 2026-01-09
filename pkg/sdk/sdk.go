@@ -42,14 +42,20 @@ func ensureURLProtocol(url string) string {
 }
 
 func NewOpenAudioSDK(nodeURL string) *OpenAudioSDK {
-	httpClient := http.DefaultClient
+	sdk := NewOpenAudioSDKWithClient(nodeURL, http.DefaultClient)
+	// Override Mediorum to ensure default timeout is still applied separately
+	sdk.Mediorum = mediorum.New(sdk.baseURL, mediorum.WithCoreClient(sdk.Core))
+	return sdk
+}
+
+func NewOpenAudioSDKWithClient(nodeURL string, httpClient *http.Client) *OpenAudioSDK {
 	baseURL := ensureURLProtocol(nodeURL)
 
 	coreClient := corev1connect.NewCoreServiceClient(httpClient, baseURL)
 	storageClientBase := storagev1connect.NewStorageServiceClient(httpClient, baseURL)
 	systemClient := systemv1connect.NewSystemServiceClient(httpClient, baseURL)
 	ethClient := ethv1connect.NewEthServiceClient(httpClient, baseURL)
-	mediorumClient := mediorum.NewWithCore(baseURL, coreClient)
+	mediorumClient := mediorum.New(baseURL, mediorum.WithCoreClient(coreClient), mediorum.WithHTTPClient(httpClient))
 	rewardsClient := rewards.NewRewards(coreClient)
 
 	// Initialize TUS client
