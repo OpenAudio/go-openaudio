@@ -307,13 +307,15 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	attrs := &blob.Attributes{}
 	attrs, err := ss.bucket.Attributes(ctx, key)
 	if err != nil {
-		if gcerrors.Code(err) == gcerrors.NotFound {
+		if gcerrors.Code(err) == gcerrors.NotFound || strings.Contains(err.Error(), "notFound") {
 			attrs = &blob.Attributes{}
 			alreadyHave = false
 		} else {
 			tracker.Counters["read_attrs_fail"]++
 			logger.Error("exist check failed", zap.Error(err))
-			return err
+			// Log the error but continue with repair (treat as not found)
+			attrs = &blob.Attributes{}
+			alreadyHave = false
 		}
 	}
 
