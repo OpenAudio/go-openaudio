@@ -71,6 +71,12 @@ func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
 		zap.Any("metadata", event.Upload.MetaData),
 	)
 
+	// Check if this is a replication request - if so, skip all processing
+	if isReplication, ok := event.Upload.MetaData["isReplication"]; ok && isReplication == "true" {
+		ss.logger.Debug("skipping upload record creation for replication request", zap.String("id", event.Upload.ID))
+		return
+	}
+
 	if !ss.diskHasSpace() {
 		ss.logger.Warn("disk is too full to accept new uploads", zap.String("id", event.Upload.ID))
 		now := time.Now().UTC()
@@ -195,6 +201,31 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 			ss.logger.Warn("failed to remove tusd info file", zap.String("path", infoPath), zap.Error(err))
 		}
 	}()
+
+	// Check if this is a replication request - if so, just store the blob without processing
+	if isReplication, ok := event.Upload.MetaData["isReplication"]; ok && isReplication == "true" {
+		// Get filename from metadata
+		filename := event.Upload.MetaData["filename"]
+		if filename == "" {
+			filename = event.Upload.ID
+		}
+
+		// Open the uploaded file and store it in the bucket
+		file, err := os.Open(filePath)
+		if err != nil {
+			ss.logger.Error("failed to open replicated file", zap.String("id", event.Upload.ID), zap.Error(err))
+			return
+		}
+		defer file.Close()
+
+		if err := ss.replicateToMyBucket(ctx, filename, file); err != nil {
+			ss.logger.Error("failed to store replicated file", zap.String("id", event.Upload.ID), zap.String("filename", filename), zap.Error(err))
+			return
+		}
+
+		ss.logger.Info("replication upload stored successfully", zap.String("id", event.Upload.ID), zap.String("filename", filename))
+		return
+	}
 
 	// Load upload record
 	var upload *Upload

@@ -1,16 +1,16 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
+	"github.com/bdragon300/tusgo"
 	"go.uber.org/zap"
 )
 
@@ -159,95 +159,43 @@ func (ss *MediorumServer) replicateViaTUS(ctx context.Context, host string, cid 
 
 	// TUS upload endpoint
 	tusEndpoint := host + "/files/"
-
-	// Create upload metadata
-	metadata := map[string]string{
-		"filename": cid,
-		"filetype": "application/octet-stream",
+	tusBaseURL, err := url.Parse(tusEndpoint)
+	if err != nil {
+		return fmt.Errorf("failed to parse TUS endpoint URL: %w", err)
 	}
 
-	// Create TUS upload
-	client := &http.Client{
+	// Create TUS client
+	httpClient := &http.Client{
 		Timeout: 10 * time.Minute,
 	}
 
-	// Step 1: Create upload
-	createReq, err := http.NewRequestWithContext(ctx, "POST", tusEndpoint, nil)
+	tusClient := tusgo.NewClient(httpClient, tusBaseURL)
+	tusClient.Capabilities = &tusgo.ServerCapabilities{
+		Extensions:       []string{"creation", "creation-with-upload", "termination"},
+		ProtocolVersions: []string{"1.0.0"},
+	}
+
+	// Create upload with metadata - mark as replication to skip processing
+	metadata := map[string]string{
+		"filename":      cid,
+		"filetype":      "application/octet-stream",
+		"isReplication": "true",
+	}
+
+	tusUpload := tusgo.Upload{}
+	_, err = tusClient.CreateUpload(&tusUpload, fileSize, false, metadata)
 	if err != nil {
-		return fmt.Errorf("failed to create TUS request: %w", err)
+		return fmt.Errorf("failed to create TUS upload: %w", err)
 	}
 
-	createReq.Header.Set("Tus-Resumable", "1.0.0")
-	createReq.Header.Set("Upload-Length", fmt.Sprintf("%d", fileSize))
+	// Create upload stream and set chunk size to 100MB
+	uploadStream := tusgo.NewUploadStream(tusClient, &tusUpload)
+	uploadStream.ChunkSize = 100 * 1024 * 1024 // 100MB chunks
 
-	// Add metadata
-	metadataStr := ""
-	for key, val := range metadata {
-		if metadataStr != "" {
-			metadataStr += ","
-		}
-		// Encode value in base64 as per TUS spec
-		encoded := base64.StdEncoding.EncodeToString([]byte(val))
-		metadataStr += fmt.Sprintf("%s %s", key, encoded)
-	}
-	createReq.Header.Set("Upload-Metadata", metadataStr)
-
-	createResp, err := client.Do(createReq)
+	// Upload the file using io.Copy
+	_, err = io.Copy(uploadStream, reader)
 	if err != nil {
-		return fmt.Errorf("TUS create failed: %w", err)
-	}
-	defer createResp.Body.Close()
-
-	if createResp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("TUS create returned status %d", createResp.StatusCode)
-	}
-
-	uploadLocation := createResp.Header.Get("Location")
-	if uploadLocation == "" {
-		return fmt.Errorf("TUS create response missing Location header")
-	}
-
-	// Step 2: Upload file data in chunks
-	chunkSize := int64(10 * 1024 * 1024) // 10MB chunks
-	offset := int64(0)
-
-	buffer := make([]byte, chunkSize)
-	for offset < fileSize {
-		n, err := io.ReadFull(reader, buffer)
-		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-			return fmt.Errorf("failed to read chunk: %w", err)
-		}
-
-		if n == 0 {
-			break
-		}
-
-		patchReq, err := http.NewRequestWithContext(ctx, "PATCH", uploadLocation, bytes.NewReader(buffer[:n]))
-		if err != nil {
-			return fmt.Errorf("failed to create PATCH request: %w", err)
-		}
-
-		patchReq.Header.Set("Tus-Resumable", "1.0.0")
-		patchReq.Header.Set("Upload-Offset", fmt.Sprintf("%d", offset))
-		patchReq.Header.Set("Content-Type", "application/offset+octet-stream")
-		patchReq.Header.Set("Content-Length", fmt.Sprintf("%d", n))
-
-		patchResp, err := client.Do(patchReq)
-		if err != nil {
-			return fmt.Errorf("TUS PATCH failed at offset %d: %w", offset, err)
-		}
-		patchResp.Body.Close()
-
-		if patchResp.StatusCode != http.StatusNoContent {
-			return fmt.Errorf("TUS PATCH returned status %d at offset %d", patchResp.StatusCode, offset)
-		}
-
-		offset += int64(n)
-		ss.logger.Debug("TUS upload progress",
-			zap.String("host", host),
-			zap.Int64("offset", offset),
-			zap.Int64("total", fileSize),
-			zap.Float64("percent", float64(offset)/float64(fileSize)*100))
+		return fmt.Errorf("failed to upload file via TUS: %w", err)
 	}
 
 	ss.logger.Info("TUS replication completed",
