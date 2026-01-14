@@ -155,20 +155,20 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 	ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
 	ss.logger.Info("replicating to my bucket", zap.String("name", filePath), zap.String("cid", formFileCID))
 
-	upload.Mirrors, err = ss.replicateFileParallel(ctx, formFileCID, filePath, upload.PlacementHosts)
-	if err != nil {
-		return ss.handleUploadError(upload, err, shouldCreate)
-	}
-
-	ss.logger.Info("mirrored",
-		zap.String("name", upload.OrigFileName),
-		zap.String("uploadID", upload.ID),
-		zap.String("cid", formFileCID),
-		zap.Strings("mirrors", upload.Mirrors),
-	)
-
-	// Handle image uploads immediately
+	// Handle image uploads immediately with synchronous replication
 	if upload.Template == JobTemplateImgSquare || upload.Template == JobTemplateImgBackdrop {
+		upload.Mirrors, err = ss.replicateFileParallel(ctx, formFileCID, filePath, upload.PlacementHosts)
+		if err != nil {
+			return ss.handleUploadError(upload, err, shouldCreate)
+		}
+
+		ss.logger.Info("mirrored",
+			zap.String("name", upload.OrigFileName),
+			zap.String("uploadID", upload.ID),
+			zap.String("cid", formFileCID),
+			zap.Strings("mirrors", upload.Mirrors),
+		)
+
 		upload.TranscodeResults["original.jpg"] = formFileCID
 		upload.TranscodeProgress = 1
 		upload.TranscodedAt = time.Now().UTC()
@@ -178,6 +178,10 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 		}
 		return ss.crud.Update(upload)
 	}
+
+	// For audio files, save immediately and queue replication asynchronously
+	// Set mirrors to just self initially - will be updated by replication worker
+	upload.Mirrors = []string{ss.Config.Self.Host}
 
 	// Save and queue for transcoding
 	if shouldCreate {
@@ -189,6 +193,15 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 			return err
 		}
 	}
+
+	ss.logger.Info("upload saved, queuing for replication and transcoding",
+		zap.String("name", upload.OrigFileName),
+		zap.String("uploadID", upload.ID),
+		zap.String("cid", formFileCID),
+	)
+
+	// Queue for async replication (non-blocking)
+	ss.replicationWork <- upload
 
 	ss.transcodeWork <- upload
 	return nil
