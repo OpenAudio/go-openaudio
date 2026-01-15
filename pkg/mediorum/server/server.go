@@ -18,6 +18,9 @@ import (
 	_ "embed"
 	_ "net/http/pprof"
 
+	"connectrpc.com/connect"
+	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
+	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	audiusHttputil "github.com/OpenAudio/go-openaudio/pkg/httputil"
@@ -37,8 +40,6 @@ import (
 	"github.com/oschwald/maxminddb-golang"
 	"go.uber.org/zap"
 	"gocloud.dev/blob"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
 
 	_ "gocloud.dev/blob/fileblob"
 )
@@ -66,6 +67,7 @@ type MediorumConfig struct {
 	VersionJson               version.VersionJson
 	DiscoveryListensEndpoints []string
 	LogLevel                  string
+	DeadHosts                 []string
 
 	ProgrammableDistributionEnabled bool
 
@@ -85,10 +87,11 @@ type MediorumServer struct {
 	quit             chan error
 	trustedNotifier  *ethcontracts.NotifierInfo
 	reqClient        *req.Client
-	rendezvousHasher *RendezvousHasher
+	rendezvousHasher *common.RendezvousHasher
 	transcodeWork    chan *Upload
 	replicationWork  chan *Upload
 	g                registrar.PeerProvider
+	ethService       ethv1connect.EthServiceHandler
 
 	// stats
 	statsMutex         sync.RWMutex
@@ -146,7 +149,7 @@ var (
 
 const PercentSeededThreshold = 50
 
-func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, provider registrar.PeerProvider, posChannel chan pos.PoSRequest, core *coreServer.CoreService) (*MediorumServer, error) {
+func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer.CoreService, ethService ethv1connect.EthServiceHandler) (*MediorumServer, error) {
 	if env := os.Getenv("OPENAUDIO_ENV"); env != "" {
 		config.Env = env
 	}
@@ -269,7 +272,11 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pro
 	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db, mediorumLifecycle, logger)
 	dbMigrate(crud, config.Self.Host)
 
-	rendezvousHasher := NewRendezvousHasher(allHosts)
+	deadHosts := config.DeadHosts
+	if deadHosts == nil {
+		deadHosts = []string{}
+	}
+	rendezvousHasher := common.NewRendezvousHasher(allHosts, deadHosts)
 
 	// req.cool http client
 	reqClient := req.C().
@@ -308,7 +315,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pro
 		reqClient:        reqClient,
 		logger:           logger,
 		quit:             make(chan error, 1),
-		g:                provider,
+		ethService:       ethService,
 		trustedNotifier:  &trustedNotifier,
 		isSeeding:        config.Env == "stage" || config.Env == "prod",
 		isAudiusdManaged: isAudiusdManaged,
@@ -658,40 +665,54 @@ func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			var peers, signers []registrar.Peer
-			var err error
-
-			eg := new(errgroup.Group)
-			eg.Go(func() error {
-				peers, err = ss.g.Peers()
-				return err
-			})
-			eg.Go(func() error {
-				signers, err = ss.g.Signers()
-				return err
-			})
-			if err := eg.Wait(); err != nil {
-				ss.logger.Error("failed to fetch registered nodes", zap.Error(err))
+			if ss.ethService == nil {
+				ss.logger.Error("eth service not available for peer refresh")
 				continue
 			}
 
-			var combined, configCombined []string
-
-			for _, peer := range append(peers, signers...) {
-				combined = append(combined, fmt.Sprintf("%s,%s", audiusHttputil.RemoveTrailingSlash(strings.ToLower(peer.Host)), strings.ToLower(peer.Wallet)))
+			// Fetch registered endpoints from eth service
+			refreshCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			endpointsResp, err := ss.ethService.GetRegisteredEndpoints(refreshCtx, connect.NewRequest(&ethv1.GetRegisteredEndpointsRequest{}))
+			cancel()
+			if err != nil {
+				ss.logger.Error("failed to fetch registered nodes from eth service", zap.Error(err))
+				continue
 			}
 
-			for _, configPeer := range append(ss.Config.Peers, ss.Config.Signers...) {
-				configCombined = append(configCombined, fmt.Sprintf("%s,%s", audiusHttputil.RemoveTrailingSlash(strings.ToLower(configPeer.Host)), strings.ToLower(configPeer.Wallet)))
+			// Filter endpoints by service type and convert to registrar.Peer format
+			var peers, signers []registrar.Peer
+			var allHosts []string
+
+			for _, ep := range endpointsResp.Msg.Endpoints {
+				peer := registrar.Peer{
+					Host:   audiusHttputil.RemoveTrailingSlash(strings.ToLower(ep.Endpoint)),
+					Wallet: strings.ToLower(ep.DelegateWallet),
+				}
+
+				// Content nodes and validators are peers
+				if strings.EqualFold(ep.ServiceType, "content-node") || strings.EqualFold(ep.ServiceType, "validator") {
+					peers = append(peers, peer)
+					allHosts = append(allHosts, peer.Host)
+				}
+
+				// Discovery nodes are signers
+				if strings.EqualFold(ep.ServiceType, "discovery-node") {
+					signers = append(signers, peer)
+				}
 			}
 
-			slices.Sort(combined)
-			slices.Sort(configCombined)
-			if !slices.Equal(combined, configCombined) {
-				ss.logger.Info("peers or signers changed on chain. restarting...", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)), zap.Strings("combined", combined), zap.Strings("configCombined", configCombined))
-				go ss.Stop()
-				return nil
+			// Update rendezvous hasher with new hosts
+			deadHosts := ss.Config.DeadHosts
+			if deadHosts == nil {
+				deadHosts = []string{}
 			}
+			ss.rendezvousHasher.UpdateHosts(allHosts, deadHosts)
+
+			// Update config dynamically (protected by existing config access patterns)
+			ss.Config.Peers = peers
+			ss.Config.Signers = signers
+
+			ss.logger.Info("updated peers and signers dynamically", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)))
 		case <-ctx.Done():
 			return ctx.Err()
 		}

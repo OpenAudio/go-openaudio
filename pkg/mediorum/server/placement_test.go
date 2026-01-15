@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -14,7 +15,8 @@ func TestRendezvous256(t *testing.T) {
 
 	testCid := "baeaaaiqsedziwknj44jsl5fak6vcbszzjlnl7pqtw2ipnyg7rsh5a2xnql2p2"
 
-	rh := NewRendezvousHasher(nodes)
+	deadHosts := []string{"https://content.grassfed.network/"}
+	rh := common.NewRendezvousHasher(nodes, deadHosts)
 
 	// sha256 ordering
 	{

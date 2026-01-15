@@ -25,7 +25,6 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 
 	network := []registrar.Peer{}
 	servers := []*MediorumServer{}
-	provider := registrar.NewMultiDev()
 
 	dbUrlTemplate := os.Getenv("dbUrlTemplate")
 	if dbUrlTemplate == "" {
@@ -57,7 +56,7 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 			},
 		}
 		posChannel := make(chan pos.PoSRequest)
-		server, err := New(lc, z, config, provider, posChannel, &coreServer.CoreService{})
+		server, err := New(lc, z, config, posChannel, &coreServer.CoreService{}, nil)
 		if err != nil {
 			panic(err)
 		}

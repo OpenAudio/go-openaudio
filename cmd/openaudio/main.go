@@ -135,12 +135,14 @@ func main() {
 		},
 		{
 			"mediorum",
-			func() error { return mediorum.Run(rootLifecycle, rootLogger, posChannel, storageService, coreService) },
+			func() error {
+				return mediorum.Run(rootLifecycle, rootLogger, posChannel, storageService, coreService, ethService)
+			},
 			isStorageEnabled(),
 		},
 		{
 			"uptime",
-			func() error { return uptime.Run(ctx) },
+			func() error { return uptime.Run(ctx, ethService) },
 			isUpTimeEnabled(hostUrl),
 		},
 		{
@@ -519,6 +521,18 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 	// storage GET routes
 	rpcGroup.GET(storagev1connect.StorageServiceGetIPDataProcedure, connectGET(storageService.GetIPData))
 	rpcGroup.GET(storagev1connect.StorageServiceGetStatusProcedure, connectGET(storageService.GetStatus))
+
+	// eth GET routes
+	rpcGroup.GET(ethv1connect.EthServiceGetStatusProcedure, connectGET(ethService.GetStatus))
+	rpcGroup.GET(ethv1connect.EthServiceGetRegisteredEndpointsProcedure, connectGET(ethService.GetRegisteredEndpoints))
+	rpcGroup.GET(ethv1connect.EthServiceGetRegisteredEndpointsForServiceProviderProcedure, connectGET(ethService.GetRegisteredEndpointsForServiceProvider))
+	rpcGroup.GET(ethv1connect.EthServiceGetRegisteredEndpointInfoProcedure, connectGET(ethService.GetRegisteredEndpointInfo))
+	rpcGroup.GET(ethv1connect.EthServiceGetServiceProviderProcedure, connectGET(ethService.GetServiceProvider))
+	rpcGroup.GET(ethv1connect.EthServiceGetServiceProvidersProcedure, connectGET(ethService.GetServiceProviders))
+	rpcGroup.GET(ethv1connect.EthServiceGetStakingMetadataForServiceProviderProcedure, connectGET(ethService.GetStakingMetadataForServiceProvider))
+	rpcGroup.GET(ethv1connect.EthServiceGetLatestFundingRoundProcedure, connectGET(ethService.GetLatestFundingRound))
+	rpcGroup.GET(ethv1connect.EthServiceIsDuplicateDelegateWalletProcedure, connectGET(ethService.IsDuplicateDelegateWallet))
+	rpcGroup.GET(ethv1connect.EthServiceGetActiveSlashProposalForAddressProcedure, connectGET(ethService.GetActiveSlashProposalForAddress))
 
 	go func() {
 		grpcServer := echo.New()

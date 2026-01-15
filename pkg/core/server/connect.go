@@ -18,6 +18,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	v1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
 	ddexv1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/ddex/v1beta1"
+	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	storagev1 "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
 	storagev1connect "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
@@ -48,6 +49,16 @@ func (c *CoreService) SetCore(core *Server) {
 
 func (c *CoreService) SetStorageService(storageService storagev1connect.StorageServiceHandler) {
 	c.storageService = storageService
+}
+
+// GetEthService returns the eth service handler for accessing registered endpoints.
+func (c *CoreService) GetEthService() ethv1connect.EthServiceHandler {
+	c.coreMu.RLock()
+	defer c.coreMu.RUnlock()
+	if c.core == nil {
+		return nil
+	}
+	return c.core.eth
 }
 
 var _ v1connect.CoreServiceHandler = (*CoreService)(nil)
