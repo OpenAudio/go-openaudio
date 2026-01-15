@@ -7,10 +7,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"time"
+
+	"slices"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
@@ -44,11 +45,6 @@ func (t *tusAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 	return t.base.RoundTrip(req)
 }
-
-const (
-	// Use TUS for files larger than 100MB
-	tusThresholdBytes = 100 * 1024 * 1024
-)
 
 func (ss *MediorumServer) startReplicationWorkers(ctx context.Context) error {
 	numWorkers := 3 // Run 3 parallel replication workers
@@ -121,7 +117,7 @@ func (ss *MediorumServer) replicateUpload(ctx context.Context, upload *Upload) e
 		if host == ss.Config.Self.Host {
 			continue
 		}
-		if contains(upload.Mirrors, host) {
+		if slices.Contains(upload.Mirrors, host) {
 			continue
 		}
 		targetHosts = append(targetHosts, host)
@@ -145,12 +141,8 @@ func (ss *MediorumServer) replicateUpload(ctx context.Context, upload *Upload) e
 			continue
 		}
 
-		// For large files, use TUS; for small files, use regular HTTP POST
-		if attrs.Size > tusThresholdBytes {
-			err = ss.replicateViaTUS(ctx, host, upload.OrigFileCID, reader, attrs.Size)
-		} else {
-			err = ss.replicateFileToHost(ctx, host, upload.OrigFileCID, reader)
-		}
+		err = ss.replicateViaTUS(host, upload.OrigFileCID, reader, attrs.Size)
+
 		reader.Close()
 
 		if err != nil {
@@ -182,7 +174,7 @@ func (ss *MediorumServer) replicateUpload(ctx context.Context, upload *Upload) e
 	return nil
 }
 
-func (ss *MediorumServer) replicateViaTUS(ctx context.Context, host string, cid string, reader io.Reader, fileSize int64) error {
+func (ss *MediorumServer) replicateViaTUS(host string, cid string, reader io.Reader, fileSize int64) error {
 	ss.logger.Info("replicating via TUS",
 		zap.String("host", host),
 		zap.String("cid", cid),
@@ -258,72 +250,4 @@ func (ss *MediorumServer) findMissedReplications() {
 			}
 		}
 	}
-}
-
-// Helper function to check if a slice contains a string
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
-// replicateFileToHostMultipart replicates a file using multipart upload with extended timeout
-func (ss *MediorumServer) replicateFileToHostMultipart(ctx context.Context, peer string, fileName string, file io.Reader, fileSize int64) error {
-	if peer == ss.Config.Self.Host {
-		return ss.replicateToMyBucket(ctx, fileName, file)
-	}
-
-	// Calculate timeout based on file size: 1 minute per 100MB, minimum 2 minutes
-	timeout := time.Duration(fileSize/(100*1024*1024)+2) * time.Minute
-	if timeout < 2*time.Minute {
-		timeout = 2 * time.Minute
-	}
-	if timeout > 30*time.Minute {
-		timeout = 30 * time.Minute
-	}
-
-	client := http.Client{
-		Timeout: timeout,
-	}
-
-	r, w := io.Pipe()
-	m := multipart.NewWriter(w)
-	errChan := make(chan error)
-
-	go func() {
-		defer w.Close()
-		defer m.Close()
-		part, err := m.CreateFormFile(filesFormFieldName, fileName)
-		if err != nil {
-			errChan <- err
-			return
-		}
-		if _, err = io.Copy(part, file); err != nil {
-			errChan <- err
-			return
-		}
-		close(errChan)
-	}()
-
-	// Create signed POST request
-	req, err := http.NewRequestWithContext(ctx, "POST", peer+"/internal/blobs", r)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", m.FormDataContentType())
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("replication returned status %d", resp.StatusCode)
-	}
-
-	return <-errChan
 }
