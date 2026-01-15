@@ -120,8 +120,9 @@ func parseSelectedPreview(previewStart string) (sql.NullString, error) {
 // regular uploads and TUS uploads. It:
 // 1. Computes the CID
 // 2. Runs ffprobe
-// 3. Replicates to local bucket and peers
-// 4. Handles image templates immediately or queues audio for transcoding
+// 3. Replicates to local bucket
+// 4. Queues replication to rendezvous hosts
+// 5. Handles image templates immediately or queues audio for transcoding
 //
 // The upload record must already exist in the database (for TUS) or will be created (for regular uploads).
 // On error, upload.Error is set and the record is updated.
@@ -151,39 +152,22 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 	// Restore original filename in ffprobe result
 	upload.FFProbe.Format.Filename = upload.OrigFileName
 
-	// Replicate to my bucket + others
+	// Replicate to my bucket
 	ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
-	ss.logger.Info("replicating to my bucket", zap.String("name", filePath), zap.String("cid", formFileCID))
+	ss.logger.Info("replicated to my bucket", zap.String("name", filePath), zap.String("cid", formFileCID))
 
-	// Handle image uploads immediately with synchronous replication
+	// For images, mark as done immediately (no transcoding needed)
 	if upload.Template == JobTemplateImgSquare || upload.Template == JobTemplateImgBackdrop {
-		upload.Mirrors, err = ss.replicateFileParallel(ctx, formFileCID, filePath, upload.PlacementHosts)
-		if err != nil {
-			return ss.handleUploadError(upload, err, shouldCreate)
-		}
-
-		ss.logger.Info("mirrored",
-			zap.String("name", upload.OrigFileName),
-			zap.String("uploadID", upload.ID),
-			zap.String("cid", formFileCID),
-			zap.Strings("mirrors", upload.Mirrors),
-		)
-
 		upload.TranscodeResults["original.jpg"] = formFileCID
 		upload.TranscodeProgress = 1
 		upload.TranscodedAt = time.Now().UTC()
 		upload.Status = JobStatusDone
-		if shouldCreate {
-			return ss.crud.Create(upload)
-		}
-		return ss.crud.Update(upload)
 	}
 
-	// For audio files, save immediately and queue replication asynchronously
 	// Set mirrors to just self initially - will be updated by replication worker
 	upload.Mirrors = []string{ss.Config.Self.Host}
 
-	// Save and queue for transcoding
+	// Save upload record
 	if shouldCreate {
 		if err := ss.crud.Create(upload); err != nil {
 			return err
@@ -194,16 +178,29 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 		}
 	}
 
-	ss.logger.Info("upload saved, queuing for replication and transcoding",
+	ss.logger.Info("upload saved, queuing for async replication",
 		zap.String("name", upload.OrigFileName),
 		zap.String("uploadID", upload.ID),
 		zap.String("cid", formFileCID),
+		zap.String("template", string(upload.Template)),
 	)
 
 	// Queue for async replication (non-blocking)
-	ss.replicationWork <- upload
+	select {
+	case ss.replicationWork <- upload:
+	default:
+		ss.logger.Warn("replication queue full, will be picked up by periodic job", zap.String("uploadID", upload.ID))
+	}
 
-	ss.transcodeWork <- upload
+	// Queue audio for transcoding (images don't need transcoding)
+	if upload.Template == JobTemplateAudio {
+		select {
+		case ss.transcodeWork <- upload:
+		default:
+			ss.logger.Warn("transcode queue full, will be picked up by periodic job", zap.String("uploadID", upload.ID))
+		}
+	}
+
 	return nil
 }
 
