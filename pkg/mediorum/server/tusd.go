@@ -3,14 +3,22 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/storyicon/sigverify"
 	"github.com/tus/tusd/v2/pkg/filestore"
 	"github.com/tus/tusd/v2/pkg/handler"
 	"go.uber.org/zap"
+
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 )
 
 func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
@@ -41,6 +49,7 @@ func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
 		NotifyCreatedUploads:    true,
 		NotifyCompleteUploads:   true,
 		RespectForwardedHeaders: true,
+		PreUploadCreateCallback: ss.validateTusUploadBeforeCreate,
 	})
 	if err != nil {
 		return nil, err
@@ -64,6 +73,102 @@ func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
 	return tusdHandler, nil
 }
 
+func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent) (handler.HTTPResponse, handler.FileInfoChanges, error) {
+	// Check if this is a replication request
+	isReplication, ok := event.Upload.MetaData["isReplication"]
+	if !ok || isReplication != "true" {
+		// Not a replication - allow (user uploads don't require auth)
+		return handler.HTTPResponse{}, handler.FileInfoChanges{}, nil
+	}
+
+	// Replication requests must be authenticated
+	authHeader := ""
+	if event.HTTPRequest.Header != nil {
+		authHeader = event.HTTPRequest.Header.Get("Authorization")
+	}
+
+	if authHeader == "" {
+		return handler.HTTPResponse{
+			StatusCode: 401,
+			Body:       "replication upload missing authentication",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+
+	// Parse Basic auth
+	if !strings.HasPrefix(authHeader, "Basic ") {
+		return handler.HTTPResponse{
+			StatusCode: 401,
+			Body:       "invalid auth header format",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(authHeader[6:])
+	if err != nil {
+		return handler.HTTPResponse{
+			StatusCode: 401,
+			Body:       "failed to decode auth header",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+
+	parts := strings.Split(string(decoded), ":")
+	if len(parts) != 2 {
+		return handler.HTTPResponse{
+			StatusCode: 401,
+			Body:       "invalid auth format",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+
+	user, pass := parts[0], parts[1]
+
+	// Check timestamp age
+	ts, err := strconv.ParseInt(user, 0, 64)
+	if err != nil {
+		return handler.HTTPResponse{
+			StatusCode: 401,
+			Body:       "invalid timestamp in auth",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+	if age := time.Since(time.UnixMilli(ts)); age > time.Hour {
+		return handler.HTTPResponse{
+			StatusCode: 401,
+			Body:       fmt.Sprintf("authentication expired (age: %v)", age),
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+
+	// Recover wallet from signature
+	sig, err := hex.DecodeString(pass[2:]) // remove "0x"
+	if err != nil {
+		return handler.HTTPResponse{
+			StatusCode: 401,
+			Body:       "invalid signature hex",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+
+	hash := crypto.Keccak256Hash([]byte(user))
+	wallet, err := sigverify.EcRecoverEx(hash.Bytes(), sig)
+	if err != nil {
+		return handler.HTTPResponse{
+			StatusCode: 401,
+			Body:       "failed to recover wallet",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+
+	// Verify wallet is in peer list
+	for _, peer := range ss.Config.Peers {
+		if strings.EqualFold(peer.Wallet, wallet.Hex()) {
+			ss.logger.Debug("authenticated TUS replication upload",
+				zap.String("wallet", wallet.Hex()),
+				zap.String("uploadID", event.Upload.ID))
+			return handler.HTTPResponse{}, handler.FileInfoChanges{}, nil
+		}
+	}
+
+	return handler.HTTPResponse{
+		StatusCode: 403,
+		Body:       fmt.Sprintf("wallet not in peer list: %s", wallet.Hex()),
+	}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+}
+
 func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
 	ss.logger.Info("tusd upload created",
 		zap.String("id", event.Upload.ID),
@@ -71,7 +176,7 @@ func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
 		zap.Any("metadata", event.Upload.MetaData),
 	)
 
-	// Check if this is a replication request - if so, skip all processing
+	// Check if this is a replication request - if so, skip creating upload record
 	if isReplication, ok := event.Upload.MetaData["isReplication"]; ok && isReplication == "true" {
 		ss.logger.Debug("skipping upload record creation for replication request", zap.String("id", event.Upload.ID))
 		return
@@ -204,13 +309,19 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 
 	// Check if this is a replication request - if so, just store the blob without processing
 	if isReplication, ok := event.Upload.MetaData["isReplication"]; ok && isReplication == "true" {
-		// Get filename from metadata
+		// Disk space check for replication
+		if !ss.diskHasSpace() {
+			ss.logger.Warn("disk is too full to accept replication", zap.String("id", event.Upload.ID))
+			return
+		}
+
+		// Get filename (CID) from metadata
 		filename := event.Upload.MetaData["filename"]
 		if filename == "" {
 			filename = event.Upload.ID
 		}
 
-		// Open the uploaded file and store it in the bucket
+		// Open the uploaded file for validation and storage
 		file, err := os.Open(filePath)
 		if err != nil {
 			ss.logger.Error("failed to open replicated file", zap.String("id", event.Upload.ID), zap.Error(err))
@@ -218,12 +329,31 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 		}
 		defer file.Close()
 
+		// Validate CID matches file content (security check)
+		if err := cidutil.ValidateCID(filename, file); err != nil {
+			ss.logger.Error("replication CID validation failed",
+				zap.String("id", event.Upload.ID),
+				zap.String("filename", filename),
+				zap.Error(err))
+			return
+		}
+
+		// Reset file pointer after validation
+		if _, err := file.Seek(0, 0); err != nil {
+			ss.logger.Error("failed to reset file pointer", zap.String("id", event.Upload.ID), zap.Error(err))
+			return
+		}
+
+		// Store in bucket
 		if err := ss.replicateToMyBucket(ctx, filename, file); err != nil {
 			ss.logger.Error("failed to store replicated file", zap.String("id", event.Upload.ID), zap.String("filename", filename), zap.Error(err))
 			return
 		}
 
-		ss.logger.Info("replication upload stored successfully", zap.String("id", event.Upload.ID), zap.String("filename", filename))
+		ss.logger.Info("replication upload stored successfully",
+			zap.String("id", event.Upload.ID),
+			zap.String("filename", filename),
+			zap.Int64("size", event.Upload.Size))
 		return
 	}
 

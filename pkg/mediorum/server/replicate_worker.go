@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -10,9 +13,37 @@ import (
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/bdragon300/tusgo"
 	"go.uber.org/zap"
 )
+
+// tusAuthTransport adds authentication headers to TUS requests for replication
+type tusAuthTransport struct {
+	base       http.RoundTripper
+	privateKey *ecdsa.PrivateKey
+	selfHost   string
+}
+
+func (t *tusAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Add basic auth signature (same as non-TUS replication)
+	if t.privateKey != nil {
+		ts := fmt.Sprintf("%d", time.Now().UnixMilli())
+		sig, err := signature.Sign(ts, t.privateKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to sign request: %w", err)
+		}
+		signatureHex := fmt.Sprintf("0x%s", hex.EncodeToString(sig))
+		basic := ts + ":" + signatureHex
+		auth := "Basic " + base64.StdEncoding.EncodeToString([]byte(basic))
+		req.Header.Set("Authorization", auth)
+		req.Header.Set("User-Agent", "mediorum "+t.selfHost)
+	} else {
+		// Dev mode
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("dev:mode")))
+	}
+	return t.base.RoundTrip(req)
+}
 
 const (
 	// Use TUS for files larger than 100MB
@@ -164,9 +195,15 @@ func (ss *MediorumServer) replicateViaTUS(ctx context.Context, host string, cid 
 		return fmt.Errorf("failed to parse TUS endpoint URL: %w", err)
 	}
 
-	// Create TUS client
+	// Create authenticated HTTP client with signature transport
+	authTransport := &tusAuthTransport{
+		base:       http.DefaultTransport,
+		privateKey: ss.Config.privateKey,
+		selfHost:   ss.Config.Self.Host,
+	}
 	httpClient := &http.Client{
-		Timeout: 10 * time.Minute,
+		Timeout:   10 * time.Minute,
+		Transport: authTransport,
 	}
 
 	tusClient := tusgo.NewClient(httpClient, tusBaseURL)
