@@ -32,10 +32,6 @@ func (s *Server) startEchoServer(ctx context.Context) error {
 	g.GET("/rewards/attestation", s.getRewardAttestation)
 	g.GET("/nodes", s.getRegisteredNodes)
 	g.GET("/nodes/verbose", s.getRegisteredNodes)
-	g.GET("/nodes/discovery", s.getRegisteredNodes)
-	g.GET("/nodes/discovery/verbose", s.getRegisteredNodes)
-	g.GET("/nodes/content", s.getRegisteredNodes)
-	g.GET("/nodes/content/verbose", s.getRegisteredNodes)
 	g.GET("/status", func(c echo.Context) error {
 		if s.self == nil {
 			return c.String(http.StatusServiceUnavailable, "starting up")

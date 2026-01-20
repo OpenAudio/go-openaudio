@@ -62,11 +62,6 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		if strings.EqualFold(ep.ServiceType, "content-node") || strings.EqualFold(ep.ServiceType, "validator") {
 			peers = append(peers, peer)
 		}
-
-		// Discovery nodes are signers
-		if strings.EqualFold(ep.ServiceType, "discovery-node") {
-			signers = append(signers, peer)
-		}
 	}
 
 	logger.Info("fetched registered nodes", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)))

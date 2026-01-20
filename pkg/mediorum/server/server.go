@@ -690,11 +690,6 @@ func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
 					peers = append(peers, peer)
 					allHosts = append(allHosts, peer.Host)
 				}
-
-				// Discovery nodes are signers
-				if strings.EqualFold(ep.ServiceType, "discovery-node") {
-					signers = append(signers, peer)
-				}
 			}
 
 			// Update rendezvous hasher with new hosts
