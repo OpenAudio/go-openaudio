@@ -245,11 +245,11 @@ func (s *StorageService) GetStatus(context.Context, *connect.Request[v1.GetStatu
 }
 
 // GetMediorumHealth returns the health check data for the mediorum process
-func (s *StorageService) GetMediorumHealth() (HealthCheckResponseData, error) {
+func (s *StorageService) GetMediorumHealth() (HealthData, error) {
 	if s.mediorum == nil {
-		return HealthCheckResponseData{}, errors.New("mediorum not initialized")
+		return HealthData{}, errors.New("mediorum not initialized")
 	}
 
-	data := s.mediorum.getHealthCheckData()
+	data := s.mediorum.getHealth()
 	return data, nil
 }

@@ -15,14 +15,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-type HealthCheckResponse struct {
-	Data      HealthCheckResponseData `json:"data"`
-	Signer    string                  `json:"signer"`
-	Signature string                  `json:"signature"`
-	Timestamp time.Time               `json:"timestamp"`
-}
-
-type HealthCheckResponseData struct {
+type HealthData struct {
 	Healthy                   bool                       `json:"healthy"`
 	Version                   string                     `json:"version"`
 	Service                   string                     `json:"service"` // used by registerWithDelegate()
@@ -66,9 +59,7 @@ type HealthCheckResponseData struct {
 	TranscodeStats            *TranscodeStats            `json:"transcodeStats"`
 }
 
-// getHealthCheckData gathers all health check data and returns it as a HealthCheckResponseData struct.
-// This method is thread-safe and can be called directly without HTTP context.
-func (ss *MediorumServer) getHealthCheckData() HealthCheckResponseData {
+func (ss *MediorumServer) getHealth() HealthData {
 	healthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == ""
 
 	blobStorePrefix, _, foundBlobStore := strings.Cut(ss.Config.BlobStoreDSN, "://")
@@ -84,7 +75,7 @@ func (ss *MediorumServer) getHealthCheckData() HealthCheckResponseData {
 	ss.peerHealthsMutex.RLock()
 	defer ss.peerHealthsMutex.RUnlock()
 
-	return HealthCheckResponseData{
+	return HealthData{
 		Healthy:                   healthy,
 		Version:                   ss.Config.VersionJson.Version,
 		Service:                   ss.Config.VersionJson.Service,
@@ -129,69 +120,8 @@ func (ss *MediorumServer) getHealthCheckData() HealthCheckResponseData {
 	}
 }
 
-func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
-	allowUnregistered, _ := strconv.ParseBool(c.QueryParam("allow_unregistered"))
-
-	data := ss.getHealthCheckData()
-
-	healthy := data.Healthy
-	if !allowUnregistered && !ss.Config.WalletIsRegistered {
-		healthy = false
-	}
-	data.Healthy = healthy
-
-	var err error
-
-	dataBytes, err := json.Marshal(data)
-	if err != nil {
-		return c.JSON(500, map[string]string{"error": "Failed to marshal health check data: " + err.Error()})
-	}
-	dataBytesSorted, err := jcs.Transform(dataBytes)
-	if err != nil {
-		return c.JSON(500, map[string]string{"error": "Failed to sort health check data: " + err.Error()})
-	}
-	signatureHex := "private key not set (should only happen on local dev)!"
-	if ss.Config.privateKey != nil {
-		signature, err := signature.SignBytes(dataBytesSorted, ss.Config.privateKey)
-		if err != nil {
-			return c.JSON(500, map[string]string{"error": "Failed to sign health check response: " + err.Error()})
-		}
-		signatureHex = fmt.Sprintf("0x%s", hex.EncodeToString(signature))
-	}
-
-	status := 200
-	var errorMsg string
-	if !healthy {
-		if !allowUnregistered && !ss.Config.WalletIsRegistered {
-			status = 506
-			errorMsg = "wallet not registered for provided endpoint"
-		} else {
-			status = 503
-		}
-	}
-
-	response := HealthCheckResponse{
-		Data:      data,
-		Signer:    ss.Config.Self.Wallet,
-		Signature: signatureHex,
-		Timestamp: time.Now(),
-	}
-
-	if errorMsg != "" {
-		return c.JSON(status, map[string]interface{}{
-			"error":     errorMsg,
-			"data":      response.Data,
-			"signer":    response.Signer,
-			"signature": response.Signature,
-			"timestamp": response.Timestamp,
-		})
-	}
-
-	return c.JSON(status, response)
-}
-
 func (ss *MediorumServer) serveMediorumHealthCheck(c echo.Context) error {
-	data := ss.getHealthCheckData()
+	data := ss.getHealth()
 
 	dataBytes, err := json.Marshal(data)
 	if err != nil {

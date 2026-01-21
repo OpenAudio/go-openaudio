@@ -50,7 +50,6 @@ func (ss *MediorumServer) startHealthPoller(ctx context.Context) error {
 						return
 					}
 
-					// Extract storage data from the aggregated health check response
 					if storage, ok := response["storage"].(map[string]interface{}); ok {
 						if peerHealthsMap, ok := storage["peerHealths"].(map[string]interface{}); ok {
 
