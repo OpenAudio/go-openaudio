@@ -120,6 +120,65 @@ func (ss *MediorumServer) getHealth() HealthData {
 	}
 }
 
+// serveHealthCheckLegacy returns health data in the old format for backward compatibility.
+// Old servers expect: {"data": {...}, "signer": "...", "signature": "...", "timestamp": "..."}
+func (ss *MediorumServer) serveHealthCheckLegacy(c echo.Context) error {
+	allowUnregistered, _ := strconv.ParseBool(c.QueryParam("allow_unregistered"))
+
+	data := ss.getHealth()
+
+	healthy := data.Healthy
+	if !allowUnregistered && !ss.Config.WalletIsRegistered {
+		healthy = false
+	}
+	data.Healthy = healthy
+
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "Failed to marshal health check data: " + err.Error()})
+	}
+	dataBytesSorted, err := jcs.Transform(dataBytes)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "Failed to sort health check data: " + err.Error()})
+	}
+	signatureHex := "private key not set (should only happen on local dev)!"
+	if ss.Config.privateKey != nil {
+		sig, err := signature.SignBytes(dataBytesSorted, ss.Config.privateKey)
+		if err != nil {
+			return c.JSON(500, map[string]string{"error": "Failed to sign health check response: " + err.Error()})
+		}
+		signatureHex = fmt.Sprintf("0x%s", hex.EncodeToString(sig))
+	}
+
+	status := 200
+	var errorMsg string
+	if !healthy {
+		if !allowUnregistered && !ss.Config.WalletIsRegistered {
+			status = 506
+			errorMsg = "wallet not registered for provided endpoint"
+		} else {
+			status = 503
+		}
+	}
+
+	// Old format: {"data": {...}, "signer": "...", "signature": "...", "timestamp": "..."}
+	response := map[string]interface{}{
+		"data":      data,
+		"signer":    ss.Config.Self.Wallet,
+		"signature": signatureHex,
+		"timestamp": time.Now(),
+	}
+
+	if errorMsg != "" {
+		response["error"] = errorMsg
+		return c.JSON(status, response)
+	}
+
+	return c.JSON(status, response)
+}
+
+// serveMediorumHealthCheck returns health data in the new aggregated format.
+// New format: {"storage": {...}, "signature": "...", "signer": "..."}
 func (ss *MediorumServer) serveMediorumHealthCheck(c echo.Context) error {
 	data := ss.getHealth()
 
