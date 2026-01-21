@@ -14,6 +14,7 @@ import (
 	"connectrpc.com/connect"
 	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
@@ -70,23 +71,26 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	}
 
 	logger.Info("fetched registered nodes", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)))
-
-	nodeEndpoint := os.Getenv("nodeEndpoint")
-	if nodeEndpoint == "" {
-		return errors.New("missing required env variable 'nodeEndpoint'")
-	}
-	privateKeyHex := os.Getenv("delegatePrivateKey")
-	if privateKeyHex == "" {
-		return errors.New("missing required env variable 'delegatePrivateKey'")
+	cfg := core.GetConfig()
+	if cfg == nil {
+		return errors.New("core service not ready - cannot get config")
 	}
 
-	privateKey, err := ethcontracts.ParsePrivateKeyHex(privateKeyHex)
-	if err != nil {
-		return fmt.Errorf("invalid private key: %v", err)
+	if cfg.NodeEndpoint == "" {
+		return errors.New("nodeEndpoint not configured")
 	}
+	if cfg.EthereumKey == nil {
+		return errors.New("delegatePrivateKey not configured")
+	}
+
+	nodeEndpoint := cfg.NodeEndpoint
+	privateKey := cfg.EthereumKey
+
+	// Convert private key to hex string for mediorum config
+	privateKeyHex := common.PrivKeyToHex(privateKey)
 
 	// compute wallet address
-	walletAddress := ethcontracts.ComputeAddressFromPrivateKey(privateKey)
+	walletAddress := cfg.WalletAddress
 	delegateOwnerWallet := os.Getenv("delegateOwnerWallet")
 	if !strings.EqualFold(walletAddress, delegateOwnerWallet) {
 		slog.Warn("incorrect delegateOwnerWallet env config", "incorrect", delegateOwnerWallet, "computed", walletAddress)
