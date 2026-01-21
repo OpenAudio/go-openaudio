@@ -1,12 +1,17 @@
 package server
 
 import (
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/ethcontracts"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/OpenAudio/go-openaudio/pkg/registrar"
+	"github.com/gowebpki/jcs"
 	"github.com/labstack/echo/v4"
 )
 
@@ -122,6 +127,96 @@ func (ss *MediorumServer) getHealthCheckData() HealthCheckResponseData {
 		TranscodeQueueLength:      len(ss.transcodeWork),
 		TranscodeStats:            ss.getTranscodeStats(),
 	}
+}
+
+func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
+	allowUnregistered, _ := strconv.ParseBool(c.QueryParam("allow_unregistered"))
+
+	data := ss.getHealthCheckData()
+
+	healthy := data.Healthy
+	if !allowUnregistered && !ss.Config.WalletIsRegistered {
+		healthy = false
+	}
+	data.Healthy = healthy
+
+	var err error
+
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "Failed to marshal health check data: " + err.Error()})
+	}
+	dataBytesSorted, err := jcs.Transform(dataBytes)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "Failed to sort health check data: " + err.Error()})
+	}
+	signatureHex := "private key not set (should only happen on local dev)!"
+	if ss.Config.privateKey != nil {
+		signature, err := signature.SignBytes(dataBytesSorted, ss.Config.privateKey)
+		if err != nil {
+			return c.JSON(500, map[string]string{"error": "Failed to sign health check response: " + err.Error()})
+		}
+		signatureHex = fmt.Sprintf("0x%s", hex.EncodeToString(signature))
+	}
+
+	status := 200
+	var errorMsg string
+	if !healthy {
+		if !allowUnregistered && !ss.Config.WalletIsRegistered {
+			status = 506
+			errorMsg = "wallet not registered for provided endpoint"
+		} else {
+			status = 503
+		}
+	}
+
+	response := HealthCheckResponse{
+		Data:      data,
+		Signer:    ss.Config.Self.Wallet,
+		Signature: signatureHex,
+		Timestamp: time.Now(),
+	}
+
+	if errorMsg != "" {
+		return c.JSON(status, map[string]interface{}{
+			"error":     errorMsg,
+			"data":      response.Data,
+			"signer":    response.Signer,
+			"signature": response.Signature,
+			"timestamp": response.Timestamp,
+		})
+	}
+
+	return c.JSON(status, response)
+}
+
+func (ss *MediorumServer) serveMediorumHealthCheck(c echo.Context) error {
+	data := ss.getHealthCheckData()
+
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "Failed to marshal health check data: " + err.Error()})
+	}
+	dataBytesSorted, err := jcs.Transform(dataBytes)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "Failed to sort health check data: " + err.Error()})
+	}
+	signatureHex := "private key not set (should only happen on local dev)!"
+	if ss.Config.privateKey != nil {
+		sig, err := signature.SignBytes(dataBytesSorted, ss.Config.privateKey)
+		if err != nil {
+			return c.JSON(500, map[string]string{"error": "Failed to sign health check response: " + err.Error()})
+		}
+		signatureHex = fmt.Sprintf("0x%s", hex.EncodeToString(sig))
+	}
+
+	response := map[string]interface{}{
+		"storage":   data,
+		"signature": signatureHex,
+		"signer":    ss.Config.Self.Wallet,
+	}
+
+	return c.JSON(200, response)
 }
 
 func isDbLocalhost(postgresDSN string) bool {

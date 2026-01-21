@@ -31,7 +31,7 @@ func (ss *MediorumServer) startHealthPoller(ctx context.Context) error {
 					if peer.Host == ss.Config.Self.Host {
 						return
 					}
-					req, err := http.NewRequest("GET", apiPath(peer.Host, "/health_check"), nil)
+					req, err := http.NewRequest("GET", apiPath(peer.Host, "/health-check"), nil)
 					if err != nil {
 						return
 					}
@@ -50,8 +50,9 @@ func (ss *MediorumServer) startHealthPoller(ctx context.Context) error {
 						return
 					}
 
-					if data, ok := response["data"].(map[string]interface{}); ok {
-						if peerHealthsMap, ok := data["peerHealths"].(map[string]interface{}); ok {
+					// Extract storage data from the aggregated health check response
+					if storage, ok := response["storage"].(map[string]interface{}); ok {
+						if peerHealthsMap, ok := storage["peerHealths"].(map[string]interface{}); ok {
 
 							// set node as reachable
 							ss.peerHealthsMutex.Lock()
@@ -61,7 +62,7 @@ func (ss *MediorumServer) startHealthPoller(ctx context.Context) error {
 							}
 							ss.peerHealths[peer.Host].LastReachable = time.Now()
 
-							if v, ok := data["version"].(string); ok {
+							if v, ok := storage["version"].(string); ok {
 								ss.peerHealths[peer.Host].Version = v
 							}
 
