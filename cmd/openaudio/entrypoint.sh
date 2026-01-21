@@ -115,7 +115,7 @@ elif [ "${OPENAUDIO_TEST_HARNESS_MODE:-false}" = "true" ]; then
     exec "$@"
 else
     setup_postgres
-    if [ "${OPENAUDIO_HOT_RELOAD:-false}" = "true" ]; then
+    if [ "${OPENAUDIO_CI:-false}" != "true" ] && [ "${OPENAUDIO_HOT_RELOAD:-false}" = "true" ]; then
         echo "Starting openaudio with hot reload (wgo)..."
         cd /app || exit 1
         # Use wgo to watch .go and .templ files, exclude generated files
