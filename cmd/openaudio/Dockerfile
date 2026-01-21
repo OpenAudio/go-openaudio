@@ -87,4 +87,22 @@ FROM toolbase AS ci
 # Image for running openaudio for development.
 # Add any developer convenience tools or state here that don't belong in CI
 FROM toolbase AS dev
-# no-op
+
+# Install Go for development (needed for wgo hot reloading)
+COPY --from=golang:alpine /usr/local/go/ /usr/local/go/
+ENV GOPATH="/go"
+ENV GOROOT="/usr/local/go"
+ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
+ENV GO111MODULE=on
+
+# Install git (needed for go install to fetch from GitHub)
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
+# Pre-download Go module dependencies for faster hot reloading
+# This avoids downloading all dependencies on first run
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Install wgo for hot reloading
+RUN go install github.com/bokwoon95/wgo@latest
