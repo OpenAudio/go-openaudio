@@ -2,6 +2,7 @@ package mediorum
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"connectrpc.com/connect"
 	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
-	"github.com/OpenAudio/go-openaudio/pkg/common"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
@@ -23,6 +23,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/pos"
 	"github.com/OpenAudio/go-openaudio/pkg/registrar"
 	"github.com/OpenAudio/go-openaudio/pkg/version"
+	"github.com/ethereum/go-ethereum/crypto"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slog"
 )
@@ -85,7 +86,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 
 	nodeEndpoint := cfg.NodeEndpoint
 	privateKey := cfg.EthereumKey
-	privateKeyHex := common.PrivKeyToHex(privateKey)
+	privateKeyHex := hex.EncodeToString(crypto.FromECDSA(privateKey))
 	walletAddress := cfg.WalletAddress
 	delegateOwnerWallet := os.Getenv("delegateOwnerWallet")
 	if !strings.EqualFold(walletAddress, delegateOwnerWallet) {

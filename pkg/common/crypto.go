@@ -110,12 +110,6 @@ func PrivKeyToAddress(privateKey *ecdsa.PrivateKey) string {
 	return address
 }
 
-// PrivKeyToHex converts an ECDSA private key to hex string (without 0x prefix)
-func PrivKeyToHex(privateKey *ecdsa.PrivateKey) string {
-	keyBytes := crypto.FromECDSA(privateKey)
-	return hex.EncodeToString(keyBytes)
-}
-
 // for parity with the web3.js web3.utils.utf8ToHex() call
 func Utf8ToHex(s string) [32]byte {
 	hex := [32]byte{}

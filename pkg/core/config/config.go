@@ -287,6 +287,8 @@ func ReadConfig() (*Config, error) {
 	return &cfg, nil
 }
 
+// Check if the hostname is a valid FQDN (Fully Qualified Domain Name)
+// which means it includes a protocol, valid hostname, and optional port number.
 // https://regex101.com/r/kIowvx/2
 func isFQDN(hostname string) bool {
 	fqdnRegex := regexp.MustCompile(`(?:^|[ \t])((https?:\/\/)?(?:localhost|[\w-]+(?:\.[\w-]+)+)(:\d+)?(\/\S*)?)`)
