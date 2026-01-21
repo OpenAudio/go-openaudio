@@ -219,18 +219,13 @@ func ReadConfig() (*Config, error) {
 			return nil, fmt.Errorf("invalid nodeEndpoint URL: %v", err)
 		}
 
-		// Check if port is specified in the URL
 		if parsedURL.Port() != "" {
 			return nil, fmt.Errorf("nodeEndpoint must not include a port number. Remove ':port' from the URL (e.g., use 'https://example.com' instead of 'https://example.com:443')")
 		}
-
-		// Extract and validate hostname/FQDN
 		hostname := parsedURL.Hostname()
 		if hostname == "" {
 			return nil, fmt.Errorf("nodeEndpoint must include a valid hostname")
 		}
-
-		// Validate hostname format is a valid FQDN
 		if !isFQDN(hostname) {
 			return nil, fmt.Errorf("invalid hostname in nodeEndpoint: %q is not a valid FQDN", hostname)
 		}

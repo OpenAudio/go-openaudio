@@ -85,11 +85,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 
 	nodeEndpoint := cfg.NodeEndpoint
 	privateKey := cfg.EthereumKey
-
-	// Convert private key to hex string for mediorum config
 	privateKeyHex := common.PrivKeyToHex(privateKey)
-
-	// compute wallet address
 	walletAddress := cfg.WalletAddress
 	delegateOwnerWallet := os.Getenv("delegateOwnerWallet")
 	if !strings.EqualFold(walletAddress, delegateOwnerWallet) {

@@ -154,7 +154,7 @@ func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
 	if !healthy {
 		if !allowUnregistered && !ss.Config.WalletIsRegistered {
 			status = 506
-			errorMsg = "wallet not registered: node endpoint may not match registered endpoint."
+			errorMsg = "wallet not registered for provided endpoint"
 		} else {
 			status = 503
 		}
@@ -198,7 +198,7 @@ func (ss *MediorumServer) requireHealthy(next echo.HandlerFunc) echo.HandlerFunc
 
 		if !ss.Config.WalletIsRegistered {
 			return c.JSON(506, map[string]string{
-				"error": "wallet not registered: node endpoint may not match registered endpoint (check that nodeEndpoint does not include a port number)",
+				"error": "wallet not registered for provided endpoint",
 			})
 		}
 		dbHealthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == ""
