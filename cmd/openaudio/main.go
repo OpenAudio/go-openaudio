@@ -559,7 +559,10 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 	})
 
 	e.GET("/health-check", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService))
+		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService, storageService))
+	})
+	e.GET("/health_check", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService, storageService))
 	})
 
 	e.GET("/console", func(c echo.Context) error {
@@ -835,7 +838,7 @@ func hasSuffix(domain string, suffixes []string) bool {
 	return false
 }
 
-func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreService) map[string]interface{} {
+func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreService, storageService *server.StorageService) map[string]interface{} {
 	response := map[string]interface{}{
 		"git":       os.Getenv("GIT_SHA"),
 		"hostname":  hostUrl.Hostname(),
@@ -851,32 +854,25 @@ func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreServic
 		"enabled": isStorageEnabled(),
 	}
 
-	if isStorageEnabled() {
-		resp, err := http.Get("http://localhost:1991/health_check")
+	if isStorageEnabled() && storageService != nil {
+		storageHealth, err := storageService.GetMediorumHealthData()
 		if err == nil {
-			defer resp.Body.Close()
-			var storageHealth server.HealthCheckResponse
-			if err := json.NewDecoder(resp.Body).Decode(&storageHealth); err == nil {
-				healthBytes, _ := json.Marshal(storageHealth)
-				var tempResponse map[string]interface{}
-				json.Unmarshal(healthBytes, &tempResponse)
+			healthBytes, _ := json.Marshal(storageHealth)
+			var tempResponse map[string]interface{}
+			json.Unmarshal(healthBytes, &tempResponse)
 
-				// TODO: remove cruft as we favor comet status for peering
-				if data, ok := tempResponse["data"].(map[string]interface{}); ok {
-					for k, v := range data {
-						if k != "signers" && k != "unreachablePeers" {
-							storageResponse[k] = v
-						}
-					}
-					delete(tempResponse, "data")
-				}
-
-				for k, v := range tempResponse {
+			if data, ok := tempResponse["data"].(map[string]interface{}); ok {
+				for k, v := range data {
 					storageResponse[k] = v
 				}
-
-				storageResponse["enabled"] = true
+				delete(tempResponse, "data")
 			}
+
+			for k, v := range tempResponse {
+				storageResponse[k] = v
+			}
+
+			storageResponse["enabled"] = true
 		}
 	}
 	response["storage"] = storageResponse

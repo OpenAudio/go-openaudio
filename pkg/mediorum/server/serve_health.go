@@ -66,13 +66,10 @@ type HealthCheckResponseData struct {
 	TranscodeStats            *TranscodeStats            `json:"transcodeStats"`
 }
 
-func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
+// getHealthCheckData gathers all health check data and returns it as a HealthCheckResponseData struct.
+// This method is thread-safe and can be called directly without HTTP context.
+func (ss *MediorumServer) getHealthCheckData() HealthCheckResponseData {
 	healthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == ""
-
-	allowUnregistered, _ := strconv.ParseBool(c.QueryParam("allow_unregistered"))
-	if !allowUnregistered && !ss.Config.WalletIsRegistered {
-		healthy = false
-	}
 
 	blobStorePrefix, _, foundBlobStore := strings.Cut(ss.Config.BlobStoreDSN, "://")
 	if !foundBlobStore {
@@ -83,12 +80,11 @@ func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
 		blobStoreMoveFromPrefix = ""
 	}
 
-	var err error
 	// since we're using peerHealth
 	ss.peerHealthsMutex.RLock()
 	defer ss.peerHealthsMutex.RUnlock()
 
-	data := HealthCheckResponseData{
+	return HealthCheckResponseData{
 		Healthy:                   healthy,
 		Version:                   ss.Config.VersionJson.Version,
 		Service:                   ss.Config.VersionJson.Service,
@@ -131,6 +127,20 @@ func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
 		TranscodeQueueLength:      len(ss.transcodeWork),
 		TranscodeStats:            ss.getTranscodeStats(),
 	}
+}
+
+func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
+	allowUnregistered, _ := strconv.ParseBool(c.QueryParam("allow_unregistered"))
+	
+	data := ss.getHealthCheckData()
+	
+	healthy := data.Healthy
+	if !allowUnregistered && !ss.Config.WalletIsRegistered {
+		healthy = false
+	}
+	data.Healthy = healthy
+
+	var err error
 
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
