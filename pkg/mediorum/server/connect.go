@@ -2,19 +2,14 @@ package server
 
 import (
 	"context"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"mime/multipart"
 	"strings"
-	"time"
 
 	"connectrpc.com/connect"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
-	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
-	"github.com/gowebpki/jcs"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -249,38 +244,12 @@ func (s *StorageService) GetStatus(context.Context, *connect.Request[v1.GetStatu
 	}), nil
 }
 
-// GetMediorumHealthData returns the health check data directly from the mediorum server instance.
-// This method allows direct access to health data without making an HTTP call.
-func (s *StorageService) GetMediorumHealthData() (*HealthCheckResponse, error) {
+// GetMediorumHealth returns the health check data for the mediorum process
+func (s *StorageService) GetMediorumHealth() (HealthCheckResponseData, error) {
 	if s.mediorum == nil {
-		return nil, errors.New("mediorum server not initialized")
+		return HealthCheckResponseData{}, errors.New("mediorum not initialized")
 	}
-	
+
 	data := s.mediorum.getHealthCheckData()
-	
-	// Generate signature for the health data
-	dataBytes, err := json.Marshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal health check data: %w", err)
-	}
-	dataBytesSorted, err := jcs.Transform(dataBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sort health check data: %w", err)
-	}
-	
-	signatureHex := "private key not set (should only happen on local dev)!"
-	if s.mediorum.Config.privateKey != nil {
-		signature, err := signature.SignBytes(dataBytesSorted, s.mediorum.Config.privateKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to sign health check response: %w", err)
-		}
-		signatureHex = fmt.Sprintf("0x%s", hex.EncodeToString(signature))
-	}
-	
-	return &HealthCheckResponse{
-		Data:      data,
-		Signer:    s.mediorum.Config.Self.Wallet,
-		Signature: signatureHex,
-		Timestamp: time.Now(),
-	}, nil
+	return data, nil
 }

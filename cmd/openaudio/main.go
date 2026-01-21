@@ -36,16 +36,19 @@ import (
 	aLogger "github.com/OpenAudio/go-openaudio/pkg/logger"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/OpenAudio/go-openaudio/pkg/pos"
 	"github.com/OpenAudio/go-openaudio/pkg/system"
 	"github.com/OpenAudio/go-openaudio/pkg/uptime"
 	"github.com/OpenAudio/go-openaudio/pkg/version"
+	"github.com/gowebpki/jcs"
 	"go.akshayshah.org/connectproto"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	storagev1connect "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
@@ -561,6 +564,7 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 	e.GET("/health-check", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService, storageService))
 	})
+
 	e.GET("/health_check", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService, storageService))
 	})
@@ -850,33 +854,26 @@ func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreServic
 		},
 	}
 
+	// Get health data from storage service
 	storageResponse := map[string]interface{}{
 		"enabled": isStorageEnabled(),
 	}
-
 	if isStorageEnabled() && storageService != nil {
-		storageHealth, err := storageService.GetMediorumHealthData()
+		storageData, err := storageService.GetMediorumHealth()
 		if err == nil {
-			healthBytes, _ := json.Marshal(storageHealth)
-			var tempResponse map[string]interface{}
-			json.Unmarshal(healthBytes, &tempResponse)
-
-			if data, ok := tempResponse["data"].(map[string]interface{}); ok {
-				for k, v := range data {
-					storageResponse[k] = v
-				}
-				delete(tempResponse, "data")
+			dataBytes, err := json.Marshal(storageData)
+			if err == nil {
+				var storageDataMap map[string]interface{}
+				json.Unmarshal(dataBytes, &storageDataMap)
+				storageResponse = storageDataMap
 			}
-
-			for k, v := range tempResponse {
-				storageResponse[k] = v
-			}
-
-			storageResponse["enabled"] = true
+		} else {
+			storageResponse["error"] = err.Error()
 		}
 	}
 	response["storage"] = storageResponse
 
+	// Get health data from core service
 	coreResponse := map[string]interface{}{}
 	if !coreService.IsReady() {
 		coreResponse["error"] = "core service not ready"
@@ -884,23 +881,42 @@ func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreServic
 		coreResponse["timestamp"] = time.Now().UTC()
 		response["core"] = coreResponse
 	} else {
-		resp, err := http.Get("http://localhost:26659/core/status")
+		statusResp, err := coreService.GetStatus(context.Background(), connect.NewRequest(&v1.GetStatusRequest{}))
 		if err == nil {
-			defer resp.Body.Close()
-			var coreHealth interface{}
-			if err := json.NewDecoder(resp.Body).Decode(&coreHealth); err == nil {
-				// TODO: remove cruft
-				healthBytes, _ := json.Marshal(coreHealth)
-				var coreMap map[string]interface{}
-				json.Unmarshal(healthBytes, &coreMap)
-				delete(coreMap, "git")
-				response["core"] = coreMap
-			} else {
-				coreResponse["error"] = err.Error()
-				response["core"] = coreResponse
+			healthBytes, _ := json.Marshal(statusResp.Msg)
+			var coreMap map[string]interface{}
+			json.Unmarshal(healthBytes, &coreMap)
+			delete(coreMap, "git")
+			response["core"] = coreMap
+		} else {
+			coreResponse["error"] = err.Error()
+			response["core"] = coreResponse
+		}
+	}
+
+	// Sign the response
+	cfg := coreService.GetConfig()
+	signatureHex := "private key not set (should only happen on local dev)!"
+	signer := ""
+	if cfg != nil {
+		signer = cfg.WalletAddress
+		if cfg.EthereumKey != nil {
+			// Marshal the entire response to JSON
+			responseBytes, err := json.Marshal(response)
+			if err == nil {
+				// Sort the JSON using JCS
+				responseBytesSorted, err := jcs.Transform(responseBytes)
+				if err == nil {
+					sig, err := signature.SignBytes(responseBytesSorted, cfg.EthereumKey)
+					if err == nil {
+						signatureHex = fmt.Sprintf("0x%s", hex.EncodeToString(sig))
+					}
+				}
 			}
 		}
 	}
+	response["signature"] = signatureHex
+	response["signer"] = signer
 
 	return response
 }
