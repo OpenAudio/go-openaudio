@@ -438,9 +438,6 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	internalApi.GET("/logs/storageAndDb", ss.serveStorageAndDbLogs)
 	internalApi.GET("/logs/pg-upgrade", ss.getPgUpgradeLog)
 
-	// internal: testing
-	internalApi.GET("/proxy_health_check", ss.proxyHealthCheck)
-
 	go ss.loadGeoIPDatabase()
 
 	return ss, nil
