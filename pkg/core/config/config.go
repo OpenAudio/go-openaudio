@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -204,8 +205,32 @@ func ReadConfig() (*Config, error) {
 	cfg.EthRPCUrl = GetEthRPC()
 
 	delegatePrivateKey := os.Getenv("delegatePrivateKey")
+	// Strip 0x prefix if present
+	if delegatePrivateKey != "" && (strings.HasPrefix(delegatePrivateKey, "0x") || strings.HasPrefix(delegatePrivateKey, "0X")) {
+		delegatePrivateKey = delegatePrivateKey[2:]
+	}
+
 	cfg.PSQLConn = GetEnvWithDefault("dbUrl", "postgresql://postgres:postgres@localhost:5432/openaudio")
-	cfg.NodeEndpoint = os.Getenv("nodeEndpoint")
+	nodeEndpoint := os.Getenv("nodeEndpoint")
+
+	if nodeEndpoint != "" {
+		parsedURL, err := url.Parse(nodeEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid nodeEndpoint URL: %v", err)
+		}
+
+		if parsedURL.Port() != "" {
+			return nil, fmt.Errorf("nodeEndpoint must not include a port number. Remove ':port' from the URL (e.g., use 'https://example.com' instead of 'https://example.com:443')")
+		}
+		hostname := parsedURL.Hostname()
+		if hostname == "" {
+			return nil, fmt.Errorf("nodeEndpoint must include a valid hostname")
+		}
+		if !isFQDN(hostname) {
+			return nil, fmt.Errorf("invalid hostname in nodeEndpoint: %q is not a valid FQDN", hostname)
+		}
+	}
+	cfg.NodeEndpoint = nodeEndpoint
 
 	ethKey, err := common.EthToEthKey(delegatePrivateKey)
 	if err != nil {
@@ -260,6 +285,14 @@ func ReadConfig() (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// Check if the hostname is a valid FQDN (Fully Qualified Domain Name)
+// which means it includes a protocol, valid hostname, and optional port number.
+// https://regex101.com/r/kIowvx/2
+func isFQDN(hostname string) bool {
+	fqdnRegex := regexp.MustCompile(`(?:^|[ \t])((https?:\/\/)?(?:localhost|[\w-]+(?:\.[\w-]+)+)(:\d+)?(\/\S*)?)`)
+	return fqdnRegex.MatchString(hostname)
 }
 
 func GetEnvWithDefault(key, defaultValue string) string {

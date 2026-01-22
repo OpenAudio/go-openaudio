@@ -15,8 +15,6 @@ import (
 	"connectrpc.com/connect"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
-	"github.com/OpenAudio/go-openaudio/pkg/common"
-	"github.com/OpenAudio/go-openaudio/pkg/eth/contracts"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/labstack/echo/v4"
@@ -27,11 +25,8 @@ const (
 	connectRPCInterval  = 15 * time.Second
 	cometRPCInterval    = 15 * time.Second
 	healthcheckInterval = 30 * time.Second
-	p2pcheckInterval    = 15 * time.Second
 	peerInfoInterval    = 15 * time.Second
 )
-
-var legacyDiscoveryProviderProfile = []string{".audius.co", ".creatorseed.com", "dn1.monophonic.digital", ".figment.io", ".tikilabs.com"}
 
 type RegisteredNodeVerboseResponse struct {
 	Owner               string `json:"owner"`
@@ -57,121 +52,34 @@ func (s *Server) getRegisteredNodes(c echo.Context) error {
 
 	path := c.Path()
 
-	discoveryQuery := strings.Contains(path, "discovery")
-	contentQuery := strings.Contains(path, "content")
-	allQuery := !discoveryQuery && !contentQuery
-
 	verbose := strings.Contains(path, "verbose")
 
 	nodes := []*RegisteredNodeVerboseResponse{}
-
-	if allQuery {
-		res, err := queries.GetAllRegisteredNodes(ctx)
-		if err != nil {
-			return fmt.Errorf("could not get all nodes: %v", err)
-		}
-		for _, node := range res {
-			spID, err := strconv.ParseUint(node.SpID, 10, 32)
-			if err != nil {
-				return fmt.Errorf("could not convert spid to int: %v", err)
-			}
-
-			ethBlock, err := strconv.ParseUint(node.EthBlock, 10, 32)
-			if err != nil {
-				return fmt.Errorf("could not convert ethblock to int: %v", err)
-			}
-
-			nodes = append(nodes, &RegisteredNodeVerboseResponse{
-				// TODO: fix this
-				Owner:               node.EthAddress,
-				Endpoint:            node.Endpoint,
-				SpID:                spID,
-				NodeType:            node.NodeType,
-				BlockNumber:         ethBlock,
-				DelegateOwnerWallet: node.EthAddress,
-				CometAddress:        node.CometAddress,
-			})
-		}
+	registeredNodes, err := queries.GetAllRegisteredNodes(ctx)
+	if err != nil {
+		return fmt.Errorf("could not get all nodes: %v", err)
 	}
-
-	if discoveryQuery {
-		res, err := queries.GetRegisteredNodesByType(ctx, common.HexToUtf8(contracts.DiscoveryNode))
+	for _, node := range registeredNodes {
+		spID, err := strconv.ParseUint(node.SpID, 10, 32)
 		if err != nil {
-			return fmt.Errorf("could not get discovery nodes: %v", err)
+			return fmt.Errorf("could not convert spid to int: %v", err)
 		}
-		for _, node := range res {
-			isProd := s.config.Environment == "prod"
-			if isProd {
-				nodeFound := false
-				for _, nodeType := range legacyDiscoveryProviderProfile {
-					if nodeFound {
-						break
-					}
-					if strings.Contains(node.Endpoint, nodeType) {
-						nodeFound = true
-						break
-					}
-				}
-				if !nodeFound {
-					continue
-				}
-			}
 
-			spID, err := strconv.ParseUint(node.SpID, 10, 32)
-			if err != nil {
-				return fmt.Errorf("could not convert spid to int: %v", err)
-			}
-
-			ethBlock, err := strconv.ParseUint(node.EthBlock, 10, 32)
-			if err != nil {
-				return fmt.Errorf("could not convert ethblock to int: %v", err)
-			}
-
-			nodeResponse := &RegisteredNodeVerboseResponse{
-				Owner:               node.EthAddress,
-				Endpoint:            node.Endpoint,
-				SpID:                spID,
-				NodeType:            node.NodeType,
-				BlockNumber:         ethBlock,
-				DelegateOwnerWallet: node.EthAddress,
-				CometAddress:        node.CometAddress,
-			}
-
-			nodes = append(nodes, nodeResponse)
-		}
-	}
-
-	if contentQuery {
-		contentNodes, err := queries.GetRegisteredNodesByType(ctx, common.HexToUtf8(contracts.ContentNode))
+		ethBlock, err := strconv.ParseUint(node.EthBlock, 10, 32)
 		if err != nil {
-			return fmt.Errorf("could not get content nodes: %v", err)
+			return fmt.Errorf("could not convert ethblock to int: %v", err)
 		}
-		validators, err := queries.GetRegisteredNodesByType(ctx, common.HexToUtf8(contracts.Validator))
-		if err != nil {
-			return fmt.Errorf("could not get validators: %v", err)
-		}
-		for _, node := range append(contentNodes, validators...) {
-			spID, err := strconv.ParseUint(node.SpID, 10, 32)
-			if err != nil {
-				return fmt.Errorf("could not convert spid to int: %v", err)
-			}
 
-			ethBlock, err := strconv.ParseUint(node.EthBlock, 10, 32)
-			if err != nil {
-				return fmt.Errorf("could not convert ethblock to int: %v", err)
-			}
-
-			nodes = append(nodes, &RegisteredNodeVerboseResponse{
-				// TODO: fix this
-				Owner:               node.EthAddress,
-				Endpoint:            node.Endpoint,
-				SpID:                spID,
-				NodeType:            node.NodeType,
-				BlockNumber:         ethBlock,
-				DelegateOwnerWallet: node.EthAddress,
-				CometAddress:        node.CometAddress,
-			})
-		}
+		nodes = append(nodes, &RegisteredNodeVerboseResponse{
+			// TODO: fix this
+			Owner:               node.EthAddress,
+			Endpoint:            node.Endpoint,
+			SpID:                spID,
+			NodeType:            node.NodeType,
+			BlockNumber:         ethBlock,
+			DelegateOwnerWallet: node.EthAddress,
+			CometAddress:        node.CometAddress,
+		})
 	}
 
 	if verbose {

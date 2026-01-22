@@ -22,6 +22,7 @@ import (
 	storagev1 "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
 	storagev1connect "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	"github.com/jackc/pgx/v5"
@@ -59,6 +60,15 @@ func (c *CoreService) GetEthService() ethv1connect.EthServiceHandler {
 		return nil
 	}
 	return c.core.eth
+}
+
+func (c *CoreService) GetConfig() *config.Config {
+	c.coreMu.RLock()
+	defer c.coreMu.RUnlock()
+	if c.core == nil {
+		return nil
+	}
+	return c.core.config
 }
 
 var _ v1connect.CoreServiceHandler = (*CoreService)(nil)

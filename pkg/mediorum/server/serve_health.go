@@ -150,20 +150,34 @@ func (ss *MediorumServer) serveHealthCheck(c echo.Context) error {
 	}
 
 	status := 200
+	var errorMsg string
 	if !healthy {
 		if !allowUnregistered && !ss.Config.WalletIsRegistered {
 			status = 506
+			errorMsg = "wallet not registered for provided endpoint"
 		} else {
 			status = 503
 		}
 	}
 
-	return c.JSON(status, HealthCheckResponse{
+	response := HealthCheckResponse{
 		Data:      data,
 		Signer:    ss.Config.Self.Wallet,
 		Signature: signatureHex,
 		Timestamp: time.Now(),
-	})
+	}
+
+	if errorMsg != "" {
+		return c.JSON(status, map[string]interface{}{
+			"error":     errorMsg,
+			"data":      response.Data,
+			"signer":    response.Signer,
+			"signature": response.Signature,
+			"timestamp": response.Timestamp,
+		})
+	}
+
+	return c.JSON(status, response)
 }
 
 func isDbLocalhost(postgresDSN string) bool {
@@ -183,7 +197,9 @@ func (ss *MediorumServer) requireHealthy(next echo.HandlerFunc) echo.HandlerFunc
 		}
 
 		if !ss.Config.WalletIsRegistered {
-			return c.JSON(506, "wallet not registered")
+			return c.JSON(506, map[string]string{
+				"error": "wallet not registered for provided endpoint",
+			})
 		}
 		dbHealthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == ""
 		if !dbHealthy {

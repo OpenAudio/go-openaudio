@@ -19,7 +19,6 @@ import (
 
 // valid service types
 var (
-	DiscoveryNode = common.Utf8ToHex("discovery-node")
 	ContentNode   = common.Utf8ToHex("content-node")
 	Validator     = common.Utf8ToHex("validator")
 	audConversion = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
@@ -342,12 +341,6 @@ func (ac *AudiusContracts) GetRegisteredNode(ctx context.Context, id *big.Int, n
 func (ac *AudiusContracts) GetAllRegisteredNodes(ctx context.Context) ([]*Node, error) {
 	nodes := []*Node{}
 
-	discoveryNodes, err := ac.GetAllRegisteredNodesForType(ctx, DiscoveryNode)
-	if err != nil {
-		return nodes, err
-	}
-	nodes = append(nodes, discoveryNodes...)
-
 	contentNodes, err := ac.GetAllRegisteredNodesForType(ctx, ContentNode)
 	if err != nil {
 		return nodes, err
@@ -422,9 +415,7 @@ func (ac *AudiusContracts) GetAllRegisteredNodesForType(ctx context.Context, nod
 }
 
 func StringToServiceType(s string) ([32]byte, error) {
-	if strings.HasPrefix(strings.ToLower(s), "discovery") {
-		return DiscoveryNode, nil
-	} else if strings.HasPrefix(strings.ToLower(s), "content") {
+	if strings.HasPrefix(strings.ToLower(s), "content") {
 		return ContentNode, nil
 	} else if s == "validator" {
 		return Validator, nil
@@ -434,9 +425,7 @@ func StringToServiceType(s string) ([32]byte, error) {
 }
 
 func ServiceTypeToString(serviceType [32]byte) (string, error) {
-	if bytes.Equal(serviceType[:], DiscoveryNode[:]) {
-		return "discovery-node", nil
-	} else if bytes.Equal(serviceType[:], ContentNode[:]) {
+	if bytes.Equal(serviceType[:], ContentNode[:]) {
 		return "content-node", nil
 	} else if bytes.Equal(serviceType[:], Validator[:]) {
 		return "validator", nil

@@ -441,9 +441,6 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	internalApi.GET("/logs/storageAndDb", ss.serveStorageAndDbLogs)
 	internalApi.GET("/logs/pg-upgrade", ss.getPgUpgradeLog)
 
-	// internal: testing
-	internalApi.GET("/proxy_health_check", ss.proxyHealthCheck)
-
 	go ss.loadGeoIPDatabase()
 
 	return ss, nil
@@ -693,11 +690,6 @@ func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
 				if strings.EqualFold(ep.ServiceType, "content-node") || strings.EqualFold(ep.ServiceType, "validator") {
 					peers = append(peers, peer)
 					allHosts = append(allHosts, peer.Host)
-				}
-
-				// Discovery nodes are signers
-				if strings.EqualFold(ep.ServiceType, "discovery-node") {
-					signers = append(signers, peer)
 				}
 			}
 

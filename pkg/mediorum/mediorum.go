@@ -2,6 +2,7 @@ package mediorum
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/pos"
 	"github.com/OpenAudio/go-openaudio/pkg/registrar"
 	"github.com/OpenAudio/go-openaudio/pkg/version"
+	"github.com/ethereum/go-ethereum/crypto"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slog"
 )
@@ -62,31 +64,25 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		if strings.EqualFold(ep.ServiceType, "content-node") || strings.EqualFold(ep.ServiceType, "validator") {
 			peers = append(peers, peer)
 		}
-
-		// Discovery nodes are signers
-		if strings.EqualFold(ep.ServiceType, "discovery-node") {
-			signers = append(signers, peer)
-		}
 	}
 
 	logger.Info("fetched registered nodes", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)))
-
-	nodeEndpoint := os.Getenv("nodeEndpoint")
-	if nodeEndpoint == "" {
-		return errors.New("missing required env variable 'nodeEndpoint'")
-	}
-	privateKeyHex := os.Getenv("delegatePrivateKey")
-	if privateKeyHex == "" {
-		return errors.New("missing required env variable 'delegatePrivateKey'")
+	cfg := core.GetConfig()
+	if cfg == nil {
+		return errors.New("core service not ready - cannot get config")
 	}
 
-	privateKey, err := ethcontracts.ParsePrivateKeyHex(privateKeyHex)
-	if err != nil {
-		return fmt.Errorf("invalid private key: %v", err)
+	if cfg.NodeEndpoint == "" {
+		return errors.New("nodeEndpoint not configured")
+	}
+	if cfg.EthereumKey == nil {
+		return errors.New("delegatePrivateKey not configured")
 	}
 
-	// compute wallet address
-	walletAddress := ethcontracts.ComputeAddressFromPrivateKey(privateKey)
+	nodeEndpoint := cfg.NodeEndpoint
+	privateKey := cfg.EthereumKey
+	privateKeyHex := hex.EncodeToString(crypto.FromECDSA(privateKey))
+	walletAddress := cfg.WalletAddress
 	delegateOwnerWallet := os.Getenv("delegateOwnerWallet")
 	if !strings.EqualFold(walletAddress, delegateOwnerWallet) {
 		slog.Warn("incorrect delegateOwnerWallet env config", "incorrect", delegateOwnerWallet, "computed", walletAddress)

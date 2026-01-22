@@ -45,6 +45,9 @@ services:
     restart: unless-stopped
     env_file:
       - ./dev/env/openaudio-1.env
+    environment:
+      - OPENAUDIO_HOT_RELOAD=true
+      - OPENAUDIO_CI=${OPENAUDIO_CI:-}
     extra_hosts:
       - 'node1.oap.devnet:host-gateway'
       - 'node2.oap.devnet:host-gateway'

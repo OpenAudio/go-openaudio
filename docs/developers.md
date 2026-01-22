@@ -40,7 +40,7 @@ Build and run a local devnet with 4 nodes.
 make up
 ```
 
-Access the dev nodes.
+**Access the dev nodes**
 
 ```bash
 # add -k if you don't have the cert in your keychain
@@ -56,7 +56,7 @@ open https://node3.oap.devnet/console
 open https://node4.oap.devnet/console
 ```
 
-Smoke test...
+**Smoke test**
 
 ```bash
 # after 5-10s there should be 4 nodes registered
@@ -73,16 +73,18 @@ $ curl -s https://node1.oap.devnet/core/nodes | jq .
   ]
 }
 
-# also...
+# or in the UI
 open https://node1.oap.devnet/console/nodes
-```
 
-Inspect Proof of Useful Work.
-```bash
+# view uptime across the network
 open https://node1.oap.devnet/console/uptime
 ```
 
-Cleanup.
+> Note:
+> By default, hot reloading is only enabled on node1.oap.devnet to conserve system resources.
+> To enable on other nodes, update the corresponding env file in [dev/env](../dev/env).
+
+**Cleanup**
 
 ```bash
 make down
@@ -100,12 +102,6 @@ Peer with mainnet
 
 ```bash
 docker run --rm -it -p 80:80 -p 443:443 -e NETWORK=prod openaudio/go-openaudio:dev
-```
-
-Peer with testnest
-
-```bash
-docker run --rm -it -p 80:80 -p 443:443 -e NETWORK="stage" openaudio/go-openaudio:dev
 ```
 
 ## Run tests

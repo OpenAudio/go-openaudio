@@ -559,14 +559,8 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 	})
 
 	e.GET("/health-check", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl))
+		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService))
 	})
-
-	if os.Getenv("audius_discprov_url") != "" && !isCoreOnly() {
-		e.GET("/health_check", func(c echo.Context) error {
-			return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl))
-		})
-	}
 
 	e.GET("/console", func(c echo.Context) error {
 		return c.Redirect(http.StatusMovedPermanently, "/console/overview")
@@ -841,7 +835,7 @@ func hasSuffix(domain string, suffixes []string) bool {
 	return false
 }
 
-func getHealthCheckResponse(hostUrl *url.URL) map[string]interface{} {
+func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreService) map[string]interface{} {
 	response := map[string]interface{}{
 		"git":       os.Getenv("GIT_SHA"),
 		"hostname":  hostUrl.Hostname(),
@@ -887,17 +881,28 @@ func getHealthCheckResponse(hostUrl *url.URL) map[string]interface{} {
 	}
 	response["storage"] = storageResponse
 
-	resp, err := http.Get("http://localhost:26659/core/status")
-	if err == nil {
-		defer resp.Body.Close()
-		var coreHealth interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&coreHealth); err == nil {
-			// TODO: remove cruft
-			healthBytes, _ := json.Marshal(coreHealth)
-			var coreMap map[string]interface{}
-			json.Unmarshal(healthBytes, &coreMap)
-			delete(coreMap, "git")
-			response["core"] = coreMap
+	coreResponse := map[string]interface{}{}
+	if !coreService.IsReady() {
+		coreResponse["error"] = "core service not ready"
+		coreResponse["healthy"] = false
+		coreResponse["timestamp"] = time.Now().UTC()
+		response["core"] = coreResponse
+	} else {
+		resp, err := http.Get("http://localhost:26659/core/status")
+		if err == nil {
+			defer resp.Body.Close()
+			var coreHealth interface{}
+			if err := json.NewDecoder(resp.Body).Decode(&coreHealth); err == nil {
+				// TODO: remove cruft
+				healthBytes, _ := json.Marshal(coreHealth)
+				var coreMap map[string]interface{}
+				json.Unmarshal(healthBytes, &coreMap)
+				delete(coreMap, "git")
+				response["core"] = coreMap
+			} else {
+				coreResponse["error"] = err.Error()
+				response["core"] = coreResponse
+			}
 		}
 	}
 

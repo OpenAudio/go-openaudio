@@ -6,6 +6,8 @@ UPGRADE_TYPE ?= patch
 GIT_SHA := $(shell git rev-parse HEAD)
 VERSION_LDFLAG := -X github.com/OpenAudio/go-openaudio/pkg/core/config.Version=$(GIT_SHA)
 
+.DEFAULT_GOAL := up
+
 ###### SQL
 CORE_SQL_SRCS := $(shell find pkg/core/db/sql -type f -name '*.sql') pkg/core/db/sqlc.yaml
 CORE_SQL_ARTIFACTS := $(wildcard pkg/core/db/*.sql.go)
