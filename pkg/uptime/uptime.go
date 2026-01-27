@@ -60,12 +60,12 @@ func Run(ctx context.Context, ethService ethv1connect.EthServiceHandler) error {
 
 	switch env {
 	case "prod":
-		err := startStagingOrProd(ctx, true, nodeType, env, ethService)
+		err := start(ctx, true, nodeType, env, ethService)
 		if err != nil {
 			return err
 		}
 	case "stage":
-		err := startStagingOrProd(ctx, false, nodeType, env, ethService)
+		err := start(ctx, false, nodeType, env, ethService)
 		if err != nil {
 			return err
 		}
@@ -173,6 +173,19 @@ func (u *Uptime) startHealthPoller() {
 	}
 }
 
+func toPeers(endpoints []*ethv1.ServiceEndpoint) []registrar.Peer {
+	var peers []registrar.Peer
+	for _, ep := range endpoints {
+		if strings.EqualFold(ep.ServiceType, "content-node") || strings.EqualFold(ep.ServiceType, "validator") {
+			peers = append(peers, registrar.Peer{
+				Host:   httputil.RemoveTrailingSlash(strings.ToLower(ep.Endpoint)),
+				Wallet: strings.ToLower(ep.DelegateWallet),
+			})
+		}
+	}
+	return peers
+}
+
 func (u *Uptime) startPeerRefresher() {
 	interval := 30 * time.Minute
 	if os.Getenv("OPENAUDIO_ENV") == "dev" {
@@ -196,15 +209,7 @@ func (u *Uptime) startPeerRefresher() {
 				continue
 			}
 
-			var peers []registrar.Peer
-			for _, ep := range endpointsResp.Msg.Endpoints {
-				if strings.EqualFold(ep.ServiceType, "content-node") || strings.EqualFold(ep.ServiceType, "validator") {
-					peers = append(peers, registrar.Peer{
-						Host:   httputil.RemoveTrailingSlash(strings.ToLower(ep.Endpoint)),
-						Wallet: strings.ToLower(ep.DelegateWallet),
-					})
-				}
-			}
+			peers := toPeers(endpointsResp.Msg.Endpoints)
 
 			u.peersMu.Lock()
 			u.Config.Peers = peers
@@ -373,7 +378,7 @@ func apiPath(parts ...string) string {
 	return u.String()
 }
 
-func startStagingOrProd(ctx context.Context, isProd bool, nodeType, env string, ethService ethv1connect.EthServiceHandler) error {
+func start(ctx context.Context, isProd bool, nodeType, env string, ethService ethv1connect.EthServiceHandler) error {
 	myEndpoint := mustGetenv("nodeEndpoint")
 	logger := slog.With("endpoint", myEndpoint)
 
@@ -384,17 +389,7 @@ func startStagingOrProd(ctx context.Context, isProd bool, nodeType, env string, 
 		return fmt.Errorf("failed to get registered endpoints from eth service: %w", err)
 	}
 
-	// Filter endpoints by service type and convert to registrar.Peer format
-	// Only include content-nodes and validators as peers (for uptime monitoring)
-	var peers []registrar.Peer
-	for _, ep := range endpointsResp.Msg.Endpoints {
-		if strings.EqualFold(ep.ServiceType, "content-node") || strings.EqualFold(ep.ServiceType, "validator") {
-			peers = append(peers, registrar.Peer{
-				Host:   httputil.RemoveTrailingSlash(strings.ToLower(ep.Endpoint)),
-				Wallet: strings.ToLower(ep.DelegateWallet),
-			})
-		}
-	}
+	peers := toPeers(endpointsResp.Msg.Endpoints)
 
 	logger.Info("fetched registered nodes", "peers", len(peers), "nodeType", nodeType, "env", env)
 
