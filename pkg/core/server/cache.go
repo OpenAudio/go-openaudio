@@ -323,6 +323,40 @@ func (s *Server) refreshSyncStatus(ctx context.Context) error {
 
 			upsertCache(s.cache.syncInfo, SyncInfoKey, func(syncInfo *v1.GetStatusResponse_SyncInfo) *v1.GetStatusResponse_SyncInfo {
 				syncInfo.Synced = !status.SyncInfo.CatchingUp
+
+				// Prefer state sync info when it's active; otherwise show block sync while catching up.
+				if status.SyncInfo.CatchingUp {
+					if syncInfo.GetStateSync() == nil {
+						blockSync := syncInfo.GetBlockSync()
+						if blockSync == nil {
+							blockSync = &v1.GetStatusResponse_SyncInfo_BlockSyncInfo{
+								StartedAt: timestamppb.Now(),
+							}
+						}
+
+						headHeight := status.SyncInfo.LatestBlockHeight
+						syncHeight := s.cache.currentHeight.Load()
+						blockDiff := headHeight - syncHeight
+						if blockDiff < 0 {
+							blockDiff = 0
+						}
+
+						nodeInfo, _ := s.cache.nodeInfo.Get(NodeInfoKey)
+						blockSync.BlockDiff = blockDiff
+						blockSync.HeadHeight = headHeight
+						blockSync.SyncHeight = syncHeight
+						blockSync.HeadSource = nodeInfo
+
+						syncInfo.SyncMode = &v1.GetStatusResponse_SyncInfo_BlockSync{BlockSync: blockSync}
+					}
+				} else {
+					if syncInfo.GetBlockSync() != nil {
+						syncInfo.GetBlockSync().CompletedAt = timestamppb.Now()
+					}
+					// Clear sync mode when fully synced.
+					syncInfo.SyncMode = nil
+				}
+
 				return syncInfo
 			})
 		case <-ctx.Done():

@@ -94,29 +94,85 @@ templ (p *Pages) OverviewCriticalFragment(status *v1.GetStatusResponse) {
 			</div>
 			<div class="text-sm text-secondary">Node Status</div>
 		</div>
+		<!-- Enhanced Sync Status Card -->
 		<div class="bg-secondary rounded-lg p-4 text-center">
-			<div class="text-2xl font-bold">
-				if status.SyncInfo != nil && status.SyncInfo.Synced {
+			if status.SyncInfo != nil && status.SyncInfo.Synced {
+				<div class="text-2xl font-bold">
 					@components.StatusGreenLg("Synced")
 					<span>&nbsp;Synced</span>
-				} else {
+				</div>
+				<div class="text-sm text-secondary">Sync Status</div>
+			} else if status.SyncInfo != nil && status.SyncInfo.GetStateSync() != nil {
+				<!-- State Sync in Progress -->
+				<div class="space-y-2">
+					<div class="text-xl font-bold">
+						@components.StatusOrangeLg("State Sync")
+						<span>&nbsp;State Sync</span>
+					</div>
+					<div class="text-xs text-secondary">
+						{ getSyncPhaseText(status.SyncInfo.GetStateSync().Phase) }
+					</div>
+					if status.SyncInfo.GetStateSync().Snapshot != nil {
+						<div class="text-xs text-secondary">
+							Snapshot: { fmt.Sprintf("%d", status.SyncInfo.GetStateSync().Snapshot.Height) }
+						</div>
+					}
+					if status.SyncInfo.GetStateSync().Snapshot != nil && status.SyncInfo.GetStateSync().Snapshot.ChunkCount > 0 {
+						<div class="mt-2">
+							<div class="text-xs text-secondary mb-1">
+								{ fmt.Sprintf("%d / %d chunks", status.SyncInfo.GetStateSync().DownloadedChunks, status.SyncInfo.GetStateSync().Snapshot.ChunkCount) }
+							</div>
+							<div class="w-full bg-gray-700 rounded-full h-2">
+								<div class="bg-orange-500 h-2 rounded-full transition-all duration-300" style={ fmt.Sprintf("width: %s", formatPercentage(status.SyncInfo.GetStateSync().DownloadedChunks, status.SyncInfo.GetStateSync().Snapshot.ChunkCount)) }></div>
+							</div>
+						</div>
+					}
+				</div>
+			} else if status.SyncInfo != nil && status.SyncInfo.GetBlockSync() != nil {
+				<!-- Block Sync in Progress -->
+				<div class="space-y-2">
+					<div class="text-xl font-bold">
+						@components.StatusOrangeLg("Block Sync")
+						<span>&nbsp;Block Sync</span>
+					</div>
+					<div class="text-xs text-secondary">
+						{ fmt.Sprintf("%d blocks behind", status.SyncInfo.GetBlockSync().BlockDiff) }
+					</div>
+				</div>
+			} else {
+				<div class="text-2xl font-bold">
 					@components.StatusOrangeLg("Syncing")
 					<span>&nbsp;Syncing</span>
-				}
-			</div>
-			<div class="text-sm text-secondary">Sync Status</div>
+				</div>
+				<div class="text-sm text-secondary">Sync Status</div>
+			}
 		</div>
+		<!-- Current Height / State Sync Progress -->
 		<div class="bg-secondary rounded-lg p-4 text-center">
-			<div class="text-2xl font-bold">
-				if status.ChainInfo != nil {
+			if status.SyncInfo != nil && status.SyncInfo.GetStateSync() != nil && status.SyncInfo.GetStateSync().Snapshot != nil {
+				<!-- Show State Sync Info instead of height -->
+				<div class="space-y-2">
+					<div class="text-2xl font-bold text-orange-400">
+						{ fmt.Sprintf("%d", status.SyncInfo.GetStateSync().Snapshot.Height) }
+					</div>
+					<div class="text-xs text-secondary">Snapshot Height</div>
+					if status.SyncInfo.GetStateSync().Snapshot.ChunkCount > 0 {
+						<div class="text-xs text-orange-400 font-medium">
+							{ formatPercentage(status.SyncInfo.GetStateSync().DownloadedChunks, status.SyncInfo.GetStateSync().Snapshot.ChunkCount) } complete
+						</div>
+					}
+				</div>
+			} else if status.ChainInfo != nil && status.ChainInfo.CurrentHeight > 0 {
+				<div class="text-2xl font-bold">
 					@p.components.Link("/block/%d", status.ChainInfo.CurrentHeight) {
 						{ fmt.Sprintf("%d", status.ChainInfo.CurrentHeight) }
 					}
-				} else {
-					N/A
-				}
-			</div>
-			<div class="text-sm text-secondary">Current Height</div>
+				</div>
+				<div class="text-sm text-secondary">Current Height</div>
+			} else {
+				<div class="text-2xl font-bold text-secondary">N/A</div>
+				<div class="text-sm text-secondary">Current Height</div>
+			}
 		</div>
 		<div class="bg-secondary rounded-lg p-4 text-center">
 			<div class="text-2xl font-bold">

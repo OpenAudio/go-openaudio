@@ -79,6 +79,52 @@ func getPgDumpPath(baseDir string) string {
 	return filepath.Join(baseDir, pgDumpFileName)
 }
 
+func (s *Server) updateStateSyncInfo(update func(info *corev1.GetStatusResponse_SyncInfo_StateSyncInfo) *corev1.GetStatusResponse_SyncInfo_StateSyncInfo) {
+	if s.cache == nil {
+		return
+	}
+
+	if err := upsertCache(s.cache.syncInfo, SyncInfoKey, func(syncInfo *corev1.GetStatusResponse_SyncInfo) *corev1.GetStatusResponse_SyncInfo {
+		next := update(syncInfo.GetStateSync())
+		if next == nil {
+			syncInfo.SyncMode = nil
+			return syncInfo
+		}
+
+		syncInfo.SyncMode = &corev1.GetStatusResponse_SyncInfo_StateSync{StateSync: next}
+		return syncInfo
+	}); err != nil {
+		s.logger.Debug("failed to update state sync info", zap.Error(err))
+	}
+}
+
+func (s *Server) clearStateSyncInfo() {
+	s.updateStateSyncInfo(func(_ *corev1.GetStatusResponse_SyncInfo_StateSyncInfo) *corev1.GetStatusResponse_SyncInfo_StateSyncInfo {
+		return nil
+	})
+}
+
+func (s *Server) countReconstructionChunks(height int64) (int64, error) {
+	heightDir := getHeightDir(filepath.Join(s.config.RootDir, tmpReconstructionDir), height)
+	entries, err := os.ReadDir(heightDir)
+	if err != nil {
+		return 0, err
+	}
+
+	var count int64
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, "chunk_") && strings.HasSuffix(name, ".gz") {
+			count++
+		}
+	}
+
+	return count, nil
+}
+
 func (s *Server) startSnapshotCreator(ctx context.Context) error {
 	s.StartProcess(ProcessStateSnapshotCreator)
 
