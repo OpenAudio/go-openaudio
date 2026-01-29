@@ -493,6 +493,10 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 	e := echo.New()
 	e.HideBanner = true
 	e.Use(middleware.Logger(), middleware.Recover(), common.InjectRealIP())
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{http.MethodGet},
+	}))
 
 	rpcGroup := e.Group("")
 	rpcGroup.Use(common.CORS())
@@ -561,14 +565,6 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 		return c.JSON(http.StatusOK, map[string]int{"a": 440})
 	})
 
-	e.GET("/health-check", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService, storageService))
-	})
-
-	e.GET("/health_check", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService, storageService))
-	})
-
 	e.GET("/console", func(c echo.Context) error {
 		return c.Redirect(http.StatusMovedPermanently, "/console/overview")
 	})
@@ -578,7 +574,6 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 		{"/core/*", "http://localhost:26659"},
 	}
 
-	// dashboard compatibility - country flags + version info
 	locationHandler := func(c echo.Context) error {
 		type ipInfoResponse struct {
 			Country string `json:"country"`
@@ -619,14 +614,16 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 		})
 	}
 
-	corsGroup := e.Group("", middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"*"},
-		AllowMethods: []string{http.MethodGet},
-	}))
+	e.GET("/health-check", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService, storageService))
+	})
 
-	corsGroup.GET("/version", locationHandler)
-	corsGroup.GET("/location", locationHandler)
-	// end dashboard compatibility
+	e.GET("/health_check", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService, storageService))
+	})
+
+	e.GET("/version", locationHandler)
+	e.GET("/location", locationHandler)
 
 	if isUpTimeEnabled(hostUrl) {
 		proxies = append(proxies, proxyConfig{"/d_api/*", "http://localhost:1996"})
