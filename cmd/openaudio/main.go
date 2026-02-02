@@ -840,17 +840,6 @@ func hasSuffix(domain string, suffixes []string) bool {
 }
 
 func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreService, storageService *server.StorageService) map[string]interface{} {
-	response := map[string]interface{}{
-		"git":       os.Getenv("GIT_SHA"),
-		"hostname":  hostUrl.Hostname(),
-		"timestamp": time.Now().UTC(),
-		"uptime":    time.Since(startTime).String(),
-		// TODO: legacy version data for uptime health check
-		"data": map[string]interface{}{
-			"version": version.Version.Version,
-		},
-	}
-
 	// Get health data from storage service
 	storageResponse := map[string]interface{}{
 		"enabled": isStorageEnabled(),
@@ -868,7 +857,18 @@ func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreServic
 			storageResponse["error"] = err.Error()
 		}
 	}
-	response["storage"] = storageResponse
+	response := map[string]interface{}{
+		"git":       os.Getenv("GIT_SHA"),
+		"hostname":  hostUrl.Hostname(),
+		"timestamp": time.Now().UTC(),
+		"uptime":    time.Since(startTime).String(),
+		"storage":   storageResponse,
+		// TODO: legacy version data for uptime and upload health check
+		"data": map[string]interface{}{
+			"version":      version.Version.Version,
+			"diskHasSpace": storageResponse["diskHasSpace"],
+		},
+	}
 
 	// Get health data from core service
 	coreResponse := map[string]interface{}{}
