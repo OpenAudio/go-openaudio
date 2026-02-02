@@ -301,7 +301,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 
 	echoServer.Use(middleware.Recover())
 	echoServer.Use(middleware.Logger())
-	echoServer.Use(middleware.CORS())
+	echoServer.Use(common.CORS())
 	echoServer.Use(timingMiddleware)
 
 	ss := &MediorumServer{

@@ -19,5 +19,12 @@ func CORS() echo.MiddlewareFunc {
 			http.MethodDelete,
 			http.MethodOptions,
 		},
+		AllowHeaders: []string{
+			echo.HeaderOrigin,
+			echo.HeaderContentType,
+			echo.HeaderAccept,
+			echo.HeaderAuthorization,
+			"X-User-Wallet-Addr",
+		},
 	})
 }
