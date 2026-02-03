@@ -32,20 +32,25 @@ func CORS() echo.MiddlewareFunc {
 	return middleware.CORSWithConfig(corsConfig)
 }
 
-func ApplyCORSHeaders(resp *http.Response) {
-	if resp.Header.Get("Access-Control-Allow-Origin") == "" {
-		if len(corsConfig.AllowOrigins) > 0 {
+func ReplaceCORSHeaders(resp *http.Response) {
+	resp.Header.Del("Access-Control-Allow-Origin")
+	resp.Header.Del("Access-Control-Allow-Methods")
+	resp.Header.Del("Access-Control-Allow-Headers")
+	resp.Header.Del("Access-Control-Allow-Credentials")
+	resp.Header.Del("Access-Control-Expose-Headers")
+	resp.Header.Del("Access-Control-Max-Age")
+
+	if len(corsConfig.AllowOrigins) > 0 {
+		if len(corsConfig.AllowOrigins) == 1 && corsConfig.AllowOrigins[0] == "*" {
+			resp.Header.Set("Access-Control-Allow-Origin", "*")
+		} else {
 			resp.Header.Set("Access-Control-Allow-Origin", strings.Join(corsConfig.AllowOrigins, ", "))
 		}
 	}
-	if resp.Header.Get("Access-Control-Allow-Methods") == "" {
-		if len(corsConfig.AllowMethods) > 0 {
-			resp.Header.Set("Access-Control-Allow-Methods", strings.Join(corsConfig.AllowMethods, ", "))
-		}
+	if len(corsConfig.AllowMethods) > 0 {
+		resp.Header.Set("Access-Control-Allow-Methods", strings.Join(corsConfig.AllowMethods, ", "))
 	}
-	if resp.Header.Get("Access-Control-Allow-Headers") == "" {
-		if len(corsConfig.AllowHeaders) > 0 {
-			resp.Header.Set("Access-Control-Allow-Headers", strings.Join(corsConfig.AllowHeaders, ", "))
-		}
+	if len(corsConfig.AllowHeaders) > 0 {
+		resp.Header.Set("Access-Control-Allow-Headers", strings.Join(corsConfig.AllowHeaders, ", "))
 	}
 }

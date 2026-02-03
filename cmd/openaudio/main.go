@@ -638,7 +638,7 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 		}
 		reverseProxy := httputil.NewSingleHostReverseProxy(target)
 		reverseProxy.ModifyResponse = func(resp *http.Response) error {
-			common.ApplyCORSHeaders(resp)
+			common.ReplaceCORSHeaders(resp)
 			return nil
 		}
 		e.Any(proxy.path, echo.WrapHandler(reverseProxy))
