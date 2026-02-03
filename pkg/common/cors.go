@@ -30,9 +30,6 @@ func ReplaceCORSHeaders(resp *http.Response) {
 	resp.Header.Del("Access-Control-Allow-Origin")
 	resp.Header.Del("Access-Control-Allow-Methods")
 	resp.Header.Del("Access-Control-Allow-Headers")
-	resp.Header.Del("Access-Control-Allow-Credentials")
-	resp.Header.Del("Access-Control-Expose-Headers")
-	resp.Header.Del("Access-Control-Max-Age")
 
 	if len(corsConfig.AllowOrigins) > 0 {
 		if len(corsConfig.AllowOrigins) == 1 && corsConfig.AllowOrigins[0] == "*" {
