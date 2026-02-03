@@ -636,7 +636,12 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 			logger.Error("Failed to parse URL", zap.Error(err))
 			continue
 		}
-		e.Any(proxy.path, echo.WrapHandler(httputil.NewSingleHostReverseProxy(target)))
+		reverseProxy := httputil.NewSingleHostReverseProxy(target)
+		reverseProxy.ModifyResponse = func(resp *http.Response) error {
+			common.ApplyCORSHeaders(resp)
+			return nil
+		}
+		e.Any(proxy.path, echo.WrapHandler(reverseProxy))
 	}
 
 	config := getEchoServerConfig(hostUrl)
