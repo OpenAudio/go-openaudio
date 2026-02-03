@@ -19,13 +19,7 @@ var corsConfig = middleware.CORSConfig{
 		http.MethodDelete,
 		http.MethodOptions,
 	},
-	AllowHeaders: []string{
-		echo.HeaderOrigin,
-		echo.HeaderContentType,
-		echo.HeaderAccept,
-		echo.HeaderAuthorization,
-		"X-User-Wallet-Addr",
-	},
+	AllowHeaders: []string{"*"},
 }
 
 func CORS() echo.MiddlewareFunc {
