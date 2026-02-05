@@ -673,8 +673,14 @@ func (s *Server) OfferSnapshot(_ context.Context, req *abcitypes.OfferSnapshotRe
 }
 
 func (s *Server) ApplySnapshotChunk(_ context.Context, req *abcitypes.ApplySnapshotChunkRequest) (*abcitypes.ApplySnapshotChunkResponse, error) {
+	s.logger.Debug("ApplySnapshotChunk called",
+		zap.Uint32("chunkIndex", req.Index),
+		zap.String("sender", req.Sender),
+		zap.Int("chunkSize", len(req.Chunk)))
+
 	offeredSnapshot, err := s.GetOfferedSnapshot()
 	if err != nil {
+		s.logger.Error("GetOfferedSnapshot failed", zap.Error(err), zap.Uint32("chunkIndex", req.Index))
 		return &abcitypes.ApplySnapshotChunkResponse{
 			Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
 		}, nil
@@ -682,12 +688,17 @@ func (s *Server) ApplySnapshotChunk(_ context.Context, req *abcitypes.ApplySnaps
 
 	offeredMetadata := &Metadata{}
 	if err := json.Unmarshal(offeredSnapshot.Metadata, offeredMetadata); err != nil {
+		s.logger.Error("failed to unmarshal metadata", zap.Error(err), zap.Uint32("chunkIndex", req.Index))
 		return &abcitypes.ApplySnapshotChunkResponse{
 			Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_REJECT_SNAPSHOT,
 		}, nil
 	}
 
 	if offeredMetadata.ChainID != s.config.GenesisFile.ChainID {
+		s.logger.Error("chain ID mismatch",
+			zap.String("offered", offeredMetadata.ChainID),
+			zap.String("expected", s.config.GenesisFile.ChainID),
+			zap.Uint32("chunkIndex", req.Index))
 		return &abcitypes.ApplySnapshotChunkResponse{
 			Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_REJECT_SNAPSHOT,
 		}, nil
@@ -695,6 +706,10 @@ func (s *Server) ApplySnapshotChunk(_ context.Context, req *abcitypes.ApplySnaps
 
 	// if sender is not the same as the offered snapshot, reject
 	if !strings.EqualFold(offeredMetadata.Sender, req.Sender) {
+		s.logger.Warn("sender mismatch, retrying",
+			zap.String("offered", offeredMetadata.Sender),
+			zap.String("request", req.Sender),
+			zap.Uint32("chunkIndex", req.Index))
 		return &abcitypes.ApplySnapshotChunkResponse{
 			Result:        abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
 			RejectSenders: []string{req.Sender},
@@ -705,16 +720,27 @@ func (s *Server) ApplySnapshotChunk(_ context.Context, req *abcitypes.ApplySnaps
 	totalChunks := int(offeredSnapshot.Chunks)
 	chunkIndex := int(req.Index)
 
-	// Store the chunk on disk
-	err = s.StoreChunkForReconstruction(height, chunkIndex, req.Chunk)
-	if err != nil {
-		s.logger.Error("failed to store chunk", zap.Int("index", chunkIndex), zap.Error(err))
-		return &abcitypes.ApplySnapshotChunkResponse{
-			Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
-		}, nil
+	// Check if chunk already exists - if so, skip storing but still update progress
+	chunkAlreadyExists := s.chunkExists(height, chunkIndex)
+	if chunkAlreadyExists {
+		s.logger.Debug("chunk already exists, skipping store",
+			zap.Int64("height", height),
+			zap.Int("chunkIndex", chunkIndex),
+			zap.Int("totalChunks", totalChunks))
+	} else {
+		// Store the chunk on disk
+		err = s.StoreChunkForReconstruction(height, chunkIndex, req.Chunk)
+		if err != nil {
+			s.logger.Error("failed to store chunk", zap.Int("index", chunkIndex), zap.Error(err))
+			return &abcitypes.ApplySnapshotChunkResponse{
+				Result: abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
+			}, nil
+		}
+		s.logger.Info("snapshot chunk stored",
+			zap.Int64("height", height),
+			zap.Int("chunkIndex", chunkIndex),
+			zap.Int("totalChunks", totalChunks))
 	}
-
-	s.logger.Info("snapshot chunk stored", zap.Int64("height", height), zap.Int("chunkIndex", chunkIndex), zap.Int("totalChunks", totalChunks))
 
 	if downloaded, err := s.countReconstructionChunks(height); err != nil {
 		s.logger.Warn("failed to count snapshot chunks", zap.Int64("height", height), zap.Error(err))

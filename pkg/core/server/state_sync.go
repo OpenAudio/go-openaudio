@@ -125,6 +125,16 @@ func (s *Server) countReconstructionChunks(height int64) (int64, error) {
 	return count, nil
 }
 
+// chunkExists checks if a chunk file already exists on disk
+func (s *Server) chunkExists(height int64, chunkIndex int) bool {
+	tmpDir := filepath.Join(s.config.RootDir, tmpReconstructionDir)
+	heightDir := getHeightDir(tmpDir, height)
+	chunkPath := getChunkPath(heightDir, chunkIndex)
+
+	_, err := os.Stat(chunkPath)
+	return err == nil
+}
+
 func (s *Server) startSnapshotCreator(ctx context.Context) error {
 	s.StartProcess(ProcessStateSnapshotCreator)
 
