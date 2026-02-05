@@ -12,6 +12,7 @@ import (
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
+	comethttp "github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/cometbft/cometbft/types"
 	"github.com/maypok86/otter"
 	"go.uber.org/zap"
@@ -40,6 +41,8 @@ const (
 	MempoolInfoKey   = "mempoolInfo"
 	SnapshotInfoKey  = "snapshotInfo"
 )
+
+const remoteHeadCacheTTL = 5 * time.Second
 
 // a simple in memory cache of frequently queried things
 // maybe upgrade to something like bigcache later
@@ -326,6 +329,22 @@ func (s *Server) refreshSyncStatus(ctx context.Context) error {
 
 				// Prefer state sync info when it's active; otherwise show block sync while catching up.
 				if status.SyncInfo.CatchingUp {
+					// Get remote head height for target height display
+					headHeight := int64(0)
+					var headSource *v1.GetStatusResponse_NodeInfo
+					if remoteHeight, remoteEndpoint, ok := s.getRemoteHeadHeight(ctx); ok {
+						headHeight = remoteHeight
+						headSource = &v1.GetStatusResponse_NodeInfo{Endpoint: remoteEndpoint}
+					}
+
+					// Update ChainInfo with target height from peers when state sync is active
+					if syncInfo.GetStateSync() != nil && headHeight > 0 {
+						upsertCache(s.cache.chainInfo, ChainInfoKey, func(chainInfo *v1.GetStatusResponse_ChainInfo) *v1.GetStatusResponse_ChainInfo {
+							chainInfo.CurrentHeight = headHeight
+							return chainInfo
+						})
+					}
+
 					if syncInfo.GetStateSync() == nil {
 						blockSync := syncInfo.GetBlockSync()
 						if blockSync == nil {
@@ -334,18 +353,21 @@ func (s *Server) refreshSyncStatus(ctx context.Context) error {
 							}
 						}
 
-						headHeight := status.SyncInfo.LatestBlockHeight
 						syncHeight := s.cache.currentHeight.Load()
-						blockDiff := headHeight - syncHeight
-						if blockDiff < 0 {
-							blockDiff = 0
+
+						if headHeight > 0 {
+							blockDiff := headHeight - syncHeight
+							if blockDiff < 0 {
+								blockDiff = 0
+							}
+							blockSync.BlockDiff = blockDiff
+						} else {
+							blockSync.BlockDiff = -1
 						}
 
-						nodeInfo, _ := s.cache.nodeInfo.Get(NodeInfoKey)
-						blockSync.BlockDiff = blockDiff
 						blockSync.HeadHeight = headHeight
 						blockSync.SyncHeight = syncHeight
-						blockSync.HeadSource = nodeInfo
+						blockSync.HeadSource = headSource
 
 						syncInfo.SyncMode = &v1.GetStatusResponse_SyncInfo_BlockSync{BlockSync: blockSync}
 					}
@@ -363,6 +385,66 @@ func (s *Server) refreshSyncStatus(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+}
+
+func (s *Server) getRemoteHeadHeight(ctx context.Context) (int64, string, bool) {
+	if len(s.config.StateSync.RPCServers) == 0 {
+		return 0, "", false
+	}
+
+	s.remoteHeadMu.Lock()
+	if time.Since(s.remoteHeadUpdatedAt) < remoteHeadCacheTTL {
+		height := s.remoteHeadHeight
+		endpoint := s.remoteHeadEndpoint
+		s.remoteHeadMu.Unlock()
+		if height > 0 {
+			return height, endpoint, true
+		}
+		return 0, "", false
+	}
+	s.remoteHeadMu.Unlock()
+
+	servers := make([]string, 0, len(s.config.StateSync.RPCServers))
+	for _, server := range s.config.StateSync.RPCServers {
+		server = strings.TrimSuffix(server, "/")
+		if !strings.HasSuffix(server, "/core/crpc") {
+			server = fmt.Sprintf("%s/core/crpc", server)
+		}
+		servers = append(servers, server)
+	}
+
+	for _, server := range servers {
+		reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		client, err := comethttp.New(server)
+		if err != nil {
+			cancel()
+			continue
+		}
+
+		status, err := client.Status(reqCtx)
+		cancel()
+		if err != nil {
+			continue
+		}
+
+		if status.SyncInfo.LatestBlockHeight <= 0 {
+			continue
+		}
+
+		s.remoteHeadMu.Lock()
+		s.remoteHeadHeight = status.SyncInfo.LatestBlockHeight
+		s.remoteHeadEndpoint = server
+		s.remoteHeadUpdatedAt = time.Now()
+		s.remoteHeadMu.Unlock()
+		return status.SyncInfo.LatestBlockHeight, server, true
+	}
+
+	s.remoteHeadMu.Lock()
+	s.remoteHeadHeight = 0
+	s.remoteHeadEndpoint = ""
+	s.remoteHeadUpdatedAt = time.Now()
+	s.remoteHeadMu.Unlock()
+	return 0, "", false
 }
 
 func (c *Cache) UpdateProcessState(processKey string, state v1.GetStatusResponse_ProcessInfo_ProcessState, errorMsg string, metadata string) error {

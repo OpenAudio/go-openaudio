@@ -68,6 +68,12 @@ type Server struct {
 	acceptedSnapshotHeight uint64
 	acceptedSnapshotHash   []byte
 	snapshotMutex          sync.Mutex
+
+	// Remote head cache for block sync diff calculations
+	remoteHeadHeight    int64
+	remoteHeadEndpoint  string
+	remoteHeadUpdatedAt time.Time
+	remoteHeadMu        sync.Mutex
 }
 
 func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.Config, logger *zap.Logger, pool *pgxpool.Pool, ethService *eth.EthService, posChannel chan pos.PoSRequest) (*Server, error) {

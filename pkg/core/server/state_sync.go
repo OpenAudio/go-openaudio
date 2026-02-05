@@ -734,14 +734,23 @@ func (s *Server) stateSyncLatestBlock(rpcServers []string) (trustHeight int64, t
 			continue
 		}
 		if len(snapshots.Msg.Snapshots) == 0 {
-			s.logger.Warn("no snapshots returned from host %s", zap.String("rpcServer", rpcServer))
+			s.logger.Warn("no snapshots returned from host", zap.String("rpcServer", rpcServer))
 			continue
 		}
 
 		// get last snapshot in list, this is the latest snapshot
 		lastSnapshot := snapshots.Msg.Snapshots[len(snapshots.Msg.Snapshots)-1]
-		trustBuffer := 10 // number of blocks to step back
-		safeHeight := lastSnapshot.Height - int64(trustBuffer)
+		trustBuffer := int64(10) // number of blocks to step back
+		safeHeight := lastSnapshot.Height - trustBuffer
+
+		// Ensure safeHeight is at least 1 (block height starts at 1)
+		if safeHeight < 1 {
+			s.logger.Warn("snapshot height too low for trust buffer",
+				zap.String("rpcServer", rpcServer),
+				zap.Int64("snapshotHeight", lastSnapshot.Height),
+				zap.Int64("safeHeight", safeHeight))
+			safeHeight = 1
+		}
 
 		client, err := http.New(rpcServer)
 		if err != nil {
@@ -751,12 +760,20 @@ func (s *Server) stateSyncLatestBlock(rpcServers []string) (trustHeight int64, t
 
 		block, err := client.Block(context.Background(), &safeHeight)
 		if err != nil {
-			s.logger.Error("error getting latest block", zap.String("rpcServer", rpcServer), zap.Error(err))
+			s.logger.Error("error getting block at safe height",
+				zap.String("rpcServer", rpcServer),
+				zap.Int64("safeHeight", safeHeight),
+				zap.Error(err))
 			continue
 		}
 
 		trustHeight = block.Block.Height
 		trustHash = block.Block.Hash().String()
+
+		s.logger.Info("found usable block for state sync",
+			zap.String("rpcServer", rpcServer),
+			zap.Int64("trustHeight", trustHeight),
+			zap.String("trustHash", trustHash))
 
 		return trustHeight, trustHash, nil
 	}

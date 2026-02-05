@@ -91,7 +91,55 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 	s.logger.Info("got latest block", zap.Bool("ss_enabled", s.config.StateSync.Enable), zap.Bool("already_synced", alreadySynced), zap.Int("rpc_servers", len(s.config.StateSync.RPCServers)))
 
+	// Check if we already have downloaded the snapshot
+	skipCometStateSync := false
 	if s.config.StateSync.Enable && !alreadySynced {
+		offeredSnapshot, err := s.GetOfferedSnapshot()
+		if err == nil && offeredSnapshot != nil {
+			// Restore accepted snapshot tracking from stored metadata (for hot reload recovery)
+			s.snapshotMutex.Lock()
+			s.acceptedSnapshotHeight = offeredSnapshot.Height
+			s.acceptedSnapshotHash = make([]byte, len(offeredSnapshot.Hash))
+			copy(s.acceptedSnapshotHash, offeredSnapshot.Hash)
+			s.snapshotMutex.Unlock()
+
+			s.logger.Info("restored accepted snapshot tracking from stored metadata",
+				zap.Uint64("height", offeredSnapshot.Height),
+				zap.String("hash", hex.EncodeToString(offeredSnapshot.Hash)))
+
+			if s.haveAllChunks(offeredSnapshot.Height, int(offeredSnapshot.Chunks)) {
+				s.logger.Info("all chunks already downloaded, reconstructing directly and skipping CometBFT state sync",
+					zap.Uint64("height", offeredSnapshot.Height),
+					zap.Uint32("chunks", offeredSnapshot.Chunks))
+
+				if err := s.ReassemblePgDump(int64(offeredSnapshot.Height)); err == nil {
+					if err := s.RestoreDatabase(int64(offeredSnapshot.Height)); err == nil {
+						s.logger.Info("state sync completed from existing chunks")
+						s.clearStateSyncInfo()
+						skipCometStateSync = true
+					}
+				}
+			} else {
+				// We have partial progress, restore it in state sync info
+				downloadedChunks, err := s.countReconstructionChunks(int64(offeredSnapshot.Height))
+				if err == nil && downloadedChunks > 0 {
+					s.logger.Info("restoring partial state sync progress",
+						zap.Uint64("height", offeredSnapshot.Height),
+						zap.Int64("downloadedChunks", downloadedChunks),
+						zap.Uint32("totalChunks", offeredSnapshot.Chunks))
+
+					s.updateStateSyncInfo(func(info *v1.GetStatusResponse_SyncInfo_StateSyncInfo) *v1.GetStatusResponse_SyncInfo_StateSyncInfo {
+						info = s.ensureStateSyncInfo(info, offeredSnapshot.Height, offeredSnapshot.Hash, offeredSnapshot.Chunks)
+						info.Phase = v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_DOWNLOADING_CHUNKS
+						info.DownloadedChunks = downloadedChunks
+						return info
+					})
+				}
+			}
+		}
+	}
+
+	if s.config.StateSync.Enable && !alreadySynced && !skipCometStateSync {
 		rpcServers := s.config.StateSync.RPCServers
 		s.logger.Info("state sync enabled", zap.Any("rpcservers", rpcServers))
 
@@ -545,7 +593,31 @@ func (s *Server) OfferSnapshot(_ context.Context, req *abcitypes.OfferSnapshotRe
 				Result: abcitypes.OFFER_SNAPSHOT_RESULT_REJECT,
 			}, nil
 		}
-		// Same snapshot, accept it
+		// Same snapshot - restore progress and accept it
+		height := int64(req.Snapshot.Height)
+		downloadedChunks, err := s.countReconstructionChunks(height)
+		if err != nil {
+			s.logger.Warn("failed to count existing chunks", zap.Int64("height", height), zap.Error(err))
+			downloadedChunks = 0
+		}
+
+		phase := v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_STARTING
+		if downloadedChunks > 0 {
+			s.logger.Info("restoring state sync progress from existing chunks (re-offered snapshot)",
+				zap.Int64("height", height),
+				zap.Int64("downloadedChunks", downloadedChunks),
+				zap.Uint32("totalChunks", req.Snapshot.Chunks),
+				zap.Int64("remainingChunks", int64(req.Snapshot.Chunks)-downloadedChunks))
+			phase = v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_DOWNLOADING_CHUNKS
+		}
+
+		s.updateStateSyncInfo(func(info *v1.GetStatusResponse_SyncInfo_StateSyncInfo) *v1.GetStatusResponse_SyncInfo_StateSyncInfo {
+			info = s.ensureStateSyncInfo(info, req.Snapshot.Height, req.Snapshot.Hash, req.Snapshot.Chunks)
+			info.Phase = phase
+			info.DownloadedChunks = downloadedChunks
+			return info
+		})
+
 		return &abcitypes.OfferSnapshotResponse{
 			Result: abcitypes.OFFER_SNAPSHOT_RESULT_ACCEPT,
 		}, nil
@@ -564,14 +636,34 @@ func (s *Server) OfferSnapshot(_ context.Context, req *abcitypes.OfferSnapshotRe
 	s.acceptedSnapshotHash = make([]byte, len(req.Snapshot.Hash))
 	copy(s.acceptedSnapshotHash, req.Snapshot.Hash)
 
+	// Check if we already have chunks for this snapshot (e.g., after timeout/rejection or hot reload)
+	height := int64(req.Snapshot.Height)
+	downloadedChunks, err := s.countReconstructionChunks(height)
+	if err != nil {
+		s.logger.Warn("failed to count existing chunks", zap.Int64("height", height), zap.Error(err))
+		downloadedChunks = 0
+	}
+
+	phase := v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_STARTING
+	if downloadedChunks > 0 {
+		s.logger.Info("restoring state sync progress from existing chunks",
+			zap.Int64("height", height),
+			zap.Int64("downloadedChunks", downloadedChunks),
+			zap.Uint32("totalChunks", req.Snapshot.Chunks),
+			zap.Int64("remainingChunks", int64(req.Snapshot.Chunks)-downloadedChunks))
+		phase = v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_DOWNLOADING_CHUNKS
+	}
+
 	s.logger.Info("accepted snapshot for state sync",
 		zap.Uint64("height", req.Snapshot.Height),
 		zap.String("hash", hex.EncodeToString(req.Snapshot.Hash)),
-		zap.Uint32("chunks", req.Snapshot.Chunks))
+		zap.Uint32("chunks", req.Snapshot.Chunks),
+		zap.Int64("existingChunks", downloadedChunks))
 
 	s.updateStateSyncInfo(func(info *v1.GetStatusResponse_SyncInfo_StateSyncInfo) *v1.GetStatusResponse_SyncInfo_StateSyncInfo {
 		info = s.ensureStateSyncInfo(info, req.Snapshot.Height, req.Snapshot.Hash, req.Snapshot.Chunks)
-		info.Phase = v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_STARTING
+		info.Phase = phase
+		info.DownloadedChunks = downloadedChunks
 		return info
 	})
 

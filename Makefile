@@ -133,7 +133,6 @@ docker-harness: docker-dev bin/openaudio-arm64-linux
 	docker build \
 		--target harness \
 		--build-arg GIT_SHA=$(GIT_SHA) \
-		--build-arg APT_INSECURE=$(APT_INSECURE) \
 		--build-arg PREBUILT_BINARY=bin/openaudio-arm64-linux \
 		-t openaudio/go-openaudio:harness \
 		-f ./cmd/openaudio/Dockerfile \
@@ -143,7 +142,6 @@ docker-dev: bin/openaudio-arm64-linux
 	docker build \
 		--target dev \
 		--build-arg GIT_SHA=$(GIT_SHA) \
-		--build-arg APT_INSECURE=$(APT_INSECURE) \
 		--build-arg PREBUILT_BINARY=bin/openaudio-arm64-linux \
 		-t openaudio/go-openaudio:dev \
 		-f ./cmd/openaudio/Dockerfile \
@@ -177,6 +175,7 @@ run-prod: docker-dev
 		-e OPENAUDIO_STORAGE_ENABLED=false \
 		-e OPENAUDIO_TLS_SELF_SIGNED=true \
 		-e stateSyncEnable=true \
+		-e nodeEndpoint=https://node.oap \
 		-e stateSyncRPCServers="$(PROD_STATE_SYNC_RPCS)" \
 		openaudio/go-openaudio:dev
 
