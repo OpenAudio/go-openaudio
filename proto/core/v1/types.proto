@@ -159,6 +159,15 @@ message GetStatusResponse {
     repeated Peer peers = 1;
   }
 
+  message StorageInfo {
+    bool is_blob_storage = 1;
+    int64 disk_used = 2;
+    int64 disk_total = 3;
+    bool disk_has_space = 4;
+    int64 storage_expectation = 5;
+    string storage_type = 6; // "Blob Storage" or "Disk Storage"
+  }
+
   bool live = 1;
   bool ready = 2;
   NodeInfo node_info = 3;
@@ -170,6 +179,7 @@ message GetStatusResponse {
   PeerInfo peers = 9;
   SnapshotInfo snapshot_info = 10;
   ProcessInfo process_info = 11;
+  StorageInfo storage_info = 12;
 }
 
 message GetNodeInfoRequest {}

@@ -38,6 +38,14 @@ func (cs *Console) overviewResourcesFragment(c echo.Context) error {
 	return cs.views.RenderOverviewResources(c, res.Msg)
 }
 
+func (cs *Console) overviewStorageFragment(c echo.Context) error {
+	res, err := cs.core.GetStatus(c.Request().Context(), &connect.Request[v1.GetStatusRequest]{})
+	if err != nil {
+		return err
+	}
+	return cs.views.RenderOverviewStorage(c, res.Msg)
+}
+
 func (cs *Console) overviewNetworkFragment(c echo.Context) error {
 	res, err := cs.core.GetStatus(c.Request().Context(), &connect.Request[v1.GetStatusRequest]{})
 	if err != nil {

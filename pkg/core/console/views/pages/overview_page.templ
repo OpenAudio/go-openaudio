@@ -419,6 +419,75 @@ templ (p *Pages) OverviewResourcesFragment(status *v1.GetStatusResponse) {
 	}
 }
 
+templ (p *Pages) OverviewStorageFragment(status *v1.GetStatusResponse) {
+	if status.StorageInfo != nil {
+		<div class="bg-tertiary shadow-md rounded-lg p-6">
+			<h2 class="text-xl font-semibold mb-4">Storage</h2>
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+				<!-- Left Column: Storage Status -->
+				<div>
+					<h3 class="text-lg font-medium mb-4">Storage Status</h3>
+					<div class="space-y-4">
+						if status.StorageInfo.IsBlobStorage && status.StorageInfo.StorageType != "" {
+							<div class="bg-secondary rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold">{ status.StorageInfo.StorageType }</div>
+								<div class="text-sm text-secondary">Storage Type</div>
+							</div>
+						}
+						<div class="bg-secondary rounded-lg p-4 text-center">
+							<div class="text-2xl font-bold">
+								if status.StorageInfo.DiskHasSpace {
+									@components.StatusGreenLg("Has Space")
+									<span>&nbsp;Has Space</span>
+								} else {
+									@components.StatusRedLg("Full")
+									<span>&nbsp;Full</span>
+								}
+							</div>
+							<div class="text-sm text-secondary">Disk Has Space</div>
+						</div>
+					</div>
+				</div>
+				<!-- Right Column: Disk Usage -->
+				<div>
+					<h3 class="text-lg font-medium mb-4">Disk Usage</h3>
+					<div class="space-y-4">
+						if status.StorageInfo.DiskTotal > 0 {
+							<div class="bg-secondary rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold">{ formatBytes(status.StorageInfo.DiskUsed) }</div>
+								<div class="text-sm text-secondary">Disk Used</div>
+								<div class="text-xs text-secondary mt-1">
+									{ formatPercentage(status.StorageInfo.DiskUsed, status.StorageInfo.DiskTotal) } of { formatBytes(status.StorageInfo.DiskTotal) }
+								</div>
+							</div>
+							<div class="bg-secondary rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold">{ formatBytes(status.StorageInfo.DiskTotal) }</div>
+								<div class="text-sm text-secondary">Disk Total</div>
+							</div>
+						} else {
+							<div class="bg-secondary rounded-lg p-4">
+								<div class="text-sm text-secondary">Disk information not available</div>
+							</div>
+						}
+						if status.StorageInfo.StorageExpectation > 0 {
+							<div class="bg-secondary rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold">{ formatBytes(status.StorageInfo.StorageExpectation) }</div>
+								<div class="text-sm text-secondary">Storage Expectation</div>
+							</div>
+						} else if status.StorageInfo.IsBlobStorage {
+							<div class="bg-secondary rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold">0 B</div>
+								<div class="text-sm text-secondary">Storage Expectation</div>
+								<div class="text-xs text-secondary mt-1">Not yet calculated</div>
+							</div>
+						}
+					</div>
+				</div>
+			</div>
+		</div>
+	}
+}
+
 templ (p *Pages) OverviewNetworkFragment(status *v1.GetStatusResponse) {
 	if status.Peers != nil && len(status.Peers.Peers) > 0 {
 		<div class="bg-tertiary rounded-lg p-6">
@@ -537,6 +606,10 @@ templ (p *Pages) OverviewPage(status *v1.GetStatusResponse) {
 			<!-- Performance & Resources - refresh every 15 seconds -->
 			<div hx-get="/console/fragments/overview/resources" hx-trigger="every 15s" hx-swap="innerHTML">
 				@p.OverviewResourcesFragment(status)
+			</div>
+			<!-- Storage - refresh every 15 seconds -->
+			<div hx-get="/console/fragments/overview/storage" hx-trigger="every 15s" hx-swap="innerHTML">
+				@p.OverviewStorageFragment(status)
 			</div>
 			<!-- Network - refresh every 10 seconds -->
 			<div hx-get="/console/fragments/overview/network" hx-trigger="every 10s" hx-swap="innerHTML">

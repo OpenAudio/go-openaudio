@@ -113,8 +113,10 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		replicationFactor = 4
 		spOwnerWallet = os.Getenv("spOwnerWallet")
 		dir = "/tmp/mediorum"
-		blobStoreDSN = os.Getenv("AUDIUS_STORAGE_DRIVER_URL")
-		moveFromBlobStoreDSN = os.Getenv("AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM")
+		// Support OPENAUDIO_STORAGE_DRIVER_URL with fallback to AUDIUS_STORAGE_DRIVER_URL for backwards compatibility
+		blobStoreDSN = getenvWithDefault("OPENAUDIO_STORAGE_DRIVER_URL", os.Getenv("AUDIUS_STORAGE_DRIVER_URL"))
+		// Support OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM with fallback to AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM for backwards compatibility
+		moveFromBlobStoreDSN = getenvWithDefault("OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM", os.Getenv("AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM"))
 	}
 
 	config := server.MediorumConfig{

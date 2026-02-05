@@ -49,6 +49,7 @@ func (c *Console) registerRoutes() {
 	g.GET("/fragments/overview/critical", c.overviewCriticalFragment)
 	g.GET("/fragments/overview/processes", c.overviewProcessesFragment)
 	g.GET("/fragments/overview/resources", c.overviewResourcesFragment)
+	g.GET("/fragments/overview/storage", c.overviewStorageFragment)
 	g.GET("/fragments/overview/network", c.overviewNetworkFragment)
 
 	// future pages

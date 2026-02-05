@@ -214,23 +214,23 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	// bucket to move all files from
 	if config.MoveFromBlobStoreDSN != "" {
 		if config.MoveFromBlobStoreDSN == config.BlobStoreDSN {
-			logger.Error("AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM cannot be the same as AUDIUS_STORAGE_DRIVER_URL")
+			logger.Error("OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM (or AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM) cannot be the same as OPENAUDIO_STORAGE_DRIVER_URL (or AUDIUS_STORAGE_DRIVER_URL)")
 			return nil, err
 		}
 		bucketToMoveFrom, err := persistence.Open(config.MoveFromBlobStoreDSN)
 		if err != nil {
-			logger.Error("Failed to open bucket to move from. Ensure AUDIUS_STORAGE_DRIVER_URL and AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM are set (the latter can be empty if not moving data)", zap.Error(err))
+			logger.Error("Failed to open bucket to move from. Ensure OPENAUDIO_STORAGE_DRIVER_URL (or AUDIUS_STORAGE_DRIVER_URL) and OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM (or AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM) are set (the latter can be empty if not moving data)", zap.Error(err))
 			return nil, err
 		}
 
 		logger.Info(fmt.Sprintf("Moving all files from %s to %s. This may take a few hours...", config.MoveFromBlobStoreDSN, config.BlobStoreDSN))
 		err = persistence.MoveAllFiles(bucketToMoveFrom, bucket)
 		if err != nil {
-			logger.Error("Failed to move files. Ensure AUDIUS_STORAGE_DRIVER_URL and AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM are set (the latter can be empty if not moving data)", zap.Error(err))
+			logger.Error("Failed to move files. Ensure OPENAUDIO_STORAGE_DRIVER_URL (or AUDIUS_STORAGE_DRIVER_URL) and OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM (or AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM) are set (the latter can be empty if not moving data)", zap.Error(err))
 			return nil, err
 		}
 
-		logger.Info("Finished moving files between buckets. Please remove AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM from your environment and restart the server.")
+		logger.Info("Finished moving files between buckets. Please remove OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM (or AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM) from your environment and restart the server.")
 	}
 
 	// db

@@ -84,6 +84,10 @@ func (v *Views) RenderOverviewResources(c echo.Context, status *v1.GetStatusResp
 	return v.pages.OverviewResourcesFragment(status).Render(c.Request().Context(), c.Response().Writer)
 }
 
+func (v *Views) RenderOverviewStorage(c echo.Context, status *v1.GetStatusResponse) error {
+	return v.pages.OverviewStorageFragment(status).Render(c.Request().Context(), c.Response().Writer)
+}
+
 func (v *Views) RenderOverviewNetwork(c echo.Context, status *v1.GetStatusResponse) error {
 	return v.pages.OverviewNetworkFragment(status).Render(c.Request().Context(), c.Response().Writer)
 }

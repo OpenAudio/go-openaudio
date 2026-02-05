@@ -244,5 +244,43 @@ func (ss *MediorumServer) diskHasSpace() bool {
 		return true
 	}
 
-	return !strings.HasPrefix(ss.Config.BlobStoreDSN, "file://") || ss.mediorumPathFree/uint64(1e9) > 200
+	// If not using file storage, always allow (S3, GCS, etc. don't have local disk constraints)
+	if !strings.HasPrefix(ss.Config.BlobStoreDSN, "file://") {
+		return true
+	}
+
+	// Extract the path from file:// URL (e.g., "file:///data/blobs?no_tmp_dir=true" -> "/data/blobs")
+	_, uri, found := strings.Cut(ss.Config.BlobStoreDSN, "://")
+	if !found {
+		// Malformed URL, fall back to checking Config.Dir
+		ss.logger.Warn("malformed BlobStoreDSN, falling back to Config.Dir check",
+			zap.String("blobStoreDSN", ss.Config.BlobStoreDSN))
+		return ss.mediorumPathFree/uint64(1e9) > 200
+	}
+
+	// Remove query parameters if present (e.g., "?no_tmp_dir=true")
+	blobPath := strings.Split(uri, "?")[0]
+
+	// Check disk space on the actual blob storage path
+	_, free, err := getDiskStatus(blobPath)
+	if err != nil {
+		// If we can't check the blob path (e.g., doesn't exist yet), fall back to Config.Dir
+		ss.logger.Warn("failed to check blob storage disk space, falling back to Config.Dir",
+			zap.String("blobPath", blobPath),
+			zap.Error(err))
+		return ss.mediorumPathFree/uint64(1e9) > 200
+	}
+
+	// Check if free space > 200GB on the actual blob storage path
+	freeGB := free / uint64(1e9)
+	hasSpace := freeGB > 200
+
+	if !hasSpace {
+		ss.logger.Warn("blob storage disk space below threshold",
+			zap.String("blobPath", blobPath),
+			zap.Uint64("freeGB", freeGB),
+			zap.Uint64("thresholdGB", 200))
+	}
+
+	return hasSpace
 }

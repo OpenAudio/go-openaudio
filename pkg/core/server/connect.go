@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -894,6 +895,91 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 	cpuOk := resourceInfo.CpuUsage < 100
 	ready = peersOk && syncInfoOk && diskOk && memOk && cpuOk
 
+	// Populate StorageInfo if storage service is available
+	var storageInfo *v1.GetStatusResponse_StorageInfo
+	if c.storageService != nil {
+		// Try to get storage info
+		// First try GetStatus for storage expectation
+		statusResp, err := c.storageService.GetStatus(ctx, connect.NewRequest(&storagev1.GetStatusRequest{}))
+		if err == nil {
+			// Try to get detailed health data using reflection
+			// Check if storageService has GetMediorumHealth method
+			if svc, ok := c.storageService.(interface {
+				GetMediorumHealth() (interface{}, error)
+			}); ok {
+				healthDataInterface, err := svc.GetMediorumHealth()
+				if err == nil {
+					// Use reflection to access HealthData struct fields
+					val := reflect.ValueOf(healthDataInterface)
+					// Handle both struct and pointer to struct
+					if val.Kind() == reflect.Ptr {
+						val = val.Elem()
+					}
+					if val.Kind() == reflect.Struct {
+						// Get all the fields we need using reflection
+						mediorumPathUsed := uint64(0)
+						mediorumPathSize := uint64(0)
+						diskHasSpace := false
+						storageExpectation := uint64(0)
+						blobStorePrefix := ""
+
+						if field := val.FieldByName("MediorumPathUsed"); field.IsValid() && field.Kind() == reflect.Uint64 {
+							mediorumPathUsed = field.Uint()
+						}
+						if field := val.FieldByName("MediorumPathSize"); field.IsValid() && field.Kind() == reflect.Uint64 {
+							mediorumPathSize = field.Uint()
+						}
+						if field := val.FieldByName("DiskHasSpace"); field.IsValid() && field.Kind() == reflect.Bool {
+							diskHasSpace = field.Bool()
+						}
+						if field := val.FieldByName("StorageExpectation"); field.IsValid() && field.Kind() == reflect.Uint64 {
+							storageExpectation = field.Uint()
+						}
+						if field := val.FieldByName("BlobStorePrefix"); field.IsValid() && field.Kind() == reflect.String {
+							blobStorePrefix = field.String()
+						}
+
+						// Determine storage type based on BlobStorePrefix
+						storageType := "Blob Storage" // default
+						if blobStorePrefix == "file" {
+							storageType = "Disk Storage"
+						}
+
+						storageInfo = &v1.GetStatusResponse_StorageInfo{
+							IsBlobStorage:     true,
+							DiskUsed:          int64(mediorumPathUsed),
+							DiskTotal:         int64(mediorumPathSize),
+							DiskHasSpace:       diskHasSpace,
+							StorageExpectation: int64(storageExpectation),
+							StorageType:        storageType,
+						}
+					}
+				}
+			}
+			// If we couldn't get health data, at least set what we have from GetStatus
+			if storageInfo == nil {
+				storageInfo = &v1.GetStatusResponse_StorageInfo{
+					IsBlobStorage:      true,
+					StorageExpectation: statusResp.Msg.StorageExpectation,
+					StorageType:        "Blob Storage", // default when we don't have detailed info
+					// Disk info not available, will be zero
+				}
+			} else {
+				// Ensure storage expectation is set from GetStatus if health data didn't have it or was 0
+				if storageInfo.StorageExpectation == 0 && statusResp.Msg.StorageExpectation > 0 {
+					storageInfo.StorageExpectation = statusResp.Msg.StorageExpectation
+				}
+			}
+		}
+	}
+
+	// If storage service is not available, set is_blob_storage to false
+	if storageInfo == nil {
+		storageInfo = &v1.GetStatusResponse_StorageInfo{
+			IsBlobStorage: false,
+		}
+	}
+
 	res.Ready = ready
 	res.NodeInfo = nodeInfo
 	res.Peers = peers
@@ -904,6 +990,7 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 	res.MempoolInfo = mempoolInfo
 	res.SnapshotInfo = snapshotInfo
 	res.ProcessInfo = processInfo
+	res.StorageInfo = storageInfo
 
 	return connect.NewResponse(res), nil
 }
