@@ -5,9 +5,13 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/console/assets"
 	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/components"
+	"github.com/OpenAudio/go-openaudio/pkg/version"
 )
 
-var gitCommit = templ.URL(fmt.Sprintf("https://github.com/OpenAudio/go-openaudio/commits/%s", config.Version))
+// Reference config package to ensure import is recognized
+var _ *config.Config
+
+var gitCommit = templ.URL(fmt.Sprintf("https://github.com/OpenAudio/go-openaudio/commits/%s", version.Version.Version))
 
 templ (l *Layout) NavBlockData(totalBlocks string, syncing bool) {
 	<div>
@@ -69,10 +73,9 @@ templ (l *Layout) SiteFrame() {
 					{ children... }
 				</div>
 			</div>
-			<footer class="h-[3vh] w-full bg-secondary flex items-center justify-center p-3">
-				<div class="text-xs text-secondary flex justify-between w-full px-5">
-					<span>made with ⚡️ by the protocol team</span>
-					<span>version: <a href={ gitCommit } target="_blank">{ config.Version }</a></span>
+			<footer class="h-[3vh] w-full flex items-center justify-center p-3">
+				<div class="text-xs text-secondary flex justify-end w-full px-5">
+					<span>version: <a href={ gitCommit } target="_blank">{ version.Version.Version }</a></span>
 				</div>
 			</footer>
 		</div>
