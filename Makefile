@@ -2,7 +2,8 @@ NETWORK ?= stage
 WRAPPER_TAG ?= default
 # One of patch, minor, or major
 UPGRADE_TYPE ?= patch
-STATE_SYNC_RPCS ?= https://creatornode.audius.co
+
+PROD_STATE_SYNC_RPCS ?= https://creatornode.audius.co,https://creatornode2.audius.co
 
 GIT_SHA := $(shell git rev-parse HEAD)
 VERSION_LDFLAG := -X github.com/OpenAudio/go-openaudio/pkg/core/config.Version=$(GIT_SHA)
@@ -176,7 +177,7 @@ run-prod: docker-dev
 		-e OPENAUDIO_STORAGE_ENABLED=false \
 		-e OPENAUDIO_TLS_SELF_SIGNED=true \
 		-e stateSyncEnable=true \
-		-e stateSyncRPCServers="$(STATE_SYNC_RPCS)" \
+		-e stateSyncRPCServers="$(PROD_STATE_SYNC_RPCS)" \
 		openaudio/go-openaudio:dev
 
 .PHONY: ss
