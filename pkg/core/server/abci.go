@@ -594,6 +594,11 @@ func (s *Server) OfferSnapshot(_ context.Context, req *abcitypes.OfferSnapshotRe
 			}, nil
 		}
 		// Same snapshot - restore progress and accept it
+		// Update the stored metadata with the new offer (in case sender changed)
+		if err := s.StoreOfferedSnapshot(req.Snapshot); err != nil {
+			s.logger.Warn("failed to update stored snapshot metadata", zap.Error(err))
+		}
+
 		height := int64(req.Snapshot.Height)
 		downloadedChunks, err := s.countReconstructionChunks(height)
 		if err != nil {
@@ -704,16 +709,48 @@ func (s *Server) ApplySnapshotChunk(_ context.Context, req *abcitypes.ApplySnaps
 		}, nil
 	}
 
-	// if sender is not the same as the offered snapshot, reject
-	if !strings.EqualFold(offeredMetadata.Sender, req.Sender) {
-		s.logger.Warn("sender mismatch, retrying",
-			zap.String("offered", offeredMetadata.Sender),
-			zap.String("request", req.Sender),
-			zap.Uint32("chunkIndex", req.Index))
-		return &abcitypes.ApplySnapshotChunkResponse{
-			Result:        abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
-			RejectSenders: []string{req.Sender},
-		}, nil
+	// Validate sender matches the offered snapshot metadata
+	// However, if we've already accepted this snapshot (by height/hash), we allow chunks from any sender
+	// This handles the case where after hot reload, CometBFT fetches chunks from different peers
+	s.snapshotMutex.Lock()
+	acceptedHeight := s.acceptedSnapshotHeight
+	acceptedHash := s.acceptedSnapshotHash
+	s.snapshotMutex.Unlock()
+
+	senderMismatch := !strings.EqualFold(offeredMetadata.Sender, req.Sender)
+	if senderMismatch {
+		// If we've already accepted this snapshot (height and hash match), allow chunks from any sender
+		// The snapshot is already validated by height and hash, so sender is just metadata
+		hashMatches := acceptedHash != nil && bytes.Equal(acceptedHash, offeredSnapshot.Hash)
+		if acceptedHeight == offeredSnapshot.Height && hashMatches {
+			s.logger.Debug("sender mismatch but snapshot already accepted, accepting chunk from different sender",
+				zap.String("offered", offeredMetadata.Sender),
+				zap.String("request", req.Sender),
+				zap.Uint32("chunkIndex", req.Index),
+				zap.Uint64("height", offeredSnapshot.Height))
+			// Update metadata with new sender for future chunks
+			offeredMetadata.Sender = req.Sender
+			updatedMetadata, err := json.Marshal(offeredMetadata)
+			if err == nil {
+				offeredSnapshot.Metadata = updatedMetadata
+				if err := s.StoreOfferedSnapshot(offeredSnapshot); err != nil {
+					s.logger.Warn("failed to update snapshot metadata with new sender", zap.Error(err))
+				}
+			}
+		} else {
+			// Snapshot not yet accepted or hash mismatch, reject sender mismatch
+			s.logger.Warn("sender mismatch, retrying",
+				zap.String("offered", offeredMetadata.Sender),
+				zap.String("request", req.Sender),
+				zap.Uint32("chunkIndex", req.Index),
+				zap.Uint64("acceptedHeight", acceptedHeight),
+				zap.Uint64("offeredHeight", offeredSnapshot.Height),
+				zap.Bool("hashMatches", hashMatches))
+			return &abcitypes.ApplySnapshotChunkResponse{
+				Result:        abcitypes.APPLY_SNAPSHOT_CHUNK_RESULT_RETRY,
+				RejectSenders: []string{req.Sender},
+			}, nil
+		}
 	}
 
 	height := int64(offeredSnapshot.Height)
