@@ -319,8 +319,8 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		isSeeding:        config.Env == "stage" || config.Env == "prod",
 		isAudiusdManaged: isAudiusdManaged,
 		rendezvousHasher: rendezvousHasher,
-		transcodeWork:    make(chan *Upload),
-		replicationWork:  make(chan *Upload),
+		transcodeWork:    make(chan *Upload, 100),
+		replicationWork:  make(chan *Upload, 100),
 		posChannel:       posChannel,
 
 		peerHealths:        map[string]*PeerHealth{},
