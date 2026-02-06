@@ -3,17 +3,14 @@ package server
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/ipfs/go-cid"
 	"github.com/tus/tusd/v2/pkg/filestore"
 	"github.com/tus/tusd/v2/pkg/handler"
 	"go.uber.org/zap"
-	"golang.org/x/exp/slices"
 )
 
 func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
@@ -44,7 +41,6 @@ func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
 		NotifyCreatedUploads:    true,
 		NotifyCompleteUploads:   true,
 		RespectForwardedHeaders: true,
-		PreUploadCreateCallback: ss.validateTusUploadBeforeCreate,
 	})
 	if err != nil {
 		return nil, err
@@ -68,113 +64,12 @@ func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
 	return tusdHandler, nil
 }
 
-func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent) (handler.HTTPResponse, handler.FileInfoChanges, error) {
-	// Check if this is a replication request
-	isReplication, ok := event.Upload.MetaData["isReplication"]
-	if !ok || isReplication != "true" {
-		// Not a replication - allow (user uploads don't require auth)
-		return handler.HTTPResponse{}, handler.FileInfoChanges{}, nil
-	}
-
-	// Replication requests must be authenticated
-	authHeader := ""
-	if event.HTTPRequest.Header != nil {
-		authHeader = event.HTTPRequest.Header.Get("Authorization")
-	}
-
-	if authHeader == "" {
-		return handler.HTTPResponse{
-			StatusCode: 401,
-			Body:       "replication upload missing authentication",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-
-	// Parse Basic auth
-	if !strings.HasPrefix(authHeader, "Basic ") {
-		return handler.HTTPResponse{
-			StatusCode: 401,
-			Body:       "invalid auth header format",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(authHeader[6:])
-	if err != nil {
-		return handler.HTTPResponse{
-			StatusCode: 401,
-			Body:       "failed to decode auth header",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-
-	parts := strings.Split(string(decoded), ":")
-	if len(parts) != 2 {
-		return handler.HTTPResponse{
-			StatusCode: 401,
-			Body:       "invalid auth format",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-
-	user, pass := parts[0], parts[1]
-	ok, err = ss.checkBasicAuth(user, pass, nil)
-	if !ok {
-		return handler.HTTPResponse{
-			StatusCode: 401,
-			Body:       "authentication failed",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-
-	// Validate CID format (filename should be a valid CID for replication)
-	filename := event.Upload.MetaData["filename"]
-	if filename == "" {
-		return handler.HTTPResponse{
-			StatusCode: 400,
-			Body:       "replication upload missing filename (CID)",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-
-	// Parse CID to ensure it's valid
-	_, err = cid.Decode(filename)
-	if err != nil {
-		return handler.HTTPResponse{
-			StatusCode: 400,
-			Body:       "invalid CID format",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-
-	// Check if this node should store this CID (based on rendezvous hashing or placement hosts)
-	placementHostsStr, hasPlacement := event.Upload.MetaData["placementHosts"]
-	var shouldStore bool
-
-	if hasPlacement && placementHostsStr != "" {
-		// If placement hosts are specified, check if we're in the list
-		placementHosts := strings.Split(placementHostsStr, ",")
-		shouldStore = slices.Contains(placementHosts, ss.Config.Self.Host)
-	} else {
-		// Otherwise use rendezvous hashing
-		_, shouldStore = ss.rendezvousAllHosts(filename)
-	}
-
-	if !shouldStore {
-		return handler.HTTPResponse{
-			StatusCode: 403,
-			Body:       "this node is not a placement host for the given CID",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-
-	return handler.HTTPResponse{}, handler.FileInfoChanges{}, nil
-}
-
 func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
 	ss.logger.Info("tusd upload created",
 		zap.String("id", event.Upload.ID),
 		zap.Int64("size", event.Upload.Size),
 		zap.Any("metadata", event.Upload.MetaData),
 	)
-
-	// Check if this is a replication request - if so, skip creating upload record
-	if isReplication, ok := event.Upload.MetaData["isReplication"]; ok && isReplication == "true" {
-		ss.logger.Debug("skipping upload record creation for replication request", zap.String("id", event.Upload.ID))
-		return
-	}
 
 	if !ss.diskHasSpace() {
 		ss.logger.Warn("disk is too full to accept new uploads", zap.String("id", event.Upload.ID))
@@ -300,47 +195,6 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 			ss.logger.Warn("failed to remove tusd info file", zap.String("path", infoPath), zap.Error(err))
 		}
 	}()
-
-	// Check if this is a replication request - if so, just store the blob without processing
-	if isReplication, ok := event.Upload.MetaData["isReplication"]; ok && isReplication == "true" {
-		// Disk space check for replication
-		if !ss.diskHasSpace() {
-			ss.logger.Warn("disk is too full to accept replication", zap.String("id", event.Upload.ID))
-			return
-		}
-
-		// Get filename (CID) from metadata
-		filename := event.Upload.MetaData["filename"]
-		if filename == "" {
-			filename = event.Upload.ID
-		}
-
-		// Open the uploaded file for validation and storage
-		file, err := os.Open(filePath)
-		if err != nil {
-			ss.logger.Error("failed to open replicated file", zap.String("id", event.Upload.ID), zap.Error(err))
-			return
-		}
-		defer file.Close()
-
-		// Reset file pointer after validation
-		if _, err := file.Seek(0, 0); err != nil {
-			ss.logger.Error("failed to reset file pointer", zap.String("id", event.Upload.ID), zap.Error(err))
-			return
-		}
-
-		// Store in bucket
-		if err := ss.replicateToMyBucket(ctx, filename, file); err != nil {
-			ss.logger.Error("failed to store replicated file", zap.String("id", event.Upload.ID), zap.String("filename", filename), zap.Error(err))
-			return
-		}
-
-		ss.logger.Info("replication upload stored successfully",
-			zap.String("id", event.Upload.ID),
-			zap.String("filename", filename),
-			zap.Int64("size", event.Upload.Size))
-		return
-	}
 
 	// Load upload record
 	var upload *Upload

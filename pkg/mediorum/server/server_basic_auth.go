@@ -25,7 +25,7 @@ func recoverSigner(input string, signature []byte) (common.Address, error) {
 	return sigverify.EcRecoverEx(hash.Bytes(), signature)
 }
 
-func (ss *MediorumServer) checkBasicAuth(user, pass string, _ echo.Context) (bool, error) {
+func (ss *MediorumServer) checkBasicAuth(user, pass string, c echo.Context) (bool, error) {
 	// for dev:
 	if ss.Config.privateKey == nil {
 		return true, nil
