@@ -320,7 +320,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		isAudiusdManaged: isAudiusdManaged,
 		rendezvousHasher: rendezvousHasher,
 		transcodeWork:    make(chan *Upload),
-		replicationWork:  make(chan *Upload, 100),
+		replicationWork:  make(chan *Upload),
 		posChannel:       posChannel,
 
 		peerHealths:        map[string]*PeerHealth{},

@@ -47,12 +47,12 @@ func (t *tusAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func (ss *MediorumServer) startReplicationWorkers(ctx context.Context) error {
-	numWorkers := 3 // Run 3 parallel replication workers
+	numWorkers := 3 // Run a 3 replication workers (arbitrary, can be tuned)
 
 	ss.logger.Info("starting replication workers", zap.Int("count", numWorkers))
 
 	// Start worker routines
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		workerID := i
 		go func() {
 			ss.replicationWorker(ctx, workerID)
@@ -162,9 +162,8 @@ func (ss *MediorumServer) replicateUpload(ctx context.Context, upload *Upload) e
 		}
 	}
 
-	// Update upload record with successful mirrors
-	upload.Mirrors = successHosts
-	if err := ss.crud.Update(upload); err != nil {
+	// Update upload record with successful mirrors (don't modify the passed-in upload to avoid race conditions)
+	if err := ss.crud.DB.Model(&Upload{}).Where("id = ?", upload.ID).Update("mirrors", successHosts).Error; err != nil {
 		return fmt.Errorf("failed to update upload mirrors: %w", err)
 	}
 
@@ -172,7 +171,7 @@ func (ss *MediorumServer) replicateUpload(ctx context.Context, upload *Upload) e
 		zap.String("name", upload.OrigFileName),
 		zap.String("uploadID", upload.ID),
 		zap.String("cid", upload.OrigFileCID),
-		zap.Strings("mirrors", upload.Mirrors),
+		zap.Strings("mirrors", successHosts),
 	)
 
 	return nil
@@ -228,15 +227,6 @@ func (ss *MediorumServer) replicateViaTUS(host string, cid string, reader io.Rea
 	// Upload the file using io.Copy
 	_, err = io.Copy(uploadStream, reader)
 	if err != nil {
-		// Attempt to terminate the incomplete TUS upload to avoid leaving
-		// a dangling resource on the remote server.
-		if termErr := tusClient.TerminateUpload(&tusUpload); termErr != nil {
-			ss.logger.Warn("failed to terminate incomplete TUS upload",
-				zap.String("host", host),
-				zap.String("cid", cid),
-				zap.Error(termErr),
-			)
-		}
 		return fmt.Errorf("failed to upload file via TUS: %w", err)
 	}
 

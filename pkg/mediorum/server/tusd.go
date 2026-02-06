@@ -4,21 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
-	"encoding/hex"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/storyicon/sigverify"
 	"github.com/tus/tusd/v2/pkg/filestore"
 	"github.com/tus/tusd/v2/pkg/handler"
 	"go.uber.org/zap"
-
-	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 )
 
 func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
@@ -119,60 +112,15 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	}
 
 	user, pass := parts[0], parts[1]
-
-	// Check timestamp age
-	ts, err := strconv.ParseInt(user, 0, 64)
-	if err != nil {
+	ok, err = ss.checkBasicAuth(user, pass, nil)
+	if !ok {
 		return handler.HTTPResponse{
 			StatusCode: 401,
-			Body:       "invalid timestamp in auth",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-	if age := time.Since(time.UnixMilli(ts)); age > time.Hour {
-		return handler.HTTPResponse{
-			StatusCode: 401,
-			Body:       fmt.Sprintf("authentication expired (age: %v)", age),
+			Body:       "authentication failed",
 		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
 	}
 
-	// Recover wallet from signature
-	if len(pass) < 2 || !strings.HasPrefix(pass, "0x") {
-		return handler.HTTPResponse{
-			StatusCode: 401,
-			Body:       "invalid signature format",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-	sig, err := hex.DecodeString(pass[2:]) // remove "0x"
-	if err != nil {
-		return handler.HTTPResponse{
-			StatusCode: 401,
-			Body:       "invalid signature hex",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-
-	hash := crypto.Keccak256Hash([]byte(user))
-	wallet, err := sigverify.EcRecoverEx(hash.Bytes(), sig)
-	if err != nil {
-		return handler.HTTPResponse{
-			StatusCode: 401,
-			Body:       "failed to recover wallet",
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-
-	// Verify wallet is in peer list
-	for _, peer := range ss.Config.Peers {
-		if strings.EqualFold(peer.Wallet, wallet.Hex()) {
-			ss.logger.Debug("authenticated TUS replication upload",
-				zap.String("wallet", wallet.Hex()),
-				zap.String("uploadID", event.Upload.ID))
-			return handler.HTTPResponse{}, handler.FileInfoChanges{}, nil
-		}
-	}
-
-	return handler.HTTPResponse{
-		StatusCode: 403,
-		Body:       fmt.Sprintf("wallet not in peer list: %s", wallet.Hex()),
-	}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	return handler.HTTPResponse{}, handler.FileInfoChanges{}, nil
 }
 
 func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
@@ -334,15 +282,6 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 			return
 		}
 		defer file.Close()
-
-		// Validate CID matches file content (security check)
-		if err := cidutil.ValidateCID(filename, file); err != nil {
-			ss.logger.Error("replication CID validation failed",
-				zap.String("id", event.Upload.ID),
-				zap.String("filename", filename),
-				zap.Error(err))
-			return
-		}
 
 		// Reset file pointer after validation
 		if _, err := file.Seek(0, 0); err != nil {
