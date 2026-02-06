@@ -41,10 +41,13 @@ type Config struct {
 }
 
 type Uptime struct {
-	quit   chan os.Signal
-	logger *slog.Logger
-	Config Config
-	DB     *bbolt.DB
+	quit       chan os.Signal
+	logger     *slog.Logger
+	Config     Config
+	DB         *bbolt.DB
+	ethService ethv1connect.EthServiceHandler
+	ctx        context.Context
+	peersMu    sync.RWMutex
 }
 
 func Run(ctx context.Context, ethService ethv1connect.EthServiceHandler) error {
@@ -57,12 +60,12 @@ func Run(ctx context.Context, ethService ethv1connect.EthServiceHandler) error {
 
 	switch env {
 	case "prod":
-		err := startStagingOrProd(ctx, true, nodeType, env, ethService)
+		err := start(ctx, true, nodeType, env, ethService)
 		if err != nil {
 			return err
 		}
 	case "stage":
-		err := startStagingOrProd(ctx, false, nodeType, env, ethService)
+		err := start(ctx, false, nodeType, env, ethService)
 		if err != nil {
 			return err
 		}
@@ -121,6 +124,7 @@ func New(config Config) (*Uptime, error) {
 
 func (u *Uptime) Start() {
 	go u.startHealthPoller()
+	go u.startPeerRefresher()
 
 	e := echo.New()
 	e.HideBanner = true
@@ -169,17 +173,71 @@ func (u *Uptime) startHealthPoller() {
 	}
 }
 
+func toPeers(endpoints []*ethv1.ServiceEndpoint) []registrar.Peer {
+	var peers []registrar.Peer
+	for _, ep := range endpoints {
+		if strings.EqualFold(ep.ServiceType, "content-node") || strings.EqualFold(ep.ServiceType, "validator") {
+			peers = append(peers, registrar.Peer{
+				Host:   httputil.RemoveTrailingSlash(strings.ToLower(ep.Endpoint)),
+				Wallet: strings.ToLower(ep.DelegateWallet),
+			})
+		}
+	}
+	return peers
+}
+
+func (u *Uptime) startPeerRefresher() {
+	interval := 30 * time.Minute
+	if os.Getenv("OPENAUDIO_ENV") == "dev" {
+		interval = 10 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+
+	for {
+		select {
+		case <-ticker.C:
+			if u.ethService == nil {
+				u.logger.Error("eth service not available for peer refresh")
+				continue
+			}
+
+			refreshCtx, cancel := context.WithTimeout(u.ctx, 30*time.Second)
+			endpointsResp, err := u.ethService.GetRegisteredEndpoints(refreshCtx, connect.NewRequest(&ethv1.GetRegisteredEndpointsRequest{}))
+			cancel()
+			if err != nil {
+				u.logger.Error("failed to fetch registered nodes from eth service", "err", err)
+				continue
+			}
+
+			peers := toPeers(endpointsResp.Msg.Endpoints)
+
+			u.peersMu.Lock()
+			u.Config.Peers = peers
+			u.peersMu.Unlock()
+
+			u.logger.Info("updated peers dynamically", "peers", len(peers))
+		case <-u.ctx.Done():
+			return
+		}
+	}
+}
+
 func (u *Uptime) pollHealth() {
+	u.peersMu.RLock()
+	peers := make([]registrar.Peer, len(u.Config.Peers))
+	copy(peers, u.Config.Peers)
+	u.peersMu.RUnlock()
+
 	httpClient := http.Client{
 		Timeout: time.Second,
 	}
 	wg := sync.WaitGroup{}
-	wg.Add(len(u.Config.Peers))
-	for _, peer := range u.Config.Peers {
+	wg.Add(len(peers))
+	for _, peer := range peers {
 		peer := peer
 		go func() {
 			defer wg.Done()
-			req, err := http.NewRequest("GET", apiPath(peer.Host, "/health_check"), nil)
+			req, err := http.NewRequest("GET", apiPath(peer.Host, "/health-check"), nil)
 			if err != nil {
 				u.recordNodeUptimeToDB(peer.Host, false)
 				return
@@ -249,6 +307,8 @@ func (u *Uptime) handleUptime(c echo.Context) error {
 }
 
 func (u *Uptime) calculateUptime(host string, duration time.Duration) (float64, map[string]int, error) {
+	normalizedHost := httputil.RemoveTrailingSlash(strings.ToLower(host))
+
 	var upCount, totalCount int
 	uptimeHours := make(map[string]int)
 
@@ -264,7 +324,7 @@ func (u *Uptime) calculateUptime(host string, duration time.Duration) (float64, 
 
 			peerBucket := b.Bucket([]byte(hourKey))
 			if peerBucket != nil {
-				value := peerBucket.Get([]byte(host))
+				value := peerBucket.Get([]byte(normalizedHost))
 				totalCount++
 				if string(value) == "1" {
 					uptimeHours[hourTimestamp] = 1 // online
@@ -318,32 +378,18 @@ func apiPath(parts ...string) string {
 	return u.String()
 }
 
-func startStagingOrProd(ctx context.Context, isProd bool, nodeType, env string, ethService ethv1connect.EthServiceHandler) error {
-	// must have either a CN or DN endpoint configured, along with other env vars
+func start(ctx context.Context, isProd bool, nodeType, env string, ethService ethv1connect.EthServiceHandler) error {
 	myEndpoint := mustGetenv("nodeEndpoint")
-
 	logger := slog.With("endpoint", myEndpoint)
 
-	// fetch peers using ethService
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-
 	endpointsResp, err := ethService.GetRegisteredEndpoints(reqCtx, connect.NewRequest(&ethv1.GetRegisteredEndpointsRequest{}))
 	if err != nil {
 		return fmt.Errorf("failed to get registered endpoints from eth service: %w", err)
 	}
 
-	// Filter endpoints by service type and convert to registrar.Peer format
-	// Only include content-nodes and validators as peers (for uptime monitoring)
-	var peers []registrar.Peer
-	for _, ep := range endpointsResp.Msg.Endpoints {
-		if strings.EqualFold(ep.ServiceType, "content-node") || strings.EqualFold(ep.ServiceType, "validator") {
-			peers = append(peers, registrar.Peer{
-				Host:   httputil.RemoveTrailingSlash(strings.ToLower(ep.Endpoint)),
-				Wallet: strings.ToLower(ep.DelegateWallet),
-			})
-		}
-	}
+	peers := toPeers(endpointsResp.Msg.Endpoints)
 
 	logger.Info("fetched registered nodes", "peers", len(peers), "nodeType", nodeType, "env", env)
 
@@ -362,6 +408,9 @@ func startStagingOrProd(ctx context.Context, isProd bool, nodeType, env string, 
 	if err != nil {
 		return fmt.Errorf("failed to init Uptime server: %w", err)
 	}
+
+	ph.ethService = ethService
+	ph.ctx = ctx
 
 	ph.Start()
 	return nil

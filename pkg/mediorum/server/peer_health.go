@@ -31,7 +31,8 @@ func (ss *MediorumServer) startHealthPoller(ctx context.Context) error {
 					if peer.Host == ss.Config.Self.Host {
 						return
 					}
-					req, err := http.NewRequest("GET", apiPath(peer.Host, "/health_check"), nil)
+
+					req, err := http.NewRequest("GET", apiPath(peer.Host, "/health-check"), nil)
 					if err != nil {
 						return
 					}
@@ -50,41 +51,55 @@ func (ss *MediorumServer) startHealthPoller(ctx context.Context) error {
 						return
 					}
 
-					if data, ok := response["data"].(map[string]interface{}); ok {
-						if peerHealthsMap, ok := data["peerHealths"].(map[string]interface{}); ok {
+					// Determine which section to use: storage (new format) or data (old format)
+					var healthData map[string]interface{}
+					var found bool
+					if storage, ok := response["storage"].(map[string]interface{}); ok {
+						// New format: use storage section
+						healthData = storage
+						found = true
+					} else if data, ok := response["data"].(map[string]interface{}); ok {
+						// Old format: use data section
+						healthData = data
+						found = true
+					}
 
-							// set node as reachable
-							ss.peerHealthsMutex.Lock()
-							defer ss.peerHealthsMutex.Unlock()
-							if _, ok := ss.peerHealths[peer.Host]; !ok {
-								ss.peerHealths[peer.Host] = &PeerHealth{}
-							}
-							ss.peerHealths[peer.Host].LastReachable = time.Now()
+					if !found {
+						return
+					}
 
-							if v, ok := data["version"].(string); ok {
-								ss.peerHealths[peer.Host].Version = v
-							}
+					// Extract peer health information
+					if peerHealthsMap, ok := healthData["peerHealths"].(map[string]interface{}); ok {
+						// set node as reachable
+						ss.peerHealthsMutex.Lock()
+						defer ss.peerHealthsMutex.Unlock()
+						if _, ok := ss.peerHealths[peer.Host]; !ok {
+							ss.peerHealths[peer.Host] = &PeerHealth{}
+						}
+						ss.peerHealths[peer.Host].LastReachable = time.Now()
 
-							// set node's reachable peers
-							for host, hostPeerHealths := range peerHealthsMap {
-								if peerHealth, ok := hostPeerHealths.(map[string]interface{}); ok {
-									if lastReachable, ok := peerHealth["LastReachable"].(string); ok {
-										if t, err := time.Parse(time.RFC3339Nano, lastReachable); err == nil {
-											ss.peerHealths[peer.Host].ReachablePeers[host] = t
-										}
+						if v, ok := healthData["version"].(string); ok {
+							ss.peerHealths[peer.Host].Version = v
+						}
+
+						// set node's reachable peers
+						for host, hostPeerHealths := range peerHealthsMap {
+							if peerHealth, ok := hostPeerHealths.(map[string]interface{}); ok {
+								if lastReachable, ok := peerHealth["LastReachable"].(string); ok {
+									if t, err := time.Parse(time.RFC3339Nano, lastReachable); err == nil {
+										ss.peerHealths[peer.Host].ReachablePeers[host] = t
 									}
 								}
 							}
+						}
 
-							// set node as healthy
-							if resp.StatusCode == 200 {
-								// node isn't healthy if there's any other node that is reachable by >50% of other nodes but not by this node
-								unreachablePeers := ss.getReachableByMajorityButNotByHost(peer.Host)
-								if len(unreachablePeers) == 0 || true { // TODO: we can remove the "|| true" if we want to enforce peer reachability
-									ss.peerHealths[peer.Host].LastHealthy = time.Now()
-								}
+						// set node as healthy
+						if resp.StatusCode == 200 {
+							// node isn't healthy if there's any other node that is reachable by >50% of other nodes but not by this node
+							unreachablePeers := ss.getReachableByMajorityButNotByHost(peer.Host)
+							if len(unreachablePeers) == 0 || true { // TODO: we can remove the "|| true" if we want to enforce peer reachability
+								ss.peerHealths[peer.Host].LastHealthy = time.Now()
 							}
-
 						}
 					}
 

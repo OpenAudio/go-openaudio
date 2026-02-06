@@ -36,16 +36,19 @@ import (
 	aLogger "github.com/OpenAudio/go-openaudio/pkg/logger"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/OpenAudio/go-openaudio/pkg/pos"
 	"github.com/OpenAudio/go-openaudio/pkg/system"
 	"github.com/OpenAudio/go-openaudio/pkg/uptime"
 	"github.com/OpenAudio/go-openaudio/pkg/version"
+	"github.com/gowebpki/jcs"
 	"go.akshayshah.org/connectproto"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	storagev1connect "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
@@ -554,24 +557,21 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 		}
 	}()
 
-	e.GET("/", func(c echo.Context) error {
+	baseRoutes := e.Group("")
+	baseRoutes.Use(common.CORS())
+	baseRoutes.GET("/", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]int{"a": 440})
 	})
-
-	e.GET("/health-check", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService))
-	})
-
-	e.GET("/console", func(c echo.Context) error {
+	baseRoutes.GET("/console", func(c echo.Context) error {
 		return c.Redirect(http.StatusMovedPermanently, "/console/overview")
 	})
+	baseRoutes.GET("/health-check", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService, storageService))
+	})
 
-	proxies := []proxyConfig{
-		{"/console/*", "http://localhost:26659"},
-		{"/core/*", "http://localhost:26659"},
-	}
-
-	// dashboard compatibility - country flags + version info
+	baseRoutes.GET("/health_check", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService, storageService))
+	})
 	locationHandler := func(c echo.Context) error {
 		type ipInfoResponse struct {
 			Country string `json:"country"`
@@ -611,31 +611,35 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 			},
 		})
 	}
+	baseRoutes.GET("/version", locationHandler)
+	baseRoutes.GET("/location", locationHandler)
 
-	corsGroup := e.Group("", middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"*"},
-		AllowMethods: []string{http.MethodGet},
-	}))
-
-	corsGroup.GET("/version", locationHandler)
-	corsGroup.GET("/location", locationHandler)
-	// end dashboard compatibility
-
+	proxies := []proxyConfig{
+		{"/console/*", "http://localhost:26659"},
+		{"/core/*", "http://localhost:26659"},
+	}
 	if isUpTimeEnabled(hostUrl) {
 		proxies = append(proxies, proxyConfig{"/d_api/*", "http://localhost:1996"})
 	}
-
 	if isStorageEnabled() {
 		proxies = append(proxies, proxyConfig{"/*", "http://localhost:1991"})
 	}
 
+	// Proxy group does not have CORS middleware - we handle CORS via ModifyResponse
+	proxyGroup := e.Group("")
 	for _, proxy := range proxies {
 		target, err := url.Parse(proxy.target)
 		if err != nil {
 			logger.Error("Failed to parse URL", zap.Error(err))
 			continue
 		}
-		e.Any(proxy.path, echo.WrapHandler(httputil.NewSingleHostReverseProxy(target)))
+		reverseProxy := httputil.NewSingleHostReverseProxy(target)
+		reverseProxy.ModifyResponse = func(resp *http.Response) error {
+			// Replace CORS headers to ensure no duplicates
+			common.ReplaceCORSHeaders(resp)
+			return nil
+		}
+		proxyGroup.Any(proxy.path, echo.WrapHandler(reverseProxy))
 	}
 
 	config := getEchoServerConfig(hostUrl)
@@ -835,52 +839,38 @@ func hasSuffix(domain string, suffixes []string) bool {
 	return false
 }
 
-func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreService) map[string]interface{} {
+func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreService, storageService *server.StorageService) map[string]interface{} {
+	// Get health data from storage service
+	storageResponse := map[string]interface{}{
+		"enabled": isStorageEnabled(),
+	}
+	if isStorageEnabled() && storageService != nil {
+		storageData, err := storageService.GetMediorumHealth()
+		if err == nil {
+			dataBytes, err := json.Marshal(storageData)
+			if err == nil {
+				var storageDataMap map[string]interface{}
+				json.Unmarshal(dataBytes, &storageDataMap)
+				storageResponse = storageDataMap
+			}
+		} else {
+			storageResponse["error"] = err.Error()
+		}
+	}
 	response := map[string]interface{}{
 		"git":       os.Getenv("GIT_SHA"),
 		"hostname":  hostUrl.Hostname(),
 		"timestamp": time.Now().UTC(),
 		"uptime":    time.Since(startTime).String(),
-		// TODO: legacy version data for uptime health check
+		"storage":   storageResponse,
+		// TODO: legacy version data for uptime and upload health check
 		"data": map[string]interface{}{
-			"version": version.Version.Version,
+			"version":      version.Version.Version,
+			"diskHasSpace": storageResponse["diskHasSpace"],
 		},
 	}
 
-	storageResponse := map[string]interface{}{
-		"enabled": isStorageEnabled(),
-	}
-
-	if isStorageEnabled() {
-		resp, err := http.Get("http://localhost:1991/health_check")
-		if err == nil {
-			defer resp.Body.Close()
-			var storageHealth server.HealthCheckResponse
-			if err := json.NewDecoder(resp.Body).Decode(&storageHealth); err == nil {
-				healthBytes, _ := json.Marshal(storageHealth)
-				var tempResponse map[string]interface{}
-				json.Unmarshal(healthBytes, &tempResponse)
-
-				// TODO: remove cruft as we favor comet status for peering
-				if data, ok := tempResponse["data"].(map[string]interface{}); ok {
-					for k, v := range data {
-						if k != "signers" && k != "unreachablePeers" {
-							storageResponse[k] = v
-						}
-					}
-					delete(tempResponse, "data")
-				}
-
-				for k, v := range tempResponse {
-					storageResponse[k] = v
-				}
-
-				storageResponse["enabled"] = true
-			}
-		}
-	}
-	response["storage"] = storageResponse
-
+	// Get health data from core service
 	coreResponse := map[string]interface{}{}
 	if !coreService.IsReady() {
 		coreResponse["error"] = "core service not ready"
@@ -888,23 +878,42 @@ func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreServic
 		coreResponse["timestamp"] = time.Now().UTC()
 		response["core"] = coreResponse
 	} else {
-		resp, err := http.Get("http://localhost:26659/core/status")
+		statusResp, err := coreService.GetStatus(context.Background(), connect.NewRequest(&v1.GetStatusRequest{}))
 		if err == nil {
-			defer resp.Body.Close()
-			var coreHealth interface{}
-			if err := json.NewDecoder(resp.Body).Decode(&coreHealth); err == nil {
-				// TODO: remove cruft
-				healthBytes, _ := json.Marshal(coreHealth)
-				var coreMap map[string]interface{}
-				json.Unmarshal(healthBytes, &coreMap)
-				delete(coreMap, "git")
-				response["core"] = coreMap
-			} else {
-				coreResponse["error"] = err.Error()
-				response["core"] = coreResponse
+			healthBytes, _ := json.Marshal(statusResp.Msg)
+			var coreMap map[string]interface{}
+			json.Unmarshal(healthBytes, &coreMap)
+			delete(coreMap, "git")
+			response["core"] = coreMap
+		} else {
+			coreResponse["error"] = err.Error()
+			response["core"] = coreResponse
+		}
+	}
+
+	// Sign the response
+	cfg := coreService.GetConfig()
+	signatureHex := "private key not set (should only happen on local dev)!"
+	signer := ""
+	if cfg != nil {
+		signer = cfg.WalletAddress
+		if cfg.EthereumKey != nil {
+			// Marshal the entire response to JSON
+			responseBytes, err := json.Marshal(response)
+			if err == nil {
+				// Sort the JSON using JCS
+				responseBytesSorted, err := jcs.Transform(responseBytes)
+				if err == nil {
+					sig, err := signature.SignBytes(responseBytesSorted, cfg.EthereumKey)
+					if err == nil {
+						signatureHex = fmt.Sprintf("0x%s", hex.EncodeToString(sig))
+					}
+				}
 			}
 		}
 	}
+	response["signature"] = signatureHex
+	response["signer"] = signer
 
 	return response
 }

@@ -243,3 +243,13 @@ func (s *StorageService) GetStatus(context.Context, *connect.Request[v1.GetStatu
 		StorageExpectation: int64(s.mediorum.storageExpectation),
 	}), nil
 }
+
+// GetMediorumHealth returns the health check data for the mediorum process
+func (s *StorageService) GetMediorumHealth() (HealthData, error) {
+	if s.mediorum == nil {
+		return HealthData{}, errors.New("mediorum not initialized")
+	}
+
+	data := s.mediorum.getHealth()
+	return data, nil
+}

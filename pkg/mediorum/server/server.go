@@ -303,7 +303,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 
 	echoServer.Use(middleware.Recover())
 	echoServer.Use(middleware.Logger())
-	echoServer.Use(middleware.CORS())
+	echoServer.Use(common.CORS())
 	echoServer.Use(timingMiddleware)
 
 	ss := &MediorumServer{
@@ -362,10 +362,6 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	routes.GET("/uploads/:id", ss.serveUploadDetail, ss.requireHealthy)
 	routes.POST("/uploads/:id", ss.updateUpload, ss.requireHealthy, ss.requireUserSignature)
 	routes.POST("/uploads", ss.postUpload, ss.requireHealthy)
-	// workaround because reverse proxy catches the browser's preflight OPTIONS request instead of letting our CORS middleware handle it
-	routes.OPTIONS("/uploads", func(c echo.Context) error {
-		return c.NoContent(http.StatusNoContent)
-	})
 
 	routes.POST("/generate_preview/:cid/:previewStartSeconds", ss.generatePreview, ss.requireHealthy)
 
@@ -388,8 +384,13 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	routes.GET("/content/:jobID/:variant", ss.serveImage, ss.requireHealthy)
 
 	routes.GET("/contact", ss.serveContact)
-	routes.GET("/health_check", ss.serveHealthCheck)
-	routes.HEAD("/health_check", ss.serveHealthCheck)
+
+	// Legacy endpoint for backward compatibility with old servers
+	routes.GET("/health_check", ss.serveHealthCheckLegacy)
+	routes.HEAD("/health_check", ss.serveHealthCheckLegacy)
+	// New endpoint with consolidated health data
+	routes.GET("/health-check", ss.serveMediorumHealthCheck)
+
 	routes.GET("/ip_check", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{
 			"data": c.RealIP(), // client/requestor IP
