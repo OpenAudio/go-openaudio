@@ -239,6 +239,11 @@ func (s *StorageService) GetIPData(ctx context.Context, req *connect.Request[v1.
 
 // GetStatus implements v1connect.StorageServiceHandler.
 func (s *StorageService) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
+	if s.mediorum == nil {
+		return connect.NewResponse(&v1.GetStatusResponse{
+			StorageExpectation: 0,
+		}), nil
+	}
 	return connect.NewResponse(&v1.GetStatusResponse{
 		StorageExpectation: int64(s.mediorum.storageExpectation),
 	}), nil
