@@ -153,7 +153,10 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 	upload.FFProbe.Format.Filename = upload.OrigFileName
 
 	// Replicate to my bucket
-	ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
+	err = ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
+	if err != nil {
+		return ss.handleUploadError(upload, err, shouldCreate)
+	}
 	ss.logger.Info("replicated to my bucket", zap.String("name", filePath), zap.String("cid", formFileCID))
 
 	// For images, mark as done immediately (no transcoding needed)
