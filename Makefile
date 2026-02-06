@@ -17,7 +17,10 @@ CORE_SQL_ARTIFACTS := $(wildcard pkg/core/db/*.sql.go)
 ETH_SQL_SRCS := $(shell find pkg/eth/db/sql -type f -name '*.sql') pkg/eth/db/sqlc.yaml
 ETH_SQL_ARTIFACTS := $(wildcard pkg/eth/db/*.sql.go)
 
-SQL_ARTIFACTS := $(CORE_SQL_ARTIFACTS) $(ETH_SQL_ARTIFACTS)
+ETL_SQL_SRCS := $(shell find pkg/etl/db/sql -type f -name '*.sql') pkg/etl/db/sqlc.yaml
+ETL_SQL_ARTIFACTS := $(wildcard pkg/etl/db/*.sql.go)
+
+SQL_ARTIFACTS := $(CORE_SQL_ARTIFACTS) $(ETH_SQL_ARTIFACTS) $(ETL_SQL_ARTIFACTS)
 
 ###### PROTO
 PROTO_SRCS := $(shell find proto -type f -name '*.proto')
@@ -107,7 +110,7 @@ $(PROTO_ARTIFACTS): $(PROTO_SRCS)
 	buf generate
 
 .PHONY: regen-sql
-regen-sql: regen-core-sql regen-eth-sql
+regen-sql: regen-core-sql regen-eth-sql regen-etl-sql
 
 .PHONY: regen-core-sql
 regen-core-sql: $(CORE_SQL_ARTIFACTS)
@@ -122,6 +125,13 @@ regen-eth-sql: $(ETH_SQL_ARTIFACTS)
 $(ETH_SQL_ARTIFACTS): $(ETH_SQL_SRCS)
 	@echo Regenerating eth sql code
 	cd pkg/eth/db && sqlc generate
+
+.PHONY: regen-etl-sql
+regen-etl-sql: $(ETL_SQL_ARTIFACTS)
+
+$(ETL_SQL_ARTIFACTS): $(ETL_SQL_SRCS)
+	@echo Regenerating etl sql code
+	cd pkg/etl/db && sqlc generate
 
 .PHONY: regen-contracts
 regen-contracts:

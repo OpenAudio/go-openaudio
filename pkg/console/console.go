@@ -165,7 +165,7 @@ func (con *Console) Run() error {
 			con.logger.Warn("Failed to initialize node info", zap.Error(err))
 			con.latestTrustedBlock.Store(0)
 		} else {
-			con.logger.Info("Initialized node info", zap.String("height", info.Msg.CurrentHeight))
+			con.logger.Info("Initialized node info", zap.Int64("height", info.Msg.CurrentHeight))
 			con.latestTrustedBlock.Store(info.Msg.CurrentHeight)
 			con.lastRefreshTime.Store(time.Now().Unix())
 		}
@@ -181,7 +181,7 @@ func (con *Console) Run() error {
 			}
 			con.latestTrustedBlock.Store(info.Msg.CurrentHeight)
 			con.lastRefreshTime.Store(time.Now().Unix())
-			con.logger.Info("Updated node info", zap.String("height", info.Msg.CurrentHeight))
+			con.logger.Info("Updated node info", zap.Int64("height", info.Msg.CurrentHeight))
 		}
 		return nil
 	})
@@ -802,14 +802,14 @@ func (con *Console) ValidatorsUptimeByRollup(c echo.Context) error {
 	// First, get the actual SLA rollup data to get tx_hash, created_at, block quota, etc.
 	rollupInfo, err := con.etl.GetDB().GetSlaRollupById(ctx, int32(rollupID))
 	if err != nil {
-		con.logger.Warn("Failed to get SLA rollup by ID", zap.String("rollupID", rollupID), zap.Error(err))
+		con.logger.Warn("Failed to get SLA rollup by ID", zap.Int64("rollupID", rollupID), zap.Error(err))
 		return c.String(http.StatusNotFound, fmt.Sprintf("SLA rollup not found: %d", rollupID))
 	}
 
 	// Get validators for this specific SLA rollup
 	validatorsData, err := con.etl.GetDB().GetValidatorsForSlaRollup(ctx, int32(rollupID))
 	if err != nil {
-		con.logger.Warn("Failed to get validators for SLA rollup", zap.String("rollupID", rollupID), zap.Error(err))
+		con.logger.Warn("Failed to get validators for SLA rollup", zap.Int64("rollupID", rollupID), zap.Error(err))
 		validatorsData = []db.GetValidatorsForSlaRollupRow{}
 	}
 
@@ -820,7 +820,7 @@ func (con *Console) ValidatorsUptimeByRollup(c echo.Context) error {
 		Height_2: rollupInfo.BlockEnd,
 	})
 	if err != nil {
-		con.logger.Warn("Failed to get challenge statistics", zap.String("rollupID", rollupID), zap.Error(err))
+		con.logger.Warn("Failed to get challenge statistics", zap.Int64("rollupID", rollupID), zap.Error(err))
 		challengeStats = []db.GetChallengeStatisticsForBlockRangeRow{}
 	}
 
@@ -990,7 +990,7 @@ func (con *Console) Blocks(c echo.Context) error {
 		// Get transaction count for each block
 		txCount, err := con.etl.GetDB().GetBlockTransactionCount(c.Request().Context(), blocksData[i].BlockHeight)
 		if err != nil {
-			con.logger.Warn("Failed to get transaction count for block", zap.String("height", blocksData[i].BlockHeight), zap.Error(err))
+			con.logger.Warn("Failed to get transaction count for block", zap.Int64("height", blocksData[i].BlockHeight), zap.Error(err))
 			txCount = 0
 		}
 		blockTransactions[i] = int32(txCount)
@@ -1126,7 +1126,7 @@ func (con *Console) Transaction(c echo.Context) error {
 	// Get block info for this transaction
 	block, err := con.etl.GetDB().GetBlockByHeight(ctx, transaction.BlockHeight)
 	if err != nil {
-		con.logger.Warn("Failed to get block for transaction", zap.String("blockHeight", transaction.BlockHeight), zap.Error(err))
+		con.logger.Warn("Failed to get block for transaction", zap.Int64("blockHeight", transaction.BlockHeight), zap.Error(err))
 		return c.String(http.StatusNotFound, fmt.Sprintf("Block not found at height %d", transaction.BlockHeight))
 	}
 
