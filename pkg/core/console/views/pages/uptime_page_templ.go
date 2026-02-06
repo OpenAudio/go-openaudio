@@ -292,7 +292,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(strippedEndpoint(props.ActiveEndpoint.Endpoint))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 220, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 220, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -305,7 +305,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var5 templ.SafeURL
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/console/adjudicate/%s", props.ActiveEndpoint.Owner)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 223, Col: 146}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 223, Col: 146}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -318,7 +318,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(props.ActiveEndpoint.Owner)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 223, Col: 177}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 223, Col: 177}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -341,7 +341,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var7).String())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 1, Col: 0}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 1, Col: 0}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
@@ -354,7 +354,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 					var templ_7745c5c3_Var9 templ.SafeURL
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/console/uptime/%d/%s", r.BlockEnd, strippedEndpoint(props.ActiveEndpoint.Endpoint))))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 229, Col: 161}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 229, Col: 161}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 					if templ_7745c5c3_Err != nil {
@@ -367,7 +367,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 					var templ_7745c5c3_Var10 string
 					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(r.Time.Format("06-01-02 15:04:05 MST"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 230, Col: 92}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 230, Col: 92}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 					if templ_7745c5c3_Err != nil {
@@ -385,7 +385,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var11 templ.SafeURL
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/console/tx/%s", props.ActiveEndpoint.ActiveReport.TxHash)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 236, Col: 108}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 236, Col: 108}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -398,7 +398,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("SLA Report at End Block %d", props.ActiveEndpoint.ActiveReport.BlockEnd))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 236, Col: 198}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 236, Col: 198}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -411,7 +411,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(props.ActiveEndpoint.ActiveReport.Time.Format("06-01-02"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 242, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 242, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -424,7 +424,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(props.ActiveEndpoint.ActiveReport.Time.Format("15:04:05 MST"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 244, Col: 87}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 244, Col: 87}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -437,7 +437,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlockStart))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 250, Col: 106}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 250, Col: 106}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -450,7 +450,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlockEnd))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 255, Col: 104}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 255, Col: 104}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -463,7 +463,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1fs", float64(props.AvgBlockTimeMs)/1000.0))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 260, Col: 101}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 260, Col: 101}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -476,7 +476,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var18 string
 				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.Quota))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 267, Col: 101}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 267, Col: 101}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
@@ -498,7 +498,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var19).String())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 1, Col: 0}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 1, Col: 0}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -521,7 +521,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 					var templ_7745c5c3_Var21 string
 					templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlocksProposed))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 275, Col: 114}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 275, Col: 114}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 					if templ_7745c5c3_Err != nil {
@@ -539,7 +539,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var22 string
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.PoSChallengesTotal))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 281, Col: 114}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 281, Col: 114}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -561,7 +561,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 				var templ_7745c5c3_Var24 string
 				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var23).String())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 1, Col: 0}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 1, Col: 0}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
@@ -582,7 +582,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 						),
 					))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 294, Col: 25}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 294, Col: 25}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 				if templ_7745c5c3_Err != nil {
@@ -605,7 +605,7 @@ func (c *Pages) UptimePageHTML(props *UptimePageView) templ.Component {
 					var templ_7745c5c3_Var26 string
 					templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.PoSChallengesFailed))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 299, Col: 123}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 299, Col: 123}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 					if templ_7745c5c3_Err != nil {
@@ -678,7 +678,7 @@ func validatorRowReport(ep *Endpoint) templ.Component {
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var28).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 		if templ_7745c5c3_Err != nil {
@@ -691,7 +691,7 @@ func validatorRowReport(ep *Endpoint) templ.Component {
 		var templ_7745c5c3_Var30 templ.SafeURL
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/console/uptime/%d/%s", ep.ActiveReport.BlockEnd, strippedEndpoint(ep.Endpoint))))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 339, Col: 126}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 339, Col: 126}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -704,7 +704,7 @@ func validatorRowReport(ep *Endpoint) templ.Component {
 		var templ_7745c5c3_Var31 string
 		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(strippedEndpoint(ep.Endpoint))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 340, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 340, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 		if templ_7745c5c3_Err != nil {
@@ -726,7 +726,7 @@ func validatorRowReport(ep *Endpoint) templ.Component {
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var32).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
@@ -739,7 +739,7 @@ func validatorRowReport(ep *Endpoint) templ.Component {
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", ep.ActiveReport.BlocksProposed))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 344, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 344, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
@@ -752,7 +752,7 @@ func validatorRowReport(ep *Endpoint) templ.Component {
 		var templ_7745c5c3_Var35 string
 		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", ep.ActiveReport.PoSChallengesTotal))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 347, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 347, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 		if templ_7745c5c3_Err != nil {
@@ -774,7 +774,7 @@ func validatorRowReport(ep *Endpoint) templ.Component {
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var36).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -787,7 +787,7 @@ func validatorRowReport(ep *Endpoint) templ.Component {
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", ep.ActiveReport.PoSChallengesFailed))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 349, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 349, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -844,7 +844,7 @@ func validatorMiniHistory(report *SlaReport, endpoint string) templ.Component {
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var40).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -857,7 +857,7 @@ func validatorMiniHistory(report *SlaReport, endpoint string) templ.Component {
 		var templ_7745c5c3_Var42 templ.SafeURL
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/console/uptime/%d/%s", report.BlockEnd, strippedEndpoint(endpoint))))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/uptime_page.templ`, Line: 361, Col: 129}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/uptime_page.templ`, Line: 361, Col: 129}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {

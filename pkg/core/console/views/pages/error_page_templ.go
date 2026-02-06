@@ -48,7 +48,7 @@ func (p *Pages) ErrorPageHTML(errorID string) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(errorID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/error_page.templ`, Line: 8, Col: 26}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/error_page.templ`, Line: 8, Col: 26}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -61,7 +61,7 @@ func (p *Pages) ErrorPageHTML(errorID string) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(p.config.NodeEndpoint)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/error_page.templ`, Line: 9, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/error_page.templ`, Line: 9, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {

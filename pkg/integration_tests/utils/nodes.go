@@ -47,7 +47,9 @@ func EnsureProtocol(endpoint string) string {
 }
 
 func WaitForDevnetHealthy(timeout time.Duration) error {
-	timeoutChan := time.After(timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	nodes := []*sdk.OpenAudioSDK{
 		DiscoveryOne,
 		ContentOne,
@@ -55,27 +57,28 @@ func WaitForDevnetHealthy(timeout time.Duration) error {
 		ContentThree,
 	}
 
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
-		case <-timeoutChan:
+		case <-ctx.Done():
 			return errors.New("timed out waiting for devnet to be ready")
-		default:
-		}
-		allReady := true
-		for _, n := range nodes {
-			status, err := n.Core.GetStatus(context.Background(), connect.NewRequest(&corev1.GetStatusRequest{}))
-			if err != nil {
-				allReady = false
-				break
-			} else if !status.Msg.Ready {
-				allReady = false
-				break
+		case <-ticker.C:
+			allReady := true
+			for _, n := range nodes {
+				status, err := n.Core.GetStatus(context.Background(), connect.NewRequest(&corev1.GetStatusRequest{}))
+				if err != nil {
+					allReady = false
+					break
+				} else if !status.Msg.Ready {
+					allReady = false
+					break
+				}
+			}
+			if allReady {
+				return nil
 			}
 		}
-		if allReady {
-			break
-		}
-		time.Sleep(2 * time.Second)
 	}
-	return nil
 }

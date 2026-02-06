@@ -38,7 +38,7 @@ func (c *Components) Link(format string, args ...interface{}) templ.Component {
 		var templ_7745c5c3_Var2 templ.SafeURL
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("%s%s", c.baseUrl, fmt.Sprintf(format, args...))))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/components/link.templ`, Line: 6, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/components/link.templ`, Line: 6, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -88,7 +88,7 @@ func (c *Components) ExternalLink(format string, args ...interface{}) templ.Comp
 		var templ_7745c5c3_Var4 templ.SafeURL
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf(format, args...)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/components/link.templ`, Line: 12, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/components/link.templ`, Line: 12, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
