@@ -341,7 +341,9 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 	dbUpload.TranscodedBy = ss.Config.Self.Host
 	dbUpload.TranscodedAt = time.Now().UTC()
 	dbUpload.Status = JobStatusBusy
-	ss.crud.Update(&dbUpload)
+	if err := ss.crud.Update(&dbUpload); err != nil {
+		ss.logger.Error("failed to update transcode status", zap.String("id", dbUpload.ID), zap.Error(err))
+	}
 
 	fileHash := upload.OrigFileCID
 
@@ -377,7 +379,9 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 		dbUpload.Error = errMsg.Error()
 		dbUpload.Status = JobStatusError
 		dbUpload.ErrorCount = dbUpload.ErrorCount + 1
-		ss.crud.Update(&dbUpload)
+		if err := ss.crud.Update(&dbUpload); err != nil {
+			ss.logger.Error("failed to update transcode error status", zap.String("id", dbUpload.ID), zap.Error(err))
+		}
 		return errMsg
 	}
 
@@ -412,7 +416,10 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 	dbUpload.TranscodedAt = time.Now().UTC()
 	dbUpload.Status = JobStatusDone
 	dbUpload.Error = ""
-	ss.crud.Update(&dbUpload)
+	if err := ss.crud.Update(&dbUpload); err != nil {
+		ss.logger.Error("failed to update transcode completion status", zap.String("id", dbUpload.ID), zap.Error(err))
+		return err
+	}
 	return nil
 }
 
