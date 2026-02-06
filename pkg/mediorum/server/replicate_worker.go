@@ -204,7 +204,7 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 	}()
 
 	// Collect results
-	successHosts := []string{ss.Config.Self.Host} // Start with self
+	newSuccessHosts := []string{}
 	for result := range resultsChan {
 		if result.err != nil {
 			fileType := "file"
@@ -216,7 +216,7 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 				zap.String("cid", cid),
 				zap.Error(result.err))
 		} else {
-			successHosts = append(successHosts, result.host)
+			newSuccessHosts = append(newSuccessHosts, result.host)
 		}
 	}
 
@@ -226,10 +226,25 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 		return fmt.Errorf("failed to get upload from DB: %w", err)
 	}
 
+	// Start with existing mirrors and add new ones
+	var allMirrors []string
 	if isTranscoded {
-		dbUpload.TranscodedMirrors = successHosts
+		allMirrors = append([]string{}, dbUpload.TranscodedMirrors...)
 	} else {
-		dbUpload.Mirrors = successHosts
+		allMirrors = append([]string{}, dbUpload.Mirrors...)
+	}
+
+	// Add newly successful hosts if not already present
+	for _, host := range newSuccessHosts {
+		if !slices.Contains(allMirrors, host) {
+			allMirrors = append(allMirrors, host)
+		}
+	}
+
+	if isTranscoded {
+		dbUpload.TranscodedMirrors = allMirrors
+	} else {
+		dbUpload.Mirrors = allMirrors
 	}
 
 	if err := ss.crud.Update(&dbUpload); err != nil {
@@ -245,7 +260,7 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 		zap.String("uploadID", upload.ID),
 		zap.String("cid", cid),
 		zap.String("field", fieldName),
-		zap.Strings(fieldName, successHosts),
+		zap.Strings(fieldName, allMirrors),
 	)
 
 	return nil
