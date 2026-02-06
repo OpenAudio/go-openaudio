@@ -224,6 +224,15 @@ func (ss *MediorumServer) replicateViaTUS(host string, cid string, reader io.Rea
 	// Upload the file using io.Copy
 	_, err = io.Copy(uploadStream, reader)
 	if err != nil {
+		// Attempt to terminate the incomplete TUS upload to avoid leaving
+		// a dangling resource on the remote server.
+		if termErr := tusClient.TerminateUpload(&tusUpload); termErr != nil {
+			ss.logger.Warn("failed to terminate incomplete TUS upload",
+				zap.String("host", host),
+				zap.String("cid", cid),
+				zap.Error(termErr),
+			)
+		}
 		return fmt.Errorf("failed to upload file via TUS: %w", err)
 	}
 
