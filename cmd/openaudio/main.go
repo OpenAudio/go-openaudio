@@ -28,10 +28,12 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/console"
 	"github.com/OpenAudio/go-openaudio/pkg/core"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/eth"
+	"github.com/OpenAudio/go-openaudio/pkg/etl"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	aLogger "github.com/OpenAudio/go-openaudio/pkg/logger"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum"
@@ -51,6 +53,7 @@ import (
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
+	etlv1connect "github.com/OpenAudio/go-openaudio/pkg/api/etl/v1/v1connect"
 	storagev1connect "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
 	systemv1connect "github.com/OpenAudio/go-openaudio/pkg/api/system/v1/v1connect"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -110,6 +113,12 @@ func main() {
 
 	setupDelegateKeyPair(rootLogger)
 
+	// Read config to check feature flags
+	cfg, err := config.ReadConfig()
+	if err != nil {
+		panic(fmt.Sprintf("failed to read config: %v", err))
+	}
+
 	ethService := eth.NewEthService(dbUrl, config.GetEthRPC(), config.GetRegistryAddress(), rootLogger, config.GetRuntimeEnvironment())
 	coreService := coreServer.NewCoreService()
 	storageService := server.NewStorageService()
@@ -117,6 +126,29 @@ func main() {
 	if isStorageEnabled() {
 		coreService.SetStorageService(storageService)
 	}
+
+	// Initialize ETL service if enabled
+	var etlService *etl.ETLService
+	if cfg.EnableETL {
+		// Create an HTTP client that will connect to the local service
+		// The ETL service needs a CoreServiceClient, so we create one that connects via HTTP
+		httpClient := &http.Client{
+			Timeout: 30 * time.Second,
+		}
+		// Determine the base URL - we'll use localhost with the port from hostUrl
+		baseURL := fmt.Sprintf("http://localhost")
+		if hostUrl.Port() != "" {
+			baseURL = fmt.Sprintf("http://localhost:%s", hostUrl.Port())
+		} else {
+			// Default to port 80 if no port specified
+			baseURL = "http://localhost:80"
+		}
+		coreClient := corev1connect.NewCoreServiceClient(httpClient, baseURL, connectJSONOpt)
+		etlService = etl.NewETLService(coreClient, rootLogger)
+		etlService.SetDBURL(dbUrl)
+		etlService.SetCheckReadiness(false) // Don't wait for core to be ready when console is enabled
+	}
+
 	systemService := system.NewSystemService(coreService, storageService)
 
 	services := []struct {
@@ -127,7 +159,7 @@ func main() {
 		{
 			"audiusd-echo-server",
 			func() error {
-				return startEchoProxy(hostUrl, rootLogger, coreService, storageService, systemService, ethService)
+				return startEchoProxy(hostUrl, rootLogger, coreService, storageService, systemService, ethService, etlService, cfg)
 			},
 			true,
 		},
@@ -152,6 +184,17 @@ func main() {
 			"eth",
 			func() error { return ethService.Run(ctx) },
 			true,
+		},
+		{
+			"etl",
+			func() error {
+				if etlService == nil {
+					return nil
+				}
+				etlService.SetRunDownMigrations(os.Getenv("OPENAUDIO_ETL_RUN_DOWN_MIGRATIONS") == "true")
+				return etlService.Run()
+			},
+			cfg.EnableETL,
 		},
 	}
 
@@ -489,7 +532,9 @@ func setProtobufField(msgReflect protoreflect.Message, field protoreflect.FieldD
 	return nil
 }
 
-func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServer.CoreService, storageService *server.StorageService, systemService *system.SystemService, ethService *eth.EthService) error {
+func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServer.CoreService, storageService *server.StorageService, systemService *system.SystemService, ethService *eth.EthService, etlService *etl.ETLService, cfg *config.Config) error {
+	// Explorer console requires ETL to be enabled
+	consoleEnabled := cfg.EnableExplorer && cfg.EnableETL && etlService != nil
 	e := echo.New()
 	e.HideBanner = true
 	e.Use(middleware.Logger(), middleware.Recover(), common.InjectRealIP())
@@ -507,6 +552,18 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 
 	ethPath, ethHandler := ethv1connect.NewEthServiceHandler(ethService, connectJSONOpt)
 	rpcGroup.POST(ethPath+"*", echo.WrapHandler(ethHandler))
+
+	// Register ETL routes if enabled
+	if cfg.EnableETL && etlService != nil {
+		etlPath, etlHandler := etlv1connect.NewETLServiceHandler(etlService, connectJSONOpt)
+		rpcGroup.POST(etlPath+"*", echo.WrapHandler(etlHandler))
+	}
+
+	// Initialize explorer console if enabled
+	if consoleEnabled {
+		c := console.NewConsole(etlService, e, cfg.Environment)
+		c.Initialize()
+	}
 
 	// register GET routes
 
@@ -544,6 +601,10 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 		grpcServerGroup.Any(storagePath+"*", echo.WrapHandler(storageHandler))
 		grpcServerGroup.Any(systemPath+"*", echo.WrapHandler(systemHandler))
 		grpcServerGroup.Any(ethPath+"*", echo.WrapHandler(ethHandler))
+		if cfg.EnableETL && etlService != nil {
+			etlPath, etlHandler := etlv1connect.NewETLServiceHandler(etlService, connectJSONOpt)
+			grpcServerGroup.Any(etlPath+"*", echo.WrapHandler(etlHandler))
+		}
 
 		// Create h2c-compatible server
 		h2cServer := &http.Server{
@@ -559,9 +620,12 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 
 	baseRoutes := e.Group("")
 	baseRoutes.Use(common.CORS())
-	baseRoutes.GET("/", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]int{"a": 440})
-	})
+	// Base route collides with console dashboard when explorer is enabled
+	if !consoleEnabled {
+		baseRoutes.GET("/", func(c echo.Context) error {
+			return c.JSON(http.StatusOK, map[string]int{"a": 440})
+		})
+	}
 	baseRoutes.GET("/console", func(c echo.Context) error {
 		return c.Redirect(http.StatusMovedPermanently, "/console/overview")
 	})

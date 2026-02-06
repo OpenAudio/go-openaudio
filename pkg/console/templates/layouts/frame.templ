@@ -1,0 +1,100 @@
+package layouts
+
+import "context"
+
+func getEnvFromContext(ctx context.Context) string {
+	if env, ok := ctx.Value("env").(string); ok {
+		return env
+	}
+	return "prod" // fallback
+}
+
+templ Frame(pageTitle string) {
+	<div class="px-30">
+		<script>
+			// Apply theme immediately to prevent flash
+			(function() {
+				const savedTheme = localStorage.getItem('theme');
+				const theme = savedTheme || 'dark'; // default to dark mode
+				if (theme === 'dark') {
+					document.documentElement.classList.add('dark');
+				}
+			})();
+		</script>
+		<div class="flex justify-between py-3">
+			<a href="/" class="flex justify-center items-center gap-2 !no-underline hover:opacity-80 transition-opacity">
+				<img src="/assets/images/OAPLogo.svg" alt="Audius Logo" class="h-10 w-10 invert dark:invert-0"/>
+				<div class="text-2xl font-bold text-gray-900 dark:text-gray-100">Open Audio Explorer</div>
+			</a>
+		</div>
+		<div class="flex flex-col gap-3">
+			<div class="flex justify-between py-3 bg-white dark:bg-[#141414] -mx-30 px-30">
+				<div class="flex w-full items-center">
+					<div class="w-2/3 flex justify-evenly">
+						<a href="/" class="!text-gray-600 dark:!text-gray-400 !no-underline hover:!bg-purple-50 hover:!text-purple-700 dark:hover:!bg-purple-700 dark:hover:!text-gray-300 px-3 py-1 rounded transition-colors">Dashboard</a>
+						<a href="/validators" class="!text-gray-600 dark:!text-gray-400 !no-underline hover:!bg-purple-50 hover:!text-purple-700 dark:hover:!bg-purple-700 dark:hover:!text-gray-300 px-3 py-1 rounded transition-colors">Validators</a>
+						<a href="/validators/uptime" class="!text-gray-600 dark:!text-gray-400 !no-underline hover:!bg-purple-50 hover:!text-purple-700 dark:hover:!bg-purple-700 dark:hover:!text-gray-300 px-3 py-1 rounded transition-colors">Uptime</a>
+						<a href="/transactions" class="!text-gray-600 dark:!text-gray-400 !no-underline hover:!bg-purple-50 hover:!text-purple-700 dark:hover:!bg-purple-700 dark:hover:!text-gray-300 px-3 py-1 rounded transition-colors">Transactions</a>
+						<a href="/blocks" class="!text-gray-600 dark:!text-gray-400 !no-underline hover:!bg-purple-50 hover:!text-purple-700 dark:hover:!bg-purple-700 dark:hover:!text-gray-300 px-3 py-1 rounded transition-colors">Blocks</a>
+					</div>
+					<div class="w-1/3">
+						<div class="relative" x-data="searchBar()" x-init="init()" @navigate.window="window.location.href = $event.detail.path" data-env={ getEnvFromContext(ctx) }>
+							<div class="relative">
+								<input
+									type="text"
+									placeholder="Search for blocks, accounts, and transactions..."
+									class="w-full rounded-md border-2 p-2 pr-24 bg-gray-50 dark:bg-[#141414] dark:text-gray-100 focus:ring-1 focus:ring-purple-500"
+									:class="hasNoResults ? 'border-red-500 dark:border-red-500 focus:border-red-500 dark:focus:border-red-500' : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 dark:focus:border-purple-500'"
+									x-model="query"
+									@input="handleInput"
+									@keydown="handleKeydown"
+									@focus="if (query.trim()) { showSuggestions = true }"
+								/>
+								<div class="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-gray-500 dark:text-gray-400 bg-gradient-to-l from-gray-50 via-gray-50 to-transparent dark:from-gray-800 dark:via-gray-800 pl-12 rounded-r-md" x-text="searchType"></div>
+							</div>
+							<div
+								class="absolute w-full mt-1 bg-white dark:bg-[#141414] rounded-md shadow-lg border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto z-50"
+								x-show="showSuggestions && suggestions.length > 0"
+								@click.away="showSuggestions = false"
+							>
+								<div class="py-1">
+									<template x-for="suggestion in suggestions" :key="suggestion.id">
+										<div
+											class="px-4 py-2 hover:bg-purple-50 dark:hover:bg-purple-700 cursor-pointer"
+											:class="{ 'bg-gray-50 dark:bg-[#141414] font-medium': suggestion.isHeader }"
+											@click="selectSuggestion(suggestion)"
+										>
+											<div class="text-sm truncate" :class="suggestion.isHeader ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'" x-text="suggestion.title"></div>
+											<div x-show="!suggestion.isHeader" class="text-xs text-gray-500 dark:text-gray-400 truncate" x-text="suggestion.subtitle"></div>
+										</div>
+									</template>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			{ children... }
+		</div>
+		<div class="mt-8 border-t border-gray-200 dark:border-gray-700 py-4">
+			<div class="flex justify-between items-center text-sm text-gray-500 dark:text-gray-400" x-data="themeToggle()" x-init="init()">
+				<div class="flex items-center gap-4">
+					<button @click="toggleTheme()" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer" title="Toggle theme">
+						<svg x-show="theme === 'light'" class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+						</svg>
+						<svg x-show="theme === 'dark'" class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+						</svg>
+					</button>
+					<a href="https://openaudio.org" target="_blank" rel="noopener noreferrer" class="!text-gray-500 dark:!text-gray-400 !no-underline hover:!text-gray-700 dark:hover:!text-gray-300">OpenAudio</a>
+					<a href="https://github.com/openaudio" target="_blank" rel="noopener noreferrer" class="!text-gray-500 dark:!text-gray-400 !no-underline hover:!text-gray-700 dark:hover:!text-gray-300">GitHub</a>
+					<a href="https://openaudio.org/docs" target="_blank" rel="noopener noreferrer" class="!text-gray-500 dark:!text-gray-400 !no-underline hover:!text-gray-700 dark:hover:!text-gray-300">Docs</a>
+				</div>
+				<div class="flex items-center gap-4">
+					<span>Made with ⚡️ by the OpenAudio Team</span>
+				</div>
+			</div>
+		</div>
+	</div>
+}

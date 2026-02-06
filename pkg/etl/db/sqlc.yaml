@@ -1,0 +1,31 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "sql/reads.sql"
+    schema: "sql/migrations"
+    gen:
+      go:
+        package: "db"
+        out: "."
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        overrides:
+          - db_type: "timestamp"
+            go_type:
+              import: "time"
+              type: "time.Time"
+
+  - engine: "postgresql"
+    queries: "sql/writes.sql"
+    schema: "sql/migrations"
+    gen:
+      go:
+        package: "db"
+        out: "."
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        overrides:
+          - db_type: "timestamp"
+            go_type:
+              import: "time"
+              type: "time.Time"

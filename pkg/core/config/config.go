@@ -128,6 +128,8 @@ type Config struct {
 	/* Feature flags */
 	ProgrammableDistributionEnabled bool
 	SkipEthRegistration             bool
+	EnableETL                       bool
+	EnableExplorer                  bool
 }
 
 func (c *Config) IsDev() bool {
@@ -184,6 +186,8 @@ func ReadConfig() (*Config, error) {
 	cfg.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(cfg.Environment)
 
 	cfg.SkipEthRegistration = GetEnvWithDefault("skipEthRegistration", "false") == "true"
+	cfg.EnableETL = GetEnvWithDefault("OPENAUDIO_ETL_ENABLED", "false") == "true"
+	cfg.EnableExplorer = GetEnvWithDefault("OPENAUDIO_EXPLORER_ENABLED", "false") == "true"
 
 	ssRpcServers := ""
 	switch cfg.Environment {
