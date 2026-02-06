@@ -44,6 +44,23 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	isProd := mediorumEnv == "prod"
 	isStage := mediorumEnv == "stage"
 
+	// Wait for eth service to be ready before fetching endpoints
+	statusCtx, statusCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer statusCancel()
+
+	for {
+		statusResp, err := ethService.GetStatus(statusCtx, connect.NewRequest(&ethv1.GetStatusRequest{}))
+		if err == nil && statusResp.Msg.Ready {
+			break
+		}
+		select {
+		case <-statusCtx.Done():
+			return fmt.Errorf("timeout waiting for eth service to be ready")
+		case <-time.After(time.Second):
+			// Retry
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
