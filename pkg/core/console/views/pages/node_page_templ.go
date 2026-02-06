@@ -54,7 +54,7 @@ func (p *Pages) NodePageHTML(data *NodePageView) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(data.Endpoint)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/node_page.templ`, Line: 11, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/node_page.templ`, Line: 11, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -67,7 +67,7 @@ func (p *Pages) NodePageHTML(data *NodePageView) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(data.EthAddress)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/node_page.templ`, Line: 12, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/node_page.templ`, Line: 12, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -80,7 +80,7 @@ func (p *Pages) NodePageHTML(data *NodePageView) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(data.CometAddress)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/node_page.templ`, Line: 13, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/node_page.templ`, Line: 13, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {

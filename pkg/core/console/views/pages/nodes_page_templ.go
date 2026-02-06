@@ -71,7 +71,7 @@ func (p *Pages) NodesPageHTML(data *NodesView) templ.Component {
 					var templ_7745c5c3_Var4 string
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(node.Endpoint)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 17, Col: 28}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/nodes_page.templ`, Line: 17, Col: 28}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 					if templ_7745c5c3_Err != nil {
@@ -110,7 +110,7 @@ func (p *Pages) NodesPageHTML(data *NodesView) templ.Component {
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(node.EthAddress)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 24, Col: 43}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/nodes_page.templ`, Line: 24, Col: 43}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
@@ -149,7 +149,7 @@ func (p *Pages) NodesPageHTML(data *NodesView) templ.Component {
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(node.CometAddress)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 29, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/nodes_page.templ`, Line: 29, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
@@ -172,7 +172,7 @@ func (p *Pages) NodesPageHTML(data *NodesView) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(node.EthBlock)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 32, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pkg/core/console/views/pages/nodes_page.templ`, Line: 32, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {

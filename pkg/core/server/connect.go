@@ -903,12 +903,23 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 		statusResp, err := c.storageService.GetStatus(ctx, connect.NewRequest(&storagev1.GetStatusRequest{}))
 		if err == nil {
 			// Try to get detailed health data using reflection
-			// Check if storageService has GetMediorumHealth method
-			if svc, ok := c.storageService.(interface {
-				GetMediorumHealth() (interface{}, error)
-			}); ok {
-				healthDataInterface, err := svc.GetMediorumHealth()
-				if err == nil {
+			// Use reflection to find and call GetMediorumHealth method
+			// Since storageService is an interface, we need to get the concrete value
+			svcVal := reflect.ValueOf(c.storageService)
+			if svcVal.Kind() == reflect.Interface && !svcVal.IsNil() {
+				// Get the concrete value from the interface
+				svcVal = svcVal.Elem()
+			}
+			// Look for GetMediorumHealth method (works for both pointer and value receivers)
+			method := svcVal.MethodByName("GetMediorumHealth")
+			if !method.IsValid() && svcVal.Kind() == reflect.Ptr {
+				// If it's a pointer and method not found, try on the element
+				method = svcVal.Elem().MethodByName("GetMediorumHealth")
+			}
+			if method.IsValid() {
+				results := method.Call(nil)
+				if len(results) == 2 && results[1].IsNil() {
+					healthDataInterface := results[0].Interface()
 					// Use reflection to access HealthData struct fields
 					val := reflect.ValueOf(healthDataInterface)
 					// Handle both struct and pointer to struct
@@ -929,9 +940,6 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 						if field := val.FieldByName("MediorumPathSize"); field.IsValid() && field.Kind() == reflect.Uint64 {
 							mediorumPathSize = field.Uint()
 						}
-						if field := val.FieldByName("DiskHasSpace"); field.IsValid() && field.Kind() == reflect.Bool {
-							diskHasSpace = field.Bool()
-						}
 						if field := val.FieldByName("StorageExpectation"); field.IsValid() && field.Kind() == reflect.Uint64 {
 							storageExpectation = field.Uint()
 						}
@@ -940,15 +948,25 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 						}
 
 						// Determine storage type based on BlobStorePrefix
-						storageType := "Blob Storage" // default
-						if blobStorePrefix == "file" {
-							storageType = "Disk Storage"
+						// If empty, default to Disk Storage (since that's the default when no blob storage URL is configured)
+						storageType := "Disk Storage" // default
+						isDiskStorage := blobStorePrefix == "file" || blobStorePrefix == ""
+						if !isDiskStorage {
+							storageType = "Blob Storage"
+						}
+						if isDiskStorage {
+							if field := val.FieldByName("DiskHasSpace"); field.IsValid() && field.Kind() == reflect.Bool {
+								diskHasSpace = field.Bool()
+							}
+						} else {
+							// For blob storage (gs, s3, azblob, etc.) or empty prefix, always has space
+							diskHasSpace = true
 						}
 
 						storageInfo = &v1.GetStatusResponse_StorageInfo{
-							IsBlobStorage:     true,
-							DiskUsed:          int64(mediorumPathUsed),
-							DiskTotal:         int64(mediorumPathSize),
+							IsBlobStorage:      !isDiskStorage, // true for blob storage, false for disk storage
+							DiskUsed:           int64(mediorumPathUsed),
+							DiskTotal:          int64(mediorumPathSize),
 							DiskHasSpace:       diskHasSpace,
 							StorageExpectation: int64(storageExpectation),
 							StorageType:        storageType,
@@ -959,9 +977,10 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 			// If we couldn't get health data, at least set what we have from GetStatus
 			if storageInfo == nil {
 				storageInfo = &v1.GetStatusResponse_StorageInfo{
-					IsBlobStorage:      true,
+					IsBlobStorage:      false, // Default to disk storage when we can't determine
 					StorageExpectation: statusResp.Msg.StorageExpectation,
-					StorageType:        "Blob Storage", // default when we don't have detailed info
+					StorageType:        "Disk Storage", // Default to disk storage when we don't have detailed info
+					DiskHasSpace:       true,           // Assume has space if we can't determine
 					// Disk info not available, will be zero
 				}
 			} else {
