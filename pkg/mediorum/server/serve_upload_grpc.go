@@ -194,6 +194,11 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 
 	// Queue audio for transcoding (images don't need transcoding)
 	if upload.Template == JobTemplateAudio {
+		ss.logger.Info("upload queued for transcode",
+			zap.String("name", upload.OrigFileName),
+			zap.String("uploadID", upload.ID),
+			zap.String("cid", formFileCID),
+			zap.String("template", string(upload.Template)))
 		select {
 		case ss.transcodeWork <- upload:
 		default:

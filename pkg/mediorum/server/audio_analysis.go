@@ -228,15 +228,19 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 	}
 
 	// all analyses complete
-	upload.AudioAnalysisResults = &AudioAnalysisResult{
-		BPM: bpm,
-		Key: musicalKey,
+	// Before updating, refresh from DB to get latest mirrors
+	var dbUpload Upload
+	if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
+		return err
 	}
-	upload.AudioAnalysisError = ""
-	upload.AudioAnalyzedAt = time.Now().UTC()
-	upload.AudioAnalysisStatus = JobStatusDone
-	upload.Status = JobStatusDone
-	ss.crud.Update(upload)
+
+	// Update only the fields we modified
+	dbUpload.AudioAnalysisResults = &AudioAnalysisResult{BPM: bpm, Key: musicalKey}
+	dbUpload.AudioAnalysisError = ""
+	dbUpload.AudioAnalyzedAt = time.Now().UTC()
+	dbUpload.AudioAnalysisStatus = JobStatusDone
+	dbUpload.Status = JobStatusDone
+	ss.crud.Update(&dbUpload)
 
 	return nil
 }

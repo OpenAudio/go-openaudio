@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"slices"
@@ -85,10 +86,22 @@ func (ss *MediorumServer) replicationWorker(ctx context.Context, workerID int) e
 
 			logger.Debug("replicating upload", zap.String("uploadID", upload.ID), zap.String("cid", upload.OrigFileCID))
 
-			if err := ss.replicateUpload(ctx, upload); err != nil {
-				logger.Warn("replication failed", zap.String("uploadID", upload.ID), zap.Error(err))
-			} else {
-				logger.Info("replication completed", zap.String("uploadID", upload.ID), zap.Strings("mirrors", upload.Mirrors))
+			// Replicate transcoded file if it exists and needs replication
+			if _, hasTranscoded := upload.TranscodeResults["320"]; hasTranscoded && len(upload.TranscodedMirrors) < ss.Config.ReplicationFactor {
+				if err := ss.replicateTranscode(ctx, upload); err != nil {
+					logger.Error("transcoded replication failed", zap.String("uploadID", upload.ID), zap.Error(err))
+				} else {
+					logger.Info("transcoded replication completed", zap.String("uploadID", upload.ID), zap.Strings("transcoded_mirrors", upload.TranscodedMirrors))
+				}
+			}
+
+			// Replicate original file if it needs replication
+			if len(upload.Mirrors) < ss.Config.ReplicationFactor {
+				if err := ss.replicateOriginal(ctx, upload); err != nil {
+					logger.Error("replication failed", zap.String("uploadID", upload.ID), zap.Error(err))
+				} else {
+					logger.Info("replication completed", zap.String("uploadID", upload.ID))
+				}
 			}
 
 		case <-ctx.Done():
@@ -97,13 +110,28 @@ func (ss *MediorumServer) replicationWorker(ctx context.Context, workerID int) e
 	}
 }
 
-func (ss *MediorumServer) replicateUpload(ctx context.Context, upload *Upload) error {
+func (ss *MediorumServer) replicateOriginal(ctx context.Context, upload *Upload) error {
 	if upload.OrigFileCID == "" {
 		ss.logger.Warn("replicateUpload called with empty OrigFileCID; skipping replication", zap.String("uploadID", upload.ID))
 		return nil
 	}
+	return ss.replicateToHosts(ctx, upload, upload.OrigFileCID, upload.Mirrors, false)
+}
+
+func (ss *MediorumServer) replicateTranscode(ctx context.Context, upload *Upload) error {
+	// Get the transcoded CID from results
+	transcodedCID, ok := upload.TranscodeResults["320"]
+	if !ok || transcodedCID == "" {
+		ss.logger.Warn("replicateTranscodedUpload called but no transcoded file exists; skipping replication", zap.String("uploadID", upload.ID))
+		return nil
+	}
+	return ss.replicateToHosts(ctx, upload, transcodedCID, upload.TranscodedMirrors, true)
+}
+
+// replicateFile is the shared implementation for replicating files to all necessary mirrors in parallel
+func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, cid string, existingMirrors []string, isTranscoded bool) error {
 	// Get the file from our bucket
-	shardedCid := cidutil.ShardCID(upload.OrigFileCID)
+	shardedCid := cidutil.ShardCID(cid)
 	attrs, err := ss.bucket.Attributes(ctx, shardedCid)
 	if err != nil {
 		return fmt.Errorf("failed to get file attributes: %w", err)
@@ -112,7 +140,7 @@ func (ss *MediorumServer) replicateUpload(ctx context.Context, upload *Upload) e
 	// Determine placement hosts
 	placementHosts := upload.PlacementHosts
 	if len(placementHosts) == 0 {
-		placementHosts, _ = ss.rendezvousAllHosts(upload.OrigFileCID)
+		placementHosts, _ = ss.rendezvousAllHosts(cid)
 	}
 
 	// Filter out self and hosts that already have the file
@@ -121,64 +149,104 @@ func (ss *MediorumServer) replicateUpload(ctx context.Context, upload *Upload) e
 		if host == ss.Config.Self.Host {
 			continue
 		}
-		if slices.Contains(upload.Mirrors, host) {
+		if slices.Contains(existingMirrors, host) {
 			continue
 		}
 		targetHosts = append(targetHosts, host)
 	}
 
 	if len(targetHosts) == 0 {
-		ss.logger.Debug("no hosts need replication", zap.String("uploadID", upload.ID))
+		fileType := "original"
+		if isTranscoded {
+			fileType = "transcoded"
+		}
+		ss.logger.Debug("no hosts need replication", zap.String("uploadID", upload.ID), zap.String("type", fileType))
 		return nil
 	}
 
-	// Replicate to each target host
-	successHosts := []string{ss.Config.Self.Host} // Start with self
+	// Replicate to all target hosts in parallel
+	type replicationResult struct {
+		host string
+		err  error
+	}
+
+	resultsChan := make(chan replicationResult, len(targetHosts))
+	var wg sync.WaitGroup
+
 	for _, host := range targetHosts {
-		// Get a fresh reader for each host
-		reader, err := ss.bucket.NewReader(ctx, shardedCid, nil)
-		if err != nil {
-			ss.logger.Warn("failed to open file for replication",
-				zap.String("host", host),
-				zap.String("cid", upload.OrigFileCID),
-				zap.Error(err))
-			continue
-		}
+		wg.Add(1)
+		go func(targetHost string) {
+			defer wg.Done()
 
-		err = ss.replicateViaTUS(host, upload.OrigFileCID, reader, attrs.Size)
-
-		reader.Close()
-
-		if err != nil {
-			ss.logger.Warn("failed to replicate to host",
-				zap.String("host", host),
-				zap.String("cid", upload.OrigFileCID),
-				zap.Error(err))
-		} else {
-			successHosts = append(successHosts, host)
-			if len(successHosts) >= ss.Config.ReplicationFactor {
-				break
+			// Get a fresh reader for this host
+			reader, err := ss.bucket.NewReader(ctx, shardedCid, nil)
+			if err != nil {
+				resultsChan <- replicationResult{host: targetHost, err: err}
+				return
 			}
+			defer reader.Close()
+
+			err = ss.replicateToHost(targetHost, cid, reader, attrs.Size)
+			resultsChan <- replicationResult{host: targetHost, err: err}
+		}(host)
+	}
+
+	// Wait for all replications to complete
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	// Collect results
+	successHosts := []string{ss.Config.Self.Host} // Start with self
+	for result := range resultsChan {
+		if result.err != nil {
+			fileType := "file"
+			if isTranscoded {
+				fileType = "transcoded file"
+			}
+			ss.logger.Warn("failed to replicate "+fileType+" to host",
+				zap.String("host", result.host),
+				zap.String("cid", cid),
+				zap.Error(result.err))
+		} else {
+			successHosts = append(successHosts, result.host)
 		}
 	}
 
-	// Update upload record with successful mirrors (don't modify the passed-in upload to avoid race conditions)
-	if err := ss.crud.DB.Model(&Upload{}).Where("id = ?", upload.ID).Update("mirrors", successHosts).Error; err != nil {
-		return fmt.Errorf("failed to update upload mirrors: %w", err)
+	// Update upload record with successful mirrors using crudr for broadcast
+	var dbUpload Upload
+	if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
+		return fmt.Errorf("failed to get upload from DB: %w", err)
 	}
 
-	ss.logger.Info("mirrored",
+	if isTranscoded {
+		dbUpload.TranscodedMirrors = successHosts
+	} else {
+		dbUpload.Mirrors = successHosts
+	}
+
+	if err := ss.crud.Update(&dbUpload); err != nil {
+		return fmt.Errorf("failed to update mirrors: %w", err)
+	}
+
+	fieldName := "mirrors"
+	if isTranscoded {
+		fieldName = "transcoded_mirrors"
+	}
+	ss.logger.Info("mirrored file",
 		zap.String("name", upload.OrigFileName),
 		zap.String("uploadID", upload.ID),
-		zap.String("cid", upload.OrigFileCID),
-		zap.Strings("mirrors", successHosts),
+		zap.String("cid", cid),
+		zap.String("field", fieldName),
+		zap.Strings(fieldName, successHosts),
 	)
 
 	return nil
 }
 
-func (ss *MediorumServer) replicateViaTUS(host string, cid string, reader io.Reader, fileSize int64) error {
-	ss.logger.Info("replicating via TUS",
+func (ss *MediorumServer) replicateToHost(host string, cid string, reader io.Reader, fileSize int64) error {
+	ss.logger.Info("replicating via TUSD",
 		zap.String("host", host),
 		zap.String("cid", cid),
 		zap.Int64("size", fileSize))
@@ -217,20 +285,20 @@ func (ss *MediorumServer) replicateViaTUS(host string, cid string, reader io.Rea
 	tusUpload := tusgo.Upload{}
 	_, err = tusClient.CreateUpload(&tusUpload, fileSize, false, metadata)
 	if err != nil {
-		return fmt.Errorf("failed to create TUS upload: %w", err)
+		return fmt.Errorf("failed to create TUSD upload: %w", err)
 	}
 
 	// Create upload stream and set chunk size to 100MB
 	uploadStream := tusgo.NewUploadStream(tusClient, &tusUpload)
-	uploadStream.ChunkSize = 100 * 1024 * 1024 // 100MB chunks
+	uploadStream.ChunkSize = 100 * 1000 * 1000 // 100MB chunks
 
 	// Upload the file using io.Copy
 	_, err = io.Copy(uploadStream, reader)
 	if err != nil {
-		return fmt.Errorf("failed to upload file via TUS: %w", err)
+		return fmt.Errorf("failed to upload file via TUSD: %w", err)
 	}
 
-	ss.logger.Info("TUS replication completed",
+	ss.logger.Info("TUSD replication completed",
 		zap.String("host", host),
 		zap.String("cid", cid),
 		zap.Int64("size", fileSize))
@@ -241,13 +309,16 @@ func (ss *MediorumServer) replicateViaTUS(host string, cid string, reader io.Rea
 func (ss *MediorumServer) findMissedReplications() {
 	// Find uploads that don't have enough replicas
 	uploads := []*Upload{}
-	ss.crud.DB.Where("status = ? AND template = 'audio'", JobStatusNew).Find(&uploads)
+	ss.crud.DB.Where(
+		"created_by = ? AND orig_file_cid IS NOT NULL AND status != ? AND jsonb_array_length(mirrors::jsonb) < ?",
+		ss.Config.Self.Host, JobStatusBusy, ss.Config.ReplicationFactor,
+	).Find(&uploads)
 
 	for _, upload := range uploads {
 		if len(upload.Mirrors) < ss.Config.ReplicationFactor {
 			select {
 			case ss.replicationWork <- upload:
-				ss.logger.Debug("queued upload for replication", zap.String("uploadID", upload.ID))
+				ss.logger.Info("queued upload for replication", zap.String("uploadID", upload.ID))
 			default:
 				// Channel full, skip for now
 			}
