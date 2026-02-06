@@ -416,6 +416,8 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 	dbUpload.TranscodedAt = time.Now().UTC()
 	dbUpload.Status = JobStatusDone
 	dbUpload.Error = ""
+	dbUpload.TranscodeResults = upload.TranscodeResults
+	dbUpload.TranscodedMirrors = upload.TranscodedMirrors
 	if err := ss.crud.Update(&dbUpload); err != nil {
 		ss.logger.Error("failed to update transcode completion status", zap.String("id", dbUpload.ID), zap.Error(err))
 		return err
