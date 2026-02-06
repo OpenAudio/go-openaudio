@@ -115,6 +115,15 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	}
 
 	user, pass := parts[0], parts[1]
+
+	// Validate password format before calling checkBasicAuth to prevent panic
+	if !strings.HasPrefix(pass, "0x") || len(pass) <= 2 {
+		return handler.HTTPResponse{
+			StatusCode: 401,
+			Body:       "invalid password format",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+
 	ok, err = ss.checkBasicAuth(user, pass, nil)
 	if !ok {
 		return handler.HTTPResponse{
