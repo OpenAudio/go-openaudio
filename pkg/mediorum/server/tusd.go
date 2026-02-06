@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/hashes"
 	"github.com/ipfs/go-cid"
 	"github.com/tus/tusd/v2/pkg/filestore"
 	"github.com/tus/tusd/v2/pkg/handler"
@@ -322,6 +323,20 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 			return
 		}
 		defer file.Close()
+
+		// Verify CID matches content to prevent data poisoning
+		computedCID, err := hashes.ComputeFileCID(file)
+		if err != nil {
+			ss.logger.Error("failed to compute CID for replicated file", zap.String("id", event.Upload.ID), zap.Error(err))
+			return
+		}
+		if computedCID != filename {
+			ss.logger.Error("CID verification failed for replicated file",
+				zap.String("id", event.Upload.ID),
+				zap.String("claimed", filename),
+				zap.String("actual", computedCID))
+			return
+		}
 
 		// Reset file pointer after validation
 		if _, err := file.Seek(0, 0); err != nil {
