@@ -121,7 +121,7 @@ func parseSelectedPreview(previewStart string) (sql.NullString, error) {
 // 1. Computes the CID
 // 2. Runs ffprobe
 // 3. Replicates to local bucket
-// 4. Queues replication to rendezvous hosts
+// 4. Queues replication to other hosts (rendezvous or placement)
 // 5. Handles image templates immediately or queues audio for transcoding
 //
 // The upload record must already exist in the database (for TUS) or will be created (for regular uploads).
