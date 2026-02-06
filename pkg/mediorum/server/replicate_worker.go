@@ -140,7 +140,13 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 	// Determine placement hosts
 	placementHosts := upload.PlacementHosts
 	if len(placementHosts) == 0 {
-		placementHosts, _ = ss.rendezvousAllHosts(cid)
+		allHosts, _ := ss.rendezvousAllHosts(cid)
+		// Limit to replication factor
+		if len(allHosts) > ss.Config.ReplicationFactor {
+			placementHosts = allHosts[:ss.Config.ReplicationFactor]
+		} else {
+			placementHosts = allHosts
+		}
 	}
 
 	// Filter out self and hosts that already have the file
@@ -310,7 +316,7 @@ func (ss *MediorumServer) findMissedReplications() {
 	// Find uploads that don't have enough replicas
 	uploads := []*Upload{}
 	ss.crud.DB.Where(
-		"created_by = ? AND orig_file_cid IS NOT NULL AND status != ? AND jsonb_array_length(mirrors::jsonb) < ?",
+		"created_by = ? AND orig_file_cid IS NOT NULL AND orig_file_cid != '' AND status != ? AND jsonb_array_length(mirrors::jsonb) < ?",
 		ss.Config.Self.Host, JobStatusBusy, ss.Config.ReplicationFactor,
 	).Find(&uploads)
 
