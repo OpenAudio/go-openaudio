@@ -216,7 +216,9 @@ func (ss *MediorumServer) handleUploadError(upload *Upload, err error, shouldCre
 	if shouldCreate {
 		ss.crud.Create(upload)
 	} else {
-		ss.crud.Update(upload)
+		if updateErr := ss.crud.Update(upload); updateErr != nil {
+			ss.logger.Error("failed to update upload status", zap.String("id", upload.ID), zap.Error(updateErr))
+		}
 	}
 	return err
 }
