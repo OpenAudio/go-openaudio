@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -192,7 +193,7 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 			}
 			defer reader.Close()
 
-			err = ss.replicateToHost(targetHost, cid, reader, attrs.Size)
+			err = ss.replicateToHost(targetHost, cid, reader, attrs.Size, placementHosts)
 			resultsChan <- replicationResult{host: targetHost, err: err}
 		}(host)
 	}
@@ -266,7 +267,7 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 	return nil
 }
 
-func (ss *MediorumServer) replicateToHost(host string, cid string, reader io.Reader, fileSize int64) error {
+func (ss *MediorumServer) replicateToHost(host string, cid string, reader io.Reader, fileSize int64, placementHosts []string) error {
 	ss.logger.Info("replicating via TUSD",
 		zap.String("host", host),
 		zap.String("cid", cid),
@@ -298,9 +299,10 @@ func (ss *MediorumServer) replicateToHost(host string, cid string, reader io.Rea
 
 	// Create upload with metadata - mark as replication to skip processing
 	metadata := map[string]string{
-		"filename":      cid,
-		"filetype":      "application/octet-stream",
-		"isReplication": "true",
+		"filename":       cid,
+		"filetype":       "application/octet-stream",
+		"isReplication":  "true",
+		"placementHosts": strings.Join(placementHosts, ","),
 	}
 
 	tusUpload := tusgo.Upload{}
