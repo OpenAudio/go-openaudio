@@ -102,6 +102,68 @@ func (s *Server) getRegisteredNodes(c echo.Context) error {
 	return c.JSON(200, res)
 }
 
+func (s *Server) debugP2PConnections(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	type DebugResponse struct {
+		NetInfoPeers    []map[string]interface{} `json:"netinfo_peers"`
+		RegisteredPeers []map[string]interface{} `json:"registered_peers"`
+		PeerStatuses    []map[string]interface{} `json:"peer_statuses"`
+		MatchingInfo    map[string]interface{}   `json:"matching_info"`
+	}
+
+	resp := DebugResponse{
+		NetInfoPeers:    []map[string]interface{}{},
+		RegisteredPeers: []map[string]interface{}{},
+		PeerStatuses:    []map[string]interface{}{},
+		MatchingInfo:    map[string]interface{}{},
+	}
+
+	if s.rpc != nil {
+		netInfo, err := s.rpc.NetInfo(ctx)
+		if err == nil {
+			for _, peer := range netInfo.Peers {
+				resp.NetInfoPeers = append(resp.NetInfoPeers, map[string]interface{}{
+					"node_id": string(peer.NodeInfo.ID()),
+					"moniker": peer.NodeInfo.Moniker,
+				})
+			}
+			resp.MatchingInfo["connected_p2p_peers_count"] = len(netInfo.Peers)
+		} else {
+			resp.MatchingInfo["netinfo_error"] = err.Error()
+		}
+	} else {
+		resp.MatchingInfo["rpc_not_ready"] = true
+	}
+
+	validators, err := s.db.GetAllRegisteredNodes(ctx)
+	if err == nil {
+		for _, validator := range validators {
+			resp.RegisteredPeers = append(resp.RegisteredPeers, map[string]interface{}{
+				"endpoint":      validator.Endpoint,
+				"comet_address": validator.CometAddress,
+				"eth_address":   validator.EthAddress,
+			})
+		}
+		resp.MatchingInfo["registered_nodes_count"] = len(validators)
+	} else {
+		resp.MatchingInfo["db_error"] = err.Error()
+	}
+
+	for _, peerStatus := range s.peerStatus.Values() {
+		resp.PeerStatuses = append(resp.PeerStatuses, map[string]interface{}{
+			"endpoint":           peerStatus.Endpoint,
+			"comet_address":      peerStatus.CometAddress,
+			"eth_address":        peerStatus.EthAddress,
+			"p2p_connected":      peerStatus.P2PConnected,
+			"connectrpc_healthy": peerStatus.ConnectrpcHealthy,
+		})
+	}
+	resp.MatchingInfo["peer_statuses_count"] = len(resp.PeerStatuses)
+
+	return c.JSON(200, resp)
+}
+
 func (s *Server) managePeers(ctx context.Context) error {
 	s.StartProcess(ProcessStatePeerManager)
 
@@ -297,6 +359,92 @@ func (s *Server) refreshPeerHealth(ctx context.Context, logger *zap.Logger) erro
 	}
 
 	wg.Wait()
+
+	// Refresh P2P connection status
+	if err := s.refreshP2PConnections(ctx, logger); err != nil {
+		logger.Error("could not refresh P2P connections", zap.Error(err))
+	}
+
+	return nil
+}
+
+func (s *Server) refreshP2PConnections(ctx context.Context, logger *zap.Logger) error {
+	if s.rpc == nil {
+		return nil
+	}
+
+	netInfo, err := s.rpc.NetInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("could not get netinfo: %v", err)
+	}
+
+	connectedNodeIDs := make(map[string]bool)
+	for _, peer := range netInfo.Peers {
+		nodeID := string(peer.NodeInfo.ID())
+		if nodeID != "" {
+			connectedNodeIDs[nodeID] = true
+		}
+	}
+
+	connectedCometAddresses := make(map[string]bool)
+	cometPeers := s.cometRPCPeers.ToMap()
+	for _, cometRPC := range cometPeers {
+		queryCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		validators, err := cometRPC.Validators(queryCtx, nil, nil, nil)
+		cancel()
+
+		if err == nil && validators != nil {
+			for _, val := range validators.Validators {
+				if val != nil {
+					validatorAddr := strings.ToLower(val.Address.String())
+					connectedCometAddresses[validatorAddr] = true
+				}
+			}
+		}
+
+		statusCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		status, err := cometRPC.Status(statusCtx)
+		cancel()
+
+		if err == nil && status != nil {
+			validatorAddr := strings.ToLower(status.ValidatorInfo.Address.String())
+			if validatorAddr != "" {
+				connectedCometAddresses[validatorAddr] = true
+			}
+		}
+	}
+
+	for nodeID := range connectedNodeIDs {
+		for _, peerStatus := range s.peerStatus.Values() {
+			if strings.HasPrefix(peerStatus.CometAddress, nodeID+"@") {
+				connectedCometAddresses[peerStatus.CometAddress] = true
+			}
+		}
+	}
+
+	for _, peerStatus := range s.peerStatus.Values() {
+		if peerStatus.CometAddress == "" {
+			continue
+		}
+
+		cometAddrLower := strings.ToLower(peerStatus.CometAddress)
+		isConnected := connectedCometAddresses[cometAddrLower]
+
+		if !isConnected && strings.Contains(peerStatus.CometAddress, "@") {
+			parts := strings.Split(peerStatus.CometAddress, "@")
+			if len(parts) > 0 {
+				nodeID := strings.TrimSpace(parts[0])
+				if connectedNodeIDs[nodeID] {
+					isConnected = true
+				}
+			}
+		}
+
+		peerStatus.P2PConnected = isConnected
+		if ethAddr := peerStatus.EthAddress; ethAddr != "" {
+			s.peerStatus.Set(EthAddress(ethAddr), peerStatus)
+		}
+	}
 
 	return nil
 }
