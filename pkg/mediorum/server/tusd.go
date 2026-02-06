@@ -9,9 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ipfs/go-cid"
 	"github.com/tus/tusd/v2/pkg/filestore"
 	"github.com/tus/tusd/v2/pkg/handler"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 )
 
 func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
@@ -117,6 +119,44 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 		return handler.HTTPResponse{
 			StatusCode: 401,
 			Body:       "authentication failed",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+
+	// Validate CID format (filename should be a valid CID for replication)
+	filename := event.Upload.MetaData["filename"]
+	if filename == "" {
+		return handler.HTTPResponse{
+			StatusCode: 400,
+			Body:       "replication upload missing filename (CID)",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+
+	// Parse CID to ensure it's valid
+	_, err = cid.Decode(filename)
+	if err != nil {
+		return handler.HTTPResponse{
+			StatusCode: 400,
+			Body:       "invalid CID format",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+
+	// Check if this node should store this CID (based on rendezvous hashing or placement hosts)
+	placementHostsStr, hasPlacement := event.Upload.MetaData["placementHosts"]
+	var shouldStore bool
+
+	if hasPlacement && placementHostsStr != "" {
+		// If placement hosts are specified, check if we're in the list
+		placementHosts := strings.Split(placementHostsStr, ",")
+		shouldStore = slices.Contains(placementHosts, ss.Config.Self.Host)
+	} else {
+		// Otherwise use rendezvous hashing
+		_, shouldStore = ss.rendezvousAllHosts(filename)
+	}
+
+	if !shouldStore {
+		return handler.HTTPResponse{
+			StatusCode: 403,
+			Body:       "this node is not a placement host for the given CID",
 		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
 	}
 
