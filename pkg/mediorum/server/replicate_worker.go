@@ -91,7 +91,7 @@ func (ss *MediorumServer) replicationWorker(ctx context.Context, workerID int) e
 				if err := ss.replicateTranscode(ctx, upload); err != nil {
 					logger.Error("transcoded replication failed", zap.String("uploadID", upload.ID), zap.Error(err))
 				} else {
-					logger.Info("transcoded replication completed", zap.String("uploadID", upload.ID), zap.Strings("transcoded_mirrors", upload.TranscodedMirrors))
+					logger.Info("transcoded replication completed", zap.String("uploadID", upload.ID))
 				}
 			}
 
