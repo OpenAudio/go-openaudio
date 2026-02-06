@@ -90,7 +90,6 @@ type MediorumServer struct {
 	rendezvousHasher *common.RendezvousHasher
 	transcodeWork    chan *Upload
 	replicationWork  chan *Upload
-	g                registrar.PeerProvider
 	ethService       ethv1connect.EthServiceHandler
 
 	// stats
