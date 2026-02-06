@@ -167,9 +167,6 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 		upload.Status = JobStatusDone
 	}
 
-	// Set mirrors to just self initially - will be updated by replication worker
-	upload.Mirrors = []string{ss.Config.Self.Host}
-
 	// Save upload record
 	if shouldCreate {
 		if err := ss.crud.Create(upload); err != nil {
