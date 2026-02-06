@@ -136,6 +136,12 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	}
 
 	// Recover wallet from signature
+	if len(pass) < 2 || !strings.HasPrefix(pass, "0x") {
+		return handler.HTTPResponse{
+			StatusCode: 401,
+			Body:       "invalid signature format",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
 	sig, err := hex.DecodeString(pass[2:]) // remove "0x"
 	if err != nil {
 		return handler.HTTPResponse{
