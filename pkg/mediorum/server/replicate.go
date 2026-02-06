@@ -237,7 +237,7 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 	return ss.replicateToMyBucket(ctx, cid, resp.Body)
 }
 
-// if the node is using local (disk) storage, do not replicate if there is <200GB remaining (i.e. 10% of 2TB)
+// if the node is using local (disk) storage, do not replicate if there is <10GB remaining
 func (ss *MediorumServer) diskHasSpace() bool {
 	// don't worry about running out of space on dev or stage
 	if ss.Config.Env != "prod" {
@@ -255,7 +255,7 @@ func (ss *MediorumServer) diskHasSpace() bool {
 		// Malformed URL, fall back to checking Config.Dir
 		ss.logger.Warn("malformed BlobStoreDSN, falling back to Config.Dir check",
 			zap.String("blobStoreDSN", ss.Config.BlobStoreDSN))
-		return ss.mediorumPathFree/uint64(1e9) > 50
+		return ss.mediorumPathFree/uint64(1e9) > 10
 	}
 
 	// Remove query parameters if present (e.g., "?no_tmp_dir=true")
@@ -268,12 +268,12 @@ func (ss *MediorumServer) diskHasSpace() bool {
 		ss.logger.Warn("failed to check blob storage disk space, falling back to Config.Dir",
 			zap.String("blobPath", blobPath),
 			zap.Error(err))
-		return ss.mediorumPathFree/uint64(1e9) > 50
+		return ss.mediorumPathFree/uint64(1e9) > 10
 	}
 
-	// Check if free space > 200GB on the actual blob storage path
+	// Check if free space > 10GB on the actual blob storage path
 	freeGB := free / uint64(1e9)
-	hasSpace := freeGB > 50
+	hasSpace := freeGB > 10
 
 	if !hasSpace {
 		ss.logger.Warn("blob storage disk space below threshold",
