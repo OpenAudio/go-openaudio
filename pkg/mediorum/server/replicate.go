@@ -255,7 +255,7 @@ func (ss *MediorumServer) diskHasSpace() bool {
 		// Malformed URL, fall back to checking Config.Dir
 		ss.logger.Warn("malformed BlobStoreDSN, falling back to Config.Dir check",
 			zap.String("blobStoreDSN", ss.Config.BlobStoreDSN))
-		return ss.mediorumPathFree/uint64(1e9) > 200
+		return ss.mediorumPathFree/uint64(1e9) > 50
 	}
 
 	// Remove query parameters if present (e.g., "?no_tmp_dir=true")
@@ -268,12 +268,12 @@ func (ss *MediorumServer) diskHasSpace() bool {
 		ss.logger.Warn("failed to check blob storage disk space, falling back to Config.Dir",
 			zap.String("blobPath", blobPath),
 			zap.Error(err))
-		return ss.mediorumPathFree/uint64(1e9) > 200
+		return ss.mediorumPathFree/uint64(1e9) > 50
 	}
 
 	// Check if free space > 200GB on the actual blob storage path
 	freeGB := free / uint64(1e9)
-	hasSpace := freeGB > 200
+	hasSpace := freeGB > 50
 
 	if !hasSpace {
 		ss.logger.Warn("blob storage disk space below threshold",
