@@ -98,6 +98,10 @@ func (ss *MediorumServer) replicationWorker(ctx context.Context, workerID int) e
 }
 
 func (ss *MediorumServer) replicateUpload(ctx context.Context, upload *Upload) error {
+	if upload.OrigFileCID == "" {
+		ss.logger.Warn("replicateUpload called with empty OrigFileCID; skipping replication", zap.String("uploadID", upload.ID))
+		return nil
+	}
 	// Get the file from our bucket
 	shardedCid := cidutil.ShardCID(upload.OrigFileCID)
 	attrs, err := ss.bucket.Attributes(ctx, shardedCid)
