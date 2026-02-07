@@ -10,3 +10,9 @@ tmp
 .release_notes.md
 
 contracts/build
+
+# Node.js dependencies
+node_modules/
+**/node_modules/
+package-lock.json
+**/package-lock.json
