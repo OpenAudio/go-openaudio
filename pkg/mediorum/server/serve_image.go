@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -111,9 +112,32 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	// if we don't have orig, fetch from network
 	if err != nil {
 		startFetch := time.Now()
-		host, err := ss.findAndPullBlob(ctx, origImageCID)
-		if err != nil {
-			return c.String(404, err.Error())
+		host, pullErr := ss.findAndPullBlob(ctx, origImageCID)
+		if pullErr != nil {
+			// Pull failed - check if it's due to disk space
+			if !ss.diskHasSpace() {
+				// Disk is full, proxy the request instead of erroring
+				// Redirect to a node that can serve this variant
+				redirectHost := ss.findNodeToServeBlob(ctx, origImageCID)
+				if redirectHost == "" {
+					return c.String(404, "blob not found")
+				}
+				dest := ss.replaceHost(c, redirectHost)
+				var query url.Values = dest.Query()
+				query.Add("allow_unhealthy", "true")
+				dest.RawQuery = query.Encode()
+				return c.Redirect(302, dest.String())
+			}
+			// Pull failed for other reasons, redirect to a node that has it
+			redirectHost := ss.findNodeToServeBlob(ctx, origImageCID)
+			if redirectHost == "" {
+				return c.String(404, pullErr.Error())
+			}
+			dest := ss.replaceHost(c, redirectHost)
+			var query url.Values = dest.Query()
+			query.Add("allow_unhealthy", "true")
+			dest.RawQuery = query.Encode()
+			return c.Redirect(302, dest.String())
 		}
 
 		c.Response().Header().Set("x-fetch-host", host)
