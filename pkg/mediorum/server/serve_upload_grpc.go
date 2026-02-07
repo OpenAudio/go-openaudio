@@ -159,6 +159,18 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 	}
 	ss.logger.Info("replicated to my bucket", zap.String("name", filePath), zap.String("cid", formFileCID))
 
+	// Only add self to Mirrors if we're in the placement hosts (or rendezvous set if no placement hosts)
+	shouldAddSelf := false
+	if len(upload.PlacementHosts) > 0 {
+		shouldAddSelf = slices.Contains(upload.PlacementHosts, ss.Config.Self.Host)
+	} else {
+		_, shouldAddSelf = ss.rendezvousAllHosts(formFileCID)
+	}
+
+	if shouldAddSelf {
+		upload.Mirrors = []string{ss.Config.Self.Host}
+	}
+
 	// For images, mark as done immediately (no transcoding needed)
 	if upload.Template == JobTemplateImgSquare || upload.Template == JobTemplateImgBackdrop {
 		upload.TranscodeResults["original.jpg"] = formFileCID

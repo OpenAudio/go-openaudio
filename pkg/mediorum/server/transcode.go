@@ -22,6 +22,7 @@ import (
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 
 	"github.com/disintegration/imaging"
 	"github.com/spf13/cast"
@@ -288,7 +289,20 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 	ss.replicateToMyBucket(ctx, resultHash, dest)
 
 	upload.TranscodeResults["320"] = resultKey
-	upload.TranscodedMirrors = []string{ss.Config.Self.Host}
+
+	// Only add self to TranscodedMirrors if we're in the placement hosts (or rendezvous set if no placement hosts)
+	shouldAddSelf := false
+	if len(upload.PlacementHosts) > 0 {
+		shouldAddSelf = slices.Contains(upload.PlacementHosts, ss.Config.Self.Host)
+	} else {
+		_, shouldAddSelf = ss.rendezvousAllHosts(resultHash)
+	}
+
+	if shouldAddSelf {
+		upload.TranscodedMirrors = []string{ss.Config.Self.Host}
+	} else {
+		upload.TranscodedMirrors = []string{}
+	}
 
 	logger.Info("audio transcode done", zap.String("cid", resultHash))
 
