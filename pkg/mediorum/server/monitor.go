@@ -179,13 +179,26 @@ func (ss *MediorumServer) updateDiskAndDbStatus(ctx context.Context) {
 	ss.uploadsCount = uploadsCount
 	ss.uploadsCountErr = errStr
 
-	mediorumTotal, mediorumFree, err := getDiskStatus(ss.Config.Dir)
+	// Determine which path to check for disk status
+	// If using file storage, check the actual blob storage path, not Config.Dir
+	diskPath := ss.Config.Dir
+	if strings.HasPrefix(ss.Config.BlobStoreDSN, "file://") {
+		// Extract the path from file:// URL (e.g., "file:///data/blobs" -> "/data/blobs")
+		_, uri, found := strings.Cut(ss.Config.BlobStoreDSN, "://")
+		if found {
+			// Remove query parameters if present (e.g., "?no_tmp_dir=true")
+			blobPath := strings.Split(uri, "?")[0]
+			diskPath = blobPath
+		}
+	}
+
+	mediorumTotal, mediorumFree, err := getDiskStatus(diskPath)
 	if err == nil {
 		ss.mediorumPathFree = mediorumFree
 		ss.mediorumPathUsed = mediorumTotal - mediorumFree
 		ss.mediorumPathSize = mediorumTotal
 	} else {
-		slog.Error("Error getting mediorum disk status", "err", err)
+		slog.Error("Error getting mediorum disk status", "err", err, "path", diskPath)
 	}
 	ss.storageExpectation, err = getStorageExpectation(ctx, ss.pgPool, ss.Config.ReplicationFactor)
 	slog.Info("Storage expectation", "size", ss.storageExpectation)

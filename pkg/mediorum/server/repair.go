@@ -99,7 +99,7 @@ func (ss *MediorumServer) startRepairer(ctx context.Context) error {
 
 			// check that disk has space
 			if !ss.diskHasSpace() && !tracker.CleanupMode {
-				logger.Warn("disk has <200GB remaining and is not in cleanup mode. skipping repair")
+				logger.Warn("disk has <10GB remaining and is not in cleanup mode. skipping repair")
 				tracker.AbortedReason = "DISK_FULL"
 				tracker.FinishedAt = time.Now()
 				saveTracker()

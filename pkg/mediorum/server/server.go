@@ -177,6 +177,17 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 
 	if config.BlobStoreDSN == "" {
 		config.BlobStoreDSN = "file://" + config.Dir + "/blobs?no_tmp_dir=true"
+	} else if strings.HasPrefix(config.BlobStoreDSN, "file://") {
+		// If using file storage, ensure no_tmp_dir=true is set to avoid cross-device link errors
+		// when /tmp and the blob storage path are on different mount points
+		if !strings.Contains(config.BlobStoreDSN, "no_tmp_dir") {
+			// Add the parameter, handling existing query params
+			if strings.Contains(config.BlobStoreDSN, "?") {
+				config.BlobStoreDSN += "&no_tmp_dir=true"
+			} else {
+				config.BlobStoreDSN += "?no_tmp_dir=true"
+			}
+		}
 	}
 
 	if pk, err := ethcontracts.ParsePrivateKeyHex(config.PrivateKey); err != nil {
