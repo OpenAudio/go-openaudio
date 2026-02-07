@@ -8,8 +8,6 @@ package layout
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "github.com/OpenAudio/go-openaudio/pkg/core/console/assets"
-
 func (l *Layout) Base() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -31,20 +29,7 @@ func (l *Layout) Base() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>Audius Console</title><link rel=\"icon\" href=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var2 string
-		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(assets.OAPLogoInverse)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/layout/base.templ`, Line: 11, Col: 48}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" type=\"image/x-icon\"><script src=\"https://cdn.tailwindcss.com\"></script><script src=\"https://d3js.org/d3.v7.min.js\"></script><script src=\"https://cdn.jsdelivr.net/npm/htmx.org@1.8.0/dist/htmx.min.js\"></script><link rel=\"stylesheet\" href=\"https://unpkg.com/franken-ui@1.1.0/dist/css/core.min.css\"><link rel=\"stylesheet\" href=\"/console/assets/css/console.css\"><script src=\"https://unpkg.com/franken-ui@1.1.0/dist/js/core.iife.js\" type=\"module\"></script><script src=\"https://unpkg.com/franken-ui@1.1.0/dist/js/icon.iife.js\" type=\"module\"></script><script src=\"https://unpkg.com/alpinejs\" defer></script><script src=\"/console/assets/js/main.js\" type=\"module\"></script></head><body class=\"bg-primary\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>Audius Console</title><link rel=\"icon\" type=\"image/png\" href=\"/console/assets/images/favicon.png\"><script src=\"https://cdn.tailwindcss.com\"></script><script src=\"https://d3js.org/d3.v7.min.js\"></script><script src=\"https://cdn.jsdelivr.net/npm/htmx.org@1.8.0/dist/htmx.min.js\"></script><link rel=\"stylesheet\" href=\"https://unpkg.com/franken-ui@1.1.0/dist/css/core.min.css\"><link rel=\"stylesheet\" href=\"/console/assets/css/console.css\"><script src=\"https://unpkg.com/franken-ui@1.1.0/dist/js/core.iife.js\" type=\"module\"></script><script src=\"https://unpkg.com/franken-ui@1.1.0/dist/js/icon.iife.js\" type=\"module\"></script><script src=\"https://unpkg.com/alpinejs\" defer></script><script src=\"/console/assets/js/main.js\" type=\"module\"></script></head><body class=\"bg-primary\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -52,7 +37,7 @@ func (l *Layout) Base() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

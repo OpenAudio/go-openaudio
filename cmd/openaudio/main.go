@@ -537,7 +537,19 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 	consoleEnabled := cfg.EnableExplorer && cfg.EnableETL && etlService != nil
 	e := echo.New()
 	e.HideBanner = true
-	e.Use(middleware.Logger(), middleware.Recover(), common.InjectRealIP())
+
+	// Configure logger to skip internal ETL requests
+	loggerConfig := middleware.LoggerConfig{
+		Skipper: func(c echo.Context) bool {
+			// Skip logging for internal ETL requests to Core service
+			path := c.Request().URL.Path
+			if strings.Contains(path, "/core.v1.CoreService/GetBlock") {
+				return true
+			}
+			return false
+		},
+	}
+	e.Use(middleware.LoggerWithConfig(loggerConfig), middleware.Recover(), common.InjectRealIP())
 
 	rpcGroup := e.Group("")
 	rpcGroup.Use(common.CORS())

@@ -2,9 +2,9 @@ package pages
 
 import (
 	"fmt"
-	"github.com/AudiusProject/audiusd/pkg/console/templates"
-	"github.com/AudiusProject/audiusd/pkg/console/templates/layouts"
-	"github.com/AudiusProject/audiusd/pkg/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/console/templates"
+	"github.com/OpenAudio/go-openaudio/pkg/console/templates/layouts"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"strings"
 )
 
@@ -82,22 +82,22 @@ templ Validators(props ValidatorsProps) {
 	@layouts.Base("Validators") {
 		<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6">
 			<div class="flex items-center gap-6 mb-6">
-				<h2 class="text-2xl font-light text-gray-900 dark:text-gray-100">Validators</h2>
+				<h2 class="text-2xl font-light text-gray-900 dark:text-white">Validators</h2>
 				<div class="flex-1 max-w-md">
 					<input
 						type="text"
 						id="endpointFilter"
 						placeholder="Filter by endpoint (e.g. audius.co)..."
 						value={ props.EndpointFilter }
-						class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-[#141414] text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+						class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-[#141414] text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500 focus:border-transparent"
 						onchange="updateFilters()"
 					/>
 				</div>
 				<div class="flex items-center gap-4 ml-auto">
-					<div class="text-sm text-gray-500 dark:text-gray-400">
+					<div class="text-sm text-gray-500 dark:text-[#b3b3b3]">
 						Page { fmt.Sprint(props.CurrentPage) } • { fmt.Sprint(props.PageSize) } per page
 					</div>
-					<div class="flex border border-gray-200 dark:border-gray-700 rounded overflow-hidden">
+					<div class="flex border border-gray-200 dark:border-gray-600 rounded overflow-hidden">
 						<a
 							href={ templ.SafeURL(fmt.Sprintf("?type=active&endpoint_filter=%s", props.EndpointFilter)) }
 							class={ "px-4 py-2 text-sm font-medium transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "active"), templ.KV("text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700", props.QueryType != "active") }
@@ -106,13 +106,13 @@ templ Validators(props ValidatorsProps) {
 						</a>
 						<a
 							href={ templ.SafeURL(fmt.Sprintf("?type=registrations&endpoint_filter=%s", props.EndpointFilter)) }
-							class={ "px-4 py-2 text-sm font-medium border-l border-gray-200 dark:border-gray-700 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "registrations"), templ.KV("text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700", props.QueryType != "registrations") }
+							class={ "px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-400 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "registrations"), templ.KV("text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#383838]", props.QueryType != "registrations") }
 						>
 							Registrations
 						</a>
 						<a
 							href={ templ.SafeURL(fmt.Sprintf("?type=deregistrations&endpoint_filter=%s", props.EndpointFilter)) }
-							class={ "px-4 py-2 text-sm font-medium border-l border-gray-200 dark:border-gray-700 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "deregistrations"), templ.KV("text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700", props.QueryType != "deregistrations") }
+							class={ "px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-400 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "deregistrations"), templ.KV("text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#383838]", props.QueryType != "deregistrations") }
 						>
 							Deregistrations
 						</a>
@@ -123,10 +123,10 @@ templ Validators(props ValidatorsProps) {
 				<div class="space-y-2">
 					for _, validator := range props.Validators {
 						<a href={ templ.SafeURL(fmt.Sprintf("/validator/%s", validator.Address)) } class="block">
-							<div class="flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-700 rounded hover:bg-purple-50 hover:border-purple-200 dark:hover:bg-gray-700 transition-colors cursor-pointer">
+							<div class="flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors cursor-pointer">
 								<div class="flex items-center gap-6 flex-1">
 									<div class="flex-2">
-										<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Endpoint</div>
+										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Endpoint</div>
 										<div class="relative">
 											<div class="font-mono text-sm text-gray-700 dark:text-gray-300 overflow-x-auto scrollbar-hide whitespace-nowrap pb-1">
 												{ extractHost(validator.Endpoint) }
@@ -135,25 +135,25 @@ templ Validators(props ValidatorsProps) {
 										</div>
 									</div>
 									<div class="flex-1">
-										<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Address</div>
-										<div class="font-mono text-sm text-purple-600 dark:text-purple-400">
+										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Address</div>
+										<div class="font-mono text-sm text-gray-400 dark:text-[#b3b3b3]">
 											@templates.StringWithTooltipCustom(validator.Address, 8, 4)
 										</div>
 									</div>
 									<div class="flex-1">
-										<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Node Type</div>
+										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Node Type</div>
 										<span class="px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-[#141414] text-gray-700 dark:text-gray-300 rounded">
 											{ validator.NodeType }
 										</span>
 									</div>
 									<div class="flex-1">
-										<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Voting Power</div>
-										<div class="text-xl font-light text-gray-900 dark:text-gray-100 tabular-nums">
+										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Voting Power</div>
+										<div class="text-xl font-light text-gray-900 dark:text-white tabular-nums">
 											{ fmt.Sprintf("%d", validator.VotingPower) }
 										</div>
 									</div>
 									<div class="flex-1">
-										<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Status</div>
+										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Status</div>
 										<div class="flex items-center gap-2 text-sm">
 											switch validator.Status {
 												case "active":
@@ -166,7 +166,7 @@ templ Validators(props ValidatorsProps) {
 													<span class="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-[#141414] text-gray-700 dark:text-gray-300 rounded">Unknown</span>
 											}
 											<span class="text-gray-400 dark:text-gray-500">|</span>
-											<div class="text-xs text-gray-500 dark:text-gray-400">
+											<div class="text-xs text-gray-500 dark:text-[#b3b3b3]">
 												if validator.RegisteredAt > 0 {
 													@templates.TimeWithTooltip(validator.CreatedAt.Time)
 												} else {
@@ -176,7 +176,7 @@ templ Validators(props ValidatorsProps) {
 										</div>
 									</div>
 									<div class="flex-1">
-										<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Uptime</div>
+										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Uptime</div>
 										<div class="flex items-center gap-1">
 											if rollups, exists := props.ValidatorUptimeMap[validator.CometAddress]; exists && len(rollups) > 0 {
 												// Show actual uptime data (reverse order so most recent is on the right)
@@ -203,7 +203,7 @@ templ Validators(props ValidatorsProps) {
 						</a>
 					}
 				</div>
-				<div class="flex justify-between items-center mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+				<div class="flex justify-between items-center mt-6 pt-6 border-t border-gray-300 dark:border-gray-400">
 					<div class="flex gap-3">
 						if props.HasPrev {
 							<a

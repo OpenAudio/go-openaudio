@@ -84,12 +84,6 @@ open https://node1.oap.devnet/console/uptime
 > By default, hot reloading is only enabled on node1.oap.devnet to conserve system resources.
 > To enable on other nodes, update the corresponding env file in [dev/env](../dev/env).
 
-**Cleanup**
-
-```bash
-make down
-```
-
 ## Develop against stage or prod
 
 Build a local docker image
@@ -126,4 +120,24 @@ make test-unit
 Run only integration tests
 ```bash
 make test-integration
+```
+
+### ETL
+
+The ETL service indexes blockchain data into the postgres database, enabling faster queries for certain views.
+
+```bash
+OPENAUDIO_ETL_ENABLED=true
+```
+
+### Explorer
+
+The Explorer provides a web-based interface to browse blocks, transactions, validators, and other  data. If enabled, the explorer runs at the site root, e.g. https://node1.oap.devnet/. Explorer requires ETL.
+
+```bash
+OPENAUDIO_ETL_ENABLED=true
+OPENAUDIO_EXPLORER_ENABLED=true
+
+# View explorer in browser
+open https://node1.oap.devnet/
 ```
