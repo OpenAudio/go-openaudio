@@ -306,14 +306,6 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 
 	logger.Info("audio transcode done", zap.String("cid", resultHash))
 
-	// Queue for async replication of transcoded file
-	select {
-	case ss.replicationWork <- upload:
-		logger.Debug("queued transcoded file for replication", zap.String("uploadID", upload.ID))
-	default:
-		logger.Warn("replication channel full, transcoded file may not replicate immediately", zap.String("uploadID", upload.ID))
-	}
-
 	// if a start time is set, also transcode an audio preview from the full 320kbps downsample
 	if upload.SelectedPreview.Valid {
 		err := ss.generateAudioPreviewForUpload(ctx, upload)
@@ -436,6 +428,15 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 		ss.logger.Error("failed to update transcode completion status", zap.String("id", dbUpload.ID), zap.Error(err))
 		return err
 	}
+
+	// Queue for async replication of transcoded file
+	select {
+	case ss.replicationWork <- upload:
+		logger.Debug("queued transcoded file for replication", zap.String("uploadID", upload.ID))
+	default:
+		logger.Warn("replication channel full, transcoded file may not replicate immediately", zap.String("uploadID", upload.ID))
+	}
+
 	return nil
 }
 
