@@ -87,8 +87,14 @@ func (ss *MediorumServer) replicationWorker(ctx context.Context, workerID int) e
 
 			logger.Debug("replicating upload", zap.String("uploadID", upload.ID), zap.String("cid", upload.OrigFileCID))
 
+			// Determine target replication count based on placement hosts
+			targetReplicationCount := ss.Config.ReplicationFactor
+			if len(upload.PlacementHosts) > 0 {
+				targetReplicationCount = len(upload.PlacementHosts)
+			}
+
 			// Replicate transcoded file if it exists and needs replication
-			if _, hasTranscoded := upload.TranscodeResults["320"]; hasTranscoded && len(upload.TranscodedMirrors) < ss.Config.ReplicationFactor {
+			if _, hasTranscoded := upload.TranscodeResults["320"]; hasTranscoded && len(upload.TranscodedMirrors) < targetReplicationCount {
 				if err := ss.replicateTranscode(ctx, upload); err != nil {
 					logger.Error("transcoded replication failed", zap.String("uploadID", upload.ID), zap.Error(err))
 				} else {
@@ -97,11 +103,11 @@ func (ss *MediorumServer) replicationWorker(ctx context.Context, workerID int) e
 			}
 
 			// Replicate original file if it needs replication
-			if len(upload.Mirrors) < ss.Config.ReplicationFactor {
+			if len(upload.Mirrors) < targetReplicationCount {
 				if err := ss.replicateOriginal(ctx, upload); err != nil {
-					logger.Error("replication failed", zap.String("uploadID", upload.ID), zap.Error(err))
+					logger.Error("original replication failed", zap.String("uploadID", upload.ID), zap.Error(err))
 				} else {
-					logger.Info("replication completed", zap.String("uploadID", upload.ID))
+					logger.Info("original replication completed", zap.String("uploadID", upload.ID))
 				}
 			}
 
