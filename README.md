@@ -4,7 +4,7 @@
 
 > A golang implementation of the OpenAudio protocol.
 
-# Quickstart
+## Quickstart
 
 ```bash
 docker run --rm -it \
@@ -15,6 +15,7 @@ docker run --rm -it \
   -e OPENAUDIO_STORAGE_ENABLED=false \
   openaudio/go-openaudio:stable
 
+# in another terminal session
 open https://localhost/console/overview
 ```
 
@@ -22,9 +23,9 @@ open https://localhost/console/overview
 To run a validator and secure the network, visit [docs.openaudio.org](https://docs.openaudio.org/tutorials/run-a-node).
 
 
-# Local Development
+## Local Development
 
-## Prerequisites
+### Prerequisites
 
 Ensure the following are installed:
 
@@ -38,11 +39,11 @@ The remaining dependencies can then be automatically installed with `make`:
 make install-deps
 ```
 
-## Running local devnet
+### Running local devnet
 
 You can simulate an openaudio network by running multiple nodes on your machine. This makes developing certain features fast and easy.
 
-### Setup
+#### Setup
 
 Add the following hosts to your `/etc/hosts` file:
 
@@ -56,7 +57,7 @@ Then add the local dev x509 cert to your keychain so you will have green ssl in 
 sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain dev/tls/cert.pem
 ```
 
-### Run
+#### Run
 
 Build and run a local devnet with 4 nodes.
 
@@ -108,7 +109,7 @@ open https://node1.oap.devnet/console/uptime
 > By default, hot reloading is only enabled on node1.oap.devnet to conserve system resources.
 > To enable on other nodes, update the corresponding env file in [dev/env](../dev/env).
 
-## Develop against stage or prod
+### Develop against stage or prod
 
 Build a local docker image
 
@@ -122,7 +123,7 @@ Peer with mainnet
 docker run --rm -it -p 80:80 -p 443:443 -e NETWORK=prod openaudio/go-openaudio:dev
 ```
 
-## Run tests
+### Run tests
 
 Run all tests
 
