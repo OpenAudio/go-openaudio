@@ -2,11 +2,15 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUploadFile(t *testing.T) {
@@ -142,6 +146,109 @@ func TestUploadPlacement(t *testing.T) {
 
 }
 
+func TestUploadPlacementTus(t *testing.T) {
+	s1 := testNetwork[0]
+	s2 := testNetwork[1]
+	s3 := testNetwork[2]
+	s5 := testNetwork[4]
+
+	examplePlacement := []string{
+		s3.Config.Self.Host,
+		s5.Config.Self.Host,
+	}
+
+	// Read file for upload
+	fileData, err := os.ReadFile("testdata/tom.wav")
+	assert.NoError(t, err)
+
+	// Create TUS upload
+	createResp, err := s1.reqClient.R().
+		SetHeader("Upload-Length", fmt.Sprintf("%d", len(fileData))).
+		SetHeader("Upload-Metadata", fmt.Sprintf("filename dG9tLndhdg==,template YXVkaW8=,placementHosts %s",
+			base64.StdEncoding.EncodeToString([]byte(strings.Join(examplePlacement, ","))))).
+		SetHeader("Tus-Resumable", "1.0.0").
+		Post(s3.Config.Self.Host + "/files/")
+
+	assert.NoError(t, err)
+	assert.Equal(t, 201, createResp.StatusCode)
+
+	uploadLocation := createResp.Header.Get("Location")
+	assert.NotEmpty(t, uploadLocation)
+
+	// Extract upload ID from location (Location is absolute URL like http://127.0.0.1:1984/files/xyz)
+	uploadId := uploadLocation[strings.LastIndex(uploadLocation, "/")+1:]
+
+	// Upload file content (use absolute URL from Location header)
+	patchResp, err := s1.reqClient.R().
+		SetHeader("Content-Type", "application/offset+octet-stream").
+		SetHeader("Upload-Offset", "0").
+		SetHeader("Tus-Resumable", "1.0.0").
+		SetBody(fileData).
+		Patch(uploadLocation)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 204, patchResp.StatusCode)
+
+	// force sweep (since blob changes SkipBroadcast)
+	for _, s := range testNetwork {
+		s.crud.ForceSweep()
+	}
+
+	// poll for complete
+	var u2 *Upload
+	for i := 0; i < 30; i++ {
+		var uploadResp Upload
+		resp, err := s2.reqClient.R().SetSuccessResult(&uploadResp).Get(s3.Config.Self.Host + "/uploads/" + uploadId)
+		assert.NoError(t, err)
+		if resp.StatusCode == 404 {
+			time.Sleep(time.Second)
+			continue
+		}
+		assert.Equal(t, 200, resp.StatusCode)
+		u2 = &uploadResp
+		require.NotEqual(t, u2.Status, JobStatusError, "upload failed with error: "+u2.Error)
+		if u2.Status == JobStatusDone {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+
+	require.NotNil(t, u2)
+	require.Equal(t, JobStatusDone, u2.Status)
+
+	assert.Equal(t, u2.TranscodeProgress, 1.0)
+
+	assert.Len(t, u2.Mirrors, len(examplePlacement))
+	assert.Len(t, u2.TranscodedMirrors, len(examplePlacement))
+
+	assert.ElementsMatch(t, u2.Mirrors, examplePlacement)
+	assert.ElementsMatch(t, u2.TranscodedMirrors, examplePlacement)
+
+	// verify correct blob locations
+	{
+		locations := testNetworkLocateBlob(u2.OrigFileCID)
+		assert.ElementsMatch(t, locations, examplePlacement)
+
+		locations = testNetworkLocateBlob(u2.TranscodeResults["320"])
+		assert.ElementsMatch(t, locations, examplePlacement)
+	}
+
+	// drop from s5
+	s5.dropFromMyBucket(u2.OrigFileCID)
+
+	// run repair
+	testNetworkRunRepair(true)
+
+	// verify correct blob locations
+	{
+		locations := testNetworkLocateBlob(u2.OrigFileCID)
+		assert.ElementsMatch(t, locations, examplePlacement)
+
+		locations = testNetworkLocateBlob(u2.TranscodeResults["320"])
+		assert.ElementsMatch(t, locations, examplePlacement)
+	}
+}
+
 func TestUploadWithInvalidPlacementHosts(t *testing.T) {
 	s1 := testNetwork[0]
 
@@ -165,4 +272,29 @@ func TestUploadWithInvalidPlacementHosts(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 400, resp.StatusCode)
 	assert.Contains(t, string(resp.Bytes()), "all placement_hosts must be registered")
+}
+
+func TestUploadWithInvalidPlacementHostsTus(t *testing.T) {
+	s1 := testNetwork[0]
+
+	// Create placement hosts array with invalid host
+	invalidPlacementHosts := []string{
+		s1.Config.Self.Host,
+		"http://invalid-host:1991", // This host is not in config.Peers
+	}
+
+	// Read file for upload
+	fileData, err := os.ReadFile("testdata/tom.wav")
+	assert.NoError(t, err)
+
+	// Attempt to create TUS upload with invalid placement hosts - should fail validation
+	createResp, err := s1.reqClient.R().
+		SetHeader("Upload-Length", fmt.Sprintf("%d", len(fileData))).
+		SetHeader("Upload-Metadata", fmt.Sprintf("filename dG9tLndhdg==,template YXVkaW8=,placementHosts %s",
+			base64.StdEncoding.EncodeToString([]byte(strings.Join(invalidPlacementHosts, ","))))).
+		SetHeader("Tus-Resumable", "1.0.0").
+		Post(s1.Config.Self.Host + "/files/")
+
+	assert.NoError(t, err)
+	assert.Equal(t, 400, createResp.StatusCode)
 }
