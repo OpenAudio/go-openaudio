@@ -58,10 +58,10 @@ if [ "$USE_CONTAINER" = "true" ] || [ -n "$VSCODE_GO_TEST_IN_CONTAINER" ]; then
     cd "$WORKSPACE_ROOT" || exit 1
     
     # Build docker command - use workspace root for project directory
-    CMD="docker compose --file=dev/docker-compose.yml --project-name=test --project-directory=$WORKSPACE_ROOT --profile=$PROFILE run --rm $SERVICE go"
+    CMD=(docker compose --file=dev/docker-compose.yml --project-name=test --project-directory="$WORKSPACE_ROOT" --profile="$PROFILE" run --rm "$SERVICE" go)
     
     # Pass through all arguments
-    exec $CMD "$@"
+    exec "${CMD[@]}" "$@"
 else
     # Run go normally
     exec /usr/bin/env go "$@"
