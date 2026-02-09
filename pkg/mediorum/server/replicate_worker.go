@@ -339,7 +339,7 @@ func (ss *MediorumServer) findMissedReplications() {
 	// Find uploads that don't have enough replicas
 	uploads := []*Upload{}
 	ss.crud.DB.Where(
-		"created_by = ? AND orig_file_cid IS NOT NULL AND orig_file_cid != '' AND status != ? AND jsonb_array_length(mirrors::jsonb) < ?",
+		"created_by = ? AND orig_file_cid IS NOT NULL AND orig_file_cid != '' AND status != ? AND jsonb_array_length(COALESCE(mirrors::jsonb, '[]'::jsonb)) < ?",
 		ss.Config.Self.Host, JobStatusBusy, ss.Config.ReplicationFactor,
 	).Find(&uploads)
 
