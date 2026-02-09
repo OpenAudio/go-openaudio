@@ -169,6 +169,9 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 
 	if shouldAddSelf {
 		upload.Mirrors = []string{ss.Config.Self.Host}
+	} else {
+		// Ensure Mirrors is an empty slice rather than nil so it serializes as [] instead of null.
+		upload.Mirrors = []string{}
 	}
 
 	// For images, mark as done immediately (no transcoding needed)
