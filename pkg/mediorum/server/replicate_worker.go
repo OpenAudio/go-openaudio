@@ -139,7 +139,7 @@ func (ss *MediorumServer) replicateTranscode(ctx context.Context, upload *Upload
 func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, cid string, existingMirrors []string, isTranscoded bool) error {
 	// Get the file from our bucket
 	shardedCid := cidutil.ShardCID(cid)
-	attrs, err := ss.bucket.Attributes(ctx, shardedCid)
+	_, err := ss.bucket.Attributes(ctx, shardedCid)
 	if err != nil {
 		return fmt.Errorf("failed to get file attributes: %w", err)
 	}
@@ -199,7 +199,9 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 			}
 			defer reader.Close()
 
-			err = ss.replicateToHost(targetHost, cid, reader, attrs.Size, placementHosts)
+			err = ss.replicateFileToHost(ctx, targetHost, cid, reader)
+			// TODO: Replicate with TUSD
+			// err = ss.replicateToHost(targetHost, cid, reader, attrs.Size, placementHosts)
 			resultsChan <- replicationResult{host: targetHost, err: err}
 		}(host)
 	}
