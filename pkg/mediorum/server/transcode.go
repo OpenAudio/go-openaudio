@@ -349,6 +349,7 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 	dbUpload.Status = JobStatusBusy
 	if err := ss.crud.Update(&dbUpload); err != nil {
 		ss.logger.Error("failed to update transcode status", zap.String("id", dbUpload.ID), zap.Error(err))
+		return err
 	}
 
 	fileHash := upload.OrigFileCID
