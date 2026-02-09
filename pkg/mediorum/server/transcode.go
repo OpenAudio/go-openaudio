@@ -432,7 +432,7 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 
 	// Queue for async replication of transcoded file
 	select {
-	case ss.replicationWork <- upload:
+	case ss.replicationWork <- &dbUpload:
 		logger.Debug("queued transcoded file for replication", zap.String("uploadID", upload.ID))
 	default:
 		logger.Warn("replication channel full, transcoded file may not replicate immediately", zap.String("uploadID", upload.ID))
