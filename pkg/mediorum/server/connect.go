@@ -39,6 +39,9 @@ func (s *StorageService) Ping(context.Context, *connect.Request[v1.PingRequest])
 
 // GetUpload implements v1connect.StorageServiceHandler.
 func (s *StorageService) GetUpload(ctx context.Context, req *connect.Request[v1.GetUploadRequest]) (*connect.Response[v1.GetUploadResponse], error) {
+	if s.mediorum == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("storage service not initialized"))
+	}
 	dbUpload, err := s.mediorum.serveUpload(ctx, req.Msg.Id, req.Msg.Fix, req.Msg.Analyze)
 	if err != nil {
 		return nil, err
@@ -104,6 +107,9 @@ func (s *StorageService) GetUpload(ctx context.Context, req *connect.Request[v1.
 
 // UploadFiles implements v1connect.StorageServiceHandler.
 func (s *StorageService) UploadFiles(ctx context.Context, req *connect.Request[v1.UploadFilesRequest]) (*connect.Response[v1.UploadFilesResponse], error) {
+	if s.mediorum == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("storage service not initialized"))
+	}
 	placeHosts := strings.Join(req.Msg.PlacementHosts, ",")
 	files := make([]*multipart.FileHeader, len(req.Msg.Files))
 	for i, file := range req.Msg.Files {
@@ -189,6 +195,9 @@ func (s *StorageService) GetStreamURL(ctx context.Context, req *connect.Request[
 
 // GetRendezvousNodes implements v1connect.StorageServiceHandler.
 func (s *StorageService) GetRendezvousNodes(ctx context.Context, req *connect.Request[v1.GetRendezvousNodesRequest]) (*connect.Response[v1.GetRendezvousNodesResponse], error) {
+	if s.mediorum == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("storage service not initialized"))
+	}
 	cid := req.Msg.Cid
 	if cid == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("cid is required"))
@@ -215,6 +224,9 @@ func (s *StorageService) GetRendezvousNodes(ctx context.Context, req *connect.Re
 
 // GetIPData implements v1connect.StorageServiceHandler.
 func (s *StorageService) GetIPData(ctx context.Context, req *connect.Request[v1.GetIPDataRequest]) (*connect.Response[v1.GetIPDataResponse], error) {
+	if s.mediorum == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("storage service not initialized"))
+	}
 	ip := req.Msg.Ip
 	if ip == "" {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("must send IP"))
@@ -239,13 +251,12 @@ func (s *StorageService) GetIPData(ctx context.Context, req *connect.Request[v1.
 
 // GetStatus implements v1connect.StorageServiceHandler.
 func (s *StorageService) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
-	if s.mediorum == nil {
-		return connect.NewResponse(&v1.GetStatusResponse{
-			StorageExpectation: 0,
-		}), nil
+	storageExpectation := int64(0)
+	if s.mediorum != nil {
+		storageExpectation = int64(s.mediorum.storageExpectation)
 	}
 	return connect.NewResponse(&v1.GetStatusResponse{
-		StorageExpectation: int64(s.mediorum.storageExpectation),
+		StorageExpectation: storageExpectation,
 	}), nil
 }
 

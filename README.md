@@ -7,7 +7,14 @@
 # Quickstart
 
 ```bash
-docker run --rm -it -p 80:80 -p 443:443 openaudio/go-openaudio:stable
+docker run --rm -it \
+  -p 80:80 \
+  -p 443:443 \
+  -p 26656:26656 \
+  -e OPENAUDIO_TLS_SELF_SIGNED=true \
+  -e OPENAUDIO_STORAGE_ENABLED=false \
+  openaudio/go-openaudio:stable
+
 open https://localhost/console/overview
 ```
 
