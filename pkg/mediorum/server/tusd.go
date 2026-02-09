@@ -51,25 +51,75 @@ func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
 		return nil, err
 	}
 
-	go func() {
-		for {
-			event := <-tusdHandler.CreatedUploads
-			ss.handleTusdUploadCreated(event)
-		}
-	}()
+	if tusdHandler.CreatedUploads != nil {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					ss.logger.Error("panic in tusd CreatedUploads handler", zap.Any("panic", r))
+				}
+			}()
+			for {
+				event := <-tusdHandler.CreatedUploads
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							ss.logger.Error("panic in handleTusdUploadCreated", zap.String("id", event.Upload.ID), zap.Any("panic", r))
+						}
+					}()
+					ss.handleTusdUploadCreated(event)
+				}()
+			}
+		}()
+	} else {
+		ss.logger.Warn("tusd CreatedUploads channel is nil, upload creation events will not be handled")
+	}
 
 	// Set up post-finish hook to handle completed uploads
-	go func() {
-		for {
-			event := <-tusdHandler.CompleteUploads
-			ss.handleTusdUploadComplete(uploadDir, event)
-		}
-	}()
+	if tusdHandler.CompleteUploads != nil {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					ss.logger.Error("panic in tusd CompleteUploads handler", zap.Any("panic", r))
+				}
+			}()
+			for {
+				event := <-tusdHandler.CompleteUploads
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							ss.logger.Error("panic in handleTusdUploadComplete", zap.String("id", event.Upload.ID), zap.Any("panic", r))
+						}
+					}()
+					ss.handleTusdUploadComplete(uploadDir, event)
+				}()
+			}
+		}()
+	} else {
+		ss.logger.Warn("tusd CompleteUploads channel is nil, upload completion events will not be handled")
+	}
 
 	return tusdHandler, nil
 }
 
 func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent) (handler.HTTPResponse, handler.FileInfoChanges, error) {
+
+	placementHostsStr, hasPlacement := event.Upload.MetaData["placementHosts"]
+	placementHosts := []string{}
+	if hasPlacement && placementHostsStr != "" {
+		placementHosts = strings.Split(placementHostsStr, ",")
+		err := ss.validatePlacementHosts(placementHosts)
+		if err != nil {
+			ss.logger.Error("placement host validation failed",
+				zap.Strings("placementHosts", placementHosts),
+				zap.String("self", ss.Config.Self.Host),
+				zap.Error(err))
+			return handler.HTTPResponse{
+				StatusCode: 400,
+				Body:       "invalid placement hosts: " + err.Error(),
+			}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+		}
+	}
+
 	// Check if this is a replication request
 	isReplication, ok := event.Upload.MetaData["isReplication"]
 	if !ok || isReplication != "true" {
@@ -84,6 +134,9 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	}
 
 	if authHeader == "" {
+		ss.logger.Warn("replication upload missing authentication",
+			zap.String("id", event.Upload.ID),
+			zap.String("filename", event.Upload.MetaData["filename"]))
 		return handler.HTTPResponse{
 			StatusCode: 401,
 			Body:       "replication upload missing authentication",
@@ -92,6 +145,9 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 
 	// Parse Basic auth
 	if !strings.HasPrefix(authHeader, "Basic ") {
+		ss.logger.Warn("invalid auth header format",
+			zap.String("id", event.Upload.ID),
+			zap.String("authHeader", authHeader))
 		return handler.HTTPResponse{
 			StatusCode: 401,
 			Body:       "invalid auth header format",
@@ -100,6 +156,9 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 
 	decoded, err := base64.StdEncoding.DecodeString(authHeader[6:])
 	if err != nil {
+		ss.logger.Warn("failed to decode auth header",
+			zap.String("id", event.Upload.ID),
+			zap.Error(err))
 		return handler.HTTPResponse{
 			StatusCode: 401,
 			Body:       "failed to decode auth header",
@@ -108,6 +167,9 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 
 	parts := strings.Split(string(decoded), ":")
 	if len(parts) != 2 {
+		ss.logger.Warn("invalid auth format",
+			zap.String("id", event.Upload.ID),
+			zap.Int("parts", len(parts)))
 		return handler.HTTPResponse{
 			StatusCode: 401,
 			Body:       "invalid auth format",
@@ -118,6 +180,9 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 
 	// Validate password format before calling checkBasicAuth to prevent panic
 	if !strings.HasPrefix(pass, "0x") || len(pass) <= 2 {
+		ss.logger.Warn("invalid password format",
+			zap.String("id", event.Upload.ID),
+			zap.String("user", user))
 		return handler.HTTPResponse{
 			StatusCode: 401,
 			Body:       "invalid password format",
@@ -126,6 +191,10 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 
 	ok, err = ss.checkBasicAuth(user, pass, nil)
 	if !ok {
+		ss.logger.Warn("basic auth check failed",
+			zap.String("id", event.Upload.ID),
+			zap.String("user", user),
+			zap.Error(err))
 		return handler.HTTPResponse{
 			StatusCode: 401,
 			Body:       "authentication failed",
@@ -135,6 +204,8 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	// Validate CID format (filename should be a valid CID for replication)
 	filename := event.Upload.MetaData["filename"]
 	if filename == "" {
+		ss.logger.Warn("replication upload missing filename (CID)",
+			zap.String("id", event.Upload.ID))
 		return handler.HTTPResponse{
 			StatusCode: 400,
 			Body:       "replication upload missing filename (CID)",
@@ -144,6 +215,10 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	// Parse CID to ensure it's valid
 	_, err = cid.Decode(filename)
 	if err != nil {
+		ss.logger.Warn("invalid CID format",
+			zap.String("id", event.Upload.ID),
+			zap.String("filename", filename),
+			zap.Error(err))
 		return handler.HTTPResponse{
 			StatusCode: 400,
 			Body:       "invalid CID format",
@@ -151,12 +226,10 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	}
 
 	// Check if this node should store this CID (based on rendezvous hashing or placement hosts)
-	placementHostsStr, hasPlacement := event.Upload.MetaData["placementHosts"]
 	var shouldStore bool
 
 	if hasPlacement && placementHostsStr != "" {
 		// If placement hosts are specified, check if we're in the list
-		placementHosts := strings.Split(placementHostsStr, ",")
 		shouldStore = slices.Contains(placementHosts, ss.Config.Self.Host)
 	} else {
 		// Otherwise use rendezvous hashing
@@ -164,6 +237,12 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	}
 
 	if !shouldStore {
+		ss.logger.Warn("this node is not a placement host for the given CID",
+			zap.String("id", event.Upload.ID),
+			zap.String("filename", filename),
+			zap.String("self", ss.Config.Self.Host),
+			zap.Strings("placementHosts", placementHosts),
+			zap.Bool("hasPlacement", hasPlacement))
 		return handler.HTTPResponse{
 			StatusCode: 403,
 			Body:       "this node is not a placement host for the given CID",
@@ -368,7 +447,19 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 
 	// Load upload record
 	var upload *Upload
-	err := ss.crud.DB.First(&upload, "id = ?", event.Upload.ID).Error
+	var err error
+
+	// Retry finding the upload record with a delay (fixes test race condition, won't happen in practice as uploads take some time from create to complete)
+	for attempt := 0; attempt < 3; attempt++ {
+		err = ss.crud.DB.First(&upload, "id = ?", event.Upload.ID).Error
+		if err == nil {
+			break
+		}
+		if attempt < 2 {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
 	if err != nil {
 		ss.logger.Error("failed to find upload record for completed tusd upload", zap.String("id", event.Upload.ID), zap.Error(err))
 		return
