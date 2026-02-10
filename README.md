@@ -1,8 +1,10 @@
-# OpenAudio Protocol
+# Open Audio Protocol
 
-[![license](https://img.shields.io/github/license/OpenAudio/go-openaudio)](https://github.com/OpenAudio/go-openaudio/blob/main/LICENSE) [![releases](https://img.shields.io/github/v/release/OpenAudio/go-openaudio)](https://github.com/OpenAudio/go-openaudio/releases/latest)
+[![license](https://img.shields.io/github/license/OpenAudio/go-openaudio?style=for-the-badge)](https://github.com/OpenAudio/go-openaudio/blob/main/LICENSE) [![Docs](https://img.shields.io/badge/docs-openaudio.org-lightgrey?style=for-the-badge)](https://docs.openaudio.org) [![releases](https://img.shields.io/github/v/release/OpenAudio/go-openaudio?style=for-the-badge)](https://github.com/OpenAudio/go-openaudio/releases/latest) [![Dockerhub](https://img.shields.io/docker/v/openaudio/go-openaudio?sort=semver&style=for-the-badge&label=Docker)](https://hub.docker.com/r/openaudio/go-openaudio)
 
-> A golang implementation of the OpenAudio protocol.
+
+
+> A golang implementation of the Open Audio Protocol.
 
 ## Quickstart
 
