@@ -131,18 +131,12 @@ func WaitForDevnetHealthy(timeout ...time.Duration) error {
 					allMediorumReady = false
 					break
 				}
-
 				resp, err := client.Do(req)
 				if err != nil {
 					allMediorumReady = false
 					break
 				}
-
-				// Parse JSON response to check wallet_is_registered
 				var healthResponse struct {
-					Data struct {
-						WalletIsRegistered bool `json:"wallet_is_registered"`
-					} `json:"data"`
 					Storage struct {
 						WalletIsRegistered bool `json:"wallet_is_registered"`
 					} `json:"storage"`
@@ -150,8 +144,7 @@ func WaitForDevnetHealthy(timeout ...time.Duration) error {
 
 				if resp.StatusCode == 200 {
 					if err := json.NewDecoder(resp.Body).Decode(&healthResponse); err == nil {
-						// Check either data.wallet_is_registered (legacy) or storage.wallet_is_registered (new format)
-						if !healthResponse.Data.WalletIsRegistered && !healthResponse.Storage.WalletIsRegistered {
+						if !healthResponse.Storage.WalletIsRegistered {
 							resp.Body.Close()
 							allMediorumReady = false
 							break

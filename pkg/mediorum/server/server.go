@@ -715,7 +715,29 @@ func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
 			ss.Config.Peers = peers
 			ss.Config.Signers = signers
 
-			ss.logger.Info("updated peers and signers dynamically", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)))
+			// Update WalletIsRegistered based on updated peers list
+			ss.Config.WalletIsRegistered = false
+			for _, peer := range peers {
+				if strings.EqualFold(ss.Config.Self.Wallet, peer.Wallet) && strings.EqualFold(ss.Config.Self.Host, peer.Host) {
+					ss.Config.WalletIsRegistered = true
+					break
+				}
+			}
+
+			// Log detailed info if not registered to help diagnose issues
+			if !ss.Config.WalletIsRegistered {
+				peerHosts := make([]string, len(peers))
+				for i, p := range peers {
+					peerHosts[i] = p.Host
+				}
+				ss.logger.Warn("node not found in registered peers list",
+					zap.String("self_host", ss.Config.Self.Host),
+					zap.String("self_wallet", ss.Config.Self.Wallet),
+					zap.Int("total_peers", len(peers)),
+					zap.Strings("peer_hosts", peerHosts))
+			}
+
+			ss.logger.Info("updated peers and signers dynamically", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)), zap.Bool("wallet_is_registered", ss.Config.WalletIsRegistered))
 		case <-ctx.Done():
 			return ctx.Err()
 		}
