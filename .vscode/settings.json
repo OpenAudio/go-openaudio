@@ -1,0 +1,21 @@
+{
+  "go.testFlags": [
+    "-v",
+    "-count=1",
+    "-timeout=90s"
+  ],
+  "go.testEnvVars": {
+    // These can be overridden by environment variables if needed
+    // The tests will use defaults from utils/nodes.go if not set
+  },
+  "go.testTimeout": "90s",
+  // Enable test coverage if desired
+  "go.coverOnSave": false,
+  "go.coverOnTestPackage": false,
+  // Build tags if needed
+  "go.buildTags": "",
+  // Test output settings
+  "go.testOutputVerbose": true,
+  // Ensure tests run from the package directory (important for relative paths like ./assets/)
+  "go.testDir": "${workspaceFolder}"
+}

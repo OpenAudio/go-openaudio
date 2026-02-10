@@ -15,7 +15,6 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/hashes"
 	"github.com/OpenAudio/go-openaudio/pkg/integration_tests/utils"
-	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk/mediorum"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -32,7 +31,7 @@ func TestUploadStream(t *testing.T) {
 	privKeyPath := "./assets/demo_key.txt"
 	privKeyPath2 := "./assets/demo_key2.txt"
 
-	oap := sdk.NewOpenAudioSDK(serverAddr)
+	oap := utils.NewTestSDK(serverAddr)
 	if err := oap.ReadPrivKey(privKeyPath); err != nil {
 		require.Nil(t, err, "failed to read private key: %w", err)
 	}
@@ -337,7 +336,7 @@ func TestUploadStream(t *testing.T) {
 
 	// Test that non-owner cannot get stream URLs
 	t.Log("\n=== Testing access control ===")
-	sdk2 := sdk.NewOpenAudioSDK(serverAddr)
+	sdk2 := utils.NewTestSDK(serverAddr)
 	if err := sdk2.ReadPrivKey(privKeyPath2); err != nil {
 		require.Nil(t, err, "failed to read private key: %w", err)
 	}

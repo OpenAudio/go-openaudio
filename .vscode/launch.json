@@ -1,0 +1,49 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Test (Current File)",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${fileDirname}",
+      "args": [
+        "-test.v",
+        "-test.run",
+        "^${selectedText}$"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "showLog": true
+    },
+    {
+      "name": "Debug Test (TestUploadStream)",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/pkg/integration_tests",
+      "args": [
+        "-test.v",
+        "-test.run",
+        "^TestUploadStream$"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "showLog": true
+    },
+    {
+      "name": "Debug All Integration Tests",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/pkg/integration_tests",
+      "args": [
+        "-test.v",
+        "-test.timeout=90s"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "showLog": true
+    }
+  ]
+}

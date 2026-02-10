@@ -2,7 +2,9 @@ package utils
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -24,11 +26,32 @@ var (
 	ContentThree *sdk.OpenAudioSDK
 )
 
+// NewTestHTTPClient creates an HTTP client configured for local devnet testing.
+// It skips TLS verification to work with self-signed certificates while maintaining HTTPS protocol.
+func NewTestHTTPClient() *http.Client {
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	return &http.Client{
+		Transport: tr,
+		Timeout:   30 * time.Second,
+	}
+}
+
+// NewTestSDK creates a new SDK instance with the test HTTP client.
+// Use this when you need to create SDK instances in tests instead of using the pre-configured ones.
+func NewTestSDK(nodeURL string) *sdk.OpenAudioSDK {
+	return sdk.NewOpenAudioSDKWithClient(nodeURL, NewTestHTTPClient())
+}
+
 func init() {
-	DiscoveryOne = sdk.NewOpenAudioSDK(DiscoveryOneRPC)
-	ContentOne = sdk.NewOpenAudioSDK(ContentOneRPC)
-	ContentTwo = sdk.NewOpenAudioSDK(ContentTwoRPC)
-	ContentThree = sdk.NewOpenAudioSDK(ContentThreeRPC)
+	// Use custom HTTP client that skips TLS verification for self-signed certs in devnet
+	// This maintains HTTPS protocol (as expected by the server) but allows local testing
+	httpClient := NewTestHTTPClient()
+	DiscoveryOne = sdk.NewOpenAudioSDKWithClient(DiscoveryOneRPC, httpClient)
+	ContentOne = sdk.NewOpenAudioSDKWithClient(ContentOneRPC, httpClient)
+	ContentTwo = sdk.NewOpenAudioSDKWithClient(ContentTwoRPC, httpClient)
+	ContentThree = sdk.NewOpenAudioSDKWithClient(ContentThreeRPC, httpClient)
 }
 
 func getEnvWithDefault(key, defaultValue string) string {
