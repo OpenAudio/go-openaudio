@@ -630,13 +630,7 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 			// get all receipts by tx hash and use index to map to the correct message
 
 			// get ERNs, MEADs, and PIES by tx hash and use index to map to the correct message
-			// Retry query in case receipt was just committed (read consistency)
-			var ernReceipts, err = c.core.db.GetERNReceipts(ctx, txhash)
-			if err == nil && len(ernReceipts) == 0 {
-				// Retry once after brief delay for read consistency
-				time.Sleep(100 * time.Millisecond)
-				ernReceipts, err = c.core.db.GetERNReceipts(ctx, txhash)
-			}
+			ernReceipts, err := c.core.db.GetERNReceipts(ctx, txhash)
 			if err != nil {
 				c.core.logger.Error("error getting ERN receipts", zap.Error(err))
 			} else {
@@ -645,7 +639,6 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 					err = proto.Unmarshal(ernReceipt.RawAcknowledgment, ernAck)
 					if err != nil {
 						c.core.logger.Error("error unmarshalling ERN receipt", zap.Error(err))
-						continue
 					}
 					receipt.MessageReceipts[ernReceipt.Index] = &v1beta1.MessageReceipt{
 						MessageIndex: int32(ernReceipt.Index),
