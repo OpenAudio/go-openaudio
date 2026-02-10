@@ -119,47 +119,39 @@ func WaitForDevnetHealthy(timeout ...time.Duration) error {
 
 			// Check mediorum services have wallets registered
 			allMediorumReady := true
+			var healthResponse struct {
+				Storage struct {
+					WalletIsRegistered bool `json:"wallet_is_registered"`
+				} `json:"storage"`
+			}
+
 			for _, addr := range nodeAddresses {
-				baseURL := EnsureProtocol(addr)
-				if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+				// Ensure https:// protocol
+				baseURL := addr
+				if !strings.HasPrefix(baseURL, "https://") && !strings.HasPrefix(baseURL, "http://") {
 					baseURL = "https://" + baseURL
+				} else if strings.HasPrefix(baseURL, "http://") {
+					baseURL = strings.Replace(baseURL, "http://", "https://", 1)
 				}
 
-				healthURL := baseURL + "/health-check"
-				req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+				req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/health-check", nil)
 				if err != nil {
 					allMediorumReady = false
 					break
 				}
+
 				resp, err := client.Do(req)
 				if err != nil {
 					allMediorumReady = false
 					break
 				}
-				var healthResponse struct {
-					Storage struct {
-						WalletIsRegistered bool `json:"wallet_is_registered"`
-					} `json:"storage"`
-				}
 
-				if resp.StatusCode == 200 {
-					if err := json.NewDecoder(resp.Body).Decode(&healthResponse); err == nil {
-						if !healthResponse.Storage.WalletIsRegistered {
-							resp.Body.Close()
-							allMediorumReady = false
-							break
-						}
-						resp.Body.Close()
-					} else {
-						resp.Body.Close()
-						allMediorumReady = false
-						break
-					}
-				} else {
+				if resp.StatusCode != 200 || json.NewDecoder(resp.Body).Decode(&healthResponse) != nil || !healthResponse.Storage.WalletIsRegistered {
 					resp.Body.Close()
 					allMediorumReady = false
 					break
 				}
+				resp.Body.Close()
 			}
 
 			if allReady && allMediorumReady {
