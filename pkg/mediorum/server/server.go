@@ -665,7 +665,7 @@ func (ss *MediorumServer) startPprofServer(ctx context.Context) error {
 }
 
 func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
-	interval := 30 * time.Minute
+	interval := 10 * time.Minute
 	if os.Getenv("OPENAUDIO_ENV") == "dev" {
 		interval = 10 * time.Second
 	}

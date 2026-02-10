@@ -187,7 +187,7 @@ func toPeers(endpoints []*ethv1.ServiceEndpoint) []registrar.Peer {
 }
 
 func (u *Uptime) startPeerRefresher() {
-	interval := 30 * time.Minute
+	interval := 10 * time.Minute
 	if os.Getenv("OPENAUDIO_ENV") == "dev" {
 		interval = 10 * time.Second
 	}
