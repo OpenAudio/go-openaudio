@@ -25,7 +25,7 @@ import (
 func TestUploadStream(t *testing.T) {
 	ctx := context.Background()
 
-	require.NoError(t, utils.WaitForDevnetHealthy(30*time.Second))
+	require.NoError(t, utils.WaitForDevnetHealthy())
 
 	serverAddr := "node3.oap.devnet"
 	privKeyPath := "./assets/demo_key.txt"

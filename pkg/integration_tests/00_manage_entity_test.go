@@ -19,7 +19,7 @@ func TestEntityManager(t *testing.T) {
 	ctx := context.Background()
 	sdk := utils.DiscoveryOne
 
-	err := utils.WaitForDevnetHealthy(60 * time.Second)
+	err := utils.WaitForDevnetHealthy()
 	assert.NoError(t, err)
 
 	// Generate a test private key

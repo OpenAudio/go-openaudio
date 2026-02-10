@@ -3,7 +3,6 @@ package integration_tests
 import (
 	"context"
 	"testing"
-	"time"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
@@ -17,7 +16,7 @@ func TestRewardsLifecycle(t *testing.T) {
 	nodeUrl := utils.DiscoveryOneRPC
 
 	// Wait for devnet to be ready
-	if err := utils.WaitForDevnetHealthy(30 * time.Second); err != nil {
+	if err := utils.WaitForDevnetHealthy(); err != nil {
 		t.Fatalf("Devnet not ready: %v", err)
 	}
 

@@ -45,7 +45,7 @@ func TestDeregisterNode(t *testing.T) {
 		wsRpcUrl = "ws" + strings.TrimPrefix(wsRpcUrl, "http")
 	}
 
-	err := utils.WaitForDevnetHealthy(30 * time.Second)
+	err := utils.WaitForDevnetHealthy()
 	require.NoError(t, err)
 
 	ethrpc, err := ethclient.Dial(wsRpcUrl)

@@ -19,7 +19,7 @@ func TestBlockCreation(t *testing.T) {
 	_, err := sdk.Core.Ping(ctx, connect.NewRequest(&corev1.PingRequest{}))
 	assert.NoError(t, err)
 
-	err = utils.WaitForDevnetHealthy(30 * time.Second)
+	err = utils.WaitForDevnetHealthy()
 	assert.NoError(t, err)
 
 	var blockOne *corev1.Block

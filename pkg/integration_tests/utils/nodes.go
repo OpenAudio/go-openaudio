@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -69,8 +70,12 @@ func EnsureProtocol(endpoint string) string {
 	return endpoint
 }
 
-func WaitForDevnetHealthy(timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func WaitForDevnetHealthy(timeout ...time.Duration) error {
+	timeoutDuration := 60 * time.Second
+	if len(timeout) > 0 {
+		timeoutDuration = timeout[0]
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
 	defer cancel()
 
 	nodes := []*sdk.OpenAudioSDK{
@@ -80,14 +85,23 @@ func WaitForDevnetHealthy(timeout time.Duration) error {
 		ContentThree,
 	}
 
+	nodeAddresses := []string{
+		ContentOneRPC,
+		ContentTwoRPC,
+		ContentThreeRPC,
+	}
+
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
+
+	client := NewTestHTTPClient()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return errors.New("timed out waiting for devnet to be ready")
 		case <-ticker.C:
+			// Check core services are ready
 			allReady := true
 			for _, n := range nodes {
 				status, err := n.Core.GetStatus(context.Background(), connect.NewRequest(&corev1.GetStatusRequest{}))
@@ -99,7 +113,63 @@ func WaitForDevnetHealthy(timeout time.Duration) error {
 					break
 				}
 			}
-			if allReady {
+			if !allReady {
+				continue
+			}
+
+			// Check mediorum services have wallets registered
+			allMediorumReady := true
+			for _, addr := range nodeAddresses {
+				baseURL := EnsureProtocol(addr)
+				if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+					baseURL = "https://" + baseURL
+				}
+
+				healthURL := baseURL + "/health-check"
+				req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+				if err != nil {
+					allMediorumReady = false
+					break
+				}
+
+				resp, err := client.Do(req)
+				if err != nil {
+					allMediorumReady = false
+					break
+				}
+
+				// Parse JSON response to check wallet_is_registered
+				var healthResponse struct {
+					Data struct {
+						WalletIsRegistered bool `json:"wallet_is_registered"`
+					} `json:"data"`
+					Storage struct {
+						WalletIsRegistered bool `json:"wallet_is_registered"`
+					} `json:"storage"`
+				}
+
+				if resp.StatusCode == 200 {
+					if err := json.NewDecoder(resp.Body).Decode(&healthResponse); err == nil {
+						// Check either data.wallet_is_registered (legacy) or storage.wallet_is_registered (new format)
+						if !healthResponse.Data.WalletIsRegistered && !healthResponse.Storage.WalletIsRegistered {
+							resp.Body.Close()
+							allMediorumReady = false
+							break
+						}
+						resp.Body.Close()
+					} else {
+						resp.Body.Close()
+						allMediorumReady = false
+						break
+					}
+				} else {
+					resp.Body.Close()
+					allMediorumReady = false
+					break
+				}
+			}
+
+			if allReady && allMediorumReady {
 				return nil
 			}
 		}
