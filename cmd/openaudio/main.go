@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"connectrpc.com/grpcreflect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/console"
 	"github.com/OpenAudio/go-openaudio/pkg/core"
@@ -616,6 +617,24 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 		if cfg.EnableETL && etlService != nil {
 			etlPath, etlHandler := etlv1connect.NewETLServiceHandler(etlService, connectJSONOpt)
 			grpcServerGroup.Any(etlPath+"*", echo.WrapHandler(etlHandler))
+		}
+
+		if cfg.EnableGRPCReflection {
+			services := []string{
+				corev1connect.CoreServiceName,
+				storagev1connect.StorageServiceName,
+				systemv1connect.SystemServiceName,
+				ethv1connect.EthServiceName,
+			}
+			if cfg.EnableETL && etlService != nil {
+				services = append(services, etlv1connect.ETLServiceName)
+			}
+			reflector := grpcreflect.NewStaticReflector(services...)
+			reflectV1Path, reflectV1Handler := grpcreflect.NewHandlerV1(reflector)
+			grpcServerGroup.Any(reflectV1Path+"*", echo.WrapHandler(reflectV1Handler))
+			reflectV1AlphaPath, reflectV1AlphaHandler := grpcreflect.NewHandlerV1Alpha(reflector)
+			grpcServerGroup.Any(reflectV1AlphaPath+"*", echo.WrapHandler(reflectV1AlphaHandler))
+			logger.Info("gRPC reflection enabled")
 		}
 
 		// Create h2c-compatible server

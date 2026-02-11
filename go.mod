@@ -36,6 +36,7 @@ require (
 
 require (
 	connectrpc.com/connect v1.18.1
+	connectrpc.com/grpcreflect v1.3.0
 	github.com/Oudwins/tailwind-merge-go v0.2.1
 	github.com/axiomhq/axiom-go v0.23.0
 	github.com/bdragon300/tusgo v0.1.2

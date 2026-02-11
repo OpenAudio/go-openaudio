@@ -130,6 +130,7 @@ type Config struct {
 	SkipEthRegistration             bool
 	EnableETL                       bool
 	EnableExplorer                  bool
+	EnableGRPCReflection            bool
 }
 
 func (c *Config) IsDev() bool {
@@ -188,6 +189,7 @@ func ReadConfig() (*Config, error) {
 	cfg.SkipEthRegistration = GetEnvWithDefault("skipEthRegistration", "false") == "true"
 	cfg.EnableETL = GetEnvWithDefault("OPENAUDIO_ETL_ENABLED", "false") == "true"
 	cfg.EnableExplorer = GetEnvWithDefault("OPENAUDIO_EXPLORER_ENABLED", "false") == "true"
+	cfg.EnableGRPCReflection = GetEnvWithDefault("OPENAUDIO_GRPC_REFLECTION_ENABLED", "false") == "true"
 
 	ssRpcServers := ""
 	switch cfg.Environment {

@@ -65,6 +65,8 @@ services:
       - ./go.mod:/app/go.mod
       - ./go.sum:/app/go.sum
       - ./tmp/oap1-data:/data
+    ports:
+      - "50051:50051"
     profiles:
       - openaudio-dev
       - integration-tests
