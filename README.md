@@ -2,8 +2,6 @@
 
 [![license](https://img.shields.io/github/license/OpenAudio/go-openaudio?style=for-the-badge)](https://github.com/OpenAudio/go-openaudio/blob/main/LICENSE) [![Docs](https://img.shields.io/badge/docs-openaudio.org-lightgrey?style=for-the-badge)](https://docs.openaudio.org) [![releases](https://img.shields.io/github/v/release/OpenAudio/go-openaudio?style=for-the-badge)](https://github.com/OpenAudio/go-openaudio/releases/latest) [![Dockerhub](https://img.shields.io/docker/v/openaudio/go-openaudio?sort=semver&style=for-the-badge&label=Docker)](https://hub.docker.com/r/openaudio/go-openaudio)
 
-
-
 > A golang implementation of the Open Audio Protocol.
 
 ## Quickstart
@@ -21,9 +19,7 @@ docker run --rm -it \
 open https://localhost/console/overview
 ```
 
-
-To run a validator and secure the network, visit [docs.openaudio.org](https://docs.openaudio.org/tutorials/run-a-node).
-
+To run and stake a validator and secure the network, visit [docs.openaudio.org](https://docs.openaudio.org/tutorials/run-a-node).
 
 ## Local Development
 
@@ -31,9 +27,9 @@ To run a validator and secure the network, visit [docs.openaudio.org](https://do
 
 Ensure the following are installed:
 
-* Docker
-* Docker Compose
-* Go v1.25
+- Docker
+- Docker Compose
+- Go v1.25
 
 The remaining dependencies can then be automatically installed with `make`:
 
@@ -140,11 +136,13 @@ make test-mediorum
 ```
 
 Run only unittests
+
 ```bash
 make test-unit
 ```
 
 Run only integration tests
+
 ```bash
 make test-integration
 ```
@@ -159,7 +157,7 @@ OPENAUDIO_ETL_ENABLED=true
 
 ### Explorer
 
-The Explorer provides a web-based interface to browse blocks, transactions, validators, and other  data. If enabled, the explorer runs at the site root, e.g. https://node1.oap.devnet/. Explorer requires ETL.
+The Explorer provides a web-based interface to browse blocks, transactions, validators, and other data. If enabled, the explorer runs at the site root, e.g. https://node1.oap.devnet/. Explorer requires ETL.
 
 ```bash
 OPENAUDIO_ETL_ENABLED=true
