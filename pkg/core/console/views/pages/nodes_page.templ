@@ -9,6 +9,7 @@ import (
 type NodesView struct {
 	Nodes               []db.CoreValidator
 	CoreValidatorsCount int
+	ValidatorNodesCount int // non-jailed core_validators
 	EthEndpointsCount   int
 }
 
@@ -16,7 +17,11 @@ templ (p *Pages) NodesPageHTML(data *NodesView) {
 	@p.layout.SiteFrame() {
 		<div class="space-y-6">
 			<h1 class="text-3xl font-bold">Validators</h1>
-			<div class="grid grid-cols-2 gap-4">
+			<div class="grid grid-cols-2 gap-4 md:grid-cols-3">
+				<div class="bg-tertiary rounded-lg p-4">
+					<div class="text-sm text-secondary">Validator Nodes</div>
+					<div class="text-2xl font-semibold">{ fmt.Sprintf("%d", data.ValidatorNodesCount) }</div>
+				</div>
 				<div class="bg-tertiary rounded-lg p-4">
 					<div class="text-sm text-secondary">Chain State Nodes</div>
 					<div class="text-2xl font-semibold">{ fmt.Sprintf("%d", data.CoreValidatorsCount) }</div>

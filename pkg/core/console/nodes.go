@@ -51,6 +51,13 @@ func (con *Console) nodesPage(c echo.Context) error {
 		return err
 	}
 
+	validatorCount := 0
+	for _, n := range nodes {
+		if !n.Jailed {
+			validatorCount++
+		}
+	}
+
 	ethCount := 0
 	if resp, err := con.eth.GetRegisteredEndpoints(ctx, connect.NewRequest(&ethv1.GetRegisteredEndpointsRequest{})); err == nil && resp.Msg != nil {
 		ethCount = len(resp.Msg.Endpoints)
@@ -59,6 +66,7 @@ func (con *Console) nodesPage(c echo.Context) error {
 	return con.views.RenderNodesView(c, &pages.NodesView{
 		Nodes:               nodes,
 		CoreValidatorsCount: len(nodes),
+		ValidatorNodesCount: validatorCount,
 		EthEndpointsCount:   ethCount,
 	})
 }

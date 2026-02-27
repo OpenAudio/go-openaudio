@@ -49,7 +49,7 @@ async function loadMatrix() {
       }));
       var name = r.base.replace(/^https?:\/\//, '').replace(/\/$/, '');
       var safeBase = r.base.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-      html += '<tr><td class="matrix-row-header font-mono sticky left-0">' + (r.err ? name + ' (err)' : name) + '<span class="matrix-tooltip">' + safeBase + '</span></td>';
+      html += '<tr><td class="matrix-row-header font-mono sticky left-0">' + name + '<span class="matrix-tooltip">' + safeBase + '</span></td>';
       var rowBaseNorm = r.base.toLowerCase().replace(/\/$/, '');
       refList.forEach(function (refEp) {
         var n = refEp.toLowerCase().replace(/\/$/, '');
