@@ -104,7 +104,7 @@ func (q *Queries) GetAllEthAddressesOfRegisteredNodes(ctx context.Context) ([]st
 }
 
 const getAllRegisteredNodes = `-- name: GetAllRegisteredNodes :many
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, jailed, comet_pub_key
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key, jailed
 from core_validators
 where coalesce(jailed, false) = false
 `
@@ -127,8 +127,8 @@ func (q *Queries) GetAllRegisteredNodes(ctx context.Context) ([]CoreValidator, e
 			&i.EthBlock,
 			&i.NodeType,
 			&i.SpID,
-			&i.Jailed,
 			&i.CometPubKey,
+			&i.Jailed,
 		); err != nil {
 			return nil, err
 		}
@@ -141,7 +141,7 @@ func (q *Queries) GetAllRegisteredNodes(ctx context.Context) ([]CoreValidator, e
 }
 
 const getAllRegisteredNodesIncludingJailed = `-- name: GetAllRegisteredNodesIncludingJailed :many
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, jailed, comet_pub_key
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key, jailed
 from core_validators
 `
 
@@ -163,8 +163,8 @@ func (q *Queries) GetAllRegisteredNodesIncludingJailed(ctx context.Context) ([]C
 			&i.EthBlock,
 			&i.NodeType,
 			&i.SpID,
-			&i.Jailed,
 			&i.CometPubKey,
+			&i.Jailed,
 		); err != nil {
 			return nil, err
 		}
@@ -177,7 +177,7 @@ func (q *Queries) GetAllRegisteredNodesIncludingJailed(ctx context.Context) ([]C
 }
 
 const getAllRegisteredNodesSorted = `-- name: GetAllRegisteredNodesSorted :many
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, jailed, comet_pub_key
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key, jailed
 from core_validators
 where coalesce(jailed, false) = false
 order by comet_address
@@ -201,8 +201,8 @@ func (q *Queries) GetAllRegisteredNodesSorted(ctx context.Context) ([]CoreValida
 			&i.EthBlock,
 			&i.NodeType,
 			&i.SpID,
-			&i.Jailed,
 			&i.CometPubKey,
+			&i.Jailed,
 		); err != nil {
 			return nil, err
 		}
@@ -1494,7 +1494,7 @@ func (q *Queries) GetMEADReceipts(ctx context.Context, txHash string) ([]GetMEAD
 }
 
 const getNodeByEndpoint = `-- name: GetNodeByEndpoint :one
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, jailed, comet_pub_key
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key, jailed
 from core_validators
 where endpoint = $1
 limit 1
@@ -1512,14 +1512,14 @@ func (q *Queries) GetNodeByEndpoint(ctx context.Context, endpoint string) (CoreV
 		&i.EthBlock,
 		&i.NodeType,
 		&i.SpID,
-		&i.Jailed,
 		&i.CometPubKey,
+		&i.Jailed,
 	)
 	return i, err
 }
 
 const getNodesByEndpoints = `-- name: GetNodesByEndpoints :many
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, jailed, comet_pub_key
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key, jailed
 from core_validators
 where endpoint = any($1::text [])
 `
@@ -1542,8 +1542,8 @@ func (q *Queries) GetNodesByEndpoints(ctx context.Context, dollar_1 []string) ([
 			&i.EthBlock,
 			&i.NodeType,
 			&i.SpID,
-			&i.Jailed,
 			&i.CometPubKey,
+			&i.Jailed,
 		); err != nil {
 			return nil, err
 		}
@@ -1857,7 +1857,7 @@ func (q *Queries) GetRecordingsForTrack(ctx context.Context, trackID string) ([]
 }
 
 const getRegisteredNodeByCometAddress = `-- name: GetRegisteredNodeByCometAddress :one
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, jailed, comet_pub_key
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key, jailed
 from core_validators
 where comet_address = $1
 `
@@ -1874,14 +1874,14 @@ func (q *Queries) GetRegisteredNodeByCometAddress(ctx context.Context, cometAddr
 		&i.EthBlock,
 		&i.NodeType,
 		&i.SpID,
-		&i.Jailed,
 		&i.CometPubKey,
+		&i.Jailed,
 	)
 	return i, err
 }
 
 const getRegisteredNodeByEthAddress = `-- name: GetRegisteredNodeByEthAddress :one
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, jailed, comet_pub_key
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key, jailed
 from core_validators
 where eth_address = $1
 `
@@ -1898,14 +1898,14 @@ func (q *Queries) GetRegisteredNodeByEthAddress(ctx context.Context, ethAddress 
 		&i.EthBlock,
 		&i.NodeType,
 		&i.SpID,
-		&i.Jailed,
 		&i.CometPubKey,
+		&i.Jailed,
 	)
 	return i, err
 }
 
 const getRegisteredNodesByCometAddresses = `-- name: GetRegisteredNodesByCometAddresses :many
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, jailed, comet_pub_key
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key, jailed
 from core_validators
 where comet_address = any($1::text [])
 `
@@ -1928,8 +1928,8 @@ func (q *Queries) GetRegisteredNodesByCometAddresses(ctx context.Context, dollar
 			&i.EthBlock,
 			&i.NodeType,
 			&i.SpID,
-			&i.Jailed,
 			&i.CometPubKey,
+			&i.Jailed,
 		); err != nil {
 			return nil, err
 		}
@@ -1942,7 +1942,7 @@ func (q *Queries) GetRegisteredNodesByCometAddresses(ctx context.Context, dollar
 }
 
 const getRegisteredNodesByEthAddresses = `-- name: GetRegisteredNodesByEthAddresses :many
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, jailed, comet_pub_key
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key, jailed
 from core_validators
 where eth_address = any($1::text [])
 `
@@ -1965,8 +1965,8 @@ func (q *Queries) GetRegisteredNodesByEthAddresses(ctx context.Context, dollar_1
 			&i.EthBlock,
 			&i.NodeType,
 			&i.SpID,
-			&i.Jailed,
 			&i.CometPubKey,
+			&i.Jailed,
 		); err != nil {
 			return nil, err
 		}
@@ -1979,7 +1979,7 @@ func (q *Queries) GetRegisteredNodesByEthAddresses(ctx context.Context, dollar_1
 }
 
 const getRegisteredNodesByType = `-- name: GetRegisteredNodesByType :many
-select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, jailed, comet_pub_key
+select rowid, pub_key, endpoint, eth_address, comet_address, eth_block, node_type, sp_id, comet_pub_key, jailed
 from core_validators
 where node_type = $1
   and coalesce(jailed, false) = false
@@ -2003,8 +2003,8 @@ func (q *Queries) GetRegisteredNodesByType(ctx context.Context, nodeType string)
 			&i.EthBlock,
 			&i.NodeType,
 			&i.SpID,
-			&i.Jailed,
 			&i.CometPubKey,
+			&i.Jailed,
 		); err != nil {
 			return nil, err
 		}
@@ -2718,6 +2718,7 @@ func (q *Queries) TotalTxResults(ctx context.Context) (int64, error) {
 const totalValidators = `-- name: TotalValidators :one
 select count(*)
 from core_validators
+where coalesce(jailed, false) = false
 `
 
 func (q *Queries) TotalValidators(ctx context.Context) (int64, error) {

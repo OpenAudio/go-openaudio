@@ -301,8 +301,8 @@ type CoreValidator struct {
 	EthBlock     string
 	NodeType     string
 	SpID         string
-	Jailed       bool
 	CometPubKey  string
+	Jailed       bool
 }
 
 type ManagementKey struct {

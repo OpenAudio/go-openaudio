@@ -254,7 +254,8 @@ where tx_type = $1;
 
 -- name: TotalValidators :one
 select count(*)
-from core_validators;
+from core_validators
+where coalesce(jailed, false) = false;
 
 -- name: TxsPerHour :many
 select date_trunc('hour', created_at)::timestamp as hour,

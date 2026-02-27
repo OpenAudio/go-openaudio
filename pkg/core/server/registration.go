@@ -61,9 +61,11 @@ func (s *Server) isValidRegisterNodeAttestation(ctx context.Context, tx *v1.Sign
 		return fmt.Errorf("address does not match public key: %s %s", vrPubKey.Address(), vr.GetCometAddress())
 	}
 
-	// ensure comet address is not already taken
-	if _, err := s.db.GetRegisteredNodeByCometAddress(context.Background(), vr.GetCometAddress()); !errors.Is(err, pgx.ErrNoRows) {
+	// ensure comet address is not already taken by an active (non-jailed) validator
+	if existing, err := s.db.GetRegisteredNodeByCometAddress(context.Background(), vr.GetCometAddress()); err == nil && !existing.Jailed {
 		return fmt.Errorf("address '%s' is already registered on comet, node %s attempted to acquire it", vr.GetCometAddress(), vr.GetEndpoint())
+	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("error checking comet address registration: %v", err)
 	}
 
 	// validate age of request
@@ -161,6 +163,9 @@ func (s *Server) isValidDeregisterNodeAttestation(ctx context.Context, tx *v1.Si
 	if err != nil {
 		return fmt.Errorf("error getting eth address from node deregistration attestation: %v", err)
 	}
+	if node.Jailed {
+		return fmt.Errorf("validator '%s' is already jailed", addr)
+	}
 
 	// validate signers
 	enough, err := s.attestationHasEnoughSigners(ctx, signers, vdPubKey.Bytes(), s.config.AttDeregistrationRSize, s.config.AttDeregistrationMin, node.EthAddress)
@@ -200,9 +205,12 @@ func (s *Server) isValidDeregisterMisbehavingNodeTx(tx *v1.SignedTransaction, mi
 
 	addr := vd.GetCometAddress()
 
-	_, err := s.db.GetRegisteredNodeByCometAddress(context.Background(), addr)
+	existingNode, err := s.db.GetRegisteredNodeByCometAddress(context.Background(), addr)
 	if err != nil {
 		return fmt.Errorf("not able to find registered node: %v", err)
+	}
+	if existingNode.Jailed {
+		return fmt.Errorf("validator '%s' is already jailed", addr)
 	}
 
 	if len(vd.GetPubKey()) == 0 {

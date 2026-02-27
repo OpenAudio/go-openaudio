@@ -211,6 +211,9 @@ func (s *Server) isValidStorageProofTx(ctx context.Context, tx *v1.SignedTransac
 	if err != nil {
 		return fmt.Errorf("could not get validator for address '%s': %v", address, err)
 	}
+	if node.Jailed {
+		return fmt.Errorf("storage proof from jailed validator '%s'", address)
+	}
 	if !strings.EqualFold(node.CometAddress, sp.Address) {
 		return fmt.Errorf("proof is for '%s' but was signed by '%s'", sp.Address, node.CometAddress)
 	}
@@ -337,6 +340,9 @@ func (s *Server) finalizeStorageProofVerification(ctx context.Context, tx *v1.Si
 		node, err := qtx.GetRegisteredNodeByCometAddress(ctx, p.Address)
 		if err != nil {
 			return nil, fmt.Errorf("could not fetch node with address %s: %v", p.Address, err)
+		}
+		if node.Jailed {
+			return nil, fmt.Errorf("prover node at address %s is jailed", p.Address)
 		}
 
 		sigBytes, err := base64.StdEncoding.DecodeString(p.ProofSignature.String)
