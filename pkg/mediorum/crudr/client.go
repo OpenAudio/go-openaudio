@@ -60,9 +60,6 @@ func (p *PeerClient) Send(data []byte) bool {
 }
 
 func (p *PeerClient) startSender(ctx context.Context) error {
-	httpClient := http.Client{
-		Timeout: 5 * time.Second,
-	}
 	for {
 		select {
 		case data, ok := <-p.outbox:
@@ -83,7 +80,7 @@ func (p *PeerClient) startSender(ctx context.Context) error {
 				continue
 			}
 
-			resp, err := httpClient.Do(req)
+			resp, err := p.crudr.httpClient.Do(req)
 			if err != nil {
 				p.logger.Debug("push failed", "host", p.Host, "err", err)
 				continue
@@ -137,10 +134,6 @@ func (p *PeerClient) doSweep(ctx context.Context) error {
 
 	endpoint := host + bulkEndpoint + "?after=" + lastUlid
 
-	client := &http.Client{
-		Timeout: time.Minute,
-	}
-
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %v", err)
@@ -148,7 +141,7 @@ func (p *PeerClient) doSweep(ctx context.Context) error {
 
 	req.Header.Set("User-Agent", "mediorum "+p.selfHost)
 
-	resp, err := client.Do(req)
+	resp, err := p.crudr.httpClient.Do(req)
 	if err != nil {
 		p.Seeded = true // we can't reach this peer, so we're not able to seed any further
 		return fmt.Errorf("request failed: %v", err)

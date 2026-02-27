@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"strings"
 	"sync"
@@ -38,9 +39,10 @@ type Crudr struct {
 	DB           *gorm.DB
 	myPrivateKey *ecdsa.PrivateKey
 
-	host    string
-	logger  *zap.Logger
-	typeMap map[string]reflect.Type
+	host       string
+	logger     *zap.Logger
+	typeMap    map[string]reflect.Type
+	httpClient *http.Client
 
 	peerClients []*PeerClient
 
@@ -89,7 +91,7 @@ func migrateOps(db *gorm.DB) error {
 	return nil
 }
 
-func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db *gorm.DB, parentLifecycle *lifecycle.Lifecycle, logger *zap.Logger) *Crudr {
+func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db *gorm.DB, parentLifecycle *lifecycle.Lifecycle, logger *zap.Logger, httpClient *http.Client) *Crudr {
 	selfHost = httputil.RemoveTrailingSlash(strings.ToLower(selfHost))
 
 	err := migrateOps(db)
@@ -102,13 +104,18 @@ func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db
 		panic(err)
 	}
 
+	if httpClient == nil {
+		httpClient = &http.Client{}
+	}
+
 	c := &Crudr{
 		DB:           db,
 		myPrivateKey: myPrivateKey,
 
-		host:    selfHost,
-		logger:  logger.With(zap.String("module", "crud")),
-		typeMap: map[string]reflect.Type{},
+		host:       selfHost,
+		logger:     logger.With(zap.String("module", "crud")),
+		typeMap:    map[string]reflect.Type{},
+		httpClient: httpClient,
 
 		peerClients: make([]*PeerClient, len(peerHosts)),
 		lc:          lifecycle.NewFromLifecycle(parentLifecycle, "crudr lifecycle"),

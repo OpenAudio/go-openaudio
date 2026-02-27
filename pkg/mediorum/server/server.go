@@ -271,25 +271,6 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	// lifecycle
 	mediorumLifecycle := lifecycle.NewFromLifecycle(lc, "mediorum")
 
-	// crud
-	peerHosts := []string{}
-	allHosts := []string{}
-	for _, peer := range config.Peers {
-		allHosts = append(allHosts, peer.Host)
-		if peer.Host != config.Self.Host {
-			peerHosts = append(peerHosts, peer.Host)
-		}
-	}
-
-	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db, mediorumLifecycle, logger)
-	dbMigrate(crud, config.Self.Host)
-
-	deadHosts := config.DeadHosts
-	if deadHosts == nil {
-		deadHosts = []string{}
-	}
-	rendezvousHasher := common.NewRendezvousHasher(allHosts, deadHosts)
-
 	// HTTP transport for peer requests - skip TLS verify in dev with self-signed certs for replication/upload-scroll to work
 	var peerTransport http.RoundTripper = http.DefaultTransport
 	if config.Env == "dev" && os.Getenv("OPENAUDIO_TLS_SELF_SIGNED") == "true" {
@@ -303,6 +284,25 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		Transport: peerTransport,
 		Timeout:   3 * time.Minute, // covers blob replication and pull
 	}
+
+	// crud
+	peerHosts := []string{}
+	allHosts := []string{}
+	for _, peer := range config.Peers {
+		allHosts = append(allHosts, peer.Host)
+		if peer.Host != config.Self.Host {
+			peerHosts = append(peerHosts, peer.Host)
+		}
+	}
+
+	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db, mediorumLifecycle, logger, peerHTTPClient)
+	dbMigrate(crud, config.Self.Host)
+
+	deadHosts := config.DeadHosts
+	if deadHosts == nil {
+		deadHosts = []string{}
+	}
+	rendezvousHasher := common.NewRendezvousHasher(allHosts, deadHosts)
 
 	// req.cool http client for upload scroll, hostGetBlobInfo, etc.
 	reqClient := req.C().

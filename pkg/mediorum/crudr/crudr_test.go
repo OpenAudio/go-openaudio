@@ -27,7 +27,7 @@ func TestCrudr(t *testing.T) {
 	assert.NoError(t, err)
 
 	z := zap.NewNop()
-	c := New("host1", nil, nil, db, lifecycle.NewLifecycle(context.Background(), "crudr test", z), z).RegisterModels(&TestBlobThing{})
+	c := New("host1", nil, nil, db, lifecycle.NewLifecycle(context.Background(), "crudr test", z), z, nil).RegisterModels(&TestBlobThing{})
 
 	// table name
 	{
