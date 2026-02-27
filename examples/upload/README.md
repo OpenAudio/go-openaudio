@@ -24,10 +24,7 @@ cd examples/upload && go run .
 
 ## Output
 
-Prints the track ID, CID, and signers. The track is streamable at:
-
 ```
-https://node1.oap.devnet/tracks/stream/{track_id}?signature=<signed_by_signer>
+uploaded cid: <transcoded_cid>
+tx receipt: <tx_hash>
 ```
-
-Use the programmable-distribution example to get a signed stream URL.

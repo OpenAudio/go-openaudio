@@ -124,16 +124,13 @@ func main() {
 		},
 	}
 
-	_, err = auds.Core.SendTransaction(ctx, connect.NewRequest(&corev1.SendTransactionRequest{
+	submitRes, err := auds.Core.SendTransaction(ctx, connect.NewRequest(&corev1.SendTransactionRequest{
 		Transaction: stx,
 	}))
 	if err != nil {
 		log.Fatalf("failed to send ManageEntity tx: %v", err)
 	}
 
-	fmt.Printf("Track created via Entity Manager\n")
-	fmt.Printf("  Track ID: %d\n", entityID)
-	fmt.Printf("  CID: %s\n", transcodedCID)
-	fmt.Printf("  Signers: [%s]\n", ownerAddress)
-	fmt.Printf("\nStream at: https://%s/tracks/stream/%d?signature=<signed_by_signer>\n", serverAddr, entityID)
+	fmt.Printf("uploaded cid: %s\n", transcodedCID)
+	fmt.Printf("tx receipt: %s\n", submitRes.Msg.Transaction.Hash)
 }

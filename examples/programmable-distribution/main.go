@@ -19,9 +19,9 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/hashes"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk/mediorum"
-	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
@@ -33,65 +33,80 @@ func main() {
 	serverPort := flag.String("port", "8800", "Server port")
 	flag.Parse()
 
-	// Worker key - in production this would be in Cloudflare Worker env
-	workerKey, err := crypto.GenerateKey()
+	signerKey, err := crypto.GenerateKey()
 	if err != nil {
-		log.Fatalf("Failed to generate worker key: %v", err)
+		log.Fatalf("Failed to generate signer key: %v", err)
 	}
 
 	auds := sdk.NewOpenAudioSDK(*validatorEndpoint)
 	if err := auds.Init(ctx); err != nil {
 		log.Fatalf("failed to init SDK: %v", err)
 	}
-	auds.SetPrivKey(workerKey)
+	auds.SetPrivKey(signerKey)
 
-	// Upload track with worker as signer (worker can grant stream access)
-	trackID, err := uploadTrackExample(ctx, auds)
+	signerAddress := auds.Address()
+
+	fmt.Printf("\n\nYour uploaded track is only accessible with a signature from %s. This local server signs for you. Modify its logic to control who can stream the file back.\n\n", signerAddress)
+
+	// Upload track with signer (signer can grant stream access)
+	cid, trackID, err := uploadTrackExample(ctx, auds)
 	if err != nil {
 		log.Fatalf("upload failed: %v", err)
 	}
 
+	nodeBaseURL := fmt.Sprintf("https://%s", *validatorEndpoint)
+
+	log.Printf("Track ID: %d | Stream at http://localhost:%s/stream (no-signature at /stream-no-signature)", trackID, *serverPort)
+	log.Printf("Running local server, Ctrl-C to close.")
+
 	handler := &StreamHandler{
-		privateKey:   workerKey,
+		privateKey:  signerKey,
 		trackID:     trackID,
-		nodeBaseURL: fmt.Sprintf("https://%s", *validatorEndpoint),
+		cid:         cid,
+		nodeBaseURL: nodeBaseURL,
 	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/stream", handler)
+	mux.Handle("/stream-no-signature", &StreamNoSignatureHandler{trackID: trackID, nodeBaseURL: nodeBaseURL})
 
-	log.Printf("Server starting on :%s", *serverPort)
-	log.Printf("Track ID: %d - Stream at http://localhost:%s/stream?track_id=%d", trackID, *serverPort, trackID)
 	if err := http.ListenAndServe(":"+*serverPort, mux); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
 }
 
-type StreamHandler struct {
-	privateKey   *ecdsa.PrivateKey
+type StreamNoSignatureHandler struct {
 	trackID     int64
 	nodeBaseURL string
 }
 
+func (h *StreamNoSignatureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	streamURL := fmt.Sprintf("%s/tracks/stream/%d", h.nodeBaseURL, h.trackID)
+	http.Redirect(w, r, streamURL, http.StatusFound)
+}
+
+type StreamHandler struct {
+	privateKey  *ecdsa.PrivateKey
+	trackID     int64
+	cid         string
+	nodeBaseURL string
+}
+
 func (h *StreamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	trackIDStr := r.URL.Query().Get("track_id")
-	if trackIDStr == "" {
-		http.Error(w, "track_id required", http.StatusBadRequest)
-		return
-	}
-	trackID, err := strconv.ParseInt(trackIDStr, 10, 64)
-	if err != nil {
-		http.Error(w, "invalid track_id", http.StatusBadRequest)
-		return
+	trackID := h.trackID
+	if trackIDParam := r.URL.Query().Get("track_id"); trackIDParam != "" {
+		if tid, err := strconv.ParseInt(trackIDParam, 10, 64); err == nil {
+			trackID = tid
+		}
 	}
 
-	// Generate signature for this track
+	// Generate signature for this track ID
 	sigData := &signature.SignatureData{
-		TrackId:     trackID,
+		Cid:         h.cid,
 		Timestamp:   time.Now().UnixMilli(),
-		UploadID:    trackIDStr,
-		Cid:         "",
+		UploadID:    "",
 		ShouldCache: 0,
+		TrackId:     trackID,
 		UserID:      0,
 	}
 	sigStr, err := signature.GenerateQueryStringFromSignatureData(sigData, h.privateKey)
@@ -104,28 +119,28 @@ func (h *StreamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, streamURL, http.StatusFound)
 }
 
-func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK) (int64, error) {
+func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK) (string, int64, error) {
 	audioPath := "../../pkg/integration_tests/assets/anxiety-upgrade.mp3"
 	audioFile, err := os.Open(audioPath)
 	if err != nil {
-		return 0, fmt.Errorf("open audio: %w", err)
+		return "", 0, fmt.Errorf("open audio: %w", err)
 	}
 	defer audioFile.Close()
 
 	fileCID, err := hashes.ComputeFileCID(audioFile)
 	if err != nil {
-		return 0, fmt.Errorf("compute CID: %w", err)
+		return "", 0, fmt.Errorf("compute CID: %w", err)
 	}
 	audioFile.Seek(0, 0)
 
 	uploadSigData := &corev1.UploadSignature{Cid: fileCID}
 	uploadSigBytes, err := proto.Marshal(uploadSigData)
 	if err != nil {
-		return 0, fmt.Errorf("marshal upload sig: %w", err)
+		return "", 0, fmt.Errorf("marshal upload sig: %w", err)
 	}
 	uploadSignature, err := common.EthSign(auds.PrivKey(), uploadSigBytes)
 	if err != nil {
-		return 0, fmt.Errorf("sign upload: %w", err)
+		return "", 0, fmt.Errorf("sign upload: %w", err)
 	}
 
 	uploadOpts := &mediorum.UploadOptions{
@@ -137,18 +152,18 @@ func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK) (int64, err
 	}
 	uploads, err := auds.Mediorum.UploadFile(ctx, audioFile, "anxiety-upgrade.mp3", uploadOpts)
 	if err != nil {
-		return 0, fmt.Errorf("upload file: %w", err)
+		return "", 0, fmt.Errorf("upload file: %w", err)
 	}
 	if len(uploads) == 0 {
-		return 0, fmt.Errorf("no uploads returned")
+		return "", 0, fmt.Errorf("no uploads returned")
 	}
 	upload := uploads[0]
 	if upload.Status != "done" {
-		return 0, fmt.Errorf("upload failed: %s", upload.Error)
+		return "", 0, fmt.Errorf("upload failed: %s", upload.Error)
 	}
 
 	transcodedCID := upload.GetTranscodedCID()
-	workerAddress := auds.Address()
+	signerAddress := auds.Address()
 
 	entityID := time.Now().UnixNano() % 1000000
 	if entityID < 0 {
@@ -156,17 +171,17 @@ func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK) (int64, err
 	}
 
 	metadata := map[string]interface{}{
-		"title":         "Programmable Distribution Demo",
-		"genre":         "Electronic",
-		"release_date":  time.Now().Format("2006-01-02"),
-		"cid":           transcodedCID,
+		"title":        "Programmable Distribution Demo",
+		"genre":        "Electronic",
+		"release_date": time.Now().Format("2006-01-02"),
+		"cid":          transcodedCID,
 		"stream_conditions": map[string]interface{}{
-			"signers": []string{workerAddress},
+			"signers": []string{signerAddress},
 		},
 	}
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
-		return 0, fmt.Errorf("marshal metadata: %w", err)
+		return "", 0, fmt.Errorf("marshal metadata: %w", err)
 	}
 
 	manageEntity := &corev1.ManageEntityLegacy{
@@ -180,10 +195,10 @@ func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK) (int64, err
 	}
 	mockConfig := &config.Config{
 		AcdcEntityManagerAddress: config.DevAcdcAddress,
-		AcdcChainID:             config.DevAcdcChainID,
+		AcdcChainID:              config.DevAcdcChainID,
 	}
 	if err := server.SignManageEntity(mockConfig, manageEntity, auds.PrivKey()); err != nil {
-		return 0, fmt.Errorf("sign ManageEntity: %w", err)
+		return "", 0, fmt.Errorf("sign ManageEntity: %w", err)
 	}
 
 	stx := &corev1.SignedTransaction{
@@ -196,8 +211,8 @@ func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK) (int64, err
 		Transaction: stx,
 	}))
 	if err != nil {
-		return 0, fmt.Errorf("send ManageEntity: %w", err)
+		return "", 0, fmt.Errorf("send ManageEntity: %w", err)
 	}
 
-	return entityID, nil
+	return transcodedCID, entityID, nil
 }

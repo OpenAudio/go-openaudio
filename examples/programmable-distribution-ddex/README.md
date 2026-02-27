@@ -1,12 +1,13 @@
 # Programmable Distribution Example (DDEX/ERN)
 
-This example demonstrates geolocation-based content distribution using the OpenAudio protocol. The service uploads a track and provides streaming access only to requests from a specific city (Bozeman, by default).
+This example demonstrates programmable distribution using DDEX ERN. Same flow as the Entity Manager example, but uploads via DDEX instead of ManageEntity.
 
 ## How it Works
 
-1. Uploads a demo track to the OpenAudio network
-2. Runs an HTTP server that filters stream access by geolocation
-3. Returns stream URLs only to requests from the allowed city
+1. Uploads a demo track via DDEX ERN
+2. Runs an HTTP server that signs stream URLs via GetStreamURLs
+3. On `GET /stream`, signs and redirects to the content node's cidstream URL
+4. On `GET /stream-no-signature`, redirects without signature (returns 401 from node)
 
 ## Setup
 
@@ -18,37 +19,27 @@ make up
 
 ## Usage
 
-Run the example:
-
 ```bash
-make example/programmable-distribution
+make example/programmable-distribution-ddex
 ```
 
-Or run directly with custom flags:
+Or with flags:
 
 ```bash
-cd examples/programmable-distribution
-go run . -validator node3.openaudio.devnet -port 8800
+cd examples/programmable-distribution-ddex && go run . -validator node1.oap.devnet -port 8800
 ```
-
-### Flags
-
-- `-validator` - Validator endpoint URL (default: `node3.openaudio.devnet`)
-- `-port` - Server port (default: `8800`)
 
 ## Testing
 
-Access the streaming endpoint with a city parameter:
-
 ```bash
-# Allowed city (Bozeman)
-curl "http://localhost:8800/stream-access?city=Bozeman"
+# Hit the worker, which signs and redirects to the stream
+curl -L "http://localhost:8800/stream"
 
-# Blocked city
-curl "http://localhost:8800/stream-access?city=Seattle"
+# No-signature route - redirects to node without signature (returns 401)
+curl -L "http://localhost:8800/stream-no-signature"
 ```
 
 ## Requirements
 
-- Running Audius validator endpoint
+- Running OpenAudio validator endpoint
 - Demo audio file is read from `../../pkg/integration_tests/assets/anxiety-upgrade.mp3`

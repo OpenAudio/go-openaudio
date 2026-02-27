@@ -205,5 +205,5 @@ func main() {
 	}
 
 	ernReceipt := submitRes.Msg.TransactionReceipt.MessageReceipts[0].GetErnAck()
-	fmt.Printf("tx receipt: %v", &ernReceipt)
+	fmt.Printf("tx receipt: %v\n", &ernReceipt)
 }

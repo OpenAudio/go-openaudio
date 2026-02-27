@@ -19,31 +19,30 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK, handler *GeolocationHandler) error {
+func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK) ([]string, error) {
 	audioFile, err := os.Open("../../pkg/integration_tests/assets/anxiety-upgrade.mp3")
 	if err != nil {
-		return fmt.Errorf("failed to open audio file: %w", err)
+		return nil, fmt.Errorf("failed to open audio file: %w", err)
 	}
 	defer audioFile.Close()
 
 	fileCID, err := hashes.ComputeFileCID(audioFile)
 	if err != nil {
-		return fmt.Errorf("failed to compute file CID: %w", err)
+		return nil, fmt.Errorf("failed to compute file CID: %w", err)
 	}
-	audioFile.Seek(0, 0) // Reset file position
+	audioFile.Seek(0, 0)
 
 	uploadSigData := &corev1.UploadSignature{Cid: fileCID}
 	uploadSigBytes, err := proto.Marshal(uploadSigData)
 	if err != nil {
-		return fmt.Errorf("failed to marshal upload signature: %w", err)
+		return nil, fmt.Errorf("failed to marshal upload signature: %w", err)
 	}
 
 	uploadSignature, err := common.EthSign(auds.PrivKey(), uploadSigBytes)
 	if err != nil {
-		return fmt.Errorf("failed to generate upload signature: %w", err)
+		return nil, fmt.Errorf("failed to generate upload signature: %w", err)
 	}
 
-	// Upload to mediorum
 	uploadOpts := &mediorum.UploadOptions{
 		Template:          "audio",
 		Signature:         uploadSignature,
@@ -54,23 +53,30 @@ func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK, handler *Ge
 
 	uploads, err := auds.Mediorum.UploadFile(ctx, audioFile, "anxiety-upgrade.mp3", uploadOpts)
 	if err != nil {
-		return fmt.Errorf("failed to upload file: %w", err)
+		return nil, fmt.Errorf("failed to upload file: %w", err)
 	}
 	if len(uploads) == 0 {
-		return fmt.Errorf("no uploads returned")
+		return nil, fmt.Errorf("no uploads returned")
 	}
 
 	upload := uploads[0]
 	if upload.Status != "done" {
-		return fmt.Errorf("upload failed: %s", upload.Error)
+		return nil, fmt.Errorf("upload failed: %s", upload.Error)
 	}
 
-	// Get the transcoded CID (this is what we use in the ERN)
 	transcodedCID := upload.GetTranscodedCID()
 
-	// Create ERN message
-	title := "Programmable Distribution Demo"
-	genre := "Electronic"
+	// Wait for FileUpload tx to be committed (ERN validation requires CID in core_uploads)
+	for i := 0; i < 30; i++ {
+		resp, err := auds.Core.GetUploadByCID(ctx, connect.NewRequest(&corev1.GetUploadByCIDRequest{Cid: transcodedCID}))
+		if err == nil && resp.Msg.Exists {
+			break
+		}
+		if i == 29 {
+			return nil, fmt.Errorf("FileUpload tx not found after 30s - ensure programmable distribution is enabled")
+		}
+		time.Sleep(1 * time.Second)
+	}
 
 	ernMessage := &ddexv1beta1.NewReleaseMessage{
 		MessageHeader: &ddexv1beta1.MessageHeader{
@@ -105,7 +111,7 @@ func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK, handler *Ge
 					SoundRecording: &ddexv1beta1.Resource_SoundRecording{
 						ResourceReference:     "A1",
 						Type:                  "MusicalWorkSoundRecording",
-						DisplayTitleText:      title,
+						DisplayTitleText:      "Programmable Distribution Demo",
 						DisplayArtistName:     "Demo Artist",
 						VersionType:           "OriginalVersion",
 						LanguageOfPerformance: "en",
@@ -134,7 +140,7 @@ func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK, handler *Ge
 											Algorithm:    "IPFS",
 											HashSumValue: transcodedCID,
 										},
-										FileSize: 1000000, // Placeholder since we don't know transcoded size
+										FileSize: 1000000,
 									},
 								},
 								IsClip: false,
@@ -150,13 +156,13 @@ func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK, handler *Ge
 					MainRelease: &ddexv1beta1.Release_Release{
 						ReleaseReference:      "R1",
 						ReleaseType:           "Single",
-						DisplayTitleText:      title,
+						DisplayTitleText:      "Programmable Distribution Demo",
 						DisplayArtistName:     "Demo Artist",
 						ReleaseLabelReference: "P_UPLOADER",
 						OriginalReleaseDate:   time.Now().Format("2006-01-02"),
 						ParentalWarningType:   "NotExplicit",
 						Genre: &ddexv1beta1.Release_Release_Genre{
-							GenreText: genre,
+							GenreText: "Electronic",
 						},
 						ResourceGroup: &ddexv1beta1.Release_Release_ResourceGroup{
 							ResourceGroup: []*ddexv1beta1.Release_Release_ResourceGroup_ResourceGroup{
@@ -178,12 +184,11 @@ func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK, handler *Ge
 		},
 	}
 
-	// Create and send transaction
 	envelope := &corev1beta1.Envelope{
 		Header: &corev1beta1.EnvelopeHeader{
 			ChainId:    auds.ChainID(),
 			From:       auds.Address(),
-			Nonce:      upload.ID, // Use upload ID as nonce
+			Nonce:      upload.ID,
 			Expiration: time.Now().Add(time.Hour).Unix(),
 		},
 		Messages: []*corev1beta1.Message{
@@ -201,23 +206,33 @@ func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK, handler *Ge
 		Transactionv2: transaction,
 	}))
 	if err != nil {
-		return fmt.Errorf("failed to send ERN transaction: %w", err)
+		return nil, fmt.Errorf("failed to send ERN transaction: %w", err)
 	}
 
-	ernReceipt := submitRes.Msg.TransactionReceipt.MessageReceipts[0].GetErnAck()
+	receipt := submitRes.Msg.TransactionReceipt
+	if receipt == nil {
+		return nil, fmt.Errorf("no transaction receipt returned")
+	}
+	if len(receipt.MessageReceipts) == 0 {
+		return nil, fmt.Errorf("no message receipts in transaction")
+	}
+
+	var ernReceipt *ddexv1beta1.NewReleaseMessageAck
+	for _, mr := range receipt.MessageReceipts {
+		if mr != nil {
+			ernReceipt = mr.GetErnAck()
+			if ernReceipt != nil {
+				break
+			}
+		}
+	}
 	if ernReceipt == nil {
-		return fmt.Errorf("failed to get ERN receipt")
+		return nil, fmt.Errorf("failed to get ERN receipt (tx included but no ERN ack in %d receipts)", len(receipt.MessageReceipts))
 	}
 
-	// Store addresses in handler for streaming
-	handler.ernAddress = ernReceipt.ErnAddress
-	handler.resourceAddresses = ernReceipt.ResourceAddresses
-	handler.releaseAddresses = ernReceipt.ReleaseAddresses
+	addresses := []string{ernReceipt.ErnAddress}
+	addresses = append(addresses, ernReceipt.ResourceAddresses...)
+	addresses = append(addresses, ernReceipt.ReleaseAddresses...)
 
-	fmt.Printf("ERN Address: %s\n", ernReceipt.ErnAddress)
-	fmt.Printf("Resource Address: %s\n", ernReceipt.ResourceAddresses[0])
-	fmt.Printf("Release Address: %s\n", ernReceipt.ReleaseAddresses[0])
-	fmt.Printf("Transcoded CID: %s\n", transcodedCID)
-
-	return nil
+	return addresses, nil
 }
