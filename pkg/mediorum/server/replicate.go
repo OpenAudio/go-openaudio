@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"go.uber.org/zap"
@@ -142,10 +140,6 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 		return ss.replicateToMyBucket(ctx, fileName, file)
 	}
 
-	client := http.Client{
-		Timeout: time.Minute,
-	}
-
 	r, w := io.Pipe()
 	m := multipart.NewWriter(w)
 	errChan := make(chan error)
@@ -178,7 +172,7 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 	}
 
 	// send it
-	resp, err := client.Do(req)
+	resp, err := ss.peerHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -214,9 +208,6 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 	if host == ss.Config.Self.Host {
 		return errors.New("should not pull blob from self")
 	}
-	client := http.Client{
-		Timeout: time.Minute * 3,
-	}
 	u := apiPath(host, "internal/blobs", url.PathEscape(cid))
 
 	req, err := signature.SignedGet(ctx, u, ss.Config.privateKey, ss.Config.Self.Host)
@@ -224,7 +215,7 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 		return err
 	}
 
-	resp, err := client.Do(req)
+	resp, err := ss.peerHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}

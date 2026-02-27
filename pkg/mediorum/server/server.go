@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -87,6 +88,7 @@ type MediorumServer struct {
 	quit             chan error
 	trustedNotifier  *ethcontracts.NotifierInfo
 	reqClient        *req.Client
+	peerHTTPClient   *http.Client // for outbound peer requests (replication, blob pull); uses InsecureSkipVerify in dev+self-signed
 	rendezvousHasher *common.RendezvousHasher
 	transcodeWork    chan *Upload
 	replicationWork  chan *Upload
@@ -288,10 +290,27 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	}
 	rendezvousHasher := common.NewRendezvousHasher(allHosts, deadHosts)
 
-	// req.cool http client
+	// HTTP transport for peer requests - skip TLS verify in dev with self-signed certs for replication/upload-scroll to work
+	var peerTransport http.RoundTripper = http.DefaultTransport
+	if config.Env == "dev" && os.Getenv("OPENAUDIO_TLS_SELF_SIGNED") == "true" {
+		peerTransport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		logger.Info("peer HTTP client using InsecureSkipVerify for dev with self-signed TLS")
+	}
+
+	peerHTTPClient := &http.Client{
+		Transport: peerTransport,
+		Timeout:   3 * time.Minute, // covers blob replication and pull
+	}
+
+	// req.cool http client for upload scroll, hostGetBlobInfo, etc.
 	reqClient := req.C().
 		SetUserAgent("mediorum " + config.Self.Host).
 		SetTimeout(5 * time.Second)
+	if config.Env == "dev" && os.Getenv("OPENAUDIO_TLS_SELF_SIGNED") == "true" {
+		reqClient = reqClient.EnableInsecureSkipVerify()
+	}
 
 	// Read trusted notifier endpoint from chain
 	var trustedNotifier ethcontracts.NotifierInfo
@@ -323,6 +342,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		crud:             crud,
 		pgPool:           pgPool,
 		reqClient:        reqClient,
+		peerHTTPClient:   peerHTTPClient,
 		logger:           logger,
 		quit:             make(chan error, 1),
 		ethService:       ethService,
