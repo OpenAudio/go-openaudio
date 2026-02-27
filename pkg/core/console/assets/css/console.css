@@ -1,30 +1,192 @@
-@import url('https://fonts.googleapis.com/css2?family=Play:wght@400;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Play:wght@400;700&display=swap");
 
 body {
-    font-family: "Play", sans-serif;
-    color: white;
+  font-family: "Play", sans-serif;
+  color: white;
 }
 
 .text-primary {
-    color: white;
+  color: white;
 }
 
 .text-secondary {
-    color: #b3b3b3;
+  color: #b3b3b3;
 }
 
 .text-tertiary {
-    color: #ededed;
+  color: #ededed;
 }
 
 .bg-primary {
-    background-color: black;
+  background-color: black;
 }
 
 .bg-secondary {
-    background-color: #383838;
+  background-color: #383838;
 }
 
 .bg-tertiary {
-    background-color: #141414;
+  background-color: #141414;
+}
+
+/* Match text-secondary (#b3b3b3) for dividers/relief */
+.border-console-divider {
+  border-color: #b3b3b3;
+}
+
+/* List View - same border styling as Matrix View */
+.list-view-card {
+  border: 1px solid #2a2a2a;
+  border-radius: 0.5rem;
+}
+
+/* Matrix View - console theme, simple readable table */
+.matrix-table {
+  background-color: transparent;
+  border-collapse: collapse;
+  width: auto;
+  max-width: 100%;
+}
+
+.matrix-table th,
+.matrix-table td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #2a2a2a;
+}
+
+.matrix-table-wrapper {
+  display: inline-block;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.5rem;
+  overflow: visible;
+}
+
+.matrix-corner {
+  background-color: transparent;
+  color: #e0e0e0;
+  text-align: left;
+  min-width: 140px;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+}
+
+.matrix-col-header {
+  background-color: #1a1a1a;
+  color: #e0e0e0;
+  height: 140px;
+  min-width: 1.4em;
+  width: 1.4em;
+  padding: 0.5rem !important;
+  position: relative;
+  overflow: visible;
+  vertical-align: bottom;
+  cursor: default;
+  user-select: none;
+}
+
+.matrix-col-header:nth-child(2n) {
+  background-color: #222;
+}
+
+.matrix-col-header .matrix-header-label {
+  display: block;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  height: 100%;
+}
+
+.matrix-row-header {
+  background-color: #1a1a1a;
+  color: #ededed;
+  font-size: 0.8rem;
+  min-width: 120px;
+  position: relative;
+}
+
+.matrix-table tbody tr:nth-child(even) .matrix-row-header {
+  background-color: #222;
+}
+
+.matrix-ok,
+.matrix-missing,
+.matrix-err {
+  text-align: center;
+  padding: 0.65rem 0.9rem;
+}
+
+.matrix-ok {
+  background-color: #141414;
+  color: #22c55e;
+}
+
+.matrix-missing {
+  background-color: #141414;
+  color: #ef4444;
+}
+
+.matrix-err {
+  background-color: #141414;
+  color: #f59e0b;
+}
+
+.matrix-table tbody tr:nth-child(even) td.matrix-ok,
+.matrix-table tbody tr:nth-child(even) td.matrix-missing,
+.matrix-table tbody tr:nth-child(even) td.matrix-err {
+  background-color: #1a1a1a;
+}
+
+/* Diagonal cells (row node = column endpoint) - lighter gray highlight */
+.matrix-diagonal {
+  background-color: #004d0a !important;
+}
+.matrix-table tbody tr:nth-child(even) td.matrix-diagonal {
+  background-color: #004d0a !important;
+}
+
+/* Custom tooltip - matches row header style (#1a1a1a bg, #ededed text) */
+.matrix-tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translateX(-50%) translateY(-6px);
+  background: #1a1a1a;
+  color: #ededed;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.08s;
+  pointer-events: none;
+}
+
+.matrix-col-header:hover .matrix-tooltip,
+.matrix-row-header:hover .matrix-tooltip {
+  opacity: 1;
+}
+
+/* Column header tooltip: show below (above gets clipped by wrapper overflow) */
+.matrix-col-header .matrix-tooltip {
+  bottom: auto;
+  top: 100%;
+  transform: translateX(-50%) translateY(6px);
+}
+
+.matrix-row-header .matrix-tooltip {
+  left: 0;
+  transform: translateY(-6px);
+}
+
+#matrix-content {
+  background-color: transparent;
 }

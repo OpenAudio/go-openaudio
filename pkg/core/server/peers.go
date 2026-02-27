@@ -223,26 +223,41 @@ func (s *Server) managePeers(ctx context.Context) error {
 }
 
 func (s *Server) refreshPeerData(ctx context.Context, _ *zap.Logger) error {
-	validators, err := s.db.GetAllRegisteredNodes(ctx)
+	// Include jailed nodes so UI can show status
+	validators, err := s.db.GetAllRegisteredNodesIncludingJailed(ctx)
 	if err != nil {
 		return fmt.Errorf("could not get validators from db: %v", err)
 	}
 
+	currentAddrs := make(map[EthAddress]bool)
 	for _, validator := range validators {
 		self := s.config.WalletAddress
 		if validator.EthAddress == self {
 			continue
 		}
-		exists := s.peerStatus.Has(validator.EthAddress)
-		if exists {
-			continue
+		addr := EthAddress(validator.EthAddress)
+		currentAddrs[addr] = true
+
+		existing, exists := s.peerStatus.Get(addr)
+		peer := &v1.GetStatusResponse_PeerInfo_Peer{
+			Endpoint:         validator.Endpoint,
+			CometAddress:     validator.CometAddress,
+			EthAddress:       validator.EthAddress,
+			NodeType:         validator.NodeType,
+			Jailed:           validator.Jailed,
+			ConnectrpcClient:  exists && existing.ConnectrpcClient,
+			ConnectrpcHealthy: exists && existing.ConnectrpcHealthy,
+			CometrpcClient:   exists && existing.CometrpcClient,
+			P2PConnected:      exists && existing.P2PConnected,
 		}
-		s.peerStatus.Set(validator.EthAddress, &v1.GetStatusResponse_PeerInfo_Peer{
-			Endpoint:     validator.Endpoint,
-			CometAddress: validator.CometAddress,
-			EthAddress:   validator.EthAddress,
-			NodeType:     validator.NodeType,
-		})
+		s.peerStatus.Set(addr, peer)
+	}
+
+	// Remove peers no longer in core_validators
+	for _, addr := range s.peerStatus.Keys() {
+		if !currentAddrs[addr] {
+			s.peerStatus.Delete(addr)
+		}
 	}
 
 	return nil
@@ -250,7 +265,7 @@ func (s *Server) refreshPeerData(ctx context.Context, _ *zap.Logger) error {
 
 // refreshes the clients in the server struct for connectrpc, does not test connectivity.
 func (s *Server) refreshConnectRPCPeers(ctx context.Context, _ *zap.Logger) error {
-	validators, err := s.db.GetAllRegisteredNodes(ctx)
+	validators, err := s.db.GetAllRegisteredNodesIncludingJailed(ctx)
 	if err != nil {
 		return fmt.Errorf("could not get validators from db: %v", err)
 	}
@@ -288,7 +303,7 @@ func (s *Server) refreshConnectRPCPeers(ctx context.Context, _ *zap.Logger) erro
 
 // refreshes the cometbft rpc clients in the server struct, does not test connectivity.
 func (s *Server) refreshCometRPCPeers(ctx context.Context, logger *zap.Logger) error {
-	validators, err := s.db.GetAllRegisteredNodes(ctx)
+	validators, err := s.db.GetAllRegisteredNodesIncludingJailed(ctx)
 	if err != nil {
 		return fmt.Errorf("could not get validators from db: %v", err)
 	}

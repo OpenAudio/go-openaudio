@@ -24,16 +24,23 @@ limit 1;
 
 -- name: GetAllRegisteredNodes :many
 select *
+from core_validators
+where coalesce(jailed, false) = false;
+
+-- name: GetAllRegisteredNodesIncludingJailed :many
+select *
 from core_validators;
 
 -- name: GetAllRegisteredNodesSorted :many
 select *
 from core_validators
+where coalesce(jailed, false) = false
 order by comet_address;
 
 -- name: GetAllEthAddressesOfRegisteredNodes :many
 select eth_address
-from core_validators;
+from core_validators
+where coalesce(jailed, false) = false;
 
 -- name: GetNodeByEndpoint :one
 select *
@@ -49,7 +56,13 @@ where endpoint = any($1::text []);
 -- name: GetRegisteredNodesByType :many
 select *
 from core_validators
-where node_type = $1;
+where node_type = $1
+  and coalesce(jailed, false) = false;
+
+-- name: GetActiveStorageNodeEndpoints :many
+select endpoint
+from core_validators
+where node_type in ('content-node', 'validator');
 
 -- name: GetLatestSlaRollup :one
 select *

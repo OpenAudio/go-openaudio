@@ -10,6 +10,12 @@ values ($1, $2, $3, $4, $5, $6, $7, $8);
 delete from core_validators
 where comet_address = $1;
 
+-- name: JailRegisteredNode :exec
+update core_validators set jailed = true where comet_address = $1;
+
+-- name: UnjailRegisteredNode :exec
+update core_validators set jailed = false where comet_address = $1;
+
 -- name: UpsertSlaRollupReport :exec
 with updated as (
     update sla_node_reports 

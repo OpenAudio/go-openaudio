@@ -17,8 +17,7 @@ import (
 )
 
 const (
-	validatorPurgeSLAInterval   int32 = 8
-	validatorPurgeMinValidators       = 50
+	validatorPurgeSLAInterval int32 = 8
 )
 
 func (s *Server) createRollupTx(ctx context.Context, ts time.Time, height int64) ([]byte, error) {
@@ -188,7 +187,7 @@ func (s *Server) ShouldPurgeValidatorForUnderperformance(ctx context.Context, va
 	}
 
 	// killswitch to avoid purging too many validators
-	if totalValidators <= validatorPurgeMinValidators {
+	if totalValidators <= int64(s.config.ValidatorPurgeMinValidators) {
 		return false, nil
 	}
 

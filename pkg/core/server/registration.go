@@ -99,8 +99,9 @@ func (s *Server) finalizeRegisterNodeAttestation(ctx context.Context, tx *v1.Sig
 
 	serializedPubKey := common.SerializePublicKeyHex(pubKey)
 
-	// Do not reinsert duplicate registrations
-	if _, err = qtx.GetRegisteredNodeByEthAddress(ctx, vr.GetDelegateWallet()); errors.Is(err, pgx.ErrNoRows) {
+	existing, err := qtx.GetRegisteredNodeByEthAddress(ctx, vr.GetDelegateWallet())
+	if errors.Is(err, pgx.ErrNoRows) {
+		// New registration
 		err = qtx.InsertRegisteredNode(ctx, db.InsertRegisteredNodeParams{
 			PubKey:       serializedPubKey,
 			EthAddress:   vr.GetDelegateWallet(),
@@ -113,6 +114,16 @@ func (s *Server) finalizeRegisterNodeAttestation(ctx context.Context, tx *v1.Sig
 		})
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("error inserting registered node: %v", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("error checking registered node: %v", err)
+	}
+	// Jailed nodes can re-attest to unjail themselves
+	if existing.Jailed {
+		if err := qtx.UnjailRegisteredNode(ctx, existing.CometAddress); err != nil {
+			return fmt.Errorf("error unjailing registered node: %v", err)
 		}
 	}
 	return nil
@@ -168,9 +179,9 @@ func (s *Server) finalizeDeregisterValidatorAttestation(ctx context.Context, tx 
 		return fmt.Errorf("unknown attestation fell into isValidDeregisterNodeAttestation: %v", tx)
 	}
 	qtx := s.getDb()
-	err := qtx.DeleteRegisteredNode(ctx, dereg.GetCometAddress())
+	err := qtx.JailRegisteredNode(ctx, dereg.GetCometAddress())
 	if err != nil {
-		return fmt.Errorf("error deleting registered node: %v", err)
+		return fmt.Errorf("error jailing registered node: %v", err)
 	}
 
 	return nil

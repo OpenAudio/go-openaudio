@@ -11,4 +11,7 @@ type PoSRequest struct {
 	Hash     []byte
 	Height   int64
 	Response chan PoSResponse
+	// Hosts, when non-nil, override Mediorum's internal peer list for rendezvous hashing.
+	// Used by Core to derive the replicaset from core_validators (chain state) for deterministic PoS validation.
+	Hosts []string
 }

@@ -101,16 +101,12 @@ go.mod: $(GO_SRCS)
 gen: regen-templ regen-proto regen-sql
 
 .PHONY: regen-templ
-regen-templ: $(TEMPL_ARTIFACTS) $(EXPLORER_TEMPL_ARTIFACTS) regen-css
-
-$(TEMPL_ARTIFACTS): $(TEMPL_SRCS)
-	@echo Regenerating console templ code
-	cd pkg/core/console && templ generate -log-level error
-
-$(EXPLORER_TEMPL_ARTIFACTS): $(EXPLORER_TEMPL_SRCS)
-	@echo Regenerating explorer templ code
-	cd pkg/console/templates && templ generate -log-level error
-	@touch pkg/console/templates/layouts/frame.templ 2>/dev/null || touch pkg/console/console.go 2>/dev/null || true
+regen-templ:
+	@echo Regenerating console templ code...
+	@cd pkg/core/console && templ generate -log-level error
+	@echo Regenerating explorer templ code...
+	@cd pkg/console/templates && templ generate -log-level error
+	@$(MAKE) regen-css
 
 .PHONY: regen-css
 regen-css: $(EXPLORER_CSS_OUTPUT)

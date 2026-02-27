@@ -1,24 +1,49 @@
 package pages
 
-import "github.com/OpenAudio/go-openaudio/pkg/core/db"
+import (
+	"fmt"
+
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
+)
 
 type NodesView struct {
-	Nodes []db.CoreValidator
+	Nodes               []db.CoreValidator
+	CoreValidatorsCount int
+	EthEndpointsCount   int
 }
 
 templ (p *Pages) NodesPageHTML(data *NodesView) {
 	@p.layout.SiteFrame() {
-		for _, node := range data.Nodes {
-			<div class="uk-padding-small">
-				<div class="uk-card">
-					<div class="uk-card-header">
+		<div class="space-y-6">
+			<h1 class="text-3xl font-bold">Validators</h1>
+			<div class="grid grid-cols-2 gap-4">
+				<div class="bg-tertiary rounded-lg p-4">
+					<div class="text-sm text-secondary">Chain State Nodes</div>
+					<div class="text-2xl font-semibold">{ fmt.Sprintf("%d", data.CoreValidatorsCount) }</div>
+				</div>
+				<div class="bg-tertiary rounded-lg p-4">
+					<div class="text-sm text-secondary">Eth Registry Nodes</div>
+					<div class="text-2xl font-semibold">{ fmt.Sprintf("%d", data.EthEndpointsCount) }</div>
+				</div>
+			</div>
+			<div class="bg-tertiary rounded-lg px-4 py-2">
+				<button id="tab-list" class="tab-btn px-4 py-2 border-b-2 border-primary" data-tab="list">List View</button>
+				<button id="tab-matrix" class="tab-btn px-4 py-2" data-tab="matrix">Matrix View</button>
+			</div>
+			<div id="panel-list" class="tab-panel space-y-4">
+				for _, node := range data.Nodes {
+				<div class="list-view-card p-4">
+					<div class="mb-3">
 						<h2>
 							@p.components.ExternalLink("%s%s", node.Endpoint, "/console/overview") {
 								<div>{ node.Endpoint }</div>
 							}
+							if node.Jailed {
+								<span class="ml-2 px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-300">Jailed</span>
+							}
 						</h2>
 					</div>
-					<div class="uk-card-body text-sm">
+					<div class="text-sm space-y-1">
 						<div>
 							@p.components.Link("/validator/%s", node.EthAddress) {
 								<div>Eth Address: { node.EthAddress } </div>
@@ -32,7 +57,13 @@ templ (p *Pages) NodesPageHTML(data *NodesView) {
 						<div>Eth Block: { node.EthBlock }</div>
 					</div>
 				</div>
+				}
 			</div>
-		}
+			<div id="panel-matrix" class="tab-panel hidden">
+				<div id="matrix-loading" class="p-4 text-secondary">Loading matrix...</div>
+				<div id="matrix-content" class="hidden overflow-x-auto"></div>
+			</div>
+		</div>
+		<script src="/console/assets/js/matrix.js"></script>
 	}
 }

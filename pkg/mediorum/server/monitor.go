@@ -238,7 +238,8 @@ WITH total_size AS (
 validator_count AS (
   SELECT COUNT(*) AS n
   FROM core_validators
-  WHERE node_type = 'content-node' OR node_type = 'validator'
+  WHERE (node_type = 'content-node' OR node_type = 'validator')
+    AND COALESCE(jailed, false) = false
 )
 SELECT
 	CASE

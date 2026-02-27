@@ -507,6 +507,7 @@ templ (p *Pages) OverviewNetworkFragment(status *v1.GetStatusResponse) {
 						<tr>
 							<th class="px-4 py-2 text-left text-sm font-medium">Endpoint</th>
 							<th class="px-4 py-2 text-left text-sm font-medium">Type</th>
+							<th class="px-4 py-2 text-left text-sm font-medium">Status</th>
 							<th class="px-4 py-2 text-left text-sm font-medium">Connect RPC</th>
 							<th class="px-4 py-2 text-left text-sm font-medium">P2P</th>
 						</tr>
@@ -520,6 +521,15 @@ templ (p *Pages) OverviewNetworkFragment(status *v1.GetStatusResponse) {
 									}
 								</td>
 								<td class="px-4 py-2 text-sm">{ peer.NodeType }</td>
+								<td class="px-4 py-2 text-sm">
+									if peer.Jailed {
+										@components.StatusRed("Jailed")
+										<span>&nbsp;Jailed</span>
+									} else {
+										@components.StatusGreen("OK")
+										<span>&nbsp;OK</span>
+									}
+								</td>
 								<td class="px-4 py-2 text-sm">
 									if peer.ConnectrpcHealthy {
 										@components.StatusGreen("Healthy")

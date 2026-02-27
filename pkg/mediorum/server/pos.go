@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 
+	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/OpenAudio/go-openaudio/pkg/pos"
 	"go.uber.org/zap"
@@ -24,7 +25,15 @@ func (ss *MediorumServer) startPoSHandler(ctx context.Context) error {
 				ss.logger.Error("Could not get a CID to perform proof with")
 				continue
 			}
-			orderedHosts := ss.rendezvousHasher.Rank(cid)
+			// Use Core's host list (from core_validators) when provided for deterministic PoS.
+			// Otherwise fall back to Mediorum's internal peer list (from eth).
+			var orderedHosts []string
+			if len(posReq.Hosts) > 0 {
+				rh := common.NewRendezvousHasher(posReq.Hosts, nil)
+				orderedHosts = rh.Rank(cid)
+			} else {
+				orderedHosts = ss.rendezvousHasher.Rank(cid)
+			}
 			ss.logger.Info("Retrieved artifacts for proof of storage challenge", zap.String("cid", cid), zap.Strings("provers", orderedHosts))
 			replicaSet := make([]string, 0, ss.Config.ReplicationFactor)
 			mustProve := false

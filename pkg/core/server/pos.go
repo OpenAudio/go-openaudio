@@ -14,6 +14,7 @@ import (
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
+	"github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/pos"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/google/uuid"
@@ -46,20 +47,32 @@ func blockShouldTriggerNewPoSChallenge(blockHash []byte) bool {
 }
 
 func (s *Server) sendPoSChallengeToStorage(blockHash []byte, blockHeight int64) {
+	ctx := context.Background()
+	// Derive replicaset from core_validators (chain state) for deterministic PoS validation.
+	// All nodes use the same source, avoiding eth sync divergence that could reject valid proofs.
+	endpoints, err := s.db.GetActiveStorageNodeEndpoints(ctx)
+	if err != nil {
+		s.logger.Error("Failed to get storage node endpoints for PoS challenge", zap.Error(err))
+		return
+	}
+	hosts := make([]string, 0, len(endpoints))
+	for _, ep := range endpoints {
+		hosts = append(hosts, httputil.RemoveTrailingSlash(strings.ToLower(ep)))
+	}
+
 	respChannel := make(chan pos.PoSResponse, 1)
 	posReq := pos.PoSRequest{
 		Hash:     blockHash,
 		Height:   blockHeight,
 		Response: respChannel,
+		Hosts:    hosts,
 	}
 	s.mediorumPoSChannel <- posReq
 
 	timeout := time.After(mediorumPoSRequestTimeout)
 	select {
 	case response := <-respChannel:
-		ctx := context.Background()
-
-		// get validator nodes corresponding to mediorum's replica endpoints
+		// get validator nodes corresponding to replica endpoints (from core_validators)
 		nodes, err := s.db.GetNodesByEndpoints(ctx, response.Replicas)
 		if err != nil {
 			s.logger.Error("Failed to get all registered comet nodes for endpoints", zap.Strings("endpoints", response.Replicas), zap.Error(err))

@@ -102,10 +102,12 @@ type Config struct {
 	EthRegistryAddress string
 
 	/* System Config */
-	RunDownMigration     bool
-	SlaRollupInterval    int
-	ValidatorVotingPower int
-	UseHttpsForSdk       bool
+	RunDownMigration             bool
+	SlaRollupInterval            int
+	ValidatorVotingPower         int
+	ValidatorPurgeMinValidators  int
+	ValidatorWardenIntervalMins  int // how often the validator warden checks for underperformance (minutes)
+	UseHttpsForSdk               bool
 
 	StateSync *StateSyncConfig
 
@@ -263,6 +265,8 @@ func ReadConfig() (*Config, error) {
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", ProdPersistentPeers)
 		cfg.SlaRollupInterval = mainnetRollupInterval
 		cfg.ValidatorVotingPower = mainnetValidatorVotingPower
+		cfg.ValidatorPurgeMinValidators = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_PURGE_MIN_VALIDATORS", 30)
+		cfg.ValidatorWardenIntervalMins = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_WARDEN_INTERVAL_MINS", 60)
 		cfg.Rewards = MakeRewards(ProdClaimAuthorities, ProdRewardExtensions)
 		cfg.AcdcChainID = ProdAcdcChainID
 		cfg.AcdcEntityManagerAddress = ProdAcdcAddress
@@ -271,6 +275,8 @@ func ReadConfig() (*Config, error) {
 		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", StagePersistentPeers)
 		cfg.SlaRollupInterval = testnetRollupInterval
 		cfg.ValidatorVotingPower = testnetValidatorVotingPower
+		cfg.ValidatorPurgeMinValidators = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_PURGE_MIN_VALIDATORS", 30)
+		cfg.ValidatorWardenIntervalMins = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_WARDEN_INTERVAL_MINS", 60)
 		cfg.Rewards = MakeRewards(StageClaimAuthorities, StageRewardExtensions)
 		cfg.AcdcChainID = StageAcdcChainID
 		cfg.AcdcEntityManagerAddress = StageAcdcAddress
@@ -280,6 +286,8 @@ func ReadConfig() (*Config, error) {
 		cfg.AddrBookStrict = false
 		cfg.SlaRollupInterval = devnetRollupInterval
 		cfg.ValidatorVotingPower = devnetValidatorVotingPower
+		cfg.ValidatorPurgeMinValidators = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_PURGE_MIN_VALIDATORS", 3)
+		cfg.ValidatorWardenIntervalMins = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_WARDEN_INTERVAL_MINS", 2)
 		cfg.Rewards = MakeRewards(DevClaimAuthorities, DevRewardExtensions)
 		cfg.AcdcChainID = DevAcdcChainID
 		cfg.AcdcEntityManagerAddress = DevAcdcAddress

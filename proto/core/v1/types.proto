@@ -155,6 +155,7 @@ message GetStatusResponse {
 
       bool p2p_connected = 9;
       bool p2p_accessible = 10;
+      bool jailed = 11;
     }
     repeated Peer peers = 1;
   }

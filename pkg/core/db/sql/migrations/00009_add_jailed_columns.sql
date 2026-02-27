@@ -1,4 +1,6 @@
 -- +migrate Up
--- we just need this file to exist since it was reverted on stage
+alter table core_validators
+add column if not exists jailed boolean not null default false;
 
 -- +migrate Down
+alter table core_validators drop column if exists jailed;

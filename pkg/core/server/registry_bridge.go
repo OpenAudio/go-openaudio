@@ -133,11 +133,13 @@ func (s *Server) listenForEthContractEvents(ctx context.Context) error {
 }
 
 func (s *Server) startValidatorWarden(ctx context.Context) error {
-	ticker := time.NewTicker(3 * time.Hour)
+	interval := time.Duration(s.config.ValidatorWardenIntervalMins) * time.Minute
+	ticker := time.NewTicker(interval)
 	for {
 		select {
 		case <-ticker.C:
-			allValidators, err := s.db.GetAllRegisteredNodes(ctx)
+			// Include jailed nodes so we can delete them if they are missing from eth
+			allValidators, err := s.db.GetAllRegisteredNodesIncludingJailed(ctx)
 			if err != nil {
 				s.logger.Error("could not get all validator eth addresses", zap.Error(err))
 				continue
@@ -160,18 +162,23 @@ func (s *Server) startValidatorWarden(ctx context.Context) error {
 				allEthAddrsMap[endpoint.DelegateWallet] = true
 			}
 
-			// deregister any missing validators
+			// delete any validators missing from eth registry (L1 formal dereg)
 			for _, validator := range allValidators {
 				if _, ok := allEthAddrsMap[validator.EthAddress]; !ok {
 					s.deregisterValidator(ctx, validator.EthAddress)
 				}
 			}
 
-			// deregister any down validators
-			for _, validator := range allValidators {
+			// jail any active validators failing quotas (underperformance)
+			activeValidators, err := s.db.GetAllRegisteredNodes(ctx)
+			if err != nil {
+				s.logger.Error("could not get active validators for quota check", zap.Error(err))
+				continue
+			}
+			for _, validator := range activeValidators {
 				if shouldPurge, err := s.ShouldPurgeValidatorForUnderperformance(ctx, validator.CometAddress); err == nil && shouldPurge {
-					s.logger.Info("attempting to deregister validator", zap.String("address", validator.CometAddress))
-					s.deregisterValidator(ctx, validator.EthAddress)
+					s.logger.Info("attempting to jail validator for underperformance", zap.String("address", validator.CometAddress))
+					s.jailValidator(ctx, validator.EthAddress)
 					break // killswitch: wait until next run to purge the next down validator
 				} else if err != nil {
 					s.logger.Error("error checking if validator should be purged", zap.Error(err))
@@ -439,20 +446,41 @@ func (s *Server) registerSelfOnEth(ctx context.Context) error {
 	return nil
 }
 
+// deregisterValidator removes a validator from core_validators when they have been formally
+// deregistered on L1. Used by eth event listener and warden "missing from eth" path.
+// No attestation required—L1 is the source of truth.
 func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 	node, err := s.db.GetRegisteredNodeByEthAddress(ctx, ethAddress)
 	if err != nil {
-		s.logger.Error("could not deregister missing node", zap.String("address", ethAddress), zap.Error(err))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return // already removed, no-op
+		}
+		s.logger.Error("could not deregister validator", zap.String("address", ethAddress), zap.Error(err))
+		return
+	}
+	if err := s.db.DeleteRegisteredNode(ctx, node.CometAddress); err != nil {
+		s.logger.Error("could not delete registered node for deregistration", zap.String("address", ethAddress), zap.Error(err))
+		return
+	}
+	s.logger.Info("deregistered validator", zap.String("eth_address", ethAddress), zap.String("comet_address", node.CometAddress))
+}
+
+// jailValidator submits an attestation tx to jail a validator (set jailed=true) for quota/operational
+// failures (e.g. underperformance). The attestation is finalized by JailRegisteredNode.
+func (s *Server) jailValidator(ctx context.Context, ethAddress string) {
+	node, err := s.db.GetRegisteredNodeByEthAddress(ctx, ethAddress)
+	if err != nil {
+		s.logger.Error("could not jail missing node", zap.String("address", ethAddress), zap.Error(err))
 		return
 	}
 
 	addrs, err := s.db.GetAllEthAddressesOfRegisteredNodes(ctx)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		s.logger.Error("could not deregister node: failed to get currently registered nodes", zap.String("address", ethAddress), zap.Error(err))
+		s.logger.Error("could not jail node: failed to get currently registered nodes", zap.String("address", ethAddress), zap.Error(err))
 		return
 	}
 
-	// don't attempt to get attestation from deregistration subject node
+	// don't attempt to get attestation from the node being jailed
 	filteredAddrs := addrs[:]
 	for i, addr := range addrs {
 		if addr == ethAddress { // delete (in-place) excluded address
@@ -464,7 +492,7 @@ func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 
 	pubkeyBytes, err := base64.StdEncoding.DecodeString(node.CometPubKey)
 	if err != nil {
-		s.logger.Error("could not deregister node: could not decode public key", zap.String("address", ethAddress), zap.String("public key", node.CometPubKey), zap.Error(err))
+		s.logger.Error("could not jail node: could not decode public key", zap.String("address", ethAddress), zap.String("public key", node.CometPubKey), zap.Error(err))
 		return
 	}
 	pubKey := ed25519.PubKey(pubkeyBytes)
@@ -508,13 +536,13 @@ func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 
 	txBytes, err := proto.Marshal(deregistrationAtt)
 	if err != nil {
-		s.logger.Error("failure to marshal deregister tx", zap.Error(err))
+		s.logger.Error("failure to marshal jail tx", zap.Error(err))
 		return
 	}
 
 	sig, err := common.EthSign(s.config.EthereumKey, txBytes)
 	if err != nil {
-		s.logger.Error("could not sign deregister tx", zap.Error(err))
+		s.logger.Error("could not sign jail tx", zap.Error(err))
 		return
 	}
 
@@ -532,9 +560,9 @@ func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
 
 	txhash, err := s.self.SendTransaction(context.Background(), connect.NewRequest(txreq))
 	if err != nil {
-		s.logger.Error("send deregister tx failed", zap.Error(err))
+		s.logger.Error("send jail tx failed", zap.Error(err))
 		return
 	}
 
-	s.logger.Info("deregistered validator", zap.String("endpoint", s.config.NodeEndpoint), zap.String("receipt", txhash.Msg.Transaction.Hash))
+	s.logger.Info("submitted jail attestation for validator", zap.String("endpoint", s.config.NodeEndpoint), zap.String("receipt", txhash.Msg.Transaction.Hash))
 }
