@@ -232,6 +232,12 @@ insert into access_keys (track_id, pub_key) values ($1, $2);
 -- name: InsertManagementKey :exec
 insert into management_keys (track_id, address) values ($1, $2);
 
+-- name: DeleteManagementKeysByTrackID :exec
+delete from management_keys where track_id = $1;
+
+-- name: DeleteSoundRecordingsByTrackID :exec
+delete from sound_recordings where track_id = $1;
+
 -- ERN, MEAD, PIE insert queries - using protobuf storage with new schema
 -- name: InsertCoreERN :exec
 insert into core_ern (

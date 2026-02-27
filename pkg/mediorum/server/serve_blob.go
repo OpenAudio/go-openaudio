@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -560,11 +559,11 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 		})
 	}
 
-	// check it is for this upload
-	if sig.Data.UploadID != trackId {
+	// check it is for this track
+	if fmt.Sprint(sig.Data.TrackId) != trackId {
 		return c.JSON(401, map[string]string{
 			"error":  "signature contains incorrect track ID",
-			"detail": fmt.Sprintf("url: %s, signature %s", trackId, sig.Data.UploadID),
+			"detail": fmt.Sprintf("url: %s, signature trackId %d", trackId, sig.Data.TrackId),
 		})
 	}
 
@@ -575,7 +574,7 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 	}
 
 	var count int
-	ss.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND pub_key = ?", trackId, base64.StdEncoding.EncodeToString(sig.SignerPubkey)).Scan(&count)
+	ss.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackId, sig.SignerWallet).Scan(&count)
 	if count == 0 {
 		ss.logger.Debug("sig no match", zap.String("signed by", sig.SignerWallet))
 		return c.JSON(401, map[string]string{

@@ -1,12 +1,12 @@
-# Programmable Distribution Example
+# Programmable Distribution Example (Entity Manager)
 
-This example demonstrates geolocation-based content distribution using the OpenAudio protocol. The service uploads a track and provides streaming access only to requests from a specific city (Bozeman, by default).
+Demonstrates a worker that signs stream URLs for entity manager tracks. The worker uploads a track with itself as the sole signer, then serves requests by signing and redirecting to the content node.
 
 ## How it Works
 
-1. Uploads a demo track to the OpenAudio network
-2. Runs an HTTP server that filters stream access by geolocation
-3. Returns stream URLs only to requests from the allowed city
+1. Uploads a demo track via ManageEntity with `stream_conditions: { signers: [workerAddress] }`
+2. Runs an HTTP server that signs stream URLs
+3. On `GET /stream?track_id=X`, generates a valid signature and redirects to the content node
 
 ## Setup
 
@@ -18,37 +18,25 @@ make up
 
 ## Usage
 
-Run the example:
-
 ```bash
 make example/programmable-distribution
 ```
 
-Or run directly with custom flags:
+Or with flags:
 
 ```bash
-cd examples/programmable-distribution
-go run . -validator node3.openaudio.devnet -port 8800
+cd examples/programmable-distribution && go run . -validator node1.oap.devnet -port 8800
 ```
-
-### Flags
-
-- `-validator` - Validator endpoint URL (default: `node3.openaudio.devnet`)
-- `-port` - Server port (default: `8800`)
 
 ## Testing
 
-Access the streaming endpoint with a city parameter:
-
 ```bash
-# Allowed city (Bozeman)
-curl "http://localhost:8800/stream-access?city=Bozeman"
-
-# Blocked city
-curl "http://localhost:8800/stream-access?city=Seattle"
+# After running the example, the server prints the track_id. Then:
+curl -L "http://localhost:8800/stream?track_id=<track_id>"
 ```
 
-## Requirements
+The worker redirects to a signed stream URL. The content node validates the signature against `management_keys` and serves the audio.
 
-- Running Audius validator endpoint
-- Demo audio file is read from `../../pkg/integration_tests/assets/anxiety-upgrade.mp3`
+## Follow-Gated (Future)
+
+For follow-gated access, the worker would call the Audius API to verify the user follows the artist before signing. The data flow is the same; only the condition check is added.

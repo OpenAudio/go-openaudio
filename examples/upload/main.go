@@ -2,208 +2,138 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"time"
 
 	"connectrpc.com/connect"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
-	corev1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
-	ddexv1beta1 "github.com/OpenAudio/go-openaudio/pkg/api/ddex/v1beta1"
-	v1storage "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
-	auds "github.com/OpenAudio/go-openaudio/pkg/sdk"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/core/server"
+	"github.com/OpenAudio/go-openaudio/pkg/hashes"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk"
+	"github.com/OpenAudio/go-openaudio/pkg/sdk/mediorum"
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/types/known/timestamppb"
+	"google.golang.org/protobuf/proto"
 )
 
 func main() {
 	ctx := context.Background()
 	serverAddr := "node1.oap.devnet"
-	privKeyPath := "./pkg/integration_tests/assets/demo_key.txt"
+	privKeyPath := "../../pkg/integration_tests/assets/demo_key.txt"
+	audioPath := "../../pkg/integration_tests/assets/anxiety-upgrade.mp3"
 
-	sdk := auds.NewOpenAudioSDK(serverAddr)
-	if err := sdk.ReadPrivKey(privKeyPath); err != nil {
-		log.Fatalf("failed to read private key: %w", err)
+	auds := sdk.NewOpenAudioSDK(serverAddr)
+	if err := auds.Init(ctx); err != nil {
+		log.Fatalf("failed to init SDK: %v", err)
+	}
+	if err := auds.ReadPrivKey(privKeyPath); err != nil {
+		log.Fatalf("failed to read private key: %v", err)
 	}
 
-	audioFile, err := os.Open("./pkg/integration_tests/assets/anxiety-upgrade.mp3")
+	audioFile, err := os.Open(audioPath)
 	if err != nil {
-		log.Fatalf("failed to open file: %v", err)
+		log.Fatalf("failed to open audio file: %v", err)
 	}
 	defer audioFile.Close()
-	audioFileBytes, err := io.ReadAll(audioFile)
+
+	fileCID, err := hashes.ComputeFileCID(audioFile)
 	if err != nil {
-		log.Fatalf("failed to read file: %v", err)
+		log.Fatalf("failed to compute file CID: %v", err)
 	}
+	audioFile.Seek(0, 0)
 
-	// upload the track
-	uploadFileRes, err := sdk.Storage.UploadFiles(ctx, &connect.Request[v1storage.UploadFilesRequest]{
-		Msg: &v1storage.UploadFilesRequest{
-			UserWallet: sdk.Address(),
-			Template:   "audio",
-			Files: []*v1storage.File{
-				{
-					Filename: "anxiety-upgrade.mp3",
-					Data:     audioFileBytes,
-				},
-			},
-		},
-	})
-	if err != nil || len(uploadFileRes.Msg.Uploads) != 1 {
-		log.Fatalf("failed to upload file on test side: %v", err)
-	}
-
-	uploadID := uploadFileRes.Msg.Uploads[0].Id
-
-	// get the upload info
-	getUploadRes, err := sdk.Storage.GetUpload(ctx, &connect.Request[v1storage.GetUploadRequest]{
-		Msg: &v1storage.GetUploadRequest{
-			Id: uploadID,
-		},
-	})
+	uploadSigData := &corev1.UploadSignature{Cid: fileCID}
+	uploadSigBytes, err := proto.Marshal(uploadSigData)
 	if err != nil {
-		log.Fatalf("failed to get upload: %v", err)
+		log.Fatalf("failed to marshal upload signature: %v", err)
+	}
+	uploadSignature, err := common.EthSign(auds.PrivKey(), uploadSigBytes)
+	if err != nil {
+		log.Fatalf("failed to sign upload: %v", err)
 	}
 
-	upload := getUploadRes.Msg.Upload
-	if upload == nil {
-		log.Fatalf("upload not found")
+	uploadOpts := &mediorum.UploadOptions{
+		Template:          "audio",
+		Signature:         uploadSignature,
+		WaitForTranscode:  true,
+		WaitForFileUpload: true,
+		OriginalCID:       fileCID,
 	}
-	fmt.Printf("uploaded cid: %s\n", upload.OrigFileCid)
 
-	// release the track
-	title := "Anxiety Upgrade"
-	genre := "Electronic"
+	uploads, err := auds.Mediorum.UploadFile(ctx, audioFile, "anxiety-upgrade.mp3", uploadOpts)
+	if err != nil {
+		log.Fatalf("failed to upload file: %v", err)
+	}
+	if len(uploads) == 0 {
+		log.Fatalf("no uploads returned")
+	}
+	upload := uploads[0]
+	if upload.Status != "done" {
+		log.Fatalf("upload failed: %s", upload.Error)
+	}
 
-	// create ERN track release with upload cid
-	envelope := &corev1beta1.Envelope{
-		Header: &corev1beta1.EnvelopeHeader{
-			ChainId:    "openaudio-devnet",
-			From:       sdk.Address(),
-			Nonce:      uuid.New().String(),
-			Expiration: time.Now().Add(time.Hour).Unix(),
+	transcodedCID := upload.GetTranscodedCID()
+	ownerAddress := auds.Address()
+
+	// Build ManageEntity Track Create
+	entityID := time.Now().UnixNano() % 1000000 // deterministic-ish for demo
+	if entityID < 0 {
+		entityID = -entityID
+	}
+
+	metadata := map[string]interface{}{
+		"title": "Anxiety Upgrade",
+		"genre": "Electronic",
+		"release_date": time.Now().Format("2006-01-02"),
+		"cid": transcodedCID,
+		"stream_conditions": map[string]interface{}{
+			"signers": []string{ownerAddress},
 		},
-		Messages: []*corev1beta1.Message{
-			{
-				Message: &corev1beta1.Message_Ern{
-					Ern: &ddexv1beta1.NewReleaseMessage{
-						MessageHeader: &ddexv1beta1.MessageHeader{
-							MessageId: fmt.Sprintf("upload_%s", uuid.New().String()),
-							MessageSender: &ddexv1beta1.MessageSender{
-								PartyId: &ddexv1beta1.Party_PartyId{
-									Dpid: sdk.Address(),
-								},
-							},
-							MessageCreatedDateTime: timestamppb.Now(),
-							MessageControlType:     ddexv1beta1.MessageControlType_MESSAGE_CONTROL_TYPE_NEW_MESSAGE.Enum(),
-						},
-						PartyList: []*ddexv1beta1.Party{
-							{
-								PartyReference: "P_UPLOADER",
-								PartyId: &ddexv1beta1.Party_PartyId{
-									Dpid: sdk.Address(),
-								},
-								PartyName: &ddexv1beta1.Party_PartyName{
-									FullName: "Test Uploader",
-								},
-							},
-						},
-						ResourceList: []*ddexv1beta1.Resource{
-							{
-								Resource: &ddexv1beta1.Resource_SoundRecording_{
-									SoundRecording: &ddexv1beta1.Resource_SoundRecording{
-										ResourceReference:     "A1",
-										Type:                  "MusicalWorkSoundRecording",
-										DisplayTitleText:      title,
-										DisplayArtistName:     "Test Artist",
-										VersionType:           "OriginalVersion",
-										LanguageOfPerformance: "en",
-										SoundRecordingEdition: &ddexv1beta1.Resource_SoundRecording_SoundRecordingEdition{
-											Type: "NonImmersiveEdition",
-											ResourceId: &ddexv1beta1.Resource_ResourceId{
-												ProprietaryId: []*ddexv1beta1.Resource_ProprietaryId{
-													{
-														Namespace:     "audius",
-														ProprietaryId: upload.OrigFileCid,
-													},
-												},
-											},
-											TechnicalDetails: &ddexv1beta1.Resource_SoundRecording_SoundRecordingEdition_TechnicalDetails{
-												TechnicalResourceDetailsReference: "T1",
-												DeliveryFile: &ddexv1beta1.Resource_SoundRecording_SoundRecordingEdition_TechnicalDetails_DeliveryFile{
-													Type:                 "AudioFile",
-													AudioCodecType:       "MP3",
-													NumberOfChannels:     2,
-													SamplingRate:         48.0, // 48kHz as per transcoding
-													BitsPerSample:        16,
-													IsProvidedInDelivery: true,
-													File: &ddexv1beta1.Resource_SoundRecording_SoundRecordingEdition_TechnicalDetails_DeliveryFile_File{
-														Uri: upload.TranscodeResults["320"], // Use transcoded file CID as URI
-														HashSum: &ddexv1beta1.Resource_SoundRecording_SoundRecordingEdition_TechnicalDetails_DeliveryFile_File_HashSum{
-															Algorithm:    "IPFS",
-															HashSumValue: upload.TranscodeResults["320"],
-														},
-														FileSize: 1000000, // Placeholder file size
-													},
-												},
-												IsClip: false,
-											},
-										},
-									},
-								},
-							},
-						},
-						ReleaseList: []*ddexv1beta1.Release{
-							{
-								Release: &ddexv1beta1.Release_MainRelease{
-									MainRelease: &ddexv1beta1.Release_Release{
-										ReleaseReference:      "R1",
-										ReleaseType:           "Single",
-										DisplayTitleText:      title,
-										DisplayArtistName:     "Test Artist",
-										ReleaseLabelReference: "P_UPLOADER",
-										OriginalReleaseDate:   time.Now().Format("2006-01-02"),
-										ParentalWarningType:   "NotExplicit",
-										Genre: &ddexv1beta1.Release_Release_Genre{
-											GenreText: genre,
-										},
-										ResourceGroup: &ddexv1beta1.Release_Release_ResourceGroup{
-											ResourceGroup: []*ddexv1beta1.Release_Release_ResourceGroup_ResourceGroup{
-												{
-													ResourceGroupType: "Audio",
-													SequenceNumber:    "1",
-													ResourceGroupContentItem: []*ddexv1beta1.Release_Release_ResourceGroup_ResourceGroup_ResourceGroupContentItem{
-														{
-															ResourceGroupContentItemType: "Track",
-															ResourceGroupContentItemText: "A1",
-														},
-													},
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
+	}
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		log.Fatalf("failed to marshal metadata: %v", err)
+	}
+
+	manageEntity := &corev1.ManageEntityLegacy{
+		UserId:     1, // placeholder; devnet may use different schemes
+		EntityType: "Track",
+		EntityId:   entityID,
+		Action:     "Create",
+		Metadata:   string(metadataJSON),
+		Nonce:      fmt.Sprintf("0x%064x", entityID), // 32-byte hex for EIP712
+		Signer:     "",                               // filled by SignManageEntity
+	}
+
+	mockConfig := &config.Config{
+		AcdcEntityManagerAddress: config.DevAcdcAddress,
+		AcdcChainID:             config.DevAcdcChainID,
+	}
+	if err := server.SignManageEntity(mockConfig, manageEntity, auds.PrivKey()); err != nil {
+		log.Fatalf("failed to sign ManageEntity: %v", err)
+	}
+
+	stx := &corev1.SignedTransaction{
+		RequestId: uuid.NewString(),
+		Transaction: &corev1.SignedTransaction_ManageEntity{
+			ManageEntity: manageEntity,
 		},
 	}
 
-	transaction := &corev1beta1.Transaction{
-		Envelope: envelope,
-	}
-
-	submitRes, err := sdk.Core.SendTransaction(ctx, connect.NewRequest(&corev1.SendTransactionRequest{
-		Transactionv2: transaction,
+	_, err = auds.Core.SendTransaction(ctx, connect.NewRequest(&corev1.SendTransactionRequest{
+		Transaction: stx,
 	}))
 	if err != nil {
-		log.Fatalf("failed to send tx: %v", err)
+		log.Fatalf("failed to send ManageEntity tx: %v", err)
 	}
 
-	ernReceipt := submitRes.Msg.TransactionReceipt.MessageReceipts[0].GetErnAck()
-	fmt.Printf("tx receipt: %v", &ernReceipt)
+	fmt.Printf("Track created via Entity Manager\n")
+	fmt.Printf("  Track ID: %d\n", entityID)
+	fmt.Printf("  CID: %s\n", transcodedCID)
+	fmt.Printf("  Signers: [%s]\n", ownerAddress)
+	fmt.Printf("\nStream at: https://%s/tracks/stream/%d?signature=<signed_by_signer>\n", serverAddr, entityID)
 }

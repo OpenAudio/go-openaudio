@@ -110,6 +110,15 @@ func (q *Queries) DeleteCoreReward(ctx context.Context, address string) error {
 	return err
 }
 
+const deleteManagementKeysByTrackID = `-- name: DeleteManagementKeysByTrackID :exec
+delete from management_keys where track_id = $1
+`
+
+func (q *Queries) DeleteManagementKeysByTrackID(ctx context.Context, trackID string) error {
+	_, err := q.db.Exec(ctx, deleteManagementKeysByTrackID, trackID)
+	return err
+}
+
 const deleteRegisteredNode = `-- name: DeleteRegisteredNode :exec
 delete from core_validators
 where comet_address = $1
@@ -117,6 +126,15 @@ where comet_address = $1
 
 func (q *Queries) DeleteRegisteredNode(ctx context.Context, cometAddress string) error {
 	_, err := q.db.Exec(ctx, deleteRegisteredNode, cometAddress)
+	return err
+}
+
+const deleteSoundRecordingsByTrackID = `-- name: DeleteSoundRecordingsByTrackID :exec
+delete from sound_recordings where track_id = $1
+`
+
+func (q *Queries) DeleteSoundRecordingsByTrackID(ctx context.Context, trackID string) error {
+	_, err := q.db.Exec(ctx, deleteSoundRecordingsByTrackID, trackID)
 	return err
 }
 
