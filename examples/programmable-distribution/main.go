@@ -171,12 +171,14 @@ func uploadTrackExample(ctx context.Context, auds *sdk.OpenAudioSDK) (string, in
 	}
 
 	metadata := map[string]interface{}{
-		"title":        "Programmable Distribution Demo",
-		"genre":        "Electronic",
-		"release_date": time.Now().Format("2006-01-02"),
-		"cid":          transcodedCID,
-		"stream_conditions": map[string]interface{}{
-			"signers": []string{signerAddress},
+		"cid":                "",
+		"access_authorities": []string{signerAddress},
+		"data": map[string]interface{}{
+			"title":        "Programmable Distribution Demo",
+			"genre":        "Electronic",
+			"release_date": time.Now().Format("2006-01-02"),
+			"track_cid":    transcodedCID,
+			"owner_id":     1,
 		},
 	}
 	metadataJSON, err := json.Marshal(metadata)

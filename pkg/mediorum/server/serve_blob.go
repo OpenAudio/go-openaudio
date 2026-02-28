@@ -423,40 +423,47 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 				"detail": err.Error(),
 			})
 		} else {
-			// check it was signed by a registered node / mediorum peer, or by a management_key signer for this track
-			isRegistered := slices.ContainsFunc(s.Config.Signers, func(peer registrar.Peer) bool {
-				return strings.EqualFold(peer.Wallet, sig.SignerWallet)
-			}) || slices.ContainsFunc(s.Config.Peers, func(peer registrar.Peer) bool {
-				return strings.EqualFold(peer.Wallet, sig.SignerWallet)
-			})
+			var trackID string
+			s.crud.DB.Raw("SELECT track_id FROM sound_recordings WHERE cid = ?", cid).Scan(&trackID)
 
-			if !isRegistered {
-				// fallback: allow if CID is in sound_recordings and signer is in management_keys (programmable distribution)
-				var trackID string
-				s.crud.DB.Raw("SELECT track_id FROM sound_recordings WHERE cid = ?", cid).Scan(&trackID)
-				if trackID != "" {
-					var count int
-					s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackID, sig.SignerWallet).Scan(&count)
-					if count > 0 {
-						isRegistered = true
-					}
-				}
+			var managementKeyCount int
+			if trackID != "" {
+				s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ?", trackID).Scan(&managementKeyCount)
 			}
 
-			if !isRegistered {
-				wallets := make([]string, len(s.Config.Signers)+len(s.Config.Peers))
-				for i, peer := range s.Config.Signers {
-					wallets[i] = peer.Wallet
+			// If track has access_authorities (management_keys), ONLY those signers may authorize - not validator keys
+			if trackID != "" && managementKeyCount > 0 {
+				var count int
+				s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackID, sig.SignerWallet).Scan(&count)
+				if count == 0 {
+					s.logger.Debug("sig no match (access_authorities)", zap.String("signed by", sig.SignerWallet), zap.String("track_id", trackID))
+					return c.JSON(401, map[string]string{
+						"error":  "signer not authorized for this track (access_authorities)",
+						"detail": "signed by: " + sig.SignerWallet + "; signer must be in track access_authorities",
+					})
 				}
-				for i, peer := range s.Config.Peers {
-					wallets[len(s.Config.Signers)+i] = peer.Wallet
-				}
-				s.logger.Debug("sig no match", zap.String("signed by", sig.SignerWallet))
-				return c.JSON(401, map[string]string{
-					"error":         "signer not in list of registered nodes",
-					"detail":        "signed by: " + sig.SignerWallet,
-					"valid_signers": strings.Join(wallets, ","),
+			} else {
+				// No access_authorities: require validator/peer signature
+				isRegistered := slices.ContainsFunc(s.Config.Signers, func(peer registrar.Peer) bool {
+					return strings.EqualFold(peer.Wallet, sig.SignerWallet)
+				}) || slices.ContainsFunc(s.Config.Peers, func(peer registrar.Peer) bool {
+					return strings.EqualFold(peer.Wallet, sig.SignerWallet)
 				})
+				if !isRegistered {
+					wallets := make([]string, len(s.Config.Signers)+len(s.Config.Peers))
+					for i, peer := range s.Config.Signers {
+						wallets[i] = peer.Wallet
+					}
+					for i, peer := range s.Config.Peers {
+						wallets[len(s.Config.Signers)+i] = peer.Wallet
+					}
+					s.logger.Debug("sig no match", zap.String("signed by", sig.SignerWallet))
+					return c.JSON(401, map[string]string{
+						"error":         "signer not in list of registered nodes",
+						"detail":        "signed by: " + sig.SignerWallet,
+						"valid_signers": strings.Join(wallets, ","),
+					})
+				}
 			}
 
 			// check signature not too old

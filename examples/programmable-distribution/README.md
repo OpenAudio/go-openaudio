@@ -4,7 +4,7 @@ Demonstrates a worker that signs stream URLs for entity manager tracks. The work
 
 ## How it Works
 
-1. Uploads a demo track via ManageEntity with `stream_conditions: { signers: [workerAddress] }`
+1. Uploads a demo track via ManageEntity with `access_authorities: [workerAddress]`
 2. Runs an HTTP server that signs stream URLs
 3. On `GET /stream`, the worker signs with its key and redirects to `/tracks/stream/:trackId?signature=...` on the node
 4. The node validates the signature against `management_keys` and serves the audio
