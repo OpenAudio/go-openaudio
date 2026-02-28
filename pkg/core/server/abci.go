@@ -996,7 +996,7 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 			return false, nil
 		}
 	case *v1.SignedTransaction_StorageProof:
-		if err := s.isValidStorageProofTx(ctx, signedTx, blockHeight, true); err != nil {
+		if err := s.isValidStorageProofTx(ctx, signedTx, blockHeight, false); err != nil {
 			s.logger.Error("Invalid block: invalid storage proof tx", zap.Error(err))
 			return false, nil
 		}
