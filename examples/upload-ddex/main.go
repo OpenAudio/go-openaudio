@@ -25,7 +25,7 @@ func main() {
 
 	sdk := auds.NewOpenAudioSDK(serverAddr)
 	if err := sdk.ReadPrivKey(privKeyPath); err != nil {
-		log.Fatalf("failed to read private key: %w", err)
+		log.Fatalf("failed to read private key: %v", err)
 	}
 
 	audioFile, err := os.Open("../../pkg/integration_tests/assets/anxiety-upgrade.mp3")

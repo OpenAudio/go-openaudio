@@ -77,7 +77,6 @@ func main() {
 	}
 
 	transcodedCID := upload.GetTranscodedCID()
-	ownerAddress := auds.Address()
 
 	// Build ManageEntity Track Create
 	entityID := time.Now().UnixNano() % 1000000 // deterministic-ish for demo
@@ -86,13 +85,10 @@ func main() {
 	}
 
 	metadata := map[string]interface{}{
-		"title": "Anxiety Upgrade",
-		"genre": "Electronic",
+		"title":        "Anxiety Upgrade",
+		"genre":        "Electronic",
 		"release_date": time.Now().Format("2006-01-02"),
-		"cid": transcodedCID,
-		"stream_conditions": map[string]interface{}{
-			"signers": []string{ownerAddress},
-		},
+		"cid":          transcodedCID,
 	}
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
@@ -111,7 +107,7 @@ func main() {
 
 	mockConfig := &config.Config{
 		AcdcEntityManagerAddress: config.DevAcdcAddress,
-		AcdcChainID:             config.DevAcdcChainID,
+		AcdcChainID:              config.DevAcdcChainID,
 	}
 	if err := server.SignManageEntity(mockConfig, manageEntity, auds.PrivKey()); err != nil {
 		log.Fatalf("failed to sign ManageEntity: %v", err)

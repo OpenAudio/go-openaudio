@@ -297,18 +297,18 @@ test-down:
 		--profile=unittests \
 		down -v
 
-.PHONY: example/upload
-example/upload:
+.PHONY: examples/upload
+examples/upload:
 	cd examples/upload && go run .
 
-.PHONY: example/upload-ddex
-example/upload-ddex:
+.PHONY: examples/upload-ddex
+examples/upload-ddex:
 	cd examples/upload-ddex && go run .
 
-.PHONY: example/programmable-distribution
-example/programmable-distribution:
+.PHONY: examples/programmable-distribution
+examples/programmable-distribution:
 	cd examples/programmable-distribution && go run .
 
-.PHONY: example/programmable-distribution-ddex
-example/programmable-distribution-ddex:
+.PHONY: examples/programmable-distribution-ddex
+examples/programmable-distribution-ddex:
 	cd examples/programmable-distribution-ddex && go run .

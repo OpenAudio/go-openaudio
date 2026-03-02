@@ -45,6 +45,12 @@ import (
 	_ "gocloud.dev/blob/fileblob"
 )
 
+// trackAccessInfo caches sound_recordings + management_keys lookup for cidstream auth
+type trackAccessInfo struct {
+	TrackID            string
+	ManagementKeyCount int
+}
+
 type MediorumConfig struct {
 	Env                       string
 	Self                      registrar.Peer
@@ -119,6 +125,7 @@ type MediorumServer struct {
 	redirectCache         *imcache.Cache[string, string]
 	uploadOrigCidCache    *imcache.Cache[string, string]
 	imageCache            *imcache.Cache[string, []byte]
+	trackAccessInfoCache  *imcache.Cache[string, trackAccessInfo]
 	failsPeerReachability bool
 
 	StartedAt time.Time
@@ -355,9 +362,10 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		posChannel:       posChannel,
 
 		peerHealths:        map[string]*PeerHealth{},
-		redirectCache:      imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
-		uploadOrigCidCache: imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
-		imageCache:         imcache.New(imcache.WithMaxEntriesLimitOption[string, []byte](10_000, imcache.EvictionPolicyLRU)),
+		redirectCache:         imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
+		uploadOrigCidCache:    imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
+		imageCache:            imcache.New(imcache.WithMaxEntriesLimitOption[string, []byte](10_000, imcache.EvictionPolicyLRU)),
+		trackAccessInfoCache:  imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
 
 		StartedAt:    time.Now().UTC(),
 		Config:       config,

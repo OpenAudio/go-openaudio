@@ -424,11 +424,16 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 			})
 		} else {
 			var trackID string
-			s.crud.DB.Raw("SELECT track_id FROM sound_recordings WHERE cid = ?", cid).Scan(&trackID)
-
 			var managementKeyCount int
-			if trackID != "" {
-				s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ?", trackID).Scan(&managementKeyCount)
+			if info, ok := s.trackAccessInfoCache.Get(cid); ok {
+				trackID = info.TrackID
+				managementKeyCount = info.ManagementKeyCount
+			} else {
+				s.crud.DB.Raw("SELECT track_id FROM sound_recordings WHERE cid = ?", cid).Scan(&trackID)
+				if trackID != "" {
+					s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ?", trackID).Scan(&managementKeyCount)
+				}
+				s.trackAccessInfoCache.Set(cid, trackAccessInfo{trackID, managementKeyCount}, imcache.WithExpiration(5*time.Minute))
 			}
 
 			// If track has access_authorities (management_keys), ONLY those signers may authorize - not validator keys
@@ -643,4 +648,3 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 	http.ServeContent(c.Response(), c.Request(), cid, blob.ModTime(), blob)
 	return nil
 }
-
