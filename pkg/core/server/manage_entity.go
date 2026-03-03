@@ -66,9 +66,6 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 	}
 
 	signers := meta.AccessAuthorities
-	if len(signers) == 0 {
-		signers = []string{me.Signer}
-	}
 
 	trackID := strconv.FormatInt(me.EntityId, 10)
 
