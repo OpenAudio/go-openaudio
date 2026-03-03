@@ -80,6 +80,10 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 		return fmt.Errorf("delete management_keys: %w", err)
 	}
 
+	if len(signers) == 0 {
+		return nil
+	}
+
 	soundRecordingID := fmt.Sprintf("sr_%s", trackID)
 	if err := q.InsertSoundRecording(ctx, db.InsertSoundRecordingParams{
 		SoundRecordingID: soundRecordingID,
