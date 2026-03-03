@@ -66,6 +66,9 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 	}
 
 	signers := meta.AccessAuthorities
+	if len(signers) == 0 {
+		return nil
+	}
 
 	trackID := strconv.FormatInt(me.EntityId, 10)
 
@@ -78,10 +81,6 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 	}
 	if err := q.DeleteManagementKeysByTrackID(ctx, trackID); err != nil {
 		return fmt.Errorf("delete management_keys: %w", err)
-	}
-
-	if len(signers) == 0 {
-		return nil
 	}
 
 	soundRecordingID := fmt.Sprintf("sr_%s", trackID)
