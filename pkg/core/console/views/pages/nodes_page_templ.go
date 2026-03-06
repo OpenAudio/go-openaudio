@@ -93,7 +93,7 @@ func (p *Pages) NodesPageHTML(data *NodesView) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div></div></div><div class=\"bg-tertiary rounded-lg px-4 py-2\"><button id=\"tab-list\" class=\"tab-btn px-4 py-2 border-b-2 border-primary\" data-tab=\"list\">List View</button> <button id=\"tab-matrix\" class=\"tab-btn px-4 py-2\" data-tab=\"matrix\">Matrix View</button></div><div id=\"panel-list\" class=\"tab-panel space-y-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div></div></div><div id=\"version-adoption\" class=\"bg-tertiary rounded-lg px-4 py-3\"><div id=\"version-adoption-loading\" class=\"text-sm text-secondary\">Loading version adoption...</div><div id=\"version-adoption-content\" class=\"hidden\"></div></div><div class=\"bg-tertiary rounded-lg px-4 py-2\"><button id=\"tab-list\" class=\"tab-btn px-4 py-2 border-b-2 border-primary\" data-tab=\"list\">List View</button> <button id=\"tab-matrix\" class=\"tab-btn px-4 py-2\" data-tab=\"matrix\">Matrix View</button></div><div id=\"panel-list\" class=\"tab-panel space-y-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -121,7 +121,7 @@ func (p *Pages) NodesPageHTML(data *NodesView) templ.Component {
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(node.Endpoint)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 44, Col: 28}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 48, Col: 28}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
@@ -166,7 +166,7 @@ func (p *Pages) NodesPageHTML(data *NodesView) templ.Component {
 					var templ_7745c5c3_Var9 string
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(node.EthAddress)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 54, Col: 43}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 58, Col: 43}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 					if templ_7745c5c3_Err != nil {
@@ -205,7 +205,7 @@ func (p *Pages) NodesPageHTML(data *NodesView) templ.Component {
 					var templ_7745c5c3_Var11 string
 					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(node.CometAddress)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 59, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 63, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 					if templ_7745c5c3_Err != nil {
@@ -228,7 +228,7 @@ func (p *Pages) NodesPageHTML(data *NodesView) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(node.EthBlock)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 62, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/nodes_page.templ`, Line: 66, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -239,7 +239,7 @@ func (p *Pages) NodesPageHTML(data *NodesView) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div><div id=\"panel-matrix\" class=\"tab-panel hidden\"><div id=\"matrix-loading\" class=\"p-4 text-secondary\">Loading matrix...</div><div id=\"matrix-content\" class=\"hidden overflow-x-auto\"></div></div></div><script src=\"/console/assets/js/matrix.js\"></script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div><div id=\"panel-matrix\" class=\"tab-panel hidden\"><div id=\"matrix-loading\" class=\"p-4 text-secondary\">Loading matrix...</div><div id=\"matrix-content\" class=\"hidden overflow-x-auto\"></div></div></div><script src=\"/console/assets/js/matrix.js\"></script> <script src=\"/console/assets/js/version-adoption.js\"></script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

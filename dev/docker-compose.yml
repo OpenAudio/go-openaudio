@@ -48,6 +48,7 @@ services:
     environment:
       - OPENAUDIO_HOT_RELOAD=true
       - OPENAUDIO_CI=${OPENAUDIO_CI:-}
+      - OPENAUDIO_VERSION_OVERRIDE=1.2.2
     extra_hosts:
       - 'node1.oap.devnet:host-gateway'
       - 'node2.oap.devnet:host-gateway'
@@ -76,6 +77,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./dev/env/openaudio-2.env
+    environment:
+      - OPENAUDIO_VERSION_OVERRIDE=1.2.2
     extra_hosts:
       - 'node1.oap.devnet:host-gateway'
       - 'node2.oap.devnet:host-gateway'
@@ -102,6 +105,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./dev/env/openaudio-3.env
+    environment:
+      - OPENAUDIO_VERSION_OVERRIDE=1.2.1
     extra_hosts:
       - 'node1.oap.devnet:host-gateway'
       - 'node2.oap.devnet:host-gateway'
@@ -128,6 +133,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./dev/env/openaudio-4.env
+    environment:
+      - OPENAUDIO_VERSION_OVERRIDE=1.2.0
     extra_hosts:
       - 'node1.oap.devnet:host-gateway'
       - 'node2.oap.devnet:host-gateway'

@@ -60,21 +60,22 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 		return fmt.Errorf("parse track metadata: %w", err)
 	}
 
-	cid := meta.Data.TrackCid
-	if cid == "" {
-		return fmt.Errorf("track metadata missing track_cid in data")
-	}
-
 	signers := meta.AccessAuthorities
 	trackID := strconv.FormatInt(me.EntityId, 10)
 	q := s.getDb()
 
 	if len(signers) == 0 {
 		// access_authorities null/empty: ungate the track by removing management keys
+		// (no track_cid needed, likely an update)
 		if err := q.DeleteManagementKeysByTrackID(ctx, trackID); err != nil {
 			return fmt.Errorf("delete management_keys: %w", err)
 		}
 		return nil
+	}
+
+	cid := meta.Data.TrackCid
+	if cid == "" {
+		return fmt.Errorf("track metadata missing track_cid in data")
 	}
 
 	// These operations run in the block's pg tx (getDb returns WithTx(onGoingBlock)).

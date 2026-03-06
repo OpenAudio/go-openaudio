@@ -31,6 +31,10 @@ templ (p *Pages) NodesPageHTML(data *NodesView) {
 					<div class="text-2xl font-semibold">{ fmt.Sprintf("%d", data.EthEndpointsCount) }</div>
 				</div>
 			</div>
+			<div id="version-adoption" class="bg-tertiary rounded-lg px-4 py-3">
+				<div id="version-adoption-loading" class="text-sm text-secondary">Loading version adoption...</div>
+				<div id="version-adoption-content" class="hidden"></div>
+			</div>
 			<div class="bg-tertiary rounded-lg px-4 py-2">
 				<button id="tab-list" class="tab-btn px-4 py-2 border-b-2 border-primary" data-tab="list">List View</button>
 				<button id="tab-matrix" class="tab-btn px-4 py-2" data-tab="matrix">Matrix View</button>
@@ -70,5 +74,6 @@ templ (p *Pages) NodesPageHTML(data *NodesView) {
 			</div>
 		</div>
 		<script src="/console/assets/js/matrix.js"></script>
+		<script src="/console/assets/js/version-adoption.js"></script>
 	}
 }

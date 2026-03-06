@@ -35,6 +35,7 @@ func (c *Console) registerRoutes() {
 	g.GET("/validator", c.nodesPage)
 	g.GET("/api/core-validators-endpoints", c.coreValidatorsEndpointsAPI)
 	g.GET("/api/matrix", c.matrixAPI)
+	g.GET("/api/version-adoption", c.versionAdoptionAPI)
 	g.GET("/validator/:validator", c.nodePage)
 	g.GET("/uptime/:rollup/:endpoint", c.uptimeFragment)
 	g.GET("/uptime/:rollup", c.uptimeFragment)

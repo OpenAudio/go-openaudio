@@ -306,9 +306,10 @@ type CoreValidator struct {
 }
 
 type ManagementKey struct {
-	ID      int32
-	TrackID string
-	Address string
+	ID        int32
+	TrackID   string
+	Address   string
+	CreatedAt pgtype.Timestamptz
 }
 
 type SlaNodeReport struct {
