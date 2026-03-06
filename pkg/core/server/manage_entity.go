@@ -66,13 +66,16 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 	}
 
 	signers := meta.AccessAuthorities
+	trackID := strconv.FormatInt(me.EntityId, 10)
+	q := s.getDb()
+
 	if len(signers) == 0 {
+		// access_authorities null/empty: ungate the track by removing management keys
+		if err := q.DeleteManagementKeysByTrackID(ctx, trackID); err != nil {
+			return fmt.Errorf("delete management_keys: %w", err)
+		}
 		return nil
 	}
-
-	trackID := strconv.FormatInt(me.EntityId, 10)
-
-	q := s.getDb()
 
 	// These operations run in the block's pg tx (getDb returns WithTx(onGoingBlock)).
 	// Replace existing rows (handles both Create and Update)
