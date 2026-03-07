@@ -74,6 +74,8 @@ type Server struct {
 	remoteHeadEndpoint  string
 	remoteHeadUpdatedAt time.Time
 	remoteHeadMu        sync.Mutex
+
+	onManagementKeysChanged func(trackID string)
 }
 
 func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.Config, logger *zap.Logger, pool *pgxpool.Pool, ethService *eth.EthService, posChannel chan pos.PoSRequest) (*Server, error) {
@@ -147,6 +149,24 @@ func (s *Server) Start() error {
 
 func (s *Server) setSelf(self corev1connect.CoreServiceHandler) {
 	s.self = self
+}
+
+func (s *Server) setManagementKeysInvalidator(fn func(trackID string)) {
+	s.onManagementKeysChanged = fn
+}
+
+func (s *Server) invalidateTrackAccessCache(trackID string) {
+	if s.onManagementKeysChanged == nil {
+		return
+	}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.logger.Debug("track access cache invalidation failed", zap.Any("recover", r), zap.String("track_id", trackID))
+			}
+		}()
+		s.onManagementKeysChanged(trackID)
+	}()
 }
 
 func (s *Server) syncLogs(ctx context.Context) error {

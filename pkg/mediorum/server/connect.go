@@ -27,6 +27,13 @@ func (s *StorageService) SetMediorum(mediorum *MediorumServer) {
 	s.mediorum = mediorum
 }
 
+// InvalidateTrackAccessCacheForTrack clears cached track access info when management_keys change.
+func (s *StorageService) InvalidateTrackAccessCacheForTrack(trackID string) {
+	if s.mediorum != nil {
+		s.mediorum.InvalidateTrackAccessCacheForTrack(trackID)
+	}
+}
+
 // GetHealth implements v1connect.StorageServiceHandler.
 func (s *StorageService) GetHealth(context.Context, *connect.Request[v1.GetHealthRequest]) (*connect.Response[v1.GetHealthResponse], error) {
 	return connect.NewResponse(&v1.GetHealthResponse{}), nil

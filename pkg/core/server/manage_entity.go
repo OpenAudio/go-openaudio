@@ -70,6 +70,7 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 		if err := q.DeleteManagementKeysByTrackID(ctx, trackID); err != nil {
 			return fmt.Errorf("delete management_keys: %w", err)
 		}
+		s.invalidateTrackAccessCache(trackID)
 		return nil
 	}
 
@@ -106,5 +107,6 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 		}
 	}
 
+	s.invalidateTrackAccessCache(trackID)
 	return nil
 }

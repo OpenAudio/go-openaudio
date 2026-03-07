@@ -26,6 +26,26 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+// InvalidateTrackAccessCacheForTrack removes cached track access info for the given track.
+// Called when management_keys change (gate/ungate). Never fails the caller.
+func (ss *MediorumServer) InvalidateTrackAccessCacheForTrack(trackID string) {
+	defer func() {
+		if r := recover(); r != nil {
+			ss.logger.Debug("track access cache invalidation failed", zap.Any("recover", r), zap.String("track_id", trackID))
+		}
+	}()
+	var cids []string
+	if res := ss.crud.DB.Table("sound_recordings").Where("track_id = ?", trackID).Pluck("cid", &cids); res.Error != nil {
+		ss.logger.Debug("track access cache invalidation query failed", zap.Error(res.Error), zap.String("track_id", trackID))
+		return
+	}
+	for _, cid := range cids {
+		if cid != "" {
+			ss.trackAccessInfoCache.Remove(cid)
+		}
+	}
+}
+
 func (ss *MediorumServer) serveBlobLocation(c echo.Context) error {
 	ctx := c.Request().Context()
 	cid := c.Param("cid")

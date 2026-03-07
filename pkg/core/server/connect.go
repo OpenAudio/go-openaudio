@@ -47,6 +47,11 @@ func (c *CoreService) SetCore(core *Server) {
 	defer c.coreMu.Unlock()
 	c.core = core
 	c.core.setSelf(c)
+	if c.storageService != nil {
+		if inv, ok := c.storageService.(interface{ InvalidateTrackAccessCacheForTrack(string) }); ok {
+			c.core.setManagementKeysInvalidator(inv.InvalidateTrackAccessCacheForTrack)
+		}
+	}
 }
 
 func (c *CoreService) SetStorageService(storageService storagev1connect.StorageServiceHandler) {
