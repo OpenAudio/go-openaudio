@@ -10,9 +10,9 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"fmt"
+	"github.com/OpenAudio/go-openaudio/etl/db"
 	"github.com/OpenAudio/go-openaudio/pkg/console/templates"
 	"github.com/OpenAudio/go-openaudio/pkg/console/templates/layouts"
-	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"strconv"
 	"strings"
 )
@@ -187,7 +187,7 @@ func Dashboard(props DashboardProps) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\" x-data=\"blockEvents()\" x-init=\"init()\"><!-- Section 1: Current Stats --><div class=\"bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6\"><div id=\"stats-header\" x-data=\"blockEvents()\" x-init=\"init()\"><div class=\"flex items-center justify-between\"><div class=\"flex-1 flex flex-col items-center\"><div class=\"flex items-center h-12\" x-data=\"animatedNumber()\" x-init=\"init(latestBlock.height)\"><template x-for=\"(digit, index) in digits\" :key=\"index\"><div class=\"relative h-10 w-6 overflow-hidden flex items-center justify-center\"><!-- Current digit (slides down when animating) --><div class=\"absolute inset-0 flex items-center justify-center\"><span class=\"text-4xl font-bold text-gray-900 dark:text-white tabular-nums\" :class=\"getCurrentDigitClass(digit)\" x-text=\"digit.current\"></span></div><!-- Next digit (slides in from above when animating) --><div class=\"absolute inset-0 flex items-center justify-center\"><span class=\"text-4xl font-bold text-gray-900 dark:text-white tabular-nums\" :class=\"getNextDigitClass(digit)\" x-text=\"digit.next\"></span></div></div></template></div><h4 class=\"text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide\">BLOCK HEIGHT</h4></div><div class=\"flex-1 w-32 border-l border-gray-300 dark:border-gray-400 pl-6 flex flex-col items-center\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\" x-data=\"blockEvents()\" x-init=\"init()\"><!-- Section 1: Current Stats --><div class=\"bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6\"><div id=\"stats-header\" x-data=\"blockEvents()\" x-init=\"init()\"><div class=\"flex items-center justify-between\"><div class=\"flex-1 flex flex-col items-center\"><div class=\"flex items-center justify-center h-12 min-w-[3rem]\" x-data=\"animatedNumber()\" x-init=\"init(latestBlock.height)\"><span x-show=\"!isInitialized\" class=\"text-4xl font-bold text-gray-900 dark:text-white tabular-nums\">-</span><div x-show=\"isInitialized\" class=\"flex items-center\" style=\"display: none;\"><template x-for=\"(digit, index) in digits\" :key=\"index\"><div class=\"relative h-10 w-6 overflow-hidden flex items-center justify-center\"><!-- Current digit (slides down when animating) --><div class=\"absolute inset-0 flex items-center justify-center\"><span class=\"text-4xl font-bold text-gray-900 dark:text-white tabular-nums\" :class=\"getCurrentDigitClass(digit)\" x-text=\"digit.current\"></span></div><!-- Next digit (slides in from above when animating) --><div class=\"absolute inset-0 flex items-center justify-center\"><span class=\"text-4xl font-bold text-gray-900 dark:text-white tabular-nums\" :class=\"getNextDigitClass(digit)\" x-text=\"digit.next\"></span></div></div></template></div></div><h4 class=\"text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide\">BLOCK HEIGHT</h4></div><div class=\"flex-1 w-32 border-l border-gray-300 dark:border-gray-400 pl-6 flex flex-col items-center\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -199,7 +199,7 @@ func Dashboard(props DashboardProps) templ.Component {
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2fs", props.Stats.AvgBlockTime))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 183, Col: 116}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 186, Col: 116}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
@@ -217,7 +217,7 @@ func Dashboard(props DashboardProps) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2fs", 1.0/props.Stats.BPS))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 185, Col: 111}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 188, Col: 111}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -230,7 +230,7 @@ func Dashboard(props DashboardProps) templ.Component {
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f BPS", props.Stats.BPS))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 186, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 189, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -278,7 +278,7 @@ func Dashboard(props DashboardProps) templ.Component {
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d blocks to go", props.Stats.BlockDelta))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 215, Col: 68}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 218, Col: 68}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
@@ -292,7 +292,7 @@ func Dashboard(props DashboardProps) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d / %d", props.Stats.LatestIndexedHeight, props.Stats.LatestChainHeight))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 219, Col: 97}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 222, Col: 97}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -305,7 +305,7 @@ func Dashboard(props DashboardProps) templ.Component {
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", props.SyncProgressPercentage))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 220, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 223, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -345,7 +345,7 @@ func Dashboard(props DashboardProps) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("init({ validatorCount: %d })", props.Stats.ValidatorCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 251, Col: 153}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 254, Col: 153}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -382,7 +382,7 @@ func Dashboard(props DashboardProps) templ.Component {
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(formatNumber(props.Stats.TotalTransactions24h))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 278, Col: 127}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 281, Col: 127}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -395,7 +395,7 @@ func Dashboard(props DashboardProps) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(formatNumber(props.Stats.TotalTransactions7d))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 283, Col: 126}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 286, Col: 126}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -408,7 +408,7 @@ func Dashboard(props DashboardProps) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(formatNumber(props.Stats.TotalTransactions7d / 7))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 284, Col: 118}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 287, Col: 118}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -421,7 +421,7 @@ func Dashboard(props DashboardProps) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(formatNumber(props.Stats.TotalTransactions30d))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 288, Col: 127}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 291, Col: 127}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
@@ -434,7 +434,7 @@ func Dashboard(props DashboardProps) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(formatNumber(props.Stats.TotalTransactions30d / 30))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 289, Col: 120}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 292, Col: 120}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -453,7 +453,7 @@ func Dashboard(props DashboardProps) templ.Component {
 					var templ_7745c5c3_Var17 string
 					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(breakdown.Type)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 300, Col: 129}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 303, Col: 129}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 					if templ_7745c5c3_Err != nil {
@@ -466,7 +466,7 @@ func Dashboard(props DashboardProps) templ.Component {
 					var templ_7745c5c3_Var18 string
 					templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(formatNumber(breakdown.Count))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 301, Col: 121}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 304, Col: 121}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 					if templ_7745c5c3_Err != nil {
@@ -495,7 +495,7 @@ func Dashboard(props DashboardProps) templ.Component {
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(templ.JSONString(props.SLAPerformanceData))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 327, Col: 68}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 330, Col: 68}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -508,7 +508,7 @@ func Dashboard(props DashboardProps) templ.Component {
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(templ.JSONString(props.SLAPerformanceData))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 347, Col: 67}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 350, Col: 67}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -536,7 +536,7 @@ func Dashboard(props DashboardProps) templ.Component {
 					var templ_7745c5c3_Var21 templ.SafeURL
 					templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/block/%d", block.BlockHeight)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 365, Col: 78}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 368, Col: 78}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 					if templ_7745c5c3_Err != nil {
@@ -549,7 +549,7 @@ func Dashboard(props DashboardProps) templ.Component {
 					var templ_7745c5c3_Var22 string
 					templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#%d", block.BlockHeight))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 366, Col: 50}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 369, Col: 50}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 					if templ_7745c5c3_Err != nil {
@@ -562,7 +562,7 @@ func Dashboard(props DashboardProps) templ.Component {
 					var templ_7745c5c3_Var23 templ.SafeURL
 					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/validator/%s", block.ProposerAddress)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 368, Col: 86}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 371, Col: 86}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 					if templ_7745c5c3_Err != nil {
@@ -576,7 +576,7 @@ func Dashboard(props DashboardProps) templ.Component {
 						var templ_7745c5c3_Var24 string
 						templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(block.ProposerAddress[:12])
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 370, Col: 40}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 373, Col: 40}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 						if templ_7745c5c3_Err != nil {
@@ -589,7 +589,7 @@ func Dashboard(props DashboardProps) templ.Component {
 						var templ_7745c5c3_Var25 string
 						templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(block.ProposerAddress[len(block.ProposerAddress)-4:])
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 370, Col: 99}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 373, Col: 99}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 						if templ_7745c5c3_Err != nil {
@@ -599,7 +599,7 @@ func Dashboard(props DashboardProps) templ.Component {
 						var templ_7745c5c3_Var26 string
 						templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(block.ProposerAddress)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 372, Col: 35}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 375, Col: 35}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 						if templ_7745c5c3_Err != nil {
@@ -653,7 +653,7 @@ func Dashboard(props DashboardProps) templ.Component {
 					var templ_7745c5c3_Var27 templ.SafeURL
 					templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/transaction/%s", tx.TxHash)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 401, Col: 76}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 404, Col: 76}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 					if templ_7745c5c3_Err != nil {
@@ -667,7 +667,7 @@ func Dashboard(props DashboardProps) templ.Component {
 						var templ_7745c5c3_Var28 string
 						templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(tx.TxHash[:12])
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 403, Col: 28}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 406, Col: 28}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 						if templ_7745c5c3_Err != nil {
@@ -680,7 +680,7 @@ func Dashboard(props DashboardProps) templ.Component {
 						var templ_7745c5c3_Var29 string
 						templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(tx.TxHash[len(tx.TxHash)-4:])
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 403, Col: 63}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 406, Col: 63}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 						if templ_7745c5c3_Err != nil {
@@ -690,7 +690,7 @@ func Dashboard(props DashboardProps) templ.Component {
 						var templ_7745c5c3_Var30 string
 						templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(tx.TxHash)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 405, Col: 23}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 408, Col: 23}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 						if templ_7745c5c3_Err != nil {
@@ -704,7 +704,7 @@ func Dashboard(props DashboardProps) templ.Component {
 					var templ_7745c5c3_Var31 string
 					templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(tx.TxType)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 409, Col: 22}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 412, Col: 22}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 					if templ_7745c5c3_Err != nil {
@@ -722,7 +722,7 @@ func Dashboard(props DashboardProps) templ.Component {
 						var templ_7745c5c3_Var32 templ.SafeURL
 						templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/block/%d", blockHeight)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 412, Col: 73}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 415, Col: 73}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 						if templ_7745c5c3_Err != nil {
@@ -735,7 +735,7 @@ func Dashboard(props DashboardProps) templ.Component {
 						var templ_7745c5c3_Var33 string
 						templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#%d", blockHeight))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 413, Col: 45}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 416, Col: 45}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 						if templ_7745c5c3_Err != nil {
@@ -840,7 +840,7 @@ func StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64) 
 			templ_7745c5c3_Var34 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<div id=\"stats-header\" hx-get=\"/fragments/stats-header\" hx-trigger=\"every 10s\" hx-swap=\"outerHTML\" x-data=\"blockEvents()\" x-init=\"init()\"><div class=\"flex items-center justify-between\"><div class=\"flex-1\"><h4 class=\"text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide\">Block Height</h4><div class=\"flex items-center h-12\" x-data=\"animatedNumber()\" x-init=\"init(latestBlock.height)\"><template x-for=\"(digit, index) in digits\" :key=\"index\"><div class=\"relative h-10 w-6 overflow-hidden flex items-center justify-center\"><!-- Current digit (slides down when animating) --><div class=\"absolute inset-0 flex items-center justify-center\"><span class=\"text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums\" :class=\"getCurrentDigitClass(digit)\" x-text=\"digit.current\"></span></div><!-- Next digit (slides in from above when animating) --><div class=\"absolute inset-0 flex items-center justify-center\"><span class=\"text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums\" :class=\"getNextDigitClass(digit)\" x-text=\"digit.next\"></span></div></div></template></div></div><div class=\"flex-none w-32 border-l border-gray-300 dark:border-gray-400 pl-6\"><h4 class=\"text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide\">Block Time</h4>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<div id=\"stats-header\" hx-get=\"/fragments/stats-header\" hx-trigger=\"every 10s\" hx-swap=\"outerHTML\" x-data=\"blockEvents()\" x-init=\"init()\"><div class=\"flex items-center justify-between\"><div class=\"flex-1\"><h4 class=\"text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide\">Block Height</h4><div class=\"flex items-center justify-center h-12 min-w-[3rem]\" x-data=\"animatedNumber()\" x-init=\"init(latestBlock.height)\"><span x-show=\"!isInitialized\" class=\"text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums\">-</span><div x-show=\"isInitialized\" class=\"flex items-center\" style=\"display: none;\"><template x-for=\"(digit, index) in digits\" :key=\"index\"><div class=\"relative h-10 w-6 overflow-hidden flex items-center justify-center\"><!-- Current digit (slides down when animating) --><div class=\"absolute inset-0 flex items-center justify-center\"><span class=\"text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums\" :class=\"getCurrentDigitClass(digit)\" x-text=\"digit.current\"></span></div><!-- Next digit (slides in from above when animating) --><div class=\"absolute inset-0 flex items-center justify-center\"><span class=\"text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums\" :class=\"getNextDigitClass(digit)\" x-text=\"digit.next\"></span></div></div></template></div></div></div><div class=\"flex-none w-32 border-l border-gray-300 dark:border-gray-400 pl-6\"><h4 class=\"text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide\">Block Time</h4>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -852,7 +852,7 @@ func StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64) 
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2fs", stats.AvgBlockTime))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 472, Col: 110}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 478, Col: 110}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -870,7 +870,7 @@ func StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64) 
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2fs", 1.0/stats.BPS))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 474, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 480, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 			if templ_7745c5c3_Err != nil {
@@ -883,7 +883,7 @@ func StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64) 
 			var templ_7745c5c3_Var37 string
 			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f BPS", stats.BPS))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 475, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 481, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 			if templ_7745c5c3_Err != nil {
@@ -931,7 +931,7 @@ func StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64) 
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d blocks to go", stats.BlockDelta))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 504, Col: 59}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 510, Col: 59}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 				if templ_7745c5c3_Err != nil {
@@ -945,7 +945,7 @@ func StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64) 
 			var templ_7745c5c3_Var39 string
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d / %d", stats.LatestIndexedHeight, stats.LatestChainHeight))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 508, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 514, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 			if templ_7745c5c3_Err != nil {
@@ -958,7 +958,7 @@ func StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64) 
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", syncProgressPercentage))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 509, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 515, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
@@ -1027,7 +1027,7 @@ func TPSFragment(stats *DashboardStats) templ.Component {
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", stats.TPS))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 526, Col: 105}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 532, Col: 105}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -1040,7 +1040,7 @@ func TPSFragment(stats *DashboardStats) templ.Component {
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", float64(stats.TotalTransactions30d)/(30*24*60*60)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 527, Col: 137}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 533, Col: 137}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {
@@ -1082,7 +1082,7 @@ func TotalTransactionsFragment(stats *DashboardStats) templ.Component {
 		var templ_7745c5c3_Var47 string
 		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(formatNumber(stats.TotalTransactions))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 534, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 540, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 		if templ_7745c5c3_Err != nil {
@@ -1117,7 +1117,7 @@ func TotalTransactionsFragment(stats *DashboardStats) templ.Component {
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(getPercentageChangeText(stats.TotalTransactions24h, stats.TotalTransactionsPrevious24h))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 535, Col: 227}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 541, Col: 227}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 		if templ_7745c5c3_Err != nil {
@@ -1212,7 +1212,7 @@ func BlockEventsScript() templ.Component {
 			templ_7745c5c3_Var53 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "<script>\n\t\tfunction animatedNumber() {\n\t\t\treturn {\n\t\t\t\tdisplayValue: 0,\n\t\t\t\tdigits: [],\n\t\t\t\tblockEventListener: null,\n\t\t\t\tanimationTimeouts: new Set(),\n\t\t\t\tisInitialized: false,\n\t\t\t\t\n\t\t\t\tinit(initialValue) {\n\t\t\t\t\t// Only initialize if we have a valid positive block height\n\t\t\t\t\t// This prevents flashing to 0 during SSE reconnection\n\t\t\t\t\tif (initialValue && initialValue > 0) {\n\t\t\t\t\t\tthis.displayValue = initialValue;\n\t\t\t\t\t\tthis.updateDigits(this.displayValue);\n\t\t\t\t\t\tthis.isInitialized = true;\n\t\t\t\t\t} else {\n\t\t\t\t\t\t// Try to get initial value from DOM as fallback\n\t\t\t\t\t\tthis.tryInitFromDOM();\n\t\t\t\t\t}\n\t\t\t\t\t\n\t\t\t\t\t// Create bound event listener for proper cleanup\n\t\t\t\t\tthis.blockEventListener = (event) => {\n\t\t\t\t\t\tif (event.detail && event.detail.height && event.detail.height > 0) {\n\t\t\t\t\t\t\t// If not initialized yet, use this as initial value\n\t\t\t\t\t\t\tif (!this.isInitialized) {\n\t\t\t\t\t\t\t\tthis.displayValue = event.detail.height;\n\t\t\t\t\t\t\t\tthis.updateDigits(this.displayValue);\n\t\t\t\t\t\t\t\tthis.isInitialized = true;\n\t\t\t\t\t\t\t} else if (event.detail.height !== this.displayValue) {\n\t\t\t\t\t\t\t\tthis.animateToNewValue(event.detail.height);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\t\t\t\t\t\n\t\t\t\t\t// Listen directly to block events instead of watching parent data\n\t\t\t\t\tdocument.addEventListener('block', this.blockEventListener);\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\ttryInitFromDOM() {\n\t\t\t\t\t// Try to get block height from the stats header as fallback\n\t\t\t\t\tconst statsHeader = document.querySelector('#stats-header');\n\t\t\t\t\tif (statsHeader) {\n\t\t\t\t\t\tconst blockHeightEl = statsHeader.querySelector('.text-3xl');\n\t\t\t\t\t\tif (blockHeightEl && blockHeightEl.textContent) {\n\t\t\t\t\t\t\tconst height = parseInt(blockHeightEl.textContent.replace(/,/g, ''));\n\t\t\t\t\t\t\tif (height > 0) {\n\t\t\t\t\t\t\t\tthis.displayValue = height;\n\t\t\t\t\t\t\t\tthis.updateDigits(this.displayValue);\n\t\t\t\t\t\t\t\tthis.isInitialized = true;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\tupdateDigits(value) {\n\t\t\t\t\tconst str = value.toString();\n\t\t\t\t\tconst newDigits = [];\n\t\t\t\t\t\n\t\t\t\t\t// Pad with leading zeros if necessary to maintain consistent width\n\t\t\t\t\tconst maxLength = Math.max(str.length, this.digits.length);\n\t\t\t\t\tconst paddedStr = str.padStart(maxLength, '0');\n\t\t\t\t\t\n\t\t\t\t\tfor (let i = 0; i < paddedStr.length; i++) {\n\t\t\t\t\t\tconst digit = parseInt(paddedStr[i]);\n\t\t\t\t\t\tconst existingDigit = this.digits[i];\n\t\t\t\t\t\t\n\t\t\t\t\t\tif (existingDigit) {\n\t\t\t\t\t\t\t// Keep existing digit state but update target\n\t\t\t\t\t\t\tnewDigits.push({\n\t\t\t\t\t\t\t\t...existingDigit,\n\t\t\t\t\t\t\t\tnext: digit,\n\t\t\t\t\t\t\t\tisAnimating: existingDigit.current !== digit\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// New digit\n\t\t\t\t\t\t\tnewDigits.push({\n\t\t\t\t\t\t\t\tcurrent: digit,\n\t\t\t\t\t\t\t\tnext: digit,\n\t\t\t\t\t\t\t\tisAnimating: false\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t\n\t\t\t\t\tthis.digits = newDigits;\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\tanimateToNewValue(newValue) {\n\t\t\t\t\tif (newValue === this.displayValue || newValue <= 0) return;\n\t\t\t\t\t\n\t\t\t\t\tthis.updateDigits(newValue);\n\t\t\t\t\t\n\t\t\t\t\t// Start animations for changed digits\n\t\t\t\t\tthis.digits.forEach((digit, index) => {\n\t\t\t\t\t\tif (digit.isAnimating) {\n\t\t\t\t\t\t\tthis.animateDigit(index);\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t\t\n\t\t\t\t\tthis.displayValue = newValue;\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\tanimateDigit(index) {\n\t\t\t\t\tconst digit = this.digits[index];\n\t\t\t\t\t\n\t\t\t\t\t// Mark as animating\n\t\t\t\t\tdigit.isAnimating = true;\n\t\t\t\t\t\n\t\t\t\t\t// After animation duration, update the current digit and stop animating\n\t\t\t\t\tconst timeout = setTimeout(() => {\n\t\t\t\t\t\tdigit.current = digit.next;\n\t\t\t\t\t\tdigit.isAnimating = false;\n\t\t\t\t\t\tthis.animationTimeouts.delete(timeout);\n\t\t\t\t\t}, 300); // Animation duration\n\t\t\t\t\t\n\t\t\t\t\tthis.animationTimeouts.add(timeout);\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\tgetCurrentDigitClass(digit) {\n\t\t\t\t\tif (digit.isAnimating) {\n\t\t\t\t\t\treturn 'transform translate-y-full opacity-0 transition-all duration-300 ease-in-out';\n\t\t\t\t\t}\n\t\t\t\t\treturn 'transform translate-y-0 opacity-100';\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\tgetNextDigitClass(digit) {\n\t\t\t\t\tif (digit.isAnimating) {\n\t\t\t\t\t\treturn 'transform translate-y-0 opacity-100 transition-all duration-300 ease-in-out';\n\t\t\t\t\t}\n\t\t\t\t\treturn 'transform -translate-y-full opacity-0';\n\t\t\t\t},\n\n\t\t\t\t// Alpine.js lifecycle hook\n\t\t\t\tdestroy() {\n\t\t\t\t\t// Clear all animation timeouts\n\t\t\t\t\tthis.animationTimeouts.forEach(timeout => clearTimeout(timeout));\n\t\t\t\t\tthis.animationTimeouts.clear();\n\t\t\t\t\t\n\t\t\t\t\t// Remove event listener\n\t\t\t\t\tif (this.blockEventListener) {\n\t\t\t\t\t\tdocument.removeEventListener('block', this.blockEventListener);\n\t\t\t\t\t\tthis.blockEventListener = null;\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\n\t\tfunction blockEvents() {\n\t\t\treturn {\n\t\t\t\trecentBlocks: [],\n\t\t\t\tlatestBlock: { height: 0, proposer: '' },\n\t\t\t\tvalidatorCount: 0,\n\t\t\t\tblockEventListener: null,\n\t\t\t\t\n\t\t\t\tinit(initialState = {}) {\n\t\t\t\t\t// Set initial state from server-rendered values\n\t\t\t\t\tconst networkSidebar = document.querySelector('#network-sidebar');\n\t\t\t\t\tconst statsHeader = document.querySelector('#stats-header');\n\t\t\t\t\t\n\t\t\t\t\t// Set initial validator count from server\n\t\t\t\t\tif (initialState.validatorCount) {\n\t\t\t\t\t\tthis.validatorCount = parseInt(initialState.validatorCount);\n\t\t\t\t\t}\n\n\t\t\t\t\tif (networkSidebar) {\n\t\t\t\t\t\tconst blockHeightEl = networkSidebar.querySelector('a[href^=\"/block/\"]');\n\t\t\t\t\t\tconst proposerEl = networkSidebar.querySelector('a[href^=\"/validator/\"]');\n\n\t\t\t\t\t\tif (blockHeightEl && proposerEl) {\n\t\t\t\t\t\t\tthis.latestBlock = {\n\t\t\t\t\t\t\t\theight: parseInt(blockHeightEl.textContent.replace('#', '')),\n\t\t\t\t\t\t\t\tproposer: proposerEl.href.split('/').pop()\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\t// Also get initial block height from stats header\n\t\t\t\t\tif (statsHeader) {\n\t\t\t\t\t\tconst blockHeightEl = statsHeader.querySelector('.text-3xl');\n\t\t\t\t\t\tif (blockHeightEl) {\n\t\t\t\t\t\t\tthis.latestBlock.height = parseInt(blockHeightEl.textContent);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\t// Create bound event listener for proper cleanup\n\t\t\t\t\tthis.blockEventListener = (event) => {\n\t\t\t\t\t\tthis.handleBlockEvent(event.detail);\n\t\t\t\t\t};\n\t\t\t\t\t\n\t\t\t\t\tdocument.addEventListener('block', this.blockEventListener);\n\t\t\t\t},\n\n\t\t\t\tformatProposer(proposer) {\n\t\t\t\t\treturn proposer.length > 12 \n\t\t\t\t\t\t? `${proposer.slice(0, 6)}...${proposer.slice(-4)}`\n\t\t\t\t\t\t: proposer;\n\t\t\t\t},\n\n\t\t\t\thandleBlockEvent(blockData) {\n\t\t\t\t\t// Check if we already have this block\n\t\t\t\t\tconst existingBlockIndex = this.recentBlocks.findIndex(block => block.height === blockData.height);\n\t\t\t\t\tif (existingBlockIndex !== -1) {\n\t\t\t\t\t\t// Remove the existing block if found\n\t\t\t\t\t\tthis.recentBlocks.splice(existingBlockIndex, 1);\n\t\t\t\t\t}\n\t\t\t\t\t\n\t\t\t\t\t// Add new block to the beginning of the array\n\t\t\t\t\tthis.recentBlocks.unshift(blockData);\n\t\t\t\t\t\n\t\t\t\t\t// Keep only the last 5 blocks to prevent memory growth\n\t\t\t\t\tif (this.recentBlocks.length > 5) {\n\t\t\t\t\t\tthis.recentBlocks = this.recentBlocks.slice(0, 5);\n\t\t\t\t\t}\n\n\t\t\t\t\t// Update latest block\n\t\t\t\t\tthis.latestBlock = blockData;\n\t\t\t\t},\n\n\t\t\t\t// Alpine.js lifecycle hook\n\t\t\t\tdestroy() {\n\t\t\t\t\t// Remove event listener\n\t\t\t\t\tif (this.blockEventListener) {\n\t\t\t\t\t\tdocument.removeEventListener('block', this.blockEventListener);\n\t\t\t\t\t\tthis.blockEventListener = null;\n\t\t\t\t\t}\n\t\t\t\t\t\n\t\t\t\t\t// Clear arrays\n\t\t\t\t\tthis.recentBlocks = [];\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\n\t\t// Global cleanup on page unload\n\t\twindow.addEventListener('beforeunload', () => {\n\t\t\t// Cleanup any remaining Alpine components\n\t\t\tif (window.Alpine && window.Alpine.store('cleanup')) {\n\t\t\t\twindow.Alpine.store('cleanup').destroy();\n\t\t\t}\n\t\t});\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "<script>\n\t\tfunction animatedNumber() {\n\t\t\treturn {\n\t\t\t\tdisplayValue: 0,\n\t\t\t\tdigits: [],\n\t\t\t\tblockEventListener: null,\n\t\t\t\tanimationTimeouts: new Set(),\n\t\t\t\tisInitialized: false,\n\t\t\t\t\n\t\t\t\tinit(initialValue) {\n\t\t\t\t\t// Only initialize if we have a valid positive block height\n\t\t\t\t\t// This prevents flashing to 0 during SSE reconnection\n\t\t\t\t\tif (initialValue && initialValue > 0) {\n\t\t\t\t\t\tthis.displayValue = initialValue;\n\t\t\t\t\t\tthis.updateDigits(this.displayValue);\n\t\t\t\t\t\tthis.isInitialized = true;\n\t\t\t\t\t} else {\n\t\t\t\t\t\t// Try to get initial value from DOM as fallback\n\t\t\t\t\t\tthis.tryInitFromDOM();\n\t\t\t\t\t}\n\t\t\t\t\t\n\t\t\t\t\t// Create bound event listener for proper cleanup\n\t\t\t\t\tthis.blockEventListener = (event) => {\n\t\t\t\t\t\tif (event.detail && event.detail.height && event.detail.height > 0) {\n\t\t\t\t\t\t\t// If not initialized yet, use this as initial value\n\t\t\t\t\t\t\tif (!this.isInitialized) {\n\t\t\t\t\t\t\t\tthis.displayValue = event.detail.height;\n\t\t\t\t\t\t\t\tthis.updateDigits(this.displayValue);\n\t\t\t\t\t\t\t\tthis.isInitialized = true;\n\t\t\t\t\t\t\t} else if (event.detail.height !== this.displayValue) {\n\t\t\t\t\t\t\t\tthis.animateToNewValue(event.detail.height);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\t\t\t\t\t\n\t\t\t\t\t// Listen directly to block events instead of watching parent data\n\t\t\t\t\tdocument.addEventListener('block', this.blockEventListener);\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\ttryInitFromDOM() {\n\t\t\t\t\t// Try to get block height from the stats header as fallback\n\t\t\t\t\t// Only accept integer-like text (avoid parsing block time like \"1.32s\")\n\t\t\t\t\tconst statsHeader = document.querySelector('#stats-header');\n\t\t\t\t\tif (statsHeader) {\n\t\t\t\t\t\tconst blockHeightSection = statsHeader.querySelector('h4');\n\t\t\t\t\t\tif (blockHeightSection && blockHeightSection.textContent.trim().toLowerCase().includes('block height')) {\n\t\t\t\t\t\t\tconst parent = blockHeightSection.closest('div');\n\t\t\t\t\t\t\tif (parent) {\n\t\t\t\t\t\t\t\tconst blockHeightEl = parent.querySelector('.text-3xl, .text-4xl');\n\t\t\t\t\t\t\t\tif (blockHeightEl && blockHeightEl.textContent) {\n\t\t\t\t\t\t\t\t\tconst text = blockHeightEl.textContent.replace(/,/g, '').trim();\n\t\t\t\t\t\t\t\t\tif (/^\\d+$/.test(text)) {\n\t\t\t\t\t\t\t\t\t\tconst height = parseInt(text);\n\t\t\t\t\t\t\t\t\t\tif (height > 0) {\n\t\t\t\t\t\t\t\t\t\t\tthis.displayValue = height;\n\t\t\t\t\t\t\t\t\t\t\tthis.updateDigits(this.displayValue);\n\t\t\t\t\t\t\t\t\t\t\tthis.isInitialized = true;\n\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\tupdateDigits(value) {\n\t\t\t\t\tconst str = value.toString();\n\t\t\t\t\tconst newDigits = [];\n\t\t\t\t\t\n\t\t\t\t\t// Pad with leading zeros if necessary to maintain consistent width\n\t\t\t\t\tconst maxLength = Math.max(str.length, this.digits.length);\n\t\t\t\t\tconst paddedStr = str.padStart(maxLength, '0');\n\t\t\t\t\t\n\t\t\t\t\tfor (let i = 0; i < paddedStr.length; i++) {\n\t\t\t\t\t\tconst digit = parseInt(paddedStr[i]);\n\t\t\t\t\t\tconst existingDigit = this.digits[i];\n\t\t\t\t\t\t\n\t\t\t\t\t\tif (existingDigit) {\n\t\t\t\t\t\t\t// Keep existing digit state but update target\n\t\t\t\t\t\t\tnewDigits.push({\n\t\t\t\t\t\t\t\t...existingDigit,\n\t\t\t\t\t\t\t\tnext: digit,\n\t\t\t\t\t\t\t\tisAnimating: existingDigit.current !== digit\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// New digit\n\t\t\t\t\t\t\tnewDigits.push({\n\t\t\t\t\t\t\t\tcurrent: digit,\n\t\t\t\t\t\t\t\tnext: digit,\n\t\t\t\t\t\t\t\tisAnimating: false\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t\n\t\t\t\t\tthis.digits = newDigits;\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\tanimateToNewValue(newValue) {\n\t\t\t\t\tif (newValue === this.displayValue || newValue <= 0) return;\n\t\t\t\t\t\n\t\t\t\t\tthis.updateDigits(newValue);\n\t\t\t\t\t\n\t\t\t\t\t// Start animations for changed digits\n\t\t\t\t\tthis.digits.forEach((digit, index) => {\n\t\t\t\t\t\tif (digit.isAnimating) {\n\t\t\t\t\t\t\tthis.animateDigit(index);\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t\t\n\t\t\t\t\tthis.displayValue = newValue;\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\tanimateDigit(index) {\n\t\t\t\t\tconst digit = this.digits[index];\n\t\t\t\t\t\n\t\t\t\t\t// Mark as animating\n\t\t\t\t\tdigit.isAnimating = true;\n\t\t\t\t\t\n\t\t\t\t\t// After animation duration, update the current digit and stop animating\n\t\t\t\t\tconst timeout = setTimeout(() => {\n\t\t\t\t\t\tdigit.current = digit.next;\n\t\t\t\t\t\tdigit.isAnimating = false;\n\t\t\t\t\t\tthis.animationTimeouts.delete(timeout);\n\t\t\t\t\t}, 300); // Animation duration\n\t\t\t\t\t\n\t\t\t\t\tthis.animationTimeouts.add(timeout);\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\tgetCurrentDigitClass(digit) {\n\t\t\t\t\tif (digit.isAnimating) {\n\t\t\t\t\t\treturn 'transform translate-y-full opacity-0 transition-all duration-300 ease-in-out';\n\t\t\t\t\t}\n\t\t\t\t\treturn 'transform translate-y-0 opacity-100';\n\t\t\t\t},\n\t\t\t\t\n\t\t\t\tgetNextDigitClass(digit) {\n\t\t\t\t\tif (digit.isAnimating) {\n\t\t\t\t\t\treturn 'transform translate-y-0 opacity-100 transition-all duration-300 ease-in-out';\n\t\t\t\t\t}\n\t\t\t\t\treturn 'transform -translate-y-full opacity-0';\n\t\t\t\t},\n\n\t\t\t\t// Alpine.js lifecycle hook\n\t\t\t\tdestroy() {\n\t\t\t\t\t// Clear all animation timeouts\n\t\t\t\t\tthis.animationTimeouts.forEach(timeout => clearTimeout(timeout));\n\t\t\t\t\tthis.animationTimeouts.clear();\n\t\t\t\t\t\n\t\t\t\t\t// Remove event listener\n\t\t\t\t\tif (this.blockEventListener) {\n\t\t\t\t\t\tdocument.removeEventListener('block', this.blockEventListener);\n\t\t\t\t\t\tthis.blockEventListener = null;\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\n\t\tfunction blockEvents() {\n\t\t\treturn {\n\t\t\t\trecentBlocks: [],\n\t\t\t\tlatestBlock: { height: 0, proposer: '' },\n\t\t\t\tvalidatorCount: 0,\n\t\t\t\tblockEventListener: null,\n\t\t\t\t\n\t\t\t\tinit(initialState = {}) {\n\t\t\t\t\t// Set initial state from server-rendered values\n\t\t\t\t\tconst networkSidebar = document.querySelector('#network-sidebar');\n\t\t\t\t\tconst statsHeader = document.querySelector('#stats-header');\n\t\t\t\t\t\n\t\t\t\t\t// Set initial validator count from server\n\t\t\t\t\tif (initialState.validatorCount) {\n\t\t\t\t\t\tthis.validatorCount = parseInt(initialState.validatorCount);\n\t\t\t\t\t}\n\n\t\t\t\t\tif (networkSidebar) {\n\t\t\t\t\t\tconst blockHeightEl = networkSidebar.querySelector('a[href^=\"/block/\"]');\n\t\t\t\t\t\tconst proposerEl = networkSidebar.querySelector('a[href^=\"/validator/\"]');\n\n\t\t\t\t\t\tif (blockHeightEl && proposerEl) {\n\t\t\t\t\t\t\tthis.latestBlock = {\n\t\t\t\t\t\t\t\theight: parseInt(blockHeightEl.textContent.replace('#', '')),\n\t\t\t\t\t\t\t\tproposer: proposerEl.href.split('/').pop()\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\t// Also get initial block height from stats header\n\t\t\t\t\tif (statsHeader) {\n\t\t\t\t\t\tconst blockHeightEl = statsHeader.querySelector('.text-3xl');\n\t\t\t\t\t\tif (blockHeightEl) {\n\t\t\t\t\t\t\tthis.latestBlock.height = parseInt(blockHeightEl.textContent);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\t// Create bound event listener for proper cleanup\n\t\t\t\t\tthis.blockEventListener = (event) => {\n\t\t\t\t\t\tthis.handleBlockEvent(event.detail);\n\t\t\t\t\t};\n\t\t\t\t\t\n\t\t\t\t\tdocument.addEventListener('block', this.blockEventListener);\n\t\t\t\t},\n\n\t\t\t\tformatProposer(proposer) {\n\t\t\t\t\treturn proposer.length > 12 \n\t\t\t\t\t\t? `${proposer.slice(0, 6)}...${proposer.slice(-4)}`\n\t\t\t\t\t\t: proposer;\n\t\t\t\t},\n\n\t\t\t\thandleBlockEvent(blockData) {\n\t\t\t\t\t// Check if we already have this block\n\t\t\t\t\tconst existingBlockIndex = this.recentBlocks.findIndex(block => block.height === blockData.height);\n\t\t\t\t\tif (existingBlockIndex !== -1) {\n\t\t\t\t\t\t// Remove the existing block if found\n\t\t\t\t\t\tthis.recentBlocks.splice(existingBlockIndex, 1);\n\t\t\t\t\t}\n\t\t\t\t\t\n\t\t\t\t\t// Add new block to the beginning of the array\n\t\t\t\t\tthis.recentBlocks.unshift(blockData);\n\t\t\t\t\t\n\t\t\t\t\t// Keep only the last 5 blocks to prevent memory growth\n\t\t\t\t\tif (this.recentBlocks.length > 5) {\n\t\t\t\t\t\tthis.recentBlocks = this.recentBlocks.slice(0, 5);\n\t\t\t\t\t}\n\n\t\t\t\t\t// Update latest block\n\t\t\t\t\tthis.latestBlock = blockData;\n\t\t\t\t},\n\n\t\t\t\t// Alpine.js lifecycle hook\n\t\t\t\tdestroy() {\n\t\t\t\t\t// Remove event listener\n\t\t\t\t\tif (this.blockEventListener) {\n\t\t\t\t\t\tdocument.removeEventListener('block', this.blockEventListener);\n\t\t\t\t\t\tthis.blockEventListener = null;\n\t\t\t\t\t}\n\t\t\t\t\t\n\t\t\t\t\t// Clear arrays\n\t\t\t\t\tthis.recentBlocks = [];\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\n\t\t// Global cleanup on page unload\n\t\twindow.addEventListener('beforeunload', () => {\n\t\t\t// Cleanup any remaining Alpine components\n\t\t\tif (window.Alpine && window.Alpine.store('cleanup')) {\n\t\t\t\twindow.Alpine.store('cleanup').destroy();\n\t\t\t}\n\t\t});\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1278,7 +1278,7 @@ func NetworkSidebarFragment(stats *DashboardStats) templ.Component {
 		var templ_7745c5c3_Var56 string
 		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", stats.ValidatorCount))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 1530, Col: 139}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/dashboard.templ`, Line: 1546, Col: 139}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 		if templ_7745c5c3_Err != nil {

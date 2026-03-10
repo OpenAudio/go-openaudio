@@ -3,6 +3,7 @@ module github.com/OpenAudio/go-openaudio
 go 1.25
 
 require (
+	github.com/OpenAudio/go-openaudio/etl v0.0.0
 	github.com/a-h/templ v0.3.898
 	github.com/cometbft/cometbft v1.0.0
 	github.com/cosmos/gogoproto v1.7.0 // indirect
@@ -260,3 +261,5 @@ require (
 	golang.org/x/sys v0.33.0 // indirect
 	lukechampine.com/blake3 v1.1.6 // indirect
 )
+
+replace github.com/OpenAudio/go-openaudio/etl => ./pkg/etl

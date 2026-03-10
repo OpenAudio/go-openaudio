@@ -34,7 +34,9 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/eth"
-	"github.com/OpenAudio/go-openaudio/pkg/etl"
+	"github.com/OpenAudio/go-openaudio/etl"
+	"github.com/OpenAudio/go-openaudio/pkg/etlserver"
+	"github.com/OpenAudio/go-openaudio/pkg/location"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	aLogger "github.com/OpenAudio/go-openaudio/pkg/logger"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum"
@@ -129,25 +131,26 @@ func main() {
 	}
 
 	// Initialize ETL service if enabled
-	var etlService *etl.ETLService
+	var etlService *etlserver.ETLService
 	if cfg.EnableETL {
-		// Create an HTTP client that will connect to the local service
-		// The ETL service needs a CoreServiceClient, so we create one that connects via HTTP
-		httpClient := &http.Client{
-			Timeout: 30 * time.Second,
-		}
-		// Determine the base URL - we'll use localhost with the port from hostUrl
-		baseURL := fmt.Sprintf("http://localhost")
+		httpClient := &http.Client{Timeout: 30 * time.Second}
+		baseURL := "http://localhost"
 		if hostUrl.Port() != "" {
 			baseURL = fmt.Sprintf("http://localhost:%s", hostUrl.Port())
 		} else {
-			// Default to port 80 if no port specified
 			baseURL = "http://localhost:80"
 		}
 		coreClient := corev1connect.NewCoreServiceClient(httpClient, baseURL, connectJSONOpt)
-		etlService = etl.NewETLService(coreClient, rootLogger)
-		etlService.SetDBURL(dbUrl)
-		etlService.SetCheckReadiness(false) // Don't wait for core to be ready when console is enabled
+		indexer := etl.New(coreClient, rootLogger)
+		indexer.SetDBURL(dbUrl)
+		indexer.SetCheckReadiness(false) // Don't wait for core to be ready when console is enabled
+
+		locationDB, err := location.NewLocationService()
+		if err != nil {
+			rootLogger.Error("error creating location service", zap.Error(err))
+			panic(fmt.Sprintf("failed to create location service: %v", err))
+		}
+		etlService = etlserver.NewETLService(indexer, locationDB, rootLogger)
 	}
 
 	systemService := system.NewSystemService(coreService, storageService)
@@ -533,7 +536,7 @@ func setProtobufField(msgReflect protoreflect.Message, field protoreflect.FieldD
 	return nil
 }
 
-func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServer.CoreService, storageService *server.StorageService, systemService *system.SystemService, ethService *eth.EthService, etlService *etl.ETLService, cfg *config.Config) error {
+func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServer.CoreService, storageService *server.StorageService, systemService *system.SystemService, ethService *eth.EthService, etlService *etlserver.ETLService, cfg *config.Config) error {
 	// Explorer console requires ETL to be enabled
 	consoleEnabled := cfg.EnableExplorer && cfg.EnableETL && etlService != nil
 	e := echo.New()

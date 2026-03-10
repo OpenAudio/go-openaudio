@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	"github.com/OpenAudio/go-openaudio/etl/db"
 )
 
 const (

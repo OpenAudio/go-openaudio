@@ -73,6 +73,7 @@ COPY ./cmd/openaudio/.initdb /app/openaudio/.initdb
 
 WORKDIR /app
 COPY go.mod go.sum ./
+COPY pkg/etl/go.mod pkg/etl/go.sum pkg/etl/
 RUN go mod download
 
 ENV OPENAUDIO_TEST_HARNESS_MODE="true"
@@ -102,6 +103,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /
 # This avoids downloading all dependencies on first run
 WORKDIR /app
 COPY go.mod go.sum ./
+COPY pkg/etl/go.mod pkg/etl/go.sum pkg/etl/
 RUN go mod download
 
 # Install wgo for hot reloading

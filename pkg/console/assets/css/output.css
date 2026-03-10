@@ -513,6 +513,9 @@
   .max-w-sm {
     max-width: var(--container-sm);
   }
+  .min-w-\[3rem\] {
+    min-width: 3rem;
+  }
   .min-w-full {
     min-width: 100%;
   }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/OpenAudio/go-openaudio/pkg/console/templates"
 	"github.com/OpenAudio/go-openaudio/pkg/console/templates/layouts"
-	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	"github.com/OpenAudio/go-openaudio/etl/db"
 	"strconv"
 	"strings"
 )
@@ -154,27 +154,30 @@ templ Dashboard(props DashboardProps) {
 				<div id="stats-header" x-data="blockEvents()" x-init="init()">
 					<div class="flex items-center justify-between">
 						<div class="flex-1 flex flex-col items-center">
-							<div class="flex items-center h-12" x-data="animatedNumber()" x-init="init(latestBlock.height)">
-								<template x-for="(digit, index) in digits" :key="index">
-									<div class="relative h-10 w-6 overflow-hidden flex items-center justify-center">
-										<!-- Current digit (slides down when animating) -->
-										<div class="absolute inset-0 flex items-center justify-center">
-											<span
-												class="text-4xl font-bold text-gray-900 dark:text-white tabular-nums"
-												:class="getCurrentDigitClass(digit)"
-												x-text="digit.current"
-											></span>
+							<div class="flex items-center justify-center h-12 min-w-[3rem]" x-data="animatedNumber()" x-init="init(latestBlock.height)">
+								<span x-show="!isInitialized" class="text-4xl font-bold text-gray-900 dark:text-white tabular-nums">-</span>
+								<div x-show="isInitialized" class="flex items-center" style="display: none;">
+									<template x-for="(digit, index) in digits" :key="index">
+										<div class="relative h-10 w-6 overflow-hidden flex items-center justify-center">
+											<!-- Current digit (slides down when animating) -->
+											<div class="absolute inset-0 flex items-center justify-center">
+												<span
+													class="text-4xl font-bold text-gray-900 dark:text-white tabular-nums"
+													:class="getCurrentDigitClass(digit)"
+													x-text="digit.current"
+												></span>
+											</div>
+											<!-- Next digit (slides in from above when animating) -->
+											<div class="absolute inset-0 flex items-center justify-center">
+												<span
+													class="text-4xl font-bold text-gray-900 dark:text-white tabular-nums"
+													:class="getNextDigitClass(digit)"
+													x-text="digit.next"
+												></span>
+											</div>
 										</div>
-										<!-- Next digit (slides in from above when animating) -->
-										<div class="absolute inset-0 flex items-center justify-center">
-											<span
-												class="text-4xl font-bold text-gray-900 dark:text-white tabular-nums"
-												:class="getNextDigitClass(digit)"
-												x-text="digit.next"
-											></span>
-										</div>
-									</div>
-								</template>
+									</template>
+								</div>
 							</div>
 							<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">BLOCK HEIGHT</h4>
 						</div>
@@ -443,27 +446,30 @@ templ StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64)
 		<div class="flex items-center justify-between">
 			<div class="flex-1">
 				<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Block Height</h4>
-				<div class="flex items-center h-12" x-data="animatedNumber()" x-init="init(latestBlock.height)">
-					<template x-for="(digit, index) in digits" :key="index">
-						<div class="relative h-10 w-6 overflow-hidden flex items-center justify-center">
-							<!-- Current digit (slides down when animating) -->
-							<div class="absolute inset-0 flex items-center justify-center">
-								<span
-									class="text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums"
-									:class="getCurrentDigitClass(digit)"
-									x-text="digit.current"
-								></span>
+				<div class="flex items-center justify-center h-12 min-w-[3rem]" x-data="animatedNumber()" x-init="init(latestBlock.height)">
+					<span x-show="!isInitialized" class="text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">-</span>
+					<div x-show="isInitialized" class="flex items-center" style="display: none;">
+						<template x-for="(digit, index) in digits" :key="index">
+							<div class="relative h-10 w-6 overflow-hidden flex items-center justify-center">
+								<!-- Current digit (slides down when animating) -->
+								<div class="absolute inset-0 flex items-center justify-center">
+									<span
+										class="text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums"
+										:class="getCurrentDigitClass(digit)"
+										x-text="digit.current"
+									></span>
+								</div>
+								<!-- Next digit (slides in from above when animating) -->
+								<div class="absolute inset-0 flex items-center justify-center">
+									<span
+										class="text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums"
+										:class="getNextDigitClass(digit)"
+										x-text="digit.next"
+									></span>
+								</div>
 							</div>
-							<!-- Next digit (slides in from above when animating) -->
-							<div class="absolute inset-0 flex items-center justify-center">
-								<span
-									class="text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums"
-									:class="getNextDigitClass(digit)"
-									x-text="digit.next"
-								></span>
-							</div>
-						</div>
-					</template>
+						</template>
+					</div>
 				</div>
 			</div>
 			<div class="flex-none w-32 border-l border-gray-300 dark:border-gray-400 pl-6">
@@ -835,15 +841,25 @@ templ BlockEventsScript() {
 				
 				tryInitFromDOM() {
 					// Try to get block height from the stats header as fallback
+					// Only accept integer-like text (avoid parsing block time like "1.32s")
 					const statsHeader = document.querySelector('#stats-header');
 					if (statsHeader) {
-						const blockHeightEl = statsHeader.querySelector('.text-3xl');
-						if (blockHeightEl && blockHeightEl.textContent) {
-							const height = parseInt(blockHeightEl.textContent.replace(/,/g, ''));
-							if (height > 0) {
-								this.displayValue = height;
-								this.updateDigits(this.displayValue);
-								this.isInitialized = true;
+						const blockHeightSection = statsHeader.querySelector('h4');
+						if (blockHeightSection && blockHeightSection.textContent.trim().toLowerCase().includes('block height')) {
+							const parent = blockHeightSection.closest('div');
+							if (parent) {
+								const blockHeightEl = parent.querySelector('.text-3xl, .text-4xl');
+								if (blockHeightEl && blockHeightEl.textContent) {
+									const text = blockHeightEl.textContent.replace(/,/g, '').trim();
+									if (/^\d+$/.test(text)) {
+										const height = parseInt(text);
+										if (height > 0) {
+											this.displayValue = height;
+											this.updateDigits(this.displayValue);
+											this.isInitialized = true;
+										}
+									}
+								}
 							}
 						}
 					}

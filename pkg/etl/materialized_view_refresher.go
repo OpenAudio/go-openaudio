@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	"github.com/OpenAudio/go-openaudio/etl/db"
 	"go.uber.org/zap"
 )
 

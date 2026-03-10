@@ -14,9 +14,10 @@ import (
 	"connectrpc.com/connect"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"go.uber.org/zap"
+	"github.com/OpenAudio/go-openaudio/etl"
+	"github.com/OpenAudio/go-openaudio/etl/db"
 	"github.com/OpenAudio/go-openaudio/pkg/console/templates/pages"
-	"github.com/OpenAudio/go-openaudio/pkg/etl"
-	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etlserver"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -38,7 +39,7 @@ var jsFS embed.FS
 type Console struct {
 	env                string
 	e                  *echo.Echo
-	etl                *etl.ETLService
+	etl                *etlserver.ETLService
 	logger             *zap.Logger
 	trustedNode        *sdk.OpenAudioSDK
 	latestTrustedBlock atomic.Int64
@@ -47,7 +48,7 @@ type Console struct {
 	dashboardCache     *Cache[*pages.DashboardProps]
 }
 
-func NewConsole(etl *etl.ETLService, e *echo.Echo, env string) *Console {
+func NewConsole(etl *etlserver.ETLService, e *echo.Echo, env string) *Console {
 	if e == nil {
 		e = echo.New()
 	}
@@ -356,7 +357,7 @@ func (con *Console) buildDashboardProps(ctx context.Context) (*pages.DashboardPr
 	// Build stats using materialized view data
 	stats := &pages.DashboardStats{
 		CurrentBlockHeight:           latestBlockHeight,
-		ChainID:                      con.etl.ChainID,
+		ChainID:                      con.etl.ChainID(),
 		BPS:                          bps,
 		TPS:                          tps,
 		TotalTransactions:            txStats.TotalTransactions,
@@ -1443,7 +1444,7 @@ func (con *Console) StatsHeaderFragment(c echo.Context) error {
 
 	stats := &pages.DashboardStats{
 		CurrentBlockHeight:  latestBlockHeight,
-		ChainID:             con.etl.ChainID,
+		ChainID:             con.etl.ChainID(),
 		BPS:                 bps,
 		ValidatorCount:      validatorCount,
 		AvgBlockTime:        avgBlockTime,
