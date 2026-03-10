@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/OpenAudio/go-openaudio/pkg/api/etl/v1"
-	"github.com/OpenAudio/go-openaudio/pkg/api/etl/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/etl"
 	"github.com/OpenAudio/go-openaudio/etl/db"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/etl/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/api/etl/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/location"
 	"go.uber.org/zap"
 )
@@ -16,11 +16,11 @@ var _ v1connect.ETLServiceHandler = (*ETLService)(nil)
 
 // ETLService is the go-openaudio ETL wrapper that composes the etl.Indexer
 // with LocationService and implements the ETL ConnectRPC query handlers.
-// Use this when running a full openaudio node with explorer/console.
+// Use this when running a full openaudio node with explorer.
 type ETLService struct {
-	indexer     *etl.Indexer
-	locationDB  *location.LocationService
-	logger      *zap.Logger
+	indexer    *etl.Indexer
+	locationDB *location.LocationService
+	logger     *zap.Logger
 }
 
 // NewETLService creates an ETL service with indexer and location support.
