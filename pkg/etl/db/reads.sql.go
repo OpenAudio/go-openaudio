@@ -337,7 +337,7 @@ func (q *Queries) GetDashboardTransactionTypes(ctx context.Context) ([]MvDashboa
 const getHealthyValidatorCountsForRollups = `-- name: GetHealthyValidatorCountsForRollups :many
 SELECT 
   sr.id as rollup_id,
-  COALESCE(COUNT(*) FILTER (WHERE snr.challenges_failed = 0 OR snr.challenges_received = 0), 0) as healthy_validators
+  COALESCE(COUNT(*) FILTER (WHERE snr.num_blocks_proposed > 0), 0) as healthy_validators
 FROM etl_sla_rollups sr
 LEFT JOIN etl_sla_node_reports snr ON sr.id = snr.sla_rollup_id  
 WHERE sr.id = ANY($1::int[])
