@@ -295,7 +295,7 @@ func (cs *Console) populateSlaReportsForEndpoints(ctx context.Context, endpoints
 		return err
 	}
 	for _, posr := range posRollups {
-		if ep, ok := cometAddressToEndpointMap[posr.Address]; ok {
+		if ep, ok := cometAddressToEndpointMap[posr.Address]; ok && ep.ActiveReport != nil {
 			ep.ActiveReport.PoSChallengesFailed = int32(posr.FailedCount)
 			ep.ActiveReport.PoSChallengesTotal = int32(posr.TotalCount)
 		}

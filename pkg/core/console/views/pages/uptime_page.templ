@@ -335,19 +335,27 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
 
 templ validatorRowReport(ep *Endpoint) {
     <tr>
-        <td class={ getSlaClassFromStatus(ep.ActiveReport.Status) }>
-            <a href={ templ.URL(fmt.Sprintf("/console/uptime/%d/%s", ep.ActiveReport.BlockEnd, strippedEndpoint(ep.Endpoint))) }>
+        if ep.ActiveReport != nil {
+            <td class={ getSlaClassFromStatus(ep.ActiveReport.Status) }>
+                <a href={ templ.URL(fmt.Sprintf("/console/uptime/%d/%s", ep.ActiveReport.BlockEnd, strippedEndpoint(ep.Endpoint))) }>
+                    { strippedEndpoint(ep.Endpoint) }
+                </a>
+            </td>
+            <td class={ getSlaClassFromStatus(ep.ActiveReport.Status) }>
+                { fmt.Sprintf("%d", ep.ActiveReport.BlocksProposed) }
+            </td>
+            <td>{ fmt.Sprintf("%d", ep.ActiveReport.PoSChallengesTotal) }</td>
+            <td class={ getPoSSlaClass(ep.ActiveReport) }>
+                { fmt.Sprintf("%d", ep.ActiveReport.PoSChallengesFailed) }
+            </td>
+        } else {
+            <td class={ slaDeadClass() }>
                 { strippedEndpoint(ep.Endpoint) }
-            </a>
-        </td>
-        <td class={ getSlaClassFromStatus(ep.ActiveReport.Status) }>
-            { fmt.Sprintf("%d", ep.ActiveReport.BlocksProposed) }
-        </td>
-
-        <td>{ fmt.Sprintf("%d", ep.ActiveReport.PoSChallengesTotal) }</td>
-        <td class={ getPoSSlaClass(ep.ActiveReport) }>
-            { fmt.Sprintf("%d", ep.ActiveReport.PoSChallengesFailed) }
-        </td>
+            </td>
+            <td class={ slaDeadClass() }>0</td>
+            <td>0</td>
+            <td>0</td>
+        }
         <td>
             for i := max(0, len(ep.SlaReports) - 6); i < len(ep.SlaReports); i++ {
                 @validatorMiniHistory(ep.SlaReports[i], ep.Endpoint)
