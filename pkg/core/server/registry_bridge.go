@@ -173,19 +173,6 @@ func (s *Server) startValidatorWarden(ctx context.Context) error {
 				}
 			}
 
-			// log eth-registered nodes not yet in chain state for observability
-			coreEthAddrs := make(map[string]bool, len(allValidators))
-			for _, v := range allValidators {
-				coreEthAddrs[v.EthAddress] = true
-			}
-			for _, ep := range eps {
-				if !coreEthAddrs[ep.DelegateWallet] {
-					s.logger.Info("eth-registered node not yet in chain state",
-						zap.String("endpoint", ep.Endpoint),
-						zap.String("delegate_wallet", ep.DelegateWallet))
-				}
-			}
-
 			// jail any active validators failing quotas (underperformance)
 			activeValidators, err := s.db.GetAllRegisteredNodes(ctx)
 			if err != nil {
