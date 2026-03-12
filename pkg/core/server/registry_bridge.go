@@ -127,7 +127,7 @@ func (s *Server) listenForEthContractEvents(ctx context.Context) error {
 			rand.Seed(time.Now().UnixNano())
 			randInterval := rand.Intn(10)
 			time.Sleep(time.Duration(randInterval) * time.Second)
-			s.deregisterValidator(ctx, dereg.DelegateWallet)
+			s.removeValidator(ctx, dereg.DelegateWallet)
 		}
 	}
 }
@@ -162,10 +162,27 @@ func (s *Server) startValidatorWarden(ctx context.Context) error {
 				allEthAddrsMap[endpoint.DelegateWallet] = true
 			}
 
-			// delete any validators missing from eth registry (L1 formal dereg)
+			// remove any validators missing from eth registry (L1 formal dereg) through consensus
 			for _, validator := range allValidators {
 				if _, ok := allEthAddrsMap[validator.EthAddress]; !ok {
-					s.deregisterValidator(ctx, validator.EthAddress)
+					s.logger.Info("removing validator not found in eth registry",
+						zap.String("address", validator.CometAddress),
+						zap.String("eth_address", validator.EthAddress))
+					s.removeValidator(ctx, validator.EthAddress)
+					break
+				}
+			}
+
+			// log eth-registered nodes not yet in chain state for observability
+			coreEthAddrs := make(map[string]bool, len(allValidators))
+			for _, v := range allValidators {
+				coreEthAddrs[v.EthAddress] = true
+			}
+			for _, ep := range eps {
+				if !coreEthAddrs[ep.DelegateWallet] {
+					s.logger.Info("eth-registered node not yet in chain state",
+						zap.String("endpoint", ep.Endpoint),
+						zap.String("delegate_wallet", ep.DelegateWallet))
 				}
 			}
 
@@ -229,6 +246,14 @@ func (s *Server) RegisterSelf() error {
 		return nil
 	} else if err != nil {
 		return err
+	}
+
+	if nodeRecord.Jailed {
+		s.logger.Info("node is jailed on comet, re-registering to unjail")
+		if err := s.registerSelfOnComet(ctx, geth.HexToAddress(s.config.WalletAddress), big.NewInt(ep.Msg.Se.BlockNumber), fmt.Sprint(ep.Msg.Se.Id)); err != nil {
+			return fmt.Errorf("could not re-register on comet to unjail: %v", err)
+		}
+		return nil
 	}
 
 	s.logger.Info("node registered on network", zap.String("eth_address", nodeRecord.EthAddress), zap.String("endpoint", nodeRecord.Endpoint), zap.String("env", s.config.Environment))
@@ -373,17 +398,16 @@ func (s *Server) awaitNodeCatchup(ctx context.Context) error {
 
 func (s *Server) isSelfAlreadyRegistered(ctx context.Context) bool {
 	res, err := s.db.GetNodeByEndpoint(ctx, s.config.NodeEndpoint)
-
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false
 	}
-
 	if err != nil {
 		s.logger.Error("error getting registered nodes", zap.Error(err))
 		return false
 	}
-
-	// return if owner wallets match
+	if res.Jailed {
+		return false
+	}
 	return res.EthAddress == s.config.WalletAddress
 }
 
@@ -446,23 +470,109 @@ func (s *Server) registerSelfOnEth(ctx context.Context) error {
 	return nil
 }
 
-// deregisterValidator removes a validator from core_validators when they have been formally
-// deregistered on L1. Used by eth event listener and warden "missing from eth" path.
-// No attestation required—L1 is the source of truth.
-func (s *Server) deregisterValidator(ctx context.Context, ethAddress string) {
+// removeValidator submits an attestation tx to remove a validator from core_validators entirely
+// (DELETE, not jail). Used when a node has been formally deregistered from the eth L1 registry.
+func (s *Server) removeValidator(ctx context.Context, ethAddress string) {
 	node, err := s.db.GetRegisteredNodeByEthAddress(ctx, ethAddress)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return // already removed, no-op
+			return
 		}
-		s.logger.Error("could not deregister validator", zap.String("address", ethAddress), zap.Error(err))
+		s.logger.Error("could not remove validator", zap.String("address", ethAddress), zap.Error(err))
 		return
 	}
-	if err := s.db.DeleteRegisteredNode(ctx, node.CometAddress); err != nil {
-		s.logger.Error("could not delete registered node for deregistration", zap.String("address", ethAddress), zap.Error(err))
+
+	addrs, err := s.db.GetAllEthAddressesOfRegisteredNodes(ctx)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		s.logger.Error("could not remove validator: failed to get currently registered nodes", zap.String("address", ethAddress), zap.Error(err))
 		return
 	}
-	s.logger.Info("deregistered validator", zap.String("eth_address", ethAddress), zap.String("comet_address", node.CometAddress))
+
+	filteredAddrs := addrs[:]
+	for i, addr := range addrs {
+		if addr == ethAddress {
+			filteredAddrs[i] = filteredAddrs[len(filteredAddrs)-1]
+			filteredAddrs = filteredAddrs[:len(filteredAddrs)-1]
+			break
+		}
+	}
+
+	pubkeyBytes, err := base64.StdEncoding.DecodeString(node.CometPubKey)
+	if err != nil {
+		s.logger.Error("could not remove validator: could not decode public key", zap.String("address", ethAddress), zap.String("public key", node.CometPubKey), zap.Error(err))
+		return
+	}
+	pubKey := ed25519.PubKey(pubkeyBytes)
+	rendezvous := common.GetAttestorRendezvous(filteredAddrs, pubKey.Bytes(), s.config.AttDeregistrationRSize)
+	attestations := make([]string, 0, s.config.AttRegistrationRSize)
+	dereg := corev1.ValidatorDeregistration{
+		CometAddress: node.CometAddress,
+		PubKey:       pubKey.Bytes(),
+		Deadline:     s.cache.currentHeight.Load() + 120,
+		Remove:       true,
+	}
+
+	peers := s.connectRPCPeers.ToMap()
+	for addr := range rendezvous {
+		if addr == s.config.WalletAddress {
+			deregCopy := dereg
+			resp, err := s.self.GetDeregistrationAttestation(ctx, connect.NewRequest(&corev1.GetDeregistrationAttestationRequest{
+				Deregistration: &deregCopy,
+			}))
+			if err != nil {
+				s.logger.Error("failed to get deregistration attestation from peer", zap.String("peer_address", addr), zap.Error(err))
+				continue
+			}
+			attestations = append(attestations, resp.Msg.Signature)
+		} else if peer, ok := peers[addr]; ok {
+			deregCopy := dereg
+			resp, err := peer.GetDeregistrationAttestation(ctx, connect.NewRequest(&corev1.GetDeregistrationAttestationRequest{
+				Deregistration: &deregCopy,
+			}))
+			if err != nil {
+				s.logger.Error("failed to get deregistration attestation from peer", zap.String("peer_address", addr), zap.Error(err))
+				continue
+			}
+			attestations = append(attestations, resp.Msg.Signature)
+		}
+	}
+
+	deregistrationAtt := &corev1.Attestation{
+		Signatures: attestations,
+		Body:       &corev1.Attestation_ValidatorDeregistration{ValidatorDeregistration: &dereg},
+	}
+
+	txBytes, err := proto.Marshal(deregistrationAtt)
+	if err != nil {
+		s.logger.Error("failure to marshal remove tx", zap.Error(err))
+		return
+	}
+
+	sig, err := common.EthSign(s.config.EthereumKey, txBytes)
+	if err != nil {
+		s.logger.Error("could not sign remove tx", zap.Error(err))
+		return
+	}
+
+	tx := &corev1.SignedTransaction{
+		Signature: sig,
+		RequestId: uuid.NewString(),
+		Transaction: &corev1.SignedTransaction_Attestation{
+			Attestation: deregistrationAtt,
+		},
+	}
+
+	txreq := &corev1.SendTransactionRequest{
+		Transaction: tx,
+	}
+
+	txhash, err := s.self.SendTransaction(context.Background(), connect.NewRequest(txreq))
+	if err != nil {
+		s.logger.Error("send remove tx failed", zap.Error(err))
+		return
+	}
+
+	s.logger.Info("submitted removal attestation for validator", zap.String("eth_address", ethAddress), zap.String("receipt", txhash.Msg.Transaction.Hash))
 }
 
 // jailValidator submits an attestation tx to jail a validator (set jailed=true) for quota/operational

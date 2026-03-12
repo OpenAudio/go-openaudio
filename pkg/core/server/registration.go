@@ -163,7 +163,7 @@ func (s *Server) isValidDeregisterNodeAttestation(ctx context.Context, tx *v1.Si
 	if err != nil {
 		return fmt.Errorf("error getting eth address from node deregistration attestation: %v", err)
 	}
-	if node.Jailed {
+	if node.Jailed && !dereg.Remove {
 		return fmt.Errorf("validator '%s' is already jailed", addr)
 	}
 
@@ -181,14 +181,18 @@ func (s *Server) isValidDeregisterNodeAttestation(ctx context.Context, tx *v1.Si
 func (s *Server) finalizeDeregisterValidatorAttestation(ctx context.Context, tx *v1.SignedTransaction) error {
 	dereg := tx.GetAttestation().GetValidatorDeregistration()
 	if dereg == nil {
-		return fmt.Errorf("unknown attestation fell into isValidDeregisterNodeAttestation: %v", tx)
+		return fmt.Errorf("unknown attestation fell into finalizeDeregisterValidatorAttestation: %v", tx)
 	}
 	qtx := s.getDb()
-	err := qtx.JailRegisteredNode(ctx, dereg.GetCometAddress())
-	if err != nil {
-		return fmt.Errorf("error jailing registered node: %v", err)
+	if dereg.Remove {
+		if err := qtx.DeleteRegisteredNode(ctx, dereg.GetCometAddress()); err != nil {
+			return fmt.Errorf("error removing registered node: %v", err)
+		}
+	} else {
+		if err := qtx.JailRegisteredNode(ctx, dereg.GetCometAddress()); err != nil {
+			return fmt.Errorf("error jailing registered node: %v", err)
+		}
 	}
-
 	return nil
 }
 
