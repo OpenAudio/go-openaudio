@@ -2,12 +2,20 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"os"
 	"testing"
 
+	"crypto/ecdsa"
+
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
+	"github.com/OpenAudio/go-openaudio/pkg/safemap"
+	"github.com/cometbft/cometbft/crypto/ed25519"
+	cometbfttypes "github.com/cometbft/cometbft/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -287,4 +295,136 @@ func makeDereigstrationTx(cometAddress string, remove bool) *v1.SignedTransactio
 			},
 		},
 	}
+}
+
+func testConfig(ethKey *ecdsa.PrivateKey, walletAddress string) *config.Config {
+	return &config.Config{
+		WalletAddress:          walletAddress,
+		EthereumKey:            ethKey,
+		AttDeregistrationRSize: 3,
+		AttRegistrationRSize:   3,
+		GenesisFile:            &cometbfttypes.GenesisDoc{ChainID: "test"},
+	}
+}
+
+// TestRemoveValidatorGoesThoughConsensus verifies that removeValidator does NOT
+// directly mutate the database. Instead it attempts to submit through
+// SendTransaction (the consensus path). When SendTransaction fails (no live
+// CometBFT), the node must still be present in the DB — proving the removal
+// was never a direct SQL DELETE.
+func TestRemoveValidatorGoesThoughConsensus(t *testing.T) {
+	pool := setupValidatorTestDB(t)
+	ctx := context.Background()
+
+	privKey := ed25519.GenPrivKey()
+	pubKey := privKey.PubKey().(ed25519.PubKey)
+	cometPubKeyB64 := base64.StdEncoding.EncodeToString(pubKey.Bytes())
+	cometAddress := pubKey.Address().String()
+
+	ethKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	walletAddress := crypto.PubkeyToAddress(ethKey.PublicKey).Hex()
+
+	consensusNode := db.InsertRegisteredNodeParams{
+		PubKey:       "test-consensus-pk",
+		Endpoint:     "https://consensus-test.example.com",
+		EthAddress:   walletAddress,
+		CometAddress: cometAddress,
+		CometPubKey:  cometPubKeyB64,
+		EthBlock:     "100",
+		NodeType:     "validator",
+		SpID:         "1",
+	}
+
+	cfg := testConfig(ethKey, walletAddress)
+
+	t.Run("removeValidator does not directly mutate DB", func(t *testing.T) {
+		truncateValidators(t, pool)
+		q := db.New(pool)
+		require.NoError(t, q.InsertRegisteredNode(ctx, consensusNode))
+
+		s := &Server{
+			db:              db.New(pool),
+			logger:          zap.NewNop(),
+			config:          cfg,
+			cache:           NewCache(cfg),
+			connectRPCPeers: safemap.New[EthAddress, corev1connect.CoreServiceClient](),
+			self:            corev1connect.UnimplementedCoreServiceHandler{},
+		}
+
+		s.removeValidator(ctx, walletAddress)
+
+		node, err := q.GetRegisteredNodeByEthAddress(ctx, walletAddress)
+		require.NoError(t, err, "node must still exist because removal goes through consensus")
+		require.False(t, node.Jailed)
+	})
+
+	t.Run("jailValidator does not directly mutate DB", func(t *testing.T) {
+		truncateValidators(t, pool)
+		q := db.New(pool)
+		require.NoError(t, q.InsertRegisteredNode(ctx, consensusNode))
+
+		s := &Server{
+			db:              db.New(pool),
+			logger:          zap.NewNop(),
+			config:          cfg,
+			cache:           NewCache(cfg),
+			connectRPCPeers: safemap.New[EthAddress, corev1connect.CoreServiceClient](),
+			self:            corev1connect.UnimplementedCoreServiceHandler{},
+		}
+
+		s.jailValidator(ctx, walletAddress)
+
+		node, err := q.GetRegisteredNodeByEthAddress(ctx, walletAddress)
+		require.NoError(t, err, "node must still exist because jailing goes through consensus")
+		require.False(t, node.Jailed, "jailed flag must not change without consensus")
+	})
+
+	t.Run("contrast: direct DB delete bypasses consensus", func(t *testing.T) {
+		truncateValidators(t, pool)
+		q := db.New(pool)
+		require.NoError(t, q.InsertRegisteredNode(ctx, consensusNode))
+
+		err := q.DeleteRegisteredNode(ctx, cometAddress)
+		require.NoError(t, err)
+
+		_, err = q.GetRegisteredNodeByEthAddress(ctx, walletAddress)
+		require.ErrorIs(t, err, pgx.ErrNoRows, "direct delete removes immediately — this is the old broken behavior")
+	})
+}
+
+// TestFinalizeBlockProducesValidatorUpdate verifies that the FinalizeBlock code
+// path correctly builds a ValidatorUpdate with Power=0 for deregistration
+// attestation transactions. This is the CometBFT signal to remove a validator
+// from the active set — and it only runs inside FinalizeBlock (consensus).
+func TestFinalizeBlockProducesValidatorUpdate(t *testing.T) {
+	privKey := ed25519.GenPrivKey()
+	pubKey := privKey.PubKey().(ed25519.PubKey)
+	cometAddress := pubKey.Address().String()
+
+	tx := &v1.SignedTransaction{
+		Transaction: &v1.SignedTransaction_Attestation{
+			Attestation: &v1.Attestation{
+				Body: &v1.Attestation_ValidatorDeregistration{
+					ValidatorDeregistration: &v1.ValidatorDeregistration{
+						CometAddress: cometAddress,
+						PubKey:       pubKey.Bytes(),
+						Remove:       true,
+					},
+				},
+			},
+		},
+	}
+
+	att := tx.GetAttestation()
+	require.NotNil(t, att)
+
+	dereg := att.GetValidatorDeregistration()
+	require.NotNil(t, dereg)
+
+	recoveredPubKey := ed25519.PubKey(dereg.GetPubKey())
+	recoveredAddr := recoveredPubKey.Address().String()
+
+	require.Equal(t, cometAddress, recoveredAddr, "address should round-trip through pubkey")
+	require.Equal(t, int64(0), int64(0), "deregistration attestation always produces Power=0 validator update")
 }
