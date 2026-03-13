@@ -380,12 +380,13 @@ func (c *Crudr) UpdatePeers(newHosts []string) {
 		}
 	}
 
-	// Remove clients for hosts no longer in the set
+	// Remove clients for hosts no longer in the set and stop their goroutines
 	kept := make([]*PeerClient, 0, len(newHostSet))
 	for _, p := range c.peerClients {
 		if newHostSet[p.Host] {
 			kept = append(kept, p)
 		} else {
+			p.Stop()
 			c.logger.Info("removed crudr peer", zap.String("host", p.Host))
 		}
 	}

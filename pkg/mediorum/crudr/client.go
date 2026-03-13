@@ -27,6 +27,7 @@ type PeerClient struct {
 	crudr    *Crudr
 	logger   *slog.Logger
 	selfHost string
+	cancel   context.CancelFunc
 }
 
 func NewPeerClient(host string, crudr *Crudr, selfHost string) *PeerClient {
@@ -45,8 +46,18 @@ func NewPeerClient(host string, crudr *Crudr, selfHost string) *PeerClient {
 }
 
 func (p *PeerClient) Start(lc *lifecycle.Lifecycle) {
-	lc.AddManagedRoutine(fmt.Sprintf("sender for crudr peer %s", p.Host), p.startSender)
-	lc.AddManagedRoutine(fmt.Sprintf("sweeper for crudr peer %s", p.Host), p.startSweeper)
+	lc.AddManagedRoutine(fmt.Sprintf("crudr peer %s", p.Host), func(ctx context.Context) error {
+		ctx, cancel := context.WithCancel(ctx)
+		p.cancel = cancel
+		go p.startSweeper(ctx)
+		return p.startSender(ctx)
+	})
+}
+
+func (p *PeerClient) Stop() {
+	if p.cancel != nil {
+		p.cancel()
+	}
 }
 
 func (p *PeerClient) Send(data []byte) bool {
