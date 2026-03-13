@@ -227,7 +227,7 @@ func getStorageExpectation(ctx context.Context, p *pgxpool.Pool, replicationFact
 
 	var size uint64
 	// Calculate storage expectation as
-	//   (total_size * 2 * replication_factor) / validator_count
+	//   (total_size * 2 * replication_factor) / node_count
 	// * 2 because we store transcode files in addition to original files
 	query := fmt.Sprintf(`
 WITH total_size AS (
@@ -235,18 +235,17 @@ WITH total_size AS (
     COALESCE(SUM((ff_probe::jsonb->'format'->>'size')::bigint), 0) AS s
   FROM uploads
 ),
-validator_count AS (
+node_count AS (
   SELECT COUNT(*) AS n
-  FROM core_validators
-  WHERE (node_type = 'content-node' OR node_type = 'validator')
-    AND COALESCE(jailed, false) = false
+  FROM eth_registered_endpoints
+  WHERE service_type IN ('content-node', 'validator')
 )
 SELECT
 	CASE
 		WHEN n > 0 THEN (((s * 2) * %d) / n)::bigint
 		ELSE 0
 	END
-FROM total_size, validator_count
+FROM total_size, node_count
 `, replicationFactor)
 	var result int64
 	if err := p.QueryRow(ctx, query).Scan(&result); err != nil {
