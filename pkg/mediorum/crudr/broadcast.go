@@ -5,7 +5,11 @@ package crudr
 // it is ok if message is dropped or POST fails
 // because the sweeper will consume op.
 func (c *Crudr) broadcast(payload []byte) {
-	for _, p := range c.peerClients {
+	c.mu.Lock()
+	peers := make([]*PeerClient, len(c.peerClients))
+	copy(peers, c.peerClients)
+	c.mu.Unlock()
+	for _, p := range peers {
 		p.Send(payload)
 	}
 }

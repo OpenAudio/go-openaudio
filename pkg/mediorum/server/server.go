@@ -361,11 +361,11 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		replicationWork:  make(chan *Upload, 100),
 		posChannel:       posChannel,
 
-		peerHealths:        map[string]*PeerHealth{},
-		redirectCache:         imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
-		uploadOrigCidCache:    imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
-		imageCache:            imcache.New(imcache.WithMaxEntriesLimitOption[string, []byte](10_000, imcache.EvictionPolicyLRU)),
-		trackAccessInfoCache:  imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
+		peerHealths:          map[string]*PeerHealth{},
+		redirectCache:        imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
+		uploadOrigCidCache:   imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
+		imageCache:           imcache.New(imcache.WithMaxEntriesLimitOption[string, []byte](10_000, imcache.EvictionPolicyLRU)),
+		trackAccessInfoCache: imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
 
 		StartedAt:    time.Now().UTC(),
 		Config:       config,
@@ -764,6 +764,8 @@ func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
 					zap.Int("total_peers", len(peers)),
 					zap.Strings("peer_hosts", peerHosts))
 			}
+
+			ss.crud.UpdatePeers(allHosts)
 
 			ss.logger.Info("updated peers and signers dynamically", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)), zap.Bool("wallet_is_registered", ss.Config.WalletIsRegistered))
 		case <-ctx.Done():

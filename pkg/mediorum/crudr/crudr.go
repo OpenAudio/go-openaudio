@@ -129,6 +129,8 @@ func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db
 }
 
 func (c *Crudr) StartClients() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for _, p := range c.peerClients {
 		p.Start(c.lc)
 	}
@@ -136,7 +138,11 @@ func (c *Crudr) StartClients() {
 
 // used for testing
 func (c *Crudr) ForceSweep() {
-	for _, p := range c.peerClients {
+	c.mu.Lock()
+	peers := make([]*PeerClient, len(c.peerClients))
+	copy(peers, c.peerClients)
+	c.mu.Unlock()
+	for _, p := range peers {
 		p.doSweep(context.Background())
 	}
 }
@@ -319,6 +325,8 @@ func (c *Crudr) ApplyOp(op *Op) error {
 }
 
 func (c *Crudr) GetOutboxSizes() map[string]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	sizes := make(map[string]int)
 	for _, p := range c.peerClients {
 		sizes[p.Host] = len(p.outbox)
@@ -327,6 +335,8 @@ func (c *Crudr) GetOutboxSizes() map[string]int {
 }
 
 func (c *Crudr) GetPercentNodesSeeded() float64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	var nCaughtUp int
 	var nPeers = len(c.peerClients)
 	for _, p := range c.peerClients {
@@ -336,4 +346,48 @@ func (c *Crudr) GetPercentNodesSeeded() float64 {
 	}
 
 	return (float64(nCaughtUp) / float64(nPeers)) * 100
+}
+
+// UpdatePeers reconciles the crudr peer client list with a new set of peer hosts.
+// New hosts get a PeerClient created and started; removed hosts are dropped.
+func (c *Crudr) UpdatePeers(newHosts []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Build a set of current peer hosts
+	currentHosts := make(map[string]*PeerClient, len(c.peerClients))
+	for _, p := range c.peerClients {
+		currentHosts[p.Host] = p
+	}
+
+	// Normalize and deduplicate new hosts (excluding self)
+	newHostSet := make(map[string]bool, len(newHosts))
+	for _, h := range newHosts {
+		h = httputil.RemoveTrailingSlash(strings.ToLower(h))
+		if h == c.host {
+			continue
+		}
+		newHostSet[h] = true
+	}
+
+	// Start clients for newly added hosts
+	for h := range newHostSet {
+		if _, exists := currentHosts[h]; !exists {
+			p := NewPeerClient(h, c, c.host)
+			p.Start(c.lc)
+			c.peerClients = append(c.peerClients, p)
+			c.logger.Info("added new crudr peer", zap.String("host", h))
+		}
+	}
+
+	// Remove clients for hosts no longer in the set
+	kept := make([]*PeerClient, 0, len(newHostSet))
+	for _, p := range c.peerClients {
+		if newHostSet[p.Host] {
+			kept = append(kept, p)
+		} else {
+			c.logger.Info("removed crudr peer", zap.String("host", p.Host))
+		}
+	}
+	c.peerClients = kept
 }

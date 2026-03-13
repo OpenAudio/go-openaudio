@@ -48,38 +48,36 @@ func (ss *MediorumServer) startUploadScroller(ctx context.Context) error {
 					continue
 				}
 
-				var overwrites []*Upload
-				for _, upload := range uploads {
+			if len(uploads) == 0 {
+				continue
+			}
 
-					// get existing upload
-					var existing Upload
-					err := ss.crud.DB.First(&existing, "id = ?", upload.ID).Error
+			var overwrites []*Upload
+			for _, upload := range uploads {
+				var existing Upload
+				err := ss.crud.DB.First(&existing, "id = ?", upload.ID).Error
 
-					// if not exists or is old, overwrite
-					if err != nil || existing.TranscodedAt.Before(upload.TranscodedAt) {
-						overwrites = append(overwrites, upload)
-					}
-
-					// advance cursor
-					uploadCursor.After = upload.CreatedAt
+				if err != nil || existing.TranscodedAt.Before(upload.TranscodedAt) {
+					overwrites = append(overwrites, upload)
 				}
 
-				if len(overwrites) == 0 {
-					continue
-				}
+				uploadCursor.After = upload.CreatedAt
+			}
 
-				// write overwrites
+			if len(overwrites) > 0 {
 				err = ss.crud.DB.Clauses(clause.OnConflict{UpdateAll: true}).Create(overwrites).Error
 				if err != nil {
 					logger.Warn("overwrite upload failed", zap.Error(err))
 				}
+			}
 
-				// save cursor
-				if err := ss.crud.DB.Clauses(clause.OnConflict{UpdateAll: true}).Create(uploadCursor).Error; err != nil {
-					logger.Error("save upload cursor failed", zap.Error(err))
-				} else {
-					logger.Info("OK", zap.Int("uploads", len(uploads)), zap.Int("overwrites", len(overwrites)))
-				}
+			// Always save cursor after processing a page so we don't
+			// re-fetch the same uploads on the next tick.
+			if err := ss.crud.DB.Clauses(clause.OnConflict{UpdateAll: true}).Create(uploadCursor).Error; err != nil {
+				logger.Error("save upload cursor failed", zap.Error(err))
+			} else {
+				logger.Info("OK", zap.Int("uploads", len(uploads)), zap.Int("overwrites", len(overwrites)))
+			}
 
 			}
 		case <-ctx.Done():
