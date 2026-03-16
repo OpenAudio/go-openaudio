@@ -80,9 +80,9 @@ const (
 
 // ID offsets matching discovery-provider constants.
 const (
-	UserIDOffset     = 1_000_000
-	TrackIDOffset    = 1_000_000
-	PlaylistIDOffset = 1_000_000
+	PlaylistIDOffset = 400_000
+	TrackIDOffset    = 2_000_000
+	UserIDOffset     = 3_000_000
 )
 
 // Character limit constants matching discovery-provider.

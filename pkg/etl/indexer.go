@@ -66,8 +66,9 @@ func (e *Indexer) Run() error {
 	e.pool = pool
 	e.db = db.New(pool)
 
-	// Initialize entity manager dispatcher
+	// Initialize entity manager dispatcher and register handlers
 	e.dispatcher = em.NewDispatcher(e.logger)
+	e.dispatcher.Register(em.UserCreate())
 
 	// Initialize pubsub instances
 	e.blockPubsub = NewPubsub[*db.EtlBlock]()
