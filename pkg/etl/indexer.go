@@ -12,6 +12,7 @@ import (
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/etl/db"
 	"github.com/OpenAudio/go-openaudio/etl/processors"
+	em "github.com/OpenAudio/go-openaudio/etl/processors/entity_manager"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -64,6 +65,9 @@ func (e *Indexer) Run() error {
 
 	e.pool = pool
 	e.db = db.New(pool)
+
+	// Initialize entity manager dispatcher
+	e.dispatcher = em.NewDispatcher(e.logger)
 
 	// Initialize pubsub instances
 	e.blockPubsub = NewPubsub[*db.EtlBlock]()
@@ -202,8 +206,13 @@ func (e *Indexer) indexBlocks() error {
 				}
 
 				switch signedTx := tx.Transaction.Transaction.(type) {
-				case *corev1.SignedTransaction_Plays:
-					txCtx := &processors.TxContext{
+			case *corev1.SignedTransaction_Plays:
+				e.logger.Debug("processing tx",
+					zap.String("type", "play"),
+					zap.String("hash", tx.Hash),
+					zap.Int("play_count", len(signedTx.Plays.GetPlays())),
+				)
+				txCtx := &processors.TxContext{
 						Block:     block,
 						TxHash:    tx.Hash,
 						TxIndex:   index,
@@ -217,20 +226,52 @@ func (e *Indexer) indexBlocks() error {
 						insertTxParams = res.InsertTx
 					}
 
-				case *corev1.SignedTransaction_ManageEntity:
-					txCtx := &processors.TxContext{
-						Block:     block,
-						TxHash:    tx.Hash,
-						TxIndex:   index,
-						BlockTime: pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-						InsertTx:  insertTxParams,
-					}
-					res, err := processors.ManageEntity().Process(context.Background(), tx.Transaction, txCtx, e.db)
-					if err != nil {
-						e.logger.Error("error processing manage entity", zap.Error(err))
+			case *corev1.SignedTransaction_ManageEntity:
+				me := signedTx.ManageEntity
+				e.logger.Debug("processing tx",
+					zap.String("type", "manage_entity"),
+					zap.String("hash", tx.Hash),
+					zap.String("entity_type", me.GetEntityType()),
+					zap.String("action", me.GetAction()),
+					zap.Int64("entity_id", me.GetEntityId()),
+					zap.Int64("user_id", me.GetUserId()),
+					zap.String("signer", me.GetSigner()),
+				)
+
+				txCtx := &processors.TxContext{
+					Block:     block,
+					TxHash:    tx.Hash,
+					TxIndex:   index,
+					BlockTime: pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+					InsertTx:  insertTxParams,
+				}
+				res, err := processors.ManageEntity().Process(context.Background(), tx.Transaction, txCtx, e.db)
+				if err != nil {
+					e.logger.Error("error processing manage entity", zap.Error(err))
+				} else {
+					insertTxParams = res.InsertTx
+				}
+
+				txStart := time.Now()
+				emParams := em.NewParams(me, block.Height, block.Timestamp.AsTime(), tx.Hash, e.pool, e.logger)
+				if dErr := e.dispatcher.Dispatch(context.Background(), emParams); dErr != nil {
+					if em.IsValidationError(dErr) {
+						e.logger.Debug("entity manager validation failed",
+							zap.String("hash", tx.Hash),
+							zap.String("entity_type", me.GetEntityType()),
+							zap.String("action", me.GetAction()),
+							zap.String("reason", dErr.Error()),
+						)
 					} else {
-						insertTxParams = res.InsertTx
+						e.logger.Error("entity manager dispatch error", zap.Error(dErr))
 					}
+				} else {
+					e.logger.Debug("tx indexed",
+						zap.String("type", "manage_entity"),
+						zap.String("hash", tx.Hash),
+						zap.Duration("elapsed", time.Since(txStart)),
+					)
+				}
 
 				case *corev1.SignedTransaction_ValidatorRegistration:
 					insertTxParams.TxType = TxTypeValidatorRegistrationLegacy
