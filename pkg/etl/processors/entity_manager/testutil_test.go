@@ -46,8 +46,8 @@ func setupTestDB(t *testing.T) *pgxpool.Pool {
 func seedUser(t *testing.T, pool *pgxpool.Pool, userID int64, wallet, handle string) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), `
-		INSERT INTO users (user_id, handle, handle_lc, wallet, is_current, is_verified, is_deactivated, is_available, created_at, updated_at, txhash, blocknumber)
-		VALUES ($1, $2, $3, $4, true, false, false, true, now(), now(), '', 0)
+		INSERT INTO users (user_id, handle, handle_lc, wallet, is_current, is_verified, is_deactivated, is_available, created_at, updated_at, txhash)
+		VALUES ($1, $2, $3, $4, true, false, false, true, now(), now(), '')
 		ON CONFLICT DO NOTHING
 	`, userID, handle, strings.ToLower(handle), wallet)
 	if err != nil {
@@ -59,8 +59,8 @@ func seedUser(t *testing.T, pool *pgxpool.Pool, userID int64, wallet, handle str
 func seedTrack(t *testing.T, pool *pgxpool.Pool, trackID int64, ownerID int64) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), `
-		INSERT INTO tracks (track_id, owner_id, is_current, is_delete, track_segments, created_at, updated_at, txhash, blocknumber)
-		VALUES ($1, $2, true, false, '[]', now(), now(), '', 0)
+		INSERT INTO tracks (track_id, owner_id, is_current, is_delete, track_segments, created_at, updated_at, txhash)
+		VALUES ($1, $2, true, false, '[]', now(), now(), '')
 		ON CONFLICT DO NOTHING
 	`, trackID, ownerID)
 	if err != nil {
@@ -72,8 +72,8 @@ func seedTrack(t *testing.T, pool *pgxpool.Pool, trackID int64, ownerID int64) {
 func seedPlaylist(t *testing.T, pool *pgxpool.Pool, playlistID int64, ownerID int64) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), `
-		INSERT INTO playlists (playlist_id, playlist_owner_id, is_album, is_private, playlist_contents, is_current, is_delete, created_at, updated_at, txhash, blocknumber)
-		VALUES ($1, $2, false, false, '{}', true, false, now(), now(), '', 0)
+		INSERT INTO playlists (playlist_id, playlist_owner_id, is_album, is_private, playlist_contents, is_current, is_delete, created_at, updated_at, txhash)
+		VALUES ($1, $2, false, false, '{}', true, false, now(), now(), '')
 		ON CONFLICT DO NOTHING
 	`, playlistID, ownerID)
 	if err != nil {
