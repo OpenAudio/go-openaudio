@@ -66,12 +66,12 @@ processors/entity_manager/
 
 ### Entity/Action Roadmap
 
-**Done:** Foundation (handler framework, dispatcher, test infra, migrations, debug logging)
+**Done:** Foundation (handler framework, dispatcher, test infra, migrations, debug logging), User Create, User Update
 
-**In progress:** User Create
+**In progress:** User Verify
 
 **Planned (one PR each):**
-- User Update, User Verify
+- User Verify
 - Track Create, Track Update, Track Delete
 - Playlist Create, Playlist Update, Playlist Delete
 - Follow/Unfollow, Save/Unsave, Repost/Unrepost

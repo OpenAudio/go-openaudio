@@ -2,11 +2,21 @@ package entity_manager
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/OpenAudio/go-openaudio/etl/db"
 )
+
+// markNotCurrent sets is_current=false on the current row for an entity.
+// Used before inserting a new version (composite PKs prevent in-place UPDATE).
+func markNotCurrent(ctx context.Context, dbtx db.DBTX, table, idCol string, id int64) error {
+	_, err := dbtx.Exec(ctx,
+		fmt.Sprintf("UPDATE %s SET is_current = false WHERE %s = $1 AND is_current = true", table, idCol),
+		id)
+	return err
+}
 
 var handleRegexp = regexp.MustCompile(`^[a-z0-9_.]+$`)
 

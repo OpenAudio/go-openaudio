@@ -177,6 +177,49 @@ func (p *Params) MetadataString(key string) string {
 	return s
 }
 
+// MetadataInt64 returns an int64 from parsed metadata (supports number and string).
+func (p *Params) MetadataInt64(key string) (int64, bool) {
+	if p.Metadata == nil {
+		return 0, false
+	}
+	v, ok := p.Metadata[key]
+	if !ok {
+		return 0, false
+	}
+	switch val := v.(type) {
+	case float64:
+		return int64(val), true
+	case int:
+		return int64(val), true
+	case int64:
+		return val, true
+	}
+	return 0, false
+}
+
+// MetadataBool returns a bool from parsed metadata.
+func (p *Params) MetadataBool(key string) (bool, bool) {
+	if p.Metadata == nil {
+		return false, false
+	}
+	v, ok := p.Metadata[key]
+	if !ok {
+		return false, false
+	}
+	b, ok := v.(bool)
+	return b, ok
+}
+
+// MetadataJSON returns the raw value for a JSONB column (map, slice, etc.).
+// Caller should json.Marshal for DB insertion.
+func (p *Params) MetadataJSON(key string) (any, bool) {
+	if p.Metadata == nil {
+		return nil, false
+	}
+	v, ok := p.Metadata[key]
+	return v, ok
+}
+
 // Handler processes a specific (entity_type, action) pair.
 type Handler interface {
 	EntityType() string

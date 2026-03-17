@@ -70,6 +70,7 @@ func (e *Indexer) Run() error {
 	e.dispatcher = em.NewDispatcher(e.logger)
 	if e.config.IsDataTypeEnabled(em.EntityTypeUser) {
 		e.dispatcher.Register(em.UserCreate())
+		e.dispatcher.Register(em.UserUpdate())
 	}
 
 	if e.dispatcher.HandlerCount() > 0 {
