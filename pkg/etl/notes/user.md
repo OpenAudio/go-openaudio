@@ -10,3 +10,4 @@ Side effects that the discovery-provider celery indexer performs but the ETL ind
 ## User Verify
 
 - **ChallengeEvent.connect_verified**: Challenge event for verification (rewards).
+- **VerifiedAddress**: When empty, ETL accepts any signer (TODO: make configurable from shared_config).
