@@ -21,7 +21,7 @@ todos:
     content: "PR1: Wire dispatcher into existing ManageEntity processor in manage_entity.go"
     status: completed
   - id: pr1-local-runner
-    content: "PR1: Create examples/etl-local/main.go -- standalone runner against production RPC + local Postgres with verbose tx logging"
+    content: "PR1: Create examples/etl/main.go -- standalone runner against production RPC + local Postgres with verbose tx logging"
     status: completed
   - id: pr1-feature-md
     content: "PR1: Update FEATURE.md with entity_manager architecture and roadmap"
@@ -182,13 +182,13 @@ Tables to create (matching discovery-provider schema exactly):
 
 This migration creates ALL tables up front so subsequent PRs just add handlers.
 
-**1g. Local runner script (`examples/etl-local/main.go`):**
+**1g. Local runner script (`examples/etl/main.go`):**
 
 A standalone Go program that exercises the ETL package against a real RPC and local database. This is the primary manual testing tool alongside unit tests.
 
 ```go
 // Usage:
-//   go run ./examples/etl-local \
+//   go run ./examples/etl \
 //     --rpc https://core.audius.co \
 //     --db "postgres://localhost:5432/etl_local?sslmode=disable"
 ```
@@ -311,7 +311,7 @@ func TestUserCreate_RejectsExistingUser(t *testing.T) {
 
 Run: `cd pkg/etl && go test ./processors/entity_manager/... -v`
 
-### 2. Local runner (`examples/etl-local/`) -- manual, against live data
+### 2. Local runner (`examples/etl/`) -- manual, against live data
 
 For end-to-end testing against production or staging chains. You run it, point it at an RPC and local Postgres, and watch real transactions flow through the full pipeline. Useful for:
 
@@ -320,7 +320,7 @@ For end-to-end testing against production or staging chains. You run it, point i
 - Testing migration idempotency on a fresh database
 - Smoke-testing before deploying a new handler
 
-Run: `go run ./examples/etl-local --rpc https://core.audius.co --db "postgres://localhost:5432/etl_local?sslmode=disable"`
+Run: `go run ./examples/etl --rpc https://core.audius.co --db "postgres://localhost:5432/etl_local?sslmode=disable"`
 
 ## Key Design Decisions
 

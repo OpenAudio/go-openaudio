@@ -1,11 +1,11 @@
-// etl-local runs the ETL indexer against a production RPC and local Postgres.
+// etl runs the ETL indexer against a production RPC and local Postgres.
 //
 // It creates all necessary tables via migrations, then indexes blocks and prints
 // each transaction's payload before processing and a completion message after.
 //
 // Usage:
 //
-//	go run ./examples/etl-local \
+//	go run ./examples/etl \
 //	  --rpc https://core.audius.co \
 //	  --db "postgres://localhost:5432/etl_local?sslmode=disable"
 //
@@ -19,8 +19,8 @@ import (
 	"os"
 	"strings"
 
-	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	etl "github.com/OpenAudio/go-openaudio/etl"
+	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	"go.uber.org/zap"
 )
 
