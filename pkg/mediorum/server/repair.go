@@ -41,13 +41,21 @@ type RepairTracker struct {
 func (ss *MediorumServer) startRepairer(ctx context.Context) error {
 	logger := ss.logger.With(zap.String("task", "repair"))
 
+	if !ss.Config.RepairEnabled {
+		logger.Info("repair is disabled via OPENAUDIO_REPAIR_ENABLED=false")
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	repairInterval := ss.Config.RepairInterval
+	logger.Info("repair configured", zap.Duration("interval", repairInterval))
+
 	// wait a minute on startup to determine healthy peers
 	ticker := time.NewTicker(1 * time.Minute)
 	for {
 		select {
 		case <-ticker.C:
-			// Wait 1 hour for next interval unless otherwise specified
-			ticker.Reset(1 * time.Hour)
+			ticker.Reset(repairInterval)
 
 			// pick up where we left off from the last repair.go run, including if the server restarted in the middle of a run
 			tracker := RepairTracker{

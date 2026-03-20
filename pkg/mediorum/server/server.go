@@ -75,6 +75,8 @@ type MediorumConfig struct {
 	DiscoveryListensEndpoints []string
 	LogLevel                  string
 	DeadHosts                 []string
+	RepairEnabled             bool          `default:"true"`
+	RepairInterval            time.Duration `default:"1h"`
 
 	ProgrammableDistributionEnabled bool
 
