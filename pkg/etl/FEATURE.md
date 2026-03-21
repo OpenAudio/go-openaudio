@@ -52,8 +52,9 @@ processors/entity_manager/
 ├── handler_test.go      # Dispatcher unit tests
 ├── validate.go          # Shared validators (ValidateSigner, ValidateHandle, etc.)
 ├── testutil_test.go     # Test helpers: setupTestDB, seeders, tx builders, assertions
-├── user_create.go       # Example: User Create handler
-├── user_create_test.go  # Tests for User Create
+├── user_create.go       # User Create handler
+├── track_create.go    # Track Create (+ genre_allowlist.go, slug.go, track_row.go, track_queries.go)
+├── track_update.go / track_delete.go
 └── <entity>_<action>.go # One file per entity/action pair
 ```
 
@@ -66,10 +67,9 @@ processors/entity_manager/
 
 ### Entity/Action Roadmap
 
-**Done:** Foundation (handler framework, dispatcher, test infra, migrations, debug logging), User Create, User Update, User Verify
+**Done:** Foundation (handler framework, dispatcher, test infra, migrations, debug logging), User Create, User Update, User Verify, Track Create, Track Update, Track Delete
 
 **Planned (one PR each):**
-- Track Create, Track Update, Track Delete
 - Playlist Create, Playlist Update, Playlist Delete
 - Follow/Unfollow, Save/Unsave, Repost/Unrepost
 - DeveloperApp (Create, Update, Delete)

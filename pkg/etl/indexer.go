@@ -73,6 +73,11 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.UserUpdate())
 		e.dispatcher.Register(em.UserVerify())
 	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeTrack) {
+		e.dispatcher.Register(em.TrackCreate())
+		e.dispatcher.Register(em.TrackUpdate())
+		e.dispatcher.Register(em.TrackDelete())
+	}
 
 	if e.dispatcher.HandlerCount() > 0 {
 		e.logger.Info("entity manager enabled", zap.Int("handlers", e.dispatcher.HandlerCount()))

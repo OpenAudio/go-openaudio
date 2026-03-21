@@ -112,3 +112,14 @@ func getUserWallet(ctx context.Context, dbtx db.DBTX, userID int64) (string, err
 	}
 	return wallet, nil
 }
+
+// ValidateGenre checks genre is in the allowlist (discovery-provider hardcoded_data.genre_allowlist).
+func ValidateGenre(genre string) error {
+	if genre == "" {
+		return nil
+	}
+	if _, ok := GenreAllowlist[genre]; !ok {
+		return NewValidationError("genre %q is not in the allow list", genre)
+	}
+	return nil
+}

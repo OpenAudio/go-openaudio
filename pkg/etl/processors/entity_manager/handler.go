@@ -90,7 +90,8 @@ const (
 	CharacterLimitUserBio     = 256
 	CharacterLimitUserName    = 32
 	CharacterLimitHandle      = 30
-	CharacterLimitDescription = 1000
+	// CharacterLimitDescription matches discovery-provider entity_manager CHARACTER_LIMIT_DESCRIPTION (tracks, playlists).
+	CharacterLimitDescription = 2500
 )
 
 // ValidationError indicates a transaction should be skipped (not a fatal indexing error).
@@ -208,6 +209,14 @@ func (p *Params) MetadataBool(key string) (bool, bool) {
 	}
 	b, ok := v.(bool)
 	return b, ok
+}
+
+// MetadataBoolOr returns the bool value or default if the key is absent.
+func (p *Params) MetadataBoolOr(key string, def bool) bool {
+	if v, ok := p.MetadataBool(key); ok {
+		return v
+	}
+	return def
 }
 
 // MetadataJSON returns the raw value for a JSONB column (map, slice, etc.).
