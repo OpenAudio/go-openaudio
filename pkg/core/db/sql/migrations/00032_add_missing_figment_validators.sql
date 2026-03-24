@@ -30,12 +30,6 @@ INSERT INTO core_validators (pub_key, endpoint, eth_address, comet_address, come
 SELECT '0253d06217adde4b689f86b13b0c78342440cc22bdd047e75de69e2fa4b0131f29', 'https://audius-content-14.figment.io', '0x817c513C1B702eA0BdD4F8C1204C60372f715006', 'C8C249813AC90623B86AF281D06E88CA4686D555', 'wzqUOH0cyv5b7B0ppzrjqW47jeZeUy9pxLAHM2ZRsc0=', '24599531', 'validator', '72'
 WHERE NOT EXISTS (SELECT 1 FROM core_validators WHERE comet_address = 'C8C249813AC90623B86AF281D06E88CA4686D555');
 
--- Clear uncommitted SLA node reports so the next rollup starts fresh.
--- Without this, nodes may have divergent in-progress block-proposal counts
--- from the period leading up to the halt, causing rollup validation to fail
--- even after the validator set is corrected.
-DELETE FROM sla_node_reports WHERE sla_rollup_id IS NULL;
-
 -- +migrate Down
 DELETE FROM core_validators WHERE comet_address IN (
     'A5B56BBFA35E2818A915CFAAEA5A0676C8CDB68E',
