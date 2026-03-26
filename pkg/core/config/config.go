@@ -180,9 +180,9 @@ func ReadConfig() (*Config, error) {
 	cfg.Archive = GetEnvWithDefault("archive", "false") == "true"
 
 	cfg.AttRegistrationMin = 5
-	cfg.AttRegistrationRSize = 10
+	cfg.AttRegistrationRSize = 15
 	cfg.AttDeregistrationMin = 5
-	cfg.AttDeregistrationRSize = 10
+	cfg.AttDeregistrationRSize = 15
 
 	cfg.LogLevel = GetLogLevel()
 	cfg.Environment = GetRuntimeEnvironment()
