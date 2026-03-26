@@ -2,6 +2,7 @@ package console
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1616,17 +1617,102 @@ func (con *Console) LiveEventsSSE(c echo.Context) error {
 	}
 }
 
+// searchResult represents a single search suggestion for the explorer UI.
+type searchResult struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Subtitle string `json:"subtitle,omitempty"`
+	Type     string `json:"type"`
+	URL      string `json:"url,omitempty"`
+}
+
 func (con *Console) Search(c echo.Context) error {
-	query := c.QueryParam("q")
+	query := strings.TrimSpace(c.QueryParam("q"))
 	if query == "" {
 		return c.JSON(http.StatusOK, map[string]interface{}{
-			"results": []interface{}{},
+			"results": []searchResult{},
 		})
 	}
 
-	// TODO: Implement search using database queries
+	ctx := c.Request().Context()
+	etlDB := con.etl.GetDB()
+	var results []searchResult
+
+	// 1. Block: numeric query → look up by height
+	if blockHeight, err := strconv.ParseInt(query, 10, 64); err == nil && blockHeight >= 0 {
+		block, err := etlDB.GetBlockByHeight(ctx, blockHeight)
+		if err == nil {
+			subtitle := block.ProposerAddress
+			if block.BlockTime.Valid {
+				subtitle = block.BlockTime.Time.Format("2006-01-02 15:04:05") + " • " + subtitle
+			}
+			results = append(results, searchResult{
+				ID:       strconv.FormatInt(block.BlockHeight, 10),
+				Title:    fmt.Sprintf("Block #%d", block.BlockHeight),
+				Subtitle: subtitle,
+				Type:     "block",
+				URL:      fmt.Sprintf("/block/%d", block.BlockHeight),
+			})
+		}
+	}
+
+	// 2. Transaction: 0x + 64 hex chars (or 64 hex without 0x)
+	txHash := query
+	if len(query) == 64 && !strings.HasPrefix(query, "0x") {
+		txHash = "0x" + query
+	}
+	if len(txHash) == 66 && strings.HasPrefix(txHash, "0x") {
+		if _, err := hex.DecodeString(txHash[2:]); err == nil {
+			tx, err := etlDB.GetTransactionByHash(ctx, txHash)
+			if err != nil {
+				tx, err = etlDB.GetTransactionByHash(ctx, query)
+			}
+			if err == nil {
+				shortHash := tx.TxHash
+				if len(shortHash) > 18 {
+					shortHash = shortHash[:10] + "..." + shortHash[len(shortHash)-8:]
+				}
+				results = append(results, searchResult{
+					ID:       tx.TxHash,
+					Title:    shortHash,
+					Subtitle: fmt.Sprintf("%s • Block %d", tx.TxType, tx.BlockHeight),
+					Type:     "transaction",
+					URL:      fmt.Sprintf("/transaction/%s", tx.TxHash),
+				})
+			}
+		}
+	}
+
+	// 3. Account / wallet: 0x + 40 hex chars (Ethereum address)
+	if ethcommon.IsHexAddress(query) && len(query) == 42 {
+		shortAddr := query[:8] + "..." + query[len(query)-6:]
+		results = append(results, searchResult{
+			ID:       query,
+			Title:    shortAddr,
+			Subtitle: "Wallet",
+			Type:     "account",
+			URL:      fmt.Sprintf("/account/%s", query),
+		})
+	}
+
+	// 4. Validator: by address or comet_address (any string that matches a validator)
+	validator, err := etlDB.GetValidatorByAddress(ctx, strings.ToLower(query))
+	if err == nil {
+		title := validator.CometAddress
+		if validator.Endpoint != "" {
+			title = validator.Endpoint
+		}
+		results = append(results, searchResult{
+			ID:       validator.CometAddress,
+			Title:    title,
+			Subtitle: fmt.Sprintf("Validator • %s", validator.Status),
+			Type:     "validator",
+			URL:      fmt.Sprintf("/validator/%s", validator.CometAddress),
+		})
+	}
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"results": []interface{}{},
+		"results": results,
 	})
 }
 
