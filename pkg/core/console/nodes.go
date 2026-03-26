@@ -1,14 +1,17 @@
 package console
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/pages"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
@@ -49,28 +52,61 @@ func (con *Console) nodePage(c echo.Context) error {
 func (con *Console) nodesPage(c echo.Context) error {
 	ctx := c.Request().Context()
 
+	// Fetch consensus validators from CometBFT
+	var consensusNodes []pages.ConsensusNode
+	if con.rpc != nil {
+		validators, err := con.rpc.Validators(ctx, nil, nil, nil)
+		if err == nil && validators != nil {
+			// Build a map of comet address -> core_validator for cross-referencing
+			allNodes, _ := con.db.GetAllRegisteredNodesIncludingJailed(ctx)
+			cometMap := make(map[string]db.CoreValidator)
+			for _, n := range allNodes {
+				cometMap[strings.ToUpper(n.CometAddress)] = n
+			}
+
+			for _, val := range validators.Validators {
+				addr := strings.ToUpper(val.Address.String())
+				cn := pages.ConsensusNode{
+					CometAddress: addr,
+					VotingPower:  val.VotingPower,
+				}
+				if node, ok := cometMap[addr]; ok {
+					cn.Endpoint = node.Endpoint
+					cn.EthAddress = node.EthAddress
+					cn.NodeType = node.NodeType
+				}
+				consensusNodes = append(consensusNodes, cn)
+			}
+		}
+	}
+
+	// Fetch all core_validators (including jailed)
 	nodes, err := con.db.GetAllRegisteredNodesIncludingJailed(ctx)
 	if err != nil {
 		return err
 	}
 
-	validatorCount := 0
-	for _, n := range nodes {
-		if !n.Jailed {
-			validatorCount++
+	// Fetch eth registry endpoints
+	var ethEndpoints []pages.EthEndpoint
+	if resp, err := con.eth.GetRegisteredEndpoints(ctx, connect.NewRequest(&ethv1.GetRegisteredEndpointsRequest{})); err == nil && resp.Msg != nil {
+		for _, ep := range resp.Msg.Endpoints {
+			ethEndpoints = append(ethEndpoints, pages.EthEndpoint{
+				Endpoint:       ep.Endpoint,
+				ServiceType:    ep.ServiceType,
+				Owner:          ep.Owner,
+				DelegateWallet: ep.DelegateWallet,
+				BlockNumber:    ep.BlockNumber,
+			})
 		}
 	}
 
-	ethCount := 0
-	if resp, err := con.eth.GetRegisteredEndpoints(ctx, connect.NewRequest(&ethv1.GetRegisteredEndpointsRequest{})); err == nil && resp.Msg != nil {
-		ethCount = len(resp.Msg.Endpoints)
-	}
-
 	return con.views.RenderNodesView(c, &pages.NodesView{
+		ConsensusNodes:      consensusNodes,
+		ConsensusNodesCount: len(consensusNodes),
 		Nodes:               nodes,
-		CoreValidatorsCount: len(nodes),
-		ValidatorNodesCount: validatorCount,
-		EthEndpointsCount:   ethCount,
+		ValidatorNodesCount: len(nodes),
+		EthEndpoints:        ethEndpoints,
+		EthEndpointsCount:   len(ethEndpoints),
 	})
 }
 
@@ -153,80 +189,109 @@ func (con *Console) matrixAPI(c echo.Context) error {
 	})
 }
 
-// versionAdoptionAPI fetches /health-check from each validator and returns version adoption stats.
+// versionAdoptionAPI fetches version info for each consensus validator.
+// Uses peer health data first, falls back to direct HTTP requests.
 func (con *Console) versionAdoptionAPI(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	nodes, err := con.db.GetAllRegisteredNodesIncludingJailed(ctx)
-	if err != nil {
-		return c.JSON(500, map[string]string{"error": err.Error()})
+	// Get consensus validators from CometBFT for the denominator
+	var consensusEndpoints []string
+	consensusTotal := 0
+	selfEndpoint := normalizeEndpoint(con.config.NodeEndpoint)
+	includedSelf := false
+
+	if con.rpc != nil {
+		validators, err := con.rpc.Validators(ctx, nil, nil, nil)
+		if err == nil && validators != nil {
+			consensusTotal = len(validators.Validators)
+
+			// Cross-reference with core_validators to get endpoints
+			allNodes, _ := con.db.GetAllRegisteredNodesIncludingJailed(ctx)
+			cometMap := make(map[string]db.CoreValidator)
+			for _, n := range allNodes {
+				cometMap[strings.ToUpper(n.CometAddress)] = n
+			}
+
+			for _, val := range validators.Validators {
+				addr := strings.ToUpper(val.Address.String())
+				if node, ok := cometMap[addr]; ok {
+					ep := normalizeEndpoint(node.Endpoint)
+					if selfEndpoint != "" && ep == selfEndpoint {
+						includedSelf = true
+						continue // will count ourselves separately
+					}
+					consensusEndpoints = append(consensusEndpoints, node.Endpoint)
+				}
+			}
+		}
+	}
+
+	// If we couldn't get consensus validators, fall back to core_validators
+	if consensusTotal == 0 {
+		nodes, err := con.db.GetAllRegisteredNodesIncludingJailed(ctx)
+		if err != nil {
+			return c.JSON(500, map[string]string{"error": err.Error()})
+		}
+		consensusTotal = len(nodes)
+		for _, n := range nodes {
+			ep := normalizeEndpoint(n.Endpoint)
+			if selfEndpoint != "" && ep == selfEndpoint {
+				includedSelf = true
+				continue
+			}
+			consensusEndpoints = append(consensusEndpoints, n.Endpoint)
+		}
 	}
 
 	selfVersion := version.Version.Version
 	versionCounts := make(map[string]int)
-	versionCounts[selfVersion]++ // Always include ourselves
 	var versions []string
 	versionSet := make(map[string]bool)
-	versionSet[selfVersion] = true
-	versions = append(versions, selfVersion)
 
-	selfEndpoint := strings.TrimSuffix(strings.ToLower(con.config.NodeEndpoint), "/")
-	if selfEndpoint != "" && !strings.HasPrefix(selfEndpoint, "http") {
-		selfEndpoint = "https://" + selfEndpoint
+	// Always include ourselves if we're in the consensus set
+	if includedSelf || selfEndpoint == "" {
+		versionCounts[selfVersion]++
+		versionSet[selfVersion] = true
+		versions = append(versions, selfVersion)
 	}
-	selfEndpoint = strings.TrimSuffix(selfEndpoint, "/")
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	for _, n := range nodes {
-		ep := strings.TrimSuffix(strings.ToLower(n.Endpoint), "/")
-		epNorm := ep
-		if !strings.HasPrefix(epNorm, "http") {
-			epNorm = "https://" + epNorm
-		}
-		epNorm = strings.TrimSuffix(epNorm, "/")
-		if selfEndpoint != "" && epNorm == selfEndpoint {
-			continue // Already counted ourselves
-		}
-		baseURL := ep
-		if !strings.HasPrefix(baseURL, "http") {
-			baseURL = "https://" + baseURL
-		}
-		u, _ := url.Parse(baseURL)
-		u.Path = "/health-check"
-		u.RawQuery = ""
-
-		req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-		if err != nil {
-			continue
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			continue
-		}
-		var data map[string]interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			resp.Body.Close()
-			continue
-		}
-		resp.Body.Close()
-
-		var v string
-		if storage, ok := data["storage"].(map[string]interface{}); ok {
-			if s, ok := storage["version"].(string); ok && s != "" {
-				v = s
-			}
-		}
-		if v == "" {
-			if d, ok := data["data"].(map[string]interface{}); ok {
-				if s, ok := d["version"].(string); ok && s != "" {
-					v = s
+	// Get peer health from our own GetStatus to check which peers are healthy
+	peerHealthVersions := make(map[string]string) // normalized endpoint -> version
+	if con.core != nil {
+		statusResp, err := con.core.GetStatus(ctx, &connect.Request[v1.GetStatusRequest]{})
+		if err == nil && statusResp.Msg != nil && statusResp.Msg.Peers != nil {
+			// Build map of healthy peers with their endpoints
+			for _, peer := range statusResp.Msg.Peers.Peers {
+				if peer.ConnectrpcHealthy && peer.Endpoint != "" {
+					// Peer is healthy via connectRPC - we can try getting version from it
+					peerHealthVersions[normalizeEndpoint(peer.Endpoint)] = ""
 				}
 			}
 		}
+	}
+
+	// Fetch versions concurrently
+	type versionResult struct {
+		version string
+	}
+	results := make([]versionResult, len(consensusEndpoints))
+	var wg sync.WaitGroup
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	for i, ep := range consensusEndpoints {
+		wg.Add(1)
+		go func(idx int, endpoint string) {
+			defer wg.Done()
+			results[idx] = versionResult{version: fetchNodeVersion(ctx, client, endpoint)}
+		}(i, ep)
+	}
+	wg.Wait()
+
+	for _, r := range results {
+		v := r.version
 		if v == "" {
 			v = "unknown"
 		}
-
 		versionCounts[v]++
 		if !versionSet[v] {
 			versionSet[v] = true
@@ -234,7 +299,7 @@ func (con *Console) versionAdoptionAPI(c echo.Context) error {
 		}
 	}
 
-	// Determine latest version via semver (canonicalize with "v" prefix for comparison)
+	// Determine latest version via semver
 	sort.Slice(versions, func(i, j int) bool {
 		vi, vj := versions[i], versions[j]
 		if vi == "unknown" {
@@ -259,10 +324,7 @@ func (con *Console) versionAdoptionAPI(c echo.Context) error {
 		latestVersion = versions[1]
 	}
 
-	total := 0
-	for _, c := range versionCounts {
-		total += c
-	}
+	total := consensusTotal
 	onLatest := 0
 	if latestVersion != "" {
 		onLatest = versionCounts[latestVersion]
@@ -272,7 +334,6 @@ func (con *Console) versionAdoptionAPI(c echo.Context) error {
 		percentOnLatest = (onLatest * 100) / total
 	}
 
-	// Build segments for stacked bar: version -> count, sorted with latest first
 	segments := make([]map[string]interface{}, 0, len(versions))
 	for _, v := range versions {
 		segments = append(segments, map[string]interface{}{
@@ -283,12 +344,73 @@ func (con *Console) versionAdoptionAPI(c echo.Context) error {
 	}
 
 	return c.JSON(200, map[string]interface{}{
-		"selfVersion":      selfVersion,
-		"latestVersion":    latestVersion,
-		"totalNodes":       total,
-		"onLatest":         onLatest,
-		"percentOnLatest":  percentOnLatest,
-		"versionCounts":    versionCounts,
-		"segments":         segments,
+		"selfVersion":     selfVersion,
+		"latestVersion":   latestVersion,
+		"totalNodes":      total,
+		"onLatest":        onLatest,
+		"percentOnLatest": percentOnLatest,
+		"versionCounts":   versionCounts,
+		"segments":        segments,
 	})
+}
+
+func normalizeEndpoint(ep string) string {
+	ep = strings.TrimSuffix(strings.ToLower(ep), "/")
+	if ep != "" && !strings.HasPrefix(ep, "http") {
+		ep = "https://" + ep
+	}
+	return strings.TrimSuffix(ep, "/")
+}
+
+func fetchNodeVersion(ctx context.Context, client *http.Client, endpoint string) string {
+	baseURL := endpoint
+	if !strings.HasPrefix(baseURL, "http") {
+		baseURL = "https://" + baseURL
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+
+	// Try /health-check first
+	u.Path = "/health-check"
+	u.RawQuery = ""
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	var data map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return ""
+	}
+
+	// Try storage.version
+	if storage, ok := data["storage"].(map[string]interface{}); ok {
+		if s, ok := storage["version"].(string); ok && s != "" {
+			return s
+		}
+	}
+	// Try data.version
+	if d, ok := data["data"].(map[string]interface{}); ok {
+		if s, ok := d["version"].(string); ok && s != "" {
+			return s
+		}
+	}
+	// Try version directly
+	if s, ok := data["version"].(string); ok && s != "" {
+		return s
+	}
+	// Try git field as fallback
+	if s, ok := data["git"].(string); ok && s != "" {
+		return s
+	}
+
+	return ""
 }
