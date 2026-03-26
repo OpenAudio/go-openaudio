@@ -1,4 +1,5 @@
 -- +migrate Up
+SELECT 1;
 
 -- This migration is no longer needed as the validators have been added to the
 -- validator set, but is kept here for reference.
@@ -11,7 +12,6 @@
 -- lost (likely during a deregistration/re-registration cycle where the DB insert
 -- was skipped due to duplicate detection but the CometBFT ValidatorUpdate was
 -- still delivered).
---
 -- Without these rows, the SLA rollup reports list 45 validators while CometBFT
 -- has 50, causing every rollup to be rejected and halting the chain.
 
@@ -36,6 +36,8 @@
 -- WHERE NOT EXISTS (SELECT 1 FROM core_validators WHERE comet_address = 'C8C249813AC90623B86AF281D06E88CA4686D555');
 
 -- +migrate Down
+SELECT 1;
+
 -- DELETE FROM core_validators WHERE comet_address IN (
 --     'A5B56BBFA35E2818A915CFAAEA5A0676C8CDB68E',
 --     'B5EF07A27E9A053561C578504F2649E406804E06',
