@@ -14,7 +14,7 @@ type Config struct {
 	// DataTypes controls which entity types the entity manager will index.
 	// If nil (default), all entity types are enabled.
 	// If non-nil (even if empty), only listed types are enabled.
-	// Populated from OPENAUDIO_ETL_DATA_TYPES env var (comma-separated).
+	// Populated from OPENAUDIO_ETL_ENTITY_MANAGER_DATA_TYPES env var (comma-separated).
 	DataTypes *[]string
 }
 
@@ -27,12 +27,12 @@ func DefaultConfig() Config {
 	}
 }
 
-// ReadDataTypesEnv reads OPENAUDIO_ETL_DATA_TYPES and sets DataTypes accordingly.
+// ReadDataTypesEnv reads OPENAUDIO_ETL_ENTITY_MANAGER_DATA_TYPES and sets DataTypes accordingly.
 // If the env var is not set, DataTypes remains nil (all types enabled).
 // If set to empty string, DataTypes is an empty slice (no entity types enabled).
 // If set to a comma-separated list, only those types are enabled.
 func (c *Config) ReadDataTypesEnv() {
-	val, ok := os.LookupEnv("OPENAUDIO_ETL_DATA_TYPES")
+	val, ok := os.LookupEnv("OPENAUDIO_ETL_ENTITY_MANAGER_DATA_TYPES")
 	if !ok {
 		return
 	}
