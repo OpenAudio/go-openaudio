@@ -253,13 +253,21 @@ function searchBar() {
             // Handle Enter key
             if (event.key === 'Enter') {
                 event.preventDefault();
+                const trimmedQuery = this.query.trim();
+
+                // Route numeric input directly to block pages.
+                // This prevents unrelated account suggestions from taking precedence.
+                if (/^[0-9]+$/.test(trimmedQuery)) {
+                    window.location.href = `/block/${trimmedQuery}`;
+                    return;
+                }
 
                 // Find the first non-header suggestion
                 const firstSuggestion = this.suggestions.find(s => !s.isHeader);
 
                 if (firstSuggestion) {
                     this.selectSuggestion(firstSuggestion);
-                } else if (this.query.trim()) {
+                } else if (trimmedQuery) {
                     // If no suggestions but there's a query, flash red
                     this.flashNoResults();
                 }

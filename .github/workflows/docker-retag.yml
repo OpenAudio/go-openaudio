@@ -3,16 +3,15 @@ name: Update Docker Tags
 on:
   workflow_dispatch:
     inputs:
-      source_version:
-        description: 'Source version to tag (e.g., v1.0.0)'
+      source_tag:
+        description: 'Source tag (e.g. v1.0.0 or sha)'
         required: true
         type: string
       target_tag:
-        description: 'Target tag to apply'
+        description: 'Target tag'
         required: true
         type: choice
         options:
-          - prerelease
           - edge
           - stable
 
@@ -33,8 +32,8 @@ jobs:
         run: |
           docker buildx imagetools create \
             -t openaudio/go-openaudio:${{ inputs.target_tag }} \
-            openaudio/go-openaudio:${{ inputs.source_version }}
+            openaudio/go-openaudio:${{ inputs.source_tag }}
 
-          echo "Successfully updated openaudio/go-openaudio:${{ inputs.target_tag }} to point to ${{ inputs.source_version }}"
+          echo "Successfully updated openaudio/go-openaudio:${{ inputs.target_tag }} to point to ${{ inputs.source_tag }}"
 
           
