@@ -54,7 +54,7 @@ templ Frame(pageTitle string) {
 							<input
 								type="text"
 								placeholder="Search for blocks, accounts, and transactions..."
-								class="w-full rounded-md border p-2 pr-24 bg-gray-50 dark:bg-[#000000] dark:text-white dark:placeholder-[#b3b3b3] border-gray-300 dark:border-gray-800 focus:outline-none"
+								class="w-full rounded-md border p-2 pr-24 text-xs bg-gray-50 dark:bg-[#000000] dark:text-white dark:placeholder-[#b3b3b3] border-gray-300 dark:border-gray-800 focus:outline-none"
 								:class="hasNoResults ? 'border-red-500 dark:border-red-500 focus:border-red-500 dark:focus:border-red-500' : 'focus:border-gray-500 dark:focus:border-gray-400'"
 								x-model="query"
 								@input="handleInput"

@@ -22,14 +22,28 @@ body {
 }
 
 .bg-secondary {
-  background-color: #0a0a0a;
+  background-color: #141414;
 }
 
 .bg-tertiary {
   background-color: #0a0a0a;
 }
 
-/* Match explorer border color (dark:border-gray-800) */
+/* Override Franken UI default border/divider colors to match explorer */
+:root {
+  --border: #1a1a1a;
+}
+
+hr,
+.uk-hr,
+.uk-divider-icon,
+.uk-divider-small::after,
+.uk-grid-divider > :not(.uk-first-column)::before,
+.uk-tab::before,
+.uk-tab-alt::before {
+  border-color: #1a1a1a !important;
+}
+
 .border-console-divider {
   border-color: #1a1a1a;
 }

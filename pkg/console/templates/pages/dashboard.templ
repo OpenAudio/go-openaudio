@@ -1251,13 +1251,8 @@ templ BlockEventsScript() {
 						}
 					}
 
-					// Also get initial block height from stats header
-					if (statsHeader) {
-						const blockHeightEl = statsHeader.querySelector('.text-3xl');
-						if (blockHeightEl) {
-							this.latestBlock.height = parseInt(blockHeightEl.textContent);
-						}
-					}
+					// Block height will be set by the first SSE block event
+					// (previously scraped from DOM with wrong selector, causing flash of "1")
 
 					// Create bound event listeners for proper cleanup
 					this.blockEventListener = (event) => {
