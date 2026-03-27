@@ -91,8 +91,8 @@ func (con *Console) Initialize() {
 	// Initialize dashboard cache with 5 second refresh rate
 	con.dashboardCache = NewCache(con.buildDashboardProps, 5*time.Second, con.logger.With(zap.String("service", "dashboard-cache")))
 
-	// Initialize validator locations cache with 5 minute refresh rate
-	con.validatorLocationsCache = NewCache(con.buildValidatorLocations, 5*time.Minute, con.logger.With(zap.String("service", "validator-locations-cache")))
+	// Initialize validator locations cache with 30 second refresh rate
+	con.validatorLocationsCache = NewCache(con.buildValidatorLocations, 30*time.Second, con.logger.With(zap.String("service", "validator-locations-cache")))
 
 	// Start background refreshers (but not the dashboard cache yet - that needs ETL to be ready)
 	go con.refreshTrustedBlock()
@@ -1675,13 +1675,23 @@ func (con *Console) ValidatorLocations(c echo.Context) error {
 
 // buildValidatorLocations fetches lat/lng from each validator's /version endpoint
 func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLocation, error) {
-	validators, err := con.etl.GetDB().GetActiveValidators(ctx, db.GetActiveValidatorsParams{
+	if con.etl == nil {
+		con.logger.Warn("ETL service not available for validator locations")
+		return nil, fmt.Errorf("etl service not available")
+	}
+	etlDB := con.etl.GetDB()
+	if etlDB == nil {
+		con.logger.Warn("ETL DB not available for validator locations")
+		return nil, fmt.Errorf("etl db not available")
+	}
+	validators, err := etlDB.GetActiveValidators(ctx, db.GetActiveValidatorsParams{
 		Limit:  100,
 		Offset: 0,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active validators: %w", err)
 	}
+	con.logger.Info("Found active validators for location fetch", zap.Int("count", len(validators)))
 
 	client := &http.Client{
 		Timeout: 5 * time.Second,
