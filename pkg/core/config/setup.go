@@ -20,6 +20,15 @@ const PrivilegedServiceSocket = "/tmp/cometbft.privileged.sock"
 const PrivilegedServiceSocketURI = "unix://" + PrivilegedServiceSocket
 const CometRPCSocket = "/tmp/cometbft.rpc.sock"
 
+func getDurationEnv(key string, defaultVal time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return defaultVal
+}
+
 func ensureSocketNotExists(socketPath string) error {
 	if _, err := os.Stat(socketPath); err == nil {
 		// File exists, remove it
@@ -142,11 +151,11 @@ func SetupNode(logger *zap.Logger) (*Config, *cconfig.Config, error) {
 	cometConfig.Mempool.Broadcast = false
 	cometConfig.Consensus.TimeoutCommit = 400 * time.Millisecond
 	cometConfig.Consensus.TimeoutPropose = 400 * time.Millisecond
-	cometConfig.Consensus.TimeoutProposeDelta = 75 * time.Millisecond
+	cometConfig.Consensus.TimeoutProposeDelta = getDurationEnv("OPENAUDIO_TIMEOUT_PROPOSE_DELTA", 75*time.Millisecond)
 	cometConfig.Consensus.TimeoutPrevote = 300 * time.Millisecond
-	cometConfig.Consensus.TimeoutPrevoteDelta = 75 * time.Millisecond
+	cometConfig.Consensus.TimeoutPrevoteDelta = getDurationEnv("OPENAUDIO_TIMEOUT_PREVOTE_DELTA", 75*time.Millisecond)
 	cometConfig.Consensus.TimeoutPrecommit = 300 * time.Millisecond
-	cometConfig.Consensus.TimeoutPrecommitDelta = 75 * time.Millisecond
+	cometConfig.Consensus.TimeoutPrecommitDelta = getDurationEnv("OPENAUDIO_TIMEOUT_PRECOMMIT_DELTA", 75*time.Millisecond)
 	// create empty blocks to continue heartbeat at the same interval
 	cometConfig.Consensus.CreateEmptyBlocks = true
 	// empty blocks wait one second to propose since plays should be a steady stream

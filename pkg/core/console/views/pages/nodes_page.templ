@@ -6,10 +6,28 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 )
 
+type ConsensusNode struct {
+	CometAddress string
+	Endpoint     string
+	EthAddress   string
+	NodeType     string
+	VotingPower  int64
+}
+
+type EthEndpoint struct {
+	Endpoint       string
+	ServiceType    string
+	Owner          string
+	DelegateWallet string
+	BlockNumber    int64
+}
+
 type NodesView struct {
+	ConsensusNodes      []ConsensusNode
+	ConsensusNodesCount int
 	Nodes               []db.CoreValidator
-	CoreValidatorsCount int
-	ValidatorNodesCount int // non-jailed core_validators
+	ValidatorNodesCount int
+	EthEndpoints        []EthEndpoint
 	EthEndpointsCount   int
 }
 
@@ -18,62 +36,156 @@ templ (p *Pages) NodesPageHTML(data *NodesView) {
 		<div class="space-y-6">
 			<h1 class="text-3xl font-bold">Validators</h1>
 			<div class="grid grid-cols-2 gap-4 md:grid-cols-3">
-				<div class="bg-tertiary rounded-lg p-4">
+				<button
+					id="btn-consensus"
+					class="node-tab-btn bg-tertiary rounded-lg p-4 text-left border-2 border-primary cursor-pointer hover:bg-secondary/30 transition-colors"
+					data-tab="consensus"
+				>
+					<div class="text-sm text-secondary">Consensus Nodes</div>
+					<div class="text-2xl font-semibold">{ fmt.Sprintf("%d", data.ConsensusNodesCount) }</div>
+				</button>
+				<button
+					id="btn-validators"
+					class="node-tab-btn bg-tertiary rounded-lg p-4 text-left border-2 border-transparent cursor-pointer hover:bg-secondary/30 transition-colors"
+					data-tab="validators"
+				>
 					<div class="text-sm text-secondary">Validator Nodes</div>
 					<div class="text-2xl font-semibold">{ fmt.Sprintf("%d", data.ValidatorNodesCount) }</div>
-				</div>
-				<div class="bg-tertiary rounded-lg p-4">
-					<div class="text-sm text-secondary">Chain State Nodes</div>
-					<div class="text-2xl font-semibold">{ fmt.Sprintf("%d", data.CoreValidatorsCount) }</div>
-				</div>
-				<div class="bg-tertiary rounded-lg p-4">
+				</button>
+				<button
+					id="btn-eth"
+					class="node-tab-btn bg-tertiary rounded-lg p-4 text-left border-2 border-transparent cursor-pointer hover:bg-secondary/30 transition-colors"
+					data-tab="eth"
+				>
 					<div class="text-sm text-secondary">Eth Registry Nodes</div>
 					<div class="text-2xl font-semibold">{ fmt.Sprintf("%d", data.EthEndpointsCount) }</div>
-				</div>
+				</button>
 			</div>
 			<div id="version-adoption" class="bg-tertiary rounded-lg px-4 py-3">
 				<div id="version-adoption-loading" class="text-sm text-secondary">Loading version adoption...</div>
 				<div id="version-adoption-content" class="hidden"></div>
 			</div>
-			<div class="bg-tertiary rounded-lg px-4 py-2">
-				<button id="tab-list" class="tab-btn px-4 py-2 border-b-2 border-primary" data-tab="list">List View</button>
-				<button id="tab-matrix" class="tab-btn px-4 py-2" data-tab="matrix">Matrix View</button>
-			</div>
-			<div id="panel-list" class="tab-panel space-y-4">
-				for _, node := range data.Nodes {
-				<div class="list-view-card p-4">
-					<div class="mb-3">
-						<h2>
-							@p.components.ExternalLink("%s%s", node.Endpoint, "/console/overview") {
-								<div>{ node.Endpoint }</div>
-							}
-							if node.Jailed {
-								<span class="ml-2 px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-300">Jailed</span>
-							}
-						</h2>
-					</div>
-					<div class="text-sm space-y-1">
-						<div>
-							@p.components.Link("/validator/%s", node.EthAddress) {
-								<div>Eth Address: { node.EthAddress } </div>
-							}
-						</div>
-						<div>
-							@p.components.Link("/validator/%s", node.CometAddress) {
-								<div>Comet Address: { node.CometAddress } </div>
-							}
-						</div>
-						<div>Eth Block: { node.EthBlock }</div>
-					</div>
+			<!-- Consensus Nodes Panel (default) -->
+			<div id="panel-consensus" class="node-tab-panel">
+				<div class="bg-tertiary rounded-lg px-4 py-2 mb-4">
+					<button class="view-toggle-btn px-4 py-2 border-b-2 border-primary" data-panel="consensus" data-view="list">List View</button>
+					<button class="view-toggle-btn px-4 py-2" data-panel="consensus" data-view="matrix">Matrix View</button>
 				</div>
-				}
+				<div id="consensus-list" class="view-panel space-y-4" data-panel="consensus">
+					for _, node := range data.ConsensusNodes {
+						<div class="list-view-card p-4">
+							<div class="mb-3">
+								<h2>
+									if node.Endpoint != "" {
+										@p.components.ExternalLink("%s%s", node.Endpoint, "/console/overview") {
+											<div>{ node.Endpoint }</div>
+										}
+									} else {
+										<span class="text-secondary font-mono text-sm">{ node.CometAddress }</span>
+									}
+								</h2>
+							</div>
+							<div class="text-sm space-y-1">
+								if node.EthAddress != "" {
+									<div>
+										@p.components.Link("/validator/%s", node.EthAddress) {
+											<div>Eth Address: { node.EthAddress }</div>
+										}
+									</div>
+								}
+								<div>
+									@p.components.Link("/validator/%s", node.CometAddress) {
+										<div>Comet Address: { node.CometAddress }</div>
+									}
+								</div>
+								<div>Voting Power: { fmt.Sprintf("%d", node.VotingPower) }</div>
+							</div>
+						</div>
+					}
+					if len(data.ConsensusNodes) == 0 {
+						<div class="text-secondary text-sm p-4">No consensus validators found. CometBFT RPC may be unavailable.</div>
+					}
+				</div>
+				<div id="consensus-matrix" class="view-panel hidden" data-panel="consensus">
+					<div class="matrix-loading p-4 text-secondary">Loading matrix...</div>
+					<div class="matrix-content hidden overflow-x-auto"></div>
+				</div>
 			</div>
-			<div id="panel-matrix" class="tab-panel hidden">
-				<div id="matrix-loading" class="p-4 text-secondary">Loading matrix...</div>
-				<div id="matrix-content" class="hidden overflow-x-auto"></div>
+			<!-- Validator Nodes Panel -->
+			<div id="panel-validators" class="node-tab-panel hidden">
+				<div class="bg-tertiary rounded-lg px-4 py-2 mb-4">
+					<button class="view-toggle-btn px-4 py-2 border-b-2 border-primary" data-panel="validators" data-view="list">List View</button>
+					<button class="view-toggle-btn px-4 py-2" data-panel="validators" data-view="matrix">Matrix View</button>
+				</div>
+				<div id="validators-list" class="view-panel space-y-4" data-panel="validators">
+					for _, node := range data.Nodes {
+						<div class="list-view-card p-4">
+							<div class="mb-3">
+								<h2>
+									@p.components.ExternalLink("%s%s", node.Endpoint, "/console/overview") {
+										<div>{ node.Endpoint }</div>
+									}
+									if node.Jailed {
+										<span class="ml-2 px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-300">Jailed</span>
+									}
+								</h2>
+							</div>
+							<div class="text-sm space-y-1">
+								<div>
+									@p.components.Link("/validator/%s", node.EthAddress) {
+										<div>Eth Address: { node.EthAddress }</div>
+									}
+								</div>
+								<div>
+									@p.components.Link("/validator/%s", node.CometAddress) {
+										<div>Comet Address: { node.CometAddress }</div>
+									}
+								</div>
+								<div>Eth Block: { node.EthBlock }</div>
+							</div>
+						</div>
+					}
+				</div>
+				<div id="validators-matrix" class="view-panel hidden" data-panel="validators">
+					<div class="matrix-loading p-4 text-secondary">Loading matrix...</div>
+					<div class="matrix-content hidden overflow-x-auto"></div>
+				</div>
+			</div>
+			<!-- Eth Registry Nodes Panel -->
+			<div id="panel-eth" class="node-tab-panel hidden">
+				<div class="bg-tertiary rounded-lg px-4 py-2 mb-4">
+					<button class="view-toggle-btn px-4 py-2 border-b-2 border-primary" data-panel="eth" data-view="list">List View</button>
+					<button class="view-toggle-btn px-4 py-2" data-panel="eth" data-view="matrix">Matrix View</button>
+				</div>
+				<div id="eth-list" class="view-panel space-y-4" data-panel="eth">
+					for _, ep := range data.EthEndpoints {
+						<div class="list-view-card p-4">
+							<div class="mb-3">
+								<h2>
+									@p.components.ExternalLink("%s%s", ep.Endpoint, "/console/overview") {
+										<div>{ ep.Endpoint }</div>
+									}
+								</h2>
+							</div>
+							<div class="text-sm space-y-1">
+								<div>Service Type: { ep.ServiceType }</div>
+								<div>Owner: { ep.Owner }</div>
+								<div>Delegate Wallet: { ep.DelegateWallet }</div>
+								<div>Block Number: { fmt.Sprintf("%d", ep.BlockNumber) }</div>
+							</div>
+						</div>
+					}
+					if len(data.EthEndpoints) == 0 {
+						<div class="text-secondary text-sm p-4">No eth registry endpoints found.</div>
+					}
+				</div>
+				<div id="eth-matrix" class="view-panel hidden" data-panel="eth">
+					<div class="matrix-loading p-4 text-secondary">Loading matrix...</div>
+					<div class="matrix-content hidden overflow-x-auto"></div>
+				</div>
 			</div>
 		</div>
-		<script src="/console/assets/js/matrix.js"></script>
+		<script src="/console/assets/js/nodes.js"></script>
 		<script src="/console/assets/js/version-adoption.js"></script>
 	}
 }

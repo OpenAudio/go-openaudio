@@ -84,7 +84,7 @@ ethstatus:
 		return err
 	}
 
-	timeout := time.After(120 * time.Minute)
+	const maxDelay = 1 * time.Hour
 	delay := 2 * time.Second
 	ticker = time.NewTicker(2 * time.Second)
 	for {
@@ -93,6 +93,9 @@ ethstatus:
 			if err := s.RegisterSelf(); err != nil {
 				s.logger.Error("node registration failed, will try again", zap.Error(err))
 				delay *= 2
+				if delay > maxDelay {
+					delay = maxDelay
+				}
 				s.logger.Info("Retrying registration after delay", zap.Duration("delay", delay))
 				ticker.Reset(delay)
 			} else {
@@ -101,10 +104,6 @@ ethstatus:
 				s.lc.AddManagedRoutine("validator warden", s.startValidatorWarden)
 				return nil
 			}
-		case <-timeout:
-			s.logger.Warn("exhausted registration retries, continuing unregistered")
-			s.CompleteProcess(ProcessStateRegistryBridge)
-			return nil
 		case <-ctx.Done():
 			s.CompleteProcess(ProcessStateRegistryBridge)
 			return ctx.Err()

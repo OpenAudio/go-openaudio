@@ -136,6 +136,17 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		moveFromBlobStoreDSN = getenvWithDefault("OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM", os.Getenv("AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM"))
 	}
 
+	// Repair configuration
+	repairEnabled := getenvWithDefault("OPENAUDIO_REPAIR_ENABLED", "true") == "true"
+	repairInterval := time.Hour
+	if ri := os.Getenv("OPENAUDIO_REPAIR_INTERVAL"); ri != "" {
+		if parsed, err := time.ParseDuration(ri); err == nil {
+			repairInterval = parsed
+		} else {
+			logger.Warn("failed to parse OPENAUDIO_REPAIR_INTERVAL, using default 1h", zap.String("value", ri), zap.Error(err))
+		}
+	}
+
 	config := server.MediorumConfig{
 		Self: registrar.Peer{
 			Host:   httputil.RemoveTrailingSlash(strings.ToLower(nodeEndpoint)),
@@ -161,6 +172,8 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		DiscoveryListensEndpoints: discoveryListensEndpoints(),
 		LogLevel:                  getenvWithDefault("OPENAUDIO_LOG_LEVEL", "info"),
 		DeadHosts:                 []string{},
+		RepairEnabled:             repairEnabled,
+		RepairInterval:            repairInterval,
 	}
 
 	ss, err := server.New(lc, logger, config, posChannel, core, ethService)
