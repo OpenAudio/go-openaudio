@@ -1750,34 +1750,92 @@ func (con *Console) ValidatorLocations(c echo.Context) error {
 	return c.JSON(http.StatusOK, locations)
 }
 
-// buildValidatorLocations fetches lat/lng from each validator's /version endpoint
+// buildValidatorLocations gets the full CometBFT validator set via local JSON-RPC,
+// cross-references with the ETL DB for endpoints, then fetches /version from each
+// for geographic coordinates.
 func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLocation, error) {
-	if con.etl == nil {
-		con.logger.Warn("ETL service not available for validator locations")
-		return nil, fmt.Errorf("etl service not available")
+	// Step 1: Get all consensus validators from local CometBFT RPC
+	type cometValidator struct {
+		Address string
 	}
-	etlDB := con.etl.GetDB()
-	if etlDB == nil {
-		con.logger.Warn("ETL DB not available for validator locations")
-		return nil, fmt.Errorf("etl db not available")
-	}
-	validators, err := etlDB.GetActiveValidators(ctx, db.GetActiveValidatorsParams{
-		Limit:  100,
-		Offset: 0,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get active validators: %w", err)
-	}
-	con.logger.Info("Found active validators for location fetch", zap.Int("count", len(validators)))
+	var allCometValidators []cometValidator
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
+	cometClient := &http.Client{Timeout: 5 * time.Second}
+	page := 1
+	for {
+		body := fmt.Sprintf(`{"jsonrpc":"2.0","method":"validators","params":{"page":"%d","per_page":"100"},"id":1}`, page)
+		req, err := http.NewRequestWithContext(ctx, "POST", "http://localhost:26657", strings.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create comet request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := cometClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query CometBFT validators: %w", err)
+		}
+		var cometResp struct {
+			Result struct {
+				Total      string `json:"total"`
+				Validators []struct {
+					Address string `json:"address"`
+				} `json:"validators"`
+			} `json:"result"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&cometResp)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode CometBFT response: %w", err)
+		}
+		for _, v := range cometResp.Result.Validators {
+			allCometValidators = append(allCometValidators, cometValidator{Address: strings.ToUpper(v.Address)})
+		}
+		if len(cometResp.Result.Validators) < 100 {
+			break
+		}
+		page++
+	}
+	con.logger.Info("Found CometBFT validators", zap.Int("count", len(allCometValidators)))
+
+	// Step 2: Build a map of comet address -> endpoint from ETL DB
+	endpointMap := make(map[string]string) // uppercase comet address -> endpoint
+	if con.etl != nil && con.etl.GetDB() != nil {
+		etlValidators, err := con.etl.GetDB().GetActiveValidators(ctx, db.GetActiveValidatorsParams{
+			Limit:  200,
+			Offset: 0,
+		})
+		if err == nil {
+			for _, v := range etlValidators {
+				endpointMap[strings.ToUpper(v.CometAddress)] = v.Endpoint
+			}
+		}
+	}
+
+	// Step 3: Build the list of validators with endpoints
+	type validatorWithEndpoint struct {
+		CometAddress string
+		Endpoint     string
+	}
+	var validators []validatorWithEndpoint
+	for _, cv := range allCometValidators {
+		ep := endpointMap[cv.Address]
+		if ep == "" {
+			continue // can't fetch location without an endpoint
+		}
+		validators = append(validators, validatorWithEndpoint{CometAddress: cv.Address, Endpoint: ep})
+	}
+	con.logger.Info("Validators with endpoints for location fetch",
+		zap.Int("with_endpoint", len(validators)),
+		zap.Int("total_comet", len(allCometValidators)),
+	)
+
+	// Step 4: Fetch /version from each validator concurrently for lat/lng
+	httpClient := &http.Client{
+		Timeout: 3 * time.Second,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}
 
-	// Fetch all validator locations concurrently
 	type locResult struct {
 		location ValidatorLocation
 		ok       bool
@@ -1787,28 +1845,21 @@ func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLoc
 
 	for i, v := range validators {
 		endpoint := v.Endpoint
-		if endpoint == "" {
-			continue
-		}
 		if !strings.HasPrefix(endpoint, "http") {
 			endpoint = "https://" + endpoint
 		}
 		wg.Add(1)
-		go func(idx int, ep string, validator db.EtlValidator) {
+		go func(idx int, ep string, val validatorWithEndpoint) {
 			defer wg.Done()
 
 			req, err := http.NewRequestWithContext(ctx, "GET", ep+"/version", nil)
 			if err != nil {
-				con.logger.Warn("Failed to create version request", zap.String("endpoint", ep), zap.Error(err))
 				return
 			}
-
-			resp, err := client.Do(req)
+			resp, err := httpClient.Do(req)
 			if err != nil {
-				con.logger.Warn("Failed to fetch version", zap.String("endpoint", ep), zap.Error(err))
 				return
 			}
-
 			var versionResp struct {
 				Data struct {
 					Latitude  float64 `json:"latitude"`
@@ -1820,12 +1871,11 @@ func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLoc
 			if err != nil {
 				return
 			}
-
 			if versionResp.Data.Latitude != 0 || versionResp.Data.Longitude != 0 {
 				results[idx] = locResult{
 					location: ValidatorLocation{
-						Address:  validator.CometAddress,
-						Endpoint: validator.Endpoint,
+						Address:  val.CometAddress,
+						Endpoint: val.Endpoint,
 						Lat:      versionResp.Data.Latitude,
 						Lng:      versionResp.Data.Longitude,
 					},
@@ -1843,7 +1893,7 @@ func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLoc
 		}
 	}
 
-	con.logger.Info("Fetched validator locations", zap.Int("count", len(locations)), zap.Int("total_validators", len(validators)))
+	con.logger.Info("Fetched validator locations", zap.Int("with_location", len(locations)), zap.Int("with_endpoint", len(validators)))
 	return locations, nil
 }
 
