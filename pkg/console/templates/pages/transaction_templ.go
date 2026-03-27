@@ -93,7 +93,7 @@ func Transaction(props TransactionProps) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><!-- Transaction Info Card --><div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]\"><div class=\"flex justify-between items-start mb-4\"><div><h2 class=\"text-2xl font-bold text-gray-900 dark:text-white\">Transaction Details</h2><div class=\"text-gray-500 dark:text-[#b3b3b3] mt-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><!-- Transaction Info Card --><div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><div class=\"flex justify-between items-start mb-4\"><div><h2 class=\"text-2xl font-bold text-gray-900 dark:text-white\">Transaction Details</h2><div class=\"text-gray-500 dark:text-[#b3b3b3] mt-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -262,7 +262,7 @@ func Transaction(props TransactionProps) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			default:
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Transaction Content</h3><p class=\"text-gray-500 dark:text-gray-400\">No detailed transaction content available for this transaction type.</p></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Transaction Content</h3><p class=\"text-gray-500 dark:text-gray-400\">No detailed transaction content available for this transaction type.</p></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -302,7 +302,7 @@ func TrackPlaysSection(plays []*db.EtlPlay) templ.Component {
 			templ_7745c5c3_Var11 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Track Plays (")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Track Plays (")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -315,12 +315,12 @@ func TrackPlaysSection(plays []*db.EtlPlay) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, ")</h3><div class=\"overflow-x-auto\"><table class=\"min-w-full table-auto\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-700\"><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">User</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Track ID</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Location</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Played At</th></tr></thead> <tbody>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, ")</h3><div class=\"overflow-x-auto\"><table class=\"min-w-full table-auto\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-800\"><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">User</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Track ID</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Location</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Played At</th></tr></thead> <tbody>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		for _, play := range plays {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<tr class=\"border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700\"><td class=\"py-2 px-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<tr class=\"border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700\"><td class=\"py-2 px-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -431,12 +431,12 @@ func ManageEntitySection(entity *db.EtlManageEntity) templ.Component {
 			templ_7745c5c3_Var16 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Manage Entity</h3><div class=\"overflow-x-auto\"><table class=\"min-w-full table-auto\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-700\"><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Address</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Entity Type</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Entity ID</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Action</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Signer</th></tr></thead> <tbody>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Manage Entity</h3><div class=\"overflow-x-auto\"><table class=\"min-w-full table-auto\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-800\"><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Address</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Entity Type</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Entity ID</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Action</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Signer</th></tr></thead> <tbody>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if entity != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<tr class=\"border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700\"><td class=\"py-2 px-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<tr class=\"border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700\"><td class=\"py-2 px-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -470,7 +470,7 @@ func ManageEntitySection(entity *db.EtlManageEntity) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</td><td class=\"py-2 px-4\"><span class=\"px-2 py-1 text-xs rounded bg-gray-100 dark:bg-[#141414] text-gray-800 dark:text-gray-200\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</td><td class=\"py-2 px-4\"><span class=\"px-2 py-1 text-xs rounded bg-gray-100 dark:bg-[#0a0a0a] text-gray-800 dark:text-gray-200\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -501,7 +501,7 @@ func ManageEntitySection(entity *db.EtlManageEntity) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if entity.Metadata.Valid {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<div class=\"mt-4\"><h4 class=\"text-lg font-medium text-gray-900 dark:text-gray-100 mb-2\">Metadata</h4><div class=\"bg-gray-50 dark:bg-[#141414] rounded-lg p-4 overflow-x-auto border border-gray-200 dark:border-gray-700\"><pre class=\"text-sm font-mono leading-relaxed whitespace-pre-wrap\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<div class=\"mt-4\"><h4 class=\"text-lg font-medium text-gray-900 dark:text-gray-100 mb-2\">Metadata</h4><div class=\"bg-gray-50 dark:bg-[#0a0a0a] rounded-lg p-4 overflow-x-auto border border-gray-200 dark:border-gray-800\"><pre class=\"text-sm font-mono leading-relaxed whitespace-pre-wrap\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -543,12 +543,12 @@ func ValidatorRegistrationSection(registration *db.EtlValidatorRegistration) tem
 			templ_7745c5c3_Var20 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Validator Registrations 1</h3><div class=\"overflow-x-auto\"><table class=\"min-w-full table-auto\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-700\"><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Address</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Comet Address</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Node Type</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Voting Power</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">SPID</th></tr></thead> <tbody>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Validator Registrations 1</h3><div class=\"overflow-x-auto\"><table class=\"min-w-full table-auto\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-800\"><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Address</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Comet Address</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Node Type</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Voting Power</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">SPID</th></tr></thead> <tbody>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if registration != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<tr class=\"border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700\"><td class=\"py-2 px-4\"><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<tr class=\"border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700\"><td class=\"py-2 px-4\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -650,12 +650,12 @@ func ValidatorDeregistrationSection(deregistration *db.EtlValidatorDeregistratio
 			templ_7745c5c3_Var25 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Validator Deregistrations 1</h3><div class=\"overflow-x-auto\"><table class=\"min-w-full table-auto\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-700\"><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Comet Address</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Public Key</th></tr></thead> <tbody>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Validator Deregistrations 1</h3><div class=\"overflow-x-auto\"><table class=\"min-w-full table-auto\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-800\"><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Comet Address</th><th class=\"text-left py-2 px-4 font-medium text-gray-900 dark:text-gray-100\">Public Key</th></tr></thead> <tbody>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if deregistration != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<tr class=\"border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700\"><td class=\"py-2 px-4\"><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<tr class=\"border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700\"><td class=\"py-2 px-4\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -718,7 +718,7 @@ func SlaRollupSection(slaRollup *db.EtlSlaRollup) templ.Component {
 			templ_7745c5c3_Var27 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">SLA Rollup</h3><div class=\"grid grid-cols-1 md:grid-cols-3 gap-4 mb-4\"><div><label class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Block Range</label><p class=\"text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">SLA Rollup</h3><div class=\"grid grid-cols-1 md:grid-cols-3 gap-4 mb-4\"><div><label class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Block Range</label><p class=\"text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -791,7 +791,7 @@ func StorageProofSection(storageProof *db.EtlStorageProof) templ.Component {
 			templ_7745c5c3_Var30 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Storage Proof</h3><div class=\"grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4\"><div><label class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Height</label><p class=\"text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Storage Proof</h3><div class=\"grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4\"><div><label class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Height</label><p class=\"text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -825,7 +825,7 @@ func StorageProofSection(storageProof *db.EtlStorageProof) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		for _, addr := range storageProof.ProverAddresses {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<span class=\"px-2 py-1 text-xs rounded bg-gray-100 dark:bg-[#141414] text-gray-800 dark:text-gray-200\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<span class=\"px-2 py-1 text-xs rounded bg-gray-100 dark:bg-[#0a0a0a] text-gray-800 dark:text-gray-200\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -885,7 +885,7 @@ func StorageProofVerificationSection(storageProofVerification *db.EtlStorageProo
 			templ_7745c5c3_Var32 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Storage Proof Verification</h3><div class=\"grid grid-cols-1 md:grid-cols-2 gap-4\"><div><label class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Height</label><p class=\"text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-gray-100 mb-4\">Storage Proof Verification</h3><div class=\"grid grid-cols-1 md:grid-cols-2 gap-4\"><div><label class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Height</label><p class=\"text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

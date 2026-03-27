@@ -16,7 +16,7 @@ templ Block(props BlockProps) {
 	@layouts.Base(fmt.Sprintf("Block %d", props.Block.BlockHeight)) {
 		<div class="space-y-6">
 			<!-- Block Overview -->
-			<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6">
+			<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
 				<div class="flex items-center justify-between mb-6">
 					<h2 class="text-2xl font-light text-gray-900 dark:text-white">Block { fmt.Sprintf("%d", props.Block.BlockHeight) }</h2>
 					<div class="text-sm text-gray-500 dark:text-[#b3b3b3]">
@@ -30,13 +30,13 @@ templ Block(props BlockProps) {
 							{ fmt.Sprintf("%d", props.Block.BlockHeight) }
 						</div>
 					</div>
-					<div class="border-l border-gray-300 dark:border-gray-400 pl-6">
+					<div class="border-l border-gray-300 dark:border-gray-800 pl-6">
 						<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Proposer</div>
 						<a href={ templ.SafeURL(fmt.Sprintf("/validator/%s", props.Block.ProposerAddress)) } class="font-mono text-sm text-gray-600 dark:text-white hover:underline">
 							{ props.Block.ProposerAddress }
 						</a>
 					</div>
-					<div class="border-l border-gray-300 dark:border-gray-400 pl-6">
+					<div class="border-l border-gray-300 dark:border-gray-800 pl-6">
 						<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Transactions</div>
 						<div class="text-3xl font-light text-gray-900 dark:text-white tabular-nums">
 							{ fmt.Sprintf("%d", len(props.Transactions)) }
@@ -45,7 +45,7 @@ templ Block(props BlockProps) {
 				</div>
 			</div>
 			<!-- Transactions -->
-			<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6">
+			<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
 				<div class="flex items-center justify-between mb-6">
 					<h3 class="text-xl font-light text-gray-900 dark:text-white">Transactions</h3>
 					<div class="text-sm text-gray-500 dark:text-[#b3b3b3]">
@@ -55,7 +55,7 @@ templ Block(props BlockProps) {
 				if len(props.Transactions) > 0 {
 					<div class="space-y-2">
 						for _, tx := range props.Transactions {
-							<div class="flex items-center justify-between py-3 px-4 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
+							<div class="flex items-center justify-between py-3 px-4 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
 								<div class="flex items-center gap-4">
 									<div>
 										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Hash</div>
@@ -63,7 +63,7 @@ templ Block(props BlockProps) {
 											{ tx.TxHash }
 										</a>
 									</div>
-									<div class="border-l border-gray-300 dark:border-gray-400 pl-4">
+									<div class="border-l border-gray-300 dark:border-gray-800 pl-4">
 										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Type</div>
 										<span class="px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-[#383838] text-gray-700 dark:text-white rounded">
 											{ tx.TxType }

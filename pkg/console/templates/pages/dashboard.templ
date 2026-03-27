@@ -140,7 +140,7 @@ func getPercentageChangeColorClass(current, previous int64) string {
 
 	change := float64(current-previous) / float64(previous) * 100
 	if change >= 0 {
-		return "text-green-600 dark:text-green-400"
+		return "text-green-400 dark:text-green-400"
 	} else {
 		return "text-red-600 dark:text-red-400"
 	}
@@ -150,7 +150,7 @@ templ Dashboard(props DashboardProps) {
 	@layouts.Base("Dashboard") {
 		<div class="space-y-6" x-data="blockEvents()" x-init="init()">
 			<!-- Section 1: Current Stats -->
-			<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6">
+			<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
 				<div id="stats-header" x-data="blockEvents()" x-init="init()">
 					<div class="flex items-center justify-between">
 						<div class="flex-1 flex flex-col items-center">
@@ -181,7 +181,7 @@ templ Dashboard(props DashboardProps) {
 							</div>
 							<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">BLOCK HEIGHT</h4>
 						</div>
-						<div class="flex-1 w-32 border-l border-gray-300 dark:border-gray-400 pl-6 flex flex-col items-center">
+						<div class="flex-1 w-32 border-l border-gray-300 dark:border-gray-800 pl-6 flex flex-col items-center">
 							if props.Stats.AvgBlockTime > 0 {
 								<p class="text-3xl font-bold text-gray-900 dark:text-white">{ fmt.Sprintf("%.2fs", props.Stats.AvgBlockTime) }</p>
 							} else if props.Stats.BPS > 0 {
@@ -193,7 +193,7 @@ templ Dashboard(props DashboardProps) {
 							}
 							<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">BLOCK TIME</h4>
 						</div>
-						<div class="flex-1 w-40 border-l border-gray-300 dark:border-gray-400 pl-6 flex flex-col items-center">
+						<div class="flex-1 w-40 border-l border-gray-300 dark:border-gray-800 pl-6 flex flex-col items-center">
 							if props.Stats.IsSyncing {
 								<div class="flex items-center">
 									<div class="w-2 h-2 bg-yellow-500 rounded-full mr-2 animate-pulse"></div>
@@ -201,8 +201,8 @@ templ Dashboard(props DashboardProps) {
 								</div>
 							} else {
 								<div class="flex items-center">
-									<div class="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-									<p class="text-xl font-bold text-green-600 dark:text-green-400">Synced</p>
+									<div class="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
+									<p class="text-xl font-bold text-green-400 dark:text-green-400">Synced</p>
 								</div>
 							}
 							<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">SYNC STATUS</h4>
@@ -210,7 +210,7 @@ templ Dashboard(props DashboardProps) {
 					</div>
 					<!-- Sync Progress Bar -->
 					if props.Stats.IsSyncing && props.Stats.LatestChainHeight > 0 {
-						<div class="mt-4 pt-4 border-t border-gray-300 dark:border-gray-400">
+						<div class="mt-4 pt-4 border-t border-gray-300 dark:border-gray-800">
 							<div class="flex items-center justify-between mb-2">
 								<span class="text-xs font-medium text-gray-600 dark:text-gray-400">
 									Sync Progress
@@ -233,39 +233,44 @@ templ Dashboard(props DashboardProps) {
 					}
 				</div>
 			</div>
-			<!-- Section 2: Live Map & Validator Info -->
-			<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl overflow-hidden">
-				<div class="relative">
-					<!-- Map - Full Background -->
-					<div
-						class="relative bg-gray-100 dark:bg-stone-700 h-96 z-10"
-						x-data="livePlayMap()"
-						x-init="initSSEEventSource(); initMap()"
-					>
-						<!-- Map container -->
-						<div id="playMap" class="w-full h-full"></div>
-						<!-- Connection status -->
-						<div class="absolute top-4 left-4 bg-black/20 backdrop-blur-sm rounded px-2 py-1" x-show="!connected">
-							<span class="text-white/90 text-xs">Connecting...</span>
+			<!-- Section 2: Globe + Transaction Analytics (side-by-side) -->
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+				<!-- Left: Globe -->
+				<div
+					class="relative h-[500px] overflow-hidden bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl"
+					x-data="globeView()"
+					x-init="initSSEEventSource(); init()"
+				>
+					<div class="absolute inset-0 flex items-center justify-center">
+						<div class="w-[460px] h-[460px] flex-shrink-0">
+							<canvas
+								x-ref="globeCanvas"
+								class="w-full h-full cursor-grab"
+								style="aspect-ratio: 1;"
+							></canvas>
 						</div>
 					</div>
-					<!-- Network Info Overlay - Left Side (aligned with zoom buttons) -->
-					<div class="absolute top-14 left-16 w-56 z-20">
+					<!-- LIVE badge -->
+					<div class="absolute top-2 right-2 bg-black/30 backdrop-blur-sm rounded px-2 py-1" x-show="connected">
+						<span class="text-green-400 text-xs flex items-center gap-1.5">
+							<span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
+							LIVE
+						</span>
+					</div>
+					<!-- Network Info Overlay -->
+					<div class="absolute top-2 left-2 w-56 z-20">
 						<div id="network-sidebar" class="space-y-2" x-data="blockEvents()" x-init={ fmt.Sprintf("init({ validatorCount: %d })", props.Stats.ValidatorCount) }>
 							@NetworkSidebarFragment(props.Stats)
 						</div>
 					</div>
 				</div>
-			</div>
-			<!-- Section 3: Transaction Analytics -->
-			<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6">
-				<div class="flex items-center justify-between mb-6">
-					<h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">Transaction Analytics</h3>
-				</div>
-				<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-					<!-- Primary Metrics -->
-					<div class="lg:col-span-2 space-y-6">
-						<!-- Top row: TPS and Total Transactions -->
+				<!-- Right: Transaction Analytics (in a box) -->
+				<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
+					<div class="flex items-center justify-between mb-6">
+						<h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">Transaction Analytics</h3>
+					</div>
+					<div class="space-y-6">
+						<!-- Top row: Total Transactions and TPS -->
 						<div class="grid grid-cols-2 gap-6">
 							<div id="total-transactions-fragment" hx-get="/fragments/total-transactions" hx-trigger="every 10s" hx-swap="outerHTML">
 								@TotalTransactionsFragment(props.Stats)
@@ -274,47 +279,47 @@ templ Dashboard(props DashboardProps) {
 								@TPSFragment(props.Stats)
 							</div>
 						</div>
-						<!-- Bottom row: Volume metrics -->
-						<div class="grid grid-cols-3 border-t border-gray-300 dark:border-gray-400 pt-6">
-							<div class="border-r border-gray-300 dark:border-gray-400 pr-6 flex flex-col items-center">
+						<!-- Volume metrics -->
+						<div class="grid grid-cols-3 border-t border-gray-300 dark:border-gray-800 pt-6">
+							<div class="border-r border-gray-300 dark:border-gray-800 pr-4 flex flex-col items-center">
 								<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">24h Volume</div>
 								<div class="text-2xl font-light text-gray-900 dark:text-gray-100 mb-1">{ formatNumber(props.Stats.TotalTransactions24h) }</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400">Daily rate</div>
 							</div>
-							<div class="border-r border-gray-300 dark:border-gray-400 pr-6 pl-6 flex flex-col items-center">
+							<div class="border-r border-gray-300 dark:border-gray-800 pr-4 pl-4 flex flex-col items-center">
 								<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">7d Volume</div>
 								<div class="text-2xl font-light text-gray-900 dark:text-gray-100 mb-1">{ formatNumber(props.Stats.TotalTransactions7d) }</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400">Avg: { formatNumber(props.Stats.TotalTransactions7d / 7) }/day</div>
 							</div>
-							<div class="pl-6 flex flex-col items-center">
+							<div class="pl-4 flex flex-col items-center">
 								<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">30d Volume</div>
 								<div class="text-2xl font-light text-gray-900 dark:text-gray-100 mb-1">{ formatNumber(props.Stats.TotalTransactions30d) }</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400">Avg: { formatNumber(props.Stats.TotalTransactions30d / 30) }/day</div>
 							</div>
 						</div>
-					</div>
-					<!-- Transaction Types -->
-					<div class="border-l border-gray-300 dark:border-gray-400 pl-6">
-						<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">Transaction Types</div>
-						<div class="space-y-3">
-							if len(props.TransactionBreakdown) > 0 {
-								for _, breakdown := range props.TransactionBreakdown {
-									<div class="flex items-center justify-between">
-										<span class="text-xs px-2 py-1 bg-gray-100 dark:bg-stone-700 rounded text-gray-600 dark:text-gray-200">{ breakdown.Type }</span>
-										<span class="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">{ formatNumber(breakdown.Count) }</span>
-									</div>
+						<!-- Transaction Types -->
+						<div class="border-t border-gray-300 dark:border-gray-800 pt-6">
+							<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">Transaction Types</div>
+							<div class="space-y-3">
+								if len(props.TransactionBreakdown) > 0 {
+									for _, breakdown := range props.TransactionBreakdown {
+										<div class="flex items-center justify-between">
+											<span class="text-xs px-2 py-1 bg-gray-100 dark:bg-stone-700 rounded text-gray-600 dark:text-gray-200">{ breakdown.Type }</span>
+											<span class="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">{ formatNumber(breakdown.Count) }</span>
+										</div>
+									}
+								} else {
+									<div class="text-sm text-gray-500 dark:text-gray-400">No transaction data available</div>
 								}
-							} else {
-								<div class="text-sm text-gray-500 dark:text-gray-400">No transaction data available</div>
-							}
+							</div>
 						</div>
 					</div>
 				</div>
 			</div>
 			<!-- Section 4: SLA Performance Chart -->
 			if props.SLAPerformanceData != nil && len(props.SLAPerformanceData) > 0 {
-				<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl border border-gray-200 dark:border-gray-600 overflow-hidden">
-					<div class="bg-white dark:bg-[#141414] px-6 py-4 border-b border-gray-200 dark:border-gray-600">
+				<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl overflow-hidden">
+					<div class="bg-white dark:bg-[#0a0a0a] px-6 py-4 border-b border-gray-300 dark:border-gray-800">
 						<div class="flex items-center justify-between">
 							<div class="flex items-center space-x-3">
 								<div class="w-3 h-3 bg-gray-500 rounded-full animate-pulse"></div>
@@ -333,15 +338,15 @@ templ Dashboard(props DashboardProps) {
 									<div class="font-medium" x-text="blockRange"></div>
 									<div class="text-gray-400" x-text="timeRange"></div>
 								</div>
-								<div class="w-px h-8 bg-gray-300 dark:bg-[#141414]"></div>
+								<div class="w-px h-8 bg-gray-300 dark:bg-[#0a0a0a]"></div>
 								<div class="flex items-center space-x-1">
-									<div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+									<div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
 									<span class="font-medium">LIVE</span>
 								</div>
 							</div>
 						</div>
 					</div>
-					<div class="relative h-96 bg-gray-50 dark:bg-[#141414] p-4">
+					<div class="relative h-96 bg-gray-50 dark:bg-[#0a0a0a] p-4">
 						<canvas
 							id="slaPerformanceChart"
 							class="w-full h-full"
@@ -355,7 +360,7 @@ templ Dashboard(props DashboardProps) {
 			<!-- Section 5: Recent Blocks & Transactions -->
 			<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 				<!-- Latest Blocks -->
-				<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6">
+				<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
 					<div class="flex justify-between items-center mb-4">
 						<h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">Latest Blocks</h3>
 						<a href="/blocks" class="text-gray-400 dark:text-[#b3b3b3] hover:text-gray-600 dark:hover:text-white hover:underline text-sm">View all →</a>
@@ -363,7 +368,7 @@ templ Dashboard(props DashboardProps) {
 					if len(props.RecentBlocks) > 0 {
 						<div class="space-y-2">
 							for _, block := range props.RecentBlocks {
-								<div class="flex items-center justify-between py-3 px-4 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
+								<div class="flex items-center justify-between py-3 px-4 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
 									<div class="flex items-center gap-4">
 										<a href={ templ.SafeURL(fmt.Sprintf("/block/%d", block.BlockHeight)) } class="font-semibold text-gray-600 dark:text-gray-200 hover:underline">
 											{ fmt.Sprintf("#%d", block.BlockHeight) }
@@ -391,7 +396,7 @@ templ Dashboard(props DashboardProps) {
 					}
 				</div>
 				<!-- Latest Transactions -->
-				<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6">
+				<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
 					<div class="flex justify-between items-center mb-4">
 						<h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">Latest Transactions</h3>
 						<a href="/transactions" class="text-gray-400 dark:text-[#b3b3b3] hover:text-gray-600 dark:hover:text-white hover:underline text-sm">View all →</a>
@@ -399,7 +404,7 @@ templ Dashboard(props DashboardProps) {
 					if len(props.RecentTransactions) > 0 {
 						<div class="space-y-2">
 							for _, tx := range props.RecentTransactions {
-								<div class="flex items-center justify-between py-3 px-4 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
+								<div class="flex items-center justify-between py-3 px-4 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
 									<div class="flex items-center gap-4">
 										<a href={ templ.SafeURL(fmt.Sprintf("/transaction/%s", tx.TxHash)) } class="font-mono text-sm text-gray-600 dark:text-gray-200 hover:underline">
 											if len(tx.TxHash) > 8 {
@@ -434,7 +439,7 @@ templ Dashboard(props DashboardProps) {
 			</div>
 		</div>
 		@SSEEventScript()
-		@LivePlayMapScript()
+		@GlobeScript()
 		@BlockEventsScript()
 		@SLAChartScript()
 	}
@@ -472,7 +477,7 @@ templ StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64)
 					</div>
 				</div>
 			</div>
-			<div class="flex-none w-32 border-l border-gray-300 dark:border-gray-400 pl-6">
+			<div class="flex-none w-32 border-l border-gray-300 dark:border-gray-800 pl-6">
 				<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Block Time</h4>
 				if stats.AvgBlockTime > 0 {
 					<p class="text-3xl font-bold text-gray-900 dark:text-gray-100">{ fmt.Sprintf("%.2fs", stats.AvgBlockTime) }</p>
@@ -484,7 +489,7 @@ templ StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64)
 					<p class="text-xs text-gray-500 dark:text-gray-400">No data</p>
 				}
 			</div>
-			<div class="flex-none w-40 border-l border-gray-300 dark:border-gray-400 pl-6">
+			<div class="flex-none w-40 border-l border-gray-300 dark:border-gray-800 pl-6">
 				<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Sync Status</h4>
 				if stats.IsSyncing {
 					<div class="flex items-center">
@@ -493,8 +498,8 @@ templ StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64)
 					</div>
 				} else {
 					<div class="flex items-center">
-						<div class="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-						<p class="text-xl font-bold text-green-600 dark:text-green-400">Synced</p>
+						<div class="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
+						<p class="text-xl font-bold text-green-400 dark:text-green-400">Synced</p>
 					</div>
 					<p class="text-xs text-gray-500 dark:text-gray-400">Up to date</p>
 				}
@@ -502,7 +507,7 @@ templ StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64)
 		</div>
 		<!-- Sync Progress Bar -->
 		if stats.IsSyncing && stats.LatestChainHeight > 0 {
-			<div class="mt-4 pt-4 border-t border-gray-300 dark:border-gray-400">
+			<div class="mt-4 pt-4 border-t border-gray-300 dark:border-gray-800">
 				<div class="flex items-center justify-between mb-2">
 					<span class="text-xs font-medium text-gray-600 dark:text-gray-400">
 						Sync Progress
@@ -515,7 +520,7 @@ templ StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64)
 						({ fmt.Sprintf("%.1f%%", syncProgressPercentage) })
 					</span>
 				</div>
-				<div class="w-full bg-gray-200 dark:[#141414] rounded-full h-2 relative overflow-hidden">
+				<div class="w-full bg-gray-200 dark:[#0a0a0a] rounded-full h-2 relative overflow-hidden">
 					<!-- Exact progress representation using calculated percentage -->
 					<div
 						class={ fmt.Sprintf("bg-gray-600 h-2 rounded-full transition-all duration-300 ease-in-out %s", getProgressBarClass(syncProgressPercentage)) }
@@ -535,7 +540,7 @@ templ TPSFragment(stats *DashboardStats) {
 }
 
 templ TotalTransactionsFragment(stats *DashboardStats) {
-	<div id="total-transactions-fragment" hx-get="/fragments/total-transactions" hx-trigger="every 10s" hx-swap="outerHTML" class="border-r border-gray-300 dark:border-gray-400 pr-6 flex flex-col items-center">
+	<div id="total-transactions-fragment" hx-get="/fragments/total-transactions" hx-trigger="every 10s" hx-swap="outerHTML" class="border-r border-gray-300 dark:border-gray-800 pr-6 flex flex-col items-center">
 		<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Total Transactions</div>
 		<div class="text-4xl font-light text-gray-900 dark:text-gray-100 mb-1">{ formatNumber(stats.TotalTransactions) }</div>
 		<div class={ fmt.Sprintf("text-xs %s", getPercentageChangeColorClass(stats.TotalTransactions24h, stats.TotalTransactionsPrevious24h)) }>{ getPercentageChangeText(stats.TotalTransactions24h, stats.TotalTransactionsPrevious24h) }</div>
@@ -614,182 +619,335 @@ templ SSEEventScript() {
 	</script>
 }
 
-// Live Play Map Alpine.js Component
-templ LivePlayMapScript() {
+// Globe View Alpine.js Component (COBE WebGL globe)
+templ GlobeScript() {
 	<script>
-		function livePlayMap() {
+		function globeView() {
 			return {
-				map: null,
-				eventSource: null,
+				globe: null,
+				markers: [],
+				validatorNodes: [],
+				proposalLines: [],
+				phi: 0.3,
+				theta: 0.15,
+				pointerDown: false,
+				pointerX: 0,
+				pointerY: 0,
+				dragVelocityX: 0,
+				dragVelocityY: 0,
+				rafId: null,
 				connected: false,
-				playMarkers: [],
 				playEventListener: null,
-				animationFrames: new Set(),
-				timeouts: new Set(),
-				
-				initMap() {
-					// Create bound event listener for proper cleanup
+				blockEventListener: null,
+				MARKER_DECAY_MS: 8000,
+				PROPOSAL_LINE_DECAY_MS: 5000,
+
+				async init() {
+					const canvas = this.$refs.globeCanvas;
+					if (!canvas) return;
+
+					// Dynamic import COBE from CDN
+					const cobe = await import('https://cdn.jsdelivr.net/npm/cobe@2.0.0/+esm');
+					const createGlobe = cobe.default;
+
+					let width = Math.min(canvas.offsetWidth, canvas.offsetHeight) || 460;
+					const dpr = window.devicePixelRatio || 1;
+
+					const isDarkMode = document.documentElement.classList.contains('dark') ||
+						window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+					this.globe = createGlobe(canvas, {
+						devicePixelRatio: dpr,
+						width: width * dpr,
+						height: width * dpr,
+						phi: 0,
+						theta: 0.15,
+						dark: isDarkMode ? 1 : 0,
+						diffuse: 1.2,
+						mapSamples: 24000,
+						mapBrightness: isDarkMode ? 8 : 6,
+						baseColor: isDarkMode ? [0.15, 0.15, 0.15] : [0.9, 0.9, 0.9],
+						markerColor: isDarkMode ? [0.9, 0.9, 0.9] : [0.3, 0.3, 0.3],
+						glowColor: isDarkMode ? [0.08, 0.08, 0.08] : [0.85, 0.85, 0.85],
+						markers: [],
+					});
+
+					// Fetch validator node locations
+					this.fetchValidatorLocations();
+
+					// Set up SSE event listeners
 					this.playEventListener = (event) => {
-						this.addPlayToMap(event.detail);
+						const play = event.detail;
+						if (play && play.lat && play.lng) {
+							this.markers.push({
+								location: [play.lat, play.lng],
+								size: 0.06 + Math.random() * 0.04,
+								addedAt: Date.now(),
+							});
+							this.connected = true;
+						}
 					};
 					document.addEventListener('play', this.playEventListener);
 
-				// Initialize Leaflet map focused on US
-				this.map = L.map('playMap', {
-					attributionControl: false
-				}).setView([39.0, -110.0], 5);
-				
-				// Detect dark mode and use appropriate tiles
-				const isDarkMode = document.documentElement.classList.contains('dark') || 
-				                  window.matchMedia('(prefers-color-scheme: dark)').matches;
-				
-				if (isDarkMode) {
-					// Dark mode tiles
-					L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-						attribution: false,
-						subdomains: 'abcd'
-					}).addTo(this.map);
-				} else {
-					// Light mode tiles
-					L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-						attribution: false
-					}).addTo(this.map);
-				}
-
-					// Setup cleanup on page unload
-					window.addEventListener('beforeunload', () => {
-						this.cleanup();
-					});
-
-					// Setup cleanup on Alpine destroy
-					this.$watch('$store.cleanup', () => {
-						// This will be called when Alpine is destroyed
-					});
-				},
-				
-				addPlayToMap(play) {
-					if (!this.map) return;
-					
-					// Set default duration if not provided
-					if (!play.duration) {
-						play.duration = 5; // Default 5 seconds
-					}
-					
-					const color = this.getRandomColor();
-					
-					// Create radar-style animation with expanding circles
-					const radarGroup = L.layerGroup().addTo(this.map);
-					
-					// Create multiple expanding circles for radar effect
-					for (let i = 0; i < 3; i++) {
-						const timeout = setTimeout(() => {
-							const circle = L.circle([play.lat, play.lng], {
-								radius: 0,
-								fillColor: color,
-								color: color,
-								weight: 2,
-								opacity: 0.8,
-								fillOpacity: 0.3
-							}).addTo(radarGroup);
-							
-							// Animate the circle expansion
-							let radius = 0;
-							let opacity = 0.8;
-							const maxRadius = 100000; // 100km in meters
-							const animationDuration = 1000; // Fixed 1 second animation duration
-							const startTime = Date.now();
-							
-							const animate = () => {
-								const elapsed = Date.now() - startTime;
-								const progress = Math.min(elapsed / animationDuration, 1);
-								
-								radius = maxRadius * progress;
-								opacity = 0.8 * (1 - progress);
-								
-								circle.setRadius(radius);
-								circle.setStyle({ 
-									opacity: opacity,
-									fillOpacity: opacity * 0.3
-								});
-								
-								if (progress < 1) {
-									const frameId = requestAnimationFrame(animate);
-									this.animationFrames.add(frameId);
-								} else {
-									radarGroup.removeLayer(circle);
-								}
-							};
-							
-							animate();
-						}, i * 200); // Stagger each circle by 200ms
-						
-						this.timeouts.add(timeout);
-					}
-					
-					// Add center dot
-					const centerDot = L.circleMarker([play.lat, play.lng], {
-						radius: 4,
-						fillColor: color,
-						color: '#ffffff',
-						weight: 2,
-						opacity: 1,
-						fillOpacity: 1
-					}).addTo(radarGroup);
-					
-					// Add popup with play info
-					const timestamp = play.timestamp ? new Date(play.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
-					centerDot.bindPopup(`Play at ${timestamp}`);
-					
-					// Store group for cleanup
-					this.playMarkers.push(radarGroup);
-					
-					// Remove entire radar group after duration
-					const cleanupTimeout = setTimeout(() => {
-						if (this.map && this.map.hasLayer(radarGroup)) {
-							this.map.removeLayer(radarGroup);
+					this.blockEventListener = (event) => {
+						const block = event.detail;
+						if (block && block.proposer) {
+							this.addProposalLines(block.proposer);
+							this.connected = true;
 						}
-						this.playMarkers = this.playMarkers.filter(m => m !== radarGroup);
-					}, play.duration * 1000);
-					
-					this.timeouts.add(cleanupTimeout);
+					};
+					document.addEventListener('block', this.blockEventListener);
+
+					// Pointer events for drag rotation
+					canvas.addEventListener('pointerdown', (e) => {
+						this.pointerDown = true;
+						this.pointerX = e.clientX;
+						this.pointerY = e.clientY;
+						canvas.style.cursor = 'grabbing';
+					});
+					const onPointerUp = () => {
+						this.pointerDown = false;
+						canvas.style.cursor = 'grab';
+					};
+					canvas.addEventListener('pointerup', onPointerUp);
+					canvas.addEventListener('pointerout', onPointerUp);
+					canvas.addEventListener('pointermove', (e) => {
+						if (this.pointerDown) {
+							const dx = e.clientX - this.pointerX;
+							const dy = e.clientY - this.pointerY;
+							this.pointerX = e.clientX;
+							this.pointerY = e.clientY;
+							this.dragVelocityX = dx * 0.008;
+							this.dragVelocityY = dy * 0.008;
+							this.phi += this.dragVelocityX;
+							this.theta = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.theta + this.dragVelocityY));
+						}
+					});
+
+					// Handle resize
+					const onResize = () => {
+						width = Math.min(canvas.offsetWidth, canvas.offsetHeight) || 460;
+						canvas.width = width * dpr;
+						canvas.height = width * dpr;
+						this.globe?.update({ width: width * dpr, height: width * dpr });
+					};
+					window.addEventListener('resize', onResize);
+
+					// Start animation loop
+					this.animate();
+
+					// Cleanup on page unload
+					window.addEventListener('beforeunload', () => this.cleanup());
 				},
-				
-				getRandomColor() {
-					const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#f0932b', '#eb4d4b', '#6c5ce7'];
-					return colors[Math.floor(Math.random() * colors.length)];
+
+				animate() {
+					const now = Date.now();
+
+					// Decay old play markers
+					this.markers = this.markers.filter(m => now - m.addedAt < this.MARKER_DECAY_MS);
+
+					// Decay old proposal lines
+					this.proposalLines = this.proposalLines.filter(l => now - l.addedAt < this.PROPOSAL_LINE_DECAY_MS);
+
+					// Build marker array for COBE
+					const allMarkers = [];
+
+					// Play event markers with scale animation
+					for (const m of this.markers) {
+						const age = now - m.addedAt;
+						const progress = age / this.MARKER_DECAY_MS;
+						const scale = progress < 0.15
+							? (progress / 0.15)
+							: 1 - ((progress - 0.15) / 0.85);
+						allMarkers.push({
+							location: m.location,
+							size: m.size * Math.max(0, scale),
+						});
+					}
+
+					// Static validator node markers (persistent)
+					for (const node of this.validatorNodes) {
+						allMarkers.push({
+							location: [node.lat, node.lng],
+							size: 0.05,
+						});
+					}
+
+					// Proposal line markers (sequential points along arced great circles)
+					for (const line of this.proposalLines) {
+						const age = now - line.addedAt;
+						const progress = Math.min(age / this.PROPOSAL_LINE_DECAY_MS, 1);
+						const totalPoints = line.points.length;
+						// Animate a "head" that travels along the arc
+						const headPos = Math.min(progress * 3, 1.0); // head reaches end at 33% of lifetime
+						const headIndex = Math.floor(headPos * (totalPoints - 1));
+						for (let i = 0; i < totalPoints; i++) {
+							if (i > headIndex) break; // only show points the head has passed
+							// Trail fades behind the head
+							const distFromHead = (headIndex - i) / totalPoints;
+							const trailFade = Math.max(0, 1 - distFromHead * 3);
+							// Overall fade out in last portion of lifetime
+							const lifeFade = progress > 0.5 ? Math.max(0, 1 - (progress - 0.5) / 0.5) : 1;
+							const size = 0.04 * trailFade * lifeFade;
+							if (size > 0.001) {
+								allMarkers.push({
+									location: line.points[i],
+									size: size,
+								});
+							}
+						}
+					}
+
+					// Idle drift + drag momentum
+					if (this.pointerDown) {
+						this.dragVelocityX *= 0.8;
+						this.dragVelocityY *= 0.8;
+					} else {
+						this.dragVelocityX *= 0.95;
+						this.dragVelocityY *= 0.95;
+						this.phi += this.dragVelocityX + 0.0001;
+						this.theta = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.theta + this.dragVelocityY));
+					}
+
+					this.globe?.update({
+						phi: this.phi,
+						theta: this.theta,
+						markers: allMarkers,
+					});
+
+					this.rafId = requestAnimationFrame(() => this.animate());
 				},
-				
+
+				addProposalLines(proposerAddress) {
+					const proposer = this.validatorNodes.find(n => n.address === proposerAddress);
+					if (!proposer) return;
+
+					const now = Date.now();
+					for (const node of this.validatorNodes) {
+						if (node.address === proposerAddress) continue;
+						const points = this.greatCirclePoints(
+							[proposer.lat, proposer.lng],
+							[node.lat, node.lng],
+							40
+						);
+						this.proposalLines.push({ points, addedAt: now });
+					}
+				},
+
+				greatCirclePoints(from, to, steps) {
+					// Generate points along a great circle, but offset them
+					// perpendicular to the path to create a visible arc/bow shape
+					const toRad = d => d * Math.PI / 180;
+					const toDeg = r => r * 180 / Math.PI;
+					const [lat1, lng1] = from.map(toRad);
+					const [lat2, lng2] = to.map(toRad);
+
+					const d = 2 * Math.asin(Math.sqrt(
+						Math.pow(Math.sin((lat1 - lat2) / 2), 2) +
+						Math.cos(lat1) * Math.cos(lat2) *
+						Math.pow(Math.sin((lng1 - lng2) / 2), 2)
+					));
+
+					if (d < 0.0001) return [from];
+
+					// Compute perpendicular offset direction (cross product of from and to vectors)
+					const ax = Math.cos(lat1) * Math.cos(lng1);
+					const ay = Math.cos(lat1) * Math.sin(lng1);
+					const az = Math.sin(lat1);
+					const bx = Math.cos(lat2) * Math.cos(lng2);
+					const by = Math.cos(lat2) * Math.sin(lng2);
+					const bz = Math.sin(lat2);
+					// Cross product gives a vector perpendicular to both
+					let cx = ay * bz - az * by;
+					let cy = az * bx - ax * bz;
+					let cz = ax * by - ay * bx;
+					const cLen = Math.sqrt(cx * cx + cy * cy + cz * cz);
+					if (cLen > 0.0001) { cx /= cLen; cy /= cLen; cz /= cLen; }
+
+					// Arc height: proportional to distance, with a visible minimum
+					const arcHeight = Math.max(Math.min(d * 0.4, 0.35), 0.08);
+
+					const points = [];
+					for (let i = 0; i <= steps; i++) {
+						const f = i / steps;
+						// Slerp along great circle
+						const A = Math.sin((1 - f) * d) / Math.sin(d);
+						const B = Math.sin(f * d) / Math.sin(d);
+						let px = A * ax + B * bx;
+						let py = A * ay + B * by;
+						let pz = A * az + B * bz;
+
+						// Add perpendicular offset (sine curve peaks at midpoint)
+						const arcOffset = Math.sin(f * Math.PI) * arcHeight;
+						px += cx * arcOffset;
+						py += cy * arcOffset;
+						pz += cz * arcOffset;
+
+						// Normalize back to unit sphere and convert to lat/lng
+						const pLen = Math.sqrt(px * px + py * py + pz * pz);
+						px /= pLen; py /= pLen; pz /= pLen;
+
+						points.push([
+							toDeg(Math.asin(pz)),
+							toDeg(Math.atan2(py, px))
+						]);
+					}
+					return points;
+				},
+
+				async fetchValidatorLocations() {
+					try {
+						const resp = await fetch('/api/validator-locations');
+						if (resp.ok) {
+							let nodes = await resp.json();
+							// If all nodes are co-located (e.g. devnet), spread them out for visualization
+							if (nodes.length > 1) {
+								const allSame = nodes.every(n =>
+									Math.abs(n.lat - nodes[0].lat) < 0.01 &&
+									Math.abs(n.lng - nodes[0].lng) < 0.01
+								);
+								if (allSame) {
+									const spreadLocations = [
+										{ lat: 37.77, lng: -122.42 },  // San Francisco
+										{ lat: 40.71, lng: -74.01 },   // New York
+										{ lat: 51.51, lng: -0.13 },    // London
+										{ lat: 35.68, lng: 139.69 },   // Tokyo
+										{ lat: -33.87, lng: 151.21 },  // Sydney
+										{ lat: 1.35, lng: 103.82 },    // Singapore
+										{ lat: 48.86, lng: 2.35 },     // Paris
+										{ lat: 52.52, lng: 13.41 },    // Berlin
+									];
+									nodes = nodes.map((n, i) => ({
+										...n,
+										lat: spreadLocations[i % spreadLocations.length].lat,
+										lng: spreadLocations[i % spreadLocations.length].lng,
+									}));
+								}
+							}
+							this.validatorNodes = nodes;
+							console.log('Validator nodes loaded:', nodes.length, nodes);
+						}
+					} catch (e) {
+						console.error('Failed to fetch validator locations:', e);
+					}
+				},
+
 				cleanup() {
-					// Clear all timeouts
-					this.timeouts.forEach(timeout => clearTimeout(timeout));
-					this.timeouts.clear();
-					
-					// Cancel all animation frames
-					this.animationFrames.forEach(frameId => cancelAnimationFrame(frameId));
-					this.animationFrames.clear();
-					
-					// Remove event listener
+					if (this.rafId) cancelAnimationFrame(this.rafId);
+					if (this.globe) {
+						this.globe.destroy();
+						this.globe = null;
+					}
 					if (this.playEventListener) {
 						document.removeEventListener('play', this.playEventListener);
 						this.playEventListener = null;
 					}
-					
-					// Clean up map markers
-					this.playMarkers.forEach(marker => {
-						if (this.map && this.map.hasLayer(marker)) {
-							this.map.removeLayer(marker);
-						}
-					});
-					this.playMarkers = [];
-					
-					// Remove map
-					if (this.map) {
-						this.map.remove();
-						this.map = null;
+					if (this.blockEventListener) {
+						document.removeEventListener('block', this.blockEventListener);
+						this.blockEventListener = null;
 					}
 				},
 
-				// Alpine.js lifecycle hook
 				destroy() {
 					this.cleanup();
 				}
@@ -1538,7 +1696,7 @@ templ SLAChartScript() {
 
 templ NetworkSidebarFragment(stats *DashboardStats) {
 	<div class="">
-		<div class="bg-white/90 dark:bg-[#141414]/90 backdrop-blur-md rounded-lg p-3 border border-white/20 dark:border-gray-700/50 shadow-lg">
+		<div class="bg-white/90 dark:bg-[#0a0a0a]/90 backdrop-blur-md rounded-lg p-3 border border-white/20 dark:border-gray-800/50 shadow-lg">
 			<h4 class="text-xs font-semibold mb-2 text-gray-900 dark:text-gray-100 uppercase tracking-wide">Network Info</h4>
 			<div class="space-y-1.5">
 				<div class="flex justify-between">
@@ -1559,7 +1717,7 @@ templ NetworkSidebarFragment(stats *DashboardStats) {
 				</template>
 			</div>
 		</div>
-		<div class="bg-white/90 dark:bg-[#141414]/90 backdrop-blur-md rounded-lg p-3 border border-white/20 dark:border-gray-700/50 shadow-lg">
+		<div class="bg-white/90 dark:bg-[#0a0a0a]/90 backdrop-blur-md rounded-lg p-3 border border-white/20 dark:border-gray-800/50 shadow-lg">
 			<h4 class="text-xs font-semibold mb-2 text-gray-900 dark:text-gray-100 uppercase tracking-wide">Recent Proposers</h4>
 			<div class="space-y-1">
 				<template x-if="recentBlocks.length > 0">

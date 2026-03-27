@@ -19,7 +19,7 @@ type RollupsProps struct {
 
 templ Rollups(props RollupsProps) {
 	@layouts.Base("SLA Rollups") {
-		<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6">
+		<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
 			<div class="flex justify-between items-center mb-6">
 				<h2 class="text-2xl font-light text-gray-900 dark:text-white">SLA Rollups</h2>
 				<div class="text-sm text-gray-500 dark:text-[#b3b3b3]">
@@ -29,7 +29,7 @@ templ Rollups(props RollupsProps) {
 			if len(props.Rollups) > 0 {
 				<div class="space-y-2">
 					for _, rollup := range props.Rollups {
-						<div class="flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
+						<div class="flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
 							<div class="flex items-center gap-6 flex-1">
 								<div class="flex-1">
 									<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Rollup ID</div>
@@ -69,23 +69,23 @@ templ Rollups(props RollupsProps) {
 						</div>
 					}
 				</div>
-				<div class="flex justify-between items-center mt-6 pt-6 border-t border-gray-300 dark:border-gray-400">
+				<div class="flex justify-between items-center mt-6 pt-6 border-t border-gray-300 dark:border-gray-800">
 					<div class="flex gap-3">
 						if props.HasPrev {
-							<a href={ templ.SafeURL(fmt.Sprintf("/rollups?page=%d&count=%d", props.CurrentPage-1, props.PageSize)) } class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-white bg-gray-100 dark:bg-[#383838] hover:bg-gray-200 dark:hover:bg-[#141414] rounded transition-colors">
+							<a href={ templ.SafeURL(fmt.Sprintf("/rollups?page=%d&count=%d", props.CurrentPage-1, props.PageSize)) } class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-white bg-gray-100 dark:bg-[#383838] hover:bg-gray-200 dark:hover:bg-[#0a0a0a] rounded transition-colors">
 								← Previous
 							</a>
 						} else {
-							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-[#b3b3b3] bg-gray-50 dark:bg-[#141414] rounded cursor-not-allowed">
+							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-[#b3b3b3] bg-gray-50 dark:bg-[#0a0a0a] rounded cursor-not-allowed">
 								← Previous
 							</span>
 						}
 						if props.HasNext {
-							<a href={ templ.SafeURL(fmt.Sprintf("/rollups?page=%d&count=%d", props.CurrentPage+1, props.PageSize)) } class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-white bg-gray-100 dark:bg-[#383838] hover:bg-gray-200 dark:hover:bg-[#141414] rounded transition-colors">
+							<a href={ templ.SafeURL(fmt.Sprintf("/rollups?page=%d&count=%d", props.CurrentPage+1, props.PageSize)) } class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-white bg-gray-100 dark:bg-[#383838] hover:bg-gray-200 dark:hover:bg-[#0a0a0a] rounded transition-colors">
 								Next →
 							</a>
 						} else {
-							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-[#b3b3b3] bg-gray-50 dark:bg-[#141414] rounded cursor-not-allowed">
+							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-[#b3b3b3] bg-gray-50 dark:bg-[#0a0a0a] rounded cursor-not-allowed">
 								Next →
 							</span>
 						}

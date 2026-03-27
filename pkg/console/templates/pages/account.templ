@@ -37,7 +37,7 @@ type AccountProps struct {
 
 templ Account(props AccountProps) {
 	@layouts.Base(fmt.Sprintf("Account %s", props.Address[:6])) {
-		<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6">
+		<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
 			<div class="flex justify-between items-center mb-6">
 				<h2 class="text-2xl font-light text-gray-900 dark:text-white">
 					Account 
@@ -49,7 +49,7 @@ templ Account(props AccountProps) {
 					Page { fmt.Sprint(props.CurrentPage) } • { fmt.Sprint(props.PageSize) } transactions per page
 				</div>
 			</div>
-			<div class="mb-6 p-4 bg-gray-50 dark:bg-[#141414] rounded-lg">
+			<div class="mb-6 p-4 bg-gray-50 dark:bg-[#0a0a0a] rounded-lg">
 				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
 					<div>
 						<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Address</div>
@@ -64,7 +64,7 @@ templ Account(props AccountProps) {
 							<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Filter by Relation</div>
 							<select
 								id="relationFilter"
-								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-[#141414] text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-800 rounded-lg bg-white dark:bg-[#0a0a0a] text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500 focus:border-transparent"
 								onchange="updateFilters()"
 							>
 								<option value="all" selected?={ props.CurrentFilter == "" || props.CurrentFilter == "all" }>All Relations</option>
@@ -80,7 +80,7 @@ templ Account(props AccountProps) {
 							type="date"
 							id="startDate"
 							value={ props.StartDate }
-							class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-[#141414] text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+							class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-800 rounded-lg bg-white dark:bg-[#0a0a0a] text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500 focus:border-transparent"
 							onchange="updateFilters()"
 						/>
 					</div>
@@ -90,7 +90,7 @@ templ Account(props AccountProps) {
 							type="date"
 							id="endDate"
 							value={ props.EndDate }
-							class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-[#141414] text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+							class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-800 rounded-lg bg-white dark:bg-[#0a0a0a] text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500 focus:border-transparent"
 							onchange="updateFilters()"
 						/>
 					</div>
@@ -100,7 +100,7 @@ templ Account(props AccountProps) {
 				<div class="space-y-2">
 					for i, tx := range props.Transactions {
 						<a href={ templ.SafeURL(fmt.Sprintf("/transaction/%s", tx.TxHash)) } class="block">
-							<div class="flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors cursor-pointer">
+							<div class="flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors cursor-pointer">
 								<div class="flex items-center gap-6 flex-1">
 									<div class="flex-1">
 										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Hash</div>
@@ -137,23 +137,23 @@ templ Account(props AccountProps) {
 						</a>
 					}
 				</div>
-				<div class="flex justify-between items-center mt-6 pt-6 border-t border-gray-300 dark:border-gray-400">
+				<div class="flex justify-between items-center mt-6 pt-6 border-t border-gray-300 dark:border-gray-800">
 					<div class="flex gap-3">
 						if props.HasPrev {
-							<a href={ templ.SafeURL(buildPaginationURL(props.Address, props.CurrentPage-1, props.PageSize, props.CurrentFilter, props.StartDate, props.EndDate)) } class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-white bg-gray-100 dark:bg-[#383838] hover:bg-gray-200 dark:hover:bg-[#141414] rounded transition-colors">
+							<a href={ templ.SafeURL(buildPaginationURL(props.Address, props.CurrentPage-1, props.PageSize, props.CurrentFilter, props.StartDate, props.EndDate)) } class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-white bg-gray-100 dark:bg-[#383838] hover:bg-gray-200 dark:hover:bg-[#0a0a0a] rounded transition-colors">
 								← Previous
 							</a>
 						} else {
-							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-[#b3b3b3] bg-gray-50 dark:bg-[#141414] rounded cursor-not-allowed">
+							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-[#b3b3b3] bg-gray-50 dark:bg-[#0a0a0a] rounded cursor-not-allowed">
 								← Previous
 							</span>
 						}
 						if props.HasNext {
-							<a href={ templ.SafeURL(buildPaginationURL(props.Address, props.CurrentPage+1, props.PageSize, props.CurrentFilter, props.StartDate, props.EndDate)) } class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-white bg-gray-100 dark:bg-[#383838] hover:bg-gray-200 dark:hover:bg-[#141414] rounded transition-colors">
+							<a href={ templ.SafeURL(buildPaginationURL(props.Address, props.CurrentPage+1, props.PageSize, props.CurrentFilter, props.StartDate, props.EndDate)) } class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-white bg-gray-100 dark:bg-[#383838] hover:bg-gray-200 dark:hover:bg-[#0a0a0a] rounded transition-colors">
 								Next →
 							</a>
 						} else {
-							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-[#b3b3b3] bg-gray-50 dark:bg-[#141414] rounded cursor-not-allowed">
+							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-[#b3b3b3] bg-gray-50 dark:bg-[#0a0a0a] rounded cursor-not-allowed">
 								Next →
 							</span>
 						}

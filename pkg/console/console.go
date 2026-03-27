@@ -2,6 +2,7 @@ package console
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,7 +46,16 @@ type Console struct {
 	latestTrustedBlock atomic.Int64
 	lastRefreshTime    atomic.Int64  // Unix timestamp of last refresh
 	refreshInterval    time.Duration // How often to refresh
-	dashboardCache     *Cache[*pages.DashboardProps]
+	dashboardCache          *Cache[*pages.DashboardProps]
+	validatorLocationsCache *Cache[[]ValidatorLocation]
+}
+
+// ValidatorLocation represents a validator node's geographic position
+type ValidatorLocation struct {
+	Address  string  `json:"address"`
+	Endpoint string  `json:"endpoint"`
+	Lat      float64 `json:"lat"`
+	Lng      float64 `json:"lng"`
 }
 
 func NewConsole(etl *etlserver.ETLService, e *echo.Echo, env string) *Console {
@@ -80,6 +90,9 @@ func NewConsole(etl *etlserver.ETLService, e *echo.Echo, env string) *Console {
 func (con *Console) Initialize() {
 	// Initialize dashboard cache with 5 second refresh rate
 	con.dashboardCache = NewCache(con.buildDashboardProps, 5*time.Second, con.logger.With(zap.String("service", "dashboard-cache")))
+
+	// Initialize validator locations cache with 5 minute refresh rate
+	con.validatorLocationsCache = NewCache(con.buildValidatorLocations, 5*time.Minute, con.logger.With(zap.String("service", "validator-locations-cache")))
 
 	// Start background refreshers (but not the dashboard cache yet - that needs ETL to be ready)
 	go con.refreshTrustedBlock()
@@ -148,6 +161,9 @@ func (con *Console) Initialize() {
 
 	e.GET("/search", con.Search)
 
+	// API endpoints
+	e.GET("/api/validator-locations", con.ValidatorLocations)
+
 	// SSE endpoints
 	e.GET("/sse/events", con.LiveEventsSSE)
 
@@ -199,6 +215,7 @@ func (con *Console) Run() error {
 		// Wait a moment for ETL to initialize
 		time.Sleep(2 * time.Second)
 		con.dashboardCache.StartRefresh(ctx)
+		con.validatorLocationsCache.StartRefresh(ctx)
 		return nil
 	})
 
@@ -1645,4 +1662,78 @@ func (con *Console) refreshTrustedBlock() {
 			con.lastRefreshTime.Store(time.Now().Unix())
 		}
 	}
+}
+
+// ValidatorLocations returns cached validator geographic positions
+func (con *Console) ValidatorLocations(c echo.Context) error {
+	locations := con.validatorLocationsCache.Get()
+	if locations == nil {
+		return c.JSON(http.StatusOK, []ValidatorLocation{})
+	}
+	return c.JSON(http.StatusOK, locations)
+}
+
+// buildValidatorLocations fetches lat/lng from each validator's /version endpoint
+func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLocation, error) {
+	validators, err := con.etl.GetDB().GetActiveValidators(ctx, db.GetActiveValidatorsParams{
+		Limit:  100,
+		Offset: 0,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active validators: %w", err)
+	}
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+	var locations []ValidatorLocation
+
+	for _, v := range validators {
+		endpoint := v.Endpoint
+		if endpoint == "" {
+			continue
+		}
+		if !strings.HasPrefix(endpoint, "http") {
+			endpoint = "https://" + endpoint
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "GET", endpoint+"/version", nil)
+		if err != nil {
+			con.logger.Warn("Failed to create version request", zap.String("endpoint", endpoint), zap.Error(err))
+			continue
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			con.logger.Warn("Failed to fetch version", zap.String("endpoint", endpoint), zap.Error(err))
+			continue
+		}
+
+		var versionResp struct {
+			Data struct {
+				Latitude  float64 `json:"latitude"`
+				Longitude float64 `json:"longitude"`
+			} `json:"data"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&versionResp)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		if versionResp.Data.Latitude != 0 || versionResp.Data.Longitude != 0 {
+			locations = append(locations, ValidatorLocation{
+				Address:  v.CometAddress,
+				Endpoint: v.Endpoint,
+				Lat:      versionResp.Data.Latitude,
+				Lng:      versionResp.Data.Longitude,
+			})
+		}
+	}
+
+	con.logger.Info("Fetched validator locations", zap.Int("count", len(locations)))
+	return locations, nil
 }

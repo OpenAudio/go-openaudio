@@ -31,7 +31,7 @@ func getUptimeBarColor(report *db.EtlSlaNodeReport) string {
 	}
 	// Simplified SLA check - assume meeting SLA if proposed blocks > 0 and not too many challenge failures
 	if report.NumBlocksProposed > 0 && report.ChallengesFailed <= (report.ChallengesReceived/5) {
-		return "bg-green-500"
+		return "bg-green-400"
 	}
 	return "bg-red-500"
 }
@@ -60,7 +60,7 @@ templ Validator(props ValidatorProps) {
 	@layouts.Base(fmt.Sprintf("Validator %s", props.Validator.Address[:8])) {
 		<div class="space-y-6">
 			<!-- Validator Info Card -->
-			<div class="shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]">
+			<div class="shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]">
 				<div class="flex justify-between items-start mb-4">
 					<div>
 						<h2 class="text-2xl font-bold text-gray-900 dark:text-white">Validator Details</h2>
@@ -75,7 +75,7 @@ templ Validator(props ValidatorProps) {
 							case "misbehavior_deregistered":
 								<span class="px-3 py-1 text-sm rounded-full bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200">Misbehavior</span>
 							default:
-								<span class="px-3 py-1 text-sm rounded-full bg-gray-100 dark:bg-[#141414] text-gray-800 dark:text-gray-200">Unknown</span>
+								<span class="px-3 py-1 text-sm rounded-full bg-gray-100 dark:bg-[#0a0a0a] text-gray-800 dark:text-gray-200">Unknown</span>
 						}
 					</div>
 				</div>
@@ -128,11 +128,11 @@ templ Validator(props ValidatorProps) {
 			</div>
 			<!-- Events History -->
 			if len(props.Events) > 0 {
-				<div class="shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]">
+				<div class="shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]">
 					<h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Event History</h3>
 					<div class="space-y-4">
 						for _, event := range props.Events {
-							<div class="border border-gray-200 dark:border-gray-600 rounded-lg p-4 hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
+							<div class="border border-gray-200 dark:border-gray-800 rounded-lg p-4 hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
 								<div class="flex justify-between items-start mb-2">
 									<div>
 										switch event.Type {
@@ -143,7 +143,7 @@ templ Validator(props ValidatorProps) {
 											case "misbehavior_deregistration":
 												<span class="px-2 py-1 text-xs rounded bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200">Misbehavior Deregistration</span>
 											default:
-												<span class="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-[#141414] text-gray-800 dark:text-gray-200">Unknown</span>
+												<span class="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-[#0a0a0a] text-gray-800 dark:text-gray-200">Unknown</span>
 										}
 									</div>
 									<div class="text-sm text-gray-500 dark:text-[#b3b3b3]">
@@ -176,14 +176,14 @@ templ Validator(props ValidatorProps) {
 				</div>
 			}
 			<!-- Uptime History Section -->
-			<div class="shadow-xl rounded-lg p-6 bg-white dark:bg-[#141414]">
+			<div class="shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]">
 				<h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4">SLA Rollup History</h3>
 				<p class="text-gray-500 dark:text-[#b3b3b3] text-sm mb-4">
 					Recent SLA rollup performance for this validator. Green indicates meeting SLA requirements, red indicates missing SLA, and dark gray indicates no activity.
 				</p>
 				<div class="flex items-center gap-6 text-sm text-gray-600 dark:text-[#b3b3b3] mb-6">
 					<div class="flex items-center gap-2">
-						<div class="w-4 h-5 bg-green-500 rounded-sm"></div>
+						<div class="w-4 h-5 bg-green-400 rounded-sm"></div>
 						<span>Meeting SLA</span>
 					</div>
 					<div class="flex items-center gap-2">

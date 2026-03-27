@@ -62,7 +62,7 @@ func validatorUptimeColor(report *db.EtlSlaNodeReport) string {
 		return "bg-gray-800"
 	}
 	if validatorMeetsSlaThreshold(report) {
-		return "bg-green-500"
+		return "bg-green-400"
 	}
 	return "bg-red-500"
 }
@@ -80,7 +80,7 @@ type ValidatorsProps struct {
 
 templ Validators(props ValidatorsProps) {
 	@layouts.Base("Validators") {
-		<div class="bg-white dark:bg-[#141414] rounded-lg shadow-xl p-6">
+		<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
 			<div class="flex items-center gap-6 mb-6">
 				<h2 class="text-2xl font-light text-gray-900 dark:text-white">Validators</h2>
 				<div class="flex-1 max-w-md">
@@ -89,7 +89,7 @@ templ Validators(props ValidatorsProps) {
 						id="endpointFilter"
 						placeholder="Filter by endpoint (e.g. audius.co)..."
 						value={ props.EndpointFilter }
-						class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-[#141414] text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+						class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-800 rounded-lg bg-white dark:bg-[#0a0a0a] text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500 focus:border-transparent"
 						onchange="updateFilters()"
 					/>
 				</div>
@@ -97,7 +97,7 @@ templ Validators(props ValidatorsProps) {
 					<div class="text-sm text-gray-500 dark:text-[#b3b3b3]">
 						Page { fmt.Sprint(props.CurrentPage) } • { fmt.Sprint(props.PageSize) } per page
 					</div>
-					<div class="flex border border-gray-200 dark:border-gray-600 rounded overflow-hidden">
+					<div class="flex border border-gray-200 dark:border-gray-800 rounded overflow-hidden">
 						<a
 							href={ templ.SafeURL(fmt.Sprintf("?type=active&endpoint_filter=%s", props.EndpointFilter)) }
 							class={ "px-4 py-2 text-sm font-medium transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "active"), templ.KV("text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700", props.QueryType != "active") }
@@ -106,13 +106,13 @@ templ Validators(props ValidatorsProps) {
 						</a>
 						<a
 							href={ templ.SafeURL(fmt.Sprintf("?type=registrations&endpoint_filter=%s", props.EndpointFilter)) }
-							class={ "px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-400 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "registrations"), templ.KV("text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#383838]", props.QueryType != "registrations") }
+							class={ "px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-800 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "registrations"), templ.KV("text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#383838]", props.QueryType != "registrations") }
 						>
 							Registrations
 						</a>
 						<a
 							href={ templ.SafeURL(fmt.Sprintf("?type=deregistrations&endpoint_filter=%s", props.EndpointFilter)) }
-							class={ "px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-400 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "deregistrations"), templ.KV("text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#383838]", props.QueryType != "deregistrations") }
+							class={ "px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-800 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "deregistrations"), templ.KV("text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#383838]", props.QueryType != "deregistrations") }
 						>
 							Deregistrations
 						</a>
@@ -123,7 +123,7 @@ templ Validators(props ValidatorsProps) {
 				<div class="space-y-2">
 					for _, validator := range props.Validators {
 						<a href={ templ.SafeURL(fmt.Sprintf("/validator/%s", validator.Address)) } class="block">
-							<div class="flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors cursor-pointer">
+							<div class="flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors cursor-pointer">
 								<div class="flex items-center gap-6 flex-1">
 									<div class="flex-2">
 										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Endpoint</div>
@@ -131,7 +131,7 @@ templ Validators(props ValidatorsProps) {
 											<div class="font-mono text-sm text-gray-700 dark:text-gray-300 overflow-x-auto scrollbar-hide whitespace-nowrap pb-1">
 												{ extractHost(validator.Endpoint) }
 											</div>
-											<div class="absolute top-0 right-0 w-8 h-full bg-white dark:bg-[#141414] pointer-events-none"></div>
+											<div class="absolute top-0 right-0 w-8 h-full bg-white dark:bg-[#0a0a0a] pointer-events-none"></div>
 										</div>
 									</div>
 									<div class="flex-1">
@@ -142,7 +142,7 @@ templ Validators(props ValidatorsProps) {
 									</div>
 									<div class="flex-1">
 										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Node Type</div>
-										<span class="px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-[#141414] text-gray-700 dark:text-gray-300 rounded">
+										<span class="px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-[#0a0a0a] text-gray-700 dark:text-gray-300 rounded">
 											{ validator.NodeType }
 										</span>
 									</div>
@@ -159,11 +159,11 @@ templ Validators(props ValidatorsProps) {
 												case "active":
 													<span class="px-2 py-1 text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded">Active</span>
 												case "deregistered":
-													<span class="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-[#141414] text-gray-700 dark:text-gray-300 rounded">Deregistered</span>
+													<span class="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-[#0a0a0a] text-gray-700 dark:text-gray-300 rounded">Deregistered</span>
 												case "misbehavior_deregistered":
-													<span class="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-[#141414] text-gray-700 dark:text-gray-300 rounded">Misbehavior</span>
+													<span class="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-[#0a0a0a] text-gray-700 dark:text-gray-300 rounded">Misbehavior</span>
 												default:
-													<span class="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-[#141414] text-gray-700 dark:text-gray-300 rounded">Unknown</span>
+													<span class="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-[#0a0a0a] text-gray-700 dark:text-gray-300 rounded">Unknown</span>
 											}
 											<span class="text-gray-400 dark:text-gray-500">|</span>
 											<div class="text-xs text-gray-500 dark:text-[#b3b3b3]">
@@ -188,12 +188,12 @@ templ Validators(props ValidatorsProps) {
 												}
 												// Fill remaining slots with empty bars if less than 5 rollups
 												for i := len(rollups); i < 5; i++ {
-													<div class="w-3 h-4 bg-gray-200 dark:bg-[#141414] rounded-sm" title="No data available"></div>
+													<div class="w-3 h-4 bg-gray-200 dark:bg-[#0a0a0a] rounded-sm" title="No data available"></div>
 												}
 											} else {
 												// Show placeholder bars if no uptime data available
 												for i := 0; i < 5; i++ {
-													<div class="w-3 h-4 bg-gray-200 dark:bg-[#141414] rounded-sm" title="No uptime data available"></div>
+													<div class="w-3 h-4 bg-gray-200 dark:bg-[#0a0a0a] rounded-sm" title="No uptime data available"></div>
 												}
 											}
 										</div>
@@ -203,29 +203,29 @@ templ Validators(props ValidatorsProps) {
 						</a>
 					}
 				</div>
-				<div class="flex justify-between items-center mt-6 pt-6 border-t border-gray-300 dark:border-gray-400">
+				<div class="flex justify-between items-center mt-6 pt-6 border-t border-gray-300 dark:border-gray-800">
 					<div class="flex gap-3">
 						if props.HasPrev {
 							<a
 								href={ templ.SafeURL(buildValidatorsPaginationURL(props.CurrentPage-1, props.PageSize, props.QueryType, props.EndpointFilter)) }
-								class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-[#141414] hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+								class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-[#0a0a0a] hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
 							>
 								← Previous
 							</a>
 						} else {
-							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-gray-600 bg-gray-50 dark:bg-[#141414] rounded cursor-not-allowed">
+							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-gray-600 bg-gray-50 dark:bg-[#0a0a0a] rounded cursor-not-allowed">
 								← Previous
 							</span>
 						}
 						if props.HasNext {
 							<a
 								href={ templ.SafeURL(buildValidatorsPaginationURL(props.CurrentPage+1, props.PageSize, props.QueryType, props.EndpointFilter)) }
-								class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-[#141414] hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+								class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-[#0a0a0a] hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
 							>
 								Next →
 							</a>
 						} else {
-							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-gray-600 bg-gray-50 dark:bg-[#141414] rounded cursor-not-allowed">
+							<span class="px-4 py-2 text-sm font-medium text-gray-400 dark:text-gray-600 bg-gray-50 dark:bg-[#0a0a0a] rounded cursor-not-allowed">
 								Next →
 							</span>
 						}
