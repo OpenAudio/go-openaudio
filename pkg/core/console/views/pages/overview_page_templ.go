@@ -2006,7 +2006,7 @@ func (p *Pages) OverviewPage(status *v1.GetStatusResponse) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				if status.PruningInfo.DataCompanionStatus != "" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 200, "<div class=\"text-xs text-secondary mt-2 pt-2 border-t border-gray-700\">Status: ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 200, "<div class=\"text-xs text-secondary mt-2 pt-2 border-t border-gray-800\">Status: ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -2129,7 +2129,7 @@ func (p *Pages) OverviewPage(status *v1.GetStatusResponse) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if status.SnapshotInfo != nil && status.SnapshotInfo.Enabled {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 215, "<div class=\"mt-6 pt-6 border-t border-gray-700\"><h3 class=\"text-lg font-medium mb-3\">State Sync Snapshots</h3><div class=\"bg-secondary rounded-lg p-4\"><div class=\"flex items-center justify-between mb-3\"><div><div class=\"text-sm text-secondary\">Serving snapshots for new nodes to sync quickly</div></div><div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 215, "<div class=\"mt-6 pt-6 border-t border-gray-800\"><h3 class=\"text-lg font-medium mb-3\">State Sync Snapshots</h3><div class=\"bg-secondary rounded-lg p-4\"><div class=\"flex items-center justify-between mb-3\"><div><div class=\"text-sm text-secondary\">Serving snapshots for new nodes to sync quickly</div></div><div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

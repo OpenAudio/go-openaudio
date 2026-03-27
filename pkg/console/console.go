@@ -163,6 +163,7 @@ func (con *Console) Initialize() {
 
 	// API endpoints
 	e.GET("/api/validator-locations", con.ValidatorLocations)
+	e.POST("/api/debug/play", con.DebugPlay)
 
 	// SSE endpoints
 	e.GET("/sse/events", con.LiveEventsSSE)
@@ -1563,14 +1564,6 @@ func (con *Console) LiveEventsSSE(c echo.Context) error {
 		con.etl.GetPlayPubsub().Unsubscribe(etl.PlayTopic, playCh)
 	}()
 
-	// Throttle state for block events
-	var (
-		latestBlock    *db.EtlBlock
-		lastSentHeight int64
-		blockTicker    = time.NewTicker(1 * time.Second)
-	)
-	defer blockTicker.Stop()
-
 	flusher.Flush()
 
 	timeout := time.After(sseConnectionTTL)
@@ -1585,23 +1578,17 @@ func (con *Console) LiveEventsSSE(c echo.Context) error {
 
 		case blockEvent := <-blockCh:
 			if blockEvent != nil {
-				latestBlock = blockEvent
-			}
-
-		case <-blockTicker.C:
-			if latestBlock != nil && latestBlock.BlockHeight > lastSentHeight {
-				// Send block event
-				blockEvent := SSEEvent{
+				// Send every block event immediately
+				event := SSEEvent{
 					Event: "block",
 					Data: map[string]interface{}{
-						"height":   latestBlock.BlockHeight,
-						"proposer": latestBlock.ProposerAddress,
-						"time":     latestBlock.BlockTime.Time.Format(time.RFC3339),
+						"height":   blockEvent.BlockHeight,
+						"proposer": blockEvent.ProposerAddress,
+						"time":     blockEvent.BlockTime.Time.Format(time.RFC3339),
 					},
 				}
-				eventData, _ := json.Marshal(blockEvent)
+				eventData, _ := json.Marshal(event)
 				fmt.Fprintf(c.Response(), "data: %s\n\n", string(eventData))
-				lastSentHeight = latestBlock.BlockHeight
 				flusher.Flush()
 			}
 
@@ -1612,12 +1599,15 @@ func (con *Console) LiveEventsSSE(c echo.Context) error {
 					if latLong, err := con.etl.GetLocationDB().GetLatLong(c.Request().Context(), play.City, play.Region, play.Country); err == nil {
 						lat := latLong.Latitude
 						lng := latLong.Longitude
-						// Send play event with coordinates
+						// Send play event with coordinates and location info
 						playEvent := SSEEvent{
 							Event: "play",
 							Data: map[string]interface{}{
 								"lat":       lat,
 								"lng":       lng,
+								"city":      play.City,
+								"region":    play.Region,
+								"country":   play.Country,
 								"timestamp": time.Now().Format(time.RFC3339),
 								"duration":  5, // Default 5 seconds for animation
 							},
@@ -1746,4 +1736,35 @@ func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLoc
 
 	con.logger.Info("Fetched validator locations", zap.Int("count", len(locations)))
 	return locations, nil
+}
+
+// DebugPlay injects a fake play event into the ETL pubsub for testing.
+// Usage: curl -X POST 'https://node1.oap.devnet/api/debug/play?city=Tokyo&region=Kanto&country=Japan'
+func (con *Console) DebugPlay(c echo.Context) error {
+	city := c.QueryParam("city")
+	region := c.QueryParam("region")
+	country := c.QueryParam("country")
+	if city == "" {
+		city = "San Francisco"
+	}
+	if region == "" {
+		region = "California"
+	}
+	if country == "" {
+		country = "United States"
+	}
+
+	play := &db.EtlPlay{
+		City:    city,
+		Region:  region,
+		Country: country,
+	}
+
+	con.etl.GetPlayPubsub().Publish(c.Request().Context(), etl.PlayTopic, play)
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"ok":      true,
+		"city":    city,
+		"region":  region,
+		"country": country,
+	})
 }

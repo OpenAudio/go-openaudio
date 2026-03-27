@@ -709,7 +709,7 @@ templ (p *Pages) OverviewPage(status *v1.GetStatusResponse) {
 									Policy: Keep last { fmt.Sprintf("%d", status.PruningInfo.RetainBlocks) } blocks
 								</div>
 								if status.PruningInfo.DataCompanionStatus != "" {
-									<div class="text-xs text-secondary mt-2 pt-2 border-t border-gray-700">
+									<div class="text-xs text-secondary mt-2 pt-2 border-t border-gray-800">
 										Status: { status.PruningInfo.DataCompanionStatus }
 									</div>
 								}
@@ -752,7 +752,7 @@ templ (p *Pages) OverviewPage(status *v1.GetStatusResponse) {
 				}
 				<!-- Snapshots for State Sync -->
 				if status.SnapshotInfo != nil && status.SnapshotInfo.Enabled {
-					<div class="mt-6 pt-6 border-t border-gray-700">
+					<div class="mt-6 pt-6 border-t border-gray-800">
 						<h3 class="text-lg font-medium mb-3">State Sync Snapshots</h3>
 						<div class="bg-secondary rounded-lg p-4">
 							<div class="flex items-center justify-between mb-3">

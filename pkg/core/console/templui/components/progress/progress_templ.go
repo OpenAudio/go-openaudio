@@ -257,7 +257,7 @@ func sizeClasses(size Size) string {
 func variantClasses(variant Variant) string {
 	switch variant {
 	case VariantSuccess:
-		return "bg-green-500"
+		return "bg-green-400"
 	case VariantDanger:
 		return "bg-destructive"
 	case VariantWarning:

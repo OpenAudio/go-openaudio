@@ -242,10 +242,15 @@ templ Dashboard(props DashboardProps) {
 					x-init="initSSEEventSource(); init()"
 				>
 					<div class="absolute inset-0 flex items-center justify-center">
-						<div class="w-[460px] h-[460px] flex-shrink-0">
+						<div class="w-[460px] h-[460px] flex-shrink-0 relative">
 							<canvas
 								x-ref="globeCanvas"
 								class="w-full h-full cursor-grab"
+								style="aspect-ratio: 1;"
+							></canvas>
+							<canvas
+								x-ref="overlayCanvas"
+								class="absolute inset-0 w-full h-full pointer-events-none"
 								style="aspect-ratio: 1;"
 							></canvas>
 						</div>
@@ -626,6 +631,7 @@ templ GlobeScript() {
 			return {
 				globe: null,
 				markers: [],
+				playMarkers: [],
 				validatorNodes: [],
 				proposalLines: [],
 				phi: 0.3,
@@ -640,7 +646,8 @@ templ GlobeScript() {
 				playEventListener: null,
 				blockEventListener: null,
 				MARKER_DECAY_MS: 8000,
-				PROPOSAL_LINE_DECAY_MS: 5000,
+				PLAY_DECAY_MS: 1000,
+				PROPOSAL_LINE_DECAY_MS: 1500,
 
 				async init() {
 					const canvas = this.$refs.globeCanvas;
@@ -667,7 +674,7 @@ templ GlobeScript() {
 						mapSamples: 24000,
 						mapBrightness: isDarkMode ? 8 : 6,
 						baseColor: isDarkMode ? [0.15, 0.15, 0.15] : [0.9, 0.9, 0.9],
-						markerColor: isDarkMode ? [0.9, 0.9, 0.9] : [0.3, 0.3, 0.3],
+						markerColor: isDarkMode ? [0.29, 0.87, 0.50] : [0.18, 0.55, 0.34],
 						glowColor: isDarkMode ? [0.08, 0.08, 0.08] : [0.85, 0.85, 0.85],
 						markers: [],
 					});
@@ -679,9 +686,9 @@ templ GlobeScript() {
 					this.playEventListener = (event) => {
 						const play = event.detail;
 						if (play && play.lat && play.lng) {
-							this.markers.push({
+							this.playMarkers.push({
 								location: [play.lat, play.lng],
-								size: 0.06 + Math.random() * 0.04,
+								size: 0.04,
 								addedAt: Date.now(),
 							});
 							this.connected = true;
@@ -740,6 +747,31 @@ templ GlobeScript() {
 					window.addEventListener('beforeunload', () => this.cleanup());
 				},
 
+				// Orthographic projection matching COBE's convention
+				projectToScreen(lat, lng, radius, cx, cy) {
+					const latRad = lat * Math.PI / 180;
+					const lngRad = lng * Math.PI / 180;
+					// Point on unit sphere
+					const x0 = Math.cos(latRad) * Math.sin(lngRad);
+					const y0 = -Math.sin(latRad);
+					const z0 = Math.cos(latRad) * Math.cos(lngRad);
+					// Rotate by phi around Y axis (globe spin)
+					const cp = Math.cos(this.phi);
+					const sp = Math.sin(this.phi);
+					const x1 = x0 * cp + z0 * sp;
+					const y1 = y0;
+					const z1 = -x0 * sp + z0 * cp;
+					// Rotate by theta around X axis (tilt)
+					const ct = Math.cos(-this.theta);
+					const st = Math.sin(-this.theta);
+					const x2 = x1;
+					const y2 = y1 * ct - z1 * st;
+					const z2 = y1 * st + z1 * ct;
+					// Behind globe
+					if (z2 < 0.05) return null;
+					return { x: cx + x2 * radius, y: cy + y2 * radius };
+				},
+
 				animate() {
 					const now = Date.now();
 
@@ -752,19 +784,6 @@ templ GlobeScript() {
 					// Build marker array for COBE
 					const allMarkers = [];
 
-					// Play event markers with scale animation
-					for (const m of this.markers) {
-						const age = now - m.addedAt;
-						const progress = age / this.MARKER_DECAY_MS;
-						const scale = progress < 0.15
-							? (progress / 0.15)
-							: 1 - ((progress - 0.15) / 0.85);
-						allMarkers.push({
-							location: m.location,
-							size: m.size * Math.max(0, scale),
-						});
-					}
-
 					// Static validator node markers (persistent)
 					for (const node of this.validatorNodes) {
 						allMarkers.push({
@@ -773,22 +792,21 @@ templ GlobeScript() {
 						});
 					}
 
-					// Proposal line markers (sequential points along arced great circles)
+					// Decay old play markers
+					this.playMarkers = this.playMarkers.filter(m => now - m.addedAt < this.PLAY_DECAY_MS);
+
+					// Proposal line markers — thin laser streak along arced great circles
 					for (const line of this.proposalLines) {
 						const age = now - line.addedAt;
 						const progress = Math.min(age / this.PROPOSAL_LINE_DECAY_MS, 1);
 						const totalPoints = line.points.length;
-						// Animate a "head" that travels along the arc
-						const headPos = Math.min(progress * 3, 1.0); // head reaches end at 33% of lifetime
-						const headIndex = Math.floor(headPos * (totalPoints - 1));
-						for (let i = 0; i < totalPoints; i++) {
-							if (i > headIndex) break; // only show points the head has passed
-							// Trail fades behind the head
-							const distFromHead = (headIndex - i) / totalPoints;
-							const trailFade = Math.max(0, 1 - distFromHead * 3);
-							// Overall fade out in last portion of lifetime
-							const lifeFade = progress > 0.5 ? Math.max(0, 1 - (progress - 0.5) / 0.5) : 1;
-							const size = 0.04 * trailFade * lifeFade;
+						const headIndex = Math.floor(progress * (totalPoints - 1));
+						const trailLength = 6;
+						const startIndex = Math.max(0, headIndex - trailLength);
+						for (let i = startIndex; i <= headIndex && i < totalPoints; i++) {
+							const distFromHead = headIndex - i;
+							const trailFade = 1 - (distFromHead / trailLength);
+							const size = 0.025 * trailFade * trailFade;
 							if (size > 0.001) {
 								allMarkers.push({
 									location: line.points[i],
@@ -815,6 +833,39 @@ templ GlobeScript() {
 						markers: allMarkers,
 					});
 
+					// Draw play markers on overlay canvas (purple → white → fade)
+					const overlay = this.$refs.overlayCanvas;
+					if (overlay) {
+						const dpr = window.devicePixelRatio || 1;
+						const w = overlay.offsetWidth;
+						const h = overlay.offsetHeight;
+						if (overlay.width !== w * dpr || overlay.height !== h * dpr) {
+							overlay.width = w * dpr;
+							overlay.height = h * dpr;
+						}
+						const ctx = overlay.getContext('2d');
+						ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+						ctx.clearRect(0, 0, w, h);
+						const radius = w * 0.44;
+						const cx = w / 2;
+						const cy = h / 2;
+						for (const m of this.playMarkers) {
+							const pos = this.projectToScreen(m.location[0], m.location[1], radius, cx, cy);
+							if (!pos) continue;
+							const age = now - m.addedAt;
+							const progress = age / this.PLAY_DECAY_MS;
+							const alpha = Math.max(0, 1 - progress);
+							// Purple (#c084fc) → white over lifetime
+							const r = Math.round(192 + (255 - 192) * progress);
+							const g = Math.round(132 + (255 - 132) * progress);
+							const b = Math.round(252 + (255 - 252) * progress);
+							ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+							ctx.beginPath();
+							ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
+							ctx.fill();
+						}
+					}
+
 					this.rafId = requestAnimationFrame(() => this.animate());
 				},
 
@@ -832,7 +883,7 @@ templ GlobeScript() {
 						const points = this.greatCirclePoints(
 							[proposer.lat, proposer.lng],
 							[node.lat, node.lng],
-							40
+							60
 						);
 						this.proposalLines.push({ points, addedAt: now });
 					}
@@ -1172,15 +1223,17 @@ templ BlockEventsScript() {
 		function blockEvents() {
 			return {
 				recentBlocks: [],
+				recentPlays: [],
 				latestBlock: { height: 0, proposer: '' },
 				validatorCount: 0,
 				blockEventListener: null,
-				
+				playEventListener: null,
+
 				init(initialState = {}) {
 					// Set initial state from server-rendered values
 					const networkSidebar = document.querySelector('#network-sidebar');
 					const statsHeader = document.querySelector('#stats-header');
-					
+
 					// Set initial validator count from server
 					if (initialState.validatorCount) {
 						this.validatorCount = parseInt(initialState.validatorCount);
@@ -1206,12 +1259,16 @@ templ BlockEventsScript() {
 						}
 					}
 
-					// Create bound event listener for proper cleanup
+					// Create bound event listeners for proper cleanup
 					this.blockEventListener = (event) => {
 						this.handleBlockEvent(event.detail);
 					};
-					
 					document.addEventListener('block', this.blockEventListener);
+
+					this.playEventListener = (event) => {
+						this.handlePlayEvent(event.detail);
+					};
+					document.addEventListener('play', this.playEventListener);
 				},
 
 				formatProposer(proposer) {
@@ -1231,25 +1288,40 @@ templ BlockEventsScript() {
 					// Add new block to the beginning of the array
 					this.recentBlocks.unshift(blockData);
 					
-					// Keep only the last 5 blocks to prevent memory growth
-					if (this.recentBlocks.length > 5) {
-						this.recentBlocks = this.recentBlocks.slice(0, 5);
+					// Keep only the last 3 blocks
+					if (this.recentBlocks.length > 3) {
+						this.recentBlocks = this.recentBlocks.slice(0, 3);
 					}
 
 					// Update latest block
 					this.latestBlock = blockData;
 				},
 
+				handlePlayEvent(playData) {
+					if (!playData || !playData.city) return;
+					const location = [playData.city, playData.region].filter(Boolean).join(', ');
+					this.recentPlays.unshift({
+						location: location,
+						timestamp: playData.timestamp,
+					});
+					// Keep only the last 3 plays
+					if (this.recentPlays.length > 3) {
+						this.recentPlays = this.recentPlays.slice(0, 3);
+					}
+				},
+
 				// Alpine.js lifecycle hook
 				destroy() {
-					// Remove event listener
 					if (this.blockEventListener) {
 						document.removeEventListener('block', this.blockEventListener);
 						this.blockEventListener = null;
 					}
-					
-					// Clear arrays
+					if (this.playEventListener) {
+						document.removeEventListener('play', this.playEventListener);
+						this.playEventListener = null;
+					}
 					this.recentBlocks = [];
+					this.recentPlays = [];
 				}
 			}
 		}
@@ -1775,7 +1847,7 @@ templ NetworkSidebarFragment(stats *DashboardStats) {
 			<h4 class="text-xs font-semibold mb-2 text-gray-900 dark:text-gray-100 uppercase tracking-wide">Recent Proposers</h4>
 			<div class="space-y-1">
 				<template x-if="recentBlocks.length > 0">
-					<template x-for="(block, index) in recentBlocks" :key="block.height">
+					<template x-for="(block, index) in recentBlocks.slice(0, 3)" :key="block.height">
 						<div class="flex items-center justify-between">
 							<span class="text-xs text-gray-500 dark:text-gray-500" x-text="'#' + (index + 1)"></span>
 							<a :href="'/validator/' + block.proposer" class="font-mono text-xs text-gray-400 dark:text-[#b3b3b3] hover:underline truncate" x-text="formatProposer(block.proposer)"></a>
@@ -1784,14 +1856,31 @@ templ NetworkSidebarFragment(stats *DashboardStats) {
 				</template>
 				<template x-if="recentBlocks.length === 0">
 					<div class="text-center py-1">
-						<p class="text-gray-500 dark:text-gray-400 text-xs">No recent proposers</p>
-						<p class="text-xs text-gray-400 dark:text-gray-500">
+						<p class="text-gray-500 dark:text-gray-400 text-xs">
 							if stats.IsSyncing {
 								Syncing...
 							} else {
 								Waiting...
 							}
 						</p>
+					</div>
+				</template>
+			</div>
+		</div>
+		<div class="bg-white/90 dark:bg-[#0a0a0a]/90 backdrop-blur-md rounded-lg p-3 border border-white/20 dark:border-gray-800/50 shadow-lg">
+			<h4 class="text-xs font-semibold mb-2 text-gray-900 dark:text-gray-100 uppercase tracking-wide">Recent Plays</h4>
+			<div class="space-y-1">
+				<template x-if="recentPlays.length > 0">
+					<template x-for="(play, index) in recentPlays" :key="index">
+						<div class="flex items-center justify-between">
+							<span class="text-xs text-gray-500 dark:text-gray-500">▶</span>
+							<span class="text-xs text-gray-400 dark:text-[#b3b3b3] truncate" x-text="play.location"></span>
+						</div>
+					</template>
+				</template>
+				<template x-if="recentPlays.length === 0">
+					<div class="text-center py-1">
+						<p class="text-gray-500 dark:text-gray-400 text-xs">Waiting for plays...</p>
 					</div>
 				</template>
 			</div>
