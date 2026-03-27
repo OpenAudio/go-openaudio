@@ -53,9 +53,11 @@ func (con *Console) nodesPage(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Fetch consensus validators from CometBFT
+	// CometBFT caps per_page at 100 (the maximum allowed value)
 	var consensusNodes []pages.ConsensusNode
 	if con.rpc != nil {
-		validators, err := con.rpc.Validators(ctx, nil, nil, nil)
+		page, perPage := 1, 100
+		validators, err := con.rpc.Validators(ctx, nil, &page, &perPage)
 		if err == nil && validators != nil {
 			// Build a map of comet address -> core_validator for cross-referencing
 			allNodes, _ := con.db.GetAllRegisteredNodesIncludingJailed(ctx)
@@ -201,7 +203,8 @@ func (con *Console) versionAdoptionAPI(c echo.Context) error {
 	includedSelf := false
 
 	if con.rpc != nil {
-		validators, err := con.rpc.Validators(ctx, nil, nil, nil)
+		page, perPage := 1, 100
+		validators, err := con.rpc.Validators(ctx, nil, &page, &perPage)
 		if err == nil && validators != nil {
 			consensusTotal = len(validators.Validators)
 
