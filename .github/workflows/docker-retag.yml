@@ -10,7 +10,10 @@ on:
       target_tag:
         description: 'Target tag'
         required: true
-        type: string
+        type: choice
+        options:
+          - edge
+          - stable
 
 jobs:
   retag-docker:
