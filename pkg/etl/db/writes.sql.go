@@ -472,3 +472,36 @@ func (q *Queries) RegisterValidator(ctx context.Context, arg RegisterValidatorPa
 	)
 	return err
 }
+
+const upsertValidatorFromPeer = `-- name: UpsertValidatorFromPeer :exec
+insert into etl_validators (address, endpoint, comet_address, node_type, spid, voting_power, status, registered_at, deregistered_at, created_at, updated_at)
+values ($1, $2, $3, $4, $5, $6, 'active', 0, null, now(), now())
+on conflict (endpoint) do update set
+  comet_address = excluded.comet_address,
+  node_type = excluded.node_type,
+  voting_power = excluded.voting_power,
+  status = 'active',
+  updated_at = now()
+where etl_validators.status != 'active' or etl_validators.comet_address != excluded.comet_address or etl_validators.voting_power != excluded.voting_power
+`
+
+type UpsertValidatorFromPeerParams struct {
+	Address      string `json:"address"`
+	Endpoint     string `json:"endpoint"`
+	CometAddress string `json:"comet_address"`
+	NodeType     string `json:"node_type"`
+	Spid         string `json:"spid"`
+	VotingPower  int64  `json:"voting_power"`
+}
+
+func (q *Queries) UpsertValidatorFromPeer(ctx context.Context, arg UpsertValidatorFromPeerParams) error {
+	_, err := q.db.Exec(ctx, upsertValidatorFromPeer,
+		arg.Address,
+		arg.Endpoint,
+		arg.CometAddress,
+		arg.NodeType,
+		arg.Spid,
+		arg.VotingPower,
+	)
+	return err
+}

@@ -123,6 +123,10 @@ func (e *Indexer) Run() error {
 		return nil
 	})
 
+	g.Go(func() error {
+		return e.syncValidatorsFromCore(gCtx)
+	})
+
 	return g.Wait()
 }
 

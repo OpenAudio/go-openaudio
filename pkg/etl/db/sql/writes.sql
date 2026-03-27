@@ -61,5 +61,16 @@ insert into etl_validators (address, endpoint, comet_address, node_type, spid, v
 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
 on conflict (endpoint) do nothing;
 
+-- name: UpsertValidatorFromPeer :exec
+insert into etl_validators (address, endpoint, comet_address, node_type, spid, voting_power, status, registered_at, deregistered_at, created_at, updated_at)
+values ($1, $2, $3, $4, $5, $6, 'active', 0, null, now(), now())
+on conflict (endpoint) do update set
+  comet_address = excluded.comet_address,
+  node_type = excluded.node_type,
+  voting_power = excluded.voting_power,
+  status = 'active',
+  updated_at = now()
+where etl_validators.status != 'active' or etl_validators.comet_address != excluded.comet_address or etl_validators.voting_power != excluded.voting_power;
+
 -- name: DeregisterValidator :exec
 update etl_validators set deregistered_at = $1, updated_at = $2, status = $3 where comet_address = $4;
