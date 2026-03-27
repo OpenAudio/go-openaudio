@@ -952,86 +952,12 @@ templ GlobeScript() {
 
 				async fetchValidatorLocations() {
 					try {
-						// Try server-side cached endpoint first
 						const resp = await fetch('/api/validator-locations');
-						let nodes = [];
-						if (resp.ok) {
-							nodes = await resp.json();
+						if (!resp.ok) return;
+						const nodes = await resp.json();
+						if (Array.isArray(nodes) && nodes.length > 0) {
+							this.validatorNodes = nodes;
 						}
-
-						// Fallback: scrape validator endpoints from the page and fetch /version + comet address directly
-						if (!nodes || nodes.length === 0) {
-							console.log('API returned no validator locations, trying client-side fallback...');
-							try {
-								const validatorsResp = await fetch('/validators');
-								if (validatorsResp.ok) {
-									const html = await validatorsResp.text();
-									// Extract endpoint hostnames from the page text
-									const hostMatches = html.match(/node\d+\.[a-z.]+\.[a-z]+/g) || [];
-									const endpoints = [...new Set(hostMatches)];
-
-									// Fetch /version and comet address from each endpoint
-									const fetches = endpoints.map(async (ep) => {
-										try {
-											const vResp = await fetch(`https://${ep}/version`);
-											if (!vResp.ok) return null;
-											const vData = await vResp.json();
-
-											// Get comet address via CometBFT JSON-RPC
-											let cometAddr = ep;
-											try {
-												const cometResp = await fetch(`https://${ep}/core/crpc`, {
-													method: 'POST',
-													headers: { 'Content-Type': 'application/json' },
-													body: JSON.stringify({ jsonrpc: '2.0', method: 'status', params: [], id: 1 }),
-												});
-												if (cometResp.ok) {
-													const cometData = await cometResp.json();
-													cometAddr = cometData?.result?.validator_info?.address || ep;
-												}
-											} catch(e) { /* use fallback address */ }
-
-											return {
-												address: cometAddr,
-												endpoint: ep,
-												lat: vData?.data?.latitude || 0,
-												lng: vData?.data?.longitude || 0,
-											};
-										} catch(e) { return null; }
-									});
-									nodes = (await Promise.all(fetches)).filter(n => n && (n.lat !== 0 || n.lng !== 0));
-								}
-							} catch (e) {
-								console.warn('Client-side validator location fallback failed:', e);
-							}
-						}
-
-						// If all nodes are co-located (e.g. devnet), spread them out for visualization
-						if (nodes.length > 1) {
-							const allSame = nodes.every(n =>
-								Math.abs(n.lat - nodes[0].lat) < 0.01 &&
-								Math.abs(n.lng - nodes[0].lng) < 0.01
-							);
-							if (allSame) {
-								const spreadLocations = [
-									{ lat: 37.77, lng: -122.42 },  // San Francisco
-									{ lat: 40.71, lng: -74.01 },   // New York
-									{ lat: 51.51, lng: -0.13 },    // London
-									{ lat: 35.68, lng: 139.69 },   // Tokyo
-									{ lat: -33.87, lng: 151.21 },  // Sydney
-									{ lat: 1.35, lng: 103.82 },    // Singapore
-									{ lat: 48.86, lng: 2.35 },     // Paris
-									{ lat: 52.52, lng: 13.41 },    // Berlin
-								];
-								nodes = nodes.map((n, i) => ({
-									...n,
-									lat: spreadLocations[i % spreadLocations.length].lat,
-									lng: spreadLocations[i % spreadLocations.length].lng,
-								}));
-							}
-						}
-						this.validatorNodes = nodes;
-						console.log('Validator nodes loaded:', nodes.length, nodes);
 					} catch (e) {
 						console.error('Failed to fetch validator locations:', e);
 					}

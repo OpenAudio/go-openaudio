@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -93,7 +94,7 @@ func (con *Console) Initialize() {
 	con.dashboardCache = NewCache(con.buildDashboardProps, 5*time.Second, con.logger.With(zap.String("service", "dashboard-cache")))
 
 	// Initialize validator locations cache with 30 second refresh rate
-	con.validatorLocationsCache = NewCache(con.buildValidatorLocations, 30*time.Second, con.logger.With(zap.String("service", "validator-locations-cache")))
+	con.validatorLocationsCache = NewCache(con.buildValidatorLocations, 5*time.Minute, con.logger.With(zap.String("service", "validator-locations-cache")))
 
 	// Start background refreshers (but not the dashboard cache yet - that needs ETL to be ready)
 	go con.refreshTrustedBlock()
@@ -1770,14 +1771,21 @@ func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLoc
 	con.logger.Info("Found active validators for location fetch", zap.Int("count", len(validators)))
 
 	client := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}
-	var locations []ValidatorLocation
 
-	for _, v := range validators {
+	// Fetch all validator locations concurrently
+	type locResult struct {
+		location ValidatorLocation
+		ok       bool
+	}
+	results := make([]locResult, len(validators))
+	var wg sync.WaitGroup
+
+	for i, v := range validators {
 		endpoint := v.Endpoint
 		if endpoint == "" {
 			continue
@@ -1785,42 +1793,57 @@ func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLoc
 		if !strings.HasPrefix(endpoint, "http") {
 			endpoint = "https://" + endpoint
 		}
+		wg.Add(1)
+		go func(idx int, ep string, validator db.EtlValidator) {
+			defer wg.Done()
 
-		req, err := http.NewRequestWithContext(ctx, "GET", endpoint+"/version", nil)
-		if err != nil {
-			con.logger.Warn("Failed to create version request", zap.String("endpoint", endpoint), zap.Error(err))
-			continue
-		}
+			req, err := http.NewRequestWithContext(ctx, "GET", ep+"/version", nil)
+			if err != nil {
+				con.logger.Warn("Failed to create version request", zap.String("endpoint", ep), zap.Error(err))
+				return
+			}
 
-		resp, err := client.Do(req)
-		if err != nil {
-			con.logger.Warn("Failed to fetch version", zap.String("endpoint", endpoint), zap.Error(err))
-			continue
-		}
+			resp, err := client.Do(req)
+			if err != nil {
+				con.logger.Warn("Failed to fetch version", zap.String("endpoint", ep), zap.Error(err))
+				return
+			}
 
-		var versionResp struct {
-			Data struct {
-				Latitude  float64 `json:"latitude"`
-				Longitude float64 `json:"longitude"`
-			} `json:"data"`
-		}
-		err = json.NewDecoder(resp.Body).Decode(&versionResp)
-		resp.Body.Close()
-		if err != nil {
-			continue
-		}
+			var versionResp struct {
+				Data struct {
+					Latitude  float64 `json:"latitude"`
+					Longitude float64 `json:"longitude"`
+				} `json:"data"`
+			}
+			err = json.NewDecoder(resp.Body).Decode(&versionResp)
+			resp.Body.Close()
+			if err != nil {
+				return
+			}
 
-		if versionResp.Data.Latitude != 0 || versionResp.Data.Longitude != 0 {
-			locations = append(locations, ValidatorLocation{
-				Address:  v.CometAddress,
-				Endpoint: v.Endpoint,
-				Lat:      versionResp.Data.Latitude,
-				Lng:      versionResp.Data.Longitude,
-			})
+			if versionResp.Data.Latitude != 0 || versionResp.Data.Longitude != 0 {
+				results[idx] = locResult{
+					location: ValidatorLocation{
+						Address:  validator.CometAddress,
+						Endpoint: validator.Endpoint,
+						Lat:      versionResp.Data.Latitude,
+						Lng:      versionResp.Data.Longitude,
+					},
+					ok: true,
+				}
+			}
+		}(i, endpoint, v)
+	}
+	wg.Wait()
+
+	var locations []ValidatorLocation
+	for _, r := range results {
+		if r.ok {
+			locations = append(locations, r.location)
 		}
 	}
 
-	con.logger.Info("Fetched validator locations", zap.Int("count", len(locations)))
+	con.logger.Info("Fetched validator locations", zap.Int("count", len(locations)), zap.Int("total_validators", len(validators)))
 	return locations, nil
 }
 
