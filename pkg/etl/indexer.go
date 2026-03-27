@@ -197,17 +197,6 @@ func (e *Indexer) indexBlocks() error {
 			continue
 		}
 
-		// Insert into legacy blocks table for entity manager FK constraints
-		if e.dispatcher.HandlerCount() > 0 {
-			_, err = e.pool.Exec(context.Background(),
-				`INSERT INTO blocks (blockhash, number, is_current) VALUES ($1, $2, false) ON CONFLICT DO NOTHING`,
-				fmt.Sprintf("etl-%d", block.Msg.Block.Height), block.Msg.Block.Height)
-			if err != nil {
-				e.logger.Error("error inserting legacy block", zap.Int64("height", nextHeight), zap.Error(err))
-				continue
-			}
-		}
-
 		var wg sync.WaitGroup
 		wg.Add(len(block.Msg.Block.Transactions))
 
