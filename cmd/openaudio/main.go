@@ -145,6 +145,11 @@ func main() {
 		indexer.SetDBURL(dbUrl)
 		indexer.SetCheckReadiness(false) // Don't wait for core to be ready when console is enabled
 
+		// Configure ETL data types from env var
+		etlConfig := etl.DefaultConfig()
+		etlConfig.ReadDataTypesEnv()
+		indexer.SetConfig(etlConfig)
+
 		locationDB, err := location.NewLocationService()
 		if err != nil {
 			rootLogger.Error("error creating location service", zap.Error(err))

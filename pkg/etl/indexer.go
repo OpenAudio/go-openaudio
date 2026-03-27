@@ -68,7 +68,15 @@ func (e *Indexer) Run() error {
 
 	// Initialize entity manager dispatcher and register handlers
 	e.dispatcher = em.NewDispatcher(e.logger)
-	e.dispatcher.Register(em.UserCreate())
+	if e.config.IsDataTypeEnabled(em.EntityTypeUser) {
+		e.dispatcher.Register(em.UserCreate())
+	}
+
+	if e.dispatcher.HandlerCount() > 0 {
+		e.logger.Info("entity manager enabled", zap.Int("handlers", e.dispatcher.HandlerCount()))
+	} else {
+		e.logger.Info("entity manager disabled (no data types enabled)")
+	}
 
 	// Initialize pubsub instances
 	e.blockPubsub = NewPubsub[*db.EtlBlock]()
@@ -187,6 +195,17 @@ func (e *Indexer) indexBlocks() error {
 		if err != nil {
 			e.logger.Error("error inserting block", zap.Int64("height", nextHeight), zap.Error(err))
 			continue
+		}
+
+		// Insert into legacy blocks table for entity manager FK constraints
+		if e.dispatcher.HandlerCount() > 0 {
+			_, err = e.pool.Exec(context.Background(),
+				`INSERT INTO blocks (blockhash, number, is_current) VALUES ($1, $2, false) ON CONFLICT DO NOTHING`,
+				fmt.Sprintf("etl-%d", block.Msg.Block.Height), block.Msg.Block.Height)
+			if err != nil {
+				e.logger.Error("error inserting legacy block", zap.Int64("height", nextHeight), zap.Error(err))
+				continue
+			}
 		}
 
 		var wg sync.WaitGroup
