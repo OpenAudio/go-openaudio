@@ -67,17 +67,6 @@ jobs:
           git tag -a ${{ inputs.version }} -m "Release ${{ inputs.version }}"
           git push origin ${{ inputs.version }}
 
-      - name: Determine if prerelease
-        id: prerelease
-        run: |
-          # main branch releases are prereleases
-          # mainnet-alpha-beta releases are stable
-          if [[ "${{ inputs.branch }}" == "main" ]]; then
-            echo "is_prerelease=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_prerelease=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -85,7 +74,6 @@ jobs:
           name: ${{ inputs.version }}
           body: ${{ inputs.release_notes }}
           draft: false
-          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
           generate_release_notes: true
 
   build-test-push:
