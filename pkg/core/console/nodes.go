@@ -80,6 +80,23 @@ func (con *Console) nodesPage(c echo.Context) error {
 		}
 	}
 
+	// Fetch versions for consensus nodes concurrently
+	if len(consensusNodes) > 0 {
+		var wg sync.WaitGroup
+		client := &http.Client{Timeout: 5 * time.Second}
+		for i := range consensusNodes {
+			if consensusNodes[i].Endpoint == "" {
+				continue
+			}
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				consensusNodes[idx].Version = fetchNodeVersion(ctx, client, consensusNodes[idx].Endpoint)
+			}(i)
+		}
+		wg.Wait()
+	}
+
 	// Fetch all core_validators (including jailed)
 	nodes, err := con.db.GetAllRegisteredNodesIncludingJailed(ctx)
 	if err != nil {

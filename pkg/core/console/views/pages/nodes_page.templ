@@ -12,6 +12,7 @@ type ConsensusNode struct {
 	EthAddress   string
 	NodeType     string
 	VotingPower  int64
+	Version      string
 }
 
 type EthEndpoint struct {
@@ -98,7 +99,10 @@ templ (p *Pages) NodesPageHTML(data *NodesView) {
 										<div>Comet Address: { node.CometAddress }</div>
 									}
 								</div>
-								<div>Voting Power: { fmt.Sprintf("%d", node.VotingPower) }</div>
+								if node.Version != "" {
+								<div>Version: { node.Version }</div>
+							}
+							<div>Voting Power: { fmt.Sprintf("%d", node.VotingPower) }</div>
 							</div>
 						</div>
 					}
