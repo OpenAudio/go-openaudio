@@ -216,12 +216,14 @@ func (con *Console) Run() error {
 	// Start dashboard cache refresh after ETL is ready
 	g.Go(func() error {
 		time.Sleep(2 * time.Second)
+		con.logger.Info("Starting dashboard cache refresh")
 		con.dashboardCache.StartRefresh(ctx)
 		return nil
 	})
 
 	g.Go(func() error {
 		time.Sleep(2 * time.Second)
+		con.logger.Info("Starting validator locations cache refresh")
 		con.validatorLocationsCache.StartRefresh(ctx)
 		return nil
 	})

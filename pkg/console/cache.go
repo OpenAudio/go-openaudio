@@ -75,5 +75,5 @@ func (c *Cache[T]) refresh(ctx context.Context) {
 	c.lastUpdated = time.Now()
 	c.mu.Unlock()
 
-	c.logger.Debug("Cache refreshed", zap.Duration("duration", time.Since(start)))
+	c.logger.Info("Cache refreshed", zap.Duration("duration", time.Since(start)))
 }
