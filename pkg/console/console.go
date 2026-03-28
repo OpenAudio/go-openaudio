@@ -82,7 +82,7 @@ func NewConsole(etl *etlserver.ETLService, e *echo.Echo, env string) *Console {
 	return &Console{
 		etl:             etl,
 		e:               e,
-		logger:          zap.NewNop().With(zap.String("service", "console")),
+		logger:          zap.Must(zap.NewProduction()).With(zap.String("service", "console")),
 		env:             env,
 		trustedNode:     sdk.NewOpenAudioSDK(trustedNodeURL),
 		refreshInterval: 10 * time.Second,
