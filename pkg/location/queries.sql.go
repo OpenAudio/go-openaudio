@@ -43,6 +43,22 @@ func (q *Queries) GetCountryCode(ctx context.Context, name string) (sql.NullStri
 	return iso2, err
 }
 
+const getCountryLatLong = `-- name: GetCountryLatLong :one
+select latitude, longitude from countries where name = ? limit 1
+`
+
+type GetCountryLatLongRow struct {
+	Latitude  sql.NullFloat64 `json:"latitude"`
+	Longitude sql.NullFloat64 `json:"longitude"`
+}
+
+func (q *Queries) GetCountryLatLong(ctx context.Context, name string) (GetCountryLatLongRow, error) {
+	row := q.db.QueryRowContext(ctx, getCountryLatLong, name)
+	var i GetCountryLatLongRow
+	err := row.Scan(&i.Latitude, &i.Longitude)
+	return i, err
+}
+
 const getStateCode = `-- name: GetStateCode :one
 select iso2 from states where name = ? and country_code = ? limit 1
 `

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1602,28 +1603,42 @@ func (con *Console) LiveEventsSSE(c echo.Context) error {
 
 		case play := <-playCh:
 			if play != nil {
-				// Get coordinates for the play location
+				locDB := con.etl.GetLocationDB()
+				ctx := c.Request().Context()
+				var lat, lng float64
+				var found bool
+
+				// Try city-level geocoding first
 				if play.City != "" && play.Region != "" && play.Country != "" {
-					if latLong, err := con.etl.GetLocationDB().GetLatLong(c.Request().Context(), play.City, play.Region, play.Country); err == nil {
-						lat := latLong.Latitude
-						lng := latLong.Longitude
-						// Send play event with coordinates and location info
-						playEvent := SSEEvent{
-							Event: "play",
-							Data: map[string]interface{}{
-								"lat":       lat,
-								"lng":       lng,
-								"city":      play.City,
-								"region":    play.Region,
-								"country":   play.Country,
-								"timestamp": time.Now().Format(time.RFC3339),
-								"duration":  5, // Default 5 seconds for animation
-							},
-						}
-						eventData, _ := json.Marshal(playEvent)
-						fmt.Fprintf(c.Response(), "data: %s\n\n", string(eventData))
-						flusher.Flush()
+					if latLong, err := locDB.GetLatLong(ctx, play.City, play.Region, play.Country); err == nil {
+						lat, lng, found = latLong.Latitude, latLong.Longitude, true
 					}
+				}
+
+				// Fall back to country-level coordinates
+				if !found && play.Country != "" {
+					if latLong, err := locDB.GetCountryLatLong(ctx, play.Country); err == nil {
+						// Add jitter so plays from the same country don't stack
+						lat = latLong.Latitude + (rand.Float64()-0.5)*5
+						lng = latLong.Longitude + (rand.Float64()-0.5)*5
+						found = true
+					}
+				}
+
+				if found {
+					playEvent := SSEEvent{
+						Event: "play",
+						Data: map[string]interface{}{
+							"lat":     lat,
+							"lng":     lng,
+							"city":    play.City,
+							"region":  play.Region,
+							"country": play.Country,
+						},
+					}
+					eventData, _ := json.Marshal(playEvent)
+					fmt.Fprintf(c.Response(), "data: %s\n\n", string(eventData))
+					flusher.Flush()
 				}
 			}
 

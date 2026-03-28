@@ -148,6 +148,21 @@ func (ls *LocationService) GetLatLong(ctx context.Context, city, state, country 
 	}, nil
 }
 
+// GetCountryLatLong retrieves latitude and longitude for a country by name
+func (ls *LocationService) GetCountryLatLong(ctx context.Context, country string) (*LatLong, error) {
+	result, err := ls.countriesQuery.GetCountryLatLong(ctx, country)
+	if err != nil {
+		return nil, fmt.Errorf("country not found: %s", country)
+	}
+	if !result.Latitude.Valid || !result.Longitude.Valid {
+		return nil, fmt.Errorf("country has no coordinates: %s", country)
+	}
+	return &LatLong{
+		Latitude:  result.Latitude.Float64,
+		Longitude: result.Longitude.Float64,
+	}, nil
+}
+
 // Close closes all database connections and cleans up temporary files
 func (ls *LocationService) Close() error {
 	var errs []error
