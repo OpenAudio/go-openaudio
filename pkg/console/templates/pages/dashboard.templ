@@ -248,11 +248,6 @@ templ Dashboard(props DashboardProps) {
 								class="w-full h-full cursor-grab"
 								style="aspect-ratio: 1;"
 							></canvas>
-							<canvas
-								x-ref="overlayCanvas"
-								class="absolute inset-0 w-full h-full pointer-events-none"
-								style="aspect-ratio: 1;"
-							></canvas>
 						</div>
 					</div>
 					<!-- LIVE badge -->
@@ -688,7 +683,7 @@ templ GlobeScript() {
 						if (play && play.lat != null && play.lng != null) {
 							this.playMarkers.push({
 								location: [play.lat, play.lng],
-								size: 0.04,
+								size: 0.06 + Math.random() * 0.04,
 								addedAt: Date.now(),
 							});
 							this.connected = true;
@@ -747,29 +742,6 @@ templ GlobeScript() {
 					window.addEventListener('beforeunload', () => this.cleanup());
 				},
 
-				// Projection matching COBE's internal w() and W() functions exactly
-				projectToScreen(lat, lng, halfW, cx, cy) {
-					const latRad = lat * Math.PI / 180;
-					const lngRad = lng * Math.PI / 180;
-					const cosLat = Math.cos(latRad);
-					// COBE's w(): [cos(lat)*cos(lng), sin(lat), -cos(lat)*sin(lng)]
-					const x0 = cosLat * Math.cos(lngRad);
-					const y0 = Math.sin(latRad);
-					const z0 = -cosLat * Math.sin(lngRad);
-					// COBE's W() rotation (phi=f, theta=l)
-					const cp = Math.cos(this.phi);
-					const sp = Math.sin(this.phi);
-					const ct = Math.cos(this.theta);
-					const st = Math.sin(this.theta);
-					const sx = cp * x0 + sp * z0;
-					const sy = sp * st * x0 + ct * y0 - cp * st * z0;
-					const sz = -sp * ct * x0 + st * y0 + cp * ct * z0;
-					// Behind globe
-					if (sz < 0) return null;
-					// COBE renders globe at radius 0.8 in normalized [-1,1] space
-					return { x: cx + sx * 0.8 * halfW, y: cy - sy * 0.8 * halfW };
-				},
-
 				animate() {
 					const now = Date.now();
 
@@ -790,8 +762,28 @@ templ GlobeScript() {
 						});
 					}
 
-					// Decay old play markers
+					// Decay old play markers and add to COBE markers with purple color
 					this.playMarkers = this.playMarkers.filter(m => now - m.addedAt < this.PLAY_DECAY_MS);
+					for (const m of this.playMarkers) {
+						const age = now - m.addedAt;
+						const progress = age / this.PLAY_DECAY_MS;
+						// Scale up quickly, then fade down (matches playglobe)
+						const scale = progress < 0.15
+							? (progress / 0.15)
+							: 1 - ((progress - 0.15) / 0.85);
+						const size = m.size * Math.max(0, scale);
+						if (size > 0.001) {
+							// Purple (#c084fc) → white over lifetime
+							const r = 0.753 + (1 - 0.753) * progress;
+							const g = 0.518 + (1 - 0.518) * progress;
+							const b = 0.988 + (1 - 0.988) * progress;
+							allMarkers.push({
+								location: m.location,
+								size: size,
+								color: [r, g, b],
+							});
+						}
+					}
 
 					// Proposal line markers — thin laser streak along arced great circles
 					for (const line of this.proposalLines) {
@@ -830,39 +822,6 @@ templ GlobeScript() {
 						theta: this.theta,
 						markers: allMarkers,
 					});
-
-					// Draw play markers on overlay canvas (purple → white → fade)
-					const overlay = this.$refs.overlayCanvas;
-					if (overlay) {
-						const dpr = window.devicePixelRatio || 1;
-						const w = overlay.offsetWidth;
-						const h = overlay.offsetHeight;
-						if (overlay.width !== w * dpr || overlay.height !== h * dpr) {
-							overlay.width = w * dpr;
-							overlay.height = h * dpr;
-						}
-						const ctx = overlay.getContext('2d');
-						ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-						ctx.clearRect(0, 0, w, h);
-						const halfW = w / 2;
-						const cx = halfW;
-						const cy = h / 2;
-						for (const m of this.playMarkers) {
-							const pos = this.projectToScreen(m.location[0], m.location[1], halfW, cx, cy);
-							if (!pos) continue;
-							const age = now - m.addedAt;
-							const progress = age / this.PLAY_DECAY_MS;
-							const alpha = Math.max(0, 1 - progress);
-							// Purple (#c084fc) → white over lifetime
-							const r = Math.round(192 + (255 - 192) * progress);
-							const g = Math.round(132 + (255 - 132) * progress);
-							const b = Math.round(252 + (255 - 252) * progress);
-							ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-							ctx.beginPath();
-							ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
-							ctx.fill();
-						}
-					}
 
 					this.rafId = requestAnimationFrame(() => this.animate());
 				},
