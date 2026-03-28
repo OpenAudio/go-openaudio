@@ -234,10 +234,10 @@ templ Dashboard(props DashboardProps) {
 				</div>
 			</div>
 			<!-- Section 2: Globe + Transaction Analytics (side-by-side) -->
-			<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
 				<!-- Left: Globe -->
 				<div
-					class="relative h-[500px] overflow-hidden bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl"
+					class="relative min-h-[500px] overflow-hidden bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl"
 					x-data="globeView()"
 					x-init="initSSEEventSource(); init()"
 				>
@@ -685,7 +685,7 @@ templ GlobeScript() {
 					// Set up SSE event listeners
 					this.playEventListener = (event) => {
 						const play = event.detail;
-						if (play && play.lat && play.lng) {
+						if (play && play.lat != null && play.lng != null) {
 							this.playMarkers.push({
 								location: [play.lat, play.lng],
 								size: 0.04,
@@ -747,29 +747,27 @@ templ GlobeScript() {
 					window.addEventListener('beforeunload', () => this.cleanup());
 				},
 
-				// Orthographic projection matching COBE's convention
-				projectToScreen(lat, lng, radius, cx, cy) {
+				// Projection matching COBE's internal w() and W() functions exactly
+				projectToScreen(lat, lng, halfW, cx, cy) {
 					const latRad = lat * Math.PI / 180;
 					const lngRad = lng * Math.PI / 180;
-					// Point on unit sphere
-					const x0 = Math.cos(latRad) * Math.sin(lngRad);
-					const y0 = -Math.sin(latRad);
-					const z0 = Math.cos(latRad) * Math.cos(lngRad);
-					// Rotate by phi around Y axis (globe spin)
+					const cosLat = Math.cos(latRad);
+					// COBE's w(): [cos(lat)*cos(lng), sin(lat), -cos(lat)*sin(lng)]
+					const x0 = cosLat * Math.cos(lngRad);
+					const y0 = Math.sin(latRad);
+					const z0 = -cosLat * Math.sin(lngRad);
+					// COBE's W() rotation (phi=f, theta=l)
 					const cp = Math.cos(this.phi);
 					const sp = Math.sin(this.phi);
-					const x1 = x0 * cp + z0 * sp;
-					const y1 = y0;
-					const z1 = -x0 * sp + z0 * cp;
-					// Rotate by theta around X axis (tilt)
-					const ct = Math.cos(-this.theta);
-					const st = Math.sin(-this.theta);
-					const x2 = x1;
-					const y2 = y1 * ct - z1 * st;
-					const z2 = y1 * st + z1 * ct;
+					const ct = Math.cos(this.theta);
+					const st = Math.sin(this.theta);
+					const sx = cp * x0 + sp * z0;
+					const sy = sp * st * x0 + ct * y0 - cp * st * z0;
+					const sz = -sp * ct * x0 + st * y0 + cp * ct * z0;
 					// Behind globe
-					if (z2 < 0.05) return null;
-					return { x: cx + x2 * radius, y: cy + y2 * radius };
+					if (sz < 0) return null;
+					// COBE renders globe at radius 0.8 in normalized [-1,1] space
+					return { x: cx + sx * 0.8 * halfW, y: cy - sy * 0.8 * halfW };
 				},
 
 				animate() {
@@ -846,11 +844,11 @@ templ GlobeScript() {
 						const ctx = overlay.getContext('2d');
 						ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 						ctx.clearRect(0, 0, w, h);
-						const radius = w * 0.44;
-						const cx = w / 2;
+						const halfW = w / 2;
+						const cx = halfW;
 						const cy = h / 2;
 						for (const m of this.playMarkers) {
-							const pos = this.projectToScreen(m.location[0], m.location[1], radius, cx, cy);
+							const pos = this.projectToScreen(m.location[0], m.location[1], halfW, cx, cy);
 							if (!pos) continue;
 							const age = now - m.addedAt;
 							const progress = age / this.PLAY_DECAY_MS;

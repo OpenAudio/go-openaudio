@@ -57,8 +57,10 @@ templ Frame(pageTitle string) {
 								class="w-full rounded-md border p-2 pr-24 text-xs bg-gray-50 dark:bg-[#000000] dark:text-white dark:placeholder-[#b3b3b3] border-gray-300 dark:border-gray-800 focus:outline-none"
 								:class="hasNoResults ? 'border-red-500 dark:border-red-500 focus:border-red-500 dark:focus:border-red-500' : 'focus:border-gray-500 dark:focus:border-gray-400'"
 								x-model="query"
+								x-ref="searchInput"
 								@input="handleInput"
 								@keydown="handleKeydown"
+								@keydown.window="if ($event.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) { $event.preventDefault(); $refs.searchInput.focus(); }"
 								@focus="if (query.trim()) { showSuggestions = true }"
 							/>
 							<div class="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-gray-500 dark:text-[#b3b3b3] bg-gradient-to-l from-gray-50 via-gray-50 to-transparent dark:from-[#000000] dark:via-[#000000] pl-12 rounded-r-md" x-text="searchType"></div>

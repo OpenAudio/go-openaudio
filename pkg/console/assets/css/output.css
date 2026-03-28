@@ -404,14 +404,14 @@
   .h-\[460px\] {
     height: 460px;
   }
-  .h-\[500px\] {
-    height: 500px;
-  }
   .h-full {
     height: 100%;
   }
   .max-h-96 {
     max-height: calc(var(--spacing) * 96);
+  }
+  .min-h-\[500px\] {
+    min-height: 500px;
   }
   .min-h-screen {
     min-height: 100vh;
@@ -591,6 +591,9 @@
   }
   .items-start {
     align-items: flex-start;
+  }
+  .items-stretch {
+    align-items: stretch;
   }
   .justify-between {
     justify-content: space-between;
