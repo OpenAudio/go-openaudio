@@ -12,6 +12,7 @@ RUN apt-get update && \
     libvorbis0a \
     libogg0 \
     libflac12 \
+    curl \
     postgresql-15 && \
     rm -rf /var/lib/apt/lists/* && \
     update-ca-certificates
@@ -63,6 +64,7 @@ COPY ./dev/tls/cert.pem /usr/share/ca-certificates/devnet.crt
 RUN chmod 644 /usr/share/ca-certificates/devnet.crt && \
     echo "devnet.crt" >> /etc/ca-certificates.conf && \
     update-ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
     apt-get update && apt-get install -y curl
 
 
