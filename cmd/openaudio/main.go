@@ -690,18 +690,30 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 			Version: version.Version.Version,
 		}
 
-		resp, err := http.Get("https://ipinfo.io")
-		if err == nil && resp.StatusCode == http.StatusOK {
-			defer resp.Body.Close()
-			body, err := io.ReadAll(resp.Body)
-			if err == nil {
-				var ipInfo ipInfoResponse
-				if err := json.Unmarshal(body, &ipInfo); err == nil {
-					response.Country = ipInfo.Country
-					// parse lat long
-					if loc := strings.Split(ipInfo.Loc, ","); len(loc) == 2 {
-						response.Latitude, _ = strconv.ParseFloat(loc[0], 64)
-						response.Longitude, _ = strconv.ParseFloat(loc[1], 64)
+		// Check for env var overrides (useful for devnet)
+		if lat := os.Getenv("OPENAUDIO_LATITUDE"); lat != "" {
+			if lng := os.Getenv("OPENAUDIO_LONGITUDE"); lng != "" {
+				response.Latitude, _ = strconv.ParseFloat(lat, 64)
+				response.Longitude, _ = strconv.ParseFloat(lng, 64)
+				response.Country = os.Getenv("OPENAUDIO_COUNTRY")
+			}
+		}
+
+		// Fall back to ipinfo.io if no env override
+		if response.Latitude == 0 && response.Longitude == 0 {
+			resp, err := http.Get("https://ipinfo.io")
+			if err == nil && resp.StatusCode == http.StatusOK {
+				defer resp.Body.Close()
+				body, err := io.ReadAll(resp.Body)
+				if err == nil {
+					var ipInfo ipInfoResponse
+					if err := json.Unmarshal(body, &ipInfo); err == nil {
+						response.Country = ipInfo.Country
+						// parse lat long
+						if loc := strings.Split(ipInfo.Loc, ","); len(loc) == 2 {
+							response.Latitude, _ = strconv.ParseFloat(loc[0], 64)
+							response.Longitude, _ = strconv.ParseFloat(loc[1], 64)
+						}
 					}
 				}
 			}
