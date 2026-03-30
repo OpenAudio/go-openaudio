@@ -284,6 +284,10 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 }
 
 func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHosts []string, tracker *RepairTracker) error {
+	if cid == "" {
+		return nil
+	}
+
 	logger := ss.logger.With(zap.String("task", "repair"), zap.String("cid", cid), zap.Bool("cleanup", tracker.CleanupMode))
 
 	preferredHosts, isMine := ss.rendezvousAllHosts(cid)
