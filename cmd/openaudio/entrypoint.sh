@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Dispatch subcommands to their own entrypoints
+if [ "$1" = "rollback" ]; then
+    shift
+    exec /bin/rollback-entrypoint.sh "$@"
+fi
+
 NETWORK="${NETWORK:-prod}"
 ENV_FILE="/env/${NETWORK}.env"
 
