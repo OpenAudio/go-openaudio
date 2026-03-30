@@ -56,6 +56,7 @@ bin/openaudio-arm64-linux: $(BUILD_SRCS)
 	@echo "Building arm openaudio for linux..."
 	@bash scripts/build-openaudio.sh $@ arm64 linux
 
+
 .PHONY: ignore-code-gen
 ignore-code-gen:
 	@echo "Warning: not regenerating .go files from sql, templ, proto, etc. Using existing artifacts instead."
@@ -163,6 +164,7 @@ docker-harness: docker-dev bin/openaudio-arm64-linux
 		--target harness \
 		--build-arg GIT_SHA=$(GIT_SHA) \
 		--build-arg PREBUILT_BINARY=bin/openaudio-arm64-linux \
+		--build-arg PREBUILT_ROLLBACK_BINARY=bin/rollback-arm64-linux \
 		-t openaudio/go-openaudio:harness \
 		-f ./cmd/openaudio/Dockerfile \
 		./
@@ -172,6 +174,7 @@ docker-dev: bin/openaudio-arm64-linux
 		--target dev \
 		--build-arg GIT_SHA=$(GIT_SHA) \
 		--build-arg PREBUILT_BINARY=bin/openaudio-arm64-linux \
+		--build-arg PREBUILT_ROLLBACK_BINARY=bin/rollback-arm64-linux \
 		-t openaudio/go-openaudio:dev \
 		-f ./cmd/openaudio/Dockerfile \
 		./
