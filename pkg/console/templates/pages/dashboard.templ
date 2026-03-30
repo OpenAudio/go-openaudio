@@ -641,8 +641,8 @@ templ GlobeScript() {
 				playEventListener: null,
 				blockEventListener: null,
 				MARKER_DECAY_MS: 8000,
-				PLAY_DECAY_MS: 8000,
-				PROPOSAL_LINE_DECAY_MS: 1500,
+				PLAY_DECAY_MS: 4000,
+				PROPOSAL_LINE_DECAY_MS: 800,
 
 				async init() {
 					const canvas = this.$refs.globeCanvas;
@@ -674,8 +674,15 @@ templ GlobeScript() {
 						markers: [],
 					});
 
-					// Fetch validator node locations
+					// Fetch validator node locations (retry every 30s until we get results)
 					this.fetchValidatorLocations();
+					this._validatorPollInterval = setInterval(() => {
+						if (this.validatorNodes.length === 0) {
+							this.fetchValidatorLocations();
+						} else {
+							clearInterval(this._validatorPollInterval);
+						}
+					}, 30000);
 
 					// Set up SSE event listeners
 					this.playEventListener = (event) => {
@@ -683,7 +690,7 @@ templ GlobeScript() {
 						if (play && play.lat != null && play.lng != null) {
 							this.playMarkers.push({
 								location: [play.lat, play.lng],
-								size: 0.06 + Math.random() * 0.04,
+								size: 0.03 + Math.random() * 0.02,
 								addedAt: Date.now(),
 							});
 							this.connected = true;
@@ -767,10 +774,10 @@ templ GlobeScript() {
 					for (const m of this.playMarkers) {
 						const age = now - m.addedAt;
 						const progress = age / this.PLAY_DECAY_MS;
-						// Scale up quickly, then fade down (matches playglobe)
-						const scale = progress < 0.15
-							? (progress / 0.15)
-							: 1 - ((progress - 0.15) / 0.85);
+						// Pop in instantly, then fade out
+						const scale = progress < 0.03
+							? (progress / 0.03)
+							: 1 - ((progress - 0.03) / 0.97);
 						const size = m.size * Math.max(0, scale);
 						if (size > 0.001) {
 							// Purple (#c084fc) → white over lifetime
@@ -922,6 +929,7 @@ templ GlobeScript() {
 
 				cleanup() {
 					if (this.rafId) cancelAnimationFrame(this.rafId);
+					if (this._validatorPollInterval) clearInterval(this._validatorPollInterval);
 					if (this.globe) {
 						this.globe.destroy();
 						this.globe = null;
