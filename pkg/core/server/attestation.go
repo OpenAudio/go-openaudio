@@ -41,6 +41,10 @@ func (s *Server) isValidAttestation(ctx context.Context, tx *v1.SignedTransactio
 }
 
 func (s *Server) finalizeAttestation(ctx context.Context, tx *v1.SignedTransaction, blockHeight int64) (*v1.SignedTransaction, error) {
+	if err := s.isValidAttestation(ctx, tx, blockHeight); err != nil {
+		return nil, fmt.Errorf("invalid attestation during finalize step: %v", err)
+	}
+
 	switch t := tx.GetAttestation().Body.(type) {
 	case *v1.Attestation_ValidatorRegistration:
 		return tx, s.finalizeRegisterNodeAttestation(ctx, tx, blockHeight)

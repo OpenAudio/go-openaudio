@@ -236,6 +236,10 @@ func (s *Server) isValidDeregisterMisbehavingNodeTx(tx *v1.SignedTransaction, mi
 }
 
 func (s *Server) finalizeDeregisterMisbehavingNode(ctx context.Context, tx *v1.SignedTransaction, misbehavior []abcitypes.Misbehavior) (*v1.ValidatorMisbehaviorDeregistration, error) {
+	if err := s.isValidDeregisterMisbehavingNodeTx(tx, misbehavior); err != nil {
+		return nil, fmt.Errorf("invalid deregister node tx: %v", err)
+	}
+
 	vd := tx.GetValidatorDeregistration()
 	qtx := s.getDb()
 	err := qtx.DeleteRegisteredNode(ctx, vd.GetCometAddress())

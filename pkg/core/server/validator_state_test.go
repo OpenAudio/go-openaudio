@@ -10,7 +10,6 @@ import (
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
-	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/safemap"
@@ -21,7 +20,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
 )
 
 func setupValidatorTestDB(t *testing.T) *pgxpool.Pool {
@@ -393,91 +391,6 @@ func TestRemoveValidatorGoesThoughConsensus(t *testing.T) {
 		_, err = q.GetRegisteredNodeByEthAddress(ctx, walletAddress)
 		require.ErrorIs(t, err, pgx.ErrNoRows, "direct delete removes immediately — this is the old broken behavior")
 	})
-}
-
-// TestFinalizeAttestationSkipsRevalidation verifies that finalizeAttestation
-// dispatches to the correct handler without re-running isValidAttestation.
-// This prevents LastResultsHash divergence when nodes disagree on validator count.
-func TestFinalizeAttestationSkipsRevalidation(t *testing.T) {
-	pool := setupValidatorTestDB(t)
-	ctx := context.Background()
-
-	privKey := ed25519.GenPrivKey()
-	pubKey := privKey.PubKey().(ed25519.PubKey)
-	cometAddress := pubKey.Address().String()
-
-	ethKey, err := crypto.GenerateKey()
-	require.NoError(t, err)
-	walletAddress := crypto.PubkeyToAddress(ethKey.PublicKey).Hex()
-
-	q := db.New(pool)
-
-	// Register a jailed node — re-registration via attestation should unjail it
-	require.NoError(t, q.InsertRegisteredNode(ctx, db.InsertRegisteredNodeParams{
-		PubKey:       "test-pk",
-		Endpoint:     "https://unjailing-node.example.com",
-		EthAddress:   walletAddress,
-		CometAddress: cometAddress,
-		CometPubKey:  base64.StdEncoding.EncodeToString(pubKey.Bytes()),
-		EthBlock:     "100",
-		NodeType:     "validator",
-		SpID:         "1",
-	}))
-	require.NoError(t, q.JailRegisteredNode(ctx, cometAddress))
-
-	dbTx, err := pool.Begin(ctx)
-	require.NoError(t, err)
-	defer dbTx.Rollback(ctx)
-
-	s := &Server{
-		db:        db.New(pool),
-		abciState: &ABCIState{onGoingBlock: dbTx},
-		logger:    zap.NewNop(),
-		config:    testConfig(ethKey, walletAddress),
-	}
-
-	// Build a registration attestation with NO attestation signatures.
-	// isValidAttestation would reject this (not enough attestations).
-	// But finalizeAttestation should skip validation and proceed to
-	// finalizeRegisterNodeAttestation.
-	regTx := &v1.SignedTransaction{
-		Transaction: &v1.SignedTransaction_Attestation{
-			Attestation: &v1.Attestation{
-				Signatures: []string{}, // empty — would fail attestation count check
-				Body: &v1.Attestation_ValidatorRegistration{
-					ValidatorRegistration: &v1.ValidatorRegistration{
-						Endpoint:       "https://unjailing-node.example.com",
-						CometAddress:   cometAddress,
-						PubKey:         pubKey.Bytes(),
-						EthBlock:       100,
-						DelegateWallet: walletAddress,
-						Power:          1,
-						NodeType:       "validator",
-						SpId:           "1",
-					},
-				},
-			},
-		},
-	}
-
-	// Sign the tx so finalizeRegisterNodeAttestation can recover the signer
-	txBytes, err := proto.Marshal(regTx)
-	require.NoError(t, err)
-	sig, err := common.EthSign(ethKey, txBytes)
-	require.NoError(t, err)
-	regTx.Signature = sig
-
-	// finalizeAttestation should NOT call isValidAttestation, so it should
-	// proceed to finalizeRegisterNodeAttestation which unjails the node.
-	result, err := s.finalizeAttestation(ctx, regTx, 200)
-	require.NoError(t, err, "finalizeAttestation must not re-validate; missing attestation signatures should not cause failure")
-	require.NotNil(t, result)
-
-	// Verify the node was unjailed
-	require.NoError(t, dbTx.Commit(ctx))
-	node, err := q.GetRegisteredNodeByEthAddress(ctx, walletAddress)
-	require.NoError(t, err)
-	require.False(t, node.Jailed, "node should have been unjailed by finalizeRegisterNodeAttestation")
 }
 
 // TestFinalizeBlockProducesValidatorUpdate verifies that the FinalizeBlock code
