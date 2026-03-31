@@ -85,6 +85,26 @@ func (c *CoreService) IsReady() bool {
 	return c.core != nil
 }
 
+// GetRegisteredNodeEndpoints returns the endpoints of all active (non-jailed) registered nodes.
+func (c *CoreService) GetRegisteredNodeEndpoints(ctx context.Context) ([]string, error) {
+	c.coreMu.RLock()
+	defer c.coreMu.RUnlock()
+	if c.core == nil {
+		return nil, fmt.Errorf("core not ready")
+	}
+	nodes, err := c.core.db.GetAllRegisteredNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	endpoints := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		if n.Endpoint != "" {
+			endpoints = append(endpoints, n.Endpoint)
+		}
+	}
+	return endpoints, nil
+}
+
 // GetNodeInfo implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetNodeInfo(ctx context.Context, req *connect.Request[v1.GetNodeInfoRequest]) (*connect.Response[v1.GetNodeInfoResponse], error) {
 	status, err := c.GetStatus(ctx, &connect.Request[v1.GetStatusRequest]{})
