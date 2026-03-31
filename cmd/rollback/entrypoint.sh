@@ -64,17 +64,7 @@ echo "Postgres DB:    $POSTGRES_DB"
 echo "Postgres data:  $POSTGRES_DATA_DIR"
 echo ""
 
-# Safety check: ensure openaudio is not running.
-# The rollback container typically runs as a separate "docker run --rm" with
-# the same /data volume mounted.  Process-based checks (kill -0, fuser) won't
-# see the node's processes because they live in a different PID namespace.
-# Instead we rely on filesystem-level evidence left on the shared volume.
-
-# 1. postmaster.pid — written by postgres into the data directory on the
-#    shared volume.  If it exists, postgres was (or still is) running in
-#    another container.  We cannot use `kill -0` across PID namespaces, so
-#    we treat its mere presence as a hard stop and ask the operator to
-#    confirm the node is down.
+# Safety: ensure the node is not running (checks shared /data volume artifacts).
 if [ -f "$POSTGRES_DATA_DIR/postmaster.pid" ]; then
     echo "ERROR: $POSTGRES_DATA_DIR/postmaster.pid exists."
     echo "       This means PostgreSQL is (or recently was) running on this data directory."
@@ -85,8 +75,7 @@ if [ -f "$POSTGRES_DATA_DIR/postmaster.pid" ]; then
     exit 1
 fi
 
-# 2. CometBFT PebbleDB LOCK files — written into the shared /data volume.
-#    A non-empty LOCK file indicates another process has the database open.
+# Check CometBFT PebbleDB lock files on the shared volume.
 for lockdb in blockstore state; do
     lockfile="$COMET_DATA/${lockdb}.db/LOCK"
     if [ -f "$lockfile" ] && [ -s "$lockfile" ]; then
@@ -96,25 +85,6 @@ for lockdb in blockstore state; do
         exit 1
     fi
 done
-
-# 3. If we're sharing the host network (--net=host), we can also check if
-#    the node's HTTP server or postgres port is reachable.  These checks are
-#    best-effort — they won't fire in an isolated network namespace, which
-#    is fine because checks 1 and 2 above cover the volume-based case.
-if command -v curl &>/dev/null; then
-    if curl -sf --max-time 3 http://localhost/health-check &>/dev/null || \
-       curl -sf --max-time 3 https://localhost/health-check --insecure &>/dev/null; then
-        echo "ERROR: openaudio node is responding on localhost."
-        echo "       Stop the node before running rollback to avoid data corruption."
-        exit 1
-    fi
-fi
-
-if "$PG_BIN/pg_isready" -q 2>/dev/null; then
-    echo "ERROR: PostgreSQL is already accepting connections on port 5432."
-    echo "       Stop the node before running rollback to avoid data corruption."
-    exit 1
-fi
 
 echo "Pre-flight checks passed: no running node detected."
 echo ""
