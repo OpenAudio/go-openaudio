@@ -83,6 +83,7 @@ const (
 	PlaylistIDOffset = 400_000
 	TrackIDOffset    = 2_000_000
 	UserIDOffset     = 3_000_000
+	CommentIDOffset  = 4_000_000
 )
 
 // Character limit constants matching discovery-provider.
@@ -92,6 +93,8 @@ const (
 	CharacterLimitHandle      = 30
 	// CharacterLimitDescription matches discovery-provider entity_manager CHARACTER_LIMIT_DESCRIPTION (tracks, playlists).
 	CharacterLimitDescription = 2500
+	// CharacterLimitCommentBody matches discovery-provider COMMENT_BODY_LIMIT.
+	CharacterLimitCommentBody = 400
 )
 
 // ValidationError indicates a transaction should be skipped (not a fatal indexing error).

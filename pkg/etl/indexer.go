@@ -113,6 +113,18 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.NotificationView())
 		e.dispatcher.Register(em.PlaylistSeenView())
 	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeComment) {
+		e.dispatcher.Register(em.CommentCreate())
+		e.dispatcher.Register(em.CommentUpdate())
+		e.dispatcher.Register(em.CommentDelete())
+		e.dispatcher.Register(em.CommentReact())
+		e.dispatcher.Register(em.CommentUnreact())
+		e.dispatcher.Register(em.CommentPin())
+		e.dispatcher.Register(em.CommentUnpin())
+		e.dispatcher.Register(em.CommentReport())
+		e.dispatcher.Register(em.CommentMute())
+		e.dispatcher.Register(em.CommentUnmute())
+	}
 
 	if e.dispatcher.HandlerCount() > 0 {
 		e.logger.Info("entity manager enabled", zap.Int("handlers", e.dispatcher.HandlerCount()))
