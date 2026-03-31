@@ -48,8 +48,8 @@ COPY ${PREBUILT_BINARY} /bin/openaudio
 RUN chmod +x /bin/openaudio
 
 ARG PREBUILT_ROLLBACK_BINARY
-COPY ${PREBUILT_ROLLBACK_BINARY} /bin/rollback-bin
-RUN chmod +x /bin/rollback-bin
+COPY ${PREBUILT_ROLLBACK_BINARY} /bin/rollback
+RUN chmod +x /bin/rollback
 
 COPY ./cmd/rollback/entrypoint.sh /bin/rollback-entrypoint.sh
 RUN chmod +x /bin/rollback-entrypoint.sh

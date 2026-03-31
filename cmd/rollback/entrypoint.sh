@@ -36,7 +36,7 @@ dbUrl="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTG
 
 PG_BIN="/usr/lib/postgresql/15/bin"
 
-ROLLBACK_BIN="/bin/rollback-bin"
+ROLLBACK_BIN="/bin/rollback"
 
 # Find CometBFT data directory (auto-discover chain ID)
 COMET_DATA=""
