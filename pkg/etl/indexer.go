@@ -108,7 +108,11 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.GrantApprove())
 		e.dispatcher.Register(em.GrantReject())
 	}
-
+	if e.config.IsDataTypeEnabled(em.EntityTypeNotification) {
+		e.dispatcher.Register(em.NotificationCreate())
+		e.dispatcher.Register(em.NotificationView())
+		e.dispatcher.Register(em.PlaylistSeenView())
+	}
 
 	if e.dispatcher.HandlerCount() > 0 {
 		e.logger.Info("entity manager enabled", zap.Int("handlers", e.dispatcher.HandlerCount()))
