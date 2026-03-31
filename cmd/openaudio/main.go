@@ -677,8 +677,11 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 		return c.JSON(http.StatusOK, getHealthCheckResponse(hostUrl, coreService, storageService))
 	})
 
-	baseRoutes.GET("/validator_check", func(c echo.Context) error {
-		return handleValidatorCheck(c, coreService)
+	baseRoutes.GET("/consensus-check", func(c echo.Context) error {
+		return handleConsensusCheck(c, coreService)
+	})
+	baseRoutes.GET("/consensus_check", func(c echo.Context) error {
+		return handleConsensusCheck(c, coreService)
 	})
 
 	locationHandler := func(c echo.Context) error {
@@ -1039,7 +1042,7 @@ func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreServic
 	return response
 }
 
-func handleValidatorCheck(c echo.Context, coreService *coreServer.CoreService) error {
+func handleConsensusCheck(c echo.Context, coreService *coreServer.CoreService) error {
 	if !coreService.IsReady() {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "core service not ready"})
 	}
