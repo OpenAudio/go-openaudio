@@ -20,8 +20,17 @@ todos:
   - id: playlist-social-apps-grants
     content: "PR6: Playlist Create/Update/Delete, Follow/Unfollow, Save/Unsave, Repost/Unrepost, DeveloperApp CRUD, Grant CRUD"
     status: completed
+  - id: muted-user
+    content: "PR7: MutedUser Mute/Unmute handlers"
+    status: completed
+  - id: notification
+    content: "PR8: Notification Create/View, PlaylistSeen View handlers"
+    status: completed
+  - id: comment
+    content: "PR9: Comment Create/Update/Delete/React/Unreact/Pin/Unpin/Report/Mute/Unmute handlers"
+    status: completed
   - id: remaining-entities
-    content: "Future: Comments, Notifications, AssociatedWallet, DashboardWalletUser, Tip, MutedUser, etc."
+    content: "Future: AssociatedWallet, DashboardWalletUser, Tip (require crypto sig verification)"
     status: pending
 isProject: false
 ---
@@ -30,7 +39,7 @@ isProject: false
 
 ## Current State
 
-All core entity manager handlers are implemented with full validation parity against the discovery-provider celery indexer. The ETL indexer processes ManageEntity transactions through a dispatcher that routes to per-entity-action handlers, each performing stateless validation, stateful validation, and domain table writes.
+35 entity manager handlers implemented with full validation parity against the discovery-provider celery indexer. The ETL indexer processes ManageEntity transactions through a dispatcher that routes to per-entity-action handlers, each performing stateless validation, stateful validation, and domain table writes.
 
 ## Graphite Stack
 
@@ -40,9 +49,12 @@ main
        └── rj/etl-em-user-verify   PR #150 — User Verify
             └── rj/etl-em-track-create  PR #176 — Track Create/Update/Delete
                  └── rj/etl-em-playlist-create  PR #177 — Playlist + Social + DeveloperApp + Grant
+                      └── rj/etl-em-muted-user  — MutedUser Mute/Unmute
+                           └── rj/etl-em-notification  — Notification + PlaylistSeen
+                                └── rj/etl-em-comment  — Comment (10 actions)
 ```
 
-## Implemented Handlers (20 total)
+## Implemented Handlers (35 total)
 
 | Entity | Actions | Handler Files |
 |--------|---------|---------------|
@@ -54,17 +66,18 @@ main
 | Repost | Repost, Unrepost | `social_repost.go` |
 | DeveloperApp | Create, Update, Delete | `developer_app_create.go`, `developer_app_update.go`, `developer_app_delete.go` |
 | Grant | Create, Delete, Approve, Reject | `grant_create.go`, `grant_revoke.go` |
+| MutedUser | Mute, Unmute | `muted_user.go` |
+| Notification | Create, View | `notification.go` |
+| PlaylistSeen | View | `notification.go` |
+| Comment | Create, Update, Delete, React, Unreact, Pin, Unpin, Report, Mute, Unmute | `comment_*.go` |
 
 ## Remaining Entities (lower priority)
 
-These are less critical for indexing parity and can be added incrementally:
+These require Ethereum/Solana signature verification and will be added when crypto primitives are available:
 
-- **Comments**: Create, Update, Delete, React, Unreact, Pin, Unpin, Report, Mute, Unmute
-- **Notifications**: Create, View, ViewPlaylist
-- **AssociatedWallet**: Create, Delete
-- **DashboardWalletUser**: Create, Delete
-- **Tip**: Update
-- **MutedUser**: Mute, Unmute
+- **AssociatedWallet**: Create, Delete — ETH/SOL signature recovery
+- **DashboardWalletUser**: Create, Delete — ETH signature recovery + timestamp validation
+- **Tip**: Update — requires `user_tips` table for signature lookup
 - **EncryptedEmail, EmailAccess, Event**: Various actions
 
 ## What to Defer

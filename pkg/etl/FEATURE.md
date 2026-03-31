@@ -80,7 +80,20 @@ processors/entity_manager/
 ├── developer_app_delete.go  # DeveloperApp Delete
 │
 ├── grant_create.go          # Grant Create
-└── grant_revoke.go          # Grant Delete / Approve / Reject
+├── grant_revoke.go          # Grant Delete / Approve / Reject
+│
+├── muted_user.go            # MutedUser Mute / Unmute
+│
+├── notification.go          # Notification Create / View, PlaylistSeen View
+│
+├── comment_create.go        # Comment Create
+├── comment_update.go        # Comment Update
+├── comment_delete.go        # Comment Delete
+├── comment_react.go         # Comment React / Unreact
+├── comment_pin.go           # Comment Pin / Unpin
+├── comment_report.go        # Comment Report
+├── comment_mute.go          # Comment Mute / Unmute (notification settings)
+└── comment_queries.go       # Comment existence + reaction queries
 ```
 
 ### Types
@@ -92,7 +105,7 @@ processors/entity_manager/
 
 ### Entity/Action Status
 
-**Implemented (20 handlers):**
+**Implemented (35 handlers):**
 
 | Entity | Actions |
 |--------|---------|
@@ -104,13 +117,16 @@ processors/entity_manager/
 | Repost | Repost, Unrepost |
 | DeveloperApp | Create, Update, Delete |
 | Grant | Create, Delete, Approve, Reject |
+| MutedUser | Mute, Unmute |
+| Notification | Create, View |
+| PlaylistSeen | View |
+| Comment | Create, Update, Delete, React, Unreact, Pin, Unpin, Report, Mute, Unmute |
 
 **Remaining (lower priority):**
-- Comments (Create, Update, Delete, React, Unreact, Pin, Unpin, Report, Mute, Unmute)
-- Notifications (Create, View, ViewPlaylist)
-- AssociatedWallet (Create, Delete)
-- DashboardWalletUser (Create, Delete)
-- Tip (Update), MutedUser, EncryptedEmail, EmailAccess, Event
+- AssociatedWallet (Create, Delete) — requires Eth/Sol signature verification
+- DashboardWalletUser (Create, Delete) — requires Eth signature verification
+- Tip (Update) — requires user_tips table
+- EncryptedEmail, EmailAccess, Event — various actions
 
 ## Key Integration Points
 
