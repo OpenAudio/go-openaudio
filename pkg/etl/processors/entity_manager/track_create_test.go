@@ -134,8 +134,8 @@ func TestTrackCreate_StatelessValidation(t *testing.T) {
 
 func TestTrackCreate_Success(t *testing.T) {
 	pool := setupTestDB(t)
-	uid := UserIDOffset + 1
-	tid := TrackIDOffset + 42
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 42)
 	seedUser(t, pool, uid, "0xtrackowner", "trackowner")
 	h := TrackCreate()
 	meta := `{"owner_id":3000001,"title":"Electronic Dreams","genre":"Electronic"}`
@@ -162,8 +162,8 @@ func TestTrackCreate_Success(t *testing.T) {
 
 func TestTrackCreate_RejectsDuplicate(t *testing.T) {
 	pool := setupTestDB(t)
-	uid := UserIDOffset + 1
-	tid := TrackIDOffset + 50
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 50)
 	seedUser(t, pool, uid, "0xowner", "o")
 	seedTrack(t, pool, tid, uid)
 	meta := `{"owner_id":3000001,"title":"Dup","genre":"Pop"}`
@@ -173,8 +173,8 @@ func TestTrackCreate_RejectsDuplicate(t *testing.T) {
 
 func TestTrackCreate_RejectsSignerMismatch(t *testing.T) {
 	pool := setupTestDB(t)
-	uid := UserIDOffset + 1
-	tid := TrackIDOffset + 51
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 51)
 	seedUser(t, pool, uid, "0xrealowner", "ro")
 	meta := `{"owner_id":3000001,"title":"X","genre":"Rock"}`
 	params := buildParams(t, pool, EntityTypeTrack, ActionCreate, uid, tid, "0xWrong", meta)

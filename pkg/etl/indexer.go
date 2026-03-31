@@ -78,6 +78,34 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.TrackUpdate())
 		e.dispatcher.Register(em.TrackDelete())
 	}
+	if e.config.IsDataTypeEnabled(em.EntityTypePlaylist) {
+		e.dispatcher.Register(em.PlaylistCreate())
+		e.dispatcher.Register(em.PlaylistUpdate())
+		e.dispatcher.Register(em.PlaylistDelete())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeFollow) {
+		e.dispatcher.Register(em.Follow())
+		e.dispatcher.Register(em.Unfollow())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeSave) {
+		e.dispatcher.Register(em.Save())
+		e.dispatcher.Register(em.Unsave())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeRepost) {
+		e.dispatcher.Register(em.Repost())
+		e.dispatcher.Register(em.Unrepost())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeDeveloperApp) {
+		e.dispatcher.Register(em.DeveloperAppCreate())
+		e.dispatcher.Register(em.DeveloperAppUpdate())
+		e.dispatcher.Register(em.DeveloperAppDelete())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeGrant) {
+		e.dispatcher.Register(em.GrantCreate())
+		e.dispatcher.Register(em.GrantDelete())
+		e.dispatcher.Register(em.GrantApprove())
+		e.dispatcher.Register(em.GrantReject())
+	}
 
 	if e.dispatcher.HandlerCount() > 0 {
 		e.logger.Info("entity manager enabled", zap.Int("handlers", e.dispatcher.HandlerCount()))

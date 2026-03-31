@@ -14,8 +14,8 @@ func TestTrackDelete_TxType(t *testing.T) {
 
 func TestTrackDelete_Success(t *testing.T) {
 	pool := setupTestDB(t)
-	uid := UserIDOffset + 1
-	tid := TrackIDOffset + 70
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 70)
 	seedUser(t, pool, uid, "0xo", "o")
 	seedTrackFull(t, pool, tid, uid, "Del Me")
 	params := buildParams(t, pool, EntityTypeTrack, ActionDelete, uid, tid, "0xo", `{}`)
@@ -33,7 +33,7 @@ func TestTrackDelete_Success(t *testing.T) {
 
 func TestTrackDelete_NotFound(t *testing.T) {
 	pool := setupTestDB(t)
-	uid := UserIDOffset + 1
+	uid := int64(UserIDOffset + 1)
 	seedUser(t, pool, uid, "0xo", "o")
 	params := buildParams(t, pool, EntityTypeTrack, ActionDelete, uid, TrackIDOffset+88, "0xo", `{}`)
 	mustReject(t, TrackDelete(), params, "does not exist")

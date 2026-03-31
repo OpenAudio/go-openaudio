@@ -53,8 +53,22 @@ processors/entity_manager/
 ├── validate.go          # Shared validators (ValidateSigner, ValidateHandle, etc.)
 ├── testutil_test.go     # Test helpers: setupTestDB, seeders, tx builders, assertions
 ├── user_create.go       # User Create handler
-├── track_create.go    # Track Create (+ genre_allowlist.go, slug.go, track_row.go, track_queries.go)
-├── track_update.go / track_delete.go
+├── user_update.go       # User Update handler (markNotCurrent, metadata merge)
+├── user_verify.go       # User Verify handler
+├── track_create.go      # Track Create (+ genre_allowlist.go, slug.go, track_row.go, track_queries.go)
+├── track_update.go      # Track Update handler
+├── track_delete.go      # Track Delete handler
+├── playlist_create.go   # Playlist Create (+ playlist_row.go, playlist_queries.go)
+├── playlist_update.go   # Playlist Update handler
+├── playlist_delete.go   # Playlist Delete handler
+├── social_follow.go     # Follow / Unfollow handlers
+├── social_save.go       # Save / Unsave handlers
+├── social_repost.go     # Repost / Unrepost handlers
+├── developer_app_create.go  # DeveloperApp Create handler
+├── developer_app_update.go  # DeveloperApp Update handler
+├── developer_app_delete.go  # DeveloperApp Delete handler
+├── grant_create.go      # Grant Create handler
+├── grant_revoke.go      # Grant Delete/Approve/Reject handlers
 └── <entity>_<action>.go # One file per entity/action pair
 ```
 
@@ -67,13 +81,9 @@ processors/entity_manager/
 
 ### Entity/Action Roadmap
 
-**Done:** Foundation (handler framework, dispatcher, test infra, migrations, debug logging), User Create, User Update, User Verify, Track Create, Track Update, Track Delete
+**Done:** Foundation (handler framework, dispatcher, test infra, migrations, debug logging), User Create, User Update, User Verify, Track Create, Track Update, Track Delete, Playlist Create, Playlist Update, Playlist Delete, Follow/Unfollow, Save/Unsave, Repost/Unrepost, DeveloperApp (Create, Update, Delete), Grant (Create, Delete, Approve, Reject)
 
 **Planned (one PR each):**
-- Playlist Create, Playlist Update, Playlist Delete
-- Follow/Unfollow, Save/Unsave, Repost/Unrepost
-- DeveloperApp (Create, Update, Delete)
-- Grant (Create, Delete, Approve, Reject)
 - Comments, Notifications, AssociatedWallet, DashboardWalletUser, etc.
 
 ## Key Integration Points

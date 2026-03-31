@@ -14,8 +14,8 @@ func TestTrackUpdate_TxType(t *testing.T) {
 
 func TestTrackUpdate_Success(t *testing.T) {
 	pool := setupTestDB(t)
-	uid := UserIDOffset + 1
-	tid := TrackIDOffset + 60
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 60)
 	seedUser(t, pool, uid, "0xowner", "ou")
 	seedTrackFull(t, pool, tid, uid, "Old Title")
 	meta := `{"title":"New Title","genre":"Jazz"}`
@@ -31,8 +31,8 @@ func TestTrackUpdate_Success(t *testing.T) {
 
 func TestTrackUpdate_NotFound(t *testing.T) {
 	pool := setupTestDB(t)
-	uid := UserIDOffset + 1
-	tid := TrackIDOffset + 99
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 99)
 	seedUser(t, pool, uid, "0xo", "o")
 	params := buildParams(t, pool, EntityTypeTrack, ActionUpdate, uid, tid, "0xOwner", `{"title":"X"}`)
 	mustReject(t, TrackUpdate(), params, "does not exist")
@@ -40,9 +40,9 @@ func TestTrackUpdate_NotFound(t *testing.T) {
 
 func TestTrackUpdate_OwnerMismatch(t *testing.T) {
 	pool := setupTestDB(t)
-	uid := UserIDOffset + 1
-	other := UserIDOffset + 2
-	tid := TrackIDOffset + 61
+	uid := int64(UserIDOffset + 1)
+	other := int64(UserIDOffset + 2)
+	tid := int64(TrackIDOffset + 61)
 	seedUser(t, pool, uid, "0xa", "a")
 	seedUser(t, pool, other, "0xb", "b")
 	seedTrackFull(t, pool, tid, other, "T")
