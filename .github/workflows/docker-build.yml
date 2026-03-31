@@ -40,9 +40,10 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
-      - name: Build binary
+      - name: Build binaries
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o openaudio-amd64 ./cmd/openaudio
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o rollback-amd64 ./cmd/rollback
 
       - name: Build and push AMD64 image
         uses: docker/build-push-action@v5
@@ -54,6 +55,7 @@ jobs:
           tags: openaudio/go-openaudio:${{ inputs.tag }}-amd64
           build-args: |
             PREBUILT_BINARY=openaudio-amd64
+            PREBUILT_ROLLBACK_BINARY=rollback-amd64
             GIT_SHA=${{ github.sha }}
           target: prod
 
@@ -68,6 +70,7 @@ jobs:
           tags: openaudio/go-openaudio:${{ inputs.tag }}-test
           build-args: |
             PREBUILT_BINARY=openaudio-amd64
+            PREBUILT_ROLLBACK_BINARY=rollback-amd64
             GIT_SHA=${{ github.sha }}
           target: ci
 
@@ -82,6 +85,7 @@ jobs:
           tags: openaudio/go-openaudio:${{ inputs.tag }}-harness
           build-args: |
             PREBUILT_BINARY=openaudio-amd64
+            PREBUILT_ROLLBACK_BINARY=rollback-amd64
             GIT_SHA=${{ github.sha }}
           target: harness
 
@@ -135,9 +139,10 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
-      - name: Build binary
+      - name: Build binaries
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o openaudio-arm64 ./cmd/openaudio
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o rollback-arm64 ./cmd/rollback
 
       - name: Build and push ARM64 image
         uses: docker/build-push-action@v5
@@ -149,6 +154,7 @@ jobs:
           tags: openaudio/go-openaudio:${{ inputs.tag }}-arm64
           build-args: |
             PREBUILT_BINARY=openaudio-arm64
+            PREBUILT_ROLLBACK_BINARY=rollback-arm64
             GIT_SHA=${{ github.sha }}
           target: prod
 
