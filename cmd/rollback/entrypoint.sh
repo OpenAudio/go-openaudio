@@ -86,6 +86,13 @@ for lockdb in blockstore state; do
     fi
 done
 
+# Check if postgres is already accepting connections.
+if "$PG_BIN/pg_isready" -q 2>/dev/null; then
+    echo "ERROR: PostgreSQL is already accepting connections on port 5432."
+    echo "       Stop the node before running rollback to avoid data corruption."
+    exit 1
+fi
+
 echo "Pre-flight checks passed: no running node detected."
 echo ""
 
