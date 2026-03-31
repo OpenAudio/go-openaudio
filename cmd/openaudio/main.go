@@ -1057,7 +1057,7 @@ func handleConsensusCheck(c echo.Context, coreService *coreServer.CoreService) e
 	}
 
 	ctx := c.Request().Context()
-	endpoints, err := coreService.GetRegisteredNodeEndpoints(ctx)
+	endpoints, err := coreService.GetConsensusNodeEndpoints(ctx)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to get registered nodes: %v", err)})
 	}

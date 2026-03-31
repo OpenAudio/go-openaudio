@@ -85,21 +85,40 @@ func (c *CoreService) IsReady() bool {
 	return c.core != nil
 }
 
-// GetRegisteredNodeEndpoints returns the endpoints of all active (non-jailed) registered nodes.
-func (c *CoreService) GetRegisteredNodeEndpoints(ctx context.Context) ([]string, error) {
+// GetConsensusNodeEndpoints returns the endpoints of nodes in the active CometBFT
+// validator set, cross-referenced with the core_validators DB table for endpoint info.
+func (c *CoreService) GetConsensusNodeEndpoints(ctx context.Context) ([]string, error) {
 	c.coreMu.RLock()
 	defer c.coreMu.RUnlock()
 	if c.core == nil {
 		return nil, fmt.Errorf("core not ready")
 	}
-	nodes, err := c.core.db.GetAllRegisteredNodes(ctx)
-	if err != nil {
-		return nil, err
+	if c.core.rpc == nil {
+		return nil, fmt.Errorf("rpc not ready")
 	}
-	endpoints := make([]string, 0, len(nodes))
-	for _, n := range nodes {
+
+	page, perPage := 1, 100
+	validators, err := c.core.rpc.Validators(ctx, nil, &page, &perPage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch validators: %w", err)
+	}
+
+	allNodes, err := c.core.db.GetAllRegisteredNodesIncludingJailed(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch registered nodes: %w", err)
+	}
+	cometMap := make(map[string]string, len(allNodes))
+	for _, n := range allNodes {
 		if n.Endpoint != "" {
-			endpoints = append(endpoints, n.Endpoint)
+			cometMap[strings.ToUpper(n.CometAddress)] = n.Endpoint
+		}
+	}
+
+	var endpoints []string
+	for _, val := range validators.Validators {
+		addr := strings.ToUpper(val.Address.String())
+		if ep, ok := cometMap[addr]; ok {
+			endpoints = append(endpoints, ep)
 		}
 	}
 	return endpoints, nil
