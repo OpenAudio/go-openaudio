@@ -30,7 +30,7 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
-	"github.com/OpenAudio/go-openaudio/pkg/console"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer"
 	"github.com/OpenAudio/go-openaudio/pkg/core"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
@@ -583,7 +583,7 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 
 	// Initialize explorer console if enabled
 	if consoleEnabled {
-		c := console.NewConsole(etlService, e, cfg.Environment)
+		c := explorer.NewExplorer(etlService, e, cfg.Environment)
 		c.Initialize()
 	}
 

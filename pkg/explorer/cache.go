@@ -1,4 +1,4 @@
-package console
+package explorer
 
 import (
 	"context"

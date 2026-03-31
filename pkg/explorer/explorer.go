@@ -1,4 +1,4 @@
-package console
+package explorer
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"go.uber.org/zap"
 	"github.com/OpenAudio/go-openaudio/etl"
 	"github.com/OpenAudio/go-openaudio/etl/db"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates/pages"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates/pages"
 	"github.com/OpenAudio/go-openaudio/pkg/etlserver"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -40,7 +40,7 @@ var imagesFS embed.FS
 //go:embed assets/js
 var jsFS embed.FS
 
-type Console struct {
+type Explorer struct {
 	env                string
 	e                  *echo.Echo
 	etl                *etlserver.ETLService
@@ -61,7 +61,7 @@ type ValidatorLocation struct {
 	Lng      float64 `json:"lng"`
 }
 
-func NewConsole(etl *etlserver.ETLService, e *echo.Echo, env string) *Console {
+func NewExplorer(etl *etlserver.ETLService, e *echo.Echo, env string) *Explorer {
 	if e == nil {
 		e = echo.New()
 	}
@@ -80,7 +80,7 @@ func NewConsole(etl *etlserver.ETLService, e *echo.Echo, env string) *Console {
 		trustedNodeURL = "node2.oap.devnet"
 	}
 
-	return &Console{
+	return &Explorer{
 		etl:             etl,
 		e:               e,
 		logger:          zap.Must(zap.NewProduction()).With(zap.String("service", "console")),
@@ -90,47 +90,47 @@ func NewConsole(etl *etlserver.ETLService, e *echo.Echo, env string) *Console {
 	}
 }
 
-func (con *Console) Initialize() {
+func (ex *Explorer) Initialize() {
 	// Initialize dashboard cache with 5 second refresh rate
-	con.dashboardCache = NewCache(con.buildDashboardProps, 5*time.Second, con.logger.With(zap.String("service", "dashboard-cache")))
+	ex.dashboardCache = NewCache(ex.buildDashboardProps, 5*time.Second, ex.logger.With(zap.String("service", "dashboard-cache")))
 
 	// Initialize validator locations cache with 30 second refresh rate
-	con.validatorLocationsCache = NewCache(con.buildValidatorLocations, 5*time.Minute, con.logger.With(zap.String("service", "validator-locations-cache")))
+	ex.validatorLocationsCache = NewCache(ex.buildValidatorLocations, 5*time.Minute, ex.logger.With(zap.String("service", "validator-locations-cache")))
 
 	// Start background cache refreshers
 	// These wait for ETL DB readiness before starting
 	go func() {
 		ctx := context.Background()
-		for con.etl.GetDB() == nil {
-			con.logger.Info("Waiting for ETL DB to be ready (dashboard cache)")
+		for ex.etl.GetDB() == nil {
+			ex.logger.Info("Waiting for ETL DB to be ready (dashboard cache)")
 			time.Sleep(1 * time.Second)
 		}
-		con.logger.Info("Starting dashboard cache refresh")
-		con.dashboardCache.StartRefresh(ctx)
+		ex.logger.Info("Starting dashboard cache refresh")
+		ex.dashboardCache.StartRefresh(ctx)
 	}()
 
 	go func() {
 		ctx := context.Background()
-		for con.etl.GetDB() == nil {
-			con.logger.Info("Waiting for ETL DB to be ready (validator locations cache)")
+		for ex.etl.GetDB() == nil {
+			ex.logger.Info("Waiting for ETL DB to be ready (validator locations cache)")
 			time.Sleep(1 * time.Second)
 		}
 		// Give validator sync a moment to populate the DB
 		time.Sleep(5 * time.Second)
-		con.logger.Info("Starting validator locations cache refresh")
-		con.validatorLocationsCache.StartRefresh(ctx)
+		ex.logger.Info("Starting validator locations cache refresh")
+		ex.validatorLocationsCache.StartRefresh(ctx)
 	}()
 
-	go con.refreshTrustedBlock()
+	go ex.refreshTrustedBlock()
 
-	e := con.e
+	e := ex.e
 	e.HideBanner = true
 
 	// Add environment context middleware
 	envMiddleware := func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			// Add environment to the request context
-			ctx := context.WithValue(c.Request().Context(), "env", con.env)
+			ctx := context.WithValue(c.Request().Context(), "env", ex.env)
 			c.SetRequest(c.Request().WithContext(ctx))
 			return next(c)
 		}
@@ -159,79 +159,79 @@ func (con *Console) Initialize() {
 	e.Use(cacheControl)
 	e.Use(envMiddleware)
 
-	e.GET("/", con.Dashboard)
-	e.GET("/hello", con.Hello)
+	e.GET("/", ex.Dashboard)
+	e.GET("/hello", ex.Hello)
 
-	e.GET("/validators", con.Validators)
-	e.GET("/validator/:address", con.Validator)
-	e.GET("/validators/uptime", con.ValidatorsUptime)
-	e.GET("/validators/uptime/:rollupid", con.ValidatorsUptimeByRollup)
+	e.GET("/validators", ex.Validators)
+	e.GET("/validator/:address", ex.Validator)
+	e.GET("/validators/uptime", ex.ValidatorsUptime)
+	e.GET("/validators/uptime/:rollupid", ex.ValidatorsUptimeByRollup)
 
-	e.GET("/rollups", con.Rollups)
+	e.GET("/rollups", ex.Rollups)
 
-	e.GET("/blocks", con.Blocks)
-	e.GET("/block/:height", con.Block)
+	e.GET("/blocks", ex.Blocks)
+	e.GET("/block/:height", ex.Block)
 
-	e.GET("/transactions", con.Transactions)
-	e.GET("/transaction/:hash", con.Transaction)
+	e.GET("/transactions", ex.Transactions)
+	e.GET("/transaction/:hash", ex.Transaction)
 
-	e.GET("/account/:address", con.Account)
-	e.GET("/account/:address/transactions", con.stubRoute)
-	e.GET("/account/:address/uploads", con.stubRoute)
-	e.GET("/account/:address/releases", con.stubRoute)
+	e.GET("/account/:address", ex.Account)
+	e.GET("/account/:address/transactions", ex.stubRoute)
+	e.GET("/account/:address/uploads", ex.stubRoute)
+	e.GET("/account/:address/releases", ex.stubRoute)
 
-	e.GET("/content", con.Content)
-	e.GET("/content/:address", con.Content)
+	e.GET("/content", ex.Content)
+	e.GET("/content/:address", ex.Content)
 
-	e.GET("/release/:address", con.stubRoute)
+	e.GET("/release/:address", ex.stubRoute)
 
-	e.GET("/search", con.Search)
+	e.GET("/search", ex.Search)
 
 	// API endpoints
-	e.GET("/api/validator-locations", con.ValidatorLocations)
-	e.POST("/api/debug/play", con.DebugPlay)
+	e.GET("/api/validator-locations", ex.ValidatorLocations)
+	e.POST("/api/debug/play", ex.DebugPlay)
 
 	// SSE endpoints
-	e.GET("/sse/events", con.LiveEventsSSE)
+	e.GET("/sse/events", ex.LiveEventsSSE)
 
 	// HTMX Fragment routes
-	e.GET("/fragments/stats-header", con.StatsHeaderFragment)
-	e.GET("/fragments/tps", con.TPSFragment)
-	e.GET("/fragments/total-transactions", con.TotalTransactionsFragment)
+	e.GET("/fragments/stats-header", ex.StatsHeaderFragment)
+	e.GET("/fragments/tps", ex.TPSFragment)
+	e.GET("/fragments/total-transactions", ex.TotalTransactionsFragment)
 }
 
-func (con *Console) Run() error {
+func (ex *Explorer) Run() error {
 	g, ctx := errgroup.WithContext(context.Background())
 
 	g.Go(func() error {
-		info, err := con.trustedNode.Core.GetNodeInfo(context.Background(), &connect.Request[corev1.GetNodeInfoRequest]{})
+		info, err := ex.trustedNode.Core.GetNodeInfo(context.Background(), &connect.Request[corev1.GetNodeInfoRequest]{})
 		if err != nil {
-			con.logger.Warn("Failed to initialize node info", zap.Error(err))
-			con.latestTrustedBlock.Store(0)
+			ex.logger.Warn("Failed to initialize node info", zap.Error(err))
+			ex.latestTrustedBlock.Store(0)
 		} else {
-			con.logger.Info("Initialized node info", zap.Int64("height", info.Msg.CurrentHeight))
-			con.latestTrustedBlock.Store(info.Msg.CurrentHeight)
-			con.lastRefreshTime.Store(time.Now().Unix())
+			ex.logger.Info("Initialized node info", zap.Int64("height", info.Msg.CurrentHeight))
+			ex.latestTrustedBlock.Store(info.Msg.CurrentHeight)
+			ex.lastRefreshTime.Store(time.Now().Unix())
 		}
 
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 
 		for range ticker.C {
-			info, err := con.trustedNode.Core.GetNodeInfo(context.Background(), &connect.Request[corev1.GetNodeInfoRequest]{})
+			info, err := ex.trustedNode.Core.GetNodeInfo(context.Background(), &connect.Request[corev1.GetNodeInfoRequest]{})
 			if err != nil {
-				con.logger.Warn("Failed to get node info", zap.Error(err))
+				ex.logger.Warn("Failed to get node info", zap.Error(err))
 				continue
 			}
-			con.latestTrustedBlock.Store(info.Msg.CurrentHeight)
-			con.lastRefreshTime.Store(time.Now().Unix())
-			con.logger.Info("Updated node info", zap.Int64("height", info.Msg.CurrentHeight))
+			ex.latestTrustedBlock.Store(info.Msg.CurrentHeight)
+			ex.lastRefreshTime.Store(time.Now().Unix())
+			ex.logger.Info("Updated node info", zap.Int64("height", info.Msg.CurrentHeight))
 		}
 		return nil
 	})
 
 	g.Go(func() error {
-		if err := con.etl.Run(); err != nil {
+		if err := ex.etl.Run(); err != nil {
 			return err
 		}
 		return nil
@@ -239,37 +239,37 @@ func (con *Console) Run() error {
 
 	// Start dashboard cache refresh after ETL DB is ready
 	g.Go(func() error {
-		for con.etl.GetDB() == nil {
+		for ex.etl.GetDB() == nil {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-time.After(1 * time.Second):
-				con.logger.Info("Waiting for ETL DB to be ready (dashboard cache)")
+				ex.logger.Info("Waiting for ETL DB to be ready (dashboard cache)")
 			}
 		}
-		con.logger.Info("Starting dashboard cache refresh")
-		con.dashboardCache.StartRefresh(ctx)
+		ex.logger.Info("Starting dashboard cache refresh")
+		ex.dashboardCache.StartRefresh(ctx)
 		return nil
 	})
 
 	g.Go(func() error {
-		for con.etl.GetDB() == nil {
+		for ex.etl.GetDB() == nil {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-time.After(1 * time.Second):
-				con.logger.Info("Waiting for ETL DB to be ready (validator locations cache)")
+				ex.logger.Info("Waiting for ETL DB to be ready (validator locations cache)")
 			}
 		}
 		// Give validator sync a moment to populate the DB
 		time.Sleep(5 * time.Second)
-		con.logger.Info("Starting validator locations cache refresh")
-		con.validatorLocationsCache.StartRefresh(ctx)
+		ex.logger.Info("Starting validator locations cache refresh")
+		ex.validatorLocationsCache.StartRefresh(ctx)
 		return nil
 	})
 
 	g.Go(func() error {
-		if err := con.e.Start(":3000"); err != nil {
+		if err := ex.e.Start(":3000"); err != nil {
 			return err
 		}
 		return nil
@@ -278,14 +278,14 @@ func (con *Console) Run() error {
 	return g.Wait()
 }
 
-func (con *Console) Stop() {
-	con.e.Shutdown(context.Background())
+func (ex *Explorer) Stop() {
+	ex.e.Shutdown(context.Background())
 }
 
 // getTransactionsWithBlockHeights is a helper method to get transactions with their block heights
-func (con *Console) getTransactionsWithBlockHeights(ctx context.Context, limit, offset int32) ([]*db.EtlTransaction, map[string]int64, error) {
+func (ex *Explorer) getTransactionsWithBlockHeights(ctx context.Context, limit, offset int32) ([]*db.EtlTransaction, map[string]int64, error) {
 	// Use GetTransactionsByPage for proper offset-based pagination
-	transactions, err := con.etl.GetDB().GetTransactionsByPage(ctx, db.GetTransactionsByPageParams{
+	transactions, err := ex.etl.GetDB().GetTransactionsByPage(ctx, db.GetTransactionsByPageParams{
 		Limit:  limit,
 		Offset: offset,
 	})
@@ -304,7 +304,7 @@ func (con *Console) getTransactionsWithBlockHeights(ctx context.Context, limit, 
 	return txPointers, blockHeights, nil
 }
 
-func (con *Console) Hello(c echo.Context) error {
+func (ex *Explorer) Hello(c echo.Context) error {
 	param := "sup"
 	if name := c.QueryParam("name"); name != "" {
 		param = name
@@ -318,31 +318,31 @@ func (con *Console) Hello(c echo.Context) error {
 
 // buildDashboardProps builds the dashboard props by querying the database
 // This is used by the cache to refresh dashboard data periodically
-func (con *Console) buildDashboardProps(ctx context.Context) (*pages.DashboardProps, error) {
+func (ex *Explorer) buildDashboardProps(ctx context.Context) (*pages.DashboardProps, error) {
 	// Get dashboard transaction stats from materialized view
-	txStats, err := con.etl.GetDB().GetDashboardTransactionStats(ctx)
+	txStats, err := ex.etl.GetDB().GetDashboardTransactionStats(ctx)
 	if err != nil {
-		con.logger.Warn("Failed to get dashboard transaction stats", zap.Error(err))
+		ex.logger.Warn("Failed to get dashboard transaction stats", zap.Error(err))
 		// Use fallback empty stats
 		txStats = db.MvDashboardTransactionStat{}
 	}
 
 	// Get transaction type breakdown from materialized view
-	txTypes, err2 := con.etl.GetDB().GetDashboardTransactionTypes(ctx)
+	txTypes, err2 := ex.etl.GetDB().GetDashboardTransactionTypes(ctx)
 	if err2 != nil {
-		con.logger.Warn("Failed to get dashboard transaction types", zap.Error(err2))
+		ex.logger.Warn("Failed to get dashboard transaction types", zap.Error(err2))
 		txTypes = []db.MvDashboardTransactionType{}
 	}
 
 	// Get latest indexed block
-	latestBlockHeight, err := con.etl.GetDB().GetLatestIndexedBlock(ctx)
+	latestBlockHeight, err := ex.etl.GetDB().GetLatestIndexedBlock(ctx)
 	if err != nil {
-		con.logger.Warn("Failed to get latest block height", zap.Error(err))
+		ex.logger.Warn("Failed to get latest block height", zap.Error(err))
 		latestBlockHeight = 0
 	}
 
 	// Get latest trusted block height from the trusted node
-	trustedBlockHeight := int64(con.latestTrustedBlock.Load())
+	trustedBlockHeight := int64(ex.latestTrustedBlock.Load())
 
 	// Calculate sync status - consider synced if within 60 blocks of the head
 	const syncThreshold = 60
@@ -373,9 +373,9 @@ func (con *Console) buildDashboardProps(ctx context.Context) (*pages.DashboardPr
 	// Get latest SLA rollup for BPS/TPS data
 	var bps, tps float64 = 0, 0
 	var avgBlockTime float32 = 0
-	latestSlaRollup, err := con.etl.GetDB().GetLatestSlaRollup(ctx)
+	latestSlaRollup, err := ex.etl.GetDB().GetLatestSlaRollup(ctx)
 	if err != nil {
-		con.logger.Debug("Failed to get latest SLA rollup", zap.Error(err))
+		ex.logger.Debug("Failed to get latest SLA rollup", zap.Error(err))
 		// Fall back to default values
 		bps = 0.5
 		tps = 0.1
@@ -392,19 +392,19 @@ func (con *Console) buildDashboardProps(ctx context.Context) (*pages.DashboardPr
 	}
 
 	// Get some recent transactions for the dashboard
-	transactions, blockHeights, err := con.getTransactionsWithBlockHeights(ctx, 10, 0)
+	transactions, blockHeights, err := ex.getTransactionsWithBlockHeights(ctx, 10, 0)
 	if err != nil {
-		con.logger.Warn("Failed to get transactions", zap.Error(err))
+		ex.logger.Warn("Failed to get transactions", zap.Error(err))
 		transactions = []*db.EtlTransaction{}
 		blockHeights = make(map[string]int64)
 	}
 
-	blocks, err := con.etl.GetDB().GetBlocksByPage(ctx, db.GetBlocksByPageParams{
+	blocks, err := ex.etl.GetDB().GetBlocksByPage(ctx, db.GetBlocksByPageParams{
 		Limit:  10,
 		Offset: 0,
 	})
 	if err != nil {
-		con.logger.Warn("Failed to get blocks", zap.Error(err))
+		ex.logger.Warn("Failed to get blocks", zap.Error(err))
 		blocks = []db.EtlBlock{}
 	}
 
@@ -414,16 +414,16 @@ func (con *Console) buildDashboardProps(ctx context.Context) (*pages.DashboardPr
 	}
 
 	// Get active validator count
-	validatorCount, err := con.etl.GetDB().GetActiveValidatorCount(ctx)
+	validatorCount, err := ex.etl.GetDB().GetActiveValidatorCount(ctx)
 	if err != nil {
-		con.logger.Warn("Failed to get validator count", zap.Error(err))
+		ex.logger.Warn("Failed to get validator count", zap.Error(err))
 		validatorCount = 0
 	}
 
 	// Build stats using materialized view data
 	stats := &pages.DashboardStats{
 		CurrentBlockHeight:           latestBlockHeight,
-		ChainID:                      con.etl.ChainID(),
+		ChainID:                      ex.etl.ChainID(),
 		BPS:                          bps,
 		TPS:                          tps,
 		TotalTransactions:            txStats.TotalTransactions,
@@ -459,12 +459,12 @@ func (con *Console) buildDashboardProps(ctx context.Context) (*pages.DashboardPr
 	}
 
 	// Get SLA performance data for the chart (most recent 50 rollups)
-	slaRollupsData, err := con.etl.GetDB().GetSlaRollupsWithPagination(ctx, db.GetSlaRollupsWithPaginationParams{
+	slaRollupsData, err := ex.etl.GetDB().GetSlaRollupsWithPagination(ctx, db.GetSlaRollupsWithPaginationParams{
 		Limit:  50,
 		Offset: 0,
 	})
 	if err != nil {
-		con.logger.Warn("Failed to get SLA rollups for performance chart", zap.Error(err))
+		ex.logger.Warn("Failed to get SLA rollups for performance chart", zap.Error(err))
 		slaRollupsData = []db.EtlSlaRollup{}
 	}
 
@@ -481,9 +481,9 @@ func (con *Console) buildDashboardProps(ctx context.Context) (*pages.DashboardPr
 		}
 
 		// Get healthy validator counts for these rollups
-		healthyValidatorData, err := con.etl.GetDB().GetHealthyValidatorCountsForRollups(ctx, rollupIDs)
+		healthyValidatorData, err := ex.etl.GetDB().GetHealthyValidatorCountsForRollups(ctx, rollupIDs)
 		if err != nil {
-			con.logger.Warn("Failed to get healthy validator counts", zap.Error(err))
+			ex.logger.Warn("Failed to get healthy validator counts", zap.Error(err))
 			healthyValidatorData = []db.GetHealthyValidatorCountsForRollupsRow{}
 		}
 
@@ -564,16 +564,16 @@ func (con *Console) buildDashboardProps(ctx context.Context) (*pages.DashboardPr
 	return props, nil
 }
 
-func (con *Console) Dashboard(c echo.Context) error {
+func (ex *Explorer) Dashboard(c echo.Context) error {
 	// Get cached dashboard props
-	props := con.dashboardCache.Get()
+	props := ex.dashboardCache.Get()
 
 	// If cache isn't ready yet, build props on-demand
 	if props == nil {
 		var err error
-		props, err = con.buildDashboardProps(c.Request().Context())
+		props, err = ex.buildDashboardProps(c.Request().Context())
 		if err != nil {
-			con.logger.Error("Failed to build dashboard props", zap.Error(err))
+			ex.logger.Error("Failed to build dashboard props", zap.Error(err))
 			return c.String(http.StatusInternalServerError, "Failed to load dashboard")
 		}
 	}
@@ -583,7 +583,7 @@ func (con *Console) Dashboard(c echo.Context) error {
 	return p.Render(c.Request().Context(), c.Response().Writer)
 }
 
-func (con *Console) Validators(c echo.Context) error {
+func (ex *Explorer) Validators(c echo.Context) error {
 	// Parse query parameters
 	pageParam := c.QueryParam("page")
 	countParam := c.QueryParam("count")
@@ -620,12 +620,12 @@ func (con *Console) Validators(c echo.Context) error {
 	switch queryType {
 	case "active":
 		// Get active validators
-		validatorsData, err := con.etl.GetDB().GetActiveValidators(ctx, db.GetActiveValidatorsParams{
+		validatorsData, err := ex.etl.GetDB().GetActiveValidators(ctx, db.GetActiveValidatorsParams{
 			Limit:  count,
 			Offset: offset,
 		})
 		if err != nil {
-			con.logger.Warn("Failed to get active validators", zap.Error(err))
+			ex.logger.Warn("Failed to get active validators", zap.Error(err))
 			validatorsData = []db.EtlValidator{}
 		}
 
@@ -635,12 +635,12 @@ func (con *Console) Validators(c echo.Context) error {
 				validators = append(validators, &validatorsData[i])
 
 				// Get uptime data for each validator
-				reports, err := con.etl.GetDB().GetSlaNodeReportsByAddress(ctx, db.GetSlaNodeReportsByAddressParams{
+				reports, err := ex.etl.GetDB().GetSlaNodeReportsByAddress(ctx, db.GetSlaNodeReportsByAddressParams{
 					Lower: validatorsData[i].CometAddress,
 					Limit: 5, // Get last 5 SLA reports
 				})
 				if err != nil {
-					con.logger.Warn("Failed to get SLA reports", zap.String("address", validatorsData[i].CometAddress), zap.Error(err))
+					ex.logger.Warn("Failed to get SLA reports", zap.String("address", validatorsData[i].CometAddress), zap.Error(err))
 				} else {
 					reportPointers := make([]*db.EtlSlaNodeReport, len(reports))
 					for j := range reports {
@@ -653,12 +653,12 @@ func (con *Console) Validators(c echo.Context) error {
 
 	case "registrations":
 		// Get validator registrations - this will need a different approach since it's a different table
-		regsData, err := con.etl.GetDB().GetValidatorRegistrations(ctx, db.GetValidatorRegistrationsParams{
+		regsData, err := ex.etl.GetDB().GetValidatorRegistrations(ctx, db.GetValidatorRegistrationsParams{
 			Limit:  count,
 			Offset: offset,
 		})
 		if err != nil {
-			con.logger.Warn("Failed to get validator registrations", zap.Error(err))
+			ex.logger.Warn("Failed to get validator registrations", zap.Error(err))
 			regsData = []db.GetValidatorRegistrationsRow{}
 		}
 
@@ -683,12 +683,12 @@ func (con *Console) Validators(c echo.Context) error {
 
 	case "deregistrations":
 		// Get validator deregistrations
-		deregsData, err := con.etl.GetDB().GetValidatorDeregistrations(ctx, db.GetValidatorDeregistrationsParams{
+		deregsData, err := ex.etl.GetDB().GetValidatorDeregistrations(ctx, db.GetValidatorDeregistrationsParams{
 			Limit:  count,
 			Offset: offset,
 		})
 		if err != nil {
-			con.logger.Warn("Failed to get validator deregistrations", zap.Error(err))
+			ex.logger.Warn("Failed to get validator deregistrations", zap.Error(err))
 			deregsData = []db.GetValidatorDeregistrationsRow{}
 		}
 
@@ -748,7 +748,7 @@ func (con *Console) Validators(c echo.Context) error {
 	return p.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) Validator(c echo.Context) error {
+func (ex *Explorer) Validator(c echo.Context) error {
 	address := c.Param("address")
 	if address == "" {
 		return c.String(http.StatusBadRequest, "Validator address required")
@@ -757,18 +757,18 @@ func (con *Console) Validator(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Get validator by address
-	validator, err := con.etl.GetDB().GetValidatorByAddress(ctx, address)
+	validator, err := ex.etl.GetDB().GetValidatorByAddress(ctx, address)
 	if err != nil {
 		return c.String(http.StatusNotFound, fmt.Sprintf("Validator not found: %s", address))
 	}
 
 	// Get SLA rollup reports for this validator
-	reports, err := con.etl.GetDB().GetSlaNodeReportsByAddress(ctx, db.GetSlaNodeReportsByAddressParams{
+	reports, err := ex.etl.GetDB().GetSlaNodeReportsByAddress(ctx, db.GetSlaNodeReportsByAddressParams{
 		Lower: validator.CometAddress,
 		Limit: 10, // Get last 10 reports
 	})
 	if err != nil {
-		con.logger.Warn("Failed to get SLA reports for validator", zap.String("address", address), zap.Error(err))
+		ex.logger.Warn("Failed to get SLA reports for validator", zap.String("address", address), zap.Error(err))
 		reports = []db.EtlSlaNodeReport{}
 	}
 
@@ -792,7 +792,7 @@ func (con *Console) Validator(c echo.Context) error {
 	return p.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) ValidatorsUptime(c echo.Context) error {
+func (ex *Explorer) ValidatorsUptime(c echo.Context) error {
 	// Parse query parameters for pagination
 	pageParam := c.QueryParam("page")
 	countParam := c.QueryParam("count")
@@ -817,12 +817,12 @@ func (con *Console) ValidatorsUptime(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Get paginated SLA rollups
-	rollupsData, err := con.etl.GetDB().GetSlaRollupsWithPagination(ctx, db.GetSlaRollupsWithPaginationParams{
+	rollupsData, err := ex.etl.GetDB().GetSlaRollupsWithPagination(ctx, db.GetSlaRollupsWithPaginationParams{
 		Limit:  count,
 		Offset: offset,
 	})
 	if err != nil {
-		con.logger.Warn("Failed to get SLA rollups", zap.Error(err))
+		ex.logger.Warn("Failed to get SLA rollups", zap.Error(err))
 		rollupsData = []db.EtlSlaRollup{}
 	}
 
@@ -853,7 +853,7 @@ func (con *Console) ValidatorsUptime(c echo.Context) error {
 	return p.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) ValidatorsUptimeByRollup(c echo.Context) error {
+func (ex *Explorer) ValidatorsUptimeByRollup(c echo.Context) error {
 	rollupIDParam := c.Param("rollupid")
 	if rollupIDParam == "" {
 		return c.String(http.StatusBadRequest, "Rollup ID required")
@@ -867,27 +867,27 @@ func (con *Console) ValidatorsUptimeByRollup(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// First, get the actual SLA rollup data to get tx_hash, created_at, block quota, etc.
-	rollupInfo, err := con.etl.GetDB().GetSlaRollupById(ctx, int32(rollupID))
+	rollupInfo, err := ex.etl.GetDB().GetSlaRollupById(ctx, int32(rollupID))
 	if err != nil {
-		con.logger.Warn("Failed to get SLA rollup by ID", zap.Int64("rollupID", rollupID), zap.Error(err))
+		ex.logger.Warn("Failed to get SLA rollup by ID", zap.Int64("rollupID", rollupID), zap.Error(err))
 		return c.String(http.StatusNotFound, fmt.Sprintf("SLA rollup not found: %d", rollupID))
 	}
 
 	// Get validators for this specific SLA rollup
-	validatorsData, err := con.etl.GetDB().GetValidatorsForSlaRollup(ctx, int32(rollupID))
+	validatorsData, err := ex.etl.GetDB().GetValidatorsForSlaRollup(ctx, int32(rollupID))
 	if err != nil {
-		con.logger.Warn("Failed to get validators for SLA rollup", zap.Int64("rollupID", rollupID), zap.Error(err))
+		ex.logger.Warn("Failed to get validators for SLA rollup", zap.Int64("rollupID", rollupID), zap.Error(err))
 		validatorsData = []db.GetValidatorsForSlaRollupRow{}
 	}
 
 	// Calculate challenge statistics dynamically for this rollup's block range
 	// This ensures we get the current accurate data instead of potentially stale pre-calculated values
-	challengeStats, err := con.etl.GetDB().GetChallengeStatisticsForBlockRange(ctx, db.GetChallengeStatisticsForBlockRangeParams{
+	challengeStats, err := ex.etl.GetDB().GetChallengeStatisticsForBlockRange(ctx, db.GetChallengeStatisticsForBlockRangeParams{
 		Height:   rollupInfo.BlockStart,
 		Height_2: rollupInfo.BlockEnd,
 	})
 	if err != nil {
-		con.logger.Warn("Failed to get challenge statistics", zap.Int64("rollupID", rollupID), zap.Error(err))
+		ex.logger.Warn("Failed to get challenge statistics", zap.Int64("rollupID", rollupID), zap.Error(err))
 		challengeStats = []db.GetChallengeStatisticsForBlockRangeRow{}
 	}
 
@@ -956,7 +956,7 @@ func (con *Console) ValidatorsUptimeByRollup(c echo.Context) error {
 	return p.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) Rollups(c echo.Context) error {
+func (ex *Explorer) Rollups(c echo.Context) error {
 	// Parse query parameters for pagination
 	pageParam := c.QueryParam("page")
 	countParam := c.QueryParam("count")
@@ -981,12 +981,12 @@ func (con *Console) Rollups(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Get paginated SLA rollups
-	rollupsData, err := con.etl.GetDB().GetSlaRollupsWithPagination(ctx, db.GetSlaRollupsWithPaginationParams{
+	rollupsData, err := ex.etl.GetDB().GetSlaRollupsWithPagination(ctx, db.GetSlaRollupsWithPaginationParams{
 		Limit:  count,
 		Offset: offset,
 	})
 	if err != nil {
-		con.logger.Warn("Failed to get SLA rollups", zap.Error(err))
+		ex.logger.Warn("Failed to get SLA rollups", zap.Error(err))
 		rollupsData = []db.EtlSlaRollup{}
 	}
 
@@ -1017,7 +1017,7 @@ func (con *Console) Rollups(c echo.Context) error {
 	return p.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) Blocks(c echo.Context) error {
+func (ex *Explorer) Blocks(c echo.Context) error {
 	// Parse query parameters
 	pageParam := c.QueryParam("page")
 	countParam := c.QueryParam("count")
@@ -1040,12 +1040,12 @@ func (con *Console) Blocks(c echo.Context) error {
 	offset := (page - 1) * count
 
 	// Get blocks from database
-	blocksData, err := con.etl.GetDB().GetBlocksByPage(c.Request().Context(), db.GetBlocksByPageParams{
+	blocksData, err := ex.etl.GetDB().GetBlocksByPage(c.Request().Context(), db.GetBlocksByPageParams{
 		Limit:  count,
 		Offset: offset,
 	})
 	if err != nil {
-		con.logger.Warn("Failed to get blocks", zap.Error(err))
+		ex.logger.Warn("Failed to get blocks", zap.Error(err))
 		blocksData = []db.EtlBlock{}
 	}
 
@@ -1055,9 +1055,9 @@ func (con *Console) Blocks(c echo.Context) error {
 	for i := range blocksData {
 		blocks[i] = &blocksData[i]
 		// Get transaction count for each block
-		txCount, err := con.etl.GetDB().GetBlockTransactionCount(c.Request().Context(), blocksData[i].BlockHeight)
+		txCount, err := ex.etl.GetDB().GetBlockTransactionCount(c.Request().Context(), blocksData[i].BlockHeight)
 		if err != nil {
-			con.logger.Warn("Failed to get transaction count for block", zap.Int64("height", blocksData[i].BlockHeight), zap.Error(err))
+			ex.logger.Warn("Failed to get transaction count for block", zap.Int64("height", blocksData[i].BlockHeight), zap.Error(err))
 			txCount = 0
 		}
 		blockTransactions[i] = int32(txCount)
@@ -1081,7 +1081,7 @@ func (con *Console) Blocks(c echo.Context) error {
 	return p.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) Transactions(c echo.Context) error {
+func (ex *Explorer) Transactions(c echo.Context) error {
 	// Parse query parameters
 	pageParam := c.QueryParam("page")
 	countParam := c.QueryParam("count")
@@ -1103,7 +1103,7 @@ func (con *Console) Transactions(c echo.Context) error {
 	// Calculate offset from page number
 	offset := (page - 1) * count
 
-	transactions, blockHeights, err := con.getTransactionsWithBlockHeights(c.Request().Context(), count, offset)
+	transactions, blockHeights, err := ex.getTransactionsWithBlockHeights(c.Request().Context(), count, offset)
 	if err != nil {
 		return c.String(http.StatusInternalServerError, "Failed to get transactions")
 	}
@@ -1126,13 +1126,13 @@ func (con *Console) Transactions(c echo.Context) error {
 	return p.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) Content(c echo.Context) error {
+func (ex *Explorer) Content(c echo.Context) error {
 	p := pages.Content()
 	ctx := c.Request().Context()
 	return p.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) Block(c echo.Context) error {
+func (ex *Explorer) Block(c echo.Context) error {
 	height, err := strconv.ParseInt(c.Param("height"), 10, 64)
 	if err != nil {
 		return c.String(http.StatusBadRequest, "Invalid block height")
@@ -1141,7 +1141,7 @@ func (con *Console) Block(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Get block by height
-	block, err := con.etl.GetDB().GetBlockByHeight(ctx, height)
+	block, err := ex.etl.GetDB().GetBlockByHeight(ctx, height)
 	if err != nil {
 		return c.String(http.StatusNotFound, fmt.Sprintf("Block not found at height %d", height))
 	}
@@ -1149,12 +1149,12 @@ func (con *Console) Block(c echo.Context) error {
 	// Get transactions for this block
 	// First get all transactions and filter by block height
 	// This is not the most efficient but will work for now - TODO: add GetTransactionsByBlockHeight query
-	transactionsData, err := con.etl.GetDB().GetTransactionsByPage(ctx, db.GetTransactionsByPageParams{
+	transactionsData, err := ex.etl.GetDB().GetTransactionsByPage(ctx, db.GetTransactionsByPageParams{
 		Limit:  1000, // Get a large number to ensure we get all for this block
 		Offset: 0,
 	})
 	if err != nil {
-		con.logger.Warn("Failed to get transactions", zap.Error(err))
+		ex.logger.Warn("Failed to get transactions", zap.Error(err))
 		transactionsData = []db.EtlTransaction{}
 	}
 
@@ -1176,7 +1176,7 @@ func (con *Console) Block(c echo.Context) error {
 	return p.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) Transaction(c echo.Context) error {
+func (ex *Explorer) Transaction(c echo.Context) error {
 	txHash := c.Param("hash")
 	if txHash == "" {
 		return c.String(http.StatusBadRequest, "Transaction hash required")
@@ -1185,15 +1185,15 @@ func (con *Console) Transaction(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Get transaction by hash
-	transaction, err := con.etl.GetDB().GetTransactionByHash(ctx, txHash)
+	transaction, err := ex.etl.GetDB().GetTransactionByHash(ctx, txHash)
 	if err != nil {
 		return c.String(http.StatusNotFound, fmt.Sprintf("Transaction not found: %s", txHash))
 	}
 
 	// Get block info for this transaction
-	block, err := con.etl.GetDB().GetBlockByHeight(ctx, transaction.BlockHeight)
+	block, err := ex.etl.GetDB().GetBlockByHeight(ctx, transaction.BlockHeight)
 	if err != nil {
-		con.logger.Warn("Failed to get block for transaction", zap.Int64("blockHeight", transaction.BlockHeight), zap.Error(err))
+		ex.logger.Warn("Failed to get block for transaction", zap.Int64("blockHeight", transaction.BlockHeight), zap.Error(err))
 		return c.String(http.StatusNotFound, fmt.Sprintf("Block not found at height %d", transaction.BlockHeight))
 	}
 
@@ -1201,9 +1201,9 @@ func (con *Console) Transaction(c echo.Context) error {
 	var content interface{}
 	switch transaction.TxType {
 	case "play":
-		plays, err := con.etl.GetDB().GetPlaysByTxHash(ctx, txHash)
+		plays, err := ex.etl.GetDB().GetPlaysByTxHash(ctx, txHash)
 		if err != nil {
-			con.logger.Warn("Failed to get plays for transaction", zap.String("txHash", txHash), zap.Error(err))
+			ex.logger.Warn("Failed to get plays for transaction", zap.String("txHash", txHash), zap.Error(err))
 		} else if len(plays) > 0 {
 			// Convert to pointers for template
 			playPointers := make([]*db.EtlPlay, len(plays))
@@ -1214,49 +1214,49 @@ func (con *Console) Transaction(c echo.Context) error {
 		}
 
 	case "manage_entity":
-		entity, err := con.etl.GetDB().GetManageEntityByTxHash(ctx, txHash)
+		entity, err := ex.etl.GetDB().GetManageEntityByTxHash(ctx, txHash)
 		if err != nil {
-			con.logger.Warn("Failed to get manage entity for transaction", zap.String("txHash", txHash), zap.Error(err))
+			ex.logger.Warn("Failed to get manage entity for transaction", zap.String("txHash", txHash), zap.Error(err))
 		} else {
 			content = &entity
 		}
 
 	case "validator_registration":
-		registration, err := con.etl.GetDB().GetValidatorRegistrationByTxHash(ctx, txHash)
+		registration, err := ex.etl.GetDB().GetValidatorRegistrationByTxHash(ctx, txHash)
 		if err != nil {
-			con.logger.Warn("Failed to get validator registration for transaction", zap.String("txHash", txHash), zap.Error(err))
+			ex.logger.Warn("Failed to get validator registration for transaction", zap.String("txHash", txHash), zap.Error(err))
 		} else {
 			content = &registration
 		}
 
 	case "validator_deregistration":
-		deregistration, err := con.etl.GetDB().GetValidatorDeregistrationByTxHash(ctx, txHash)
+		deregistration, err := ex.etl.GetDB().GetValidatorDeregistrationByTxHash(ctx, txHash)
 		if err != nil {
-			con.logger.Warn("Failed to get validator deregistration for transaction", zap.String("txHash", txHash), zap.Error(err))
+			ex.logger.Warn("Failed to get validator deregistration for transaction", zap.String("txHash", txHash), zap.Error(err))
 		} else {
 			content = &deregistration
 		}
 
 	case "sla_rollup":
-		slaRollup, err := con.etl.GetDB().GetSlaRollupByTxHash(ctx, txHash)
+		slaRollup, err := ex.etl.GetDB().GetSlaRollupByTxHash(ctx, txHash)
 		if err != nil {
-			con.logger.Warn("Failed to get SLA rollup for transaction", zap.String("txHash", txHash), zap.Error(err))
+			ex.logger.Warn("Failed to get SLA rollup for transaction", zap.String("txHash", txHash), zap.Error(err))
 		} else {
 			content = &slaRollup
 		}
 
 	case "storage_proof":
-		storageProof, err := con.etl.GetDB().GetStorageProofByTxHash(ctx, txHash)
+		storageProof, err := ex.etl.GetDB().GetStorageProofByTxHash(ctx, txHash)
 		if err != nil {
-			con.logger.Warn("Failed to get storage proof for transaction", zap.String("txHash", txHash), zap.Error(err))
+			ex.logger.Warn("Failed to get storage proof for transaction", zap.String("txHash", txHash), zap.Error(err))
 		} else {
 			content = &storageProof
 		}
 
 	case "storage_proof_verification":
-		storageProofVerification, err := con.etl.GetDB().GetStorageProofVerificationByTxHash(ctx, txHash)
+		storageProofVerification, err := ex.etl.GetDB().GetStorageProofVerificationByTxHash(ctx, txHash)
 		if err != nil {
-			con.logger.Warn("Failed to get storage proof verification for transaction", zap.String("txHash", txHash), zap.Error(err))
+			ex.logger.Warn("Failed to get storage proof verification for transaction", zap.String("txHash", txHash), zap.Error(err))
 		} else {
 			content = &storageProofVerification
 		}
@@ -1273,7 +1273,7 @@ func (con *Console) Transaction(c echo.Context) error {
 	return p.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) Account(c echo.Context) error {
+func (ex *Explorer) Account(c echo.Context) error {
 	address := c.Param("address")
 	if address == "" {
 		return c.String(http.StatusBadRequest, "Address parameter is required")
@@ -1335,7 +1335,7 @@ func (con *Console) Account(c echo.Context) error {
 	offset := (page - 1) * count
 
 	ctx := c.Request().Context()
-	etlDB := con.etl.GetDB()
+	etlDB := ex.etl.GetDB()
 
 	// Parse date filters
 	var startTimestamp, endTimestamp pgtype.Timestamp
@@ -1361,7 +1361,7 @@ func (con *Console) Account(c echo.Context) error {
 		Offset:  offset,
 	})
 	if err != nil {
-		con.logger.Error("Failed to get transactions for address", zap.String("address", address), zap.Error(err))
+		ex.logger.Error("Failed to get transactions for address", zap.String("address", address), zap.Error(err))
 		return c.String(http.StatusInternalServerError, "Failed to get transactions")
 	}
 
@@ -1373,14 +1373,14 @@ func (con *Console) Account(c echo.Context) error {
 		Column4: endTimestamp,
 	})
 	if err != nil {
-		con.logger.Error("Failed to get transaction count for address", zap.String("address", address), zap.Error(err))
+		ex.logger.Error("Failed to get transaction count for address", zap.String("address", address), zap.Error(err))
 		return c.String(http.StatusInternalServerError, "Failed to get transaction count")
 	}
 
 	// Get available relation types for filter dropdown
 	relationTypesRaw, err := etlDB.GetRelationTypesByAddress(ctx, address)
 	if err != nil {
-		con.logger.Error("Failed to get relation types for address", zap.String("address", address), zap.Error(err))
+		ex.logger.Error("Failed to get relation types for address", zap.String("address", address), zap.Error(err))
 		// Don't fail the request, just log the error
 		relationTypesRaw = []interface{}{}
 	}
@@ -1438,23 +1438,23 @@ func (con *Console) Account(c echo.Context) error {
 	return p.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) stubRoute(c echo.Context) error {
+func (ex *Explorer) stubRoute(c echo.Context) error {
 	return c.String(http.StatusOK, "Hello, World!")
 }
 
 // HTMX Fragment Handlers
-func (con *Console) StatsHeaderFragment(c echo.Context) error {
+func (ex *Explorer) StatsHeaderFragment(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Get latest indexed block
-	latestBlockHeight, err := con.etl.GetDB().GetLatestIndexedBlock(ctx)
+	latestBlockHeight, err := ex.etl.GetDB().GetLatestIndexedBlock(ctx)
 	if err != nil {
-		con.logger.Warn("Failed to get latest block height", zap.Error(err))
+		ex.logger.Warn("Failed to get latest block height", zap.Error(err))
 		latestBlockHeight = 0
 	}
 
 	// Get latest trusted block height from the trusted node
-	trustedBlockHeight := int64(con.latestTrustedBlock.Load())
+	trustedBlockHeight := int64(ex.latestTrustedBlock.Load())
 
 	// Calculate sync status - consider synced if within 60 blocks of the head
 	const syncThreshold = 60
@@ -1485,9 +1485,9 @@ func (con *Console) StatsHeaderFragment(c echo.Context) error {
 	// Get latest SLA rollup for BPS/TPS data
 	var bps float64 = 0
 	var avgBlockTime float32 = 0
-	latestSlaRollup, err := con.etl.GetDB().GetLatestSlaRollup(ctx)
+	latestSlaRollup, err := ex.etl.GetDB().GetLatestSlaRollup(ctx)
 	if err != nil {
-		con.logger.Debug("Failed to get latest SLA rollup", zap.Error(err))
+		ex.logger.Debug("Failed to get latest SLA rollup", zap.Error(err))
 		// Fall back to default values
 		bps = 0.5
 		avgBlockTime = 2.0
@@ -1502,15 +1502,15 @@ func (con *Console) StatsHeaderFragment(c echo.Context) error {
 	}
 
 	// Get active validator count
-	validatorCount, err := con.etl.GetDB().GetActiveValidatorCount(ctx)
+	validatorCount, err := ex.etl.GetDB().GetActiveValidatorCount(ctx)
 	if err != nil {
-		con.logger.Warn("Failed to get validator count", zap.Error(err))
+		ex.logger.Warn("Failed to get validator count", zap.Error(err))
 		validatorCount = 0
 	}
 
 	stats := &pages.DashboardStats{
 		CurrentBlockHeight:  latestBlockHeight,
-		ChainID:             con.etl.ChainID(),
+		ChainID:             ex.etl.ChainID(),
 		BPS:                 bps,
 		ValidatorCount:      validatorCount,
 		AvgBlockTime:        avgBlockTime,
@@ -1525,19 +1525,19 @@ func (con *Console) StatsHeaderFragment(c echo.Context) error {
 	return fragment.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) NetworkSidebarFragment(c echo.Context) error {
+func (ex *Explorer) NetworkSidebarFragment(c echo.Context) error {
 	// TODO: Implement network sidebar fragment using database queries
 	return c.String(http.StatusNotImplemented, "TODO: Implement network sidebar fragment")
 }
 
-func (con *Console) TPSFragment(c echo.Context) error {
+func (ex *Explorer) TPSFragment(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Get latest SLA rollup for TPS data
 	var tps float64 = 0
-	latestSlaRollup, err := con.etl.GetDB().GetLatestSlaRollup(ctx)
+	latestSlaRollup, err := ex.etl.GetDB().GetLatestSlaRollup(ctx)
 	if err != nil {
-		con.logger.Debug("Failed to get latest SLA rollup", zap.Error(err))
+		ex.logger.Debug("Failed to get latest SLA rollup", zap.Error(err))
 		// Fall back to default value
 		tps = 0.1
 	} else {
@@ -1545,9 +1545,9 @@ func (con *Console) TPSFragment(c echo.Context) error {
 	}
 
 	// Get dashboard transaction stats from materialized view
-	txStats, err := con.etl.GetDB().GetDashboardTransactionStats(ctx)
+	txStats, err := ex.etl.GetDB().GetDashboardTransactionStats(ctx)
 	if err != nil {
-		con.logger.Warn("Failed to get dashboard transaction stats", zap.Error(err))
+		ex.logger.Warn("Failed to get dashboard transaction stats", zap.Error(err))
 		txStats = db.MvDashboardTransactionStat{}
 	}
 
@@ -1561,13 +1561,13 @@ func (con *Console) TPSFragment(c echo.Context) error {
 	return fragment.Render(ctx, c.Response().Writer)
 }
 
-func (con *Console) TotalTransactionsFragment(c echo.Context) error {
+func (ex *Explorer) TotalTransactionsFragment(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Get dashboard transaction stats from materialized view
-	txStats, err := con.etl.GetDB().GetDashboardTransactionStats(ctx)
+	txStats, err := ex.etl.GetDB().GetDashboardTransactionStats(ctx)
 	if err != nil {
-		con.logger.Warn("Failed to get dashboard transaction stats", zap.Error(err))
+		ex.logger.Warn("Failed to get dashboard transaction stats", zap.Error(err))
 		txStats = db.MvDashboardTransactionStat{}
 	}
 
@@ -1589,7 +1589,7 @@ type SSEEvent struct {
 
 const sseConnectionTTL = 1 * time.Minute
 
-func (con *Console) LiveEventsSSE(c echo.Context) error {
+func (ex *Explorer) LiveEventsSSE(c echo.Context) error {
 	c.Response().Header().Set("Content-Type", "text/event-stream")
 	c.Response().Header().Set("Cache-Control", "no-cache")
 	c.Response().Header().Set("Connection", "keep-alive")
@@ -1603,13 +1603,13 @@ func (con *Console) LiveEventsSSE(c echo.Context) error {
 	flusher.Flush()
 
 	// Subscribe to both block and play events from ETL pubsub
-	blockCh := con.etl.GetBlockPubsub().Subscribe(etl.BlockTopic, 10)
-	playCh := con.etl.GetPlayPubsub().Subscribe(etl.PlayTopic, 10)
+	blockCh := ex.etl.GetBlockPubsub().Subscribe(etl.BlockTopic, 10)
+	playCh := ex.etl.GetPlayPubsub().Subscribe(etl.PlayTopic, 10)
 
 	// Ensure cleanup on connection close
 	defer func() {
-		con.etl.GetBlockPubsub().Unsubscribe(etl.BlockTopic, blockCh)
-		con.etl.GetPlayPubsub().Unsubscribe(etl.PlayTopic, playCh)
+		ex.etl.GetBlockPubsub().Unsubscribe(etl.BlockTopic, blockCh)
+		ex.etl.GetPlayPubsub().Unsubscribe(etl.PlayTopic, playCh)
 	}()
 
 	flusher.Flush()
@@ -1642,7 +1642,7 @@ func (con *Console) LiveEventsSSE(c echo.Context) error {
 
 		case play := <-playCh:
 			if play != nil {
-				locDB := con.etl.GetLocationDB()
+				locDB := ex.etl.GetLocationDB()
 				ctx := c.Request().Context()
 				var lat, lng float64
 				var found bool
@@ -1694,7 +1694,7 @@ type searchResult struct {
 	URL      string `json:"url,omitempty"`
 }
 
-func (con *Console) Search(c echo.Context) error {
+func (ex *Explorer) Search(c echo.Context) error {
 	query := strings.TrimSpace(c.QueryParam("q"))
 	if query == "" {
 		return c.JSON(http.StatusOK, map[string]interface{}{
@@ -1703,7 +1703,7 @@ func (con *Console) Search(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	etlDB := con.etl.GetDB()
+	etlDB := ex.etl.GetDB()
 	var results []searchResult
 
 	// 1. Block: numeric query → look up by height
@@ -1785,25 +1785,25 @@ func (con *Console) Search(c echo.Context) error {
 }
 
 // refreshTrustedBlock refreshes the trusted block height every 10 seconds
-func (con *Console) refreshTrustedBlock() {
+func (ex *Explorer) refreshTrustedBlock() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		info, err := con.trustedNode.Core.GetNodeInfo(context.Background(), &connect.Request[corev1.GetNodeInfoRequest]{})
+		info, err := ex.trustedNode.Core.GetNodeInfo(context.Background(), &connect.Request[corev1.GetNodeInfoRequest]{})
 		if err != nil {
-			con.logger.Warn("Failed to refresh node info", zap.Error(err))
+			ex.logger.Warn("Failed to refresh node info", zap.Error(err))
 			// Use the cached value if refresh fails
 		} else {
-			con.latestTrustedBlock.Store(info.Msg.CurrentHeight)
-			con.lastRefreshTime.Store(time.Now().Unix())
+			ex.latestTrustedBlock.Store(info.Msg.CurrentHeight)
+			ex.lastRefreshTime.Store(time.Now().Unix())
 		}
 	}
 }
 
 // ValidatorLocations returns cached validator geographic positions
-func (con *Console) ValidatorLocations(c echo.Context) error {
-	locations := con.validatorLocationsCache.Get()
+func (ex *Explorer) ValidatorLocations(c echo.Context) error {
+	locations := ex.validatorLocationsCache.Get()
 	if locations == nil {
 		return c.JSON(http.StatusOK, []ValidatorLocation{})
 	}
@@ -1811,18 +1811,18 @@ func (con *Console) ValidatorLocations(c echo.Context) error {
 }
 
 // buildValidatorLocations fetches lat/lng from each active ETL validator's /version endpoint.
-func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLocation, error) {
-	if con.etl == nil || con.etl.GetDB() == nil {
+func (ex *Explorer) buildValidatorLocations(ctx context.Context) ([]ValidatorLocation, error) {
+	if ex.etl == nil || ex.etl.GetDB() == nil {
 		return nil, fmt.Errorf("etl service not available")
 	}
-	validators, err := con.etl.GetDB().GetActiveValidators(ctx, db.GetActiveValidatorsParams{
+	validators, err := ex.etl.GetDB().GetActiveValidators(ctx, db.GetActiveValidatorsParams{
 		Limit:  200,
 		Offset: 0,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active validators: %w", err)
 	}
-	con.logger.Info("Fetching validator locations", zap.Int("count", len(validators)))
+	ex.logger.Info("Fetching validator locations", zap.Int("count", len(validators)))
 
 	client := &http.Client{
 		Timeout: 3 * time.Second,
@@ -1852,13 +1852,13 @@ func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLoc
 			versionURL := ep + "/version"
 			req, err := http.NewRequestWithContext(ctx, "GET", versionURL, nil)
 			if err != nil {
-				con.logger.Warn("Failed to create request for validator version",
+				ex.logger.Warn("Failed to create request for validator version",
 					zap.String("url", versionURL), zap.Error(err))
 				return
 			}
 			resp, err := client.Do(req)
 			if err != nil {
-				con.logger.Warn("Failed to fetch validator version",
+				ex.logger.Warn("Failed to fetch validator version",
 					zap.String("url", versionURL), zap.Error(err))
 				return
 			}
@@ -1871,7 +1871,7 @@ func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLoc
 			err = json.NewDecoder(resp.Body).Decode(&versionResp)
 			resp.Body.Close()
 			if err != nil {
-				con.logger.Warn("Failed to decode validator version response",
+				ex.logger.Warn("Failed to decode validator version response",
 					zap.String("url", versionURL), zap.Error(err))
 				return
 			}
@@ -1896,13 +1896,13 @@ func (con *Console) buildValidatorLocations(ctx context.Context) ([]ValidatorLoc
 			locations = append(locations, r.location)
 		}
 	}
-	con.logger.Info("Fetched validator locations", zap.Int("with_location", len(locations)), zap.Int("total", len(validators)))
+	ex.logger.Info("Fetched validator locations", zap.Int("with_location", len(locations)), zap.Int("total", len(validators)))
 	return locations, nil
 }
 
 // DebugPlay injects a fake play event into the ETL pubsub for testing.
 // Usage: curl -X POST 'https://node1.oap.devnet/api/debug/play?city=Tokyo&region=Kanto&country=Japan'
-func (con *Console) DebugPlay(c echo.Context) error {
+func (ex *Explorer) DebugPlay(c echo.Context) error {
 	city := c.QueryParam("city")
 	region := c.QueryParam("region")
 	country := c.QueryParam("country")
@@ -1922,7 +1922,7 @@ func (con *Console) DebugPlay(c echo.Context) error {
 		Country: country,
 	}
 
-	con.etl.GetPlayPubsub().Publish(c.Request().Context(), etl.PlayTopic, play)
+	ex.etl.GetPlayPubsub().Publish(c.Request().Context(), etl.PlayTopic, play)
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"ok":      true,
 		"city":    city,

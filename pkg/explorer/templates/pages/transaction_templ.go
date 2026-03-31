@@ -12,8 +12,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/OpenAudio/go-openaudio/etl/db"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates/layouts"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates/layouts"
 	"regexp"
 )
 

@@ -8,7 +8,7 @@ package pages
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "github.com/OpenAudio/go-openaudio/pkg/console/templates/layouts"
+import "github.com/OpenAudio/go-openaudio/pkg/explorer/templates/layouts"
 
 func Content() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
