@@ -36,6 +36,8 @@ dbUrl="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTG
 
 PG_BIN="/usr/lib/postgresql/15/bin"
 
+ROLLBACK_BIN="/bin/rollback-bin"
+
 # Find CometBFT data directory (auto-discover chain ID)
 COMET_DATA=""
 for dir in /data/core/*/data; do
@@ -50,9 +52,62 @@ if [ -z "$COMET_DATA" ]; then
     exit 1
 fi
 
+# Verify the rollback binary exists and is executable.
+if [ ! -x "$ROLLBACK_BIN" ]; then
+    echo "ERROR: Rollback binary not found at $ROLLBACK_BIN"
+    echo "       Was the image built with PREBUILT_ROLLBACK_BINARY?"
+    exit 1
+fi
+
 echo "CometBFT data: $COMET_DATA"
 echo "Postgres DB:    $POSTGRES_DB"
 echo "Postgres data:  $POSTGRES_DATA_DIR"
+echo ""
+
+# Safety check: ensure openaudio is not running.
+# Check if postgres is already running (another container / the main node has it).
+if "$PG_BIN/pg_isready" -q 2>/dev/null; then
+    echo "ERROR: PostgreSQL is already running. Is the openaudio node still up?"
+    echo "       Stop the node before running rollback to avoid data corruption."
+    exit 1
+fi
+
+# Check if the PG postmaster.pid exists (stale or active).
+if [ -f "$POSTGRES_DATA_DIR/postmaster.pid" ]; then
+    PG_PID=$(head -1 "$POSTGRES_DATA_DIR/postmaster.pid")
+    if kill -0 "$PG_PID" 2>/dev/null; then
+        echo "ERROR: PostgreSQL process (PID $PG_PID) is still running on $POSTGRES_DATA_DIR."
+        echo "       Stop the node before running rollback to avoid data corruption."
+        exit 1
+    else
+        echo "WARNING: Stale postmaster.pid found (PID $PG_PID not running). Removing it."
+        rm -f "$POSTGRES_DATA_DIR/postmaster.pid"
+    fi
+fi
+
+# Check if the openaudio node is responding on localhost.
+if command -v curl &>/dev/null; then
+    if curl -sf --max-time 3 http://localhost/health-check &>/dev/null || \
+       curl -sf --max-time 3 https://localhost/health-check --insecure &>/dev/null; then
+        echo "ERROR: openaudio node is responding on localhost."
+        echo "       Stop the node before running rollback to avoid data corruption."
+        exit 1
+    fi
+fi
+
+# Check if CometBFT data is locked (another process has it open).
+for lockdb in blockstore state; do
+    lockfile="$COMET_DATA/${lockdb}.db/LOCK"
+    if [ -f "$lockfile" ]; then
+        if fuser "$lockfile" 2>/dev/null | grep -q '[0-9]'; then
+            echo "ERROR: CometBFT $lockdb database is locked by another process."
+            echo "       Stop the node before running rollback to avoid data corruption."
+            exit 1
+        fi
+    fi
+done
+
+echo "Pre-flight checks passed: no running node detected."
 echo ""
 
 # Start postgres
@@ -66,7 +121,7 @@ echo "PostgreSQL ready."
 echo ""
 
 # Run rollback
-/bin/rollback -comet-data "$COMET_DATA" -pg "$dbUrl" "$@"
+"$ROLLBACK_BIN" -comet-data "$COMET_DATA" -pg "$dbUrl" "$@"
 EXIT_CODE=$?
 
 # Stop postgres
