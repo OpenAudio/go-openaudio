@@ -23,19 +23,27 @@ const (
 	abortContextCanceled = "CONTEXT_CANCELED"
 )
 
+// seenKeyResult stores the outcome of a previous Attributes check for the same
+// key within one repair cycle, allowing duplicate checks to be skipped.
+type seenKeyResult struct {
+	alreadyHave bool
+	size        int64
+}
+
 type RepairTracker struct {
-	StartedAt        time.Time `gorm:"primaryKey;not null"`
-	UpdatedAt        time.Time `gorm:"not null"`
-	FinishedAt       time.Time
-	CleanupMode      bool           `gorm:"not null"`
-	CursorI          int            `gorm:"not null"`
-	CursorUploadID   string         `gorm:"not null"`
-	CursorPreviewCID string         ``
-	CursorQmCID      string         `gorm:"not null"`
-	Counters         map[string]int `gorm:"not null;serializer:json"`
-	ContentSize      int64          `gorm:"not null"`
-	Duration         time.Duration  `gorm:"not null"`
-	AbortedReason    string         `gorm:"not null"`
+	StartedAt      time.Time `gorm:"primaryKey;not null"`
+	UpdatedAt      time.Time `gorm:"not null"`
+	FinishedAt     time.Time
+	CleanupMode    bool           `gorm:"not null"`
+	CursorI        int            `gorm:"not null"`
+	CursorUploadID string         `gorm:"not null"`
+	CursorPreviewCID string       ``
+	CursorQmCID    string         `gorm:"not null"`
+	Counters       map[string]int `gorm:"not null;serializer:json"`
+	ContentSize    int64          `gorm:"not null"`
+	Duration       time.Duration  `gorm:"not null"`
+	AbortedReason  string         `gorm:"not null"`
+	SeenKeys       map[string]seenKeyResult `gorm:"-" json:"-"`
 }
 
 func (ss *MediorumServer) startRepairer(ctx context.Context) error {
@@ -315,6 +323,22 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	myRank := slices.Index(preferredHosts, ss.Config.Self.Host)
 
 	key := cidutil.ShardCID(cid)
+
+	// Per-cycle dedupe: repair iterates uploads, audio_previews, and qm_cids,
+	// and the same CID can appear across those tables. Skip the duplicate
+	// Attributes check when we already resolved this key earlier in the cycle.
+	if tracker.SeenKeys == nil {
+		tracker.SeenKeys = map[string]seenKeyResult{}
+	}
+	if prev, seen := tracker.SeenKeys[key]; seen {
+		tracker.Counters["repair_deduped"]++
+		if prev.alreadyHave {
+			tracker.Counters["already_have"]++
+			tracker.ContentSize += prev.size
+		}
+		return nil
+	}
+
 	alreadyHave := true
 	attrs := &blob.Attributes{}
 	attrs, err := ss.bucket.Attributes(ctx, key)
@@ -330,6 +354,9 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 			alreadyHave = false
 		}
 	}
+
+	// Store result for future duplicate checks within this cycle.
+	tracker.SeenKeys[key] = seenKeyResult{alreadyHave: alreadyHave, size: attrs.Size}
 
 	// in cleanup mode do some extra checks:
 	// - validate CID, delete if invalid (doesn't apply to Qm keys because their hash is not the CID)
