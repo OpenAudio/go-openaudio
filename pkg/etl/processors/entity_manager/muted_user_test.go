@@ -7,8 +7,8 @@ import (
 
 func TestMuteUser_TxType(t *testing.T) {
 	h := MuteUser()
-	if h.EntityType() != EntityTypeMutedUser {
-		t.Errorf("EntityType() = %q, want %q", h.EntityType(), EntityTypeMutedUser)
+	if h.EntityType() != EntityTypeUser {
+		t.Errorf("EntityType() = %q, want %q", h.EntityType(), EntityTypeUser)
 	}
 	if h.Action() != ActionMute {
 		t.Errorf("Action() = %q, want %q", h.Action(), ActionMute)
@@ -17,8 +17,8 @@ func TestMuteUser_TxType(t *testing.T) {
 
 func TestUnmuteUser_TxType(t *testing.T) {
 	h := UnmuteUser()
-	if h.EntityType() != EntityTypeMutedUser {
-		t.Errorf("EntityType() = %q, want %q", h.EntityType(), EntityTypeMutedUser)
+	if h.EntityType() != EntityTypeUser {
+		t.Errorf("EntityType() = %q, want %q", h.EntityType(), EntityTypeUser)
 	}
 	if h.Action() != ActionUnmute {
 		t.Errorf("Action() = %q, want %q", h.Action(), ActionUnmute)
@@ -32,7 +32,7 @@ func TestMuteUser_Success(t *testing.T) {
 	seedUser(t, pool, uid, "0xmuter", "muter")
 	seedUser(t, pool, targetID, "0xtarget", "target")
 
-	mustHandle(t, MuteUser(), buildParams(t, pool, EntityTypeMutedUser, ActionMute, uid, targetID, "0xMuter", `{}`))
+	mustHandle(t, MuteUser(), buildParams(t, pool, EntityTypeUser, ActionMute, uid, targetID, "0xMuter", `{}`))
 
 	var isDelete bool
 	err := pool.QueryRow(context.Background(),
@@ -50,7 +50,7 @@ func TestMuteUser_RejectsSelfMute(t *testing.T) {
 	uid := int64(UserIDOffset + 1)
 	seedUser(t, pool, uid, "0xmuter", "muter")
 
-	params := buildParams(t, pool, EntityTypeMutedUser, ActionMute, uid, uid, "0xMuter", `{}`)
+	params := buildParams(t, pool, EntityTypeUser, ActionMute, uid, uid, "0xMuter", `{}`)
 	mustReject(t, MuteUser(), params, "cannot mute themselves")
 }
 
@@ -59,7 +59,7 @@ func TestMuteUser_RejectsNonexistentTarget(t *testing.T) {
 	uid := int64(UserIDOffset + 1)
 	seedUser(t, pool, uid, "0xmuter", "muter")
 
-	params := buildParams(t, pool, EntityTypeMutedUser, ActionMute, uid, int64(UserIDOffset+999), "0xMuter", `{}`)
+	params := buildParams(t, pool, EntityTypeUser, ActionMute, uid, int64(UserIDOffset+999), "0xMuter", `{}`)
 	mustReject(t, MuteUser(), params, "does not exist")
 }
 
@@ -70,9 +70,9 @@ func TestMuteUser_RejectsDuplicate(t *testing.T) {
 	seedUser(t, pool, uid, "0xmuter", "muter")
 	seedUser(t, pool, targetID, "0xtarget", "target")
 
-	mustHandle(t, MuteUser(), buildParams(t, pool, EntityTypeMutedUser, ActionMute, uid, targetID, "0xMuter", `{}`))
+	mustHandle(t, MuteUser(), buildParams(t, pool, EntityTypeUser, ActionMute, uid, targetID, "0xMuter", `{}`))
 
-	params := buildParams(t, pool, EntityTypeMutedUser, ActionMute, uid, targetID, "0xMuter", `{}`)
+	params := buildParams(t, pool, EntityTypeUser, ActionMute, uid, targetID, "0xMuter", `{}`)
 	mustReject(t, MuteUser(), params, "already muted")
 }
 
@@ -83,8 +83,8 @@ func TestUnmuteUser_Success(t *testing.T) {
 	seedUser(t, pool, uid, "0xmuter", "muter")
 	seedUser(t, pool, targetID, "0xtarget", "target")
 
-	mustHandle(t, MuteUser(), buildParams(t, pool, EntityTypeMutedUser, ActionMute, uid, targetID, "0xMuter", `{}`))
-	mustHandle(t, UnmuteUser(), buildParams(t, pool, EntityTypeMutedUser, ActionUnmute, uid, targetID, "0xMuter", `{}`))
+	mustHandle(t, MuteUser(), buildParams(t, pool, EntityTypeUser, ActionMute, uid, targetID, "0xMuter", `{}`))
+	mustHandle(t, UnmuteUser(), buildParams(t, pool, EntityTypeUser, ActionUnmute, uid, targetID, "0xMuter", `{}`))
 
 	var isDelete bool
 	err := pool.QueryRow(context.Background(),
@@ -104,6 +104,6 @@ func TestUnmuteUser_RejectsNoActiveMute(t *testing.T) {
 	seedUser(t, pool, uid, "0xmuter", "muter")
 	seedUser(t, pool, targetID, "0xtarget", "target")
 
-	params := buildParams(t, pool, EntityTypeMutedUser, ActionUnmute, uid, targetID, "0xMuter", `{}`)
+	params := buildParams(t, pool, EntityTypeUser, ActionUnmute, uid, targetID, "0xMuter", `{}`)
 	mustReject(t, UnmuteUser(), params, "no active mute")
 }

@@ -10,7 +10,7 @@ import (
 
 type muteUserHandler struct{}
 
-func (h *muteUserHandler) EntityType() string { return EntityTypeMutedUser }
+func (h *muteUserHandler) EntityType() string { return EntityTypeUser }
 func (h *muteUserHandler) Action() string     { return ActionMute }
 
 func (h *muteUserHandler) Handle(ctx context.Context, params *Params) error {
@@ -44,7 +44,7 @@ func (h *muteUserHandler) Handle(ctx context.Context, params *Params) error {
 
 type unmuteUserHandler struct{}
 
-func (h *unmuteUserHandler) EntityType() string { return EntityTypeMutedUser }
+func (h *unmuteUserHandler) EntityType() string { return EntityTypeUser }
 func (h *unmuteUserHandler) Action() string     { return ActionUnmute }
 
 func (h *unmuteUserHandler) Handle(ctx context.Context, params *Params) error {

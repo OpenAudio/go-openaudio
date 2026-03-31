@@ -72,6 +72,8 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.UserCreate())
 		e.dispatcher.Register(em.UserUpdate())
 		e.dispatcher.Register(em.UserVerify())
+		e.dispatcher.Register(em.MuteUser())
+		e.dispatcher.Register(em.UnmuteUser())
 	}
 	if e.config.IsDataTypeEnabled(em.EntityTypeTrack) {
 		e.dispatcher.Register(em.TrackCreate())
@@ -106,10 +108,7 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.GrantApprove())
 		e.dispatcher.Register(em.GrantReject())
 	}
-	if e.config.IsDataTypeEnabled(em.EntityTypeMutedUser) {
-		e.dispatcher.Register(em.MuteUser())
-		e.dispatcher.Register(em.UnmuteUser())
-	}
+
 
 	if e.dispatcher.HandlerCount() > 0 {
 		e.logger.Info("entity manager enabled", zap.Int("handlers", e.dispatcher.HandlerCount()))
