@@ -34,7 +34,7 @@ func upsertCommentNotificationSetting(ctx context.Context, params *Params, isMut
 		) VALUES ($1, $2, $3, $4, $5, $5)
 		ON CONFLICT (user_id, entity_id, entity_type)
 		DO UPDATE SET is_muted = $4, updated_at = $5
-	`, params.UserID, params.EntityID, EntityTypeComment, isMuted, params.BlockTime)
+	`, params.UserID, params.EntityID, params.EntityType, isMuted, params.BlockTime)
 	return err
 }
 
