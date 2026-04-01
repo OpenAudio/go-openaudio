@@ -11,7 +11,7 @@ import (
 
 type saveHandler struct{}
 
-func (h *saveHandler) EntityType() string { return EntityTypeSave }
+func (h *saveHandler) EntityType() string { return EntityTypeAny }
 func (h *saveHandler) Action() string     { return ActionSave }
 
 func (h *saveHandler) Handle(ctx context.Context, params *Params) error {
@@ -25,9 +25,12 @@ func validateSave(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	saveType := saveTypeFromEntityType(params.MetadataString("type"))
+	// Use tx entity_type first (e.g. "Track", "Playlist"), then metadata, then DB inference
+	saveType := saveTypeFromEntityType(params.EntityType)
 	if saveType == "" {
-		// Fallback: infer from the entity being saved
+		saveType = saveTypeFromEntityType(params.MetadataString("type"))
+	}
+	if saveType == "" {
 		saveType = inferSaveType(ctx, params.DBTX, params.EntityID)
 	}
 	if saveType == "" {
@@ -52,7 +55,7 @@ func validateSave(ctx context.Context, params *Params) error {
 
 type unsaveHandler struct{}
 
-func (h *unsaveHandler) EntityType() string { return EntityTypeSave }
+func (h *unsaveHandler) EntityType() string { return EntityTypeAny }
 func (h *unsaveHandler) Action() string     { return ActionUnsave }
 
 func (h *unsaveHandler) Handle(ctx context.Context, params *Params) error {
@@ -66,7 +69,10 @@ func validateUnsave(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	saveType := saveTypeFromEntityType(params.MetadataString("type"))
+	saveType := saveTypeFromEntityType(params.EntityType)
+	if saveType == "" {
+		saveType = saveTypeFromEntityType(params.MetadataString("type"))
+	}
 	if saveType == "" {
 		saveType = inferSaveType(ctx, params.DBTX, params.EntityID)
 	}
@@ -86,7 +92,10 @@ func validateUnsave(ctx context.Context, params *Params) error {
 // --- shared ---
 
 func insertSave(ctx context.Context, params *Params, isDelete bool) error {
-	saveType := saveTypeFromEntityType(params.MetadataString("type"))
+	saveType := saveTypeFromEntityType(params.EntityType)
+	if saveType == "" {
+		saveType = saveTypeFromEntityType(params.MetadataString("type"))
+	}
 	if saveType == "" {
 		saveType = inferSaveType(ctx, params.DBTX, params.EntityID)
 	}
@@ -117,7 +126,6 @@ func saveExists(ctx context.Context, dbtx db.DBTX, userID, itemID int64, saveTyp
 	return exists, err
 }
 
-// saveTypeFromEntityType maps the metadata "type" field to the savetype enum value.
 func saveTypeFromEntityType(entityType string) string {
 	switch strings.ToLower(entityType) {
 	case "track":
@@ -130,7 +138,6 @@ func saveTypeFromEntityType(entityType string) string {
 	return ""
 }
 
-// inferSaveType checks if the entity ID corresponds to a track or playlist.
 func inferSaveType(ctx context.Context, dbtx db.DBTX, entityID int64) string {
 	var exists bool
 	_ = dbtx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM tracks WHERE track_id = $1)", entityID).Scan(&exists)
@@ -172,8 +179,5 @@ func validateSaveTarget(ctx context.Context, dbtx db.DBTX, entityID int64, saveT
 	return nil
 }
 
-// Save returns the Save handler.
-func Save() Handler { return &saveHandler{} }
-
-// Unsave returns the Unsave handler.
+func Save() Handler   { return &saveHandler{} }
 func Unsave() Handler { return &unsaveHandler{} }

@@ -7,8 +7,8 @@ import (
 
 func TestRepost_TxType(t *testing.T) {
 	h := Repost()
-	if h.EntityType() != EntityTypeRepost {
-		t.Errorf("EntityType() = %q, want %q", h.EntityType(), EntityTypeRepost)
+	if h.EntityType() != EntityTypeAny {
+		t.Errorf("EntityType() = %q, want %q", h.EntityType(), EntityTypeAny)
 	}
 	if h.Action() != ActionRepost {
 		t.Errorf("Action() = %q, want %q", h.Action(), ActionRepost)
@@ -24,7 +24,7 @@ func TestRepost_Track_Success(t *testing.T) {
 	seedTrack(t, pool, tid, UserIDOffset+2)
 
 	meta := `{"type":"track"}`
-	params := buildParams(t, pool, EntityTypeRepost, ActionRepost, uid, tid, "0xReposter", meta)
+	params := buildParams(t, pool, EntityTypeTrack, ActionRepost, uid, tid, "0xReposter", meta)
 	mustHandle(t, Repost(), params)
 
 	var isDelete bool
@@ -48,8 +48,8 @@ func TestRepost_RejectsDuplicate(t *testing.T) {
 	seedTrack(t, pool, tid, UserIDOffset+2)
 
 	meta := `{"type":"track"}`
-	mustHandle(t, Repost(), buildParams(t, pool, EntityTypeRepost, ActionRepost, uid, tid, "0xReposter", meta))
-	mustReject(t, Repost(), buildParams(t, pool, EntityTypeRepost, ActionRepost, uid, tid, "0xReposter", meta), "already exists")
+	mustHandle(t, Repost(), buildParams(t, pool, EntityTypeTrack, ActionRepost, uid, tid, "0xReposter", meta))
+	mustReject(t, Repost(), buildParams(t, pool, EntityTypeTrack, ActionRepost, uid, tid, "0xReposter", meta), "already exists")
 }
 
 func TestUnrepost_Success(t *testing.T) {
@@ -61,8 +61,8 @@ func TestUnrepost_Success(t *testing.T) {
 	seedTrack(t, pool, tid, UserIDOffset+2)
 
 	meta := `{"type":"track"}`
-	mustHandle(t, Repost(), buildParams(t, pool, EntityTypeRepost, ActionRepost, uid, tid, "0xReposter", meta))
-	mustHandle(t, Unrepost(), buildParams(t, pool, EntityTypeRepost, ActionUnrepost, uid, tid, "0xReposter", meta))
+	mustHandle(t, Repost(), buildParams(t, pool, EntityTypeTrack, ActionRepost, uid, tid, "0xReposter", meta))
+	mustHandle(t, Unrepost(), buildParams(t, pool, EntityTypeTrack, ActionUnrepost, uid, tid, "0xReposter", meta))
 
 	var isDelete bool
 	err := pool.QueryRow(context.Background(),
@@ -85,5 +85,5 @@ func TestUnrepost_RejectsNoActiveRepost(t *testing.T) {
 	seedTrack(t, pool, tid, UserIDOffset+2)
 
 	meta := `{"type":"track"}`
-	mustReject(t, Unrepost(), buildParams(t, pool, EntityTypeRepost, ActionUnrepost, uid, tid, "0xReposter", meta), "no active repost")
+	mustReject(t, Unrepost(), buildParams(t, pool, EntityTypeTrack, ActionUnrepost, uid, tid, "0xReposter", meta), "no active repost")
 }

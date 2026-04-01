@@ -10,7 +10,7 @@ import (
 
 type followHandler struct{}
 
-func (h *followHandler) EntityType() string { return EntityTypeFollow }
+func (h *followHandler) EntityType() string { return EntityTypeAny }
 func (h *followHandler) Action() string     { return ActionFollow }
 
 func (h *followHandler) Handle(ctx context.Context, params *Params) error {
@@ -49,7 +49,7 @@ func validateFollow(ctx context.Context, params *Params) error {
 
 type unfollowHandler struct{}
 
-func (h *unfollowHandler) EntityType() string { return EntityTypeFollow }
+func (h *unfollowHandler) EntityType() string { return EntityTypeAny }
 func (h *unfollowHandler) Action() string     { return ActionUnfollow }
 
 func (h *unfollowHandler) Handle(ctx context.Context, params *Params) error {
@@ -77,7 +77,6 @@ func validateUnfollow(ctx context.Context, params *Params) error {
 // --- shared ---
 
 func insertFollow(ctx context.Context, params *Params, isDelete bool) error {
-	// Mark existing follow rows as not current
 	_, err := params.DBTX.Exec(ctx,
 		"UPDATE follows SET is_current = false WHERE follower_user_id = $1 AND followee_user_id = $2 AND is_current = true",
 		params.UserID, params.EntityID)
@@ -91,6 +90,24 @@ func insertFollow(ctx context.Context, params *Params, isDelete bool) error {
 			created_at, txhash, blocknumber
 		) VALUES ($1, $2, true, $3, $4, $5, $6)
 	`, params.UserID, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
+	if err != nil {
+		return err
+	}
+
+	// Python parity: Follow/Unfollow also creates/deletes a Subscription record
+	_, err = params.DBTX.Exec(ctx,
+		"UPDATE subscriptions SET is_current = false WHERE subscriber_id = $1 AND user_id = $2 AND is_current = true",
+		params.UserID, params.EntityID)
+	if err != nil {
+		return err
+	}
+	_, err = params.DBTX.Exec(ctx, `
+		INSERT INTO subscriptions (
+			subscriber_id, user_id, is_current, is_delete,
+			created_at, txhash, blocknumber
+		) VALUES ($1, $2, true, $3, $4, $5, $6)
+		ON CONFLICT DO NOTHING
+	`, params.UserID, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }
 
@@ -102,8 +119,5 @@ func followExists(ctx context.Context, dbtx db.DBTX, followerID, followeeID int6
 	return exists, err
 }
 
-// Follow returns the Follow handler.
-func Follow() Handler { return &followHandler{} }
-
-// Unfollow returns the Unfollow handler.
+func Follow() Handler   { return &followHandler{} }
 func Unfollow() Handler { return &unfollowHandler{} }

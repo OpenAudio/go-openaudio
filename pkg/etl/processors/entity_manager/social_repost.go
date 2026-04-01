@@ -11,7 +11,7 @@ import (
 
 type repostHandler struct{}
 
-func (h *repostHandler) EntityType() string { return EntityTypeRepost }
+func (h *repostHandler) EntityType() string { return EntityTypeAny }
 func (h *repostHandler) Action() string     { return ActionRepost }
 
 func (h *repostHandler) Handle(ctx context.Context, params *Params) error {
@@ -25,7 +25,10 @@ func validateRepost(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	repostType := repostTypeFromEntityType(params.MetadataString("type"))
+	repostType := repostTypeFromEntityType(params.EntityType)
+	if repostType == "" {
+		repostType = repostTypeFromEntityType(params.MetadataString("type"))
+	}
 	if repostType == "" {
 		repostType = inferRepostType(ctx, params.DBTX, params.EntityID)
 	}
@@ -51,7 +54,7 @@ func validateRepost(ctx context.Context, params *Params) error {
 
 type unrepostHandler struct{}
 
-func (h *unrepostHandler) EntityType() string { return EntityTypeRepost }
+func (h *unrepostHandler) EntityType() string { return EntityTypeAny }
 func (h *unrepostHandler) Action() string     { return ActionUnrepost }
 
 func (h *unrepostHandler) Handle(ctx context.Context, params *Params) error {
@@ -65,7 +68,10 @@ func validateUnrepost(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	repostType := repostTypeFromEntityType(params.MetadataString("type"))
+	repostType := repostTypeFromEntityType(params.EntityType)
+	if repostType == "" {
+		repostType = repostTypeFromEntityType(params.MetadataString("type"))
+	}
 	if repostType == "" {
 		repostType = inferRepostType(ctx, params.DBTX, params.EntityID)
 	}
@@ -85,7 +91,10 @@ func validateUnrepost(ctx context.Context, params *Params) error {
 // --- shared ---
 
 func insertRepost(ctx context.Context, params *Params, isDelete bool) error {
-	repostType := repostTypeFromEntityType(params.MetadataString("type"))
+	repostType := repostTypeFromEntityType(params.EntityType)
+	if repostType == "" {
+		repostType = repostTypeFromEntityType(params.MetadataString("type"))
+	}
 	if repostType == "" {
 		repostType = inferRepostType(ctx, params.DBTX, params.EntityID)
 	}
@@ -116,7 +125,6 @@ func repostExists(ctx context.Context, dbtx db.DBTX, userID, itemID int64, repos
 	return exists, err
 }
 
-// repostTypeFromEntityType maps the metadata "type" field to the reposttype enum value.
 func repostTypeFromEntityType(entityType string) string {
 	switch strings.ToLower(entityType) {
 	case "track":
@@ -129,7 +137,6 @@ func repostTypeFromEntityType(entityType string) string {
 	return ""
 }
 
-// inferRepostType checks if the entity ID corresponds to a track or playlist.
 func inferRepostType(ctx context.Context, dbtx db.DBTX, entityID int64) string {
 	var exists bool
 	_ = dbtx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM tracks WHERE track_id = $1)", entityID).Scan(&exists)
@@ -170,8 +177,5 @@ func validateRepostTarget(ctx context.Context, dbtx db.DBTX, entityID int64, rep
 	return nil
 }
 
-// Repost returns the Repost handler.
-func Repost() Handler { return &repostHandler{} }
-
-// Unrepost returns the Unrepost handler.
+func Repost() Handler   { return &repostHandler{} }
 func Unrepost() Handler { return &unrepostHandler{} }

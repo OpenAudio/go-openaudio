@@ -7,8 +7,8 @@ import (
 
 func TestSave_TxType(t *testing.T) {
 	h := Save()
-	if h.EntityType() != EntityTypeSave {
-		t.Errorf("EntityType() = %q, want %q", h.EntityType(), EntityTypeSave)
+	if h.EntityType() != EntityTypeAny {
+		t.Errorf("EntityType() = %q, want %q", h.EntityType(), EntityTypeAny)
 	}
 	if h.Action() != ActionSave {
 		t.Errorf("Action() = %q, want %q", h.Action(), ActionSave)
@@ -24,7 +24,7 @@ func TestSave_Track_Success(t *testing.T) {
 	seedTrack(t, pool, tid, UserIDOffset+2)
 
 	meta := `{"type":"track"}`
-	params := buildParams(t, pool, EntityTypeSave, ActionSave, uid, tid, "0xSaver", meta)
+	params := buildParams(t, pool, EntityTypeTrack, ActionSave, uid, tid, "0xSaver", meta)
 	mustHandle(t, Save(), params)
 
 	var isDelete bool
@@ -48,8 +48,8 @@ func TestSave_RejectsDuplicate(t *testing.T) {
 	seedTrack(t, pool, tid, UserIDOffset+2)
 
 	meta := `{"type":"track"}`
-	mustHandle(t, Save(), buildParams(t, pool, EntityTypeSave, ActionSave, uid, tid, "0xSaver", meta))
-	mustReject(t, Save(), buildParams(t, pool, EntityTypeSave, ActionSave, uid, tid, "0xSaver", meta), "already exists")
+	mustHandle(t, Save(), buildParams(t, pool, EntityTypeTrack, ActionSave, uid, tid, "0xSaver", meta))
+	mustReject(t, Save(), buildParams(t, pool, EntityTypeTrack, ActionSave, uid, tid, "0xSaver", meta), "already exists")
 }
 
 func TestUnsave_Success(t *testing.T) {
@@ -61,8 +61,8 @@ func TestUnsave_Success(t *testing.T) {
 	seedTrack(t, pool, tid, UserIDOffset+2)
 
 	meta := `{"type":"track"}`
-	mustHandle(t, Save(), buildParams(t, pool, EntityTypeSave, ActionSave, uid, tid, "0xSaver", meta))
-	mustHandle(t, Unsave(), buildParams(t, pool, EntityTypeSave, ActionUnsave, uid, tid, "0xSaver", meta))
+	mustHandle(t, Save(), buildParams(t, pool, EntityTypeTrack, ActionSave, uid, tid, "0xSaver", meta))
+	mustHandle(t, Unsave(), buildParams(t, pool, EntityTypeTrack, ActionUnsave, uid, tid, "0xSaver", meta))
 
 	var isDelete bool
 	err := pool.QueryRow(context.Background(),
@@ -85,5 +85,5 @@ func TestUnsave_RejectsNoActiveSave(t *testing.T) {
 	seedTrack(t, pool, tid, UserIDOffset+2)
 
 	meta := `{"type":"track"}`
-	mustReject(t, Unsave(), buildParams(t, pool, EntityTypeSave, ActionUnsave, uid, tid, "0xSaver", meta), "no active save")
+	mustReject(t, Unsave(), buildParams(t, pool, EntityTypeTrack, ActionUnsave, uid, tid, "0xSaver", meta), "no active save")
 }

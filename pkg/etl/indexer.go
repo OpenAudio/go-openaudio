@@ -87,18 +87,14 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.PlaylistUpdate())
 		e.dispatcher.Register(em.PlaylistDelete())
 	}
-	if e.config.IsDataTypeEnabled(em.EntityTypeFollow) {
-		e.dispatcher.Register(em.Follow())
-		e.dispatcher.Register(em.Unfollow())
-	}
-	if e.config.IsDataTypeEnabled(em.EntityTypeSave) {
-		e.dispatcher.Register(em.Save())
-		e.dispatcher.Register(em.Unsave())
-	}
-	if e.config.IsDataTypeEnabled(em.EntityTypeRepost) {
-		e.dispatcher.Register(em.Repost())
-		e.dispatcher.Register(em.Unrepost())
-	}
+	// Social features use wildcard entity type — actual txs carry the entity
+	// being acted on (User for Follow, Track/Playlist for Save/Repost).
+	e.dispatcher.Register(em.Follow())
+	e.dispatcher.Register(em.Unfollow())
+	e.dispatcher.Register(em.Save())
+	e.dispatcher.Register(em.Unsave())
+	e.dispatcher.Register(em.Repost())
+	e.dispatcher.Register(em.Unrepost())
 	if e.config.IsDataTypeEnabled(em.EntityTypeDeveloperApp) {
 		e.dispatcher.Register(em.DeveloperAppCreate())
 		e.dispatcher.Register(em.DeveloperAppUpdate())

@@ -262,6 +262,11 @@ func (d *Dispatcher) Register(h Handler) {
 	d.handlers[handlerKey(h.EntityType(), h.Action())] = h
 }
 
+// EntityTypeAny is a wildcard entity type for handlers that match any entity type
+// for a given action (e.g., social features: Follow matches entity_type "User",
+// Save matches "Track" or "Playlist").
+const EntityTypeAny = "*"
+
 // Dispatch routes a ManageEntity transaction to the appropriate handler.
 // Returns nil if no handler is registered (unhandled entity/action pairs are silently skipped).
 // Returns a ValidationError if the handler rejects the transaction.
@@ -270,14 +275,21 @@ func (d *Dispatcher) Dispatch(ctx context.Context, params *Params) error {
 	key := handlerKey(params.EntityType, params.Action)
 	h, ok := d.handlers[key]
 	if !ok {
-		return nil
+		// Fall back to wildcard entity type match
+		h, ok = d.handlers[handlerKey(EntityTypeAny, params.Action)]
+		if !ok {
+			return nil
+		}
 	}
 	return h.Handle(ctx, params)
 }
 
 // HasHandler returns true if a handler is registered for the given entity_type and action.
 func (d *Dispatcher) HasHandler(entityType, action string) bool {
-	_, ok := d.handlers[handlerKey(entityType, action)]
+	if _, ok := d.handlers[handlerKey(entityType, action)]; ok {
+		return true
+	}
+	_, ok := d.handlers[handlerKey(EntityTypeAny, action)]
 	return ok
 }
 
