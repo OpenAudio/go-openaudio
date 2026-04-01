@@ -115,6 +115,12 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.EventUpdate())
 		e.dispatcher.Register(em.EventDelete())
 	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeEncryptedEmail) {
+		e.dispatcher.Register(em.EncryptedEmailCreate())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeEmailAccess) {
+		e.dispatcher.Register(em.EmailAccessUpdate())
+	}
 	if e.config.IsDataTypeEnabled(em.EntityTypeNotification) {
 		e.dispatcher.Register(em.NotificationCreate())
 		e.dispatcher.Register(em.NotificationView())
