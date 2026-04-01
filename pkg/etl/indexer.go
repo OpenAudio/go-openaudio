@@ -110,6 +110,11 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.GrantApprove())
 		e.dispatcher.Register(em.GrantReject())
 	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeEvent) {
+		e.dispatcher.Register(em.EventCreate())
+		e.dispatcher.Register(em.EventUpdate())
+		e.dispatcher.Register(em.EventDelete())
+	}
 	if e.config.IsDataTypeEnabled(em.EntityTypeNotification) {
 		e.dispatcher.Register(em.NotificationCreate())
 		e.dispatcher.Register(em.NotificationView())
