@@ -79,6 +79,7 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.TrackCreate())
 		e.dispatcher.Register(em.TrackUpdate())
 		e.dispatcher.Register(em.TrackDelete())
+		e.dispatcher.Register(em.TrackDownload())
 		e.dispatcher.Register(em.TrackMute())
 		e.dispatcher.Register(em.TrackUnmute())
 	}
