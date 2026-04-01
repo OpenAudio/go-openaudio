@@ -115,6 +115,9 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.EventUpdate())
 		e.dispatcher.Register(em.EventDelete())
 	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeTip) {
+		e.dispatcher.Register(em.TipReaction())
+	}
 	if e.config.IsDataTypeEnabled(em.EntityTypeDashboardWalletUser) {
 		e.dispatcher.Register(em.DashboardWalletCreate())
 		e.dispatcher.Register(em.DashboardWalletDelete())
