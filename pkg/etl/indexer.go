@@ -95,6 +95,8 @@ func (e *Indexer) Run() error {
 	e.dispatcher.Register(em.Unsave())
 	e.dispatcher.Register(em.Repost())
 	e.dispatcher.Register(em.Unrepost())
+	e.dispatcher.Register(em.Subscribe())
+	e.dispatcher.Register(em.Unsubscribe())
 	if e.config.IsDataTypeEnabled(em.EntityTypeDeveloperApp) {
 		e.dispatcher.Register(em.DeveloperAppCreate())
 		e.dispatcher.Register(em.DeveloperAppUpdate())
