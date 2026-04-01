@@ -115,6 +115,10 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.EventUpdate())
 		e.dispatcher.Register(em.EventDelete())
 	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeAssociatedWallet) {
+		e.dispatcher.Register(em.AssociatedWalletCreate())
+		e.dispatcher.Register(em.AssociatedWalletDelete())
+	}
 	if e.config.IsDataTypeEnabled(em.EntityTypeTip) {
 		e.dispatcher.Register(em.TipReaction())
 	}
