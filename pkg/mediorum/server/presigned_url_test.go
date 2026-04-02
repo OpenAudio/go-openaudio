@@ -42,10 +42,10 @@ func TestPresignedURLExpiry(t *testing.T) {
 		assert.Equal(t, 5*time.Minute, presignedURLExpiry(30))
 	})
 
-	t.Run("3 minute track gets 10% buffer", func(t *testing.T) {
+	t.Run("3 minute track hits minimum floor", func(t *testing.T) {
 		result := presignedURLExpiry(180)
-		// 180s * 1.1 = 198s = 3m18s
-		assert.Equal(t, 198*time.Second, result)
+		// 180s * 1.1 = 198s = 3m18s, which is below 5m floor
+		assert.Equal(t, 5*time.Minute, result)
 	})
 
 	t.Run("10 minute track gets 10% buffer", func(t *testing.T) {
