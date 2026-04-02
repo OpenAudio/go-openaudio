@@ -24,6 +24,7 @@ import (
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	audiusHttputil "github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
@@ -163,15 +164,12 @@ var (
 const PercentSeededThreshold = 50
 
 func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer.CoreService, ethService ethv1connect.EthServiceHandler) (*MediorumServer, error) {
-	if env := os.Getenv("OPENAUDIO_ENV"); env != "" {
-		config.Env = env
+	if v := env.String("OPENAUDIO_ENV"); v != "" {
+		config.Env = v
 	}
 	config.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(config.Env)
 
-	var isAudiusdManaged bool
-	if audiusdGenerated := os.Getenv("AUDIUS_D_GENERATED"); audiusdGenerated != "" {
-		isAudiusdManaged = true
-	}
+	isAudiusdManaged := env.IsSet("OPENAUDIO_AUDIUS_D_GENERATED", "AUDIUS_D_GENERATED")
 
 	if config.VersionJson == (version.VersionJson{}) {
 		return nil, errors.New(".version.json is required to be bundled with the mediorum binary")
@@ -285,7 +283,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 
 	// HTTP transport for peer requests - skip TLS verify in dev with self-signed certs for replication/upload-scroll to work
 	var peerTransport http.RoundTripper = http.DefaultTransport
-	if config.Env == "dev" && os.Getenv("OPENAUDIO_TLS_SELF_SIGNED") == "true" {
+	if config.Env == "dev" && env.Bool("OPENAUDIO_TLS_SELF_SIGNED") {
 		peerTransport = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
@@ -320,7 +318,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	reqClient := req.C().
 		SetUserAgent("mediorum " + config.Self.Host).
 		SetTimeout(5 * time.Second)
-	if config.Env == "dev" && os.Getenv("OPENAUDIO_TLS_SELF_SIGNED") == "true" {
+	if config.Env == "dev" && env.Bool("OPENAUDIO_TLS_SELF_SIGNED") {
 		reqClient = reqClient.EnableInsecureSkipVerify()
 	}
 
@@ -699,7 +697,7 @@ func (ss *MediorumServer) startPprofServer(ctx context.Context) error {
 
 func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
 	interval := 10 * time.Minute
-	if os.Getenv("OPENAUDIO_ENV") == "dev" {
+	if env.String("OPENAUDIO_ENV") == "dev" {
 		interval = 10 * time.Second
 	}
 	ticker := time.NewTicker(interval)

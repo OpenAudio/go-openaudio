@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/OpenAudio/go-openaudio/pkg/hashes"
 	"github.com/ipfs/go-cid"
 	"github.com/tus/tusd/v2/pkg/filestore"
@@ -19,10 +20,7 @@ import (
 
 func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
 	// Create upload directory if it doesn't exist
-	uploadDir := os.Getenv("TUSD_UPLOAD_DIR")
-	if uploadDir == "" {
-		uploadDir = "/tmp/tusd-uploads"
-	}
+	uploadDir := env.Get("/tmp/tusd-uploads", "OPENAUDIO_TUSD_UPLOAD_DIR", "TUSD_UPLOAD_DIR")
 
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		return nil, err

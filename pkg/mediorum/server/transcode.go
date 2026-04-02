@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
@@ -40,7 +41,7 @@ func (ss *MediorumServer) startTranscoder(ctx context.Context) error {
 	if numWorkers < 2 {
 		numWorkers = 2
 	}
-	numWorkersOverride := os.Getenv("TRANSCODE_WORKERS")
+	numWorkersOverride := env.String("OPENAUDIO_TRANSCODE_WORKERS", "TRANSCODE_WORKERS")
 	if numWorkersOverride != "" {
 		num, err := strconv.ParseInt(numWorkersOverride, 10, 64)
 		if err != nil {
