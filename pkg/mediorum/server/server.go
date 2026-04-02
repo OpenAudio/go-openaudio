@@ -88,16 +88,6 @@ type MediorumConfig struct {
 	privateKey *ecdsa.PrivateKey
 }
 
-// supportsPresignedURLs returns true if the storage backend supports generating presigned URLs.
-// S3, S3-compatible (https), and GCS backends support this. File and Azure backends do not.
-func supportsPresignedURLs(dsn string) bool {
-	for _, prefix := range []string{"s3://", "https://", "gs://"} {
-		if strings.HasPrefix(dsn, prefix) {
-			return true
-		}
-	}
-	return false
-}
 
 type MediorumServer struct {
 	lc               *lifecycle.Lifecycle
@@ -142,8 +132,6 @@ type MediorumServer struct {
 	imageCache            *imcache.Cache[string, []byte]
 	trackAccessInfoCache  *imcache.Cache[string, trackAccessInfo]
 	failsPeerReachability bool
-
-	presignedURLEnabled bool
 
 	StartedAt time.Time
 	Config    MediorumConfig
@@ -383,8 +371,6 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		uploadOrigCidCache:   imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
 		imageCache:           imcache.New(imcache.WithMaxEntriesLimitOption[string, []byte](10_000, imcache.EvictionPolicyLRU)),
 		trackAccessInfoCache: imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
-
-		presignedURLEnabled: config.BlobStorageStreaming && supportsPresignedURLs(config.BlobStoreDSN),
 
 		StartedAt: time.Now().UTC(),
 		Config:    config,

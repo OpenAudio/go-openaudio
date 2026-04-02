@@ -232,7 +232,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 		setTimingHeader(c)
 
 		// Presigned URL redirect: send client directly to storage backend
-		if ss.presignedURLEnabled {
+		if ss.Config.BlobStorageStreaming {
 			id3Requested, _ := strconv.ParseBool(c.QueryParam("id3"))
 			hasFilename := c.QueryParam("filename") != ""
 
@@ -244,13 +244,16 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 					Expiry: expiry,
 					Method: http.MethodGet,
 				})
-				if err == nil {
-					blob.Close()
-					blob = nil // prevent double-close in defer
-					return c.Redirect(http.StatusTemporaryRedirect, signedURL)
+				if err != nil {
+					ss.logger.Error("presigned URL generation failed",
+						zap.String("cid", cid), zap.Error(err))
+					return c.JSON(http.StatusInternalServerError, map[string]string{
+						"error": "blob storage streaming is enabled but presigned URL generation failed",
+					})
 				}
-				ss.logger.Warn("presigned URL generation failed, falling through to proxy",
-					zap.String("cid", cid), zap.Error(err))
+				blob.Close()
+				blob = nil // prevent double-close in defer
+				return c.Redirect(http.StatusTemporaryRedirect, signedURL)
 			}
 		}
 
@@ -498,7 +501,7 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 					s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ?", trackID).Scan(&managementKeyCount)
 				}
 				// Look up track duration from uploads table (for presigned URL expiry)
-				if s.presignedURLEnabled {
+				if s.Config.BlobStorageStreaming {
 					var ffprobeJSON string
 					s.crud.DB.Raw("SELECT ff_probe FROM uploads WHERE transcode_results::jsonb ->> '320' = ? LIMIT 1", cid).Scan(&ffprobeJSON)
 					if ffprobeJSON != "" {

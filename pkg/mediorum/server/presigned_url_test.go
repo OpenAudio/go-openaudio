@@ -7,28 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSupportsPresignedURLs(t *testing.T) {
-	tests := []struct {
-		dsn      string
-		expected bool
-	}{
-		{"s3://my-bucket?region=us-east-1", true},
-		{"s3://my-bucket", true},
-		{"https://minio.example.com/bucket", true},
-		{"gs://my-gcs-bucket", true},
-		{"file:///tmp/mediorum/blobs?no_tmp_dir=true", false},
-		{"file:///data/blobs", false},
-		{"azblob://my-container", false},
-		{"", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.dsn, func(t *testing.T) {
-			assert.Equal(t, tt.expected, supportsPresignedURLs(tt.dsn))
-		})
-	}
-}
-
 func TestPresignedURLExpiry(t *testing.T) {
 	t.Run("unknown duration returns default 2h", func(t *testing.T) {
 		assert.Equal(t, 2*time.Hour, presignedURLExpiry(0))
@@ -77,27 +55,3 @@ func TestPresignedURLExpiryFloor(t *testing.T) {
 	assert.Greater(t, result, 5*time.Minute)
 }
 
-func TestPresignedURLEnabledComputation(t *testing.T) {
-	tests := []struct {
-		name                string
-		blobStorageStreaming bool
-		dsn                 string
-		expected            bool
-	}{
-		{"flag off, s3 backend", false, "s3://bucket", false},
-		{"flag on, s3 backend", true, "s3://bucket", true},
-		{"flag on, https backend", true, "https://minio.example.com/bucket", true},
-		{"flag on, gs backend", true, "gs://bucket", true},
-		{"flag on, file backend", true, "file:///tmp/blobs", false},
-		{"flag on, azblob backend", true, "azblob://container", false},
-		{"flag on, empty dsn", true, "", false},
-		{"flag off, file backend", false, "file:///tmp/blobs", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.blobStorageStreaming && supportsPresignedURLs(tt.dsn)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
