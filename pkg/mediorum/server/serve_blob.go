@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/OpenAudio/go-openaudio/pkg/registrar"
 	"go.uber.org/zap"
+	gcblob "gocloud.dev/blob"
 	"gorm.io/gorm"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
@@ -25,6 +27,23 @@ import (
 	"gocloud.dev/gcerrors"
 	"golang.org/x/exp/slices"
 )
+
+const (
+	presignedURLDefaultExpiry = 2 * time.Hour  // fallback when duration unknown
+	presignedURLMinExpiry     = 5 * time.Minute // floor for very short tracks
+	presignedURLBufferRatio   = 1.1             // 10% buffer over track duration
+)
+
+func presignedURLExpiry(durationSeconds float64) time.Duration {
+	if durationSeconds <= 0 {
+		return presignedURLDefaultExpiry
+	}
+	expiry := time.Duration(float64(time.Second) * durationSeconds * presignedURLBufferRatio)
+	if expiry < presignedURLMinExpiry {
+		return presignedURLMinExpiry
+	}
+	return expiry
+}
 
 // InvalidateTrackAccessCacheForTrack removes cached track access info for the given track.
 // Called when management_keys change (gate/ungate). Never fails the caller.
@@ -211,6 +230,29 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 		// synchronously write track listen to event queue
 		ss.logTrackListen(c)
 		setTimingHeader(c)
+
+		// Presigned URL redirect: send client directly to storage backend
+		if ss.presignedURLEnabled {
+			id3Requested, _ := strconv.ParseBool(c.QueryParam("id3"))
+			hasFilename := c.QueryParam("filename") != ""
+
+			if !id3Requested && !hasFilename {
+				durationSeconds, _ := c.Get("trackDurationSeconds").(float64)
+				expiry := presignedURLExpiry(durationSeconds)
+
+				signedURL, err := ss.bucket.SignedURL(ctx, key, &gcblob.SignedURLOptions{
+					Expiry: expiry,
+					Method: http.MethodGet,
+				})
+				if err == nil {
+					blob.Close()
+					blob = nil // prevent double-close in defer
+					return c.Redirect(http.StatusTemporaryRedirect, signedURL)
+				}
+				ss.logger.Warn("presigned URL generation failed, falling through to proxy",
+					zap.String("cid", cid), zap.Error(err))
+			}
+		}
 
 		if id3, _ := strconv.ParseBool(c.QueryParam("id3")); id3 {
 			title := c.QueryParam("id3_title")
@@ -445,16 +487,30 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 		} else {
 			var trackID string
 			var managementKeyCount int
+			var durationSeconds float64
 			if info, ok := s.trackAccessInfoCache.Get(cid); ok {
 				trackID = info.TrackID
 				managementKeyCount = info.ManagementKeyCount
+				durationSeconds = info.DurationSeconds
 			} else {
 				s.crud.DB.Raw("SELECT track_id FROM sound_recordings WHERE cid = ?", cid).Scan(&trackID)
 				if trackID != "" {
 					s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ?", trackID).Scan(&managementKeyCount)
 				}
-				s.trackAccessInfoCache.Set(cid, trackAccessInfo{trackID, managementKeyCount}, imcache.WithExpiration(5*time.Minute))
+				// Look up track duration from uploads table (for presigned URL expiry)
+				if s.presignedURLEnabled {
+					var ffprobeJSON string
+					s.crud.DB.Raw("SELECT ff_probe FROM uploads WHERE transcode_results::jsonb ->> '320' = ? LIMIT 1", cid).Scan(&ffprobeJSON)
+					if ffprobeJSON != "" {
+						var probe FFProbeResult
+						if err := json.Unmarshal([]byte(ffprobeJSON), &probe); err == nil {
+							durationSeconds, _ = strconv.ParseFloat(probe.Format.Duration, 64)
+						}
+					}
+				}
+				s.trackAccessInfoCache.Set(cid, trackAccessInfo{trackID, managementKeyCount, durationSeconds}, imcache.WithExpiration(5*time.Minute))
 			}
+			c.Set("trackDurationSeconds", durationSeconds)
 
 			// If track has access_authorities (management_keys), ONLY those signers may authorize - not validator keys
 			if trackID != "" && managementKeyCount > 0 {

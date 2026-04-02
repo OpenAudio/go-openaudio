@@ -49,6 +49,7 @@ import (
 type trackAccessInfo struct {
 	TrackID            string
 	ManagementKeyCount int
+	DurationSeconds    float64 // track duration in seconds (from FFProbe); 0 means unknown
 }
 
 type MediorumConfig struct {
@@ -79,11 +80,23 @@ type MediorumConfig struct {
 	RepairInterval            time.Duration `default:"1h"`
 
 	ProgrammableDistributionEnabled bool
+	BlobStorageStreaming             bool
 
 	// should have a basedir type of thing
 	// by default will put db + blobs there
 
 	privateKey *ecdsa.PrivateKey
+}
+
+// supportsPresignedURLs returns true if the storage backend supports generating presigned URLs.
+// S3, S3-compatible (https), and GCS backends support this. File and Azure backends do not.
+func supportsPresignedURLs(dsn string) bool {
+	for _, prefix := range []string{"s3://", "https://", "gs://"} {
+		if strings.HasPrefix(dsn, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 type MediorumServer struct {
@@ -129,6 +142,8 @@ type MediorumServer struct {
 	imageCache            *imcache.Cache[string, []byte]
 	trackAccessInfoCache  *imcache.Cache[string, trackAccessInfo]
 	failsPeerReachability bool
+
+	presignedURLEnabled bool
 
 	StartedAt time.Time
 	Config    MediorumConfig
@@ -369,8 +384,10 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		imageCache:           imcache.New(imcache.WithMaxEntriesLimitOption[string, []byte](10_000, imcache.EvictionPolicyLRU)),
 		trackAccessInfoCache: imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
 
-		StartedAt:    time.Now().UTC(),
-		Config:       config,
+		presignedURLEnabled: config.BlobStorageStreaming && supportsPresignedURLs(config.BlobStoreDSN),
+
+		StartedAt: time.Now().UTC(),
+		Config:    config,
 		geoIPdbReady: make(chan struct{}),
 
 		core: core,

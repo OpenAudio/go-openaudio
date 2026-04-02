@@ -174,6 +174,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		DeadHosts:                 []string{},
 		RepairEnabled:             repairEnabled,
 		RepairInterval:            repairInterval,
+		BlobStorageStreaming:      os.Getenv("OPENAUDIO_BLOB_STORAGE_STREAMING") == "true",
 	}
 
 	ss, err := server.New(lc, logger, config, posChannel, core, ethService)
