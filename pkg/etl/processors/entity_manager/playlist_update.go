@@ -61,11 +61,7 @@ func updatePlaylist(ctx context.Context, params *Params) error {
 	}
 	merged := mergePlaylistFromMetadata(params, base)
 
-	if err := markNotCurrent(ctx, params.DBTX, "playlists", "playlist_id", params.EntityID); err != nil {
-		return err
-	}
-
-	if err := insertPlaylistRow(ctx, params.DBTX, merged, false, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
+	if err := updatePlaylistRow(ctx, params.DBTX, merged, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
 		return err
 	}
 

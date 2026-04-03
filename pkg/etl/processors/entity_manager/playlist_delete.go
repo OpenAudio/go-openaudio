@@ -44,16 +44,13 @@ func validatePlaylistDelete(ctx context.Context, params *Params) error {
 }
 
 func deletePlaylist(ctx context.Context, params *Params) error {
-	base, err := loadCurrentPlaylistRow(ctx, params.DBTX, params.EntityID)
-	if err != nil {
-		return err
-	}
-
-	if err := markNotCurrent(ctx, params.DBTX, "playlists", "playlist_id", params.EntityID); err != nil {
-		return err
-	}
-
-	return insertPlaylistRow(ctx, params.DBTX, base, true, params.BlockTime, params.TxHash, params.BlockNumber)
+	_, err := params.DBTX.Exec(ctx, `
+		UPDATE playlists SET
+			is_delete = true,
+			updated_at = $2, txhash = $3, blocknumber = $4
+		WHERE playlist_id = $1 AND is_current = true
+	`, params.EntityID, params.BlockTime, params.TxHash, params.BlockNumber)
+	return err
 }
 
 // PlaylistDelete returns the Playlist Delete handler.

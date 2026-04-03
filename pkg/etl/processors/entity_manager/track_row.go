@@ -216,6 +216,54 @@ func strPtrVal(p *string) any {
 	return *p
 }
 
+func updateTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime time.Time, txHash string, blockNumber int64) error {
+	_, err := dbtx.Exec(ctx, `
+		UPDATE tracks SET
+			title = $2, genre = $3, mood = $4, tags = $5, description = $6,
+			cover_art = $7, cover_art_sizes = $8, is_unlisted = $9, field_visibility = $10,
+			remix_of = $11, stem_of = $12, track_cid = $13, preview_cid = $14, orig_file_cid = $15,
+			duration = $16, is_downloadable = $17, is_download_gated = $18, download_conditions = $19,
+			is_stream_gated = $20, stream_conditions = $21, release_date = $22, is_scheduled_release = $23,
+			ai_attribution_user_id = $24, is_playlist_upload = $25, ddex_app = $26, ddex_release_ids = $27,
+			is_available = $28,
+			updated_at = $29, txhash = $30, blocknumber = $31
+		WHERE track_id = $1 AND is_current = true
+	`,
+		r.TrackID,
+		r.Title,
+		strPtrVal(r.Genre),
+		strPtrVal(r.Mood),
+		strPtrVal(r.Tags),
+		strPtrVal(r.Description),
+		strPtrVal(r.CoverArt),
+		strPtrVal(r.CoverArtSizes),
+		r.IsUnlisted,
+		r.FieldVisibility,
+		r.RemixOf,
+		r.StemOf,
+		strPtrVal(r.TrackCID),
+		strPtrVal(r.PreviewCID),
+		strPtrVal(r.OrigFileCID),
+		r.Duration,
+		r.IsDownloadable,
+		r.IsDownloadGated,
+		r.DownloadConditions,
+		r.IsStreamGated,
+		r.StreamConditions,
+		r.ReleaseDate,
+		r.IsScheduledRelease,
+		r.AiAttributionUserID,
+		r.IsPlaylistUpload,
+		strPtrVal(r.DdexApp),
+		r.DdexReleaseIDs,
+		r.IsAvailable,
+		blockTime,
+		txHash,
+		blockNumber,
+	)
+	return err
+}
+
 func insertTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime time.Time, txHash string, blockNumber int64) error {
 	_, err := dbtx.Exec(ctx, `
 		INSERT INTO tracks (

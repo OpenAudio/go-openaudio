@@ -105,11 +105,6 @@ func updateUser(ctx context.Context, params *Params) error {
 		return err
 	}
 
-	// Mark current row as not current
-	if err := markNotCurrent(ctx, params.DBTX, "users", "user_id", params.UserID); err != nil {
-		return err
-	}
-
 	// Merge metadata into existing
 	handle := pickString(params.MetadataString("handle"), existing.handle)
 	handleLC := strings.ToLower(handle)
@@ -127,8 +122,6 @@ func updateUser(ctx context.Context, params *Params) error {
 	artistPickTrackID := existing.artistPickTrackID
 	if trackID, ok := params.MetadataInt64("artist_pick_track_id"); ok {
 		artistPickTrackID = &trackID
-	} else if params.MetadataString("artist_pick_track_id") == "" {
-		// Explicit null in metadata would clear it - for now keep existing if not in metadata
 	}
 
 	allowAIAttribution := existing.allowAIAttribution
@@ -145,24 +138,16 @@ func updateUser(ctx context.Context, params *Params) error {
 	}
 
 	_, err = params.DBTX.Exec(ctx, `
-		INSERT INTO users (
-			user_id, handle, handle_lc, wallet, name, bio, location,
-			profile_picture, profile_picture_sizes, cover_photo, cover_photo_sizes,
-			playlist_library, artist_pick_track_id, allow_ai_attribution,
-			is_current, is_verified, is_deactivated, is_available, is_storage_v2,
-			created_at, updated_at, txhash, blockhash, blocknumber
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			$8, $9, $10, $11,
-			$12, $13, $14,
-			true, $15, $16, $17, true,
-			$18, $19, $20, '', $21
-		)
+		UPDATE users SET
+			handle = $2, handle_lc = $3, name = $4, bio = $5, location = $6,
+			profile_picture = $7, profile_picture_sizes = $8, cover_photo = $9, cover_photo_sizes = $10,
+			playlist_library = $11, artist_pick_track_id = $12, allow_ai_attribution = $13,
+			updated_at = $14, txhash = $15, blocknumber = $16
+		WHERE user_id = $1 AND is_current = true
 	`,
 		params.UserID,
 		handle,
 		handleLC,
-		existing.wallet,
 		name,
 		bio,
 		location,
@@ -173,10 +158,6 @@ func updateUser(ctx context.Context, params *Params) error {
 		playlistLibrary,
 		artistPickTrackID,
 		allowAIAttribution,
-		existing.isVerified,
-		existing.isDeactivated,
-		existing.isAvailable,
-		existing.createdAt,
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,

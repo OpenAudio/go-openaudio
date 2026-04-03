@@ -158,7 +158,12 @@ func NewParams(tx *corev1.ManageEntityLegacy, blockNumber int64, blockTime time.
 	if tx.GetMetadata() != "" {
 		var meta map[string]any
 		if err := json.Unmarshal([]byte(tx.GetMetadata()), &meta); err == nil {
-			p.Metadata = meta
+			// Unwrap nested "data" envelope: {"cid":"...", "data": {actual fields}}
+			if data, ok := meta["data"].(map[string]any); ok {
+				p.Metadata = data
+			} else {
+				p.Metadata = meta
+			}
 		}
 	}
 

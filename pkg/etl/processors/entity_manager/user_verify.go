@@ -57,10 +57,6 @@ func verifyUser(ctx context.Context, params *Params) error {
 		return err
 	}
 
-	if err := markNotCurrent(ctx, params.DBTX, "users", "user_id", params.UserID); err != nil {
-		return err
-	}
-
 	isVerified := existing.isVerified
 	if v, ok := params.MetadataBool("is_verified"); ok {
 		isVerified = isVerified || v
@@ -85,38 +81,13 @@ func verifyUser(ctx context.Context, params *Params) error {
 	}
 
 	_, err = params.DBTX.Exec(ctx, `
-		INSERT INTO users (
-			user_id, handle, handle_lc, wallet, name, bio, location,
-			profile_picture, profile_picture_sizes, cover_photo, cover_photo_sizes,
-			playlist_library, artist_pick_track_id, allow_ai_attribution,
-			is_verified, twitter_handle, instagram_handle, tiktok_handle,
-			verified_with_twitter, verified_with_instagram, verified_with_tiktok,
-			is_current, is_deactivated, is_available, is_storage_v2,
-			created_at, updated_at, txhash, blockhash, blocknumber
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			$8, $9, $10, $11,
-			$12, $13, $14,
-			$15, $16, $17, $18,
-			$19, $20, $21,
-			true, $22, $23, true,
-			$24, $25, $26, '', $27
-		)
+		UPDATE users SET
+			is_verified = $2, twitter_handle = $3, instagram_handle = $4, tiktok_handle = $5,
+			verified_with_twitter = $6, verified_with_instagram = $7, verified_with_tiktok = $8,
+			updated_at = $9, txhash = $10, blocknumber = $11
+		WHERE user_id = $1 AND is_current = true
 	`,
 		params.UserID,
-		existing.handle,
-		existing.handleLC,
-		existing.wallet,
-		existing.name,
-		existing.bio,
-		existing.location,
-		existing.profilePicture,
-		existing.profilePictureSizes,
-		existing.coverPhoto,
-		existing.coverPhotoSizes,
-		existing.playlistLibrary,
-		existing.artistPickTrackID,
-		existing.allowAIAttribution,
 		isVerified,
 		twitterHandle,
 		instagramHandle,
@@ -124,9 +95,6 @@ func verifyUser(ctx context.Context, params *Params) error {
 		verifiedWithTwitter,
 		verifiedWithInstagram,
 		verifiedWithTiktok,
-		existing.isDeactivated,
-		existing.isAvailable,
-		existing.createdAt,
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,

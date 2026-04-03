@@ -63,11 +63,7 @@ func updateTrack(ctx context.Context, params *Params) error {
 	oldTitle := base.Title
 	merged := mergeTrackFromMetadata(params, base)
 
-	if err := markNotCurrent(ctx, params.DBTX, "tracks", "track_id", params.EntityID); err != nil {
-		return err
-	}
-
-	if err := insertTrackRow(ctx, params.DBTX, merged, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
+	if err := updateTrackRow(ctx, params.DBTX, merged, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
 		return err
 	}
 
