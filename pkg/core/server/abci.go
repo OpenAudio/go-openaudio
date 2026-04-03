@@ -573,15 +573,18 @@ func (s *Server) OfferSnapshot(_ context.Context, req *abcitypes.OfferSnapshotRe
 	s.snapshotMutex.Lock()
 	defer s.snapshotMutex.Unlock()
 
-	// If we've already accepted a snapshot, only accept the same one
+	// If we've already accepted a snapshot, check if CometBFT is re-offering the
+	// same one (resume) or a different one (previous snapshot failed verification).
 	if s.acceptedSnapshotHeight != 0 {
 		if req.Snapshot.Height != s.acceptedSnapshotHeight {
-			s.logger.Info("rejecting snapshot: already syncing to different snapshot",
-				zap.Uint64("offered_height", req.Snapshot.Height),
-				zap.Uint64("accepted_height", s.acceptedSnapshotHeight))
-			return &abcitypes.OfferSnapshotResponse{
-				Result: abcitypes.OFFER_SNAPSHOT_RESULT_REJECT,
-			}, nil
+			// CometBFT is offering a different snapshot, which means the previously
+			// accepted one failed (e.g. consensus params verification error). Clear
+			// the old state so we can accept the new snapshot.
+			s.logger.Info("clearing previous snapshot state: CometBFT offered a new snapshot",
+				zap.Uint64("previous_height", s.acceptedSnapshotHeight),
+				zap.Uint64("new_height", req.Snapshot.Height))
+			s.acceptedSnapshotHeight = 0
+			s.acceptedSnapshotHash = nil
 		}
 		// Check hash matches too
 		if !bytes.Equal(req.Snapshot.Hash, s.acceptedSnapshotHash) {
@@ -1043,6 +1046,8 @@ func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.Finaliz
 		return s.finalizePlayTransaction(ctx, msg)
 	case *v1.SignedTransaction_ManageEntity:
 		return s.finalizeManageEntity(ctx, msg)
+	case *v1.SignedTransaction_ManageEntityMigration:
+		return s.finalizeManageEntityMigration(ctx, msg)
 	case *v1.SignedTransaction_Attestation:
 		return s.finalizeAttestation(ctx, msg, req.Height)
 	case *v1.SignedTransaction_ValidatorRegistration:

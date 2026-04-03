@@ -288,6 +288,7 @@ message SignedTransaction {
     ddex.v1beta1.NewReleaseMessage release = 1008;
     RewardMessage reward = 1009;
     FileUpload file_upload = 1010;
+    ManageEntityLegacyMigration manage_entity_migration = 1011;
   }
 }
 
@@ -328,6 +329,22 @@ message SlaNodeReport {
 }
 
 message ManageEntityLegacy {
+  int64 user_id = 1;
+  string entity_type = 2;
+  int64 entity_id = 3;
+  string action = 4;
+  string metadata = 5;
+  string signature = 6;
+  string signer = 7;
+  string nonce = 8;
+}
+
+// ManageEntityLegacyMigration is structurally identical to ManageEntityLegacy
+// but signals to indexers that the transaction was produced by genesis-writer
+// during the initial chain migration. Indexers must verify only that the signer
+// matches the genesis migration authority; standard ownership, wallet-uniqueness,
+// and signer checks must not be applied.
+message ManageEntityLegacyMigration {
   int64 user_id = 1;
   string entity_type = 2;
   int64 entity_id = 3;

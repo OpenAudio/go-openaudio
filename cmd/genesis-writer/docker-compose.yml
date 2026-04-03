@@ -1,0 +1,214 @@
+name: genesis-writer
+
+# Integration-test stack for genesis-writer end-to-end verification.
+# All paths are relative to the repo root.
+#
+# Usage (from repo root):
+#
+#   export EXT_DATA_DIR=$(mktemp -d)
+#   docker compose -f cmd/genesis-writer/docker-compose.yml up -d src-db core-db eth-ganache ingress
+#   go test -v -tags integration -run TestGenesisWriter -timeout 30m ./cmd/genesis-writer/...
+#   docker compose -f cmd/genesis-writer/docker-compose.yml down -v
+#
+# The integration test runs genesis-writer in-process, verifies the core DB
+# content with a lightweight indexer, then starts openaudio-1 to confirm
+# consensus advances from the genesis height.
+
+services:
+
+  # ----------------------------------------------------------------
+  # Source database – holds the Audius Discovery Provider schema and
+  # is pre-seeded with test entities via genesis_writer_source DB.
+  # ----------------------------------------------------------------
+  src-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: discovery_provider_1
+    volumes:
+      - ../../cmd/genesis-replay/testdata/dp_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ../../cmd/genesis-writer/testdata/dp_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - ../../cmd/genesis-writer/testdata/source_init.sh:/docker-entrypoint-initdb.d/03_source_init.sh:ro
+      - ../../cmd/genesis-writer/testdata/seed.sql:/tmp/source_seed.sql:ro
+      - ${EXT_DATA_DIR}/gw-src-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "psql -h 127.0.0.1 -U postgres -d genesis_writer_source -c 'SELECT 1' > /dev/null 2>&1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    ports:
+      - "5435:5432"
+
+  # ----------------------------------------------------------------
+  # Core chain database – starts empty; genesis-writer applies the
+  # Core chain schema via RunMigrations and then populates it.
+  # openaudio-1 reads from this DB once genesis-writer is done.
+  # ----------------------------------------------------------------
+  core-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: openaudio
+    volumes:
+      - ${EXT_DATA_DIR}/gw-core-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5436:5432"
+
+  # ----------------------------------------------------------------
+  # Ethereum test network required by openaudio-1 for contract calls.
+  # ----------------------------------------------------------------
+  eth-ganache:
+    image: audius/eth-ganache:latest
+    pull_policy: always
+    stop_grace_period: 0s
+    command: >
+      npx ganache
+        --server.host 0.0.0.0
+        --wallet.deterministic
+        --wallet.totalAccounts 50
+        --database.dbPath /usr/db
+        --chain.networkId 12345
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          node -e "require('http').request({port:8545,method:'POST',headers:{'Content-Type':'application/json'}},
+          r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>process.exit(JSON.parse(d).result?0:1))}).end(JSON.stringify({jsonrpc:'2.0',method:'eth_blockNumber',params:[],id:1}))"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # ----------------------------------------------------------------
+  # TLS-terminating ingress for the devnet node.
+  # ----------------------------------------------------------------
+  ingress:
+    image: nginx:latest
+    volumes:
+      - ../../dev/nginx.conf:/etc/nginx/conf.d/vhost.conf:ro
+      - ../../dev/tls/cert.pem:/etc/nginx/ssl/cert.pem:ro
+      - ../../dev/tls/key.pem:/etc/nginx/ssl/key.pem:ro
+    extra_hosts:
+      - "node1.oap.devnet:host-gateway"
+    ports:
+      - "80:80"
+      - "443:443"
+
+  # ----------------------------------------------------------------
+  # Second core DB – used by openaudio-2 during state sync tests.
+  # Starts empty; state sync restores a pg_dump from openaudio-1.
+  # ----------------------------------------------------------------
+  core-db-2:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: openaudio
+    volumes:
+      - ${EXT_DATA_DIR}/gw-core-pg-2-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5437:5432"
+
+  # ----------------------------------------------------------------
+  # OpenAudio consensus node – started by the integration test AFTER
+  # genesis-writer has populated core-db and written CometBFT state.
+  #
+  # Key settings:
+  #   OPENAUDIO_CORE_ONLY=true  – skip embedded postgres; use core-db
+  #   dbUrl                     – external core-db DSN
+  #   audius_core_root_dir      – mounts the volume written by genesis-writer
+  # ----------------------------------------------------------------
+  openaudio-1:
+    image: ${OPENAUDIO_IMAGE:-openaudio/go-openaudio:dev}
+    profiles: [chain]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl -fsk https://localhost/health-check | grep -v 'core service not ready'"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    environment:
+      NETWORK: dev
+      OPENAUDIO_ENV: dev
+      OPENAUDIO_GENESIS: dev-v2
+      OPENAUDIO_TLS_SELF_SIGNED: "true"
+      OPENAUDIO_GENESIS_MIGRATION: "true"
+      OPENAUDIO_CORE_ONLY: "true"
+      nodeEndpoint: https://node1.oap.devnet
+      delegatePrivateKey: d09ba371c359f10f22ccda12fd26c598c7921bda3220c9942174562bc6a36fe8
+      dbUrl: postgresql://postgres:postgres@core-db:5432/openaudio?sslmode=disable
+      audius_core_root_dir: /data/core
+      uptimeDataDir: /data/bolt
+      stateSyncServeSnapshots: "true"
+      stateSyncBlockInterval: "20"
+      stateSyncEnable: "false"
+      externalAddress: "openaudio-1:26656"
+    extra_hosts:
+      - "node1.oap.devnet:host-gateway"
+    volumes:
+      - ${GENESIS_WRITER_DATA_DIR:-/tmp/genesis-writer-cmt-data}:/data/core
+    ports:
+      - "50052:50051"
+    depends_on:
+      core-db:
+        condition: service_healthy
+      eth-ganache:
+        condition: service_healthy
+
+  # ----------------------------------------------------------------
+  # Second OpenAudio node – state syncs from openaudio-1.
+  # Started by the integration test AFTER openaudio-1 has produced
+  # at least one snapshot.
+  # ----------------------------------------------------------------
+  openaudio-2:
+    image: ${OPENAUDIO_IMAGE:-openaudio/go-openaudio:dev}
+    profiles: [statesync]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl -fsk https://localhost/health-check | grep -v 'core service not ready'"
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    environment:
+      NETWORK: dev
+      OPENAUDIO_ENV: dev
+      OPENAUDIO_GENESIS: dev-v2
+      OPENAUDIO_TLS_SELF_SIGNED: "true"
+      OPENAUDIO_CORE_ONLY: "true"
+      nodeEndpoint: https://node2.oap.devnet
+      delegatePrivateKey: e19a18cfeb4ea5c0fef65cd1cb4c20f9c52a1bb9c54e3a58ecd0e1bcbea1cc04
+      dbUrl: postgresql://postgres:postgres@core-db-2:5432/openaudio?sslmode=disable
+      audius_core_root_dir: /data/core
+      uptimeDataDir: /data/bolt
+      skipEthRegistration: "true"
+      stateSyncEnable: "true"
+      stateSyncServeSnapshots: "false"
+      stateSyncRPCServers: "https://node1.oap.devnet,https://node1.oap.devnet"
+      persistentPeers: "${PERSISTENT_PEERS:-}"
+    extra_hosts:
+      - "node1.oap.devnet:host-gateway"
+      - "node2.oap.devnet:host-gateway"
+    volumes:
+      - ${EXT_DATA_DIR}/oap2-core:/data/core
+    depends_on:
+      core-db-2:
+        condition: service_healthy
+      eth-ganache:
+        condition: service_healthy
+
