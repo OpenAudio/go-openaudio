@@ -11,7 +11,7 @@ import (
 
 var handleRegexp = regexp.MustCompile(`^[a-z0-9_.]+$`)
 
-// Reserved handles that cannot be used (subset matching discovery-provider).
+// Reserved handles that cannot be used.
 var reservedHandles = map[string]bool{
 	"admin": true, "audius": true, "api": true, "app": true, "blog": true,
 	"contact": true, "dashboard": true, "dev": true, "developer": true,
@@ -104,7 +104,7 @@ func getUserWallet(ctx context.Context, dbtx db.DBTX, userID int64) (string, err
 	return wallet, nil
 }
 
-// ValidateGenre checks genre is in the allowlist (discovery-provider hardcoded_data.genre_allowlist).
+// ValidateGenre checks genre is in the allowlist.
 func ValidateGenre(genre string) error {
 	if genre == "" {
 		return nil
@@ -116,7 +116,6 @@ func ValidateGenre(genre string) error {
 }
 
 // ValidateAccessConditions checks gating field consistency, matching
-// Python discovery-provider's validate_access_conditions logic.
 // Only validates when gating fields are present in metadata.
 func ValidateAccessConditions(p *Params) error {
 	// Only validate if any gating field is present in metadata.

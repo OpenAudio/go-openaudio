@@ -16,7 +16,7 @@ import (
 
 var slugStripRegexp = regexp.MustCompile(`!|%|#|\$|&|'|\(|\)|\*|\+|’|,|/|:|;|=|\?|@|\[|\]|\x00|\^|\.|\{|\}|"|~`)
 
-// SanitizeSlug converts a title into a URL-friendly slug (discovery-provider helpers.sanitize_slug).
+// SanitizeSlug converts a title into a URL-friendly slug.
 func SanitizeSlug(title string, recordID int64, collisionID int) string {
 	sanitized := title
 	sanitized = slugStripRegexp.ReplaceAllString(sanitized, "")

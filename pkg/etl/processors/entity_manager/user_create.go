@@ -94,18 +94,10 @@ func validateUserCreate(ctx context.Context, params *Params) error {
 }
 
 func insertUser(ctx context.Context, params *Params) error {
-	handle := params.MetadataString("handle")
-	name := params.MetadataString("name")
-	bio := params.MetadataString("bio")
-	location := params.MetadataString("location")
-	profilePicture := params.MetadataString("profile_picture")
-	profilePictureSizes := params.MetadataString("profile_picture_sizes")
-	coverPhoto := params.MetadataString("cover_photo")
-	coverPhotoSizes := params.MetadataString("cover_photo_sizes")
-
-	handleLC := ""
-	if handle != "" {
-		handleLC = strings.ToLower(handle)
+	handle := nullString(params.MetadataString("handle"))
+	var handleLC any
+	if h := params.MetadataString("handle"); h != "" {
+		handleLC = strings.ToLower(h)
 	}
 
 	_, err := params.DBTX.Exec(ctx, `
@@ -125,13 +117,13 @@ func insertUser(ctx context.Context, params *Params) error {
 		handle,
 		handleLC,
 		strings.ToLower(params.Signer),
-		name,
-		bio,
-		location,
-		profilePicture,
-		profilePictureSizes,
-		coverPhoto,
-		coverPhotoSizes,
+		nullString(params.MetadataString("name")),
+		nullString(params.MetadataString("bio")),
+		nullString(params.MetadataString("location")),
+		nullString(params.MetadataString("profile_picture")),
+		nullString(params.MetadataString("profile_picture_sizes")),
+		nullString(params.MetadataString("cover_photo")),
+		nullString(params.MetadataString("cover_photo_sizes")),
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,

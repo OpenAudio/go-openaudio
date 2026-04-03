@@ -2,16 +2,14 @@ package entity_manager
 
 import (
 	"context"
+	"database/sql"
 	"strings"
-	"time"
 
 	"github.com/OpenAudio/go-openaudio/etl/db"
 )
 
 // VerifiedAddress is the wallet address authorized to sign User Verify transactions.
-// Discovery-provider uses shared_config["contracts"]["verified_address"].
-// TODO: Make configurable via env or metadata; for now accept any signer when empty.
-var VerifiedAddress = ""
+var VerifiedAddress = "0xbeef8E42e8B5964fDD2b7ca8efA0d9aef38AA996"
 
 type userVerifyHandler struct{}
 
@@ -61,21 +59,21 @@ func verifyUser(ctx context.Context, params *Params) error {
 	if v, ok := params.MetadataBool("is_verified"); ok {
 		isVerified = isVerified || v
 	}
-	twitterHandle := pickString(params.MetadataString("twitter_handle"), existing.twitterHandle)
-	instagramHandle := pickString(params.MetadataString("instagram_handle"), existing.instagramHandle)
-	tiktokHandle := pickString(params.MetadataString("tiktok_handle"), existing.tiktokHandle)
+	twitterHandle := mergeNullStr(params, "twitter_handle", existing.twitterHandle)
+	instagramHandle := mergeNullStr(params, "instagram_handle", existing.instagramHandle)
+	tiktokHandle := mergeNullStr(params, "tiktok_handle", existing.tiktokHandle)
 
 	verifiedWithTwitter := existing.verifiedWithTwitter
 	verifiedWithInstagram := existing.verifiedWithInstagram
 	verifiedWithTiktok := existing.verifiedWithTiktok
 	if isVerified {
-		if twitterHandle != "" {
+		if twitterHandle != nil {
 			verifiedWithTwitter = true
 		}
-		if instagramHandle != "" {
+		if instagramHandle != nil {
 			verifiedWithInstagram = true
 		}
-		if tiktokHandle != "" {
+		if tiktokHandle != nil {
 			verifiedWithTiktok = true
 		}
 	}
@@ -89,9 +87,9 @@ func verifyUser(ctx context.Context, params *Params) error {
 	`,
 		params.UserID,
 		isVerified,
-		twitterHandle,
-		instagramHandle,
-		tiktokHandle,
+		strPtrVal(twitterHandle),
+		strPtrVal(instagramHandle),
+		strPtrVal(tiktokHandle),
 		verifiedWithTwitter,
 		verifiedWithInstagram,
 		verifiedWithTiktok,
@@ -103,90 +101,42 @@ func verifyUser(ctx context.Context, params *Params) error {
 }
 
 type currentUserForVerifyRow struct {
-	handle                string
-	handleLC              string
-	wallet                string
-	name                  string
-	bio                   string
-	location              string
-	profilePicture        string
-	profilePictureSizes   string
-	coverPhoto            string
-	coverPhotoSizes       string
-	twitterHandle         string
-	instagramHandle       string
-	tiktokHandle          string
+	twitterHandle         *string
+	instagramHandle       *string
+	tiktokHandle          *string
 	verifiedWithTwitter   bool
 	verifiedWithInstagram bool
 	verifiedWithTiktok    bool
 	isVerified            bool
-	isDeactivated         bool
-	isAvailable           bool
-	playlistLibrary       []byte
-	artistPickTrackID     *int64
-	allowAIAttribution    bool
-	createdAt             time.Time
 }
 
 func getCurrentUserForVerify(ctx context.Context, dbtx db.DBTX, userID int64) (*currentUserForVerifyRow, error) {
 	var (
-		handle, handleLC, wallet, name, bio, location                      string
-		profilePicture, profilePictureSizes, coverPhoto, coverPhotoSizes   string
-		twitterHandle, instagramHandle, tiktokHandle                       string
-		verifiedWithTwitter, verifiedWithInstagram, verifiedWithTiktok    bool
-		isVerified, isDeactivated, isAvailable                             bool
-		playlistLibrary                                                    []byte
-		artistPickTrackID                                                  *int64
-		allowAIAttribution                                                 bool
-		createdAt                                                          time.Time
+		twitterHandle, instagramHandle, tiktokHandle                   sql.NullString
+		verifiedWithTwitter, verifiedWithInstagram, verifiedWithTiktok sql.NullBool
+		isVerified                                                     bool
 	)
 	err := dbtx.QueryRow(ctx, `
-		SELECT COALESCE(handle,''), COALESCE(handle_lc,''), COALESCE(wallet,''),
-			COALESCE(name,''), COALESCE(bio,''), COALESCE(location,''),
-			COALESCE(profile_picture,''), COALESCE(profile_picture_sizes,''),
-			COALESCE(cover_photo,''), COALESCE(cover_photo_sizes,''),
-			COALESCE(twitter_handle,''), COALESCE(instagram_handle,''), COALESCE(tiktok_handle,''),
-			COALESCE(verified_with_twitter, false), COALESCE(verified_with_instagram, false), COALESCE(verified_with_tiktok, false),
-			is_verified, is_deactivated, is_available,
-			playlist_library, artist_pick_track_id, allow_ai_attribution,
-			created_at
+		SELECT twitter_handle, instagram_handle, tiktok_handle,
+			verified_with_twitter, verified_with_instagram, verified_with_tiktok,
+			is_verified
 		FROM users WHERE user_id = $1 AND is_current = true LIMIT 1
 	`, userID).Scan(
-		&handle, &handleLC, &wallet, &name, &bio, &location,
-		&profilePicture, &profilePictureSizes, &coverPhoto, &coverPhotoSizes,
 		&twitterHandle, &instagramHandle, &tiktokHandle,
 		&verifiedWithTwitter, &verifiedWithInstagram, &verifiedWithTiktok,
-		&isVerified, &isDeactivated, &isAvailable,
-		&playlistLibrary, &artistPickTrackID, &allowAIAttribution,
-		&createdAt,
+		&isVerified,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &currentUserForVerifyRow{
-		handle:                handle,
-		handleLC:              handleLC,
-		wallet:                wallet,
-		name:                  name,
-		bio:                   bio,
-		location:              location,
-		profilePicture:        profilePicture,
-		profilePictureSizes:  profilePictureSizes,
-		coverPhoto:            coverPhoto,
-		coverPhotoSizes:       coverPhotoSizes,
-		twitterHandle:         twitterHandle,
-		instagramHandle:        instagramHandle,
-		tiktokHandle:          tiktokHandle,
-		verifiedWithTwitter:   verifiedWithTwitter,
-		verifiedWithInstagram: verifiedWithInstagram,
-		verifiedWithTiktok:     verifiedWithTiktok,
+		twitterHandle:         nullStrPtr(twitterHandle),
+		instagramHandle:       nullStrPtr(instagramHandle),
+		tiktokHandle:          nullStrPtr(tiktokHandle),
+		verifiedWithTwitter:   verifiedWithTwitter.Valid && verifiedWithTwitter.Bool,
+		verifiedWithInstagram: verifiedWithInstagram.Valid && verifiedWithInstagram.Bool,
+		verifiedWithTiktok:    verifiedWithTiktok.Valid && verifiedWithTiktok.Bool,
 		isVerified:            isVerified,
-		isDeactivated:         isDeactivated,
-		isAvailable:           isAvailable,
-		playlistLibrary:       playlistLibrary,
-		artistPickTrackID:     artistPickTrackID,
-		allowAIAttribution:    allowAIAttribution,
-		createdAt:             createdAt,
 	}, nil
 }
 

@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Entity type constants matching discovery-provider EntityType enum.
+// Entity type constants.
 const (
 	EntityTypeUser                      = "User"
 	EntityTypeTrack                     = "Track"
@@ -48,7 +48,7 @@ const (
 	EntityTypeShare                     = "Share"
 )
 
-// Action constants matching discovery-provider Action enum.
+// Action constants.
 const (
 	ActionCreate      = "Create"
 	ActionUpdate      = "Update"
@@ -78,7 +78,7 @@ const (
 	ActionShare       = "Share"
 )
 
-// ID offsets matching discovery-provider constants.
+// ID offsets.
 const (
 	PlaylistIDOffset = 400_000
 	TrackIDOffset    = 2_000_000
@@ -86,14 +86,12 @@ const (
 	CommentIDOffset  = 4_000_000
 )
 
-// Character limit constants matching discovery-provider.
+// Character limit constants.
 const (
 	CharacterLimitUserBio     = 256
 	CharacterLimitUserName    = 32
 	CharacterLimitHandle      = 30
-	// CharacterLimitDescription matches discovery-provider entity_manager CHARACTER_LIMIT_DESCRIPTION (tracks, playlists).
 	CharacterLimitDescription = 2500
-	// CharacterLimitCommentBody matches discovery-provider COMMENT_BODY_LIMIT.
 	CharacterLimitCommentBody = 400
 )
 

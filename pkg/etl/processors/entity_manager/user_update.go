@@ -2,6 +2,7 @@ package entity_manager
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"time"
@@ -99,25 +100,24 @@ func validateUserUpdate(ctx context.Context, params *Params) error {
 }
 
 func updateUser(ctx context.Context, params *Params) error {
-	// Fetch existing user row for merge
 	existing, err := getCurrentUser(ctx, params.DBTX, params.UserID)
 	if err != nil {
 		return err
 	}
 
-	// Merge metadata into existing
-	handle := pickString(params.MetadataString("handle"), existing.handle)
-	handleLC := strings.ToLower(handle)
-	if handle == "" {
-		handleLC = existing.handleLC
+	handle := mergeNullStr(params, "handle", existing.handle)
+	handleLC := existing.handleLC
+	if handle != nil {
+		lc := strings.ToLower(*handle)
+		handleLC = &lc
 	}
-	name := pickString(params.MetadataString("name"), existing.name)
-	bio := pickString(params.MetadataString("bio"), existing.bio)
-	location := pickString(params.MetadataString("location"), existing.location)
-	profilePicture := pickString(params.MetadataString("profile_picture"), existing.profilePicture)
-	profilePictureSizes := pickString(params.MetadataString("profile_picture_sizes"), existing.profilePictureSizes)
-	coverPhoto := pickString(params.MetadataString("cover_photo"), existing.coverPhoto)
-	coverPhotoSizes := pickString(params.MetadataString("cover_photo_sizes"), existing.coverPhotoSizes)
+	name := mergeNullStr(params, "name", existing.name)
+	bio := mergeNullStr(params, "bio", existing.bio)
+	location := mergeNullStr(params, "location", existing.location)
+	profilePicture := mergeNullStr(params, "profile_picture", existing.profilePicture)
+	profilePictureSizes := mergeNullStr(params, "profile_picture_sizes", existing.profilePictureSizes)
+	coverPhoto := mergeNullStr(params, "cover_photo", existing.coverPhoto)
+	coverPhotoSizes := mergeNullStr(params, "cover_photo_sizes", existing.coverPhotoSizes)
 
 	artistPickTrackID := existing.artistPickTrackID
 	if trackID, ok := params.MetadataInt64("artist_pick_track_id"); ok {
@@ -146,15 +146,15 @@ func updateUser(ctx context.Context, params *Params) error {
 		WHERE user_id = $1 AND is_current = true
 	`,
 		params.UserID,
-		handle,
-		handleLC,
-		name,
-		bio,
-		location,
-		profilePicture,
-		profilePictureSizes,
-		coverPhoto,
-		coverPhotoSizes,
+		strPtrVal(handle),
+		strPtrVal(handleLC),
+		strPtrVal(name),
+		strPtrVal(bio),
+		strPtrVal(location),
+		strPtrVal(profilePicture),
+		strPtrVal(profilePictureSizes),
+		strPtrVal(coverPhoto),
+		strPtrVal(coverPhotoSizes),
 		playlistLibrary,
 		artistPickTrackID,
 		allowAIAttribution,
@@ -165,24 +165,30 @@ func updateUser(ctx context.Context, params *Params) error {
 	return err
 }
 
-func pickString(newVal, existing string) string {
-	if newVal != "" {
-		return newVal
+// mergeNullStr returns the metadata value if present, otherwise the existing value.
+// If metadata provides an empty string, it clears the field (returns nil).
+func mergeNullStr(p *Params, key string, existing *string) *string {
+	if _, ok := p.Metadata[key]; !ok {
+		return existing
 	}
-	return existing
+	s := p.MetadataString(key)
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 type currentUserRow struct {
-	handle              string
-	handleLC            string
-	wallet              string
-	name                string
-	bio                 string
-	location            string
-	profilePicture      string
-	profilePictureSizes string
-	coverPhoto          string
-	coverPhotoSizes     string
+	handle              *string
+	handleLC            *string
+	wallet              *string
+	name                *string
+	bio                 *string
+	location            *string
+	profilePicture      *string
+	profilePictureSizes *string
+	coverPhoto          *string
+	coverPhotoSizes     *string
 	playlistLibrary     []byte
 	artistPickTrackID   *int64
 	allowAIAttribution  bool
@@ -194,18 +200,18 @@ type currentUserRow struct {
 
 func getCurrentUser(ctx context.Context, dbtx db.DBTX, userID int64) (*currentUserRow, error) {
 	var (
-		handle, handleLC, wallet, name, bio, location                string
-		profilePicture, profilePictureSizes, coverPhoto, coverPhotoSizes string
-		playlistLibrary                                               []byte
-		artistPickTrackID                                             *int64
-		allowAIAttribution, isVerified, isDeactivated, isAvailable    bool
-		createdAt                                                     time.Time
+		handle, handleLC, wallet, name, bio, location                      sql.NullString
+		profilePicture, profilePictureSizes, coverPhoto, coverPhotoSizes   sql.NullString
+		playlistLibrary                                                    []byte
+		artistPickTrackID                                                  *int64
+		allowAIAttribution, isVerified, isDeactivated, isAvailable         bool
+		createdAt                                                          time.Time
 	)
 	err := dbtx.QueryRow(ctx, `
-		SELECT COALESCE(handle,''), COALESCE(handle_lc,''), COALESCE(wallet,''),
-			COALESCE(name,''), COALESCE(bio,''), COALESCE(location,''),
-			COALESCE(profile_picture,''), COALESCE(profile_picture_sizes,''),
-			COALESCE(cover_photo,''), COALESCE(cover_photo_sizes,''),
+		SELECT handle, handle_lc, wallet,
+			name, bio, location,
+			profile_picture, profile_picture_sizes,
+			cover_photo, cover_photo_sizes,
 			playlist_library, artist_pick_track_id, allow_ai_attribution,
 			is_verified, is_deactivated, is_available, created_at
 		FROM users WHERE user_id = $1 AND is_current = true LIMIT 1
@@ -219,30 +225,33 @@ func getCurrentUser(ctx context.Context, dbtx db.DBTX, userID int64) (*currentUs
 		return nil, err
 	}
 	return &currentUserRow{
-		handle:              handle,
-		handleLC:            handleLC,
-		wallet:              wallet,
-		name:                name,
-		bio:                 bio,
-		location:            location,
-		profilePicture:      profilePicture,
-		profilePictureSizes: profilePictureSizes,
-		coverPhoto:          coverPhoto,
-		coverPhotoSizes:     coverPhotoSizes,
+		handle:              nullStrPtr(handle),
+		handleLC:            nullStrPtr(handleLC),
+		wallet:              nullStrPtr(wallet),
+		name:                nullStrPtr(name),
+		bio:                 nullStrPtr(bio),
+		location:            nullStrPtr(location),
+		profilePicture:      nullStrPtr(profilePicture),
+		profilePictureSizes: nullStrPtr(profilePictureSizes),
+		coverPhoto:          nullStrPtr(coverPhoto),
+		coverPhotoSizes:     nullStrPtr(coverPhotoSizes),
 		playlistLibrary:     playlistLibrary,
 		artistPickTrackID:   artistPickTrackID,
 		allowAIAttribution:  allowAIAttribution,
-		isVerified:         isVerified,
-		isDeactivated:      isDeactivated,
-		isAvailable:        isAvailable,
+		isVerified:          isVerified,
+		isDeactivated:       isDeactivated,
+		isAvailable:         isAvailable,
 		createdAt:           createdAt,
 	}, nil
 }
 
 func getUserHandle(ctx context.Context, dbtx db.DBTX, userID int64) (string, error) {
-	var handleLC string
+	var handleLC sql.NullString
 	err := dbtx.QueryRow(ctx, "SELECT handle_lc FROM users WHERE user_id = $1 AND is_current = true LIMIT 1", userID).Scan(&handleLC)
-	return handleLC, err
+	if handleLC.Valid {
+		return handleLC.String, err
+	}
+	return "", err
 }
 
 func trackExistsAndOwnedBy(ctx context.Context, dbtx db.DBTX, trackID, ownerID int64) (bool, error) {

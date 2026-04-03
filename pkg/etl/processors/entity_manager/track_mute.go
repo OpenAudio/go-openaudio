@@ -5,7 +5,6 @@ import (
 )
 
 // Track Mute/Unmute update comment notification settings for tracks.
-// Dispatched as (Track, Mute) and (Track, Unmute) in discovery-provider.
 
 type trackMuteHandler struct{}
 

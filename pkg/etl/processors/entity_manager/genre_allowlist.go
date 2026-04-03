@@ -1,6 +1,6 @@
 package entity_manager
 
-// GenreAllowlist matches discovery-provider src/utils/hardcoded_data.genre_allowlist (exact strings).
+// GenreAllowlist is the set of valid genre strings.
 var GenreAllowlist = map[string]struct{}{
 	"Acoustic": {}, "Alternative": {}, "Ambient": {}, "Audiobooks": {}, "Blues": {},
 	"Classical": {}, "Comedy": {}, "Country": {}, "Dancehall": {}, "Deep House": {},
