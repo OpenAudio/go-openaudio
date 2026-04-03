@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -25,23 +24,39 @@ func Diff(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("reading snapshot_time: %w", err)
 	}
 
-	// Get current max block (after ETL ran)
+	// Determine em_block boundary (domain tables use em_block, not chain height)
+	var emBlockBoundary int64
+	err = pool.QueryRow(ctx,
+		`SELECT COALESCE(em_block, $1) FROM core_indexed_blocks
+		 WHERE height = $1 ORDER BY height DESC LIMIT 1`, maxBlock).Scan(&emBlockBoundary)
+	if err != nil {
+		// Fallback: compute from offset
+		var offset int64
+		err2 := pool.QueryRow(ctx,
+			`SELECT em_block - height FROM core_indexed_blocks ORDER BY height DESC LIMIT 1`).Scan(&offset)
+		if err2 != nil {
+			emBlockBoundary = maxBlock // last resort: use chain height directly
+		} else {
+			emBlockBoundary = maxBlock + offset
+		}
+	}
+
+	// Get current max block
 	var currentMaxBlock int64
 	pool.QueryRow(ctx, `SELECT COALESCE(MAX(number), 0) FROM blocks`).Scan(&currentMaxBlock)
 
-	// Get max ETL block
 	var etlMaxBlock int64
 	pool.QueryRow(ctx, `SELECT COALESCE(MAX(block_height), 0) FROM etl_blocks`).Scan(&etlMaxBlock)
 
 	fmt.Printf("=== ETL Parity Report ===\n")
-	fmt.Printf("Snapshot block:  %d\n", maxBlock)
-	fmt.Printf("Current block:   %d (blocks table)\n", currentMaxBlock)
-	fmt.Printf("ETL max block:   %d (etl_blocks table)\n", etlMaxBlock)
-	fmt.Printf("Blocks indexed:  %d\n", etlMaxBlock-maxBlock)
-	fmt.Printf("Snapshot time:   %s\n\n", snapshotTime)
+	fmt.Printf("Snapshot chain height: %d\n", maxBlock)
+	fmt.Printf("Snapshot em_block:     %d\n", emBlockBoundary)
+	fmt.Printf("ETL max chain height:  %d (etl_blocks)\n", etlMaxBlock)
+	fmt.Printf("Blocks indexed:        %d\n", etlMaxBlock-maxBlock)
+	fmt.Printf("Snapshot time:         %s\n\n", snapshotTime)
 
 	// --- Raw Transaction Counts ---
-	fmt.Printf("--- Raw ManageEntity Transactions (block > %d) ---\n", maxBlock)
+	fmt.Printf("--- ManageEntity Transactions (chain height > %d) ---\n", maxBlock)
 	rows, err := pool.Query(ctx, `
 		SELECT entity_type, action, COUNT(*)
 		FROM etl_manage_entities
@@ -56,8 +71,8 @@ func Diff(ctx context.Context, pool *pgxpool.Pool) error {
 
 	txCounts := map[string]int64{}
 	var totalTxs int64
-	fmt.Printf("%-20s %-15s %10s\n", "EntityType", "Action", "Count")
-	fmt.Printf("%-20s %-15s %10s\n", "----------", "------", "-----")
+	fmt.Printf("%-20s %-20s %10s\n", "EntityType", "Action", "Count")
+	fmt.Printf("%-20s %-20s %10s\n", "----------", "------", "-----")
 	for rows.Next() {
 		var entityType, action string
 		var count int64
@@ -67,17 +82,16 @@ func Diff(ctx context.Context, pool *pgxpool.Pool) error {
 		key := entityType + "/" + action
 		txCounts[key] = count
 		totalTxs += count
-		fmt.Printf("%-20s %-15s %10d\n", entityType, action, count)
+		fmt.Printf("%-20s %-20s %10d\n", entityType, action, count)
 	}
-	fmt.Printf("%-20s %-15s %10d\n\n", "TOTAL", "", totalTxs)
+	fmt.Printf("%-20s %-20s %10d\n\n", "TOTAL", "", totalTxs)
 
 	// --- Domain Table Growth ---
-	fmt.Printf("--- Domain Table Growth (blocknumber > %d) ---\n", maxBlock)
+	fmt.Printf("--- Domain Table Growth (em_block > %d) ---\n", emBlockBoundary)
 	fmt.Printf("%-30s %10s %10s %10s\n", "Table", "Baseline", "New Rows", "Total Now")
 	fmt.Printf("%-30s %10s %10s %10s\n", "-----", "--------", "--------", "---------")
 
 	for _, t := range tables {
-		// Get baseline from snapshot
 		var baseline int64
 		err := pool.QueryRow(ctx,
 			`SELECT COALESCE(value_int, 0) FROM _parity_meta WHERE key = $1`,
@@ -86,17 +100,15 @@ func Diff(ctx context.Context, pool *pgxpool.Pool) error {
 			baseline = -1
 		}
 
-		// Count total rows now
 		totalNow, err := countRows(ctx, pool, t.Name, "")
 		if err != nil {
-			fmt.Printf("%-30s %10s %10s %10s (table may not exist)\n", t.Name, "ERR", "-", "-")
+			fmt.Printf("%-30s %10s %10s %10s (error)\n", t.Name, "ERR", "-", "-")
 			continue
 		}
 
-		// Count new rows (added since snapshot)
 		var newRows int64
 		if t.BlocknumCol != "" {
-			newRows, _ = countRows(ctx, pool, t.Name, fmt.Sprintf("%s > %d", t.BlocknumCol, maxBlock))
+			newRows, _ = countRows(ctx, pool, t.Name, fmt.Sprintf("%s > %d", t.BlocknumCol, emBlockBoundary))
 		} else if t.CreatedAtCol != "" {
 			newRows, _ = countRows(ctx, pool, t.Name, fmt.Sprintf("%s > '%s'", t.CreatedAtCol, snapshotTime))
 		}
@@ -106,7 +118,7 @@ func Diff(ctx context.Context, pool *pgxpool.Pool) error {
 
 	// --- Structural Integrity Checks ---
 	fmt.Println()
-	fmt.Printf("--- Structural Integrity (new rows, blocknumber > %d) ---\n", maxBlock)
+	fmt.Printf("--- Structural Integrity (new rows, em_block > %d) ---\n", emBlockBoundary)
 
 	checks := []struct {
 		name  string
@@ -114,31 +126,35 @@ func Diff(ctx context.Context, pool *pgxpool.Pool) error {
 	}{
 		{
 			"users: missing handle",
-			fmt.Sprintf("SELECT COUNT(*) FROM users WHERE blocknumber > %d AND is_current = true AND (handle IS NULL OR handle = '')", maxBlock),
+			fmt.Sprintf("SELECT COUNT(*) FROM users WHERE blocknumber > %d AND is_current = true AND (handle IS NULL OR handle = '')", emBlockBoundary),
 		},
 		{
 			"users: missing wallet",
-			fmt.Sprintf("SELECT COUNT(*) FROM users WHERE blocknumber > %d AND is_current = true AND (wallet IS NULL OR wallet = '')", maxBlock),
+			fmt.Sprintf("SELECT COUNT(*) FROM users WHERE blocknumber > %d AND is_current = true AND (wallet IS NULL OR wallet = '')", emBlockBoundary),
+		},
+		{
+			"tracks: missing title",
+			fmt.Sprintf("SELECT COUNT(*) FROM tracks WHERE blocknumber > %d AND is_current = true AND is_delete = false AND (title IS NULL OR title = '')", emBlockBoundary),
 		},
 		{
 			"tracks: missing owner_id",
-			fmt.Sprintf("SELECT COUNT(*) FROM tracks WHERE blocknumber > %d AND is_current = true AND owner_id = 0", maxBlock),
+			fmt.Sprintf("SELECT COUNT(*) FROM tracks WHERE blocknumber > %d AND is_current = true AND owner_id = 0", emBlockBoundary),
 		},
 		{
 			"tracks: owner not in users",
-			fmt.Sprintf(`SELECT COUNT(*) FROM tracks t WHERE t.blocknumber > %d AND t.is_current = true
-				AND NOT EXISTS (SELECT 1 FROM users u WHERE u.user_id = t.owner_id AND u.is_current = true)`, maxBlock),
+			fmt.Sprintf(`SELECT COUNT(*) FROM tracks t WHERE t.blocknumber > %d AND t.is_current = true AND t.is_delete = false
+				AND NOT EXISTS (SELECT 1 FROM users u WHERE u.user_id = t.owner_id AND u.is_current = true)`, emBlockBoundary),
 		},
 		{
 			"follows: followee not in users",
 			fmt.Sprintf(`SELECT COUNT(*) FROM follows f WHERE f.blocknumber > %d AND f.is_current = true AND f.is_delete = false
-				AND NOT EXISTS (SELECT 1 FROM users u WHERE u.user_id = f.followee_user_id AND u.is_current = true)`, maxBlock),
+				AND NOT EXISTS (SELECT 1 FROM users u WHERE u.user_id = f.followee_user_id AND u.is_current = true)`, emBlockBoundary),
 		},
 		{
-			"saves: target track/playlist missing",
+			"saves: target track missing",
 			fmt.Sprintf(`SELECT COUNT(*) FROM saves s WHERE s.blocknumber > %d AND s.is_current = true AND s.is_delete = false
 				AND s.save_type = 'track'
-				AND NOT EXISTS (SELECT 1 FROM tracks t WHERE t.track_id = s.save_item_id AND t.is_current = true)`, maxBlock),
+				AND NOT EXISTS (SELECT 1 FROM tracks t WHERE t.track_id = s.save_item_id AND t.is_current = true)`, emBlockBoundary),
 		},
 	}
 
@@ -164,49 +180,43 @@ func Diff(ctx context.Context, pool *pgxpool.Pool) error {
 		fmt.Println("\nSome structural checks have warnings — review above.")
 	}
 
-	// --- Unhandled Transaction Types ---
+	// --- Match Rates ---
 	fmt.Println()
-	fmt.Printf("--- Unhandled ManageEntity Types (block > %d) ---\n", maxBlock)
+	fmt.Printf("--- Match Rates (txs vs new domain rows) ---\n")
+	fmt.Printf("%-30s %10s %10s %10s\n", "Type", "Txs", "New Rows", "Rate")
+	fmt.Printf("%-30s %10s %10s %10s\n", "----", "---", "--------", "----")
 
-	// Find entity_type/action combos that have etl_manage_entities rows
-	// but zero corresponding domain table rows
-	unhandledRows, err := pool.Query(ctx, `
-		SELECT entity_type, action, COUNT(*)
-		FROM etl_manage_entities
-		WHERE block_height > $1
-		GROUP BY entity_type, action
-		HAVING COUNT(*) > 0
-		ORDER BY COUNT(*) DESC
-	`, maxBlock)
-	if err == nil {
-		defer unhandledRows.Close()
+	matchChecks := []struct {
+		label    string
+		txKey    string
+		table    string
+		whereCol string
+	}{
+		{"User Create", "User/Create", "users", "blocknumber"},
+		{"Track Create", "Track/Create", "tracks", "blocknumber"},
+		{"Playlist Create", "Playlist/Create", "playlists", "blocknumber"},
+		{"Follow", "User/Follow", "follows", "blocknumber"},
+		{"Save (track)", "Track/Save", "saves", "blocknumber"},
+		{"Repost (track)", "Track/Repost", "reposts", "blocknumber"},
+		{"Subscribe", "User/Subscribe", "subscriptions", "blocknumber"},
+		{"Share (track)", "Track/Share", "shares", "blocknumber"},
+		{"Comment Create", "Comment/Create", "comments", "blocknumber"},
+		{"Track Download", "Track/Download", "track_downloads", "blocknumber"},
+		{"Grant Create", "Grant/Create", "grants", "blocknumber"},
+	}
 
-		// Build set of handled types from the tables list
-		handled := map[string]bool{}
-		for _, t := range tables {
-			if t.EntityType != "" && t.Action != "" {
-				handled[strings.ToLower(t.EntityType+"/"+t.Action)] = true
-			}
+	for _, mc := range matchChecks {
+		txCount := txCounts[mc.txKey]
+		if txCount == 0 {
+			continue
 		}
-
-		hasUnhandled := false
-		for unhandledRows.Next() {
-			var entityType, action string
-			var count int64
-			unhandledRows.Scan(&entityType, &action, &count)
-			key := strings.ToLower(entityType + "/" + action)
-			if !handled[key] {
-				if !hasUnhandled {
-					fmt.Printf("%-20s %-15s %10s\n", "EntityType", "Action", "Count")
-					fmt.Printf("%-20s %-15s %10s\n", "----------", "------", "-----")
-					hasUnhandled = true
-				}
-				fmt.Printf("%-20s %-15s %10d\n", entityType, action, count)
-			}
+		newRows, _ := countRows(ctx, pool, mc.table, fmt.Sprintf("%s > %d", mc.whereCol, emBlockBoundary))
+		rate := ""
+		if txCount > 0 {
+			pct := float64(newRows) / float64(txCount) * 100
+			rate = fmt.Sprintf("%.0f%%", pct)
 		}
-		if !hasUnhandled {
-			fmt.Println("(none — all transaction types are handled)")
-		}
+		fmt.Printf("%-30s %10d %10d %10s\n", mc.label, txCount, newRows, rate)
 	}
 
 	fmt.Println("\n=== Report Complete ===")
