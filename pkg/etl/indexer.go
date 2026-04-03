@@ -254,61 +254,55 @@ func (e *Indexer) indexBlocks() error {
 	var txsProcessed int64
 	lastLog := time.Now()
 
-	for {
-		// Get the latest indexed block height
-		latestHeight, err := e.db.GetLatestIndexedBlock(context.Background())
-		if err != nil {
-			// If no records exist, start from block 1
-			if errors.Is(err, pgx.ErrNoRows) {
-				if e.startingBlockHeight > 0 {
-					// Start from block 1 (nextHeight will be 1)
-					latestHeight = e.startingBlockHeight - 1
-				} else {
-					// Start from block 1 (nextHeight will be 1)
-					latestHeight = 0
-				}
+	// Determine start height.
+	latestHeight, err := e.db.GetLatestIndexedBlock(context.Background())
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			if e.startingBlockHeight > 0 {
+				latestHeight = e.startingBlockHeight - 1
 			} else {
-				e.logger.Error("error getting latest indexed block", zap.Error(err))
-				continue
+				latestHeight = 0
 			}
+		} else {
+			return fmt.Errorf("error getting latest indexed block: %w", err)
 		}
+	}
+	startHeight := latestHeight + 1
 
-		// Get the next block
-		nextHeight := latestHeight + 1
-		block, err := e.core.GetBlock(context.Background(), connect.NewRequest(&corev1.GetBlockRequest{
-			Height: nextHeight,
-		}))
-		if err != nil {
-			e.logger.Error("error getting block", zap.Int64("height", nextHeight), zap.Error(err))
-			continue
-		}
+	// Start prefetcher goroutine.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-		if block.Msg.Block.Height < 0 {
-			continue
-		}
+	pf := newPrefetcher(e.core, e.logger)
+	go pf.run(ctx, startHeight)
+
+	e.logger.Info("prefetcher started", zap.Int64("start_height", startHeight), zap.Int("buffer_size", pf.bufSz))
+
+	for pb := range pf.C() {
+		block := pb.Block
 
 		// Insert into etl_blocks
-		err = e.db.InsertBlock(context.Background(), db.InsertBlockParams{
-			ProposerAddress: block.Msg.Block.Proposer,
-			BlockHeight:     block.Msg.Block.Height,
-			BlockTime:       pgtype.Timestamp{Time: block.Msg.Block.Timestamp.AsTime(), Valid: true},
+		err := e.db.InsertBlock(context.Background(), db.InsertBlockParams{
+			ProposerAddress: block.Proposer,
+			BlockHeight:     block.Height,
+			BlockTime:       pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
 		})
 		if err != nil {
-			e.logger.Error("error inserting block", zap.Int64("height", nextHeight), zap.Error(err))
+			e.logger.Error("error inserting block", zap.Int64("height", block.Height), zap.Error(err))
 			continue
 		}
 
 		// Compute em_block number (continues the blocks.number sequence).
-		emBlock := block.Msg.Block.Height + e.emBlockOffset
+		emBlock := block.Height + e.emBlockOffset
 
 		// Insert into blocks table so FK constraints are satisfied.
 		_, err = e.pool.Exec(context.Background(),
 			`INSERT INTO blocks (blockhash, parenthash, is_current, number)
 			 VALUES ($1, NULL, false, $2)
 			 ON CONFLICT (number) DO NOTHING`,
-			block.Msg.Block.Hash, emBlock)
+			block.Hash, emBlock)
 		if err != nil {
-			e.logger.Error("error inserting into blocks table", zap.Int64("height", nextHeight), zap.Error(err))
+			e.logger.Error("error inserting into blocks table", zap.Int64("height", block.Height), zap.Error(err))
 			continue
 		}
 
@@ -317,15 +311,15 @@ func (e *Indexer) indexBlocks() error {
 			`INSERT INTO core_indexed_blocks (blockhash, chain_id, height, em_block)
 			 VALUES ($1, $2, $3, $4)
 			 ON CONFLICT (chain_id, height) DO UPDATE SET em_block = $4, blockhash = $1`,
-			block.Msg.Block.Hash, e.ChainID, block.Msg.Block.Height, emBlock)
+			block.Hash, e.ChainID, block.Height, emBlock)
 		if err != nil {
-			e.logger.Error("error inserting into core_indexed_blocks", zap.Int64("height", nextHeight), zap.Error(err))
+			e.logger.Error("error inserting into core_indexed_blocks", zap.Int64("height", block.Height), zap.Error(err))
 		}
 
 		var wg sync.WaitGroup
-		wg.Add(len(block.Msg.Block.Transactions))
+		wg.Add(len(block.Transactions))
 
-		for index := range block.Msg.Block.Transactions {
+		for index := range block.Transactions {
 			go func(block *corev1.Block, index int) {
 				defer wg.Done()
 
@@ -632,31 +626,34 @@ func (e *Indexer) indexBlocks() error {
 					return
 				}
 
-			}(block.Msg.Block, index)
+			}(block, index)
 		}
 
 		wg.Wait()
 
 		blocksProcessed++
-		txsProcessed += int64(len(block.Msg.Block.Transactions))
+		txsProcessed += int64(len(block.Transactions))
 
 		if time.Since(lastLog) >= 10*time.Second {
 			e.logger.Info("indexing progress",
-				zap.Int64("block", block.Msg.Block.Height),
-				zap.Int("txs_in_block", len(block.Msg.Block.Transactions)),
+				zap.Int64("block", block.Height),
+				zap.Int("txs_in_block", len(block.Transactions)),
 				zap.Int64("blocks_since_start", blocksProcessed),
 				zap.Int64("txs_since_start", txsProcessed),
+				zap.Int("prefetch_buffered", len(pf.C())),
 			)
 			lastLog = time.Now()
 		}
 
 		// TODO: use pgnotify to publish block and play events to pubsub
 
-		if e.endingBlockHeight > 0 && block.Msg.Block.Height >= e.endingBlockHeight {
+		if e.endingBlockHeight > 0 && block.Height >= e.endingBlockHeight {
 			e.logger.Info("ending block height reached, stopping etl service")
 			return nil
 		}
 	}
+
+	return nil
 }
 
 func (e *Indexer) startPgNotifyListener(ctx context.Context) error {
