@@ -50,6 +50,9 @@ func validateTrackCreate(ctx context.Context, params *Params) error {
 			return err
 		}
 	}
+	if err := ValidateAccessConditions(params); err != nil {
+		return err
+	}
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}

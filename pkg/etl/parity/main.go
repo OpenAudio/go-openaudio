@@ -19,13 +19,14 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: go run ./pkg/etl/parity <snapshot|diff|cleanup> --db <postgres-url>\n")
+		fmt.Fprintf(os.Stderr, "Usage: go run ./pkg/etl/parity <snapshot|diff|compare|cleanup> --db <postgres-url>\n")
 		os.Exit(1)
 	}
 
 	cmd := os.Args[1]
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
-	dbURL := fs.String("db", os.Getenv("ETL_DB_URL"), "Postgres connection string")
+	dbURL := fs.String("db", os.Getenv("ETL_DB_URL"), "Postgres connection string (ETL clone)")
+	prodURL := fs.String("prod-db", os.Getenv("PROD_DB_URL"), "Production Postgres connection string (for compare)")
 	fs.Parse(os.Args[2:])
 
 	if *dbURL == "" {
@@ -48,12 +49,24 @@ func main() {
 		if err := Diff(ctx, pool); err != nil {
 			log.Fatalf("diff failed: %v", err)
 		}
+	case "compare":
+		if *prodURL == "" {
+			log.Fatal("--prod-db is required for compare (or set PROD_DB_URL)")
+		}
+		prodPool, err := pgxpool.New(ctx, *prodURL)
+		if err != nil {
+			log.Fatalf("connect to prod db: %v", err)
+		}
+		defer prodPool.Close()
+		if err := Compare(ctx, pool, prodPool); err != nil {
+			log.Fatalf("compare failed: %v", err)
+		}
 	case "cleanup":
 		if err := Cleanup(ctx, pool); err != nil {
 			log.Fatalf("cleanup failed: %v", err)
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\nUsage: go run ./pkg/etl/parity <snapshot|diff|cleanup> --db <url>\n", cmd)
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\nUsage: go run ./pkg/etl/parity <snapshot|diff|compare|cleanup> --db <url>\n", cmd)
 		os.Exit(1)
 	}
 }

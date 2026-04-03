@@ -2,6 +2,7 @@ package entity_manager
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"strings"
 
@@ -112,4 +113,103 @@ func ValidateGenre(genre string) error {
 		return NewValidationError("genre %q is not in the allow list", genre)
 	}
 	return nil
+}
+
+// ValidateAccessConditions checks gating field consistency, matching
+// Python discovery-provider's validate_access_conditions logic.
+// Only validates when gating fields are present in metadata.
+func ValidateAccessConditions(p *Params) error {
+	// Only validate if any gating field is present in metadata.
+	_, hasSG := p.Metadata["is_stream_gated"]
+	_, hasDG := p.Metadata["is_download_gated"]
+	_, hasSC := p.Metadata["stream_conditions"]
+	_, hasDC := p.Metadata["download_conditions"]
+	if !hasSG && !hasDG && !hasSC && !hasDC {
+		return nil
+	}
+
+	isStreamGated := p.MetadataBoolOr("is_stream_gated", false)
+	isDownloadGated := p.MetadataBoolOr("is_download_gated", false)
+	streamConditions, _ := p.MetadataJSON("stream_conditions")
+	downloadConditions, _ := p.MetadataJSON("download_conditions")
+
+	// Stem tracks cannot be gated.
+	if stemOf, ok := p.MetadataJSON("stem_of"); ok && stemOf != nil {
+		if isStreamGated || isDownloadGated {
+			return NewValidationError("stem tracks cannot have stream or download gating")
+		}
+	}
+
+	// Validate USDC purchase splits for both condition sets.
+	if err := validateUSDCSplits(streamConditions); err != nil {
+		return err
+	}
+	if err := validateUSDCSplits(downloadConditions); err != nil {
+		return err
+	}
+
+	if isStreamGated {
+		scMap, ok := streamConditions.(map[string]any)
+		if !ok || len(scMap) == 0 {
+			return NewValidationError("stream gated track must have stream_conditions")
+		}
+		if len(scMap) != 1 {
+			return NewValidationError("stream_conditions must have exactly one condition type")
+		}
+		if !isDownloadGated {
+			return NewValidationError("stream gated track must also be download gated")
+		}
+		// stream_conditions and download_conditions must be equal (marshaled comparison)
+		if !jsonEqual(streamConditions, downloadConditions) {
+			return NewValidationError("stream_conditions must match download_conditions for stream gated tracks")
+		}
+	} else if isDownloadGated {
+		dcMap, ok := downloadConditions.(map[string]any)
+		if !ok || len(dcMap) == 0 {
+			return NewValidationError("download gated track must have download_conditions")
+		}
+		if len(dcMap) != 1 {
+			return NewValidationError("download_conditions must have exactly one condition type")
+		}
+	}
+
+	return nil
+}
+
+func validateUSDCSplits(conditions any) error {
+	cMap, ok := conditions.(map[string]any)
+	if !ok {
+		return nil
+	}
+	usdc, ok := cMap["usdc_purchase"]
+	if !ok {
+		return nil
+	}
+	uMap, ok := usdc.(map[string]any)
+	if !ok {
+		return NewValidationError("usdc_purchase must be an object")
+	}
+	splits, ok := uMap["splits"]
+	if !ok {
+		return NewValidationError("usdc_purchase must contain splits")
+	}
+	switch s := splits.(type) {
+	case []any:
+		if len(s) == 0 {
+			return NewValidationError("usdc_purchase splits cannot be empty")
+		}
+	case map[string]any:
+		if len(s) == 0 {
+			return NewValidationError("usdc_purchase splits cannot be empty")
+		}
+	default:
+		return NewValidationError("usdc_purchase splits must be an array or object")
+	}
+	return nil
+}
+
+func jsonEqual(a, b any) bool {
+	aj, _ := json.Marshal(a)
+	bj, _ := json.Marshal(b)
+	return string(aj) == string(bj)
 }

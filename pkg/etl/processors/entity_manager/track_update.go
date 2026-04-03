@@ -35,6 +35,9 @@ func validateTrackUpdate(ctx context.Context, params *Params) error {
 			}
 		}
 	}
+	if err := ValidateAccessConditions(params); err != nil {
+		return err
+	}
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
