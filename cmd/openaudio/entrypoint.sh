@@ -125,7 +125,7 @@ else
         echo "Starting openaudio with hot reload (wgo)..."
         cd /app || exit 1
         # Use wgo to watch .go and .templ files, exclude generated files
-        exec wgo -file=.go -file=.templ -xfile=_templ.go -xfile=.pb.go -xfile=.sql.go go run ./cmd/openaudio/main.go "$@"
+        exec wgo -file=.go -file=.templ -xfile=_templ.go -xfile=.pb.go -xfile=.sql.go go run ./cmd/openaudio/ "$@"
     else
         echo "Starting openaudio..."
         exec /bin/openaudio "$@"
