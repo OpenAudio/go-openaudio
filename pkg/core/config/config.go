@@ -7,10 +7,10 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/OpenAudio/go-openaudio/pkg/common"
-	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cometbft/cometbft/types"
@@ -162,22 +162,22 @@ func ReadConfig() (*Config, error) {
 
 	var cfg Config
 	// comet config
-	cfg.CometLogLevel = env.Get("statesync:info,p2p:none,mempool:none,rpc:none,*:error", "OPENAUDIO_COMET_LOG_LEVEL", "audius_comet_log_level")
-	cfg.RootDir = env.Get(homeDir+"/.audiusd", "OPENAUDIO_CORE_ROOT_DIR", "audius_core_root_dir")
-	cfg.RPCladdr = env.Get("unix:///tmp/cometbft.rpc.sock", "OPENAUDIO_RPC_LADDR", "rpcLaddr")
-	cfg.P2PLaddr = env.Get("tcp://0.0.0.0:26656", "OPENAUDIO_P2P_LADDR", "p2pLaddr")
+	cfg.CometLogLevel = GetEnvWithDefault("audius_comet_log_level", "statesync:info,p2p:none,mempool:none,rpc:none,*:error")
+	cfg.RootDir = GetEnvWithDefault("audius_core_root_dir", homeDir+"/.audiusd")
+	cfg.RPCladdr = GetEnvWithDefault("rpcLaddr", "unix:///tmp/cometbft.rpc.sock")
+	cfg.P2PLaddr = GetEnvWithDefault("p2pLaddr", "tcp://0.0.0.0:26656")
 
-	cfg.GRPCladdr = env.Get("0.0.0.0:50051", "OPENAUDIO_GRPC_LADDR", "grpcLaddr")
-	cfg.CoreServerAddr = env.Get("0.0.0.0:26659", "OPENAUDIO_CORE_SERVER_ADDR", "coreServerAddr")
+	cfg.GRPCladdr = GetEnvWithDefault("grpcLaddr", "0.0.0.0:50051")
+	cfg.CoreServerAddr = GetEnvWithDefault("coreServerAddr", "0.0.0.0:26659")
 
 	// allow up to 200 inbound connections
-	cfg.MaxInboundPeers = env.GetInt(200, "OPENAUDIO_MAX_INBOUND_PEERS", "maxInboundPeers")
+	cfg.MaxInboundPeers = getEnvIntWithDefault("maxInboundPeers", 200)
 	// actively connect to 50 peers
-	cfg.MaxOutboundPeers = env.GetInt(50, "OPENAUDIO_MAX_OUTBOUND_PEERS", "maxOutboundPeers")
+	cfg.MaxOutboundPeers = getEnvIntWithDefault("maxOutboundPeers", 50)
 
 	// (default) approximately one week of blocks
-	cfg.RetainHeight = int64(env.GetInt(604800, "OPENAUDIO_RETAIN_HEIGHT", "retainHeight"))
-	cfg.Archive = env.Get("false", "OPENAUDIO_ARCHIVE", "archive") == "true"
+	cfg.RetainHeight = int64(getEnvIntWithDefault("retainHeight", 604800))
+	cfg.Archive = GetEnvWithDefault("archive", "false") == "true"
 
 	cfg.AttRegistrationMin = 5
 	cfg.AttRegistrationRSize = 15
@@ -188,10 +188,10 @@ func ReadConfig() (*Config, error) {
 	cfg.Environment = GetRuntimeEnvironment()
 	cfg.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(cfg.Environment)
 
-	cfg.SkipEthRegistration = env.Get("false", "OPENAUDIO_SKIP_ETH_REGISTRATION", "skipEthRegistration") == "true"
-	cfg.EnableETL = env.Get("false", "OPENAUDIO_ETL_ENABLED") == "true"
-	cfg.EnableExplorer = env.Get("false", "OPENAUDIO_EXPLORER_ENABLED") == "true"
-	cfg.EnableGRPCReflection = env.Get("false", "OPENAUDIO_GRPC_REFLECTION_ENABLED") == "true"
+	cfg.SkipEthRegistration = GetEnvWithDefault("skipEthRegistration", "false") == "true"
+	cfg.EnableETL = GetEnvWithDefault("OPENAUDIO_ETL_ENABLED", "false") == "true"
+	cfg.EnableExplorer = GetEnvWithDefault("OPENAUDIO_EXPLORER_ENABLED", "false") == "true"
+	cfg.EnableGRPCReflection = GetEnvWithDefault("OPENAUDIO_GRPC_REFLECTION_ENABLED", "false") == "true"
 
 	ssRpcServers := ""
 	switch cfg.Environment {
@@ -202,24 +202,24 @@ func ReadConfig() (*Config, error) {
 	}
 
 	cfg.StateSync = &StateSyncConfig{
-		ServeSnapshots: env.Get("false", "OPENAUDIO_STATE_SYNC_SERVE_SNAPSHOTS", "stateSyncServeSnapshots") == "true",
-		Enable:         env.Get("true", "OPENAUDIO_STATE_SYNC_ENABLE", "stateSyncEnable") == "true",
-		Keep:           env.GetInt(6, "OPENAUDIO_STATE_SYNC_KEEP", "stateSyncKeep"),
-		BlockInterval:  int64(env.GetInt(100, "OPENAUDIO_STATE_SYNC_BLOCK_INTERVAL", "stateSyncBlockInterval")),
-		ChunkFetchers:  int32(env.GetInt(10, "OPENAUDIO_STATE_SYNC_CHUNK_FETCHERS", "stateSyncChunkFetchers")),
-		RPCServers:     strings.Split(env.Get(ssRpcServers, "OPENAUDIO_STATE_SYNC_RPC_SERVERS", "stateSyncRPCServers"), ","),
+		ServeSnapshots: GetEnvWithDefault("stateSyncServeSnapshots", "false") == "true",
+		Enable:         GetEnvWithDefault("stateSyncEnable", "true") == "true",
+		Keep:           getEnvIntWithDefault("stateSyncKeep", 6),
+		BlockInterval:  int64(getEnvIntWithDefault("stateSyncBlockInterval", 100)),
+		ChunkFetchers:  int32(getEnvIntWithDefault("stateSyncChunkFetchers", 10)),
+		RPCServers:     strings.Split(GetEnvWithDefault("stateSyncRPCServers", ssRpcServers), ","),
 	}
 
 	cfg.EthRPCUrl = GetEthRPC()
 
-	delegatePrivateKey := env.String("OPENAUDIO_DELEGATE_PRIVATE_KEY", "delegatePrivateKey")
+	delegatePrivateKey := os.Getenv("delegatePrivateKey")
 	// Strip 0x prefix if present
 	if delegatePrivateKey != "" && (strings.HasPrefix(delegatePrivateKey, "0x") || strings.HasPrefix(delegatePrivateKey, "0X")) {
 		delegatePrivateKey = delegatePrivateKey[2:]
 	}
 
-	cfg.PSQLConn = env.Get("postgresql://postgres:postgres@localhost:5432/openaudio", "OPENAUDIO_DB_URL", "dbUrl")
-	nodeEndpoint := env.String("OPENAUDIO_NODE_ENDPOINT", "nodeEndpoint")
+	cfg.PSQLConn = GetEnvWithDefault("dbUrl", "postgresql://postgres:postgres@localhost:5432/openaudio")
+	nodeEndpoint := os.Getenv("nodeEndpoint")
 
 	if nodeEndpoint != "" {
 		parsedURL, err := url.Parse(nodeEndpoint)
@@ -256,38 +256,38 @@ func ReadConfig() (*Config, error) {
 	cfg.CometKey = key
 
 	cfg.AddrBookStrict = true
-	cfg.UseHttpsForSdk = env.Get("true", "OPENAUDIO_USE_HTTPS_FOR_SDK", "useHttpsForSdk") == "true"
-	cfg.ExternalAddress = env.String("OPENAUDIO_EXTERNAL_ADDRESS", "externalAddress")
+	cfg.UseHttpsForSdk = GetEnvWithDefault("useHttpsForSdk", "true") == "true"
+	cfg.ExternalAddress = os.Getenv("externalAddress")
 	cfg.EthRegistryAddress = GetRegistryAddress()
 
 	switch cfg.Environment {
 	case "prod", "production", "mainnet":
-		cfg.PersistentPeers = env.Get(ProdPersistentPeers, "OPENAUDIO_PERSISTENT_PEERS", "persistentPeers")
+		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", ProdPersistentPeers)
 		cfg.SlaRollupInterval = mainnetRollupInterval
 		cfg.ValidatorVotingPower = mainnetValidatorVotingPower
-		cfg.ValidatorPurgeMinValidators = env.GetInt(30, "OPENAUDIO_VALIDATOR_PURGE_MIN_VALIDATORS")
-		cfg.ValidatorWardenIntervalMins = env.GetInt(60, "OPENAUDIO_VALIDATOR_WARDEN_INTERVAL_MINS")
+		cfg.ValidatorPurgeMinValidators = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_PURGE_MIN_VALIDATORS", 30)
+		cfg.ValidatorWardenIntervalMins = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_WARDEN_INTERVAL_MINS", 60)
 		cfg.Rewards = MakeRewards(ProdClaimAuthorities, ProdRewardExtensions)
 		cfg.AcdcChainID = ProdAcdcChainID
 		cfg.AcdcEntityManagerAddress = ProdAcdcAddress
 
 	case "stage", "staging", "testnet":
-		cfg.PersistentPeers = env.Get(StagePersistentPeers, "OPENAUDIO_PERSISTENT_PEERS", "persistentPeers")
+		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", StagePersistentPeers)
 		cfg.SlaRollupInterval = testnetRollupInterval
 		cfg.ValidatorVotingPower = testnetValidatorVotingPower
-		cfg.ValidatorPurgeMinValidators = env.GetInt(30, "OPENAUDIO_VALIDATOR_PURGE_MIN_VALIDATORS")
-		cfg.ValidatorWardenIntervalMins = env.GetInt(60, "OPENAUDIO_VALIDATOR_WARDEN_INTERVAL_MINS")
+		cfg.ValidatorPurgeMinValidators = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_PURGE_MIN_VALIDATORS", 30)
+		cfg.ValidatorWardenIntervalMins = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_WARDEN_INTERVAL_MINS", 60)
 		cfg.Rewards = MakeRewards(StageClaimAuthorities, StageRewardExtensions)
 		cfg.AcdcChainID = StageAcdcChainID
 		cfg.AcdcEntityManagerAddress = StageAcdcAddress
 
 	case "dev", "development", "devnet", "local", "sandbox":
-		cfg.PersistentPeers = env.Get(DevPersistentPeers, "OPENAUDIO_PERSISTENT_PEERS", "persistentPeers")
+		cfg.PersistentPeers = GetEnvWithDefault("persistentPeers", DevPersistentPeers)
 		cfg.AddrBookStrict = false
 		cfg.SlaRollupInterval = devnetRollupInterval
 		cfg.ValidatorVotingPower = devnetValidatorVotingPower
-		cfg.ValidatorPurgeMinValidators = env.GetInt(3, "OPENAUDIO_VALIDATOR_PURGE_MIN_VALIDATORS")
-		cfg.ValidatorWardenIntervalMins = env.GetInt(2, "OPENAUDIO_VALIDATOR_WARDEN_INTERVAL_MINS")
+		cfg.ValidatorPurgeMinValidators = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_PURGE_MIN_VALIDATORS", 3)
+		cfg.ValidatorWardenIntervalMins = getEnvIntWithDefault("OPENAUDIO_VALIDATOR_WARDEN_INTERVAL_MINS", 2)
 		cfg.Rewards = MakeRewards(DevClaimAuthorities, DevRewardExtensions)
 		cfg.AcdcChainID = DevAcdcChainID
 		cfg.AcdcEntityManagerAddress = DevAcdcAddress
@@ -309,17 +309,30 @@ func isFQDN(hostname string) bool {
 	return fqdnRegex.MatchString(hostname)
 }
 
-// Deprecated: Use env.Get instead.
 func GetEnvWithDefault(key, defaultValue string) string {
-	return env.Get(defaultValue, key)
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvIntWithDefault(key string, defaultValue int) int {
+	if value, exists := os.LookupEnv(key); exists {
+		val, err := strconv.Atoi(value)
+		if err == nil {
+			return val
+		}
+		return defaultValue
+	}
+	return defaultValue
 }
 
 func GetEthRPC() string {
-	return env.Get(DefaultEthRPC(), "OPENAUDIO_ETH_PROVIDER_URL", "ethProviderUrl")
+	return GetEnvWithDefault("ethProviderUrl", DefaultEthRPC())
 }
 
 func GetDbURL() string {
-	dbUrl := env.Get(DbURL, "OPENAUDIO_DB_URL", "dbUrl")
+	dbUrl := GetEnvWithDefault("dbUrl", DbURL)
 	if !strings.HasSuffix(dbUrl, "?sslmode=disable") && isLocalDbUrlRegex.MatchString(dbUrl) {
 		dbUrl += "?sslmode=disable"
 	}
@@ -327,15 +340,15 @@ func GetDbURL() string {
 }
 
 func GetRegistryAddress() string {
-	return env.Get(DefaultRegistryAddress(), "OPENAUDIO_ETH_REGISTRY_ADDRESS", "ethRegistryAddress")
+	return GetEnvWithDefault("ethRegistryAddress", DefaultRegistryAddress())
 }
 
 func GetRuntimeEnvironment() string {
-	return env.Get("prod", "OPENAUDIO_ENV")
+	return GetEnvWithDefault("OPENAUDIO_ENV", "prod")
 }
 
 func GetLogLevel() string {
-	return env.Get("info", "OPENAUDIO_LOG_LEVEL")
+	return GetEnvWithDefault("OPENAUDIO_LOG_LEVEL", "info")
 }
 
 func DefaultEthRPC() string {

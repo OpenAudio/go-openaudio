@@ -19,7 +19,6 @@ import (
 	"connectrpc.com/connect"
 	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
-	oaenv "github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/registrar"
 	"github.com/labstack/echo/v4"
@@ -55,7 +54,7 @@ func Run(ctx context.Context, ethService ethv1connect.EthServiceHandler) error {
 	if ethService == nil {
 		return fmt.Errorf("ethService is required")
 	}
-	env := oaenv.String("OPENAUDIO_ENV")
+	env := os.Getenv("OPENAUDIO_ENV")
 	nodeType := "validator"
 	slog.Info("starting", "env", env, "nodeType", nodeType)
 
@@ -189,7 +188,7 @@ func toPeers(endpoints []*ethv1.ServiceEndpoint) []registrar.Peer {
 
 func (u *Uptime) startPeerRefresher() {
 	interval := 10 * time.Minute
-	if oaenv.String("OPENAUDIO_ENV") == "dev" {
+	if os.Getenv("OPENAUDIO_ENV") == "dev" {
 		interval = 10 * time.Second
 	}
 	ticker := time.NewTicker(interval)
@@ -400,7 +399,7 @@ func start(ctx context.Context, isProd bool, nodeType, env string, ethService et
 		},
 		Peers:      peers,
 		ListenPort: "1996",
-		Dir:        oaenv.Get("/bolt", "OPENAUDIO_UPTIME_DATA_DIR", "uptimeDataDir"),
+		Dir:        getenvWithDefault("uptimeDataDir", "/bolt"),
 		Env:        env,
 		NodeType:   nodeType,
 	}
@@ -428,7 +427,10 @@ func mustGetenv(key string) string {
 	return val
 }
 
-// Deprecated: Use env.Get instead.
 func getenvWithDefault(key string, fallback string) string {
-	return oaenv.Get(fallback, key)
+	val := os.Getenv(key)
+	if val == "" {
+		return fallback
+	}
+	return val
 }

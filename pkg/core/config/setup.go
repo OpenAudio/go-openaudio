@@ -10,7 +10,6 @@ import (
 
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config/genesis"
-	"github.com/OpenAudio/go-openaudio/pkg/env"
 	cconfig "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
@@ -22,7 +21,12 @@ const PrivilegedServiceSocketURI = "unix://" + PrivilegedServiceSocket
 const CometRPCSocket = "/tmp/cometbft.rpc.sock"
 
 func getDurationEnv(key string, defaultVal time.Duration) time.Duration {
-	return env.GetDuration(defaultVal, key)
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return defaultVal
 }
 
 func ensureSocketNotExists(socketPath string) error {

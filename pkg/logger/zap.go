@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/OpenAudio/go-openaudio/pkg/common"
-	oaenv "github.com/OpenAudio/go-openaudio/pkg/env"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/axiomhq/axiom-go/axiom"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -22,7 +22,7 @@ const (
 
 func CreateLogger(env, level string) (*zap.Logger, error) {
 	enableAxiomDefault := strconv.FormatBool(env != "dev")
-	enableAxiom := oaenv.Get(enableAxiomDefault, "OPENAUDIO_ENABLE_AXIOM") == "true"
+	enableAxiom := config.GetEnvWithDefault("OPENAUDIO_ENABLE_AXIOM", enableAxiomDefault) == "true"
 
 	consoleEncoder := zapcore.NewConsoleEncoder(zap.NewProductionEncoderConfig())
 

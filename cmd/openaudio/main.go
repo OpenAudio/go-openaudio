@@ -29,10 +29,9 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer"
 	"github.com/OpenAudio/go-openaudio/pkg/core"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
-	oaenv "github.com/OpenAudio/go-openaudio/pkg/env"
-	"github.com/OpenAudio/go-openaudio/pkg/explorer"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/eth"
 	"github.com/OpenAudio/go-openaudio/etl"
@@ -201,7 +200,7 @@ func main() {
 				if etlService == nil {
 					return nil
 				}
-				etlService.SetRunDownMigrations(oaenv.Bool("OPENAUDIO_ETL_RUN_DOWN_MIGRATIONS"))
+				etlService.SetRunDownMigrations(os.Getenv("OPENAUDIO_ETL_RUN_DOWN_MIGRATIONS") == "true")
 				return etlService.Run()
 			},
 			cfg.EnableETL,
@@ -273,7 +272,7 @@ func runWithRecover(name string, ctx context.Context, logger *zap.Logger, f func
 }
 
 func setupHostUrl() *url.URL {
-	if u, err := url.Parse(oaenv.String("OPENAUDIO_NODE_ENDPOINT", "nodeEndpoint")); err != nil {
+	if u, err := url.Parse(os.Getenv("nodeEndpoint")); err != nil {
 		return &url.URL{Scheme: "http", Host: "localhost"}
 	} else {
 		return u
@@ -281,19 +280,20 @@ func setupHostUrl() *url.URL {
 }
 
 func setupDelegateKeyPair(logger *zap.Logger) {
-	if oaenv.IsSet("OPENAUDIO_DELEGATE_PRIVATE_KEY", "delegatePrivateKey") {
+	delegatePrivateKey := os.Getenv("delegatePrivateKey")
+	if delegatePrivateKey != "" {
 		return
 	}
 
 	privKey, ownerWallet := keyGen()
-	os.Setenv("OPENAUDIO_DELEGATE_PRIVATE_KEY", privKey)
-	os.Setenv("OPENAUDIO_DELEGATE_WALLET", ownerWallet)
+	os.Setenv("delegatePrivateKey", privKey)
+	os.Setenv("delegateOwnerWallet", ownerWallet)
 	logger.Info("Generated and set delegate key pair", zap.String("ownerWallet", ownerWallet))
 }
 
 func getEchoServerConfig(hostUrl *url.URL) serverConfig {
-	httpPort := oaenv.Get("80", "OPENAUDIO_HTTP_PORT")
-	httpsPort := oaenv.Get("443", "OPENAUDIO_HTTPS_PORT")
+	httpPort := getEnvString("OPENAUDIO_HTTP_PORT", "80")
+	httpsPort := getEnvString("OPENAUDIO_HTTPS_PORT", "443")
 	hostname := hostUrl.Hostname()
 
 	// TODO: this is all gross
@@ -303,13 +303,13 @@ func getEchoServerConfig(hostUrl *url.URL) serverConfig {
 
 	tlsEnabled := true
 	switch {
-	case oaenv.Bool("OPENAUDIO_TLS_DISABLED"):
+	case os.Getenv("OPENAUDIO_TLS_DISABLED") == "true":
 		tlsEnabled = false
 	case hasSuffix(hostname, []string{"altego.net", "bdnodes.net", "staked.cloud"}):
 		tlsEnabled = false
 	case hostname == "localhost":
 		tlsEnabled = true
-		if !oaenv.IsSet("OPENAUDIO_TLS_SELF_SIGNED") {
+		if os.Getenv("OPENAUDIO_TLS_SELF_SIGNED") == "" {
 			os.Setenv("OPENAUDIO_TLS_SELF_SIGNED", "true")
 		}
 	}
@@ -699,11 +699,11 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 		}
 
 		// Check for env var overrides (useful for devnet)
-		if lat := oaenv.String("OPENAUDIO_LATITUDE"); lat != "" {
-			if lng := oaenv.String("OPENAUDIO_LONGITUDE"); lng != "" {
+		if lat := os.Getenv("OPENAUDIO_LATITUDE"); lat != "" {
+			if lng := os.Getenv("OPENAUDIO_LONGITUDE"); lng != "" {
 				response.Latitude, _ = strconv.ParseFloat(lat, 64)
 				response.Longitude, _ = strconv.ParseFloat(lng, 64)
-				response.Country = oaenv.String("OPENAUDIO_COUNTRY")
+				response.Country = os.Getenv("OPENAUDIO_COUNTRY")
 			}
 		}
 
@@ -774,7 +774,7 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 }
 
 func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, logger *zap.Logger) error {
-	useSelfSigned := oaenv.Bool("OPENAUDIO_TLS_SELF_SIGNED")
+	useSelfSigned := os.Getenv("OPENAUDIO_TLS_SELF_SIGNED") == "true"
 
 	if useSelfSigned {
 		logger.Info("Using self-signed certificate")
@@ -784,7 +784,7 @@ func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, lo
 			return fmt.Errorf("failed to generate self-signed certificate: %v", err)
 		}
 
-		certDir := oaenv.Get(config.DefaultCoreRootDir, "OPENAUDIO_CORE_ROOT_DIR", "audius_core_root_dir") + "/echo/certs"
+		certDir := getEnvString("audius_core_root_dir", config.DefaultCoreRootDir) + "/echo/certs"
 		logger.Info("Creating certificate directory", zap.String("dir", certDir))
 		if err := os.MkdirAll(certDir, 0755); err != nil {
 			logger.Error("Failed to create certificate directory", zap.Error(err))
@@ -849,7 +849,7 @@ func startWithTLS(e *echo.Echo, httpPort, httpsPort string, hostUrl *url.URL, lo
 
 	logger.Info("TLS host whitelist: " + strings.Join(whitelist, ", "))
 	e.AutoTLSManager.HostPolicy = autocert.HostWhitelist(whitelist...)
-	e.AutoTLSManager.Cache = autocert.DirCache(oaenv.Get(config.DefaultCoreRootDir, "OPENAUDIO_CORE_ROOT_DIR", "audius_core_root_dir") + "/echo/cache")
+	e.AutoTLSManager.Cache = autocert.DirCache(getEnvString("audius_core_root_dir", config.DefaultCoreRootDir) + "/echo/cache")
 	e.Pre(middleware.HTTPSRedirect())
 
 	eg := errgroup.Group{}
@@ -919,7 +919,7 @@ func generateSelfSignedCert(hostname string) ([]byte, []byte, error) {
 
 // TODO: I don't love this, but it is kinof the only way to make this work rn
 func isCoreOnly() bool {
-	return oaenv.Bool("OPENAUDIO_CORE_ONLY")
+	return os.Getenv("OPENAUDIO_CORE_ONLY") == "true"
 }
 
 func isUpTimeEnabled(hostUrl *url.URL) bool {
@@ -931,7 +931,7 @@ func isStorageEnabled() bool {
 	if isCoreOnly() {
 		return false
 	}
-	if oaenv.String("OPENAUDIO_STORAGE_ENABLED") == "false" {
+	if os.Getenv("OPENAUDIO_STORAGE_ENABLED") == "false" {
 		return false
 	}
 	return true
@@ -946,6 +946,12 @@ func keyGen() (string, string) {
 	return hex.EncodeToString(privateKeyBytes), crypto.PubkeyToAddress(privateKey.PublicKey).Hex()
 }
 
+func getEnvString(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
 
 func hasSuffix(domain string, suffixes []string) bool {
 	for _, suffix := range suffixes {
@@ -975,7 +981,7 @@ func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreServic
 		}
 	}
 	response := map[string]interface{}{
-		"git":       oaenv.String("OPENAUDIO_GIT_SHA", "GIT_SHA"),
+		"git":       os.Getenv("GIT_SHA"),
 		"hostname":  hostUrl.Hostname(),
 		"timestamp": time.Now().UTC(),
 		"uptime":    time.Since(startTime).String(),

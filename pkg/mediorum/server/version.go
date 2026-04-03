@@ -1,9 +1,9 @@
 package server
 
 import (
+	"os"
 	"runtime/debug"
 
-	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"golang.org/x/exp/slog"
 )
 
@@ -28,7 +28,7 @@ func init() {
 	}
 
 	// read GIT_SHA which is set by circleci build
-	if gitSha := env.String("OPENAUDIO_GIT_SHA", "GIT_SHA"); gitSha != "" && vcsRevision == "" {
+	if gitSha := os.Getenv("GIT_SHA"); gitSha != "" && vcsRevision == "" {
 		vcsRevision = gitSha
 	}
 

@@ -149,18 +149,18 @@ The main entry point (`cmd/openaudio/main.go`) starts multiple services:
 ### Node Types
 
 **Validators**: Run both core + mediorum storage
-- Identified by `OPENAUDIO_NODE_ENDPOINT` env var (legacy: `nodeEndpoint`)
+- Identified by `nodeEndpoint` env var
 - Store and serve audio content
 - Require more resources (storage, bandwidth)
 - Are meant to be the replacement for content nodes and the sole supported node type
 
 **Content Nodes**: Run both core + mediorum storage
-- Identified by `creatorNodeEndpoint` env var (legacy, being phased out)
+- Identified by `creatorNodeEndpoint` env var
 - Store and serve audio content
 - Require more resources (storage, bandwidth)
 
 **Discovery Nodes**: Run core only (consensus + indexing)
-- Identified by `audius_discprov_url` env var (legacy, being phased out)
+- Identified by `audius_discprov_url` env var
 - Do not store content
 - Lighter resource requirements
 - Are deprecated
@@ -175,14 +175,12 @@ The main entry point (`cmd/openaudio/main.go`) starts multiple services:
 
 ### Configuration
 
-All environment variables support an `OPENAUDIO_`-prefixed canonical name (preferred) with fallback to legacy names for backward compatibility. The `pkg/env` package provides helpers for this pattern.
-
-- **Validators**: `OPENAUDIO_NODE_ENDPOINT`, `OPENAUDIO_DELEGATE_PRIVATE_KEY`, `OPENAUDIO_DELEGATE_WALLET`, `OPENAUDIO_OWNER_WALLET`
-- **Content nodes** (legacy): `creatorNodeEndpoint`, `delegatePrivateKey`, `delegateOwnerWallet`, `spOwnerWallet`
-- **Discovery nodes** (legacy): `audius_discprov_url`, `audius_delegate_private_key`, `audius_delegate_owner_wallet`
-- **Network**: `OPENAUDIO_ENV` (prod/stage/dev)
-- **Database**: `OPENAUDIO_DB_URL`
-- **Storage**: `OPENAUDIO_STORAGE_DRIVER_URL` (local/s3/gcs)
+Node configuration is primarily environment-variable driven:
+- **Validators**: `nodeEndpoint`, `delegatePrivateKey`, `delegateOwnerWallet`, `spOwnerWallet`
+- **Content nodes**: `creatorNodeEndpoint`, `delegatePrivateKey`, `delegateOwnerWallet`, `spOwnerWallet`
+- **Discovery nodes**: `audius_discprov_url`, `audius_delegate_private_key`, `audius_delegate_owner_wallet`
+- **Network**: `NETWORK` (prod/stage/dev)
+- **Storage**: `AUDIUS_STORAGE_DRIVER_URL` (local/s3/gcs)
 - **TLS**: `OPENAUDIO_TLS_DISABLED`, `OPENAUDIO_TLS_SELF_SIGNED`
 
 Genesis configurations are in `pkg/core/config/genesis/` as JSON files.
