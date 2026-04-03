@@ -1,7 +1,10 @@
 -- Tables for ETL service
 
 -- Storage proof status enum
-create type etl_proof_status as enum ('unresolved', 'pass', 'fail');
+DO $$ BEGIN
+  CREATE TYPE etl_proof_status AS ENUM ('unresolved', 'pass', 'fail');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 create table if not exists etl_addresses(
   id serial primary key,
@@ -264,22 +267,25 @@ end;
 $$ language plpgsql;
 
 -- Trigger for new blocks
-create trigger trigger_notify_new_block
-  after insert on etl_blocks
-  for each row
-  execute function notify_new_block();
+DROP TRIGGER IF EXISTS trigger_notify_new_block ON etl_blocks;
+CREATE TRIGGER trigger_notify_new_block
+  AFTER INSERT ON etl_blocks
+  FOR EACH ROW
+  EXECUTE FUNCTION notify_new_block();
 
 -- Trigger for new plays
-create trigger trigger_notify_new_plays
-  after insert on etl_plays
-  for each row
-  execute function notify_new_plays();
+DROP TRIGGER IF EXISTS trigger_notify_new_plays ON etl_plays;
+CREATE TRIGGER trigger_notify_new_plays
+  AFTER INSERT ON etl_plays
+  FOR EACH ROW
+  EXECUTE FUNCTION notify_new_plays();
 
 -- Materialized views for dashboard stats
 -- These use the latest indexed block timestamp as "now" so syncing nodes have updating data
 
 -- Transaction time-based statistics
-create materialized view mv_dashboard_transaction_stats as
+DROP MATERIALIZED VIEW IF EXISTS mv_dashboard_transaction_stats;
+CREATE MATERIALIZED VIEW mv_dashboard_transaction_stats AS
 with latest_block_time as (
   select block_time from etl_blocks order by block_height desc limit 1
 ),
@@ -308,7 +314,8 @@ cross join etl_transactions t
 where t.created_at <= tp.now_time;
 
 -- Transaction type breakdown
-create materialized view mv_dashboard_transaction_types as
+DROP MATERIALIZED VIEW IF EXISTS mv_dashboard_transaction_types;
+CREATE MATERIALIZED VIEW mv_dashboard_transaction_types AS
 with latest_block_time as (
   select block_time from etl_blocks order by block_height desc limit 1
 )
@@ -322,5 +329,5 @@ group by t.tx_type
 order by transaction_count desc;
 
 -- Indexes for better performance
-create index on mv_dashboard_transaction_stats using btree (transactions_24h);
-create index on mv_dashboard_transaction_types using btree (tx_type, transaction_count);
+CREATE INDEX IF NOT EXISTS mv_dashboard_transaction_stats_24h_idx ON mv_dashboard_transaction_stats USING btree (transactions_24h);
+CREATE INDEX IF NOT EXISTS mv_dashboard_transaction_types_idx ON mv_dashboard_transaction_types USING btree (tx_type, transaction_count);
