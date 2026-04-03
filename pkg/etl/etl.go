@@ -21,6 +21,7 @@ type Indexer struct {
 	checkReadiness      bool
 	ChainID             string
 	config              Config
+	emBlockOffset       int64 // offset to convert chain height to blocks.number (em_block = height + offset)
 
 	core       corev1connect.CoreServiceClient
 	pool       *pgxpool.Pool

@@ -105,28 +105,32 @@ processors/entity_manager/
 
 ### Entity/Action Status
 
-**Implemented (35 handlers):**
+**All entity types implemented (53 handlers):**
+
+**Implemented (53 handlers):**
 
 | Entity | Actions |
 |--------|---------|
 | User | Create, Update, Verify |
-| Track | Create, Update, Delete |
+| Track | Create, Update, Delete, Download, Mute, Unmute |
 | Playlist | Create, Update, Delete |
 | Follow | Follow, Unfollow |
 | Save | Save, Unsave |
 | Repost | Repost, Unrepost |
+| Subscribe | Subscribe, Unsubscribe |
+| Share | Share |
 | DeveloperApp | Create, Update, Delete |
 | Grant | Create, Delete, Approve, Reject |
 | MutedUser | Mute, Unmute |
 | Notification | Create, View |
 | PlaylistSeen | View |
 | Comment | Create, Update, Delete, React, Unreact, Pin, Unpin, Report, Mute, Unmute |
-
-**Remaining (lower priority):**
-- AssociatedWallet (Create, Delete) — requires Eth/Sol signature verification
-- DashboardWalletUser (Create, Delete) — requires Eth signature verification
-- Tip (Update) — requires user_tips table
-- EncryptedEmail, EmailAccess, Event — various actions
+| AssociatedWallet | Create, Delete (ETH ecrecover + SOL ed25519 verification) |
+| DashboardWalletUser | Create, Delete (ETH ecrecover verification) |
+| Tip | Reaction |
+| EncryptedEmail | Create |
+| EmailAccess | Update |
+| Event | Create, Update, Delete |
 
 ## Key Integration Points
 
@@ -146,12 +150,34 @@ etl_blocks, etl_transactions, etl_plays, etl_manage_entities, etl_addresses, etl
 ### Entity manager domain tables (migration 0002)
 users, tracks, playlists, follows, saves, reposts, track_routes, playlist_routes, developer_apps, grants, blocks.
 
-### User verify columns (migration 0003)
-twitter_handle, instagram_handle, tiktok_handle, verified_with_twitter, verified_with_instagram, verified_with_tiktok.
+### Additional migrations (0003–0015)
+0003: User verify columns (twitter, instagram, tiktok handles).
+0004: muted_users. 0005: notification. 0006: comment tables.
+0007: subscriptions. 0008: shares. 0009: track_downloads.
+0010: events. 0011: encrypted_emails, email_access.
+0012: dashboard_wallet_users. 0013: user_tips, reactions.
+0014: associated_wallets. 0015: core_indexed_blocks.
+
+All migrations are idempotent (`IF NOT EXISTS`, `DO $$ EXCEPTION`, `DROP TRIGGER IF EXISTS`).
 
 Schema matches discovery-provider exactly (same table names, columns, composite PKs, enums). This enables the cutover strategy: stop celery indexer, start ETL indexer, same database.
 
 Migrations are embedded and run automatically via `Indexer.Run()` → `db.RunMigrations()`.
+
+### Block Numbering and em_block Offset
+
+Domain tables (users, tracks, playlists, follows, saves, reposts, etc.) have `blocknumber REFERENCES blocks(number)`. The `blocks` table uses a sequential numbering scheme (`blocks.number`) that differs from the CometBFT chain height. The mapping is tracked in `core_indexed_blocks`:
+
+```
+core_indexed_blocks(chain_id, height, em_block)
+  - height:   CometBFT chain block height
+  - em_block: blocks.number (the value domain tables FK to)
+  - offset:   em_block - height (constant per chain_id)
+```
+
+At startup, the indexer queries `core_indexed_blocks` for the current chain ID to determine the offset. For existing databases with prior Python-indexed data, this continues the `blocks.number` sequence seamlessly. For clean databases, the offset is 0 (em_block = chain height).
+
+**Known limitation:** Chain ID rollovers (e.g., `audius-mainnet-alpha` → `audius-mainnet-alpha-beta`) are not handled. The offset is looked up once at startup for the current chain ID. If the chain rolls over, the ETL must be restarted (and may need manual intervention to set the correct offset for the new chain). The Python discovery indexer has explicit chain rollover detection logic that the Go ETL does not yet replicate.
 
 ## Testing
 
@@ -182,10 +208,33 @@ Test helpers in `testutil_test.go`:
 go run ./examples/etl \
   --rpc https://rpc.audius.co \
   --db "postgres://postgres:postgres@localhost:5432/etl_local?sslmode=disable" \
-  --start 21343648
+  --start 22275839
 ```
 
 Uses debug-level logging to show every transaction's payload and processing result.
+Progress is logged at INFO level every 10 seconds (block height, tx counts).
+
+### Parity testing (against production clone)
+
+Standalone CLI tool in `pkg/etl/parity/` for comparing Go ETL output against existing Python-indexed data.
+
+```bash
+cd pkg/etl
+
+# 1. Snapshot baseline (records max chain height + row counts)
+go run ./parity snapshot --db "$ETL_DB_URL"
+
+# 2. Run the ETL for some duration
+go run ../../examples/etl --rpc https://rpc.audius.co --db "$ETL_DB_URL" --start <snapshot_max_block + 1>
+
+# 3. Diff results
+go run ./parity diff --db "$ETL_DB_URL"
+
+# 4. Cleanup
+go run ./parity cleanup --db "$ETL_DB_URL"
+```
+
+The diff cross-references `etl_manage_entities` (which logs every ManageEntity tx) with domain table growth to find match rates, and runs structural integrity checks (non-null required fields, FK targets exist, is_current consistency).
 
 ## Module Notes
 

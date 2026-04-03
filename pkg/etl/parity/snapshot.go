@@ -28,9 +28,9 @@ func Snapshot(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("create _parity_meta: %w", err)
 	}
 
-	// Record max block height
+	// Record max chain block height from core_indexed_blocks (the CometBFT block height)
 	var maxBlock int64
-	err = pool.QueryRow(ctx, `SELECT COALESCE(MAX(number), 0) FROM blocks`).Scan(&maxBlock)
+	err = pool.QueryRow(ctx, `SELECT COALESCE(MAX(height), 0) FROM core_indexed_blocks`).Scan(&maxBlock)
 	if err != nil {
 		return fmt.Errorf("query max block: %w", err)
 	}

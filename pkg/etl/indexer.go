@@ -169,6 +169,21 @@ func (e *Indexer) Run() error {
 		e.logger.Error("error initializing chain ID", zap.Error(err))
 	}
 
+	// Look up em_block offset from core_indexed_blocks so we can continue
+	// the blocks.number sequence (em_block = chain_height + offset).
+	err = e.pool.QueryRow(context.Background(),
+		`SELECT em_block - height FROM core_indexed_blocks
+		 WHERE chain_id = $1 ORDER BY height DESC LIMIT 1`, e.ChainID).Scan(&e.emBlockOffset)
+	if err != nil {
+		e.logger.Warn("could not determine em_block offset, using chain height directly", zap.Error(err))
+		e.emBlockOffset = 0
+	} else {
+		e.logger.Info("em_block offset determined",
+			zap.String("chain_id", e.ChainID),
+			zap.Int64("offset", e.emBlockOffset),
+		)
+	}
+
 	e.logger.Info("starting etl service")
 
 	if e.checkReadiness {
@@ -235,6 +250,10 @@ func (e *Indexer) awaitReadiness() error {
 }
 
 func (e *Indexer) indexBlocks() error {
+	var blocksProcessed int64
+	var txsProcessed int64
+	lastLog := time.Now()
+
 	for {
 		// Get the latest indexed block height
 		latestHeight, err := e.db.GetLatestIndexedBlock(context.Background())
@@ -268,7 +287,7 @@ func (e *Indexer) indexBlocks() error {
 			continue
 		}
 
-		// Insert block first
+		// Insert into etl_blocks
 		err = e.db.InsertBlock(context.Background(), db.InsertBlockParams{
 			ProposerAddress: block.Msg.Block.Proposer,
 			BlockHeight:     block.Msg.Block.Height,
@@ -277,6 +296,30 @@ func (e *Indexer) indexBlocks() error {
 		if err != nil {
 			e.logger.Error("error inserting block", zap.Int64("height", nextHeight), zap.Error(err))
 			continue
+		}
+
+		// Compute em_block number (continues the blocks.number sequence).
+		emBlock := block.Msg.Block.Height + e.emBlockOffset
+
+		// Insert into blocks table so FK constraints are satisfied.
+		_, err = e.pool.Exec(context.Background(),
+			`INSERT INTO blocks (blockhash, parenthash, is_current, number)
+			 VALUES ($1, NULL, false, $2)
+			 ON CONFLICT (number) DO NOTHING`,
+			block.Msg.Block.Hash, emBlock)
+		if err != nil {
+			e.logger.Error("error inserting into blocks table", zap.Int64("height", nextHeight), zap.Error(err))
+			continue
+		}
+
+		// Update core_indexed_blocks to track what we've indexed.
+		_, err = e.pool.Exec(context.Background(),
+			`INSERT INTO core_indexed_blocks (blockhash, chain_id, height, em_block)
+			 VALUES ($1, $2, $3, $4)
+			 ON CONFLICT (chain_id, height) DO UPDATE SET em_block = $4, blockhash = $1`,
+			block.Msg.Block.Hash, e.ChainID, block.Msg.Block.Height, emBlock)
+		if err != nil {
+			e.logger.Error("error inserting into core_indexed_blocks", zap.Int64("height", nextHeight), zap.Error(err))
 		}
 
 		var wg sync.WaitGroup
@@ -344,7 +387,7 @@ func (e *Indexer) indexBlocks() error {
 				}
 
 				txStart := time.Now()
-				emParams := em.NewParams(me, block.Height, block.Timestamp.AsTime(), tx.Hash, e.pool, e.logger)
+				emParams := em.NewParams(me, emBlock, block.Timestamp.AsTime(), tx.Hash, e.pool, e.logger)
 				if dErr := e.dispatcher.Dispatch(context.Background(), emParams); dErr != nil {
 					if em.IsValidationError(dErr) {
 						e.logger.Debug("entity manager validation failed",
@@ -593,6 +636,19 @@ func (e *Indexer) indexBlocks() error {
 		}
 
 		wg.Wait()
+
+		blocksProcessed++
+		txsProcessed += int64(len(block.Msg.Block.Transactions))
+
+		if time.Since(lastLog) >= 10*time.Second {
+			e.logger.Info("indexing progress",
+				zap.Int64("block", block.Msg.Block.Height),
+				zap.Int("txs_in_block", len(block.Msg.Block.Transactions)),
+				zap.Int64("blocks_since_start", blocksProcessed),
+				zap.Int64("txs_since_start", txsProcessed),
+			)
+			lastLog = time.Now()
+		}
 
 		// TODO: use pgnotify to publish block and play events to pubsub
 
