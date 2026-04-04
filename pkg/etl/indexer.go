@@ -171,14 +171,37 @@ func (e *Indexer) Run() error {
 
 	// Look up em_block offset from core_indexed_blocks so we can continue
 	// the blocks.number sequence (em_block = chain_height + offset).
+	//
+	// First try: use an existing row where em_block is populated (from a prior Go ETL run).
+	// Fallback: compute from MAX(blocks.number) - MAX(core_indexed_blocks.height).
+	// This works because on a prod clone, blocks.number is the Python-assigned sequence
+	// and core_indexed_blocks.height is the chain height — their difference is the offset.
 	err = e.pool.QueryRow(context.Background(),
 		`SELECT em_block - height FROM core_indexed_blocks
-		 WHERE chain_id = $1 ORDER BY height DESC LIMIT 1`, e.ChainID).Scan(&e.emBlockOffset)
+		 WHERE chain_id = $1 AND em_block IS NOT NULL
+		 ORDER BY height DESC LIMIT 1`, e.ChainID).Scan(&e.emBlockOffset)
 	if err != nil {
-		e.logger.Warn("could not determine em_block offset, using chain height directly", zap.Error(err))
-		e.emBlockOffset = 0
+		// No em_block data yet — compute offset from production tables.
+		var maxBlockNumber, maxChainHeight *int64
+		_ = e.pool.QueryRow(context.Background(),
+			"SELECT MAX(number) FROM blocks").Scan(&maxBlockNumber)
+		_ = e.pool.QueryRow(context.Background(),
+			"SELECT MAX(height) FROM core_indexed_blocks WHERE chain_id = $1",
+			e.ChainID).Scan(&maxChainHeight)
+
+		if maxBlockNumber != nil && maxChainHeight != nil {
+			e.emBlockOffset = *maxBlockNumber - *maxChainHeight
+			e.logger.Info("em_block offset computed from production data",
+				zap.Int64("max_blocks_number", *maxBlockNumber),
+				zap.Int64("max_chain_height", *maxChainHeight),
+				zap.Int64("offset", e.emBlockOffset),
+			)
+		} else {
+			e.logger.Warn("could not determine em_block offset, using chain height directly")
+			e.emBlockOffset = 0
+		}
 	} else {
-		e.logger.Info("em_block offset determined",
+		e.logger.Info("em_block offset determined from core_indexed_blocks",
 			zap.String("chain_id", e.ChainID),
 			zap.Int64("offset", e.emBlockOffset),
 		)
@@ -255,14 +278,30 @@ func (e *Indexer) indexBlocks() error {
 	indexStart := time.Now()
 	lastLog := time.Now()
 
-	// Determine start height.
+	// Determine start height (chain height, not blocks.number).
+	// 1. Check etl_blocks (our own tracking table) for the last chain height we indexed.
+	// 2. If empty and --start was given, use that.
+	// 3. Otherwise, fall back to core_indexed_blocks which tracks what chain height
+	//    the production indexer last processed.
 	latestHeight, err := e.db.GetLatestIndexedBlock(context.Background())
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			if e.startingBlockHeight > 0 {
 				latestHeight = e.startingBlockHeight - 1
 			} else {
-				latestHeight = 0
+				var maxHeight *int64
+				err = e.pool.QueryRow(context.Background(),
+					"SELECT MAX(height) FROM core_indexed_blocks WHERE chain_id = $1",
+					e.ChainID).Scan(&maxHeight)
+				if err != nil || maxHeight == nil {
+					latestHeight = 0
+				} else {
+					latestHeight = *maxHeight
+					e.logger.Info("resuming from core_indexed_blocks",
+						zap.String("chain_id", e.ChainID),
+						zap.Int64("last_chain_height", latestHeight),
+					)
+				}
 			}
 		} else {
 			return fmt.Errorf("error getting latest indexed block: %w", err)
