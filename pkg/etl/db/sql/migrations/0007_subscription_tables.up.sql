@@ -12,6 +12,5 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   CONSTRAINT subscriptions_pkey PRIMARY KEY (subscriber_id, user_id, txhash)
 );
 
-CREATE INDEX IF NOT EXISTS idx_subscriptions_blocknumber ON subscriptions (blocknumber);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_subscriber_id ON subscriptions (subscriber_id);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions (user_id);
+CREATE INDEX IF NOT EXISTS ix_subscriptions_blocknumber ON subscriptions (blocknumber);
+CREATE INDEX IF NOT EXISTS ix_subscriptions_user_id ON subscriptions (user_id);

@@ -17,5 +17,5 @@ CREATE TABLE IF NOT EXISTS shares (
   CONSTRAINT shares_pkey PRIMARY KEY (user_id, share_item_id, share_type, txhash)
 );
 
-CREATE INDEX IF NOT EXISTS idx_shares_blocknumber ON shares (blocknumber);
-CREATE INDEX IF NOT EXISTS idx_shares_user_id ON shares (user_id);
+CREATE INDEX IF NOT EXISTS shares_new_blocknumber_idx ON shares (blocknumber);
+CREATE INDEX IF NOT EXISTS shares_user_idx ON shares (user_id, share_type, share_item_id, created_at);

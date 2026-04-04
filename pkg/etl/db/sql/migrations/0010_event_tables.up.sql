@@ -17,5 +17,6 @@ CREATE TABLE IF NOT EXISTS events (
   CONSTRAINT events_pkey PRIMARY KEY (event_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_events_user_id ON events (user_id);
-CREATE INDEX IF NOT EXISTS idx_events_entity ON events (entity_id, entity_type);
+CREATE INDEX IF NOT EXISTS idx_events_entity_id ON events (entity_id);
+CREATE INDEX IF NOT EXISTS idx_events_entity_type ON events (entity_type);
+CREATE INDEX IF NOT EXISTS idx_events_created_at ON events (created_at);

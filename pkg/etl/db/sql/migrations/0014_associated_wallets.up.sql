@@ -14,6 +14,5 @@ CREATE TABLE IF NOT EXISTS associated_wallets (
   CONSTRAINT associated_wallets_pkey PRIMARY KEY (id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_associated_wallets_user_id ON associated_wallets (user_id);
-CREATE INDEX IF NOT EXISTS idx_associated_wallets_wallet ON associated_wallets (wallet);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_associated_wallets_unique_active ON associated_wallets (user_id, wallet, chain) WHERE is_current = true AND is_delete = false;
+CREATE INDEX IF NOT EXISTS ix_associated_wallets_user_id ON associated_wallets (user_id);
+CREATE INDEX IF NOT EXISTS ix_associated_wallets_wallet ON associated_wallets (wallet);

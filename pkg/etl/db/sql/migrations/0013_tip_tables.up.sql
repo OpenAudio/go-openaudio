@@ -11,8 +11,8 @@ CREATE TABLE IF NOT EXISTS user_tips (
   CONSTRAINT user_tips_pkey PRIMARY KEY (slot, signature)
 );
 
-CREATE INDEX IF NOT EXISTS idx_user_tips_sender ON user_tips (sender_user_id);
-CREATE INDEX IF NOT EXISTS idx_user_tips_receiver ON user_tips (receiver_user_id);
+CREATE INDEX IF NOT EXISTS ix_user_tips_sender_user_id ON user_tips (sender_user_id);
+CREATE INDEX IF NOT EXISTS ix_user_tips_receiver_user_id ON user_tips (receiver_user_id);
 
 CREATE TABLE IF NOT EXISTS reactions (
   id serial NOT NULL,
@@ -25,4 +25,4 @@ CREATE TABLE IF NOT EXISTS reactions (
   CONSTRAINT reactions_pkey PRIMARY KEY (id)
 );
 
-CREATE INDEX IF NOT EXISTS ix_reactions_reacted_to_type ON reactions (reacted_to, reaction_type);
+CREATE INDEX IF NOT EXISTS ix_reactions_reacted_to_reaction_type ON reactions (reacted_to, reaction_type);

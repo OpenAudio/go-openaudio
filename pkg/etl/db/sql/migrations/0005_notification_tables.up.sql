@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS notification (
   CONSTRAINT uq_notification UNIQUE (group_id, specifier)
 );
 
-CREATE INDEX IF NOT EXISTS idx_notification_user_ids ON notification USING gin (user_ids);
+CREATE INDEX IF NOT EXISTS ix_notification ON notification USING gin (user_ids);
 
 CREATE TABLE IF NOT EXISTS notification_seen (
   user_id integer NOT NULL,
