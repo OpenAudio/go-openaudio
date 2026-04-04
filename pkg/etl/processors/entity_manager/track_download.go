@@ -17,7 +17,7 @@ func (h *trackDownloadHandler) Handle(ctx context.Context, params *Params) error
 
 	trackID := params.EntityID
 
-	exists, err := trackExistsActive(ctx, params.DBTX, trackID)
+	exists, err := trackExists(ctx, params.DBTX, trackID)
 	if err != nil {
 		return err
 	}
@@ -29,7 +29,7 @@ func (h *trackDownloadHandler) Handle(ctx context.Context, params *Params) error
 	parentTrackID := trackID
 	var stemOfRaw []byte
 	err = params.DBTX.QueryRow(ctx,
-		"SELECT stem_of FROM tracks WHERE track_id = $1 AND is_current = true LIMIT 1",
+		"SELECT stem_of FROM tracks WHERE track_id = $1 AND is_current = true",
 		trackID).Scan(&stemOfRaw)
 	if err == nil && stemOfRaw != nil {
 		var stemOf map[string]any
