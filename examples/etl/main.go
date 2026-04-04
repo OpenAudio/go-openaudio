@@ -44,7 +44,9 @@ func main() {
 		*rpcURL = "https://" + *rpcURL
 	}
 
-	logger, err := zap.NewDevelopment()
+	cfg := zap.NewDevelopmentConfig()
+	cfg.DisableStacktrace = true
+	logger, err := cfg.Build()
 	if err != nil {
 		log.Fatalf("failed to create logger: %v", err)
 	}
