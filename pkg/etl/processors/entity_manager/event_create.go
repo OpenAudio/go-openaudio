@@ -81,7 +81,7 @@ func validateCreateEvent(ctx context.Context, params *Params) error {
 	entityType := params.MetadataString("entity_type")
 	entityID, hasEntityID := params.MetadataInt64("entity_id")
 	if entityType == "track" && hasEntityID {
-		trackOK, err := trackExistsActive(ctx, params.DBTX, entityID)
+		trackOK, err := trackExists(ctx, params.DBTX, entityID)
 		if err != nil {
 			return err
 		}

@@ -26,7 +26,7 @@ func validateTrackDelete(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	ok, err := trackExistsActive(ctx, params.DBTX, params.EntityID)
+	ok, err := trackExists(ctx, params.DBTX, params.EntityID)
 	if err != nil {
 		return err
 	}

@@ -26,7 +26,7 @@ func validatePlaylistDelete(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	ok, err := playlistExistsActive(ctx, params.DBTX, params.EntityID)
+	ok, err := playlistExists(ctx, params.DBTX, params.EntityID)
 	if err != nil {
 		return err
 	}

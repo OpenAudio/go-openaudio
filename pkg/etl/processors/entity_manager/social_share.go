@@ -51,13 +51,13 @@ func validateShareTarget(ctx context.Context, params *Params, shareType string) 
 	var exists bool
 	switch shareType {
 	case "track":
-		e, err := trackExistsActive(ctx, params.DBTX, params.EntityID)
+		e, err := trackExists(ctx, params.DBTX, params.EntityID)
 		if err != nil {
 			return err
 		}
 		exists = e
 	case "playlist", "album":
-		e, err := playlistExistsActive(ctx, params.DBTX, params.EntityID)
+		e, err := playlistExists(ctx, params.DBTX, params.EntityID)
 		if err != nil {
 			return err
 		}

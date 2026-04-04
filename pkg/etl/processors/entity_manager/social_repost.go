@@ -159,13 +159,13 @@ func validateRepostTarget(ctx context.Context, dbtx db.DBTX, entityID int64, rep
 	var exists bool
 	switch repostType {
 	case "track":
-		exists2, err := trackExistsActive(ctx, dbtx, entityID)
+		exists2, err := trackExists(ctx, dbtx, entityID)
 		if err != nil {
 			return err
 		}
 		exists = exists2
 	case "playlist", "album":
-		exists2, err := playlistExistsActive(ctx, dbtx, entityID)
+		exists2, err := playlistExists(ctx, dbtx, entityID)
 		if err != nil {
 			return err
 		}

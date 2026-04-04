@@ -15,7 +15,7 @@ func (h *commentDeleteHandler) Handle(ctx context.Context, params *Params) error
 	}
 
 	// Comment must exist
-	exists, err := commentExistsActive(ctx, params.DBTX, params.EntityID)
+	exists, err := commentExists(ctx, params.DBTX, params.EntityID)
 	if err != nil {
 		return err
 	}

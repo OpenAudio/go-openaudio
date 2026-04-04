@@ -90,8 +90,8 @@ func validateCommentWrite(ctx context.Context, params *Params, isCreate bool) er
 		}
 	}
 
-	// entity_type only supports Track
-	if et := params.MetadataString("entity_type"); et != "" && et != EntityTypeTrack {
+	// entity_type supports Track and FanClub
+	if et := params.MetadataString("entity_type"); et != "" && et != EntityTypeTrack && et != "FanClub" {
 		return NewValidationError("entity type %q is not supported for comments", et)
 	}
 
@@ -99,12 +99,15 @@ func validateCommentWrite(ctx context.Context, params *Params, isCreate bool) er
 	if !ok {
 		return NewValidationError("entity_id is required for comment")
 	}
-	exists, err := trackExists(ctx, params.DBTX, entityID)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return NewValidationError("track %d does not exist", entityID)
+	et := params.MetadataString("entity_type")
+	if et == "" || et == EntityTypeTrack {
+		exists, err := trackExists(ctx, params.DBTX, entityID)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return NewValidationError("track %d does not exist", entityID)
+		}
 	}
 
 	body := params.MetadataString("body")
