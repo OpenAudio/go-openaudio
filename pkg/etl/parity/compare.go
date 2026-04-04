@@ -139,51 +139,43 @@ var compareTables = []compareTable{
 // present in the original snapshot (i.e., the first non-NULL em_block
 // written by us). Everything at or above that boundary is Go-written data.
 func Compare(ctx context.Context, etlPool *pgxpool.Pool, prodPool *pgxpool.Pool) error {
-	// Find the em_block boundary: the last blocks.number that existed before
-	// the Go ETL started writing. The Go ETL writes sequential em_block values
-	// starting from MAX(blocks.number)+1 at startup, so we find the minimum
-	// em_block in core_indexed_blocks written by Go (non-NULL, from ETL run).
-	//
-	// Approach: find the first core_indexed_blocks row (by height) that has a
-	// non-NULL em_block AND was written by the Go ETL. The Go ETL writes
-	// em_block for every block with EM txs. The boundary is em_block - 1.
-	//
-	// Simpler: the Go ETL's em_blocks start right after the pre-existing max blocks.number.
-	// So the boundary is the max blocks.number that has is_current=false and was NOT
-	// written by Go. We can detect this by finding the gap: the last blocks.number
-	// where a parenthash exists (Python sets parenthash, Go sets it to NULL).
-	//
-	// Simplest: just find the min em_block from core_indexed_blocks where em_block IS NOT NULL
-	// and height > max height where em_block IS NULL. That's the first Go-written em_block.
-	var emBlockBoundary int64
+	// Find the em_block boundary using etl_blocks, which only the Go ETL writes to.
+	// The first etl_blocks row marks where Go started indexing. We then find the
+	// minimum em_block assigned by Go in core_indexed_blocks for that height range.
+	// Everything below that em_block is Python-written; everything at or above is Go-written.
+	var minGoHeight, maxGoHeight int64
 	err := etlPool.QueryRow(ctx,
+		`SELECT MIN(block_height), MAX(block_height) FROM etl_blocks`).Scan(&minGoHeight, &maxGoHeight)
+	if err != nil {
+		return fmt.Errorf("no etl_blocks data — has the Go ETL run? %w", err)
+	}
+
+	// The boundary is the em_block just before the first Go-written em_block.
+	var emBlockBoundary int64
+	err = etlPool.QueryRow(ctx,
 		`SELECT COALESCE(MIN(em_block) - 1, 0)
 		 FROM core_indexed_blocks
 		 WHERE em_block IS NOT NULL
-		   AND height > (
-		     SELECT COALESCE(MAX(height), 0)
-		     FROM core_indexed_blocks
-		     WHERE em_block IS NULL
-		   )`).Scan(&emBlockBoundary)
+		   AND height >= $1`, minGoHeight).Scan(&emBlockBoundary)
 	if err != nil {
 		return fmt.Errorf("determining em_block boundary: %w", err)
 	}
 
-	// Also get the chain height range for context.
-	var minGoHeight, maxGoHeight int64
-	_ = etlPool.QueryRow(ctx,
-		`SELECT MIN(height), MAX(height)
+	// Find the max em_block in prod that corresponds to the Go ETL's max chain height.
+	// Any prod entity with blocknumber > this was modified after our comparison window.
+	var prodMaxEmBlock int64
+	err = prodPool.QueryRow(ctx,
+		`SELECT COALESCE(MAX(em_block), 0)
 		 FROM core_indexed_blocks
-		 WHERE em_block IS NOT NULL
-		   AND height > (
-		     SELECT COALESCE(MAX(height), 0)
-		     FROM core_indexed_blocks
-		     WHERE em_block IS NULL
-		   )`).Scan(&minGoHeight, &maxGoHeight)
+		 WHERE height <= $1 AND em_block IS NOT NULL`, maxGoHeight).Scan(&prodMaxEmBlock)
+	if err != nil {
+		return fmt.Errorf("determining prod em_block cutoff: %w", err)
+	}
 
 	fmt.Printf("=== ETL vs Production Comparison ===\n")
 	fmt.Printf("em_block boundary:     %d (rows with blocknumber > this are Go-written)\n", emBlockBoundary)
 	fmt.Printf("Go ETL chain heights:  %d .. %d\n", minGoHeight, maxGoHeight)
+	fmt.Printf("Prod em_block cutoff:  %d (prod rows above this are beyond our window)\n", prodMaxEmBlock)
 	fmt.Println()
 
 	var totals struct {
@@ -191,7 +183,7 @@ func Compare(ctx context.Context, etlPool *pgxpool.Pool, prodPool *pgxpool.Pool)
 	}
 
 	for _, ct := range compareTables {
-		r, err := compareOneTable(ctx, etlPool, prodPool, ct, emBlockBoundary)
+		r, err := compareOneTable(ctx, etlPool, prodPool, ct, emBlockBoundary, prodMaxEmBlock)
 		if err != nil {
 			fmt.Printf("ERROR comparing %s: %v\n\n", ct.Name, err)
 			continue
@@ -217,7 +209,7 @@ type compareResult struct {
 	compared, matched, mismatched, missing, skippedAhead int
 }
 
-func compareOneTable(ctx context.Context, etlPool, prodPool *pgxpool.Pool, ct compareTable, emBlockBoundary int64) (compareResult, error) {
+func compareOneTable(ctx context.Context, etlPool, prodPool *pgxpool.Pool, ct compareTable, emBlockBoundary, prodMaxEmBlock int64) (compareResult, error) {
 	var r compareResult
 
 	// castCol returns the SELECT expression for a column, applying casts if configured.
@@ -341,9 +333,11 @@ func compareOneTable(ctx context.Context, etlPool, prodPool *pgxpool.Pool, ct co
 			continue
 		}
 
-		// If prod has a higher blocknumber, it processed more updates — skip
+		// Skip if prod modified this entity after our comparison window
+		// (i.e., prod's blocknumber for this entity is beyond what the Go ETL's
+		// max chain height maps to in prod's numbering).
 		prodBN := toInt64(prodVals[bnIdx])
-		if prodBN > entity.blocknum {
+		if prodBN > prodMaxEmBlock {
 			r.skippedAhead++
 			continue
 		}
