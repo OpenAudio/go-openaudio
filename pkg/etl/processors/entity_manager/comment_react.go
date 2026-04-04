@@ -35,10 +35,10 @@ func (h *commentReactHandler) Handle(ctx context.Context, params *Params) error 
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO comment_reactions (
 			comment_id, user_id, created_at, updated_at, is_delete,
-			txhash, blocknumber
-		) VALUES ($1, $2, $3, $3, false, $4, $5)
-		ON CONFLICT (comment_id, user_id) DO UPDATE SET is_delete = false, updated_at = $3, txhash = $4, blocknumber = $5
-	`, params.EntityID, params.UserID, params.BlockTime, params.TxHash, params.BlockNumber)
+			txhash, blockhash, blocknumber
+		) VALUES ($1, $2, $3, $3, false, $4, $5, $6)
+		ON CONFLICT (comment_id, user_id) DO UPDATE SET is_delete = false, updated_at = $3, txhash = $4, blocknumber = $6
+	`, params.EntityID, params.UserID, params.BlockTime, params.TxHash, params.BlockHash, params.BlockNumber)
 	return err
 }
 

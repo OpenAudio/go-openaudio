@@ -126,6 +126,7 @@ type Params struct {
 	RawMetadata string
 	BlockNumber int64
 	BlockTime   time.Time
+	BlockHash   string
 	TxHash      string
 	DBTX        db.DBTX
 	Logger      *zap.Logger
@@ -137,7 +138,7 @@ func (p *Params) Queries() *db.Queries {
 }
 
 // NewParams creates Params from a ManageEntityLegacy proto and block context.
-func NewParams(tx *corev1.ManageEntityLegacy, blockNumber int64, blockTime time.Time, txHash string, dbtx db.DBTX, logger *zap.Logger) *Params {
+func NewParams(tx *corev1.ManageEntityLegacy, blockNumber int64, blockTime time.Time, blockHash, txHash string, dbtx db.DBTX, logger *zap.Logger) *Params {
 	p := &Params{
 		TX:          tx,
 		UserID:      tx.GetUserId(),
@@ -148,6 +149,7 @@ func NewParams(tx *corev1.ManageEntityLegacy, blockNumber int64, blockTime time.
 		RawMetadata: tx.GetMetadata(),
 		BlockNumber: blockNumber,
 		BlockTime:   blockTime,
+		BlockHash:   blockHash,
 		TxHash:      txHash,
 		DBTX:        dbtx,
 		Logger:      logger,

@@ -119,6 +119,7 @@ func buildParams(t *testing.T, pool *pgxpool.Pool, entityType, action string, us
 		tx.GetManageEntity(),
 		100,
 		time.Now(),
+		fmt.Sprintf("blockhash-%s-%s-%d", entityType, action, entityID),
 		fmt.Sprintf("txhash-%s-%s-%d", entityType, action, entityID),
 		pool,
 		logger,

@@ -110,7 +110,7 @@ func insertUser(ctx context.Context, params *Params) error {
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11,
 			true, false, false, true, true,
-			$12, $12, $13, '', $14
+			$12, $12, $13, $14, $15
 		)
 	`,
 		params.UserID,
@@ -126,6 +126,7 @@ func insertUser(ctx context.Context, params *Params) error {
 		nullString(params.MetadataString("cover_photo_sizes")),
 		params.BlockTime,
 		params.TxHash,
+		params.BlockHash,
 		params.BlockNumber,
 	)
 	return err

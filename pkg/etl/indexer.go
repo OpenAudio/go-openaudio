@@ -381,7 +381,7 @@ func (e *Indexer) indexBlocks() error {
 				}
 
 				txStart := time.Now()
-				emParams := em.NewParams(me, emBlock, block.Timestamp.AsTime(), tx.Hash, e.pool, e.logger)
+				emParams := em.NewParams(me, emBlock, block.Timestamp.AsTime(), block.Hash, tx.Hash, e.pool, e.logger)
 				if dErr := e.dispatcher.Dispatch(context.Background(), emParams); dErr != nil {
 					if em.IsValidationError(dErr) {
 						e.logger.Debug("entity manager validation failed",

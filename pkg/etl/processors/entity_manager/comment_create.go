@@ -27,11 +27,11 @@ func (h *commentCreateHandler) Handle(ctx context.Context, params *Params) error
 			comment_id, text, user_id, entity_id, entity_type,
 			track_timestamp_s, created_at, updated_at,
 			is_delete, is_visible, is_edited,
-			txhash, blocknumber
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, false, true, false, $8, $9)
+			txhash, blockhash, blocknumber
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, false, true, false, $8, $9, $10)
 	`, params.EntityID, body, params.UserID, entityID, entityType,
 		nullableInt(trackTimestamp, hasTimestamp),
-		params.BlockTime, params.TxHash, params.BlockNumber)
+		params.BlockTime, params.TxHash, params.BlockHash, params.BlockNumber)
 	if err != nil {
 		return err
 	}
@@ -42,10 +42,10 @@ func (h *commentCreateHandler) Handle(ctx context.Context, params *Params) error
 			_, err := params.DBTX.Exec(ctx, `
 				INSERT INTO comment_mentions (
 					comment_id, user_id, created_at, updated_at, is_delete,
-					txhash, blocknumber
-				) VALUES ($1, $2, $3, $3, false, $4, $5)
-				ON CONFLICT (comment_id, user_id) DO UPDATE SET is_delete = false, updated_at = $3, txhash = $4, blocknumber = $5
-			`, params.EntityID, mentionUserID, params.BlockTime, params.TxHash, params.BlockNumber)
+					txhash, blockhash, blocknumber
+				) VALUES ($1, $2, $3, $3, false, $4, $5, $6)
+				ON CONFLICT (comment_id, user_id) DO UPDATE SET is_delete = false, updated_at = $3, txhash = $4, blocknumber = $6
+			`, params.EntityID, mentionUserID, params.BlockTime, params.TxHash, params.BlockHash, params.BlockNumber)
 			if err != nil {
 				return err
 			}

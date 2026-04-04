@@ -180,9 +180,9 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 			blockhash, blocknumber, txhash
 		) VALUES (
 			$1, $2, $3, $4, $5, true,
-			'', $6, $7
+			$6, $7, $8
 		)
-	`, slug, titleSlug, collisionID, params.UserID, params.EntityID, params.BlockNumber, params.TxHash)
+	`, slug, titleSlug, collisionID, params.UserID, params.EntityID, params.BlockHash, params.BlockNumber, params.TxHash)
 	return err
 }
 
