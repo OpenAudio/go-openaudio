@@ -68,6 +68,18 @@ func seedTrack(t *testing.T, pool *pgxpool.Pool, trackID int64, ownerID int64) {
 	}
 }
 
+// seedTrackFull inserts a track with title (for update/delete tests that load full rows).
+func seedTrackFull(t *testing.T, pool *pgxpool.Pool, trackID, ownerID int64, title string) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(), `
+		INSERT INTO tracks (track_id, owner_id, title, is_current, is_delete, track_segments, created_at, updated_at, txhash)
+		VALUES ($1, $2, $3, true, false, '[]', now(), now(), $4)
+	`, trackID, ownerID, title, "seed-"+fmt.Sprintf("%d", trackID))
+	if err != nil {
+		t.Fatalf("seedTrackFull(%d): %v", trackID, err)
+	}
+}
+
 // seedPlaylist inserts a playlist row into the playlists table.
 func seedPlaylist(t *testing.T, pool *pgxpool.Pool, playlistID int64, ownerID int64) {
 	t.Helper()
@@ -107,6 +119,7 @@ func buildParams(t *testing.T, pool *pgxpool.Pool, entityType, action string, us
 		tx.GetManageEntity(),
 		100,
 		time.Now(),
+		fmt.Sprintf("blockhash-%s-%s-%d", entityType, action, entityID),
 		fmt.Sprintf("txhash-%s-%s-%d", entityType, action, entityID),
 		pool,
 		logger,

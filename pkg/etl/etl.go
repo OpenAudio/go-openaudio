@@ -20,7 +20,8 @@ type Indexer struct {
 	endingBlockHeight   int64
 	checkReadiness      bool
 	ChainID             string
-	config              Config
+	config      Config
+	lastEmBlock int64 // last assigned blocks.number; incremented only for blocks with EM txs
 
 	core       corev1connect.CoreServiceClient
 	pool       *pgxpool.Pool

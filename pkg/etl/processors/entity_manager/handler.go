@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Entity type constants matching discovery-provider EntityType enum.
+// Entity type constants.
 const (
 	EntityTypeUser                      = "User"
 	EntityTypeTrack                     = "Track"
@@ -48,7 +48,7 @@ const (
 	EntityTypeShare                     = "Share"
 )
 
-// Action constants matching discovery-provider Action enum.
+// Action constants.
 const (
 	ActionCreate      = "Create"
 	ActionUpdate      = "Update"
@@ -78,19 +78,21 @@ const (
 	ActionShare       = "Share"
 )
 
-// ID offsets matching discovery-provider constants.
+// ID offsets.
 const (
 	PlaylistIDOffset = 400_000
 	TrackIDOffset    = 2_000_000
 	UserIDOffset     = 3_000_000
+	CommentIDOffset  = 4_000_000
 )
 
-// Character limit constants matching discovery-provider.
+// Character limit constants.
 const (
 	CharacterLimitUserBio     = 256
 	CharacterLimitUserName    = 32
 	CharacterLimitHandle      = 30
-	CharacterLimitDescription = 1000
+	CharacterLimitDescription = 2500
+	CharacterLimitCommentBody = 400
 )
 
 // ValidationError indicates a transaction should be skipped (not a fatal indexing error).
@@ -124,6 +126,7 @@ type Params struct {
 	RawMetadata string
 	BlockNumber int64
 	BlockTime   time.Time
+	BlockHash   string
 	TxHash      string
 	DBTX        db.DBTX
 	Logger      *zap.Logger
@@ -135,7 +138,7 @@ func (p *Params) Queries() *db.Queries {
 }
 
 // NewParams creates Params from a ManageEntityLegacy proto and block context.
-func NewParams(tx *corev1.ManageEntityLegacy, blockNumber int64, blockTime time.Time, txHash string, dbtx db.DBTX, logger *zap.Logger) *Params {
+func NewParams(tx *corev1.ManageEntityLegacy, blockNumber int64, blockTime time.Time, blockHash, txHash string, dbtx db.DBTX, logger *zap.Logger) *Params {
 	p := &Params{
 		TX:          tx,
 		UserID:      tx.GetUserId(),
@@ -146,6 +149,7 @@ func NewParams(tx *corev1.ManageEntityLegacy, blockNumber int64, blockTime time.
 		RawMetadata: tx.GetMetadata(),
 		BlockNumber: blockNumber,
 		BlockTime:   blockTime,
+		BlockHash:   blockHash,
 		TxHash:      txHash,
 		DBTX:        dbtx,
 		Logger:      logger,
@@ -154,7 +158,12 @@ func NewParams(tx *corev1.ManageEntityLegacy, blockNumber int64, blockTime time.
 	if tx.GetMetadata() != "" {
 		var meta map[string]any
 		if err := json.Unmarshal([]byte(tx.GetMetadata()), &meta); err == nil {
-			p.Metadata = meta
+			// Unwrap nested "data" envelope: {"cid":"...", "data": {actual fields}}
+			if data, ok := meta["data"].(map[string]any); ok {
+				p.Metadata = data
+			} else {
+				p.Metadata = meta
+			}
 		}
 	}
 
@@ -175,6 +184,57 @@ func (p *Params) MetadataString(key string) string {
 		return ""
 	}
 	return s
+}
+
+// MetadataInt64 returns an int64 from parsed metadata (supports number and string).
+func (p *Params) MetadataInt64(key string) (int64, bool) {
+	if p.Metadata == nil {
+		return 0, false
+	}
+	v, ok := p.Metadata[key]
+	if !ok {
+		return 0, false
+	}
+	switch val := v.(type) {
+	case float64:
+		return int64(val), true
+	case int:
+		return int64(val), true
+	case int64:
+		return val, true
+	}
+	return 0, false
+}
+
+// MetadataBool returns a bool from parsed metadata.
+func (p *Params) MetadataBool(key string) (bool, bool) {
+	if p.Metadata == nil {
+		return false, false
+	}
+	v, ok := p.Metadata[key]
+	if !ok {
+		return false, false
+	}
+	b, ok := v.(bool)
+	return b, ok
+}
+
+// MetadataBoolOr returns the bool value or default if the key is absent.
+func (p *Params) MetadataBoolOr(key string, def bool) bool {
+	if v, ok := p.MetadataBool(key); ok {
+		return v
+	}
+	return def
+}
+
+// MetadataJSON returns the raw value for a JSONB column (map, slice, etc.).
+// Caller should json.Marshal for DB insertion.
+func (p *Params) MetadataJSON(key string) (any, bool) {
+	if p.Metadata == nil {
+		return nil, false
+	}
+	v, ok := p.Metadata[key]
+	return v, ok
 }
 
 // Handler processes a specific (entity_type, action) pair.
@@ -207,6 +267,11 @@ func (d *Dispatcher) Register(h Handler) {
 	d.handlers[handlerKey(h.EntityType(), h.Action())] = h
 }
 
+// EntityTypeAny is a wildcard entity type for handlers that match any entity type
+// for a given action (e.g., social features: Follow matches entity_type "User",
+// Save matches "Track" or "Playlist").
+const EntityTypeAny = "*"
+
 // Dispatch routes a ManageEntity transaction to the appropriate handler.
 // Returns nil if no handler is registered (unhandled entity/action pairs are silently skipped).
 // Returns a ValidationError if the handler rejects the transaction.
@@ -215,14 +280,21 @@ func (d *Dispatcher) Dispatch(ctx context.Context, params *Params) error {
 	key := handlerKey(params.EntityType, params.Action)
 	h, ok := d.handlers[key]
 	if !ok {
-		return nil
+		// Fall back to wildcard entity type match
+		h, ok = d.handlers[handlerKey(EntityTypeAny, params.Action)]
+		if !ok {
+			return nil
+		}
 	}
 	return h.Handle(ctx, params)
 }
 
 // HasHandler returns true if a handler is registered for the given entity_type and action.
 func (d *Dispatcher) HasHandler(entityType, action string) bool {
-	_, ok := d.handlers[handlerKey(entityType, action)]
+	if _, ok := d.handlers[handlerKey(entityType, action)]; ok {
+		return true
+	}
+	_, ok := d.handlers[handlerKey(EntityTypeAny, action)]
 	return ok
 }
 

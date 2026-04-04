@@ -28,6 +28,7 @@ func main() {
 	rpcURL := flag.String("rpc", "", "Core RPC endpoint (e.g. https://core.audius.co)")
 	dbURL := flag.String("db", "", "Postgres connection string (e.g. postgres://localhost:5432/etl_local?sslmode=disable)")
 	startBlock := flag.Int64("start", 0, "Starting block height (0 = resume from last indexed)")
+	verbose := flag.Bool("v", false, "Enable debug logging")
 	flag.Parse()
 
 	if *rpcURL == "" {
@@ -44,7 +45,12 @@ func main() {
 		*rpcURL = "https://" + *rpcURL
 	}
 
-	logger, err := zap.NewDevelopment()
+	cfg := zap.NewDevelopmentConfig()
+	cfg.DisableStacktrace = true
+	if !*verbose {
+		cfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
+	}
+	logger, err := cfg.Build()
 	if err != nil {
 		log.Fatalf("failed to create logger: %v", err)
 	}
