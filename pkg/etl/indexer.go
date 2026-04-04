@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
+
 	"time"
 
 	"connectrpc.com/connect"
@@ -252,6 +252,7 @@ func (e *Indexer) awaitReadiness() error {
 func (e *Indexer) indexBlocks() error {
 	var blocksProcessed int64
 	var txsProcessed int64
+	indexStart := time.Now()
 	lastLog := time.Now()
 
 	// Determine start height.
@@ -316,55 +317,38 @@ func (e *Indexer) indexBlocks() error {
 			e.logger.Error("error inserting into core_indexed_blocks", zap.Int64("height", block.Height), zap.Error(err))
 		}
 
-		var wg sync.WaitGroup
-		wg.Add(len(block.Transactions))
+		var emTxCount, emRejectCount int
+		blockStart := time.Now()
 
-		for index := range block.Transactions {
-			go func(block *corev1.Block, index int) {
-				defer wg.Done()
+		for index, tx := range block.Transactions {
+			insertTxParams := db.InsertTransactionParams{
+				TxHash:      tx.Hash,
+				BlockHeight: block.Height,
+				TxIndex:     int32(index),
+				TxType:      "",
+				Address:     pgtype.Text{Valid: false},
+				CreatedAt:   pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+			}
 
-				tx := block.Transactions[index]
-				insertTxParams := db.InsertTransactionParams{
-					TxHash:      tx.Hash,
-					BlockHeight: block.Height,
-					TxIndex:     int32(index),
-					TxType:      "",                        // We'll update this after determining the type
-					Address:     pgtype.Text{Valid: false}, // We'll update this after determining the address
-					CreatedAt:   pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-				}
-
-				switch signedTx := tx.Transaction.Transaction.(type) {
+			switch signedTx := tx.Transaction.Transaction.(type) {
 			case *corev1.SignedTransaction_Plays:
-				e.logger.Debug("processing tx",
-					zap.String("type", "play"),
-					zap.String("hash", tx.Hash),
-					zap.Int("play_count", len(signedTx.Plays.GetPlays())),
-				)
 				txCtx := &processors.TxContext{
-						Block:     block,
-						TxHash:    tx.Hash,
-						TxIndex:   index,
-						BlockTime: pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-						InsertTx:  insertTxParams,
-					}
-					res, err := processors.Play().Process(context.Background(), tx.Transaction, txCtx, e.db)
-					if err != nil {
-						e.logger.Error("error processing plays", zap.Error(err))
-					} else {
-						insertTxParams = res.InsertTx
-					}
+					Block:     block,
+					TxHash:    tx.Hash,
+					TxIndex:   index,
+					BlockTime: pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+					InsertTx:  insertTxParams,
+				}
+				res, err := processors.Play().Process(context.Background(), tx.Transaction, txCtx, e.db)
+				if err != nil {
+					e.logger.Error("error processing plays", zap.Error(err))
+				} else {
+					insertTxParams = res.InsertTx
+				}
 
 			case *corev1.SignedTransaction_ManageEntity:
 				me := signedTx.ManageEntity
-				e.logger.Debug("processing tx",
-					zap.String("type", "manage_entity"),
-					zap.String("hash", tx.Hash),
-					zap.String("entity_type", me.GetEntityType()),
-					zap.String("action", me.GetAction()),
-					zap.Int64("entity_id", me.GetEntityId()),
-					zap.Int64("user_id", me.GetUserId()),
-					zap.String("signer", me.GetSigner()),
-				)
+				emTxCount++
 
 				txCtx := &processors.TxContext{
 					Block:     block,
@@ -383,12 +367,15 @@ func (e *Indexer) indexBlocks() error {
 				txStart := time.Now()
 				emParams := em.NewParams(me, emBlock, block.Timestamp.AsTime(), block.Hash, tx.Hash, e.pool, e.logger)
 				if dErr := e.dispatcher.Dispatch(context.Background(), emParams); dErr != nil {
+					emRejectCount++
 					if em.IsValidationError(dErr) {
-						e.logger.Debug("entity manager validation failed",
-							zap.String("hash", tx.Hash),
+						e.logger.Warn("entity manager validation rejected",
 							zap.String("entity_type", me.GetEntityType()),
 							zap.String("action", me.GetAction()),
+							zap.Int64("entity_id", me.GetEntityId()),
+							zap.Int64("user_id", me.GetUserId()),
 							zap.String("reason", dErr.Error()),
+							zap.String("hash", tx.Hash),
 						)
 					} else {
 						e.logger.Error("entity manager dispatch error", zap.Error(dErr))
@@ -620,26 +607,33 @@ func (e *Indexer) indexBlocks() error {
 					}
 				}
 
-				err = e.db.InsertTransaction(context.Background(), insertTxParams)
-				if err != nil {
-					e.logger.Error("error inserting transaction", zap.String("tx", tx.Hash), zap.Error(err))
-					return
-				}
-
-			}(block, index)
+			err = e.db.InsertTransaction(context.Background(), insertTxParams)
+			if err != nil {
+				e.logger.Error("error inserting transaction", zap.String("tx", tx.Hash), zap.Error(err))
+			}
 		}
 
-		wg.Wait()
-
+		blockElapsed := time.Since(blockStart)
 		blocksProcessed++
 		txsProcessed += int64(len(block.Transactions))
 
 		if time.Since(lastLog) >= 10*time.Second {
+			elapsed := time.Since(indexStart).Seconds()
+			blocksPerSec := float64(blocksProcessed) / elapsed
+			txsPerSec := float64(txsProcessed) / elapsed
+			blocksBehind := pb.CurrentHeight - block.Height
+
 			e.logger.Info("indexing progress",
 				zap.Int64("block", block.Height),
+				zap.Int64("blocks_behind", blocksBehind),
 				zap.Int("txs_in_block", len(block.Transactions)),
-				zap.Int64("blocks_since_start", blocksProcessed),
-				zap.Int64("txs_since_start", txsProcessed),
+				zap.Int("em_txs", emTxCount),
+				zap.Int("em_rejected", emRejectCount),
+				zap.Duration("block_time", blockElapsed),
+				zap.Float64("blocks_per_sec", blocksPerSec),
+				zap.Float64("txs_per_sec", txsPerSec),
+				zap.Int64("total_blocks", blocksProcessed),
+				zap.Int64("total_txs", txsProcessed),
 				zap.Int("prefetch_buffered", len(pf.C())),
 			)
 			lastLog = time.Now()
