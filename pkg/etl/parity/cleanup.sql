@@ -30,6 +30,6 @@ DELETE FROM etl_transactions WHERE block_height > :chain_height;
 DELETE FROM etl_manage_entities WHERE block_height > :chain_height;
 DELETE FROM etl_addresses WHERE first_seen_block_height > :chain_height;
 
--- Block tracking
+-- Block tracking (keep at least one core_indexed_blocks row so em_block offset survives)
 DELETE FROM blocks WHERE number > :em_block;
-DELETE FROM core_indexed_blocks WHERE height > :chain_height AND chain_id = 'audius-mainnet-alpha-beta';
+DELETE FROM core_indexed_blocks WHERE height > :chain_height;
