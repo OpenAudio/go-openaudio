@@ -5,53 +5,20 @@
 package db
 
 import (
-	"database/sql/driver"
-	"fmt"
-
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type EtlProofStatus string
-
-const (
-	EtlProofStatusUnresolved EtlProofStatus = "unresolved"
-	EtlProofStatusPass       EtlProofStatus = "pass"
-	EtlProofStatusFail       EtlProofStatus = "fail"
-)
-
-func (e *EtlProofStatus) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = EtlProofStatus(s)
-	case string:
-		*e = EtlProofStatus(s)
-	default:
-		return fmt.Errorf("unsupported scan type for EtlProofStatus: %T", src)
-	}
-	return nil
-}
-
-type NullEtlProofStatus struct {
-	EtlProofStatus EtlProofStatus `json:"etl_proof_status"`
-	Valid          bool           `json:"valid"` // Valid is true if EtlProofStatus is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullEtlProofStatus) Scan(value interface{}) error {
-	if value == nil {
-		ns.EtlProofStatus, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.EtlProofStatus.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullEtlProofStatus) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.EtlProofStatus), nil
+type AssociatedWallet struct {
+	ID          int32            `json:"id"`
+	UserID      int32            `json:"user_id"`
+	Wallet      string           `json:"wallet"`
+	Chain       string           `json:"chain"`
+	IsCurrent   bool             `json:"is_current"`
+	IsDelete    bool             `json:"is_delete"`
+	Blockhash   string           `json:"blockhash"`
+	Blocknumber pgtype.Int4      `json:"blocknumber"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
 }
 
 type Block struct {
@@ -59,6 +26,90 @@ type Block struct {
 	Parenthash pgtype.Text `json:"parenthash"`
 	IsCurrent  pgtype.Bool `json:"is_current"`
 	Number     pgtype.Int4 `json:"number"`
+}
+
+type Comment struct {
+	CommentID       int32            `json:"comment_id"`
+	Text            string           `json:"text"`
+	UserID          int32            `json:"user_id"`
+	EntityID        int32            `json:"entity_id"`
+	EntityType      string           `json:"entity_type"`
+	TrackTimestampS pgtype.Int4      `json:"track_timestamp_s"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
+	IsDelete        pgtype.Bool      `json:"is_delete"`
+	IsVisible       pgtype.Bool      `json:"is_visible"`
+	IsEdited        pgtype.Bool      `json:"is_edited"`
+	Txhash          string           `json:"txhash"`
+	Blockhash       string           `json:"blockhash"`
+	Blocknumber     int32            `json:"blocknumber"`
+}
+
+type CommentMention struct {
+	CommentID   int32            `json:"comment_id"`
+	UserID      int32            `json:"user_id"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+	IsDelete    bool             `json:"is_delete"`
+	Txhash      string           `json:"txhash"`
+	Blockhash   string           `json:"blockhash"`
+	Blocknumber int32            `json:"blocknumber"`
+}
+
+type CommentNotificationSetting struct {
+	UserID     int32            `json:"user_id"`
+	EntityID   int32            `json:"entity_id"`
+	EntityType string           `json:"entity_type"`
+	IsMuted    pgtype.Bool      `json:"is_muted"`
+	CreatedAt  pgtype.Timestamp `json:"created_at"`
+	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
+}
+
+type CommentReaction struct {
+	CommentID   int32            `json:"comment_id"`
+	UserID      int32            `json:"user_id"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+	IsDelete    bool             `json:"is_delete"`
+	Txhash      string           `json:"txhash"`
+	Blockhash   string           `json:"blockhash"`
+	Blocknumber int32            `json:"blocknumber"`
+}
+
+type CommentReport struct {
+	CommentID   int32            `json:"comment_id"`
+	UserID      int32            `json:"user_id"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+	IsDelete    bool             `json:"is_delete"`
+	Txhash      string           `json:"txhash"`
+	Blockhash   string           `json:"blockhash"`
+	Blocknumber int32            `json:"blocknumber"`
+}
+
+type CommentThread struct {
+	ParentCommentID int32 `json:"parent_comment_id"`
+	CommentID       int32 `json:"comment_id"`
+}
+
+type CoreIndexedBlock struct {
+	Blockhash  string      `json:"blockhash"`
+	Parenthash pgtype.Text `json:"parenthash"`
+	ChainID    string      `json:"chain_id"`
+	Height     int32       `json:"height"`
+	PlaysSlot  pgtype.Int4 `json:"plays_slot"`
+	EmBlock    pgtype.Int4 `json:"em_block"`
+}
+
+type DashboardWalletUser struct {
+	Wallet      string           `json:"wallet"`
+	UserID      int32            `json:"user_id"`
+	IsDelete    bool             `json:"is_delete"`
+	Txhash      string           `json:"txhash"`
+	Blockhash   string           `json:"blockhash"`
+	Blocknumber pgtype.Int4      `json:"blocknumber"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
 }
 
 type DeveloperApp struct {
@@ -75,6 +126,22 @@ type DeveloperApp struct {
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 	Description      pgtype.Text      `json:"description"`
 	ImageUrl         pgtype.Text      `json:"image_url"`
+}
+
+type EmailAccess struct {
+	EmailOwnerUserID int32            `json:"email_owner_user_id"`
+	ReceivingUserID  int32            `json:"receiving_user_id"`
+	GrantorUserID    int32            `json:"grantor_user_id"`
+	EncryptedKey     string           `json:"encrypted_key"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+}
+
+type EncryptedEmail struct {
+	EmailOwnerUserID int32            `json:"email_owner_user_id"`
+	EncryptedEmail   string           `json:"encrypted_email"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
 type EtlAddress struct {
@@ -154,7 +221,7 @@ type EtlStorageProof struct {
 	Cid             string           `json:"cid"`
 	ProofSignature  []byte           `json:"proof_signature"`
 	Proof           []byte           `json:"proof"`
-	Status          EtlProofStatus   `json:"status"`
+	Status          interface{}      `json:"status"`
 	BlockHeight     int64            `json:"block_height"`
 	TxHash          string           `json:"tx_hash"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
@@ -225,6 +292,22 @@ type EtlValidatorRegistration struct {
 	TxHash       string `json:"tx_hash"`
 }
 
+type Event struct {
+	EventID     int32            `json:"event_id"`
+	EventType   string           `json:"event_type"`
+	UserID      int32            `json:"user_id"`
+	EntityType  pgtype.Text      `json:"entity_type"`
+	EntityID    pgtype.Int4      `json:"entity_id"`
+	EndDate     pgtype.Timestamp `json:"end_date"`
+	EventData   []byte           `json:"event_data"`
+	IsDeleted   bool             `json:"is_deleted"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+	Txhash      string           `json:"txhash"`
+	Blockhash   string           `json:"blockhash"`
+	Blocknumber pgtype.Int4      `json:"blocknumber"`
+}
+
 type Follow struct {
 	Blockhash      pgtype.Text      `json:"blockhash"`
 	Blocknumber    pgtype.Int4      `json:"blocknumber"`
@@ -250,6 +333,17 @@ type Grant struct {
 	Txhash         string           `json:"txhash"`
 }
 
+type MutedUser struct {
+	MutedUserID int32            `json:"muted_user_id"`
+	UserID      int32            `json:"user_id"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+	IsDelete    pgtype.Bool      `json:"is_delete"`
+	Txhash      string           `json:"txhash"`
+	Blockhash   string           `json:"blockhash"`
+	Blocknumber int32            `json:"blocknumber"`
+}
+
 type MvDashboardTransactionStat struct {
 	Transactions24h         int64 `json:"transactions_24h"`
 	TransactionsPrevious24h int64 `json:"transactions_previous_24h"`
@@ -261,6 +355,27 @@ type MvDashboardTransactionStat struct {
 type MvDashboardTransactionType struct {
 	TxType           string `json:"tx_type"`
 	TransactionCount int64  `json:"transaction_count"`
+}
+
+type Notification struct {
+	ID          int32            `json:"id"`
+	Specifier   string           `json:"specifier"`
+	GroupID     string           `json:"group_id"`
+	Type        string           `json:"type"`
+	Slot        pgtype.Int4      `json:"slot"`
+	Blocknumber pgtype.Int4      `json:"blocknumber"`
+	Timestamp   pgtype.Timestamp `json:"timestamp"`
+	Data        []byte           `json:"data"`
+	UserIds     []int32          `json:"user_ids"`
+	TypeV2      pgtype.Text      `json:"type_v2"`
+}
+
+type NotificationSeen struct {
+	UserID      int32            `json:"user_id"`
+	SeenAt      pgtype.Timestamp `json:"seen_at"`
+	Blocknumber pgtype.Int4      `json:"blocknumber"`
+	Blockhash   pgtype.Text      `json:"blockhash"`
+	Txhash      pgtype.Text      `json:"txhash"`
 }
 
 type Playlist struct {
@@ -309,6 +424,26 @@ type PlaylistRoute struct {
 	Txhash      string `json:"txhash"`
 }
 
+type PlaylistSeen struct {
+	IsCurrent   bool             `json:"is_current"`
+	UserID      int32            `json:"user_id"`
+	PlaylistID  int32            `json:"playlist_id"`
+	SeenAt      pgtype.Timestamp `json:"seen_at"`
+	Blocknumber pgtype.Int4      `json:"blocknumber"`
+	Blockhash   pgtype.Text      `json:"blockhash"`
+	Txhash      pgtype.Text      `json:"txhash"`
+}
+
+type Reaction struct {
+	ID            int32            `json:"id"`
+	ReactionValue int32            `json:"reaction_value"`
+	SenderWallet  string           `json:"sender_wallet"`
+	ReactionType  string           `json:"reaction_type"`
+	ReactedTo     string           `json:"reacted_to"`
+	Timestamp     pgtype.Timestamp `json:"timestamp"`
+	Blocknumber   int32            `json:"blocknumber"`
+}
+
 type Repost struct {
 	Blockhash        pgtype.Text      `json:"blockhash"`
 	Blocknumber      pgtype.Int4      `json:"blocknumber"`
@@ -335,6 +470,28 @@ type Safe struct {
 	Txhash         string           `json:"txhash"`
 	Slot           pgtype.Int4      `json:"slot"`
 	IsSaveOfRepost bool             `json:"is_save_of_repost"`
+}
+
+type Share struct {
+	Blockhash   pgtype.Text      `json:"blockhash"`
+	Blocknumber pgtype.Int4      `json:"blocknumber"`
+	UserID      int32            `json:"user_id"`
+	ShareItemID int32            `json:"share_item_id"`
+	ShareType   interface{}      `json:"share_type"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	Txhash      string           `json:"txhash"`
+	Slot        pgtype.Int4      `json:"slot"`
+}
+
+type Subscription struct {
+	Blockhash    pgtype.Text      `json:"blockhash"`
+	Blocknumber  pgtype.Int4      `json:"blocknumber"`
+	SubscriberID int32            `json:"subscriber_id"`
+	UserID       int32            `json:"user_id"`
+	IsCurrent    bool             `json:"is_current"`
+	IsDelete     bool             `json:"is_delete"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	Txhash       string           `json:"txhash"`
 }
 
 type Track struct {
@@ -412,6 +569,18 @@ type Track struct {
 	NoAiUse                            pgtype.Bool      `json:"no_ai_use"`
 }
 
+type TrackDownload struct {
+	Txhash        string           `json:"txhash"`
+	Blocknumber   pgtype.Int4      `json:"blocknumber"`
+	ParentTrackID int32            `json:"parent_track_id"`
+	TrackID       int32            `json:"track_id"`
+	UserID        int32            `json:"user_id"`
+	City          pgtype.Text      `json:"city"`
+	Region        pgtype.Text      `json:"region"`
+	Country       pgtype.Text      `json:"country"`
+	CreatedAt     pgtype.Timestamp `json:"created_at"`
+}
+
 type TrackRoute struct {
 	Slug        string `json:"slug"`
 	TitleSlug   string `json:"title_slug"`
@@ -458,4 +627,20 @@ type User struct {
 	IsAvailable            bool             `json:"is_available"`
 	IsStorageV2            bool             `json:"is_storage_v2"`
 	AllowAiAttribution     bool             `json:"allow_ai_attribution"`
+	TwitterHandle          pgtype.Text      `json:"twitter_handle"`
+	InstagramHandle        pgtype.Text      `json:"instagram_handle"`
+	TiktokHandle           pgtype.Text      `json:"tiktok_handle"`
+	VerifiedWithTwitter    pgtype.Bool      `json:"verified_with_twitter"`
+	VerifiedWithInstagram  pgtype.Bool      `json:"verified_with_instagram"`
+	VerifiedWithTiktok     pgtype.Bool      `json:"verified_with_tiktok"`
+}
+
+type UserTip struct {
+	Slot           int32            `json:"slot"`
+	Signature      string           `json:"signature"`
+	SenderUserID   int32            `json:"sender_user_id"`
+	ReceiverUserID int32            `json:"receiver_user_id"`
+	Amount         int64            `json:"amount"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
 }

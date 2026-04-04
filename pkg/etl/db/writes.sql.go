@@ -284,7 +284,7 @@ type InsertStorageProofParams struct {
 	Cid             string           `json:"cid"`
 	ProofSignature  []byte           `json:"proof_signature"`
 	Proof           []byte           `json:"proof"`
-	Status          EtlProofStatus   `json:"status"`
+	Status          interface{}      `json:"status"`
 	BlockHeight     int64            `json:"block_height"`
 	TxHash          string           `json:"tx_hash"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
