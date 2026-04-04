@@ -133,34 +133,57 @@ var compareTables = []compareTable{
 
 // Compare connects to both the ETL clone and production DB and compares
 // rows created after the snapshot boundary.
+//
+// The boundary is determined automatically: the first em_block written by
+// the Go ETL is the lowest em_block in core_indexed_blocks that was NOT
+// present in the original snapshot (i.e., the first non-NULL em_block
+// written by us). Everything at or above that boundary is Go-written data.
 func Compare(ctx context.Context, etlPool *pgxpool.Pool, prodPool *pgxpool.Pool) error {
-	// Read snapshot metadata from ETL db
-	var maxBlock int64
+	// Find the em_block boundary: the last blocks.number that existed before
+	// the Go ETL started writing. The Go ETL writes sequential em_block values
+	// starting from MAX(blocks.number)+1 at startup, so we find the minimum
+	// em_block in core_indexed_blocks written by Go (non-NULL, from ETL run).
+	//
+	// Approach: find the first core_indexed_blocks row (by height) that has a
+	// non-NULL em_block AND was written by the Go ETL. The Go ETL writes
+	// em_block for every block with EM txs. The boundary is em_block - 1.
+	//
+	// Simpler: the Go ETL's em_blocks start right after the pre-existing max blocks.number.
+	// So the boundary is the max blocks.number that has is_current=false and was NOT
+	// written by Go. We can detect this by finding the gap: the last blocks.number
+	// where a parenthash exists (Python sets parenthash, Go sets it to NULL).
+	//
+	// Simplest: just find the min em_block from core_indexed_blocks where em_block IS NOT NULL
+	// and height > max height where em_block IS NULL. That's the first Go-written em_block.
+	var emBlockBoundary int64
 	err := etlPool.QueryRow(ctx,
-		`SELECT value_int FROM _parity_meta WHERE key = 'max_block'`).Scan(&maxBlock)
+		`SELECT COALESCE(MIN(em_block) - 1, 0)
+		 FROM core_indexed_blocks
+		 WHERE em_block IS NOT NULL
+		   AND height > (
+		     SELECT COALESCE(MAX(height), 0)
+		     FROM core_indexed_blocks
+		     WHERE em_block IS NULL
+		   )`).Scan(&emBlockBoundary)
 	if err != nil {
-		return fmt.Errorf("reading snapshot max_block (did you run 'snapshot' first?): %w", err)
+		return fmt.Errorf("determining em_block boundary: %w", err)
 	}
 
-	// Determine em_block boundary
-	var emBlockBoundary int64
-	err = etlPool.QueryRow(ctx,
-		`SELECT COALESCE(em_block, $1) FROM core_indexed_blocks
-		 WHERE height = $1 ORDER BY height DESC LIMIT 1`, maxBlock).Scan(&emBlockBoundary)
-	if err != nil {
-		var offset int64
-		err2 := etlPool.QueryRow(ctx,
-			`SELECT em_block - height FROM core_indexed_blocks ORDER BY height DESC LIMIT 1`).Scan(&offset)
-		if err2 != nil {
-			emBlockBoundary = maxBlock
-		} else {
-			emBlockBoundary = maxBlock + offset
-		}
-	}
+	// Also get the chain height range for context.
+	var minGoHeight, maxGoHeight int64
+	_ = etlPool.QueryRow(ctx,
+		`SELECT MIN(height), MAX(height)
+		 FROM core_indexed_blocks
+		 WHERE em_block IS NOT NULL
+		   AND height > (
+		     SELECT COALESCE(MAX(height), 0)
+		     FROM core_indexed_blocks
+		     WHERE em_block IS NULL
+		   )`).Scan(&minGoHeight, &maxGoHeight)
 
 	fmt.Printf("=== ETL vs Production Comparison ===\n")
-	fmt.Printf("Snapshot chain height: %d\n", maxBlock)
-	fmt.Printf("em_block boundary:     %d\n", emBlockBoundary)
+	fmt.Printf("em_block boundary:     %d (rows with blocknumber > this are Go-written)\n", emBlockBoundary)
+	fmt.Printf("Go ETL chain heights:  %d .. %d\n", minGoHeight, maxGoHeight)
 	fmt.Println()
 
 	var totals struct {

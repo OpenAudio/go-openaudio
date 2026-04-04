@@ -169,41 +169,17 @@ func (e *Indexer) Run() error {
 		e.logger.Error("error initializing chain ID", zap.Error(err))
 	}
 
-	// Look up em_block offset from core_indexed_blocks so we can continue
-	// the blocks.number sequence (em_block = chain_height + offset).
-	//
-	// First try: use an existing row where em_block is populated (from a prior Go ETL run).
-	// Fallback: compute from MAX(blocks.number) - MAX(core_indexed_blocks.height).
-	// This works because on a prod clone, blocks.number is the Python-assigned sequence
-	// and core_indexed_blocks.height is the chain height — their difference is the offset.
+	// Initialize lastEmBlock: the last assigned blocks.number value.
+	// Python increments this sequentially, only for blocks with EM transactions.
+	// We continue the sequence from wherever the production DB left off.
 	err = e.pool.QueryRow(context.Background(),
-		`SELECT em_block - height FROM core_indexed_blocks
-		 WHERE chain_id = $1 AND em_block IS NOT NULL
-		 ORDER BY height DESC LIMIT 1`, e.ChainID).Scan(&e.emBlockOffset)
+		"SELECT COALESCE(MAX(number), 0) FROM blocks").Scan(&e.lastEmBlock)
 	if err != nil {
-		// No em_block data yet — compute offset from production tables.
-		var maxBlockNumber, maxChainHeight *int64
-		_ = e.pool.QueryRow(context.Background(),
-			"SELECT MAX(number) FROM blocks").Scan(&maxBlockNumber)
-		_ = e.pool.QueryRow(context.Background(),
-			"SELECT MAX(height) FROM core_indexed_blocks WHERE chain_id = $1",
-			e.ChainID).Scan(&maxChainHeight)
-
-		if maxBlockNumber != nil && maxChainHeight != nil {
-			e.emBlockOffset = *maxBlockNumber - *maxChainHeight
-			e.logger.Info("em_block offset computed from production data",
-				zap.Int64("max_blocks_number", *maxBlockNumber),
-				zap.Int64("max_chain_height", *maxChainHeight),
-				zap.Int64("offset", e.emBlockOffset),
-			)
-		} else {
-			e.logger.Warn("could not determine em_block offset, using chain height directly")
-			e.emBlockOffset = 0
-		}
+		e.logger.Warn("could not determine last em_block, starting from 0", zap.Error(err))
+		e.lastEmBlock = 0
 	} else {
-		e.logger.Info("em_block offset determined from core_indexed_blocks",
-			zap.String("chain_id", e.ChainID),
-			zap.Int64("offset", e.emBlockOffset),
+		e.logger.Info("last em_block (blocks.number) determined",
+			zap.Int64("last_em_block", e.lastEmBlock),
 		)
 	}
 
@@ -332,26 +308,60 @@ func (e *Indexer) indexBlocks() error {
 			continue
 		}
 
-		// Compute em_block number (continues the blocks.number sequence).
-		emBlock := block.Height + e.emBlockOffset
+		// Check if this block has any ManageEntity transactions.
+		// Python only assigns a blocks.number (em_block) for blocks with EM txs.
+		hasEM := false
+		for _, tx := range block.Transactions {
+			if _, ok := tx.Transaction.Transaction.(*corev1.SignedTransaction_ManageEntity); ok {
+				hasEM = true
+				break
+			}
+		}
 
-		// Insert into blocks table so FK constraints are satisfied.
-		_, err = e.pool.Exec(context.Background(),
-			`INSERT INTO blocks (blockhash, parenthash, is_current, number)
-			 VALUES ($1, NULL, false, $2)
-			 ON CONFLICT (number) DO NOTHING`,
-			block.Hash, emBlock)
-		if err != nil {
-			e.logger.Error("error inserting into blocks table", zap.Int64("height", block.Height), zap.Error(err))
-			continue
+		// Assign em_block only for blocks with EM transactions (matching Python behavior).
+		// Python: marks previous block is_current=false, then inserts new block is_current=true.
+		// The blocks table has a unique partial index on (is_current) WHERE is_current IS TRUE,
+		// so we must update the previous block BEFORE inserting the new one.
+		var emBlock int64
+		if hasEM {
+			e.lastEmBlock++
+			emBlock = e.lastEmBlock
+
+			// Get the previous current block's hash (for parenthash).
+			var prevHash *string
+			_ = e.pool.QueryRow(context.Background(),
+				"SELECT blockhash FROM blocks WHERE is_current = true").Scan(&prevHash)
+
+			// Mark previous block as not current.
+			_, err = e.pool.Exec(context.Background(),
+				"UPDATE blocks SET is_current = false WHERE is_current = true")
+			if err != nil {
+				e.logger.Error("error marking previous block not current", zap.Error(err))
+			}
+
+			// Insert new block as current.
+			_, err = e.pool.Exec(context.Background(),
+				`INSERT INTO blocks (blockhash, parenthash, number, is_current)
+				 VALUES ($1, $2, $3, true)`,
+				block.Hash, prevHash, emBlock)
+			if err != nil {
+				e.logger.Error("error inserting into blocks table", zap.Int64("height", block.Height), zap.Error(err))
+				e.lastEmBlock-- // roll back
+				continue
+			}
 		}
 
 		// Update core_indexed_blocks to track what we've indexed.
+		// em_block is NULL for blocks without EM transactions (matching Python).
+		var emBlockParam any
+		if hasEM {
+			emBlockParam = emBlock
+		}
 		_, err = e.pool.Exec(context.Background(),
 			`INSERT INTO core_indexed_blocks (blockhash, chain_id, height, em_block)
 			 VALUES ($1, $2, $3, $4)
 			 ON CONFLICT (chain_id, height) DO UPDATE SET em_block = $4, blockhash = $1`,
-			block.Hash, e.ChainID, block.Height, emBlock)
+			block.Hash, e.ChainID, block.Height, emBlockParam)
 		if err != nil {
 			e.logger.Error("error inserting into core_indexed_blocks", zap.Int64("height", block.Height), zap.Error(err))
 		}
