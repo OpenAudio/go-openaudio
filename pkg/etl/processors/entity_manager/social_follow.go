@@ -106,7 +106,6 @@ func insertFollow(ctx context.Context, params *Params, isDelete bool) error {
 			subscriber_id, user_id, is_current, is_delete,
 			created_at, txhash, blocknumber
 		) VALUES ($1, $2, true, $3, $4, $5, $6)
-		ON CONFLICT DO NOTHING
 	`, params.UserID, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }
