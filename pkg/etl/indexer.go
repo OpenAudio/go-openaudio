@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
+
 	"time"
 
 	"connectrpc.com/connect"
@@ -70,6 +70,84 @@ func (e *Indexer) Run() error {
 	e.dispatcher = em.NewDispatcher(e.logger)
 	if e.config.IsDataTypeEnabled(em.EntityTypeUser) {
 		e.dispatcher.Register(em.UserCreate())
+		e.dispatcher.Register(em.UserUpdate())
+		e.dispatcher.Register(em.UserVerify())
+		e.dispatcher.Register(em.MuteUser())
+		e.dispatcher.Register(em.UnmuteUser())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeTrack) {
+		e.dispatcher.Register(em.TrackCreate())
+		e.dispatcher.Register(em.TrackUpdate())
+		e.dispatcher.Register(em.TrackDelete())
+		e.dispatcher.Register(em.TrackDownload())
+		e.dispatcher.Register(em.TrackMute())
+		e.dispatcher.Register(em.TrackUnmute())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypePlaylist) {
+		e.dispatcher.Register(em.PlaylistCreate())
+		e.dispatcher.Register(em.PlaylistUpdate())
+		e.dispatcher.Register(em.PlaylistDelete())
+	}
+	// Social features use wildcard entity type — actual txs carry the entity
+	// being acted on (User for Follow, Track/Playlist for Save/Repost).
+	e.dispatcher.Register(em.Follow())
+	e.dispatcher.Register(em.Unfollow())
+	e.dispatcher.Register(em.Save())
+	e.dispatcher.Register(em.Unsave())
+	e.dispatcher.Register(em.Repost())
+	e.dispatcher.Register(em.Unrepost())
+	e.dispatcher.Register(em.Subscribe())
+	e.dispatcher.Register(em.Unsubscribe())
+	e.dispatcher.Register(em.Share())
+	if e.config.IsDataTypeEnabled(em.EntityTypeDeveloperApp) {
+		e.dispatcher.Register(em.DeveloperAppCreate())
+		e.dispatcher.Register(em.DeveloperAppUpdate())
+		e.dispatcher.Register(em.DeveloperAppDelete())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeGrant) {
+		e.dispatcher.Register(em.GrantCreate())
+		e.dispatcher.Register(em.GrantDelete())
+		e.dispatcher.Register(em.GrantApprove())
+		e.dispatcher.Register(em.GrantReject())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeEvent) {
+		e.dispatcher.Register(em.EventCreate())
+		e.dispatcher.Register(em.EventUpdate())
+		e.dispatcher.Register(em.EventDelete())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeAssociatedWallet) {
+		e.dispatcher.Register(em.AssociatedWalletCreate())
+		e.dispatcher.Register(em.AssociatedWalletDelete())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeTip) {
+		e.dispatcher.Register(em.TipReaction())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeDashboardWalletUser) {
+		e.dispatcher.Register(em.DashboardWalletCreate())
+		e.dispatcher.Register(em.DashboardWalletDelete())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeEncryptedEmail) {
+		e.dispatcher.Register(em.EncryptedEmailCreate())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeEmailAccess) {
+		e.dispatcher.Register(em.EmailAccessUpdate())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeNotification) {
+		e.dispatcher.Register(em.NotificationCreate())
+		e.dispatcher.Register(em.NotificationView())
+		e.dispatcher.Register(em.PlaylistSeenView())
+	}
+	if e.config.IsDataTypeEnabled(em.EntityTypeComment) {
+		e.dispatcher.Register(em.CommentCreate())
+		e.dispatcher.Register(em.CommentUpdate())
+		e.dispatcher.Register(em.CommentDelete())
+		e.dispatcher.Register(em.CommentReact())
+		e.dispatcher.Register(em.CommentUnreact())
+		e.dispatcher.Register(em.CommentPin())
+		e.dispatcher.Register(em.CommentUnpin())
+		e.dispatcher.Register(em.CommentReport())
+		e.dispatcher.Register(em.CommentMute())
+		e.dispatcher.Register(em.CommentUnmute())
 	}
 
 	if e.dispatcher.HandlerCount() > 0 {
@@ -89,6 +167,20 @@ func (e *Indexer) Run() error {
 	err = e.InitializeChainID(context.Background())
 	if err != nil {
 		e.logger.Error("error initializing chain ID", zap.Error(err))
+	}
+
+	// Initialize lastEmBlock: the last assigned blocks.number value.
+	// Python increments this sequentially, only for blocks with EM transactions.
+	// We continue the sequence from wherever the production DB left off.
+	err = e.pool.QueryRow(context.Background(),
+		"SELECT COALESCE(MAX(number), 0) FROM blocks").Scan(&e.lastEmBlock)
+	if err != nil {
+		e.logger.Warn("could not determine last em_block, starting from 0", zap.Error(err))
+		e.lastEmBlock = 0
+	} else {
+		e.logger.Info("last em_block (blocks.number) determined",
+			zap.Int64("last_em_block", e.lastEmBlock),
+		)
 	}
 
 	e.logger.Info("starting etl service")
@@ -157,99 +249,155 @@ func (e *Indexer) awaitReadiness() error {
 }
 
 func (e *Indexer) indexBlocks() error {
-	for {
-		// Get the latest indexed block height
-		latestHeight, err := e.db.GetLatestIndexedBlock(context.Background())
-		if err != nil {
-			// If no records exist, start from block 1
-			if errors.Is(err, pgx.ErrNoRows) {
-				if e.startingBlockHeight > 0 {
-					// Start from block 1 (nextHeight will be 1)
-					latestHeight = e.startingBlockHeight - 1
-				} else {
-					// Start from block 1 (nextHeight will be 1)
-					latestHeight = 0
-				}
+	var blocksProcessed int64
+	var txsProcessed int64
+	indexStart := time.Now()
+	lastLog := time.Now()
+
+	// Determine start height (chain height, not blocks.number).
+	// 1. Check etl_blocks (our own tracking table) for the last chain height we indexed.
+	// 2. If empty and --start was given, use that.
+	// 3. Otherwise, fall back to core_indexed_blocks which tracks what chain height
+	//    the production indexer last processed.
+	latestHeight, err := e.db.GetLatestIndexedBlock(context.Background())
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			if e.startingBlockHeight > 0 {
+				latestHeight = e.startingBlockHeight - 1
 			} else {
-				e.logger.Error("error getting latest indexed block", zap.Error(err))
+				var maxHeight *int64
+				err = e.pool.QueryRow(context.Background(),
+					"SELECT MAX(height) FROM core_indexed_blocks WHERE chain_id = $1",
+					e.ChainID).Scan(&maxHeight)
+				if err != nil || maxHeight == nil {
+					latestHeight = 0
+				} else {
+					latestHeight = *maxHeight
+					e.logger.Info("resuming from core_indexed_blocks",
+						zap.String("chain_id", e.ChainID),
+						zap.Int64("last_chain_height", latestHeight),
+					)
+				}
+			}
+		} else {
+			return fmt.Errorf("error getting latest indexed block: %w", err)
+		}
+	}
+	startHeight := latestHeight + 1
+
+	// Start prefetcher goroutine.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pf := newPrefetcher(e.core, e.logger)
+	go pf.run(ctx, startHeight)
+
+	e.logger.Info("prefetcher started", zap.Int64("start_height", startHeight), zap.Int("buffer_size", pf.bufSz))
+
+	for pb := range pf.C() {
+		block := pb.Block
+
+		// Insert into etl_blocks
+		err := e.db.InsertBlock(context.Background(), db.InsertBlockParams{
+			ProposerAddress: block.Proposer,
+			BlockHeight:     block.Height,
+			BlockTime:       pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+		})
+		if err != nil {
+			e.logger.Error("error inserting block", zap.Int64("height", block.Height), zap.Error(err))
+			continue
+		}
+
+		// Check if this block has any ManageEntity transactions.
+		// Python only assigns a blocks.number (em_block) for blocks with EM txs.
+		hasEM := false
+		for _, tx := range block.Transactions {
+			if _, ok := tx.Transaction.Transaction.(*corev1.SignedTransaction_ManageEntity); ok {
+				hasEM = true
+				break
+			}
+		}
+
+		// Assign em_block only for blocks with EM transactions (matching Python behavior).
+		// Python: marks previous block is_current=false, then inserts new block is_current=true.
+		// The blocks table has a unique partial index on (is_current) WHERE is_current IS TRUE,
+		// so we must update the previous block BEFORE inserting the new one.
+		var emBlock int64
+		if hasEM {
+			e.lastEmBlock++
+			emBlock = e.lastEmBlock
+
+			// Get the previous current block's hash (for parenthash).
+			var prevHash *string
+			_ = e.pool.QueryRow(context.Background(),
+				"SELECT blockhash FROM blocks WHERE is_current = true").Scan(&prevHash)
+
+			// Mark previous block as not current.
+			_, err = e.pool.Exec(context.Background(),
+				"UPDATE blocks SET is_current = false WHERE is_current = true")
+			if err != nil {
+				e.logger.Error("error marking previous block not current", zap.Error(err))
+			}
+
+			// Insert new block as current.
+			_, err = e.pool.Exec(context.Background(),
+				`INSERT INTO blocks (blockhash, parenthash, number, is_current)
+				 VALUES ($1, $2, $3, true)`,
+				block.Hash, prevHash, emBlock)
+			if err != nil {
+				e.logger.Error("error inserting into blocks table", zap.Int64("height", block.Height), zap.Error(err))
+				e.lastEmBlock-- // roll back
 				continue
 			}
 		}
 
-		// Get the next block
-		nextHeight := latestHeight + 1
-		block, err := e.core.GetBlock(context.Background(), connect.NewRequest(&corev1.GetBlockRequest{
-			Height: nextHeight,
-		}))
+		// Update core_indexed_blocks to track what we've indexed.
+		// em_block is NULL for blocks without EM transactions (matching Python).
+		var emBlockParam any
+		if hasEM {
+			emBlockParam = emBlock
+		}
+		_, err = e.pool.Exec(context.Background(),
+			`INSERT INTO core_indexed_blocks (blockhash, chain_id, height, em_block)
+			 VALUES ($1, $2, $3, $4)
+			 ON CONFLICT (chain_id, height) DO UPDATE SET em_block = $4, blockhash = $1`,
+			block.Hash, e.ChainID, block.Height, emBlockParam)
 		if err != nil {
-			e.logger.Error("error getting block", zap.Int64("height", nextHeight), zap.Error(err))
-			continue
+			e.logger.Error("error inserting into core_indexed_blocks", zap.Int64("height", block.Height), zap.Error(err))
 		}
 
-		if block.Msg.Block.Height < 0 {
-			continue
-		}
+		var emTxCount, emRejectCount int
+		blockStart := time.Now()
 
-		// Insert block first
-		err = e.db.InsertBlock(context.Background(), db.InsertBlockParams{
-			ProposerAddress: block.Msg.Block.Proposer,
-			BlockHeight:     block.Msg.Block.Height,
-			BlockTime:       pgtype.Timestamp{Time: block.Msg.Block.Timestamp.AsTime(), Valid: true},
-		})
-		if err != nil {
-			e.logger.Error("error inserting block", zap.Int64("height", nextHeight), zap.Error(err))
-			continue
-		}
+		for index, tx := range block.Transactions {
+			insertTxParams := db.InsertTransactionParams{
+				TxHash:      tx.Hash,
+				BlockHeight: block.Height,
+				TxIndex:     int32(index),
+				TxType:      "",
+				Address:     pgtype.Text{Valid: false},
+				CreatedAt:   pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+			}
 
-		var wg sync.WaitGroup
-		wg.Add(len(block.Msg.Block.Transactions))
-
-		for index := range block.Msg.Block.Transactions {
-			go func(block *corev1.Block, index int) {
-				defer wg.Done()
-
-				tx := block.Transactions[index]
-				insertTxParams := db.InsertTransactionParams{
-					TxHash:      tx.Hash,
-					BlockHeight: block.Height,
-					TxIndex:     int32(index),
-					TxType:      "",                        // We'll update this after determining the type
-					Address:     pgtype.Text{Valid: false}, // We'll update this after determining the address
-					CreatedAt:   pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-				}
-
-				switch signedTx := tx.Transaction.Transaction.(type) {
+			switch signedTx := tx.Transaction.Transaction.(type) {
 			case *corev1.SignedTransaction_Plays:
-				e.logger.Debug("processing tx",
-					zap.String("type", "play"),
-					zap.String("hash", tx.Hash),
-					zap.Int("play_count", len(signedTx.Plays.GetPlays())),
-				)
 				txCtx := &processors.TxContext{
-						Block:     block,
-						TxHash:    tx.Hash,
-						TxIndex:   index,
-						BlockTime: pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-						InsertTx:  insertTxParams,
-					}
-					res, err := processors.Play().Process(context.Background(), tx.Transaction, txCtx, e.db)
-					if err != nil {
-						e.logger.Error("error processing plays", zap.Error(err))
-					} else {
-						insertTxParams = res.InsertTx
-					}
+					Block:     block,
+					TxHash:    tx.Hash,
+					TxIndex:   index,
+					BlockTime: pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+					InsertTx:  insertTxParams,
+				}
+				res, err := processors.Play().Process(context.Background(), tx.Transaction, txCtx, e.db)
+				if err != nil {
+					e.logger.Error("error processing plays", zap.Error(err))
+				} else {
+					insertTxParams = res.InsertTx
+				}
 
 			case *corev1.SignedTransaction_ManageEntity:
 				me := signedTx.ManageEntity
-				e.logger.Debug("processing tx",
-					zap.String("type", "manage_entity"),
-					zap.String("hash", tx.Hash),
-					zap.String("entity_type", me.GetEntityType()),
-					zap.String("action", me.GetAction()),
-					zap.Int64("entity_id", me.GetEntityId()),
-					zap.Int64("user_id", me.GetUserId()),
-					zap.String("signer", me.GetSigner()),
-				)
+				emTxCount++
 
 				txCtx := &processors.TxContext{
 					Block:     block,
@@ -266,14 +414,17 @@ func (e *Indexer) indexBlocks() error {
 				}
 
 				txStart := time.Now()
-				emParams := em.NewParams(me, block.Height, block.Timestamp.AsTime(), tx.Hash, e.pool, e.logger)
+				emParams := em.NewParams(me, emBlock, block.Timestamp.AsTime(), block.Hash, tx.Hash, e.pool, e.logger)
 				if dErr := e.dispatcher.Dispatch(context.Background(), emParams); dErr != nil {
+					emRejectCount++
 					if em.IsValidationError(dErr) {
-						e.logger.Debug("entity manager validation failed",
-							zap.String("hash", tx.Hash),
+						e.logger.Warn("entity manager validation rejected",
 							zap.String("entity_type", me.GetEntityType()),
 							zap.String("action", me.GetAction()),
+							zap.Int64("entity_id", me.GetEntityId()),
+							zap.Int64("user_id", me.GetUserId()),
 							zap.String("reason", dErr.Error()),
+							zap.String("hash", tx.Hash),
 						)
 					} else {
 						e.logger.Error("entity manager dispatch error", zap.Error(dErr))
@@ -505,24 +656,47 @@ func (e *Indexer) indexBlocks() error {
 					}
 				}
 
-				err = e.db.InsertTransaction(context.Background(), insertTxParams)
-				if err != nil {
-					e.logger.Error("error inserting transaction", zap.String("tx", tx.Hash), zap.Error(err))
-					return
-				}
-
-			}(block.Msg.Block, index)
+			err = e.db.InsertTransaction(context.Background(), insertTxParams)
+			if err != nil {
+				e.logger.Error("error inserting transaction", zap.String("tx", tx.Hash), zap.Error(err))
+			}
 		}
 
-		wg.Wait()
+		blockElapsed := time.Since(blockStart)
+		blocksProcessed++
+		txsProcessed += int64(len(block.Transactions))
+
+		if time.Since(lastLog) >= 10*time.Second {
+			elapsed := time.Since(indexStart).Seconds()
+			blocksPerSec := float64(blocksProcessed) / elapsed
+			txsPerSec := float64(txsProcessed) / elapsed
+			blocksBehind := pb.CurrentHeight - block.Height
+
+			e.logger.Info("indexing progress",
+				zap.Int64("block", block.Height),
+				zap.Int64("blocks_behind", blocksBehind),
+				zap.Int("txs_in_block", len(block.Transactions)),
+				zap.Int("em_txs", emTxCount),
+				zap.Int("em_rejected", emRejectCount),
+				zap.Duration("block_time", blockElapsed),
+				zap.Float64("blocks_per_sec", blocksPerSec),
+				zap.Float64("txs_per_sec", txsPerSec),
+				zap.Int64("total_blocks", blocksProcessed),
+				zap.Int64("total_txs", txsProcessed),
+				zap.Int("prefetch_buffered", len(pf.C())),
+			)
+			lastLog = time.Now()
+		}
 
 		// TODO: use pgnotify to publish block and play events to pubsub
 
-		if e.endingBlockHeight > 0 && block.Msg.Block.Height >= e.endingBlockHeight {
+		if e.endingBlockHeight > 0 && block.Height >= e.endingBlockHeight {
 			e.logger.Info("ending block height reached, stopping etl service")
 			return nil
 		}
 	}
+
+	return nil
 }
 
 func (e *Indexer) startPgNotifyListener(ctx context.Context) error {

@@ -89,6 +89,19 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 	ctx := c.Request().Context()
 	cid := c.Param("cid")
 	key := cidutil.ShardCID(cid)
+
+	// DB health check on every request including cache hits.
+	// A node with a broken DB cannot check delist status, so peers
+	// must not redirect users here regardless of blob presence.
+	dbHealthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == ""
+	if !dbHealthy {
+		return c.String(500, "database connection issue")
+	}
+
+	if attr, ok := ss.attrCache.Get(key); ok {
+		return c.JSON(200, attr)
+	}
+
 	attr, err := ss.bucket.Attributes(ctx, key)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
@@ -98,12 +111,7 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 		return err
 	}
 
-	// since this is called before redirecting, make sure this node can actually serve the blob (it needs to check db for delisted status)
-	dbHealthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == ""
-	if !dbHealthy {
-		return c.String(500, "database connection issue")
-	}
-
+	ss.attrCache.Set(key, attr, imcache.WithExpiration(60*time.Second))
 	return c.JSON(200, attr)
 }
 

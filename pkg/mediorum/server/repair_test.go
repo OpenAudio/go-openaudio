@@ -162,3 +162,68 @@ func TestRepair(t *testing.T) {
 	}
 
 }
+
+func TestBuildRepairPresenceIndexIncludesLocalBlob(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+
+	data := []byte("presence-index-local-blob")
+	cid, err := cidutil.ComputeFileCID(bytes.NewReader(data))
+	assert.NoError(t, err)
+	assert.NoError(t, ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data)))
+
+	index, err := ss.buildRepairPresenceIndex(ctx)
+	assert.NoError(t, err)
+
+	entry, ok := index.Lookup(cidutil.ShardCID(cid))
+	assert.True(t, ok)
+	assert.Equal(t, int64(len(data)), entry.Size)
+}
+
+func TestRepairCidWithPresenceIndexUsesListedState(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+
+	data := []byte("presence-index-repair-path")
+	cid, err := cidutil.ComputeFileCID(bytes.NewReader(data))
+	assert.NoError(t, err)
+	assert.NoError(t, ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data)))
+
+	index, err := ss.buildRepairPresenceIndex(ctx)
+	assert.NoError(t, err)
+
+	key := cidutil.ShardCID(cid)
+	ss.knownPresent.Remove(key)
+	assert.NoError(t, ss.dropFromMyBucket(cid))
+
+	tracker := &RepairTracker{
+		StartedAt:   time.Now(),
+		CleanupMode: false,
+		Counters:    map[string]int{},
+	}
+
+	assert.NoError(t, ss.repairCid(ctx, cid, []string{ss.Config.Self.Host}, tracker, index))
+	assert.Equal(t, 1, tracker.Counters["already_have"])
+	assert.Equal(t, 1, tracker.Counters["qm_cids_list_index_hit"])
+	assert.Equal(t, 0, tracker.Counters["qm_cids_list_index_miss"])
+}
+
+func TestRepairCidUsesKnownPresentOutsideCleanup(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+
+	data := []byte("known-present-fast-path")
+	cid, err := cidutil.ComputeFileCID(bytes.NewReader(data))
+	assert.NoError(t, err)
+	assert.NoError(t, ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data)))
+
+	tracker := &RepairTracker{
+		StartedAt:   time.Now(),
+		CleanupMode: false,
+		Counters:    map[string]int{},
+	}
+
+	assert.NoError(t, ss.repairCid(ctx, cid, []string{ss.Config.Self.Host}, tracker, nil))
+	assert.Equal(t, 1, tracker.Counters["already_have"])
+	assert.Equal(t, 1, tracker.Counters["repair_known_present"])
+}

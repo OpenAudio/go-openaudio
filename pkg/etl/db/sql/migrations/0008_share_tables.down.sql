@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS shares;
+DROP TYPE IF EXISTS sharetype;

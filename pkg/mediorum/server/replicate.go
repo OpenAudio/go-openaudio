@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
+	"github.com/erni27/imcache"
 	"go.uber.org/zap"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
@@ -105,12 +106,17 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 		return err
 	}
 
-	_, err = io.Copy(w, file)
+	n, err := io.Copy(w, file)
 	if err != nil {
 		return err
 	}
 
-	return w.Close()
+	if err := w.Close(); err != nil {
+		return err
+	}
+
+	ss.knownPresent.Set(key, n, imcache.WithNoExpiration())
+	return nil
 }
 
 func (ss *MediorumServer) dropFromMyBucket(fileName string) error {
@@ -122,6 +128,8 @@ func (ss *MediorumServer) dropFromMyBucket(fileName string) error {
 	err := ss.bucket.Delete(ctx, key)
 	if err != nil {
 		logger.Error("failed to delete", zap.Error(err))
+	} else {
+		ss.knownPresent.Remove(key)
 	}
 
 	return nil

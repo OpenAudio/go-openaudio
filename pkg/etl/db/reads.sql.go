@@ -1612,10 +1612,10 @@ where height = $3 and address = $4
 `
 
 type UpdateStorageProofStatusParams struct {
-	Status  EtlProofStatus `json:"status"`
-	Proof   []byte         `json:"proof"`
-	Height  int64          `json:"height"`
-	Address string         `json:"address"`
+	Status  interface{} `json:"status"`
+	Proof   []byte      `json:"proof"`
+	Height  int64       `json:"height"`
+	Address string      `json:"address"`
 }
 
 func (q *Queries) UpdateStorageProofStatus(ctx context.Context, arg UpdateStorageProofStatusParams) error {

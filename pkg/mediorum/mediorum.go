@@ -146,6 +146,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 			logger.Warn("failed to parse OPENAUDIO_REPAIR_INTERVAL, using default 1h", zap.String("value", ri), zap.Error(err))
 		}
 	}
+	repairQmCidsUseListIndex := os.Getenv("OPENAUDIO_REPAIR_QM_CIDS_USE_LIST_INDEX") == "true"
 
 	config := server.MediorumConfig{
 		Self: registrar.Peer{
@@ -172,8 +173,9 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		DiscoveryListensEndpoints: discoveryListensEndpoints(),
 		LogLevel:                  getenvWithDefault("OPENAUDIO_LOG_LEVEL", "info"),
 		DeadHosts:                 []string{},
-		RepairEnabled:             repairEnabled,
-		RepairInterval:            repairInterval,
+		RepairEnabled:            repairEnabled,
+		RepairInterval:           repairInterval,
+		RepairQmCidsUseListIndex: repairQmCidsUseListIndex,
 		BlobStorageStreaming:      os.Getenv("OPENAUDIO_BLOB_STORAGE_STREAMING") == "true",
 	}
 

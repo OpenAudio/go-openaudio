@@ -71,9 +71,9 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT users_pkey PRIMARY KEY (txhash, user_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_blocknumber ON users (blocknumber);
-CREATE INDEX IF NOT EXISTS idx_users_wallet ON users (wallet);
-CREATE INDEX IF NOT EXISTS idx_users_handle_lc ON users (handle_lc);
+CREATE INDEX IF NOT EXISTS users_new_blocknumber_idx ON users (blocknumber);
+CREATE INDEX IF NOT EXISTS users_new_wallet_idx ON users (wallet);
+CREATE INDEX IF NOT EXISTS users_new_handle_lc_idx ON users (handle_lc);
 
 -- tracks
 
@@ -153,10 +153,10 @@ CREATE TABLE IF NOT EXISTS tracks (
   CONSTRAINT tracks_pkey PRIMARY KEY (txhash, track_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_tracks_blocknumber ON tracks (blocknumber);
-CREATE INDEX IF NOT EXISTS idx_tracks_owner_id ON tracks (owner_id);
-CREATE INDEX IF NOT EXISTS idx_tracks_created_at ON tracks (created_at);
-CREATE INDEX IF NOT EXISTS idx_tracks_track_cid ON tracks (track_cid, is_delete);
+CREATE INDEX IF NOT EXISTS tracks_blocknumber_idx ON tracks (blocknumber);
+CREATE INDEX IF NOT EXISTS track_owner_id_idx ON tracks (owner_id);
+CREATE INDEX IF NOT EXISTS track_created_at_idx ON tracks (created_at);
+CREATE INDEX IF NOT EXISTS tracks_track_cid_idx ON tracks (track_cid, is_delete);
 
 -- playlists
 
@@ -195,9 +195,9 @@ CREATE TABLE IF NOT EXISTS playlists (
   CONSTRAINT playlists_pkey PRIMARY KEY (txhash, playlist_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_playlists_blocknumber ON playlists (blocknumber);
-CREATE INDEX IF NOT EXISTS idx_playlists_playlist_owner_id ON playlists (playlist_owner_id);
-CREATE INDEX IF NOT EXISTS idx_playlists_created_at ON playlists (created_at);
+CREATE INDEX IF NOT EXISTS playlists_blocknumber_idx ON playlists (blocknumber);
+CREATE INDEX IF NOT EXISTS playlist_owner_idx ON playlists (playlist_owner_id);
+CREATE INDEX IF NOT EXISTS playlist_created_at_idx ON playlists (created_at);
 
 -- follows
 
@@ -214,9 +214,9 @@ CREATE TABLE IF NOT EXISTS follows (
   CONSTRAINT follows_pkey PRIMARY KEY (followee_user_id, txhash, follower_user_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_follows_blocknumber ON follows (blocknumber);
-CREATE INDEX IF NOT EXISTS idx_follows_follower_user_id ON follows (follower_user_id);
-CREATE INDEX IF NOT EXISTS idx_follows_followee_user_id ON follows (followee_user_id);
+CREATE INDEX IF NOT EXISTS follows_blocknumber_idx ON follows (blocknumber);
+CREATE INDEX IF NOT EXISTS ix_follows_follower_user_id ON follows (follower_user_id);
+CREATE INDEX IF NOT EXISTS ix_follows_followee_user_id ON follows (followee_user_id);
 CREATE INDEX IF NOT EXISTS follows_inbound_idx ON follows (followee_user_id, follower_user_id, is_delete);
 
 -- saves
@@ -236,9 +236,9 @@ CREATE TABLE IF NOT EXISTS saves (
   CONSTRAINT saves_pkey PRIMARY KEY (save_item_id, user_id, txhash, save_type)
 );
 
-CREATE INDEX IF NOT EXISTS idx_saves_blocknumber ON saves (blocknumber);
-CREATE INDEX IF NOT EXISTS save_item_id_idx ON saves (save_item_id, save_type, user_id, is_delete);
-CREATE INDEX IF NOT EXISTS save_user_id_idx ON saves (user_id, save_type, save_item_id, is_delete);
+CREATE INDEX IF NOT EXISTS saves_new_blocknumber_idx ON saves (blocknumber);
+CREATE INDEX IF NOT EXISTS saves_item_idx ON saves (save_item_id, save_type, user_id, is_delete);
+CREATE INDEX IF NOT EXISTS saves_user_idx ON saves (user_id, save_type, save_item_id, is_delete);
 
 -- reposts
 
@@ -257,10 +257,10 @@ CREATE TABLE IF NOT EXISTS reposts (
   CONSTRAINT reposts_pkey PRIMARY KEY (txhash, user_id, repost_item_id, repost_type)
 );
 
-CREATE INDEX IF NOT EXISTS idx_reposts_blocknumber ON reposts (blocknumber);
-CREATE INDEX IF NOT EXISTS idx_reposts_created_at ON reposts (created_at);
-CREATE INDEX IF NOT EXISTS repost_item_id_idx ON reposts (repost_item_id, repost_type, user_id, is_delete);
-CREATE INDEX IF NOT EXISTS repost_user_id_idx ON reposts (user_id, repost_type, repost_item_id, created_at, is_delete);
+CREATE INDEX IF NOT EXISTS reposts_new_blocknumber_idx ON reposts (blocknumber);
+CREATE INDEX IF NOT EXISTS reposts_new_created_at_idx ON reposts (created_at);
+CREATE INDEX IF NOT EXISTS reposts_item_idx ON reposts (repost_item_id, repost_type, user_id, is_delete);
+CREATE INDEX IF NOT EXISTS reposts_user_idx ON reposts (user_id, repost_type, repost_item_id, created_at, is_delete);
 
 -- track_routes
 
