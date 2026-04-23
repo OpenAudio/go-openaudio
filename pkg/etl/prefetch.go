@@ -2,7 +2,6 @@ package etl
 
 import (
 	"context"
-	"sort"
 	"time"
 
 	"connectrpc.com/connect"
@@ -119,17 +118,12 @@ func (p *prefetcher) run(ctx context.Context, startHeight int64) {
 		// Reset backoff on success.
 		backoff = 0
 
-		// Sort heights so we send blocks in order.
-		sortedHeights := make([]int64, 0, len(blocks))
-		for h := range blocks {
-			sortedHeights = append(sortedHeights, h)
-		}
-		sort.Slice(sortedHeights, func(i, j int) bool { return sortedHeights[i] < sortedHeights[j] })
-
-		for _, h := range sortedHeights {
-			b := blocks[h]
-			if b == nil {
-				continue
+		// Emit only a contiguous run starting from the requested height.
+		// Stop at the first gap to avoid skipping blocks.
+		for _, h := range heights {
+			b, ok := blocks[h]
+			if !ok || b == nil {
+				break
 			}
 			select {
 			case <-ctx.Done():
@@ -139,10 +133,8 @@ func (p *prefetcher) run(ctx context.Context, startHeight int64) {
 				CurrentHeight: resp.Msg.CurrentHeight,
 			}:
 			}
+			height = h + 1
 		}
-
-		// Advance height past the last block we got.
-		height = sortedHeights[len(sortedHeights)-1] + 1
 	}
 }
 

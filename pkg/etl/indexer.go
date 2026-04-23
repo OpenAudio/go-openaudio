@@ -339,11 +339,10 @@ func (e *Indexer) indexBlocks() error {
 				e.logger.Error("error marking previous block not current", zap.Error(err))
 			}
 
-			// Insert new block as current (or update if blockhash already exists from snapshot).
+			// Insert new block as current.
 			_, err = e.pool.Exec(context.Background(),
 				`INSERT INTO blocks (blockhash, parenthash, number, is_current)
-				 VALUES ($1, $2, $3, true)
-				 ON CONFLICT (blockhash) DO UPDATE SET parenthash = $2, number = $3, is_current = true`,
+				 VALUES ($1, $2, $3, true)`,
 				block.Hash, prevHash, emBlock)
 			if err != nil {
 				e.logger.Error("error inserting into blocks table", zap.Int64("height", block.Height), zap.Error(err))
