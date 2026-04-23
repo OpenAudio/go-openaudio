@@ -29,6 +29,7 @@ func main() {
 	dbURL := flag.String("db", "", "Postgres connection string (e.g. postgres://localhost:5432/etl_local?sslmode=disable)")
 	startBlock := flag.Int64("start", 0, "Starting block height (0 = resume from last indexed)")
 	endBlock := flag.Int64("end", 0, "Ending block height (0 = run forever)")
+	skipMigrations := flag.Bool("skip-migrations", false, "Skip running database migrations (use with pre-existing schemas)")
 	verbose := flag.Bool("v", false, "Enable debug logging")
 	flag.Parse()
 
@@ -69,6 +70,9 @@ func main() {
 	}
 	if *endBlock > 0 {
 		indexer.SetEndingBlockHeight(*endBlock)
+	}
+	if *skipMigrations {
+		indexer.SetSkipMigrations(true)
 	}
 
 	logger.Info("starting ETL local runner",

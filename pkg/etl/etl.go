@@ -16,6 +16,7 @@ import (
 type Indexer struct {
 	dbURL               string
 	runDownMigrations   bool
+	skipMigrations      bool
 	startingBlockHeight int64
 	endingBlockHeight   int64
 	checkReadiness      bool
@@ -63,6 +64,10 @@ func (e *Indexer) SetEndingBlockHeight(endingBlockHeight int64) {
 
 func (e *Indexer) SetRunDownMigrations(runDownMigrations bool) {
 	e.runDownMigrations = runDownMigrations
+}
+
+func (e *Indexer) SetSkipMigrations(skip bool) {
+	e.skipMigrations = skip
 }
 
 func (e *Indexer) SetCheckReadiness(checkReadiness bool) {
