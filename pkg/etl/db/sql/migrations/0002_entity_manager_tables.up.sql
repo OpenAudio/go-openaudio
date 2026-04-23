@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS users (
   is_available boolean NOT NULL DEFAULT true,
   is_storage_v2 boolean NOT NULL DEFAULT false,
   allow_ai_attribution boolean NOT NULL DEFAULT false,
-  CONSTRAINT users_pkey PRIMARY KEY (txhash, user_id)
+  CONSTRAINT users_pkey PRIMARY KEY (user_id, txhash)
 );
 
 CREATE INDEX IF NOT EXISTS users_new_blocknumber_idx ON users (blocknumber);
@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS tracks (
   cover_original_artist character varying,
   is_owned_by_user boolean NOT NULL DEFAULT false,
   no_ai_use boolean DEFAULT false,
-  CONSTRAINT tracks_pkey PRIMARY KEY (txhash, track_id)
+  CONSTRAINT tracks_pkey PRIMARY KEY (track_id, txhash)
 );
 
 CREATE INDEX IF NOT EXISTS tracks_blocknumber_idx ON tracks (blocknumber);
@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS playlists (
   parental_warning_type character varying,
   is_scheduled_release boolean NOT NULL DEFAULT false,
   release_date timestamp without time zone,
-  CONSTRAINT playlists_pkey PRIMARY KEY (txhash, playlist_id)
+  CONSTRAINT playlists_pkey PRIMARY KEY (playlist_id, txhash)
 );
 
 CREATE INDEX IF NOT EXISTS playlists_blocknumber_idx ON playlists (blocknumber);
@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS follows (
   created_at timestamp without time zone NOT NULL,
   txhash character varying NOT NULL DEFAULT '',
   slot integer,
-  CONSTRAINT follows_pkey PRIMARY KEY (followee_user_id, txhash, follower_user_id)
+  CONSTRAINT follows_pkey PRIMARY KEY (follower_user_id, followee_user_id, txhash)
 );
 
 CREATE INDEX IF NOT EXISTS follows_blocknumber_idx ON follows (blocknumber);
@@ -233,7 +233,7 @@ CREATE TABLE IF NOT EXISTS saves (
   txhash character varying NOT NULL DEFAULT '',
   slot integer,
   is_save_of_repost boolean NOT NULL DEFAULT false,
-  CONSTRAINT saves_pkey PRIMARY KEY (save_item_id, user_id, txhash, save_type)
+  CONSTRAINT saves_pkey PRIMARY KEY (user_id, save_item_id, save_type, txhash)
 );
 
 CREATE INDEX IF NOT EXISTS saves_new_blocknumber_idx ON saves (blocknumber);
@@ -254,7 +254,7 @@ CREATE TABLE IF NOT EXISTS reposts (
   txhash character varying NOT NULL DEFAULT '',
   slot integer,
   is_repost_of_repost boolean NOT NULL DEFAULT false,
-  CONSTRAINT reposts_pkey PRIMARY KEY (txhash, user_id, repost_item_id, repost_type)
+  CONSTRAINT reposts_pkey PRIMARY KEY (user_id, repost_item_id, repost_type, txhash)
 );
 
 CREATE INDEX IF NOT EXISTS reposts_new_blocknumber_idx ON reposts (blocknumber);
@@ -312,7 +312,7 @@ CREATE TABLE IF NOT EXISTS developer_apps (
   updated_at timestamp without time zone NOT NULL,
   description character varying(255),
   image_url character varying,
-  CONSTRAINT developer_apps_pkey PRIMARY KEY (txhash, address),
+  CONSTRAINT developer_apps_pkey PRIMARY KEY (address, txhash),
   CONSTRAINT unique_developer_apps_address UNIQUE (address)
 );
 
@@ -329,7 +329,7 @@ CREATE TABLE IF NOT EXISTS grants (
   updated_at timestamp without time zone NOT NULL,
   created_at timestamp without time zone NOT NULL,
   txhash character varying NOT NULL,
-  CONSTRAINT grants_pkey PRIMARY KEY (user_id, txhash, grantee_address)
+  CONSTRAINT grants_pkey PRIMARY KEY (grantee_address, user_id, txhash)
 );
 
 CREATE INDEX IF NOT EXISTS idx_grants_user_id ON grants (user_id);
