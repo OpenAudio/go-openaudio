@@ -330,19 +330,20 @@ func (e *Indexer) indexBlocks() error {
 			// Get the previous current block's hash (for parenthash).
 			var prevHash *string
 			_ = e.pool.QueryRow(context.Background(),
-				"SELECT blockhash FROM blocks WHERE is_current = true").Scan(&prevHash)
+				"SELECT blockhash FROM blocks WHERE is_current IS TRUE").Scan(&prevHash)
 
 			// Mark previous block as not current.
 			_, err = e.pool.Exec(context.Background(),
-				"UPDATE blocks SET is_current = false WHERE is_current = true")
+				"UPDATE blocks SET is_current = false WHERE is_current IS TRUE")
 			if err != nil {
 				e.logger.Error("error marking previous block not current", zap.Error(err))
 			}
 
-			// Insert new block as current.
+			// Insert new block as current (or update if blockhash already exists from snapshot).
 			_, err = e.pool.Exec(context.Background(),
 				`INSERT INTO blocks (blockhash, parenthash, number, is_current)
-				 VALUES ($1, $2, $3, true)`,
+				 VALUES ($1, $2, $3, true)
+				 ON CONFLICT (blockhash) DO UPDATE SET parenthash = $2, number = $3, is_current = true`,
 				block.Hash, prevHash, emBlock)
 			if err != nil {
 				e.logger.Error("error inserting into blocks table", zap.Int64("height", block.Height), zap.Error(err))

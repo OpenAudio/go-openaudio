@@ -2,6 +2,7 @@ package etl
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"connectrpc.com/connect"
@@ -26,6 +27,9 @@ type prefetcher struct {
 }
 
 const defaultPrefetchBuffer = 50
+
+// batchSize is how many blocks to request per GetBlocks RPC call.
+const batchSize = 50
 
 func newPrefetcher(core corev1connect.CoreServiceClient, logger *zap.Logger) *prefetcher {
 	return &prefetcher{
@@ -59,20 +63,51 @@ func (p *prefetcher) run(ctx context.Context, startHeight int64) {
 			}
 		}
 
-		resp, err := p.core.GetBlock(ctx, connect.NewRequest(&corev1.GetBlockRequest{
-			Height: height,
+		// Build a batch of heights to fetch.
+		heights := make([]int64, batchSize)
+		for i := range heights {
+			heights[i] = height + int64(i)
+		}
+
+		resp, err := p.core.GetBlocks(ctx, connect.NewRequest(&corev1.GetBlocksRequest{
+			Height: heights,
 		}))
 		if err != nil {
-			// Block not yet available — wait briefly and retry.
-			if backoff == 0 {
-				backoff = 200 * time.Millisecond
-			} else if backoff < 2*time.Second {
-				backoff *= 2
+			// Batch not available — fall back to single-block fetch for the first height.
+			singleResp, singleErr := p.core.GetBlock(ctx, connect.NewRequest(&corev1.GetBlockRequest{
+				Height: height,
+			}))
+			if singleErr != nil {
+				if backoff == 0 {
+					backoff = 200 * time.Millisecond
+				} else if backoff < 2*time.Second {
+					backoff *= 2
+				}
+				continue
 			}
+			if singleResp.Msg.Block == nil || singleResp.Msg.Block.Height < 0 {
+				if backoff == 0 {
+					backoff = 200 * time.Millisecond
+				} else if backoff < 2*time.Second {
+					backoff *= 2
+				}
+				continue
+			}
+			backoff = 0
+			select {
+			case <-ctx.Done():
+				return
+			case p.ch <- prefetchedBlock{
+				Block:         singleResp.Msg.Block,
+				CurrentHeight: singleResp.Msg.CurrentHeight,
+			}:
+			}
+			height++
 			continue
 		}
 
-		if resp.Msg.Block == nil || resp.Msg.Block.Height < 0 {
+		blocks := resp.Msg.Blocks
+		if len(blocks) == 0 {
 			if backoff == 0 {
 				backoff = 200 * time.Millisecond
 			} else if backoff < 2*time.Second {
@@ -84,16 +119,30 @@ func (p *prefetcher) run(ctx context.Context, startHeight int64) {
 		// Reset backoff on success.
 		backoff = 0
 
-		select {
-		case <-ctx.Done():
-			return
-		case p.ch <- prefetchedBlock{
-			Block:         resp.Msg.Block,
-			CurrentHeight: resp.Msg.CurrentHeight,
-		}:
+		// Sort heights so we send blocks in order.
+		sortedHeights := make([]int64, 0, len(blocks))
+		for h := range blocks {
+			sortedHeights = append(sortedHeights, h)
+		}
+		sort.Slice(sortedHeights, func(i, j int) bool { return sortedHeights[i] < sortedHeights[j] })
+
+		for _, h := range sortedHeights {
+			b := blocks[h]
+			if b == nil {
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case p.ch <- prefetchedBlock{
+				Block:         b,
+				CurrentHeight: resp.Msg.CurrentHeight,
+			}:
+			}
 		}
 
-		height++
+		// Advance height past the last block we got.
+		height = sortedHeights[len(sortedHeights)-1] + 1
 	}
 }
 
