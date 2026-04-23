@@ -28,6 +28,7 @@ func main() {
 	rpcURL := flag.String("rpc", "", "Core RPC endpoint (e.g. https://core.audius.co)")
 	dbURL := flag.String("db", "", "Postgres connection string (e.g. postgres://localhost:5432/etl_local?sslmode=disable)")
 	startBlock := flag.Int64("start", 0, "Starting block height (0 = resume from last indexed)")
+	skipMigrations := flag.Bool("skip-migrations", false, "Skip running database migrations (use with pre-existing schemas)")
 	verbose := flag.Bool("v", false, "Enable debug logging")
 	flag.Parse()
 
@@ -65,6 +66,9 @@ func main() {
 	})
 	if *startBlock > 0 {
 		indexer.SetStartingBlockHeight(*startBlock)
+	}
+	if *skipMigrations {
+		indexer.SetSkipMigrations(true)
 	}
 
 	logger.Info("starting ETL local runner",

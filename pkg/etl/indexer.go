@@ -48,9 +48,11 @@ func (e *Indexer) Run() error {
 		return fmt.Errorf("dbUrl environment variable not set")
 	}
 
-	err := db.RunMigrations(e.logger, dbUrl, e.runDownMigrations)
-	if err != nil {
-		return fmt.Errorf("error running migrations: %v", err)
+	if !e.skipMigrations {
+		err := db.RunMigrations(e.logger, dbUrl, e.runDownMigrations)
+		if err != nil {
+			return fmt.Errorf("error running migrations: %v", err)
+		}
 	}
 
 	pgConfig, err := pgxpool.ParseConfig(dbUrl)
