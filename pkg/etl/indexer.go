@@ -327,26 +327,45 @@ func (e *Indexer) indexBlocks() error {
 			e.lastEmBlock++
 			emBlock = e.lastEmBlock
 
+			// Swap is_current in a transaction so we never leave the table
+			// without a current block if the INSERT fails.
+			tx, err := e.pool.Begin(context.Background())
+			if err != nil {
+				e.logger.Error("error starting blocks transaction", zap.Error(err))
+				e.lastEmBlock--
+				continue
+			}
+
 			// Get the previous current block's hash (for parenthash).
 			var prevHash *string
-			_ = e.pool.QueryRow(context.Background(),
+			_ = tx.QueryRow(context.Background(),
 				"SELECT blockhash FROM blocks WHERE is_current IS TRUE").Scan(&prevHash)
 
 			// Mark previous block as not current.
-			_, err = e.pool.Exec(context.Background(),
+			_, err = tx.Exec(context.Background(),
 				"UPDATE blocks SET is_current = false WHERE is_current IS TRUE")
 			if err != nil {
 				e.logger.Error("error marking previous block not current", zap.Error(err))
+				tx.Rollback(context.Background())
+				e.lastEmBlock--
+				continue
 			}
 
 			// Insert new block as current.
-			_, err = e.pool.Exec(context.Background(),
+			_, err = tx.Exec(context.Background(),
 				`INSERT INTO blocks (blockhash, parenthash, number, is_current)
 				 VALUES ($1, $2, $3, true)`,
 				block.Hash, prevHash, emBlock)
 			if err != nil {
 				e.logger.Error("error inserting into blocks table", zap.Int64("height", block.Height), zap.Error(err))
-				e.lastEmBlock-- // roll back
+				tx.Rollback(context.Background())
+				e.lastEmBlock--
+				continue
+			}
+
+			if err := tx.Commit(context.Background()); err != nil {
+				e.logger.Error("error committing blocks transaction", zap.Error(err))
+				e.lastEmBlock--
 				continue
 			}
 		}
