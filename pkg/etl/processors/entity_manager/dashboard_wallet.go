@@ -23,7 +23,7 @@ func (h *dashboardWalletCreateHandler) Handle(ctx context.Context, params *Param
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO dashboard_wallet_users (wallet, user_id, is_delete, txhash, blocknumber, created_at, updated_at)
 		VALUES ($1, $2, false, $3, $4, $5, $5)
-		ON CONFLICT (wallet) DO UPDATE SET user_id = $2, is_delete = false, txhash = $3, blocknumber = $4, updated_at = $5
+		ON CONFLICT (user_id, wallet) DO UPDATE SET is_delete = false, txhash = $3, blocknumber = $4, updated_at = $5
 	`, wallet, params.UserID, params.TxHash, params.BlockNumber, params.BlockTime)
 	return err
 }
