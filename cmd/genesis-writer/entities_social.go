@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
@@ -37,7 +38,10 @@ func (w *Writer) writeFollows(ctx context.Context) error {
 			return f, err
 		},
 		func(ctx context.Context, f follow) error {
-			metaJSON, _ := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(f.createdAt)})
+			metaJSON, err := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(f.createdAt)})
+			if err != nil {
+				return fmt.Errorf("marshal follow metadata: %w", err)
+			}
 			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
 				UserId:     f.follower,
 				EntityType: "User",
@@ -69,7 +73,10 @@ func (w *Writer) writeSaves(ctx context.Context) error {
 			return s, err
 		},
 		func(ctx context.Context, s save) error {
-			metaJSON, _ := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(s.createdAt)})
+			metaJSON, err := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(s.createdAt)})
+			if err != nil {
+				return fmt.Errorf("marshal save metadata: %w", err)
+			}
 			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
 				UserId:     s.userID,
 				EntityType: saveRepostEntityType(s.saveType),
@@ -101,7 +108,10 @@ func (w *Writer) writeReposts(ctx context.Context) error {
 			return r, err
 		},
 		func(ctx context.Context, r repost) error {
-			metaJSON, _ := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(r.createdAt)})
+			metaJSON, err := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(r.createdAt)})
+			if err != nil {
+				return fmt.Errorf("marshal repost metadata: %w", err)
+			}
 			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
 				UserId:     r.userID,
 				EntityType: saveRepostEntityType(r.repostType),
@@ -133,7 +143,10 @@ func (w *Writer) writeShares(ctx context.Context) error {
 			return s, err
 		},
 		func(ctx context.Context, s share) error {
-			metaJSON, _ := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(s.createdAt)})
+			metaJSON, err := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(s.createdAt)})
+			if err != nil {
+				return fmt.Errorf("marshal share metadata: %w", err)
+			}
 			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
 				UserId:     s.userID,
 				EntityType: saveRepostEntityType(s.shareType),
@@ -164,7 +177,10 @@ func (w *Writer) writeSubscriptions(ctx context.Context) error {
 			return s, err
 		},
 		func(ctx context.Context, s subscription) error {
-			metaJSON, _ := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(s.createdAt)})
+			metaJSON, err := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(s.createdAt)})
+			if err != nil {
+				return fmt.Errorf("marshal subscription metadata: %w", err)
+			}
 			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
 				UserId:     s.subscriberID,
 				EntityType: "User",
@@ -195,7 +211,10 @@ func (w *Writer) writeMutedUsers(ctx context.Context) error {
 			return m, err
 		},
 		func(ctx context.Context, m mutedUser) error {
-			metaJSON, _ := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(m.createdAt)})
+			metaJSON, err := json.Marshal(createdAtMeta{CreatedAt: fmtCreatedAt(m.createdAt)})
+			if err != nil {
+				return fmt.Errorf("marshal muted user metadata: %w", err)
+			}
 			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
 				UserId:     m.userID,
 				EntityType: "MutedUser",

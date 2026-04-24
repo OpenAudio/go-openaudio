@@ -112,7 +112,10 @@ func (w *Writer) writeCommentReactions(ctx context.Context) error {
 			return cr, err
 		},
 		func(ctx context.Context, cr commentReaction) error {
-			metaJSON, _ := json.Marshal(createdAtMeta{CreatedAt: cr.createdAt.Format(time.RFC3339)})
+			metaJSON, err := json.Marshal(createdAtMeta{CreatedAt: cr.createdAt.Format(time.RFC3339)})
+			if err != nil {
+				return fmt.Errorf("marshal comment reaction metadata: %w", err)
+			}
 			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
 				UserId:     cr.userID,
 				EntityType: "CommentReaction",

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
@@ -137,12 +136,6 @@ type txRow struct {
 // NewWriter connects to both databases and returns a ready Writer.
 func NewWriter(cfg *WriterConfig, logger *zap.Logger) (*Writer, error) {
 	if cfg.RunMigrations {
-		// Convert pgx DSN to a lib/pq DSN (both accept the same postgresql:// URLs).
-		db, err := sql.Open("postgres", cfg.DstDSN)
-		if err != nil {
-			return nil, fmt.Errorf("open dst db for migrations: %w", err)
-		}
-		db.Close()
 		if err := coredb.RunMigrations(logger, cfg.DstDSN, false); err != nil {
 			return nil, fmt.Errorf("run migrations: %w", err)
 		}

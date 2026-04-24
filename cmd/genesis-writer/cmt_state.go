@@ -145,11 +145,15 @@ func (w *Writer) writeGenesisFile() error {
 		return fmt.Errorf("parse genesis file: %w", err)
 	}
 
-	// Update app_state with the migration address and end height.
-	appState := map[string]interface{}{
-		"genesis_migration_address":    w.signerAddr,
-		"genesis_migration_end_height": w.finalHeight,
+	// Merge migration fields into existing app_state (if any).
+	appState := make(map[string]interface{})
+	if existing, ok := doc["app_state"]; ok {
+		if err := json.Unmarshal(existing, &appState); err != nil {
+			return fmt.Errorf("unmarshal existing app_state: %w", err)
+		}
 	}
+	appState["genesis_migration_address"] = w.signerAddr
+	appState["genesis_migration_end_height"] = w.finalHeight
 	appStateJSON, err := json.Marshal(appState)
 	if err != nil {
 		return fmt.Errorf("marshal app_state: %w", err)
