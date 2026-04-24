@@ -54,8 +54,7 @@ type sourceTrack struct {
 	Genre               *string
 	Mood                *string
 	Tags                *string
-	MetadataMultihash   *string
-	TrackSegments       []byte // JSONB
+	TrackCID            *string
 	CoverArt            *string
 	CoverArtSizes       *string
 	PreviewCID          *string
@@ -82,7 +81,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 		`SELECT count(*) FROM tracks WHERE is_current = true AND is_delete = false AND is_available = true`,
 		`SELECT
 			track_id, owner_id, title, description, duration, genre, mood, tags,
-			metadata_multihash, track_segments,
+			track_cid,
 			cover_art, cover_art_sizes, preview_cid,
 			is_unlisted, is_downloadable, is_original_available,
 			release_date::text, license, isrc, iswc, bpm, musical_key,
@@ -97,7 +96,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			var t sourceTrack
 			err := rows.Scan(
 				&t.TrackID, &t.OwnerID, &t.Title, &t.Description, &t.Duration, &t.Genre, &t.Mood, &t.Tags,
-				&t.MetadataMultihash, &t.TrackSegments,
+				&t.TrackCID,
 				&t.CoverArt, &t.CoverArtSizes, &t.PreviewCID,
 				&t.IsUnlisted, &t.IsDownloadable, &t.IsOriginalAvailable,
 				&t.ReleaseDate, &t.License, &t.ISRC, &t.ISWC, &t.BPM, &t.MusicalKey,
@@ -139,25 +138,10 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			inner.StreamConditions = unmarshalJSONB(t.StreamConditions)
 			inner.DownloadConditions = unmarshalJSONB(t.DownloadConditions)
 
-			// Extract track CID from track_segments or metadata_multihash.
-			cid := "genesis-import"
-			if t.MetadataMultihash != nil && *t.MetadataMultihash != "" {
-				cid = *t.MetadataMultihash
-			}
-			if len(t.TrackSegments) > 0 {
-				var segs []struct {
-					MultiHash string `json:"multihash"`
-				}
-				if err := json.Unmarshal(t.TrackSegments, &segs); err == nil && len(segs) > 0 {
-					inner.TrackCID = segs[0].MultiHash
-				}
-			}
-			if inner.TrackCID == "" && t.MetadataMultihash != nil && *t.MetadataMultihash != "" {
-				inner.TrackCID = *t.MetadataMultihash
-			}
+			inner.TrackCID = deref(t.TrackCID)
 
 			metaJSON, err := json.Marshal(trackMetadataWrapper{
-				CID:  cid,
+				CID:  deref(t.TrackCID),
 				Data: inner,
 			})
 			if err != nil {
