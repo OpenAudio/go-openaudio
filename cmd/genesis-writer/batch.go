@@ -45,7 +45,10 @@ func processBatched[T any](
 	defer rows.Close()
 
 	workers := runtime.NumCPU()
-	batchSize := workers * 2
+	batchSize := w.cfg.BatchSize
+	if batchSize <= 0 {
+		batchSize = workers * 2
+	}
 
 	var processed int64
 	batch := make([]T, 0, batchSize)

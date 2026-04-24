@@ -31,7 +31,7 @@ the main migration work.
    `core_app_state` in a single PostgreSQL transaction per block.
 
 5. **Prime** — writes CometBFT `state.db` (via `Bootstrap`) and
-   `blockstore.db` (via `SaveSeenCommit` signed with the validator's ed25519
+   `blockstore.db` (via `SaveBlock` signed with the validator's ed25519
    key) so the genesis node can start from height N and propose N+1. Also
    updates `genesis.json` with the migration address and end height.
 

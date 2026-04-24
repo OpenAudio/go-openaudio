@@ -106,7 +106,7 @@ type Writer struct {
 
 	// async block writer pipeline
 	blockWriteCh   chan pendingBlock
-	blockWriteErr  error
+	blockWriteErr  atomic.Pointer[error]
 	blockWriteDone chan struct{}
 
 	// proto marshal buffer pool (reduces GC pressure)
@@ -218,7 +218,7 @@ func (w *Writer) startBlockWriter(ctx context.Context) {
 		defer close(w.blockWriteDone)
 		for pb := range w.blockWriteCh {
 			if err := w.writeBlockToDB(ctx, pb); err != nil {
-				w.blockWriteErr = err
+				w.blockWriteErr.Store(&err)
 				// Drain remaining blocks to unblock senders.
 				for range w.blockWriteCh {
 				}
@@ -234,8 +234,12 @@ func (w *Writer) stopBlockWriter() error {
 	if w.blockWriteCh != nil {
 		close(w.blockWriteCh)
 		<-w.blockWriteDone
+		w.blockWriteCh = nil
 	}
-	return w.blockWriteErr
+	if ep := w.blockWriteErr.Load(); ep != nil {
+		return *ep
+	}
+	return nil
 }
 
 // writeBlockToDB writes a single block to postgres (using COPY for transactions)
@@ -333,6 +337,27 @@ func (w *Writer) Run(ctx context.Context) error {
 		if maxHeight > 0 {
 			w.height = maxHeight + 1
 			w.blockTime = w.cfg.GenesisTime.Add(time.Duration(maxHeight) * time.Second)
+
+			// Restore block linkage from blockstore so new blocks chain correctly.
+			if w.blockStore != nil {
+				lastBlock, _ := w.blockStore.LoadBlock(maxHeight)
+				if lastBlock != nil {
+					blockParts, err := lastBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
+					if err != nil {
+						return fmt.Errorf("make part set for resume block %d: %w", maxHeight, err)
+					}
+					w.prevBlockID = cmttypes.BlockID{
+						Hash:          lastBlock.Hash(),
+						PartSetHeader: blockParts.Header(),
+					}
+					w.prevAppHash = lastBlock.Header.AppHash
+				}
+				lastCommit := w.blockStore.LoadBlockCommit(maxHeight)
+				if lastCommit != nil {
+					w.lastCommit = lastCommit
+				}
+			}
+
 			w.logger.Info("resuming from height", zap.Int64("height", w.height))
 		}
 	}
@@ -347,6 +372,7 @@ func (w *Writer) Run(ctx context.Context) error {
 
 	// Start the async block writer pipeline.
 	w.startBlockWriter(ctx)
+	defer w.stopBlockWriter() //nolint:errcheck // explicit stop below captures the error
 
 	steps := []struct {
 		name string
@@ -416,8 +442,8 @@ func (w *Writer) Run(ctx context.Context) error {
 			continue
 		}
 		// Check for async writer errors before starting next step.
-		if w.blockWriteErr != nil {
-			return fmt.Errorf("block writer: %w", w.blockWriteErr)
+		if ep := w.blockWriteErr.Load(); ep != nil {
+			return fmt.Errorf("block writer: %w", *ep)
 		}
 		w.logger.Info("writing", zap.String("step", step.name))
 		if err := step.fn(ctx); err != nil {
@@ -600,8 +626,8 @@ func (w *Writer) addTx(ctx context.Context, txBytes []byte) error {
 	w.blockMu.Lock()
 	defer w.blockMu.Unlock()
 	// Check for async writer errors.
-	if w.blockWriteErr != nil {
-		return fmt.Errorf("block writer: %w", w.blockWriteErr)
+	if ep := w.blockWriteErr.Load(); ep != nil {
+		return fmt.Errorf("block writer: %w", *ep)
 	}
 	w.blockTxs = append(w.blockTxs, txBytes)
 	if len(w.blockTxs) >= w.cfg.MaxTxsPerBlock {
@@ -622,11 +648,11 @@ func (w *Writer) flushBlock(ctx context.Context) error {
 
 	// app_hash = SHA256(all tx bytes concatenated) — convention shared with the
 	// core server's FinalizeBlock implementation for genesis-range blocks.
-	var all []byte
+	h := sha256.New()
 	for _, tx := range w.blockTxs {
-		all = append(all, tx...)
+		h.Write(tx)
 	}
-	appHash := sha256Bytes(all)
+	appHash := h.Sum(nil)
 
 	// Pre-compute tx hashes for the COPY insert.
 	txData := make([]txRow, len(w.blockTxs))
