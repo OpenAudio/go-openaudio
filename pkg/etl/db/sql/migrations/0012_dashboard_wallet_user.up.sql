@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS dashboard_wallet_users (
   blocknumber integer REFERENCES blocks(number) ON DELETE CASCADE,
   created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT dashboard_wallet_users_pkey PRIMARY KEY (user_id, wallet)
+  CONSTRAINT dashboard_wallet_users_pkey PRIMARY KEY (wallet)
 );
 
 CREATE INDEX IF NOT EXISTS idx_dashboard_wallet_users_user_id ON dashboard_wallet_users (user_id);
