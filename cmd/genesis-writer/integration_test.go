@@ -133,8 +133,8 @@ func TestGenesisWriter(t *testing.T) {
 	t.Logf("validator address: %s", pv.GetAddress())
 
 	// Write the genesis.json that genesis-writer needs for state.db construction.
-	genDoc, err := genesisPkg.Read("dev-v2")
-	require.NoError(t, err, "read dev-v2 genesis")
+	genDoc, err := genesisPkg.Read("dev")
+	require.NoError(t, err, "read dev genesis")
 	genesisFile := filepath.Join(cmtHome, "config", "genesis.json")
 	require.NoError(t, genDoc.SaveAs(genesisFile), "save genesis.json")
 
