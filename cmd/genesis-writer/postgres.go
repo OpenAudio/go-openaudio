@@ -179,6 +179,20 @@ max_wal_size = '4GB'
 		return fmt.Errorf("write pg_hba.conf: %w", err)
 	}
 
+	// Pin listen_addresses to localhost since we're using trust auth.
+	confPath := filepath.Join(pg.dataDir, "postgresql.conf")
+	conf, err := os.ReadFile(confPath)
+	if err != nil {
+		return fmt.Errorf("read postgresql.conf: %w", err)
+	}
+	confStr := string(conf)
+	if !strings.Contains(confStr, "listen_addresses = 'localhost'") {
+		confStr += "\nlisten_addresses = 'localhost'\n"
+		if err := os.WriteFile(confPath, []byte(confStr), 0o600); err != nil {
+			return fmt.Errorf("write postgresql.conf: %w", err)
+		}
+	}
+
 	return nil
 }
 
