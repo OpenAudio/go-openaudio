@@ -434,15 +434,17 @@ func (w *Writer) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("query progress: %w", err)
 		}
+		defer rows.Close()
 		for rows.Next() {
 			var name string
 			if err := rows.Scan(&name); err != nil {
-				rows.Close()
 				return fmt.Errorf("scan progress: %w", err)
 			}
 			completedSteps[name] = true
 		}
-		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("iterate progress: %w", err)
+		}
 	}
 
 	for _, step := range steps {

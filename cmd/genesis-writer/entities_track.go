@@ -152,6 +152,9 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 					inner.TrackCID = segs[0].MultiHash
 				}
 			}
+			if inner.TrackCID == "" && t.MetadataMultihash != nil && *t.MetadataMultihash != "" {
+				inner.TrackCID = *t.MetadataMultihash
+			}
 
 			metaJSON, err := json.Marshal(trackMetadataWrapper{
 				CID:  cid,

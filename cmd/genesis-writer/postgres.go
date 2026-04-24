@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
@@ -97,7 +98,15 @@ func startManagedPostgres(dataDir string, logger *zap.Logger) (*managedPostgres,
 		return nil, "", fmt.Errorf("ensure database: %w", err)
 	}
 
-	dsn := fmt.Sprintf("postgres://%s@localhost:%s/%s?sslmode=disable", os.Getenv("USER"), pg.port, pgDatabase)
+	username := os.Getenv("USER")
+	if username == "" {
+		if u, err := user.Current(); err == nil {
+			username = u.Username
+		} else {
+			username = "postgres"
+		}
+	}
+	dsn := fmt.Sprintf("postgres://%s@localhost:%s/%s?sslmode=disable", username, pg.port, pgDatabase)
 	logger.Info("managed postgres ready",
 		zap.String("dataDir", pgDataDir),
 		zap.String("dsn", dsn),

@@ -28,7 +28,7 @@ type sourceTipReaction struct {
 func (w *Writer) writeTipReactions(ctx context.Context) error {
 	// Pre-load wallet → user_id mapping so we can set UserId on the ManageEntity.
 	walletToUser, err := preloadMap[string, int64](ctx, w.srcDB,
-		`SELECT LOWER(wallet), user_id FROM users WHERE is_current = true AND wallet IS NOT NULL`)
+		`SELECT LOWER(wallet), user_id FROM users WHERE is_current = true AND wallet IS NOT NULL ORDER BY wallet, user_id`)
 	if err != nil {
 		return fmt.Errorf("preload wallet→user map: %w", err)
 	}
