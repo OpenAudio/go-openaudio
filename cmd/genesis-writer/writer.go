@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -331,25 +332,39 @@ func (w *Writer) Run(ctx context.Context) error {
 			w.height = maxHeight + 1
 			w.blockTime = w.cfg.GenesisTime.Add(time.Duration(maxHeight) * time.Second)
 
-			// Restore block linkage from blockstore so new blocks chain correctly.
-			if w.blockStore != nil {
-				lastBlock, _ := w.blockStore.LoadBlock(maxHeight)
-				if lastBlock != nil {
-					blockParts, err := lastBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
-					if err != nil {
-						return fmt.Errorf("make part set for resume block %d: %w", maxHeight, err)
-					}
-					w.prevBlockID = cmttypes.BlockID{
-						Hash:          lastBlock.Hash(),
-						PartSetHeader: blockParts.Header(),
-					}
-					w.prevAppHash = lastBlock.Header.AppHash
-				}
-				lastCommit := w.blockStore.LoadBlockCommit(maxHeight)
-				if lastCommit != nil {
-					w.lastCommit = lastCommit
-				}
+			// Restore prevAppHash from core_app_state (the app hash AFTER executing maxHeight).
+			// Header.AppHash is the app hash after the *previous* block, so loading from
+			// the block header would be off-by-one.
+			var prevAppHash []byte
+			err = w.dstDB.QueryRow(ctx,
+				`SELECT app_hash FROM core_app_state WHERE block_height = $1`, maxHeight).
+				Scan(&prevAppHash)
+			if err != nil {
+				return fmt.Errorf("query app hash for resume height %d: %w", maxHeight, err)
 			}
+			w.prevAppHash = prevAppHash
+
+			// Restore block linkage from blockstore so new blocks chain correctly.
+			if w.blockStore == nil {
+				return fmt.Errorf("cannot resume without blockstore (--cmt-home required)")
+			}
+			lastBlock, _ := w.blockStore.LoadBlock(maxHeight)
+			if lastBlock == nil {
+				return fmt.Errorf("load resume block %d from blockstore: not found", maxHeight)
+			}
+			blockParts, err := lastBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
+			if err != nil {
+				return fmt.Errorf("make part set for resume block %d: %w", maxHeight, err)
+			}
+			w.prevBlockID = cmttypes.BlockID{
+				Hash:          lastBlock.Hash(),
+				PartSetHeader: blockParts.Header(),
+			}
+			lastCommit := w.blockStore.LoadBlockCommit(maxHeight)
+			if lastCommit == nil {
+				return fmt.Errorf("load resume commit %d from blockstore: not found", maxHeight)
+			}
+			w.lastCommit = lastCommit
 
 			w.logger.Info("resuming from height", zap.Int64("height", w.height))
 		}
@@ -548,6 +563,10 @@ func (w *Writer) signAndMarshal(me *corev1.ManageEntityLegacy, signer string) ([
 	if err := server.SignManageEntity(w.sigCfg, me, w.privKey); err != nil {
 		return nil, fmt.Errorf("sign manage entity: %w", err)
 	}
+	// Override Signer with the entity's real wallet address. The signature was
+	// computed with the migration key, so it will NOT recover to this Signer value.
+	// Indexers must verify authority by recovering from the signature and checking
+	// against the genesis migration authority — Signer is an identity hint only.
 	me.Signer = signer
 
 	migration := &corev1.ManageEntityLegacyMigration{
@@ -648,10 +667,11 @@ func (w *Writer) flushBlock(ctx context.Context) error {
 	appHash := h.Sum(nil)
 
 	// Pre-compute tx hashes for the COPY insert.
+	// Use uppercase hex to match CometBFT's HexBytes.String() / common.ToTxHashFromBytes.
 	txData := make([]txRow, len(w.blockTxs))
 	for i, tx := range w.blockTxs {
 		txData[i] = txRow{
-			hash:    hex.EncodeToString(sha256Bytes(tx)),
+			hash:    strings.ToUpper(hex.EncodeToString(sha256Bytes(tx))),
 			txBytes: tx,
 		}
 	}
