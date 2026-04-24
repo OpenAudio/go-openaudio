@@ -72,6 +72,8 @@ func (p *prefetcher) run(ctx context.Context, startHeight int64) {
 			Height: heights,
 		}))
 		if err != nil {
+			// Log batch failure so operators can detect degraded mode.
+			p.logger.Debug("GetBlocks failed, falling back to single-block fetch", zap.Error(err))
 			// Batch not available — fall back to single-block fetch for the first height.
 			singleResp, singleErr := p.core.GetBlock(ctx, connect.NewRequest(&corev1.GetBlockRequest{
 				Height: height,
@@ -115,11 +117,9 @@ func (p *prefetcher) run(ctx context.Context, startHeight int64) {
 			continue
 		}
 
-		// Reset backoff on success.
-		backoff = 0
-
 		// Emit only a contiguous run starting from the requested height.
 		// Stop at the first gap to avoid skipping blocks.
+		emitted := 0
 		for _, h := range heights {
 			b, ok := blocks[h]
 			if !ok || b == nil {
@@ -134,6 +134,18 @@ func (p *prefetcher) run(ctx context.Context, startHeight int64) {
 			}:
 			}
 			height = h + 1
+			emitted++
+		}
+
+		if emitted > 0 {
+			backoff = 0
+		} else {
+			// Batch returned data but not for our height — backoff to avoid tight loop.
+			if backoff == 0 {
+				backoff = 200 * time.Millisecond
+			} else if backoff < 2*time.Second {
+				backoff *= 2
+			}
 		}
 	}
 }
