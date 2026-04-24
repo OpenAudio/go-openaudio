@@ -151,16 +151,25 @@ tracks completed steps in a `genesis_writer_progress` table and recovers
 chain state (height, app hash, block hash) from the database. The
 auto-generated migration key is persisted to disk and reloaded on resume.
 
+**Note:** Resume granularity is per entity-type step (e.g., users, tracks).
+If interrupted mid-step, the entire step is rerun on resume. This may
+produce duplicate blocks for already-written entities, but the data is
+idempotent — indexers processing these blocks will see the same final state.
+
 ## Indexer integration
 
 Indexers that consume the Core chain must handle `ManageEntityLegacyMigration`
 transactions. When this transaction type is encountered, the indexer should:
 
-1. Verify that `signer` matches the genesis migration authority configured in
+1. Recover the signer address from the transaction `signature` and verify that
+   the recovered address matches the genesis migration authority configured in
    `genesis.json` (`genesis_migration_address`).
-2. Apply entity data directly from `metadata` — the same JSON structure as
+2. Treat the transaction `signer` field as informational only for this
+   transaction type, because `genesis-writer` sets it to the entity wallet
+   address rather than the migration authority.
+3. Apply entity data directly from `metadata` — the same JSON structure as
    `ManageEntityLegacy`, with `action` values `Create`, `Follow`, `Save`, `Repost`.
-3. **Skip** all standard checks that do not apply to historical migration data:
+4. **Skip** all standard checks that do not apply to historical migration data:
    ownership validation, wallet uniqueness, handle filtering, character limits,
    entity ID offset checks, and social action signer checks.
 

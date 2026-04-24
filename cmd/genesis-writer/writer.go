@@ -237,13 +237,9 @@ func (w *Writer) stopBlockWriter() error {
 }
 
 // writeBlockToDB writes a single block to postgres (using COPY for transactions)
-// and blockstore.db.
+// and blockstore.db. Postgres is committed first so that on failure the blockstore
+// doesn't contain blocks that aren't in the SQL tables.
 func (w *Writer) writeBlockToDB(ctx context.Context, pb pendingBlock) error {
-	// Write to blockstore so peers can serve this block for blocksync.
-	if w.blockStore != nil {
-		w.blockStore.SaveBlock(pb.block, pb.blockParts, pb.seenCommit)
-	}
-
 	pgTx, err := w.dstDB.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx height=%d: %w", pb.height, err)
@@ -282,7 +278,16 @@ func (w *Writer) writeBlockToDB(ctx context.Context, pb pendingBlock) error {
 		return fmt.Errorf("insert core_app_state height=%d: %w", pb.height, err)
 	}
 
-	return pgTx.Commit(ctx)
+	if err := pgTx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx height=%d: %w", pb.height, err)
+	}
+
+	// Write to blockstore after postgres commit so they stay in sync.
+	if w.blockStore != nil {
+		w.blockStore.SaveBlock(pb.block, pb.blockParts, pb.seenCommit)
+	}
+
+	return nil
 }
 
 // txCopySource implements pgx.CopyFromSource for bulk-inserting transactions.
@@ -456,8 +461,8 @@ func (w *Writer) Run(ctx context.Context) error {
 		w.logger.Info("writing", zap.String("step", step.name))
 		if err := step.fn(ctx); err != nil {
 			if ctx.Err() != nil {
-				w.logger.Info("write interrupted")
-				break
+				w.logger.Info("write interrupted", zap.String("step", step.name))
+				return ctx.Err()
 			}
 			return fmt.Errorf("write %s: %w", step.name, err)
 		}
