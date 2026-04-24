@@ -692,8 +692,12 @@ func (e *Indexer) insertCurrentBlock(blockHash string, emBlock int64, height int
 
 	// Get the previous current block's hash (for parenthash).
 	var prevHash *string
-	_ = tx.QueryRow(context.Background(),
+	err = tx.QueryRow(context.Background(),
 		"SELECT blockhash FROM blocks WHERE is_current IS TRUE").Scan(&prevHash)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		e.logger.Error("error fetching previous current block hash", zap.Error(err))
+		return err
+	}
 
 	// Mark previous block as not current.
 	_, err = tx.Exec(context.Background(),
