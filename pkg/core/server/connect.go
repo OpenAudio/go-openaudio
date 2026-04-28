@@ -1765,6 +1765,40 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 	}), nil
 }
 
+// GetDeleteRewardSenderAttestation implements v1connect.CoreServiceHandler.
+func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
+	address := req.Msg.Address
+	if address == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is required"))
+	}
+
+	rewardsManagerPubkey := req.Msg.RewardsManagerPubkey
+	if rewardsManagerPubkey == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
+	}
+
+	allowed := slices.ContainsFunc(c.core.config.RewardSenderDeleteAllowlist, func(allowlisted string) bool {
+		return strings.EqualFold(allowlisted, address)
+	})
+	if !allowed {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("address not allowlisted for reward sender deletion"))
+	}
+
+	owner, attestation, err := rewards.GetDeleteSenderAttestation(c.core.config.EthereumKey, &rewards.DeleteSenderAttestationParams{
+		SenderAddress:               address,
+		RewardsManagerAccountPubKey: rewardsManagerPubkey,
+	})
+
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("could not create delete attestation"))
+	}
+
+	return connect.NewResponse(&v1.GetRewardSenderAttestationResponse{
+		Owner:       owner,
+		Attestation: attestation,
+	}), nil
+}
+
 func ReadyCheckInterceptor(c *CoreService) connect.UnaryInterceptorFunc {
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {

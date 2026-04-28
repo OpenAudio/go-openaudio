@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	audiuscommon "github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -233,6 +234,60 @@ func TestGetCreateSenderAttestation(t *testing.T) {
 		_, err = hex.DecodeString(signedAttestation)
 		require.NoError(t, err, "signature should be valid hex")
 	})
+}
+
+func TestGetDeleteSenderAttestation(t *testing.T) {
+	privKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+
+	senderAddress := common.HexToAddress("0x73EB6d82CFB20bA669e9c178b718d770C49BB52f")
+	rewardsManagerBytes := make([]byte, 32)
+	_, err = rand.Read(rewardsManagerBytes)
+	require.NoError(t, err)
+	rewardsManagerPubkey := base58.Encode(rewardsManagerBytes)
+
+	params := &rewards.DeleteSenderAttestationParams{
+		SenderAddress:               senderAddress.Hex(),
+		RewardsManagerAccountPubKey: rewardsManagerPubkey,
+	}
+
+	ownerWallet, signedAttestation, err := rewards.GetDeleteSenderAttestation(privKey, params)
+	require.NoError(t, err)
+	require.NotEmpty(t, ownerWallet)
+	require.NotEmpty(t, signedAttestation)
+	require.False(t, strings.HasPrefix(signedAttestation, "0x"), "signature should not have 0x prefix")
+	require.Equal(t, 130, len(signedAttestation), "signature should be 65 bytes in hex format")
+
+	message := append([]byte(rewards.DeleteSenderMessagePrefix), rewardsManagerBytes...)
+	message = append(message, senderAddress.Bytes()...)
+	_, recoveredOwner, err := audiuscommon.EthRecoverKeccak(signedAttestation, message)
+	require.NoError(t, err)
+	require.Equal(t, ownerWallet, recoveredOwner)
+}
+
+func TestSenderAttestationPrefixesProduceDifferentSignatures(t *testing.T) {
+	privKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+
+	senderAddress := common.HexToAddress("0x73EB6d82CFB20bA669e9c178b718d770C49BB52f")
+	rewardsManagerBytes := make([]byte, 32)
+	_, err = rand.Read(rewardsManagerBytes)
+	require.NoError(t, err)
+	rewardsManagerPubkey := base58.Encode(rewardsManagerBytes)
+
+	_, addAttestation, err := rewards.GetCreateSenderAttestation(privKey, &rewards.CreateSenderAttestationParams{
+		NewSenderAddress:            senderAddress.Hex(),
+		RewardsManagerAccountPubKey: rewardsManagerPubkey,
+	})
+	require.NoError(t, err)
+
+	_, deleteAttestation, err := rewards.GetDeleteSenderAttestation(privKey, &rewards.DeleteSenderAttestationParams{
+		SenderAddress:               senderAddress.Hex(),
+		RewardsManagerAccountPubKey: rewardsManagerPubkey,
+	})
+	require.NoError(t, err)
+
+	require.NotEqual(t, addAttestation, deleteAttestation)
 }
 
 func TestCreateSenderAttestationMessageConstruction(t *testing.T) {

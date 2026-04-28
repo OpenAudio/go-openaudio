@@ -29,6 +29,7 @@ service CoreService {
   rpc GetRewards(GetRewardsRequest) returns (GetRewardsResponse) {}
   rpc GetRewardAttestation(GetRewardAttestationRequest) returns (GetRewardAttestationResponse) {}
   rpc GetRewardSenderAttestation(GetRewardSenderAttestationRequest) returns (GetRewardSenderAttestationResponse) {}
+  rpc GetDeleteRewardSenderAttestation(GetRewardSenderAttestationRequest) returns (GetRewardSenderAttestationResponse) {}
 
   rpc GetStreamURLs(GetStreamURLsRequest) returns (GetStreamURLsResponse) {}
 
