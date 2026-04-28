@@ -122,7 +122,7 @@ type CoreServiceClient interface {
 	GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error)
 	GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error)
 	GetRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error)
-	GetDeleteRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error)
+	GetDeleteRewardSenderAttestation(context.Context, *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error)
 	GetStreamURLs(context.Context, *connect.Request[v1.GetStreamURLsRequest]) (*connect.Response[v1.GetStreamURLsResponse], error)
 	GetUploadByCID(context.Context, *connect.Request[v1.GetUploadByCIDRequest]) (*connect.Response[v1.GetUploadByCIDResponse], error)
 	StreamBlocks(context.Context, *connect.Request[v1.StreamBlocksRequest]) (*connect.ServerStreamForClient[v1.StreamBlocksResponse], error)
@@ -265,7 +265,7 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("GetRewardSenderAttestation")),
 			connect.WithClientOptions(opts...),
 		),
-		getDeleteRewardSenderAttestation: connect.NewClient[v1.GetRewardSenderAttestationRequest, v1.GetRewardSenderAttestationResponse](
+		getDeleteRewardSenderAttestation: connect.NewClient[v1.GetDeleteRewardSenderAttestationRequest, v1.GetDeleteRewardSenderAttestationResponse](
 			httpClient,
 			baseURL+CoreServiceGetDeleteRewardSenderAttestationProcedure,
 			connect.WithSchema(coreServiceMethods.ByName("GetDeleteRewardSenderAttestation")),
@@ -315,7 +315,7 @@ type coreServiceClient struct {
 	getRewards                       *connect.Client[v1.GetRewardsRequest, v1.GetRewardsResponse]
 	getRewardAttestation             *connect.Client[v1.GetRewardAttestationRequest, v1.GetRewardAttestationResponse]
 	getRewardSenderAttestation       *connect.Client[v1.GetRewardSenderAttestationRequest, v1.GetRewardSenderAttestationResponse]
-	getDeleteRewardSenderAttestation *connect.Client[v1.GetRewardSenderAttestationRequest, v1.GetRewardSenderAttestationResponse]
+	getDeleteRewardSenderAttestation *connect.Client[v1.GetDeleteRewardSenderAttestationRequest, v1.GetDeleteRewardSenderAttestationResponse]
 	getStreamURLs                    *connect.Client[v1.GetStreamURLsRequest, v1.GetStreamURLsResponse]
 	getUploadByCID                   *connect.Client[v1.GetUploadByCIDRequest, v1.GetUploadByCIDResponse]
 	streamBlocks                     *connect.Client[v1.StreamBlocksRequest, v1.StreamBlocksResponse]
@@ -427,7 +427,7 @@ func (c *coreServiceClient) GetRewardSenderAttestation(ctx context.Context, req 
 }
 
 // GetDeleteRewardSenderAttestation calls core.v1.CoreService.GetDeleteRewardSenderAttestation.
-func (c *coreServiceClient) GetDeleteRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
+func (c *coreServiceClient) GetDeleteRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error) {
 	return c.getDeleteRewardSenderAttestation.CallUnary(ctx, req)
 }
 
@@ -469,7 +469,7 @@ type CoreServiceHandler interface {
 	GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error)
 	GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error)
 	GetRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error)
-	GetDeleteRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error)
+	GetDeleteRewardSenderAttestation(context.Context, *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error)
 	GetStreamURLs(context.Context, *connect.Request[v1.GetStreamURLsRequest]) (*connect.Response[v1.GetStreamURLsResponse], error)
 	GetUploadByCID(context.Context, *connect.Request[v1.GetUploadByCIDRequest]) (*connect.Response[v1.GetUploadByCIDResponse], error)
 	StreamBlocks(context.Context, *connect.Request[v1.StreamBlocksRequest], *connect.ServerStream[v1.StreamBlocksResponse]) error
@@ -777,7 +777,7 @@ func (UnimplementedCoreServiceHandler) GetRewardSenderAttestation(context.Contex
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetRewardSenderAttestation is not implemented"))
 }
 
-func (UnimplementedCoreServiceHandler) GetDeleteRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
+func (UnimplementedCoreServiceHandler) GetDeleteRewardSenderAttestation(context.Context, *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetDeleteRewardSenderAttestation is not implemented"))
 }
 

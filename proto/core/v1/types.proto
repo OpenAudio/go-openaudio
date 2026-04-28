@@ -639,6 +639,16 @@ message GetRewardSenderAttestationResponse {
   string attestation = 2;
 }
 
+message GetDeleteRewardSenderAttestationRequest {
+  string address = 1;
+  string rewards_manager_pubkey = 2;
+}
+
+message GetDeleteRewardSenderAttestationResponse {
+  string owner = 1;
+  string attestation = 2;
+}
+
 message StreamBlocksRequest {
   bool canon = 1;
 }

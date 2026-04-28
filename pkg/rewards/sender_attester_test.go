@@ -240,29 +240,87 @@ func TestGetDeleteSenderAttestation(t *testing.T) {
 	privKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
 
-	senderAddress := common.HexToAddress("0x73EB6d82CFB20bA669e9c178b718d770C49BB52f")
-	rewardsManagerBytes := make([]byte, 32)
-	_, err = rand.Read(rewardsManagerBytes)
-	require.NoError(t, err)
-	rewardsManagerPubkey := base58.Encode(rewardsManagerBytes)
+	t.Run("successful attestation recovers signer", func(t *testing.T) {
+		senderAddress := common.HexToAddress("0x73EB6d82CFB20bA669e9c178b718d770C49BB52f")
+		rewardsManagerBytes := make([]byte, 32)
+		_, err := rand.Read(rewardsManagerBytes)
+		require.NoError(t, err)
+		rewardsManagerPubkey := base58.Encode(rewardsManagerBytes)
 
-	params := &rewards.DeleteSenderAttestationParams{
-		SenderAddress:               senderAddress.Hex(),
-		RewardsManagerAccountPubKey: rewardsManagerPubkey,
-	}
+		params := &rewards.DeleteSenderAttestationParams{
+			SenderAddress:               senderAddress.Hex(),
+			RewardsManagerAccountPubKey: rewardsManagerPubkey,
+		}
 
-	ownerWallet, signedAttestation, err := rewards.GetDeleteSenderAttestation(privKey, params)
-	require.NoError(t, err)
-	require.NotEmpty(t, ownerWallet)
-	require.NotEmpty(t, signedAttestation)
-	require.False(t, strings.HasPrefix(signedAttestation, "0x"), "signature should not have 0x prefix")
-	require.Equal(t, 130, len(signedAttestation), "signature should be 65 bytes in hex format")
+		ownerWallet, signedAttestation, err := rewards.GetDeleteSenderAttestation(privKey, params)
+		require.NoError(t, err)
+		require.NotEmpty(t, ownerWallet)
+		require.NotEmpty(t, signedAttestation)
+		require.False(t, strings.HasPrefix(signedAttestation, "0x"), "signature should not have 0x prefix")
+		require.Equal(t, 130, len(signedAttestation), "signature should be 65 bytes in hex format")
 
-	message := append([]byte(rewards.DeleteSenderMessagePrefix), rewardsManagerBytes...)
-	message = append(message, senderAddress.Bytes()...)
-	_, recoveredOwner, err := audiuscommon.EthRecoverKeccak(signedAttestation, message)
-	require.NoError(t, err)
-	require.Equal(t, ownerWallet, recoveredOwner)
+		// Verify the signature was produced over the exact "del" + program + address payload
+		message := append([]byte(rewards.DeleteSenderMessagePrefix), rewardsManagerBytes...)
+		message = append(message, senderAddress.Bytes()...)
+		_, recoveredOwner, err := audiuscommon.EthRecoverKeccak(signedAttestation, message)
+		require.NoError(t, err)
+		require.Equal(t, ownerWallet, recoveredOwner)
+	})
+
+	t.Run("0x prefix on sender address is normalized", func(t *testing.T) {
+		testAddr := common.HexToAddress("0x73EB6d82CFB20bA669e9c178b718d770C49BB52f")
+		solanaKeyBytes := make([]byte, 32)
+		_, err := rand.Read(solanaKeyBytes)
+		require.NoError(t, err)
+		solanaPubKey := base58.Encode(solanaKeyBytes)
+
+		owner1, sig1, err := rewards.GetDeleteSenderAttestation(privKey, &rewards.DeleteSenderAttestationParams{
+			SenderAddress:               testAddr.Hex(),
+			RewardsManagerAccountPubKey: solanaPubKey,
+		})
+		require.NoError(t, err)
+
+		owner2, sig2, err := rewards.GetDeleteSenderAttestation(privKey, &rewards.DeleteSenderAttestationParams{
+			SenderAddress:               testAddr.Hex()[2:],
+			RewardsManagerAccountPubKey: solanaPubKey,
+		})
+		require.NoError(t, err)
+
+		require.Equal(t, owner1, owner2)
+		require.Equal(t, sig1, sig2)
+	})
+
+	t.Run("invalid program pubkey", func(t *testing.T) {
+		testAddress := crypto.PubkeyToAddress(*privKey.Public().(*ecdsa.PublicKey))
+		owner, sig, err := rewards.GetDeleteSenderAttestation(privKey, &rewards.DeleteSenderAttestationParams{
+			SenderAddress:               testAddress.Hex(),
+			RewardsManagerAccountPubKey: "invalid!@#$base58",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid program pubkey")
+		require.Empty(t, owner)
+		require.Empty(t, sig)
+	})
+
+	t.Run("invalid sender address", func(t *testing.T) {
+		solanaKeyBytes := make([]byte, 32)
+		_, err := rand.Read(solanaKeyBytes)
+		require.NoError(t, err)
+		solanaPubKey := base58.Encode(solanaKeyBytes)
+
+		owner, sig, err := rewards.GetDeleteSenderAttestation(privKey, &rewards.DeleteSenderAttestationParams{
+			SenderAddress:               "0xINVALIDHEX",
+			RewardsManagerAccountPubKey: solanaPubKey,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid sender address")
+		require.Empty(t, owner)
+		require.Empty(t, sig)
+	})
+
+	t.Run("verify message prefix constant", func(t *testing.T) {
+		require.Equal(t, "del", rewards.DeleteSenderMessagePrefix)
+	})
 }
 
 func TestSenderAttestationPrefixesProduceDifferentSignatures(t *testing.T) {

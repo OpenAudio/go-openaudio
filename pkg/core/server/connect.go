@@ -1766,7 +1766,7 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 }
 
 // GetDeleteRewardSenderAttestation implements v1connect.CoreServiceHandler.
-func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
+func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error) {
 	address := req.Msg.Address
 	if address == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is required"))
@@ -1793,7 +1793,7 @@ func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req 
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("could not create delete attestation"))
 	}
 
-	return connect.NewResponse(&v1.GetRewardSenderAttestationResponse{
+	return connect.NewResponse(&v1.GetDeleteRewardSenderAttestationResponse{
 		Owner:       owner,
 		Attestation: attestation,
 	}), nil
