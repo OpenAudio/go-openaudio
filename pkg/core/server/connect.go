@@ -1725,6 +1725,26 @@ func (c *CoreService) GetSlashAttestations(ctx context.Context, req *connect.Req
 	}), nil
 }
 
+// gatherEligibleSenderAddresses returns the union of registered validator
+// eth addresses and anti-abuse oracle eth addresses. This is the set the
+// rewards-manager program treats as eligible senders: add attestations are
+// only signed for addresses in this set, delete attestations are only signed
+// for addresses NOT in this set.
+//
+// Validators come from the local consensus-populated core_validators table.
+// AAOs come from the L1 EthRewardsManager contract via the eth-bridge sync.
+func (c *CoreService) gatherEligibleSenderAddresses(ctx context.Context) ([]string, error) {
+	validators, err := c.core.db.GetAllEthAddressesOfRegisteredNodes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error finding validators: %w", err)
+	}
+	aaos, err := c.core.eth.GetAntiAbuseOracleAddresses(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error finding anti-abuse oracles: %w", err)
+	}
+	return append(validators, aaos...), nil
+}
+
 // GetRewardSenderAttestation implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
 	address := req.Msg.Address
@@ -1737,17 +1757,15 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
 	}
 
-	validators, err := c.core.db.GetAllEthAddressesOfRegisteredNodes(ctx)
+	eligible, err := c.gatherEligibleSenderAddresses(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("error finding validators: %w", err))
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	notValidator := !slices.ContainsFunc(validators, func(validator string) bool {
-		return strings.EqualFold(validator, address)
-	})
-
-	if notValidator {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address not a validator"))
+	if !slices.ContainsFunc(eligible, func(eth string) bool {
+		return strings.EqualFold(eth, address)
+	}) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address not a registered validator or anti-abuse oracle"))
 	}
 
 	owner, attestation, err := rewards.GetCreateSenderAttestation(c.core.config.EthereumKey, &rewards.CreateSenderAttestationParams{
@@ -1777,17 +1795,15 @@ func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req 
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
 	}
 
-	validators, err := c.core.db.GetAllEthAddressesOfRegisteredNodes(ctx)
+	eligible, err := c.gatherEligibleSenderAddresses(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("error finding validators: %w", err))
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	isValidator := slices.ContainsFunc(validators, func(validator string) bool {
-		return strings.EqualFold(validator, address)
-	})
-
-	if isValidator {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is a validator"))
+	if slices.ContainsFunc(eligible, func(eth string) bool {
+		return strings.EqualFold(eth, address)
+	}) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is a registered validator or anti-abuse oracle"))
 	}
 
 	owner, attestation, err := rewards.GetDeleteSenderAttestation(c.core.config.EthereumKey, &rewards.DeleteSenderAttestationParams{

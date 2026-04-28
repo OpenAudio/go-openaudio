@@ -29,3 +29,6 @@ select total_staked from eth_staked where address = $1;
 
 -- name: GetActiveProposals :many
 select * from eth_active_proposals;
+
+-- name: GetAllAntiAbuseOracleAddresses :many
+select address from eth_anti_abuse_oracles;
