@@ -1777,11 +1777,17 @@ func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req 
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
 	}
 
-	allowed := slices.ContainsFunc(c.core.config.RewardSenderDeleteAllowlist, func(allowlisted string) bool {
-		return strings.EqualFold(allowlisted, address)
+	validators, err := c.core.db.GetAllEthAddressesOfRegisteredNodes(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("error finding validators: %w", err))
+	}
+
+	isValidator := slices.ContainsFunc(validators, func(validator string) bool {
+		return strings.EqualFold(validator, address)
 	})
-	if !allowed {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("address not allowlisted for reward sender deletion"))
+
+	if isValidator {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is a validator"))
 	}
 
 	owner, attestation, err := rewards.GetDeleteSenderAttestation(c.core.config.EthereumKey, &rewards.DeleteSenderAttestationParams{
@@ -1790,7 +1796,7 @@ func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req 
 	})
 
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("could not create delete attestation"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("could not create attestation"))
 	}
 
 	return connect.NewResponse(&v1.GetDeleteRewardSenderAttestationResponse{

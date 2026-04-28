@@ -120,8 +120,6 @@ type Config struct {
 	EthereumKey *ecdsa.PrivateKey
 	CometKey    *ed25519.PrivKey
 	Rewards     []rewards.Reward
-	// Reward sender eth addresses this node is willing to sign delete attestations for.
-	RewardSenderDeleteAllowlist []string
 
 	/* Attestation Thresholds */
 	AttRegistrationMin     int // minimum number of attestations needed to register a new node
@@ -261,7 +259,6 @@ func ReadConfig() (*Config, error) {
 	cfg.UseHttpsForSdk = GetEnvWithDefault("useHttpsForSdk", "true") == "true"
 	cfg.ExternalAddress = os.Getenv("externalAddress")
 	cfg.EthRegistryAddress = GetRegistryAddress()
-	cfg.RewardSenderDeleteAllowlist = splitAndTrim(os.Getenv("rewardSenderDeleteAllowlist"))
 
 	switch cfg.Environment {
 	case "prod", "production", "mainnet":
@@ -317,21 +314,6 @@ func GetEnvWithDefault(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
-}
-
-func splitAndTrim(value string) []string {
-	if value == "" {
-		return nil
-	}
-	parts := strings.Split(value, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
 }
 
 func getEnvIntWithDefault(key string, defaultValue int) int {
