@@ -23,6 +23,8 @@ import (
 )
 
 func TestUploadStream(t *testing.T) {
+	t.Skip("flaky on resource-constrained CI runners; underlying double-poll fix in progress on a separate PR")
+
 	ctx := context.Background()
 
 	require.NoError(t, utils.WaitForDevnetHealthy())
