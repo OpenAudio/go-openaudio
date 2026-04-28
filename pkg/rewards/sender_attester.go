@@ -23,7 +23,7 @@ type CreateSenderAttestationParams struct {
 }
 
 type DeleteSenderAttestationParams struct {
-	// must be existing sender
+	// must not be a registered validator
 	SenderAddress string
 
 	// base58 encoded pubkey

@@ -166,15 +166,3 @@ OPENAUDIO_EXPLORER_ENABLED=true
 # View explorer in browser
 open https://node1.oap.devnet/
 ```
-
-### Reward Sender Delete Attestations
-
-Nodes can sign reward-manager sender delete attestations through `GetDeleteRewardSenderAttestation`, but only for addresses explicitly allowlisted in local node config. This prevents the public API from becoming an open signing endpoint for arbitrary sender deletion.
-
-Set `rewardSenderDeleteAllowlist` to a comma-separated list of Ethereum sender addresses that this node is willing to sign delete attestations for:
-
-```bash
-rewardSenderDeleteAllowlist=0xf1a1Bd34b2Bc73629aa69E50E3249E89A3c16786
-```
-
-Operationally, set this only on the quorum signer nodes participating in a planned delete, restart/redeploy those nodes, collect the delete attestations, submit the `DeleteSenderPublic` transaction, then remove the allowlist and redeploy again.

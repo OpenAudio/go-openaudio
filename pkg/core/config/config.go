@@ -102,12 +102,12 @@ type Config struct {
 	EthRegistryAddress string
 
 	/* System Config */
-	RunDownMigration            bool
-	SlaRollupInterval           int
-	ValidatorVotingPower        int
-	ValidatorPurgeMinValidators int
-	ValidatorWardenIntervalMins int // how often the validator warden checks for underperformance (minutes)
-	UseHttpsForSdk              bool
+	RunDownMigration             bool
+	SlaRollupInterval            int
+	ValidatorVotingPower         int
+	ValidatorPurgeMinValidators  int
+	ValidatorWardenIntervalMins  int // how often the validator warden checks for underperformance (minutes)
+	UseHttpsForSdk               bool
 
 	StateSync *StateSyncConfig
 
