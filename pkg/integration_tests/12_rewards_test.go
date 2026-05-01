@@ -169,7 +169,7 @@ func TestRewardsLifecycle(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected GetRewardAttestation to be rejected, got success")
 		}
-		if !strings.Contains(err.Error(), "artist-coin attestations are disabled") {
+		if !strings.Contains(err.Error(), "artist-coin attestations are temporarily disabled") {
 			t.Fatalf("expected disabled-attestation error, got: %v", err)
 		}
 	})

@@ -1059,8 +1059,12 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 }
 
 // GetRewardAttestation implements v1connect.CoreServiceHandler.
+//
+// TODO: temporarily disabled. Restore the programmatic-reward attestation
+// flow (see git history for the previous implementation) once artist-coin
+// attestations are ready to be re-enabled.
 func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
-	return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("artist-coin attestations are disabled"))
+	return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("artist-coin attestations are temporarily disabled"))
 }
 
 // GetRewards implements v1connect.CoreServiceHandler.
