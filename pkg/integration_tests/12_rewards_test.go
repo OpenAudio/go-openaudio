@@ -2,6 +2,7 @@ package integration_tests
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
@@ -134,137 +135,7 @@ func TestRewardsLifecycle(t *testing.T) {
 		t.Logf("All reward lifecycle tests passed successfully!")
 	})
 
-	t.Run("Test Reward Attestations with Claim Authorities", func(t *testing.T) {
-		// Generate random private keys for claim authorities
-		authority1Key, err := crypto.GenerateKey()
-		if err != nil {
-			t.Fatalf("Failed to generate authority1 key: %v", err)
-		}
-		authority1Addr := common.PrivKeyToAddress(authority1Key)
-		authority1 := sdk.NewOpenAudioSDK(nodeUrl)
-		authority1.SetPrivKey(authority1Key)
-
-		authority2Key, err := crypto.GenerateKey()
-		if err != nil {
-			t.Fatalf("Failed to generate authority2 key: %v", err)
-		}
-		authority2Addr := common.PrivKeyToAddress(authority2Key)
-		authority2 := sdk.NewOpenAudioSDK(nodeUrl)
-		authority2.SetPrivKey(authority2Key)
-
-		unauthorizedKey, err := crypto.GenerateKey()
-		if err != nil {
-			t.Fatalf("Failed to generate unauthorized key: %v", err)
-		}
-		unauthorizedAddr := common.PrivKeyToAddress(unauthorizedKey)
-		unauthorized := sdk.NewOpenAudioSDK(nodeUrl)
-		unauthorized.SetPrivKey(unauthorizedKey)
-
-		t.Logf("authority1 address: %s", authority1Addr)
-		t.Logf("authority2 address: %s", authority2Addr)
-		t.Logf("unauthorized address: %s", unauthorizedAddr)
-
-		// Create a reward with authority1 and authority2 as claim authorities
-		reward, err := authority1.Rewards.CreateReward(ctx, &v1.CreateReward{
-			RewardId: "attestation_test_reward",
-			Name:     "Attestation Test Reward",
-			Amount:   5000,
-			ClaimAuthorities: []*v1.ClaimAuthority{
-				{Address: authority1Addr, Name: "Authority 1"},
-				{Address: authority2Addr, Name: "Authority 2"},
-			},
-			DeadlineBlockHeight: 999999,
-		})
-		if err != nil {
-			t.Fatalf("Failed to create reward: %v", err)
-		}
-		t.Logf("Created reward at address: %s", reward.Address)
-
-		// Test recipient address
-		recipientAddr := "0x1234567890123456789012345678901234567890"
-		specifier := "test_specifier_123"
-
-		// Test 1: authority1 should be able to get attestation
-        attestation1, err := authority1.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
-			EthRecipientAddress: recipientAddr,
-			Amount:              5000,
-			RewardAddress:       reward.Address,
-			RewardId:            "attestation_test_reward",
-			Specifier:           specifier,
-            ClaimAuthority:      authority1Addr,
-            AmountDecimals:      8,
-		})
-		if err != nil {
-			t.Fatalf("authority1 should be able to get attestation: %v", err)
-		}
-		t.Logf("authority1 successfully got attestation: %s", attestation1.Attestation)
-
-		// Test 2: authority2 should be able to get attestation
-        attestation2, err := authority2.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
-			EthRecipientAddress: recipientAddr,
-			Amount:              5000,
-			RewardAddress:       reward.Address,
-			RewardId:            "attestation_test_reward",
-			Specifier:           specifier,
-            ClaimAuthority:      authority2Addr,
-            AmountDecimals:      8,
-		})
-		if err != nil {
-			t.Fatalf("authority2 should be able to get attestation: %v", err)
-		}
-		t.Logf("authority2 successfully got attestation: %s", attestation2.Attestation)
-
-		// Test 3: unauthorized user should NOT be able to get attestation
-        _, err = unauthorized.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
-			EthRecipientAddress: recipientAddr,
-			Amount:              1000,
-			RewardAddress:       reward.Address,
-			RewardId:            "attestation_test_reward",
-			Specifier:           specifier,
-            ClaimAuthority:      unauthorizedAddr,
-            AmountDecimals:      8,
-		})
-		if err == nil {
-			t.Fatalf("unauthorized user should NOT be able to get attestation, but it succeeded")
-		}
-		t.Logf("unauthorized user correctly failed to get attestation: %v", err)
-
-		// Test 4: Verify authority1 cannot get attestation for a reward they're not authorized for
-		// Create another reward with only authority2
-		reward2, err := authority2.Rewards.CreateReward(ctx, &v1.CreateReward{
-			RewardId: "attestation_test_reward_2",
-			Name:     "Attestation Test Reward 2",
-			Amount:   3000,
-			ClaimAuthorities: []*v1.ClaimAuthority{
-				{Address: authority2Addr, Name: "Authority 2"},
-			},
-			DeadlineBlockHeight: 999999,
-		})
-		if err != nil {
-			t.Fatalf("Failed to create reward2: %v", err)
-		}
-		t.Logf("Created reward2 at address: %s", reward2.Address)
-
-		// authority1 should NOT be able to get attestation for reward2
-        _, err = authority1.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
-			EthRecipientAddress: recipientAddr,
-			Amount:              500,
-			RewardAddress:       reward2.Address,
-			RewardId:            "attestation_test_reward_2",
-			Specifier:           specifier,
-            ClaimAuthority:      authority1Addr,
-            AmountDecimals:      8,
-		})
-		if err == nil {
-			t.Fatalf("authority1 should NOT be able to get attestation for reward2, but it succeeded")
-		}
-		t.Logf("authority1 correctly failed to get attestation for reward2: %v", err)
-
-		t.Logf("All reward attestation tests passed successfully!")
-	})
-
-	t.Run("Test with Amount Validation", func(t *testing.T) {
-		// Generate a new claim authority key
+	t.Run("Artist-coin attestations are rejected", func(t *testing.T) {
 		authorityKey, err := crypto.GenerateKey()
 		if err != nil {
 			t.Fatalf("Failed to generate authority key: %v", err)
@@ -273,97 +144,33 @@ func TestRewardsLifecycle(t *testing.T) {
 		authority := sdk.NewOpenAudioSDK(nodeUrl)
 		authority.SetPrivKey(authorityKey)
 
-		// Generate a key for creating the reward
-		creatorKey, err := crypto.GenerateKey()
-		if err != nil {
-			t.Fatalf("Failed to generate creator key: %v", err)
-		}
-		creator := sdk.NewOpenAudioSDK(nodeUrl)
-		creator.SetPrivKey(creatorKey)
-
-		// Create a reward with specific amount
-		reward, err := creator.Rewards.CreateReward(ctx, &v1.CreateReward{
-			RewardId: "amount_test",
-			Name:     "Amount Test Reward",
-			Amount:   100, // Fixed amount
+		reward, err := authority.Rewards.CreateReward(ctx, &v1.CreateReward{
+			RewardId: "blocked_attestation_reward",
+			Name:     "Blocked Attestation Reward",
+			Amount:   5000,
 			ClaimAuthorities: []*v1.ClaimAuthority{
-				{Address: authorityAddr, Name: "Test Authority"},
+				{Address: authorityAddr, Name: "Authority"},
 			},
 			DeadlineBlockHeight: 999999,
 		})
 		if err != nil {
 			t.Fatalf("Failed to create reward: %v", err)
 		}
-		t.Logf("Created reward at address: %s", reward.Address)
 
-		// Test recipient address
-		recipientAddr := "0xe811761771ef65f9de0b64d6335f3b8ff50adc44"
-		specifier := "test_specifier_amount"
-
-		// Test 1: Correct amount should succeed
-        attestation, err := authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
-			EthRecipientAddress: recipientAddr,
-			Amount:              100, // Matches reward amount
+		_, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
+			EthRecipientAddress: "0x1234567890123456789012345678901234567890",
+			Amount:              5000,
 			RewardAddress:       reward.Address,
-			RewardId:            "amount_test",
-			Specifier:           specifier,
-            ClaimAuthority:      authorityAddr,
-            AmountDecimals:      8,
-		})
-		if err != nil {
-			t.Fatalf("Should succeed with correct amount: %v", err)
-		}
-		t.Logf("Successfully got attestation with correct amount: %s", attestation.Attestation)
-
-		// Test 2: Wrong amount should fail
-        _, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
-			EthRecipientAddress: recipientAddr,
-			Amount:              50, // Wrong amount
-			RewardAddress:       reward.Address,
-			RewardId:            "amount_test",
-			Specifier:           specifier,
-            ClaimAuthority:      authorityAddr,
-            AmountDecimals:      8,
+			RewardId:            "blocked_attestation_reward",
+			Specifier:           "test_specifier",
+			ClaimAuthority:      authorityAddr,
+			AmountDecimals:      8,
 		})
 		if err == nil {
-			t.Fatalf("Should have failed with wrong amount")
+			t.Fatalf("expected GetRewardAttestation to be rejected, got success")
 		}
-		t.Logf("Correctly failed with wrong amount: %v", err)
-
-		// Test 3: Zero amount should fail
-        _, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
-			EthRecipientAddress: recipientAddr,
-			Amount:              0, // Zero amount
-			RewardAddress:       reward.Address,
-			RewardId:            "amount_test",
-			Specifier:           specifier,
-            ClaimAuthority:      authorityAddr,
-            AmountDecimals:      8,
-		})
-        if err == nil {
-            t.Fatalf("Should have failed with zero amount")
-        }
-        t.Logf("Correctly failed with zero amount: %v", err)
-
-        // Test 4: Invalid decimals should fail
-        _, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
-            EthRecipientAddress: recipientAddr,
-            Amount:              100,
-            RewardAddress:       reward.Address,
-            RewardId:            "amount_test",
-            Specifier:           specifier,
-            ClaimAuthority:      authorityAddr,
-            AmountDecimals:      19,
-        })
-        if err == nil {
-            t.Fatalf("Should have failed with invalid amount_decimals")
-        }
-        t.Logf("Correctly failed with invalid amount_decimals: %v", err)
-		if err == nil {
-			t.Fatalf("Should have failed with zero amount")
+		if !strings.Contains(err.Error(), "artist-coin attestations are disabled") {
+			t.Fatalf("expected disabled-attestation error, got: %v", err)
 		}
-		t.Logf("Correctly failed with zero amount: %v", err)
-
-		t.Logf("Amount validation test passed successfully!")
 	})
 }
