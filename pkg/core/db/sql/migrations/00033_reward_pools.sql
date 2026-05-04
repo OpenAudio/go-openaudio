@@ -189,6 +189,7 @@ from (
             select lower(trim(a)) from unnest(r2.claim_authorities) a
             where a is not null and trim(a) <> ''
         )
+        order by rm.rewards_manager_pubkey, rm.authority
         limit 1
     ) rm
     where r2.claim_authorities is not null

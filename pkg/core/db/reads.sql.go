@@ -1487,6 +1487,7 @@ const getLaunchpadRMByAuthority = `-- name: GetLaunchpadRMByAuthority :one
 select rewards_manager_pubkey
 from launchpad_authority_rm
 where authority = any($1::text[])
+order by rewards_manager_pubkey, authority
 limit 1
 `
 

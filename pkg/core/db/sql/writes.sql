@@ -357,12 +357,13 @@ delete from core_rewards
 where address = $1;
 
 -- name: UpsertSyntheticRewardPool :exec
--- Used by the legacy CreateReward replay flow (wire-compat layer) to ensure
--- a reward-pool row exists for the provided rewards_manager_pubkey, which is
--- the pool identity in the current schema. On replay, DO UPDATE refreshes the
--- stored authority set for that same pool identity so legacy backfills remain
--- aligned with the latest replayed state instead of leaving stale authorities
--- on an existing row.
+-- Used by the legacy CreateReward path to ensure a reward-pool row exists
+-- for the provided rewards_manager_pubkey with the requested authority
+-- set. The pubkey may be a real Solana RM (when the row's
+-- claim_authorities included a known launchpad-derived per-mint key) or
+-- a synthetic 'mig_<md5>' identifier (otherwise). DO UPDATE refreshes
+-- the stored authorities so multiple CreateReward txs targeting the
+-- same pool converge instead of leaving stale rows.
 insert into core_reward_pools (
     rewards_manager_pubkey,
     authorities
