@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"gocloud.dev/blob"
 )
 
 type presenceEntry struct {
@@ -23,18 +25,30 @@ func (idx *repairPresenceIndex) Lookup(key string) (presenceEntry, bool) {
 }
 
 func (ss *MediorumServer) buildRepairPresenceIndex(ctx context.Context) (*repairPresenceIndex, error) {
-	iter := ss.bucket.List(nil)
 	index := &repairPresenceIndex{
 		entries: make(map[string]presenceEntry),
 	}
 
+	if err := listIntoIndex(ctx, ss.bucket, index); err != nil {
+		return nil, err
+	}
+	if ss.archiveBucket != nil {
+		if err := listIntoIndex(ctx, ss.archiveBucket, index); err != nil {
+			return nil, err
+		}
+	}
+	return index, nil
+}
+
+func listIntoIndex(ctx context.Context, bucket *blob.Bucket, index *repairPresenceIndex) error {
+	iter := bucket.List(nil)
 	for {
 		obj, err := iter.Next(ctx)
 		if err != nil {
 			if err == io.EOF {
-				return index, nil
+				return nil
 			}
-			return nil, err
+			return err
 		}
 		if obj == nil || obj.IsDir {
 			continue

@@ -146,7 +146,7 @@ func (ss *MediorumServer) getKeyToTempFile(fileHash string) (*os.File, error) {
 	}
 
 	key := cidutil.ShardCID(fileHash)
-	blob, err := ss.bucket.NewReader(context.Background(), key, nil)
+	blob, err := ss.bucketForCID(fileHash, nil).NewReader(context.Background(), key, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -350,6 +350,8 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	myRank := slices.Index(preferredHosts, ss.Config.Self.Host)
 
 	key := cidutil.ShardCID(cid)
+	bucket := ss.bucketForCID(cid, placementHosts)
+	isArchive := ss.archiveBucket != nil && bucket == ss.archiveBucket
 
 	// Per-cycle dedupe: repair iterates uploads, audio_previews, and qm_cids,
 	// and the same CID can appear across those tables. Skip the duplicate
@@ -394,17 +396,23 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 		}
 	} else {
 		var err error
-		attrs, err = ss.bucket.Attributes(ctx, key)
+		attrs, err = bucket.Attributes(ctx, key)
 		if err != nil {
 			if gcerrors.Code(err) == gcerrors.NotFound || strings.Contains(err.Error(), "notFound") {
 				attrs = &blob.Attributes{}
 			} else {
 				tracker.Counters["read_attrs_fail"]++
+				if isArchive {
+					tracker.Counters["archive_blob_attrs_fail"]++
+				}
 				logger.Error("exist check failed", zap.Error(err))
 				attrs = &blob.Attributes{}
 			}
 		} else {
 			alreadyHave = true
+			if isArchive {
+				tracker.Counters["archive_blob_present"]++
+			}
 		}
 	}
 
@@ -414,7 +422,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	// in cleanup mode do some extra checks:
 	// - validate CID, delete if invalid (doesn't apply to Qm keys because their hash is not the CID)
 	if tracker.CleanupMode && alreadyHave && !cidutil.IsLegacyCID(cid) {
-		if r, errRead := ss.bucket.NewReader(ctx, key, nil); errRead == nil {
+		if r, errRead := bucket.NewReader(ctx, key, nil); errRead == nil {
 			computed, errCompute := cidutil.ComputeFileCID(r)
 			errClose := r.Close()
 			if errCompute != nil {
@@ -424,7 +432,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 			} else if computed != cid {
 				tracker.Counters["delete_invalid_needed"]++
 				logger.Error("deleting invalid CID", zap.String("expected", cid), zap.String("computed", computed))
-				if errDel := ss.bucket.Delete(ctx, key); errDel == nil {
+				if errDel := bucket.Delete(ctx, key); errDel == nil {
 					tracker.Counters["delete_invalid_success"]++
 					tracker.SeenKeys[key] = seenKeyResult{alreadyHave: false, size: 0}
 					ss.knownPresent.Remove(key)
@@ -468,7 +476,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	}
 
 	// get blobs that I should have (regardless of health of other nodes)
-	if isMine && !alreadyHave && ss.diskHasSpace() {
+	if isMine && !alreadyHave && ss.diskHasSpaceForCID(cid, placementHosts) {
 		tracker.Counters["pull_mine_needed"]++
 
 		success := false
@@ -483,10 +491,13 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 				logger.Error("pull failed (blob I should have)", zap.Error(err), zap.String("host", host))
 			} else {
 				tracker.Counters["pull_mine_success"]++
+				if isArchive {
+					tracker.Counters["archive_blob_pulled"]++
+				}
 				logger.Debug("pull OK (blob I should have)", zap.String("host", host))
 				success = true
 
-				pulledAttrs, errAttrs := ss.bucket.Attributes(ctx, key)
+				pulledAttrs, errAttrs := bucket.Attributes(ctx, key)
 				if errAttrs == nil {
 					tracker.ContentSize += pulledAttrs.Size
 				}

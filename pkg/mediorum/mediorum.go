@@ -123,6 +123,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	spOwnerWallet := walletAddress
 	dir := fmt.Sprintf("/tmp/mediorum_dev_%d", spID)
 	blobStoreDSN := ""
+	archiveBlobStoreDSN := ""
 	moveFromBlobStoreDSN := ""
 
 	notDev := isProd || isStage
@@ -132,6 +133,8 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		dir = "/tmp/mediorum"
 		// Support OPENAUDIO_STORAGE_DRIVER_URL with fallback to AUDIUS_STORAGE_DRIVER_URL for backwards compatibility
 		blobStoreDSN = getenvWithDefault("OPENAUDIO_STORAGE_DRIVER_URL", os.Getenv("AUDIUS_STORAGE_DRIVER_URL"))
+		// Optional separate bucket for archive (StoreAll-only) content.
+		archiveBlobStoreDSN = getenvWithDefault("OPENAUDIO_ARCHIVE_STORAGE_DRIVER_URL", os.Getenv("AUDIUS_ARCHIVE_STORAGE_DRIVER_URL"))
 		// Support OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM with fallback to AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM for backwards compatibility
 		moveFromBlobStoreDSN = getenvWithDefault("OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM", os.Getenv("AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM"))
 	}
@@ -161,6 +164,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		Dir:                       dir,
 		PostgresDSN:               getenvWithDefault("dbUrl", "postgres://postgres:postgres@db:5432/audius_creator_node"),
 		BlobStoreDSN:              blobStoreDSN,
+		ArchiveBlobStoreDSN:       archiveBlobStoreDSN,
 		MoveFromBlobStoreDSN:      moveFromBlobStoreDSN,
 		TrustedNotifierID:         trustedNotifierID,
 		SPID:                      spID,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/crudr"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	gcblob "gocloud.dev/blob"
 	"golang.org/x/exp/slices"
 	"golang.org/x/exp/slog"
 	"gorm.io/gorm"
@@ -200,12 +202,58 @@ func (ss *MediorumServer) updateDiskAndDbStatus(ctx context.Context) {
 	} else {
 		slog.Error("Error getting mediorum disk status", "err", err, "path", diskPath)
 	}
+
+	// Archive bucket disk status (file:// only) and blob count.
+	if ss.archiveBucket != nil {
+		if strings.HasPrefix(ss.Config.ArchiveBlobStoreDSN, "file://") {
+			_, uri, found := strings.Cut(ss.Config.ArchiveBlobStoreDSN, "://")
+			if found {
+				archivePath := strings.Split(uri, "?")[0]
+				archiveTotal, archiveFree, archiveErr := getDiskStatus(archivePath)
+				if archiveErr == nil {
+					ss.archivePathFree = archiveFree
+					ss.archivePathUsed = archiveTotal - archiveFree
+					ss.archivePathSize = archiveTotal
+				} else {
+					slog.Error("Error getting archive disk status", "err", archiveErr, "path", archivePath)
+				}
+			}
+		}
+
+		if count, countErr := countBucketBlobs(ctx, ss.archiveBucket); countErr == nil {
+			ss.archiveBlobCount = count
+		} else {
+			slog.Error("Error counting archive bucket blobs", "err", countErr)
+		}
+	}
+
 	ss.storageExpectation, err = getStorageExpectation(ctx, ss.pgPool, ss.Config.ReplicationFactor)
 	slog.Info("Storage expectation", "size", ss.storageExpectation)
 	slog.Info("Replication factor", "replicationFactor", ss.Config.ReplicationFactor)
 	slog.Info("running job")
 	if err != nil {
 		slog.Error("Error getting storage expectation", "err", err.Error())
+	}
+}
+
+func countBucketBlobs(ctx context.Context, bucket *gcblob.Bucket) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	var count int64
+	iter := bucket.List(nil)
+	for {
+		obj, err := iter.Next(ctx)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return count, nil
+			}
+			return count, err
+		}
+		if obj == nil || obj.IsDir {
+			continue
+		}
+		count++
 	}
 }
 

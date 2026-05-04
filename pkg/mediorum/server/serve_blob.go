@@ -102,7 +102,7 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 		return c.JSON(200, attr)
 	}
 
-	attr, err := ss.bucket.Attributes(ctx, key)
+	attr, err := ss.bucketForCID(cid, nil).Attributes(ctx, key)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return c.String(404, "blob not found")
@@ -162,7 +162,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 		c.Response().Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, contentDisposition))
 	}
 
-	blob, err := ss.bucket.NewReader(ctx, key, nil)
+	blob, err := ss.bucketForCID(cid, nil).NewReader(ctx, key, nil)
 
 	// If our bucket doesn't have the file, try to pull it first
 	if err != nil {
@@ -176,7 +176,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 			_, pullErr := ss.findAndPullBlob(ctx, cid)
 			if pullErr == nil {
 				// Successfully pulled, try reading again
-				blob, err = ss.bucket.NewReader(ctx, key, nil)
+				blob, err = ss.bucketForCID(cid, nil).NewReader(ctx, key, nil)
 				if err == nil {
 					// Successfully read after pull, continue with normal serving
 				} else {
@@ -185,7 +185,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 				}
 			} else {
 				// Pull failed - check if it's due to disk space
-				if !ss.diskHasSpace() {
+				if !ss.diskHasSpaceForCID(cid, nil) {
 					// Disk is full, proxy the request instead of erroring
 					ss.logger.Info("disk full, proxying blob request", zap.String("cid", cid), zap.Error(pullErr))
 					host := ss.findNodeToServeBlob(ctx, cid)
@@ -248,7 +248,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 				durationSeconds, _ := c.Get("trackDurationSeconds").(float64)
 				expiry := presignedURLExpiry(durationSeconds)
 
-				signedURL, err := ss.bucket.SignedURL(ctx, key, &gcblob.SignedURLOptions{
+				signedURL, err := ss.bucketForCID(cid, nil).SignedURL(ctx, key, &gcblob.SignedURLOptions{
 					Expiry: expiry,
 					Method: http.MethodGet,
 				})
@@ -596,7 +596,7 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 	cid := c.Param("cid")
 	key := cidutil.ShardCID(cid)
 
-	blob, err := ss.bucket.NewReader(ctx, key, nil)
+	blob, err := ss.bucketForCID(cid, nil).NewReader(ctx, key, nil)
 	if err != nil {
 		return err
 	}
@@ -703,7 +703,7 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 		c.Response().Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, contentDisposition))
 	}
 
-	blob, err := ss.bucket.NewReader(ctx, key, nil)
+	blob, err := ss.bucketForCID(cid, nil).NewReader(ctx, key, nil)
 	// If our bucket doesn't have the file, find a different node
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {

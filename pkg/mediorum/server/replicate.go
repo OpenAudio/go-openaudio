@@ -101,7 +101,7 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 	logger.Debug("replicateToMyBucket")
 	key := cidutil.ShardCID(fileName)
 
-	w, err := ss.bucket.NewWriter(ctx, key, nil)
+	w, err := ss.bucketForCID(fileName, nil).NewWriter(ctx, key, nil)
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func (ss *MediorumServer) dropFromMyBucket(fileName string) error {
 
 	key := cidutil.ShardCID(fileName)
 	ctx := context.Background()
-	err := ss.bucket.Delete(ctx, key)
+	err := ss.bucketForCID(fileName, nil).Delete(ctx, key)
 	if err != nil {
 		logger.Error("failed to delete", zap.Error(err))
 	} else {
@@ -138,7 +138,7 @@ func (ss *MediorumServer) dropFromMyBucket(fileName string) error {
 func (ss *MediorumServer) haveInMyBucket(fileName string) bool {
 	shardedCid := cidutil.ShardCID(fileName)
 	ctx := context.Background()
-	exists, _ := ss.bucket.Exists(ctx, shardedCid)
+	exists, _ := ss.bucketForCID(fileName, nil).Exists(ctx, shardedCid)
 	return exists
 }
 
@@ -236,41 +236,32 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 	return ss.replicateToMyBucket(ctx, cid, resp.Body)
 }
 
-// if the node is using local (disk) storage, do not replicate if there is <10GB remaining
-func (ss *MediorumServer) diskHasSpace() bool {
-	// don't worry about running out of space on dev or stage
-	if ss.Config.Env != "prod" {
+// dsnHasSpace reports whether a file:// DSN has enough free disk to accept new
+// blobs. Non-file DSNs (S3/GCS/etc) always return true. The fallbackFreeBytes
+// argument is used when we can't statfs the path (e.g. it doesn't exist yet);
+// callers pass the most relevant cached free-bytes count for their bucket.
+func (ss *MediorumServer) dsnHasSpace(dsn string, fallbackFreeBytes uint64) bool {
+	if !strings.HasPrefix(dsn, "file://") {
 		return true
 	}
 
-	// If not using file storage, always allow (S3, GCS, etc. don't have local disk constraints)
-	if !strings.HasPrefix(ss.Config.BlobStoreDSN, "file://") {
-		return true
-	}
-
-	// Extract the path from file:// URL (e.g., "file:///data/blobs?no_tmp_dir=true" -> "/data/blobs")
-	_, uri, found := strings.Cut(ss.Config.BlobStoreDSN, "://")
+	_, uri, found := strings.Cut(dsn, "://")
 	if !found {
-		// Malformed URL, fall back to checking Config.Dir
-		ss.logger.Warn("malformed BlobStoreDSN, falling back to Config.Dir check",
-			zap.String("blobStoreDSN", ss.Config.BlobStoreDSN))
-		return ss.mediorumPathFree/uint64(1e9) > 10
+		ss.logger.Warn("malformed blob store DSN, falling back to cached free-bytes check",
+			zap.String("dsn", dsn))
+		return fallbackFreeBytes/uint64(1e9) > 10
 	}
 
-	// Remove query parameters if present (e.g., "?no_tmp_dir=true")
 	blobPath := strings.Split(uri, "?")[0]
 
-	// Check disk space on the actual blob storage path
 	_, free, err := getDiskStatus(blobPath)
 	if err != nil {
-		// If we can't check the blob path (e.g., doesn't exist yet), fall back to Config.Dir
-		ss.logger.Warn("failed to check blob storage disk space, falling back to Config.Dir",
+		ss.logger.Warn("failed to check blob storage disk space, falling back to cached free-bytes",
 			zap.String("blobPath", blobPath),
 			zap.Error(err))
-		return ss.mediorumPathFree/uint64(1e9) > 10
+		return fallbackFreeBytes/uint64(1e9) > 10
 	}
 
-	// Check if free space > 10GB on the actual blob storage path
 	freeGB := free / uint64(1e9)
 	hasSpace := freeGB > 10
 
@@ -278,8 +269,39 @@ func (ss *MediorumServer) diskHasSpace() bool {
 		ss.logger.Warn("blob storage disk space below threshold",
 			zap.String("blobPath", blobPath),
 			zap.Uint64("freeGB", freeGB),
-			zap.Uint64("thresholdGB", 200))
+			zap.Uint64("thresholdGB", 10))
 	}
 
 	return hasSpace
+}
+
+// diskHasSpace returns true only when every configured bucket has headroom.
+// Used by paths that don't have a CID yet (e.g. the inbound /internal/blobs
+// precheck) so we don't accept a write that we can't actually place.
+func (ss *MediorumServer) diskHasSpace() bool {
+	if ss.Config.Env != "prod" {
+		return true
+	}
+	if !ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree) {
+		return false
+	}
+	if ss.Config.ArchiveBlobStoreDSN != "" {
+		if !ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree) {
+			return false
+		}
+	}
+	return true
+}
+
+// diskHasSpaceForCID checks only the bucket the given CID would land in. Use
+// this anywhere the CID is known so we don't reject writes to a healthy primary
+// because the archive bucket is full (or vice versa).
+func (ss *MediorumServer) diskHasSpaceForCID(cid string, placementHosts []string) bool {
+	if ss.Config.Env != "prod" {
+		return true
+	}
+	if ss.archiveBucket != nil && ss.bucketForCID(cid, placementHosts) == ss.archiveBucket {
+		return ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree)
+	}
+	return ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree)
 }

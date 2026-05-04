@@ -60,6 +60,7 @@ type MediorumConfig struct {
 	ReplicationFactor         int
 	Dir                       string `default:"/tmp/mediorum"`
 	BlobStoreDSN              string `json:"-"`
+	ArchiveBlobStoreDSN       string `json:"-"`
 	MoveFromBlobStoreDSN      string `json:"-"`
 	PostgresDSN               string `json:"-"`
 	PrivateKey                string `json:"-"`
@@ -94,6 +95,7 @@ type MediorumServer struct {
 	lc               *lifecycle.Lifecycle
 	echo             *echo.Echo
 	bucket           *blob.Bucket
+	archiveBucket    *blob.Bucket
 	logger           *zap.Logger
 	crud             *crudr.Crudr
 	pgPool           *pgxpool.Pool
@@ -113,6 +115,12 @@ type MediorumServer struct {
 	mediorumPathSize   uint64
 	mediorumPathFree   uint64
 	storageExpectation uint64
+
+	// archive bucket stats (only populated when ArchiveBlobStoreDSN is set)
+	archivePathUsed  uint64
+	archivePathSize  uint64
+	archivePathFree  uint64
+	archiveBlobCount int64
 
 	databaseSize          uint64
 	dbSizeErr             string
@@ -240,6 +248,23 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		return nil, err
 	}
 
+	// archive bucket: only opened if configured. Routes CIDs that this node
+	// only stores due to StoreAll (rendezvous rank >= ReplicationFactor).
+	var archiveBucket *blob.Bucket
+	if config.ArchiveBlobStoreDSN != "" {
+		if config.ArchiveBlobStoreDSN == config.BlobStoreDSN {
+			return nil, errors.New("OPENAUDIO_ARCHIVE_STORAGE_DRIVER_URL must differ from OPENAUDIO_STORAGE_DRIVER_URL")
+		}
+		if !config.StoreAll {
+			logger.Warn("OPENAUDIO_ARCHIVE_STORAGE_DRIVER_URL is set but STORE_ALL is false; archive bucket will be unused")
+		}
+		archiveBucket, err = persistence.Open(config.ArchiveBlobStoreDSN)
+		if err != nil {
+			logger.Error("failed to open archive storage bucket", zap.Error(err))
+			return nil, err
+		}
+	}
+
 	// bucket to move all files from
 	if config.MoveFromBlobStoreDSN != "" {
 		if config.MoveFromBlobStoreDSN == config.BlobStoreDSN {
@@ -354,6 +379,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		lc:               mediorumLifecycle,
 		echo:             echoServer,
 		bucket:           bucket,
+		archiveBucket:    archiveBucket,
 		crud:             crud,
 		pgPool:           pgPool,
 		reqClient:        reqClient,

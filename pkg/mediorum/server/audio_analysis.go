@@ -78,13 +78,13 @@ func (ss *MediorumServer) findMissedAudioAnalysisJobs(ctx context.Context, work 
 
 		cid, ok := upload.TranscodeResults["320"]
 		if !ok {
-			if exists, _ := ss.bucket.Exists(ctx, upload.OrigFileCID); exists {
+			if exists, _ := ss.bucketForCID(upload.OrigFileCID, nil).Exists(ctx, upload.OrigFileCID); exists {
 				ss.transcode(ctx, upload)
 				cid, ok = upload.TranscodeResults["320"]
 			}
 		}
 		if ok {
-			if exists, _ := ss.bucket.Exists(ctx, cid); exists {
+			if exists, _ := ss.bucketForCID(cid, nil).Exists(ctx, cid); exists {
 				work <- upload
 			}
 		}
@@ -145,7 +145,7 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 	// pull transcoded file from bucket
 	cid, ok := upload.TranscodeResults["320"]
 	if !ok {
-		if exists, _ := ss.bucket.Exists(ctx, upload.OrigFileCID); exists {
+		if exists, _ := ss.bucketForCID(upload.OrigFileCID, nil).Exists(ctx, upload.OrigFileCID); exists {
 			ss.transcode(ctx, upload)
 			cid, ok = upload.TranscodeResults["320"]
 		}
@@ -159,7 +159,7 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 	// so that the next mirror may pick the job up
 	logger = logger.With(zap.String("cid", cid))
 	key := cidutil.ShardCID(cid)
-	attrs, err := ss.bucket.Attributes(ctx, key)
+	attrs, err := ss.bucketForCID(cid, nil).Attributes(ctx, key)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return errors.New("failed to find audio file on node")
@@ -172,7 +172,7 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 		logger.Error("failed to create temp file", zap.Error(err))
 		return err
 	}
-	r, err := ss.bucket.NewReader(ctx, key, nil)
+	r, err := ss.bucketForCID(cid, nil).NewReader(ctx, key, nil)
 	if err != nil {
 		logger.Error("failed to read blob", zap.Error(err))
 		return err

@@ -55,7 +55,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	}
 
 	serveSuccess := func(blobPath string) error {
-		if blob, err := ss.bucket.NewReader(ctx, blobPath, nil); err == nil {
+		if blob, err := ss.bucketForCID(containerCID, nil).NewReader(ctx, blobPath, nil); err == nil {
 			return serveSuccessWithReader(blob)
 		} else {
 			return err
@@ -97,7 +97,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 
 	// we already have the resized version
 	if !skipCache {
-		if blob, err := ss.bucket.NewReader(ctx, variantStoragePath, nil); err == nil {
+		if blob, err := ss.bucketForCID(containerCID, nil).NewReader(ctx, variantStoragePath, nil); err == nil {
 			return serveSuccessWithReader(blob)
 		}
 	}
@@ -107,7 +107,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	if cidutil.IsLegacyCID(origImageCID) {
 		origImageCID += "/original.jpg"
 	}
-	origReader, err := ss.bucket.NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
+	origReader, err := ss.bucketForCID(containerCID, nil).NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
 
 	// if we don't have orig, fetch from network
 	if err != nil {
@@ -115,7 +115,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 		host, pullErr := ss.findAndPullBlob(ctx, origImageCID)
 		if pullErr != nil {
 			// Pull failed - check if it's due to disk space
-			if !ss.diskHasSpace() {
+			if !ss.diskHasSpaceForCID(containerCID, nil) {
 				// Disk is full, proxy the request instead of erroring
 				// Redirect to a node that can serve this variant
 				redirectHost := ss.findNodeToServeBlob(ctx, origImageCID)
@@ -143,7 +143,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 		c.Response().Header().Set("x-fetch-host", host)
 		c.Response().Header().Set("x-fetch-ok", fmt.Sprintf("%.2fs", time.Since(startFetch).Seconds()))
 
-		origReader, err = ss.bucket.NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
+		origReader, err = ss.bucketForCID(containerCID, nil).NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
 		if err != nil {
 			return err
 		}
@@ -153,7 +153,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	if !isOriginalJpg {
 		resizeStart := time.Now()
 		resized, _, _ := Resized(".jpg", origReader, w, h, "fill")
-		w, _ := ss.bucket.NewWriter(ctx, variantStoragePath, nil)
+		w, _ := ss.bucketForCID(containerCID, nil).NewWriter(ctx, variantStoragePath, nil)
 		io.Copy(w, resized)
 		w.Close()
 		c.Response().Header().Set("x-resize-ok", fmt.Sprintf("%.2fs", time.Since(resizeStart).Seconds()))
