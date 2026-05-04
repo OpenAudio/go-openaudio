@@ -1073,6 +1073,11 @@ func (c *CoreService) GetRewards(ctx context.Context, req *connect.Request[v1.Ge
 	if claimAuthority == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority required"))
 	}
+	// Stored authorities are lowercased by rewards.CanonicalAuthorities; the
+	// underlying GetRewardsByClaimAuthority does a case-sensitive @> array
+	// containment check. Normalize the caller-supplied address (which is
+	// often checksum-case from common.PrivKeyToAddress) so lookups match.
+	claimAuthority = strings.ToLower(strings.TrimSpace(claimAuthority))
 
 	rewards, err := c.core.db.GetRewardsByClaimAuthority(ctx, claimAuthority)
 	if err != nil {

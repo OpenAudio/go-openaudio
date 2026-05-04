@@ -14,6 +14,8 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"google.golang.org/protobuf/proto"
 )
@@ -210,30 +212,61 @@ func (s *Server) finalizeCreateReward(ctx context.Context, req *abcitypes.Finali
 	}
 	rewardAddress := common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, "")
 
-	// Convert claim authorities to string array
-	claimAuthorities := make([]string, len(createReward.ClaimAuthorities))
-	for i, auth := range createReward.ClaimAuthorities {
-		claimAuthorities[i] = auth.Address
+	// Resolve the reward's RM by looking up any one of its inline
+	// claim_authorities in the launchpad_authority_rm mapping. This
+	// matches what the 00033 migration's backfill block does for
+	// pre-migration rows, so live CreateReward state and replayed-
+	// CreateReward state both converge on real-RM-keyed pools (no
+	// synthetic mig_<md5> identifiers).
+	authorityAddrs := make([]string, 0, len(createReward.ClaimAuthorities))
+	for _, auth := range createReward.ClaimAuthorities {
+		authorityAddrs = append(authorityAddrs, auth.Address)
+	}
+	canonicalAuthorities := rewards.CanonicalAuthorities(authorityAddrs)
+
+	qtx := s.getDb()
+	var rmPubkey pgtype.Text
+	if len(canonicalAuthorities) > 0 {
+		rm, err := qtx.GetLaunchpadRMByAuthority(ctx, canonicalAuthorities)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			// No matching launchpad authority. Reward stays orphaned
+			// (NULL rewards_manager_pubkey, no pool). Mirrors the
+			// migration backfill's behavior for rows whose authorities
+			// don't include any known launchpad-derived authority.
+		case err != nil:
+			return fmt.Errorf("failed to resolve launchpad RM: %w", err)
+		default:
+			// Upsert the pool so multiple CreateReward txs targeting the
+			// same RM converge on the same authority set. The DO UPDATE
+			// in UpsertSyntheticRewardPool absorbs any canonicalization
+			// drift between successive replays.
+			if err := qtx.UpsertSyntheticRewardPool(ctx, db.UpsertSyntheticRewardPoolParams{
+				RewardsManagerPubkey: rm,
+				Authorities:          canonicalAuthorities,
+			}); err != nil {
+				return fmt.Errorf("failed to upsert reward pool: %w", err)
+			}
+			rmPubkey = pgtype.Text{String: rm, Valid: true}
+		}
 	}
 
-	// Marshal the raw message
 	rawMessage, err := proto.Marshal(createReward)
 	if err != nil {
 		return fmt.Errorf("failed to marshal create reward message: %w", err)
 	}
 
-	qtx := s.getDb()
 	if err := qtx.InsertCoreReward(ctx, db.InsertCoreRewardParams{
-		TxHash:           txhash,
-		Index:            messageIndex,
-		Address:          rewardAddress,
-		Sender:           signer, // Use verified signer instead of passed sender
-		RewardID:         createReward.RewardId,
-		Name:             createReward.Name,
-		Amount:           int64(createReward.Amount),
-		ClaimAuthorities: claimAuthorities,
-		RawMessage:       rawMessage,
-		BlockHeight:      req.Height,
+		TxHash:               txhash,
+		Index:                messageIndex,
+		Address:              rewardAddress,
+		Sender:               signer, // Use verified signer instead of passed sender
+		RewardID:             createReward.RewardId,
+		Name:                 createReward.Name,
+		Amount:               int64(createReward.Amount),
+		RewardsManagerPubkey: rmPubkey,
+		RawMessage:           rawMessage,
+		BlockHeight:          req.Height,
 	}); err != nil {
 		return fmt.Errorf("failed to insert reward: %w", err)
 	}
