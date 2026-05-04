@@ -212,12 +212,22 @@ func (s *Server) finalizeCreateReward(ctx context.Context, req *abcitypes.Finali
 	}
 	rewardAddress := common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, "")
 
-	// Resolve the reward's RM by looking up any one of its inline
-	// claim_authorities in the launchpad_authority_rm mapping. This
-	// matches what the 00033 migration's backfill block does for
-	// pre-migration rows, so live CreateReward state and replayed-
-	// CreateReward state both converge on real-RM-keyed pools (no
-	// synthetic mig_<md5> identifiers).
+	// Resolve the reward's RM. Two-tier lookup that matches the migration
+	// backfill's behavior for the launchpad case and preserves the legacy
+	// synthetic-pool fallback for everything else:
+	//
+	//   1. Look up any of the row's claim_authorities in
+	//      launchpad_authority_rm. If a launchpad-derived per-mint authority
+	//      is found, route the reward into that mint's real Solana RM pool
+	//      — same as the 00033 migration would for the same authority set.
+	//
+	//   2. Otherwise (test fixtures, ad-hoc rewards, anything not produced
+	//      by the launchpad), fall back to a synthetic mig_<md5> pool keyed
+	//      by the canonical authority set. PR3's per-RM sender-attestation
+	//      gate ignores mig_* pools (their identifiers don't decode as RM
+	//      pubkeys), so synthetic pools never grant Solana sender
+	//      registration; they exist purely so legacy claim attestations
+	//      can still be authenticated against the row's authorities.
 	authorityAddrs := make([]string, 0, len(createReward.ClaimAuthorities))
 	for _, auth := range createReward.ClaimAuthorities {
 		authorityAddrs = append(authorityAddrs, auth.Address)
@@ -225,30 +235,27 @@ func (s *Server) finalizeCreateReward(ctx context.Context, req *abcitypes.Finali
 	canonicalAuthorities := rewards.CanonicalAuthorities(authorityAddrs)
 
 	qtx := s.getDb()
-	var rmPubkey pgtype.Text
+	var poolAddress string
 	if len(canonicalAuthorities) > 0 {
 		rm, err := qtx.GetLaunchpadRMByAuthority(ctx, canonicalAuthorities)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
-			// No matching launchpad authority. Reward stays orphaned
-			// (NULL rewards_manager_pubkey, no pool). Mirrors the
-			// migration backfill's behavior for rows whose authorities
-			// don't include any known launchpad-derived authority.
+			poolAddress = rewards.MigratedPoolAddress(authorityAddrs)
 		case err != nil:
 			return fmt.Errorf("failed to resolve launchpad RM: %w", err)
 		default:
-			// Upsert the pool so multiple CreateReward txs targeting the
-			// same RM converge on the same authority set. The DO UPDATE
-			// in UpsertSyntheticRewardPool absorbs any canonicalization
-			// drift between successive replays.
-			if err := qtx.UpsertSyntheticRewardPool(ctx, db.UpsertSyntheticRewardPoolParams{
-				RewardsManagerPubkey: rm,
-				Authorities:          canonicalAuthorities,
-			}); err != nil {
-				return fmt.Errorf("failed to upsert reward pool: %w", err)
-			}
-			rmPubkey = pgtype.Text{String: rm, Valid: true}
+			poolAddress = rm
 		}
+		if err := qtx.UpsertSyntheticRewardPool(ctx, db.UpsertSyntheticRewardPoolParams{
+			RewardsManagerPubkey: poolAddress,
+			Authorities:          canonicalAuthorities,
+		}); err != nil {
+			return fmt.Errorf("failed to upsert reward pool: %w", err)
+		}
+	}
+	var rmPubkey pgtype.Text
+	if poolAddress != "" {
+		rmPubkey = pgtype.Text{String: poolAddress, Valid: true}
 	}
 
 	rawMessage, err := proto.Marshal(createReward)
