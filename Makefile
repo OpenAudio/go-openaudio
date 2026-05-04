@@ -238,6 +238,18 @@ down: ss-down
 		down -v
 	rm -rf tmp/oap*
 
+DEVNET_NODES := node1.oap.devnet node2.oap.devnet node3.oap.devnet node4.oap.devnet
+
+.PHONY: devnet-status
+devnet-status:
+	@for node in $(DEVNET_NODES); do \
+		printf "%-22s " "$$node"; \
+		body=$$(curl -fsSk --max-time 5 "https://$$node/health-check" 2>/dev/null) || { echo "unreachable"; continue; }; \
+		git=$$(printf '%s' "$$body" | sed -n 's/.*"git":"\([^"]*\)".*/\1/p' | cut -c1-12); \
+		uptime=$$(printf '%s' "$$body" | sed -n 's/.*"uptime":"\([^"]*\)".*/\1/p'); \
+		echo "healthy  git=$${git:-?}  uptime=$${uptime:-?}"; \
+	done
+
 .PHONY: test
 test: test-mediorum test-integration test-unit
 
