@@ -456,7 +456,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	// delete derived image variants since they'll be dynamically resized
 	if strings.HasSuffix(cid, ".jpg") && !strings.HasSuffix(cid, "original.jpg") {
 		if tracker.CleanupMode && alreadyHave {
-			err := ss.dropFromMyBucket(cid)
+			err := ss.dropFromMyBucket(cid, placementHosts)
 			if err != nil {
 				logger.Error("delete_resized_image_failed", zap.Error(err))
 				tracker.Counters["delete_resized_image_failed"]++
@@ -485,7 +485,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 			if host == ss.Config.Self.Host {
 				continue
 			}
-			err := ss.pullFileFromHost(ctx, host, cid)
+			err := ss.pullFileFromHost(ctx, host, cid, placementHosts)
 			if err != nil {
 				tracker.Counters["pull_mine_fail"]++
 				logger.Error("pull failed (blob I should have)", zap.Error(err), zap.String("host", host))
@@ -532,7 +532,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	if !isPlaced && !ss.Config.StoreAll && tracker.CleanupMode && alreadyHave && myRank > rankThreshold && !wasReplicatedThisWeek {
 		// if i'm the first node that over-replicated, keep the file for a week as a buffer since a node ahead of me in the preferred order will likely be down temporarily at some point
 		tracker.Counters["delete_over_replicated_needed"]++
-		err := ss.dropFromMyBucket(cid)
+		err := ss.dropFromMyBucket(cid, placementHosts)
 		if err != nil {
 			tracker.Counters["delete_over_replicated_fail"]++
 			logger.Error("delete failed", zap.Error(err))

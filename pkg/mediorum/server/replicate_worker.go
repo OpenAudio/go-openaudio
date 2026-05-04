@@ -200,7 +200,7 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 			}
 			defer reader.Close()
 
-			err = ss.replicateFileToHost(ctx, targetHost, cid, reader)
+			err = ss.replicateFileToHost(ctx, targetHost, cid, reader, upload.PlacementHosts)
 			// TODO: Replicate with TUSD
 			// err = ss.replicateToHost(targetHost, cid, reader, attrs.Size, placementHosts)
 			resultsChan <- replicationResult{host: targetHost, err: err}

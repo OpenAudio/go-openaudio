@@ -286,7 +286,7 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 	resultKey := resultHash
 
 	// transcode server will retain transcode result for analysis
-	ss.replicateToMyBucket(ctx, resultHash, dest)
+	ss.replicateToMyBucket(ctx, resultHash, dest, upload.PlacementHosts)
 
 	upload.TranscodeResults["320"] = resultKey
 
@@ -356,7 +356,7 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 
 	logger := ss.logger.With(zap.Any("template", upload.Template), zap.String("cid", fileHash))
 
-	if !ss.haveInMyBucket(fileHash) {
+	if !ss.haveInMyBucket(fileHash, upload.PlacementHosts) {
 		_, err := ss.findAndPullBlob(ctx, fileHash)
 		if err != nil {
 			logger.Warn("failed to find blob", zap.Error(err))

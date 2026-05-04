@@ -75,20 +75,40 @@ func TestDiskHasSpace_FilePrimaryUsesFallbackFreeBytes(t *testing.T) {
 }
 
 func TestDiskHasSpace_ArchiveBucketChecked(t *testing.T) {
-	// When archive is configured, diskHasSpace must AND-together both buckets.
+	// Archive disk only matters when archive can actually receive writes:
+	// archiveBucket open AND StoreAll true. Use a real (mem) archive bucket
+	// so archiveBucket is non-nil; gating still operates off DSN free-bytes.
+	archive := openMemBucket(t)
+
 	t.Run("primary plenty, archive tight -> false", func(t *testing.T) {
 		ss := makeDiskSpaceServer("prod", "file:///nonexistent/primary", "file:///nonexistent/archive",
-			plentyFree, tightFree, nil, false)
+			plentyFree, tightFree, archive, true)
 		assert.False(t, ss.diskHasSpace())
 	})
 	t.Run("primary tight, archive plenty -> false", func(t *testing.T) {
 		ss := makeDiskSpaceServer("prod", "file:///nonexistent/primary", "file:///nonexistent/archive",
-			tightFree, plentyFree, nil, false)
+			tightFree, plentyFree, archive, true)
 		assert.False(t, ss.diskHasSpace())
 	})
 	t.Run("both plenty -> true", func(t *testing.T) {
 		ss := makeDiskSpaceServer("prod", "file:///nonexistent/primary", "file:///nonexistent/archive",
-			plentyFree, plentyFree, nil, false)
+			plentyFree, plentyFree, archive, true)
+		assert.True(t, ss.diskHasSpace())
+	})
+
+	t.Run("archive open but StoreAll=false -> archive ignored", func(t *testing.T) {
+		// non-StoreAll node with stray archive DSN: archive is logged as
+		// "unused" at startup and no CID will ever route there. Don't gate
+		// writes on its disk pressure.
+		ss := makeDiskSpaceServer("prod", "file:///nonexistent/primary", "file:///nonexistent/archive",
+			plentyFree, tightFree, archive, false)
+		assert.True(t, ss.diskHasSpace())
+	})
+
+	t.Run("archive DSN set but bucket nil -> archive ignored", func(t *testing.T) {
+		// Defensive case: DSN string set but bucket open failed / not opened.
+		ss := makeDiskSpaceServer("prod", "file:///nonexistent/primary", "file:///nonexistent/archive",
+			plentyFree, tightFree, nil, true)
 		assert.True(t, ss.diskHasSpace())
 	})
 }

@@ -117,10 +117,9 @@ type MediorumServer struct {
 	storageExpectation uint64
 
 	// archive bucket stats (only populated when ArchiveBlobStoreDSN is set)
-	archivePathUsed  uint64
-	archivePathSize  uint64
-	archivePathFree  uint64
-	archiveBlobCount int64
+	archivePathUsed uint64
+	archivePathSize uint64
+	archivePathFree uint64
 
 	databaseSize          uint64
 	dbSizeErr             string

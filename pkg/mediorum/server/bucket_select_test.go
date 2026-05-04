@@ -131,4 +131,14 @@ func TestBucketForCID(t *testing.T) {
 		cid := findCIDByRank(t, ss, 0)
 		assert.Same(t, primary, ss.bucketForCID(cid, nil))
 	})
+
+	t.Run("self not in hash ring (myRank<0) -> primary", func(t *testing.T) {
+		// Build a server whose Self.Host isn't in the rendezvous host list,
+		// simulating misconfiguration / mid-registration.
+		ss := makeBucketSelectorServer(t, primary, archive, true, 3, 0)
+		ss.Config.Self = registrar.Peer{Host: "http://stranger.test"}
+		// any CID will rank stranger.test at -1
+		assert.Same(t, primary, ss.bucketForCID("QmTestCIDA", nil))
+		assert.False(t, ss.isArchiveCID("QmTestCIDA", nil))
+	})
 }

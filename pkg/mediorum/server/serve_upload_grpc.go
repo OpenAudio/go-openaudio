@@ -153,7 +153,7 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 	upload.FFProbe.Format.Filename = upload.OrigFileName
 
 	// Replicate to my bucket
-	err = ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
+	err = ss.replicateToMyBucket(ctx, formFileCID, tmpFile, upload.PlacementHosts)
 	if err != nil {
 		return ss.handleUploadError(upload, err, shouldCreate)
 	}

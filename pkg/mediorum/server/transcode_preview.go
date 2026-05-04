@@ -35,7 +35,7 @@ func (ss *MediorumServer) generateAudioPreviewForUpload(ctx context.Context, upl
 // It returns an AudioPreview record, and the client can use that to update a track record.
 func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash string, previewStartSeconds string) (*AudioPreview, error) {
 
-	if !ss.haveInMyBucket(fileHash) {
+	if !ss.haveInMyBucket(fileHash, nil) {
 		_, err := ss.findAndPullBlob(ctx, fileHash)
 		if err != nil {
 			return nil, err

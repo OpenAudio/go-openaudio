@@ -130,7 +130,7 @@ func TestUploadPlacement(t *testing.T) {
 	}
 
 	// drop from s5
-	s5.dropFromMyBucket(u2.OrigFileCID)
+	s5.dropFromMyBucket(u2.OrigFileCID, nil)
 
 	// run repair
 	testNetworkRunRepair(true)
@@ -234,7 +234,7 @@ func TestUploadPlacementTus(t *testing.T) {
 	}
 
 	// drop from s5
-	s5.dropFromMyBucket(u2.OrigFileCID)
+	s5.dropFromMyBucket(u2.OrigFileCID, nil)
 
 	// run repair
 	testNetworkRunRepair(true)

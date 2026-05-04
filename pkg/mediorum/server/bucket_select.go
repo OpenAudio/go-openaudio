@@ -30,7 +30,10 @@ func (ss *MediorumServer) bucketForCID(cid string, placementHosts []string) *blo
 	}
 	orderedHosts := ss.rendezvousHasher.Rank(cid)
 	myRank := slices.Index(orderedHosts, ss.Config.Self.Host)
-	if myRank >= 0 && myRank < ss.Config.ReplicationFactor {
+	// myRank < 0 means self isn't in the hash ring (misconfigured or
+	// mid-registration); route to primary so we don't silently divert
+	// everything to cold storage during a transient bad state.
+	if myRank < 0 || myRank < ss.Config.ReplicationFactor {
 		return ss.bucket
 	}
 	return ss.archiveBucket

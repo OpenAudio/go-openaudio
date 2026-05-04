@@ -382,7 +382,7 @@ func (ss *MediorumServer) findAndPullBlob(ctx context.Context, key string) (stri
 
 	hosts, _ := ss.rendezvousAllHosts(key)
 	for _, host := range hosts {
-		err := ss.pullFileFromHost(ctx, host, key)
+		err := ss.pullFileFromHost(ctx, host, key, nil)
 		if err == nil {
 			return host, nil
 		}
@@ -635,7 +635,11 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 			})
 		}
 
-		err = ss.replicateToMyBucket(c.Request().Context(), cid, inp)
+		// Peer-driven push (/internal/blobs): no placement context on the wire,
+		// route by rendezvous rank only. A peer pushing to a placement target
+		// will only push CIDs the target should hold; opportunistic pushes to
+		// non-target StoreAll nodes correctly route to archive.
+		err = ss.replicateToMyBucket(c.Request().Context(), cid, inp, nil)
 		if err != nil {
 			ss.logger.Error("accept ERR", zap.Error(err))
 			return err

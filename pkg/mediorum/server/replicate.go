@@ -23,16 +23,20 @@ import (
 func (ss *MediorumServer) replicateFileParallel(ctx context.Context, cid string, filePath string, placementHosts []string) ([]string, error) {
 	replicaCount := ss.Config.ReplicationFactor
 
-	if len(placementHosts) > 0 {
-		// use all explicit placement hosts
-		replicaCount = len(placementHosts)
+	// Preserve the original placement context separately from the host list
+	// we iterate. bucketForCID treats any non-empty placementHosts as "force
+	// primary," so we must NOT pass the rendezvous-expanded list when the
+	// upload had no explicit placement.
+	originalPlacement := placementHosts
+	hosts := placementHosts
+	if len(hosts) > 0 {
+		replicaCount = len(hosts)
 	} else {
-		// use rendezvous
-		placementHosts, _ = ss.rendezvousAllHosts(cid)
+		hosts, _ = ss.rendezvousAllHosts(cid)
 	}
 
-	queue := make(chan string, len(placementHosts))
-	for _, p := range placementHosts {
+	queue := make(chan string, len(hosts))
+	for _, p := range hosts {
 		queue <- p
 	}
 
@@ -54,7 +58,7 @@ func (ss *MediorumServer) replicateFileParallel(ctx context.Context, cid string,
 			defer file.Close()
 			for peer := range queue {
 				file.Seek(0, 0)
-				err := ss.replicateFileToHost(ctx, peer, cid, file)
+				err := ss.replicateFileToHost(ctx, peer, cid, file, originalPlacement)
 				if err == nil {
 					mu.Lock()
 					results = append(results, peer)
@@ -81,7 +85,7 @@ func (ss *MediorumServer) replicateFile(ctx context.Context, fileName string, fi
 		logger.Debug("replicating")
 
 		file.Seek(0, 0)
-		err := ss.replicateFileToHost(ctx, peer, fileName, file)
+		err := ss.replicateFileToHost(ctx, peer, fileName, file, nil)
 		if err != nil {
 			logger.Error("replication failed", zap.Error(err))
 		} else {
@@ -96,12 +100,16 @@ func (ss *MediorumServer) replicateFile(ctx context.Context, fileName string, fi
 	return success, nil
 }
 
-func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName string, file io.Reader) error {
+// replicateToMyBucket writes the blob to the bucket selected by bucketForCID.
+// placementHosts MUST be passed when the caller has placement context (repair,
+// upload replication path) so writes go to the same bucket reads expect.
+// Pass nil for opportunistic peer pushes that have no placement context.
+func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName string, file io.Reader, placementHosts []string) error {
 	logger := ss.logger.With(zap.String("task", "replicateToMyBucket"), zap.String("cid", fileName))
 	logger.Debug("replicateToMyBucket")
 	key := cidutil.ShardCID(fileName)
 
-	w, err := ss.bucketForCID(fileName, nil).NewWriter(ctx, key, nil)
+	w, err := ss.bucketForCID(fileName, placementHosts).NewWriter(ctx, key, nil)
 	if err != nil {
 		return err
 	}
@@ -119,13 +127,13 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 	return nil
 }
 
-func (ss *MediorumServer) dropFromMyBucket(fileName string) error {
+func (ss *MediorumServer) dropFromMyBucket(fileName string, placementHosts []string) error {
 	logger := ss.logger.With(zap.String("task", "dropFromMyBucket"), zap.String("cid", fileName))
 	logger.Debug("deleting blob")
 
 	key := cidutil.ShardCID(fileName)
 	ctx := context.Background()
-	err := ss.bucketForCID(fileName, nil).Delete(ctx, key)
+	err := ss.bucketForCID(fileName, placementHosts).Delete(ctx, key)
 	if err != nil {
 		logger.Error("failed to delete", zap.Error(err))
 	} else {
@@ -135,17 +143,17 @@ func (ss *MediorumServer) dropFromMyBucket(fileName string) error {
 	return nil
 }
 
-func (ss *MediorumServer) haveInMyBucket(fileName string) bool {
+func (ss *MediorumServer) haveInMyBucket(fileName string, placementHosts []string) bool {
 	shardedCid := cidutil.ShardCID(fileName)
 	ctx := context.Background()
-	exists, _ := ss.bucketForCID(fileName, nil).Exists(ctx, shardedCid)
+	exists, _ := ss.bucketForCID(fileName, placementHosts).Exists(ctx, shardedCid)
 	return exists
 }
 
-func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, fileName string, file io.Reader) error {
+func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, fileName string, file io.Reader, placementHosts []string) error {
 	// logger := ss.logger.With()
 	if peer == ss.Config.Self.Host {
-		return ss.replicateToMyBucket(ctx, fileName, file)
+		return ss.replicateToMyBucket(ctx, fileName, file, placementHosts)
 	}
 
 	r, w := io.Pipe()
@@ -212,7 +220,11 @@ func (ss *MediorumServer) hostGetBlobInfo(host, key string) (*blob.Attributes, e
 	return attr, nil
 }
 
-func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string) error {
+// pullFileFromHost fetches a CID from a peer and writes it to the bucket
+// selected by bucketForCID(cid, placementHosts). Pass placementHosts when the
+// caller has placement context (repair) so the local write lands in the same
+// bucket reads expect; pass nil for opportunistic pulls (e.g. serveBlob fallback).
+func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string, placementHosts []string) error {
 	if host == ss.Config.Self.Host {
 		return errors.New("should not pull blob from self")
 	}
@@ -233,7 +245,7 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 		return fmt.Errorf("pull blob: bad status: %d cid: %s host: %s", resp.StatusCode, cid, host)
 	}
 
-	return ss.replicateToMyBucket(ctx, cid, resp.Body)
+	return ss.replicateToMyBucket(ctx, cid, resp.Body, placementHosts)
 }
 
 // dsnHasSpace reports whether a file:// DSN has enough free disk to accept new
@@ -275,9 +287,10 @@ func (ss *MediorumServer) dsnHasSpace(dsn string, fallbackFreeBytes uint64) bool
 	return hasSpace
 }
 
-// diskHasSpace returns true only when every configured bucket has headroom.
-// Used by paths that don't have a CID yet (e.g. the inbound /internal/blobs
-// precheck) so we don't accept a write that we can't actually place.
+// diskHasSpace returns true only when every configured bucket that can
+// actually receive writes has headroom. Used by paths that don't have a CID
+// yet (e.g. the inbound /internal/blobs precheck) so we don't accept a write
+// we can't place.
 func (ss *MediorumServer) diskHasSpace() bool {
 	if ss.Config.Env != "prod" {
 		return true
@@ -285,7 +298,10 @@ func (ss *MediorumServer) diskHasSpace() bool {
 	if !ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree) {
 		return false
 	}
-	if ss.Config.ArchiveBlobStoreDSN != "" {
+	// Archive only routes when archiveBucket is open AND StoreAll is on. If
+	// the DSN is set but StoreAll is false, archive is logged as "unused" at
+	// startup and no CID will ever land there — don't gate writes on it.
+	if ss.archiveBucket != nil && ss.Config.StoreAll {
 		if !ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree) {
 			return false
 		}

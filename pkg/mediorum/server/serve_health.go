@@ -50,7 +50,6 @@ type HealthData struct {
 	ArchiveStoragePrefix      string                     `json:"archiveStoragePrefix"`
 	ArchivePathUsed           uint64                     `json:"archivePathUsed"` // bytes
 	ArchivePathSize           uint64                     `json:"archivePathSize"` // bytes
-	ArchiveBlobCount          int64                      `json:"archiveBlobCount"`
 	ListenPort                string                     `json:"listenPort"`
 	TrustedNotifierID         int                        `json:"trustedNotifierId"`
 	PeerHealths               map[string]*PeerHealth     `json:"peerHealths"`
@@ -114,7 +113,6 @@ func (ss *MediorumServer) getHealth() HealthData {
 		ArchiveStoragePrefix:      archiveStoragePrefix,
 		ArchivePathUsed:           ss.archivePathUsed,
 		ArchivePathSize:           ss.archivePathSize,
-		ArchiveBlobCount:          ss.archiveBlobCount,
 		ListenPort:                ss.Config.ListenPort,
 		ReplicationFactor:         ss.Config.ReplicationFactor,
 		Env:                       ss.Config.Env,
