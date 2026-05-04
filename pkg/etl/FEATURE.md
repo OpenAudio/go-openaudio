@@ -11,7 +11,7 @@ go-openaudio (main module)
 ├── cmd/openaudio/main.go      # Wires Indexer + Location + etlserver
 ├── pkg/etlserver/             # Wrapper: Indexer + LocationService + ETL ConnectRPC handlers
 ├── pkg/location/              # Geodb for city/country lat-long (explorer play maps)
-├── pkg/console/               # Explorer UI; uses etlserver.GetDB(), GetLocationDB()
+├── pkg/explorer/              # Explorer UI (templ); uses etlserver.GetDB(), GetLocationDB()
 ├── examples/etl/              # Standalone local runner for manual testing
 └── pkg/etl/                   # THIS PACKAGE (submodule)
     ├── go.mod                 # Module github.com/OpenAudio/go-openaudio/etl

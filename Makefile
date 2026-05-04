@@ -30,12 +30,14 @@ PROTO_ARTIFACTS := $(shell find pkg/api -type f -name '*.pb.go')
 TEMPL_SRCS := $(shell find pkg/core/console -type f -name "*.templ")
 TEMPL_ARTIFACTS := $(shell find pkg/core/console -type f -name "*_templ.go")
 
-EXPLORER_TEMPL_SRCS := $(shell find pkg/console/templates -type f -name "*.templ")
-EXPLORER_TEMPL_ARTIFACTS := $(shell find pkg/console/templates -type f -name "*_templ.go")
+# Explorer (ETL web UI) templ and CSS live under pkg/explorer.
+EXPLORER_TEMPL_DIR := pkg/explorer/templates
+EXPLORER_TEMPL_SRCS := $(shell find $(EXPLORER_TEMPL_DIR) -type f -name "*.templ")
+EXPLORER_TEMPL_ARTIFACTS := $(shell find $(EXPLORER_TEMPL_DIR) -type f -name "*_templ.go")
 
 ###### CSS
-EXPLORER_CSS_INPUT := pkg/console/assets/input.css
-EXPLORER_CSS_OUTPUT := pkg/console/assets/css/output.css
+EXPLORER_CSS_INPUT := pkg/explorer/assets/input.css
+EXPLORER_CSS_OUTPUT := pkg/explorer/assets/css/output.css
 
 ###### CODE
 JSON_SRCS := $(wildcard pkg/core/config/genesis/*.json)
@@ -106,7 +108,7 @@ regen-templ:
 	@echo Regenerating console templ code...
 	@cd pkg/core/console && templ generate -log-level error
 	@echo Regenerating explorer templ code...
-	@cd pkg/console/templates && templ generate -log-level error
+	@cd pkg/explorer && templ generate -log-level error
 	@$(MAKE) regen-css
 
 .PHONY: regen-css
@@ -114,12 +116,12 @@ regen-css: $(EXPLORER_CSS_OUTPUT)
 
 $(EXPLORER_CSS_OUTPUT): $(EXPLORER_CSS_INPUT) $(EXPLORER_TEMPL_SRCS)
 	@echo Regenerating explorer CSS
-	@cd pkg/console/assets && \
+	@cd pkg/explorer/assets && \
 		(npm list @tailwindcss/postcss > /dev/null 2>&1 || npm install --no-save @tailwindcss/postcss postcss-cli > /dev/null 2>&1) && \
 		npx postcss input.css -o css/output.css --minify || \
 		(echo "Error: Failed to regenerate CSS. You may need to run manually:" && \
-		 echo "  cd pkg/console/assets && npm install && npx postcss input.css -o css/output.css" && exit 1)
-	@touch pkg/console/templates/layouts/frame.templ 2>/dev/null || touch pkg/console/console.go 2>/dev/null || true
+		 echo "  cd pkg/explorer/assets && npm install && npx postcss input.css -o css/output.css" && exit 1)
+	@touch pkg/explorer/templates/layouts/frame.templ 2>/dev/null || true
 
 .PHONY: regen-proto
 regen-proto: $(PROTO_ARTIFACTS)
