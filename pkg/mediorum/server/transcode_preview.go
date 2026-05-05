@@ -36,7 +36,7 @@ func (ss *MediorumServer) generateAudioPreviewForUpload(ctx context.Context, upl
 func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash string, previewStartSeconds string) (*AudioPreview, error) {
 
 	if !ss.haveInMyBucket(fileHash, nil) {
-		_, err := ss.findAndPullBlob(ctx, fileHash)
+		_, err := ss.findAndPullBlob(ctx, fileHash, nil)
 		if err != nil {
 			return nil, err
 		}

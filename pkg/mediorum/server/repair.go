@@ -382,11 +382,14 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	}
 
 	// Resolve blob presence: use the presence index (from bucket.List) if
-	// available, otherwise fall back to per-key HeadObject.
+	// available, otherwise fall back to per-key HeadObject. The lookup is
+	// bucket-scoped — if the key only exists in the *other* bucket
+	// (rank-flip orphan), treat as missing so the repair pull below writes
+	// it into the bucket the routing decision selected.
 	alreadyHave := false
 	attrs := &blob.Attributes{}
 	if presenceIndex != nil {
-		if entry, ok := presenceIndex.Lookup(key); ok {
+		if entry, ok := presenceIndex.Lookup(key, bucket); ok {
 			alreadyHave = true
 			attrs.Size = entry.Size
 			attrs.ModTime = entry.ModTime

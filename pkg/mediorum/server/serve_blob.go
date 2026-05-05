@@ -173,7 +173,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 			}
 
 			// Try to pull the file first
-			_, pullErr := ss.findAndPullBlob(ctx, cid)
+			_, pullErr := ss.findAndPullBlob(ctx, cid, nil)
 			if pullErr == nil {
 				// Successfully pulled, try reading again
 				blob, err = ss.bucketForCID(cid, nil).NewReader(ctx, key, nil)
@@ -377,12 +377,17 @@ func (ss *MediorumServer) findNodeToServeBlob(_ context.Context, key string) str
 	return ""
 }
 
-func (ss *MediorumServer) findAndPullBlob(ctx context.Context, key string) (string, error) {
+// findAndPullBlob locates a CID on the network and pulls it into the local
+// bucket selected by bucketForCID(key, placementHosts). Pass placementHosts
+// when the caller has placement context (transcode and similar) so the local
+// write lands in the same bucket subsequent reads will check; pass nil for
+// opportunistic pulls (serveBlob fallback, image originals).
+func (ss *MediorumServer) findAndPullBlob(ctx context.Context, key string, placementHosts []string) (string, error) {
 	// start := time.Now()
 
 	hosts, _ := ss.rendezvousAllHosts(key)
 	for _, host := range hosts {
-		err := ss.pullFileFromHost(ctx, host, key, nil)
+		err := ss.pullFileFromHost(ctx, host, key, placementHosts)
 		if err == nil {
 			return host, nil
 		}

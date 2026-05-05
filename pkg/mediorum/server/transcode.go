@@ -357,7 +357,7 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 	logger := ss.logger.With(zap.Any("template", upload.Template), zap.String("cid", fileHash))
 
 	if !ss.haveInMyBucket(fileHash, upload.PlacementHosts) {
-		_, err := ss.findAndPullBlob(ctx, fileHash)
+		_, err := ss.findAndPullBlob(ctx, fileHash, upload.PlacementHosts)
 		if err != nil {
 			logger.Warn("failed to find blob", zap.Error(err))
 			return err

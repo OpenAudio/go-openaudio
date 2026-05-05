@@ -118,7 +118,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	// if we don't have orig, fetch from network
 	if err != nil {
 		startFetch := time.Now()
-		host, pullErr := ss.findAndPullBlob(ctx, origImageCID)
+		host, pullErr := ss.findAndPullBlob(ctx, origImageCID, nil)
 		if pullErr != nil {
 			// Pull failed - check if it's due to disk space
 			if !ss.diskHasSpaceForCID(origImageCID, nil) {

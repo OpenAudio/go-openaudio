@@ -175,7 +175,7 @@ func TestBuildRepairPresenceIndexIncludesLocalBlob(t *testing.T) {
 	index, err := ss.buildRepairPresenceIndex(ctx)
 	assert.NoError(t, err)
 
-	entry, ok := index.Lookup(cidutil.ShardCID(cid))
+	entry, ok := index.Lookup(cidutil.ShardCID(cid), ss.bucket)
 	assert.True(t, ok)
 	assert.Equal(t, int64(len(data)), entry.Size)
 }

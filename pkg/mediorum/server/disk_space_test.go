@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"gocloud.dev/blob"
+	_ "gocloud.dev/blob/memblob"
 )
 
 // makeDiskSpaceServer is a minimal MediorumServer wired only for disk-space
