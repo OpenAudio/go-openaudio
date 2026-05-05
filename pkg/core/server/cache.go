@@ -324,6 +324,8 @@ func (s *Server) refreshSyncStatus(ctx context.Context) error {
 				return fmt.Errorf("could not get status: %v", err)
 			}
 
+			s.cache.currentHeight.Store(status.SyncInfo.LatestBlockHeight)
+
 			upsertCache(s.cache.syncInfo, SyncInfoKey, func(syncInfo *v1.GetStatusResponse_SyncInfo) *v1.GetStatusResponse_SyncInfo {
 				syncInfo.Synced = !status.SyncInfo.CatchingUp
 
