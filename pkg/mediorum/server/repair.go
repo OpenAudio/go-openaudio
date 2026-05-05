@@ -394,6 +394,9 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 			attrs.Size = entry.Size
 			attrs.ModTime = entry.ModTime
 			tracker.Counters["qm_cids_list_index_hit"]++
+			if isArchive {
+				tracker.Counters["archive_blob_present"]++
+			}
 		} else {
 			tracker.Counters["qm_cids_list_index_miss"]++
 		}

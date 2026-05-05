@@ -11,36 +11,34 @@ import (
 type presenceEntry struct {
 	Size    int64
 	ModTime time.Time
-	// Bucket records which bucket the listing came from. Repair must check
-	// this against bucketForCID(cid, placementHosts) for each lookup; a key
-	// present in the *wrong* bucket (e.g. an orphan from a rank flip) must
-	// be treated as missing so the repair pull lands in the correct bucket.
-	Bucket *blob.Bucket
+}
+
+// indexKey scopes a presence entry to a specific bucket. A CID can legitimately
+// exist in both buckets (e.g. a rank-flip orphan plus the freshly-pulled correct
+// copy); a single map keyed only by storage key would have the second listing
+// overwrite the first, hiding the bucket the caller is asking about.
+type indexKey struct {
+	key    string
+	bucket *blob.Bucket
 }
 
 // repairPresenceIndex holds the result of a bucket.List call as an in-memory
 // map, allowing O(1) presence checks instead of per-key HeadObject calls.
 type repairPresenceIndex struct {
-	entries map[string]presenceEntry
+	entries map[indexKey]presenceEntry
 }
 
-// Lookup returns the entry for key only if the listing came from wantBucket.
-// A merged index that contains the key under a different bucket reports
-// "missing" — repair will then pull the blob into the bucket it expects.
+// Lookup returns the entry for key in wantBucket. A key that exists only in
+// the *other* bucket (rank-flip orphan) reports missing here so repair will
+// pull a fresh copy into the bucket bucketForCID selected.
 func (idx *repairPresenceIndex) Lookup(key string, wantBucket *blob.Bucket) (presenceEntry, bool) {
-	entry, ok := idx.entries[key]
-	if !ok {
-		return entry, false
-	}
-	if entry.Bucket != wantBucket {
-		return presenceEntry{}, false
-	}
-	return entry, true
+	entry, ok := idx.entries[indexKey{key: key, bucket: wantBucket}]
+	return entry, ok
 }
 
 func (ss *MediorumServer) buildRepairPresenceIndex(ctx context.Context) (*repairPresenceIndex, error) {
 	index := &repairPresenceIndex{
-		entries: make(map[string]presenceEntry),
+		entries: make(map[indexKey]presenceEntry),
 	}
 
 	if err := listIntoIndex(ctx, ss.bucket, index); err != nil {
@@ -67,10 +65,9 @@ func listIntoIndex(ctx context.Context, bucket *blob.Bucket, index *repairPresen
 		if obj == nil || obj.IsDir {
 			continue
 		}
-		index.entries[obj.Key] = presenceEntry{
+		index.entries[indexKey{key: obj.Key, bucket: bucket}] = presenceEntry{
 			Size:    obj.Size,
 			ModTime: obj.ModTime,
-			Bucket:  bucket,
 		}
 	}
 }
