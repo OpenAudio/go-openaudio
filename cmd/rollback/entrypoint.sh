@@ -39,8 +39,9 @@ PG_BIN="/usr/lib/postgresql/15/bin"
 ROLLBACK_BIN="/bin/rollback"
 
 # Find CometBFT data directory (auto-discover chain ID)
+CORE_ROOT="${audius_core_root_dir:-/data/core}"
 COMET_DATA=""
-for dir in /data/core/*/data; do
+for dir in "$CORE_ROOT"/*/data; do
     if [ -d "$dir" ]; then
         COMET_DATA="$dir"
         break
@@ -48,7 +49,7 @@ for dir in /data/core/*/data; do
 done
 
 if [ -z "$COMET_DATA" ]; then
-    echo "ERROR: Could not find CometBFT data directory under /data/core/*/data"
+    echo "ERROR: Could not find CometBFT data directory under $CORE_ROOT/*/data"
     exit 1
 fi
 
