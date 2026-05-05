@@ -54,14 +54,6 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 		}
 	}
 
-	serveSuccess := func(blobPath string) error {
-		if blob, err := ss.bucketForCID(containerCID, nil).NewReader(ctx, blobPath, nil); err == nil {
-			return serveSuccessWithReader(blob)
-		} else {
-			return err
-		}
-	}
-
 	// if the client provided a filename, set it in the header to be auto-populated in download prompt
 	filenameForDownload := c.QueryParam("filename")
 	if filenameForDownload != "" {
@@ -73,6 +65,24 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	if cid, err := ss.getUploadOrigCID(containerCID); err == nil {
 		c.Response().Header().Set("x-orig-cid", cid)
 		containerCID = cid
+	}
+
+	// origImageCID is the identifier findAndPullBlob/replicateToMyBucket use
+	// when fetching the original. For non-legacy CIDs it equals containerCID;
+	// for legacy CIDs it's "<cid>/original.jpg" — a *different* rendezvous-rank
+	// input. Route the original AND its derived variants by origImageCID so
+	// reads land in the same bucket the pull wrote to.
+	origImageCID := containerCID
+	if cidutil.IsLegacyCID(origImageCID) {
+		origImageCID += "/original.jpg"
+	}
+
+	serveSuccess := func(blobPath string) error {
+		if blob, err := ss.bucketForCID(origImageCID, nil).NewReader(ctx, blobPath, nil); err == nil {
+			return serveSuccessWithReader(blob)
+		} else {
+			return err
+		}
 	}
 
 	// 2. serve variant
@@ -97,17 +107,13 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 
 	// we already have the resized version
 	if !skipCache {
-		if blob, err := ss.bucketForCID(containerCID, nil).NewReader(ctx, variantStoragePath, nil); err == nil {
+		if blob, err := ss.bucketForCID(origImageCID, nil).NewReader(ctx, variantStoragePath, nil); err == nil {
 			return serveSuccessWithReader(blob)
 		}
 	}
 
 	// open the orig for resizing
-	origImageCID := containerCID
-	if cidutil.IsLegacyCID(origImageCID) {
-		origImageCID += "/original.jpg"
-	}
-	origReader, err := ss.bucketForCID(containerCID, nil).NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
+	origReader, err := ss.bucketForCID(origImageCID, nil).NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
 
 	// if we don't have orig, fetch from network
 	if err != nil {
@@ -115,7 +121,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 		host, pullErr := ss.findAndPullBlob(ctx, origImageCID)
 		if pullErr != nil {
 			// Pull failed - check if it's due to disk space
-			if !ss.diskHasSpaceForCID(containerCID, nil) {
+			if !ss.diskHasSpaceForCID(origImageCID, nil) {
 				// Disk is full, proxy the request instead of erroring
 				// Redirect to a node that can serve this variant
 				redirectHost := ss.findNodeToServeBlob(ctx, origImageCID)
@@ -143,7 +149,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 		c.Response().Header().Set("x-fetch-host", host)
 		c.Response().Header().Set("x-fetch-ok", fmt.Sprintf("%.2fs", time.Since(startFetch).Seconds()))
 
-		origReader, err = ss.bucketForCID(containerCID, nil).NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
+		origReader, err = ss.bucketForCID(origImageCID, nil).NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
 		if err != nil {
 			return err
 		}
@@ -153,7 +159,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	if !isOriginalJpg {
 		resizeStart := time.Now()
 		resized, _, _ := Resized(".jpg", origReader, w, h, "fill")
-		w, _ := ss.bucketForCID(containerCID, nil).NewWriter(ctx, variantStoragePath, nil)
+		w, _ := ss.bucketForCID(origImageCID, nil).NewWriter(ctx, variantStoragePath, nil)
 		io.Copy(w, resized)
 		w.Close()
 		c.Response().Header().Set("x-resize-ok", fmt.Sprintf("%.2fs", time.Since(resizeStart).Seconds()))

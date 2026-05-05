@@ -42,8 +42,9 @@ func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash str
 		}
 	}
 
-	// pull to temp file
-	temp, err := ss.getKeyToTempFile(fileHash)
+	// pull to temp file. Preview generation has no upload-level placement
+	// context — pass nil so routing falls back to rendezvous rank.
+	temp, err := ss.getKeyToTempFile(fileHash, nil)
 	if err != nil {
 		return nil, err
 	}

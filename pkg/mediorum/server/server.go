@@ -202,17 +202,11 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 
 	if config.BlobStoreDSN == "" {
 		config.BlobStoreDSN = "file://" + config.Dir + "/blobs?no_tmp_dir=true"
-	} else if strings.HasPrefix(config.BlobStoreDSN, "file://") {
-		// If using file storage, ensure no_tmp_dir=true is set to avoid cross-device link errors
-		// when /tmp and the blob storage path are on different mount points
-		if !strings.Contains(config.BlobStoreDSN, "no_tmp_dir") {
-			// Add the parameter, handling existing query params
-			if strings.Contains(config.BlobStoreDSN, "?") {
-				config.BlobStoreDSN += "&no_tmp_dir=true"
-			} else {
-				config.BlobStoreDSN += "?no_tmp_dir=true"
-			}
-		}
+	} else {
+		config.BlobStoreDSN = ensureNoTmpDir(config.BlobStoreDSN)
+	}
+	if config.ArchiveBlobStoreDSN != "" {
+		config.ArchiveBlobStoreDSN = ensureNoTmpDir(config.ArchiveBlobStoreDSN)
 	}
 
 	if pk, err := ethcontracts.ParsePrivateKeyHex(config.PrivateKey); err != nil {
@@ -526,6 +520,22 @@ func setResponseACAOHeaderFromRequest(req http.Request, resp echo.Response) {
 		echo.HeaderAccessControlAllowOrigin,
 		req.Header.Get(echo.HeaderOrigin),
 	)
+}
+
+// ensureNoTmpDir ensures file:// DSNs carry no_tmp_dir=true to avoid cross-device
+// link errors when /tmp and the blob storage path are on different mount points.
+// Non-file DSNs are returned unchanged.
+func ensureNoTmpDir(dsn string) string {
+	if !strings.HasPrefix(dsn, "file://") {
+		return dsn
+	}
+	if strings.Contains(dsn, "no_tmp_dir") {
+		return dsn
+	}
+	if strings.Contains(dsn, "?") {
+		return dsn + "&no_tmp_dir=true"
+	}
+	return dsn + "?no_tmp_dir=true"
 }
 
 func ACAOHeaderOverwriteMiddleware(next echo.HandlerFunc) echo.HandlerFunc {

@@ -78,13 +78,15 @@ func (ss *MediorumServer) findMissedAudioAnalysisJobs(ctx context.Context, work 
 
 		cid, ok := upload.TranscodeResults["320"]
 		if !ok {
-			if exists, _ := ss.bucketForCID(upload.OrigFileCID, nil).Exists(ctx, upload.OrigFileCID); exists {
+			origKey := cidutil.ShardCID(upload.OrigFileCID)
+			if exists, _ := ss.bucketForCID(upload.OrigFileCID, upload.PlacementHosts).Exists(ctx, origKey); exists {
 				ss.transcode(ctx, upload)
 				cid, ok = upload.TranscodeResults["320"]
 			}
 		}
 		if ok {
-			if exists, _ := ss.bucketForCID(cid, nil).Exists(ctx, cid); exists {
+			transcodedKey := cidutil.ShardCID(cid)
+			if exists, _ := ss.bucketForCID(cid, upload.PlacementHosts).Exists(ctx, transcodedKey); exists {
 				work <- upload
 			}
 		}
@@ -145,7 +147,8 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 	// pull transcoded file from bucket
 	cid, ok := upload.TranscodeResults["320"]
 	if !ok {
-		if exists, _ := ss.bucketForCID(upload.OrigFileCID, nil).Exists(ctx, upload.OrigFileCID); exists {
+		origKey := cidutil.ShardCID(upload.OrigFileCID)
+		if exists, _ := ss.bucketForCID(upload.OrigFileCID, upload.PlacementHosts).Exists(ctx, origKey); exists {
 			ss.transcode(ctx, upload)
 			cid, ok = upload.TranscodeResults["320"]
 		}
@@ -159,7 +162,8 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 	// so that the next mirror may pick the job up
 	logger = logger.With(zap.String("cid", cid))
 	key := cidutil.ShardCID(cid)
-	attrs, err := ss.bucketForCID(cid, nil).Attributes(ctx, key)
+	srcBucket := ss.bucketForCID(cid, upload.PlacementHosts)
+	attrs, err := srcBucket.Attributes(ctx, key)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return errors.New("failed to find audio file on node")
@@ -172,7 +176,7 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 		logger.Error("failed to create temp file", zap.Error(err))
 		return err
 	}
-	r, err := ss.bucketForCID(cid, nil).NewReader(ctx, key, nil)
+	r, err := srcBucket.NewReader(ctx, key, nil)
 	if err != nil {
 		logger.Error("failed to read blob", zap.Error(err))
 		return err

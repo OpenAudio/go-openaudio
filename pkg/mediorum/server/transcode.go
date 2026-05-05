@@ -139,14 +139,14 @@ func (ss *MediorumServer) startTranscodeWorker(ctx context.Context) error {
 	}
 }
 
-func (ss *MediorumServer) getKeyToTempFile(fileHash string) (*os.File, error) {
+func (ss *MediorumServer) getKeyToTempFile(fileHash string, placementHosts []string) (*os.File, error) {
 	temp, err := os.CreateTemp("", "mediorumTemp")
 	if err != nil {
 		return nil, err
 	}
 
 	key := cidutil.ShardCID(fileHash)
-	blob, err := ss.bucketForCID(fileHash, nil).NewReader(context.Background(), key, nil)
+	blob, err := ss.bucketForCID(fileHash, placementHosts).NewReader(context.Background(), key, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -392,7 +392,7 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 		return errMsg
 	}
 
-	temp, err := ss.getKeyToTempFile(fileHash)
+	temp, err := ss.getKeyToTempFile(fileHash, upload.PlacementHosts)
 	if err != nil {
 		return onError(err, upload.Status, "getting file")
 	}
