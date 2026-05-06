@@ -41,33 +41,44 @@ func TestRewardsLifecycle(t *testing.T) {
 		t.Logf("creator key: %s", creatorAddr)
 		t.Logf("deleter key: %s", deleterAddr)
 
-		// Step 1: Create two rewards with different claim authorities
-		// Reward 1: only creator as claim authority
+		// Under the pool-based model authorities live on the pool, not on
+		// the reward. To preserve the per-reward authority granularity of
+		// the original test (reward1: creator only; reward2: creator +
+		// deleter), we create two pools.
+		rmPubkeyA := freshSolanaPubkey(t)
+		rmPubkeyB := freshSolanaPubkey(t)
+		if _, err := creator.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
+			RewardsManagerPubkey: rmPubkeyA,
+			Authorities:          []string{creatorAddr},
+		}, 999999); err != nil {
+			t.Fatalf("Failed to create pool A: %v", err)
+		}
+		if _, err := creator.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
+			RewardsManagerPubkey: rmPubkeyB,
+			Authorities:          []string{creatorAddr, deleterAddr},
+		}, 999999); err != nil {
+			t.Fatalf("Failed to create pool B: %v", err)
+		}
+
+		// Step 1: Create two rewards in different pools.
 		reward1, err := creator.Rewards.CreateReward(ctx, &v1.CreateReward{
-			RewardId: "reward1",
-			Name:     "Test Reward 1",
-			Amount:   1000,
-			ClaimAuthorities: []*v1.ClaimAuthority{
-				{Address: creatorAddr, Name: "Creator"},
-			},
-			DeadlineBlockHeight: 999999,
-		})
+			RewardId:             "reward1",
+			Name:                 "Test Reward 1",
+			Amount:               1000,
+			RewardsManagerPubkey: rmPubkeyA,
+		}, 999999)
 		if err != nil {
 			t.Fatalf("Failed to create reward1: %v", err)
 		}
 		t.Logf("Created reward1 at address: %s", reward1.Address)
 
-		// Reward 2: creator and deleter as claim authorities
+		// Reward 2: creator and deleter as claim authorities (via pool B).
 		reward2, err := creator.Rewards.CreateReward(ctx, &v1.CreateReward{
-			RewardId: "reward2",
-			Name:     "Test Reward 2",
-			Amount:   2000,
-			ClaimAuthorities: []*v1.ClaimAuthority{
-				{Address: creatorAddr, Name: "Creator"},
-				{Address: deleterAddr, Name: "Deleter"},
-			},
-			DeadlineBlockHeight: 999999,
-		})
+			RewardId:             "reward2",
+			Name:                 "Test Reward 2",
+			Amount:               2000,
+			RewardsManagerPubkey: rmPubkeyB,
+		}, 999999)
 		if err != nil {
 			t.Fatalf("Failed to create reward2: %v", err)
 		}
@@ -100,8 +111,7 @@ func TestRewardsLifecycle(t *testing.T) {
 		// Step 3: Deleter deletes reward2
 		deleteHash, err := deleter.Rewards.DeleteReward(ctx, &v1.DeleteReward{
 			Address:             reward2.Address,
-			DeadlineBlockHeight: 999999,
-		})
+		}, 999999)
 		if err != nil {
 			t.Fatalf("Failed to delete reward2: %v", err)
 		}
@@ -166,17 +176,20 @@ func TestRewardsLifecycle(t *testing.T) {
 		t.Logf("authority2 address: %s", authority2Addr)
 		t.Logf("unauthorized address: %s", unauthorizedAddr)
 
-		// Create a reward with authority1 and authority2 as claim authorities
+		// Create a pool with both authorities and a reward in it.
+		rmPubkey := freshSolanaPubkey(t)
+		if _, err := authority1.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
+			RewardsManagerPubkey: rmPubkey,
+			Authorities:          []string{authority1Addr, authority2Addr},
+		}, 999999); err != nil {
+			t.Fatalf("Failed to create pool: %v", err)
+		}
 		reward, err := authority1.Rewards.CreateReward(ctx, &v1.CreateReward{
-			RewardId: "attestation_test_reward",
-			Name:     "Attestation Test Reward",
-			Amount:   5000,
-			ClaimAuthorities: []*v1.ClaimAuthority{
-				{Address: authority1Addr, Name: "Authority 1"},
-				{Address: authority2Addr, Name: "Authority 2"},
-			},
-			DeadlineBlockHeight: 999999,
-		})
+			RewardId:             "attestation_test_reward",
+			Name:                 "Attestation Test Reward",
+			Amount:               5000,
+			RewardsManagerPubkey: rmPubkey,
+		}, 999999)
 		if err != nil {
 			t.Fatalf("Failed to create reward: %v", err)
 		}
@@ -232,16 +245,20 @@ func TestRewardsLifecycle(t *testing.T) {
 		t.Logf("unauthorized user correctly failed to get attestation: %v", err)
 
 		// Test 4: Verify authority1 cannot get attestation for a reward they're not authorized for
-		// Create another reward with only authority2
+		// Create another pool with only authority2 + a reward in it.
+		rmPubkey2 := freshSolanaPubkey(t)
+		if _, err := authority2.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
+			RewardsManagerPubkey: rmPubkey2,
+			Authorities:          []string{authority2Addr},
+		}, 999999); err != nil {
+			t.Fatalf("Failed to create pool 2: %v", err)
+		}
 		reward2, err := authority2.Rewards.CreateReward(ctx, &v1.CreateReward{
-			RewardId: "attestation_test_reward_2",
-			Name:     "Attestation Test Reward 2",
-			Amount:   3000,
-			ClaimAuthorities: []*v1.ClaimAuthority{
-				{Address: authority2Addr, Name: "Authority 2"},
-			},
-			DeadlineBlockHeight: 999999,
-		})
+			RewardId:             "attestation_test_reward_2",
+			Name:                 "Attestation Test Reward 2",
+			Amount:               3000,
+			RewardsManagerPubkey: rmPubkey2,
+		}, 999999)
 		if err != nil {
 			t.Fatalf("Failed to create reward2: %v", err)
 		}
@@ -285,16 +302,20 @@ func TestRewardsLifecycle(t *testing.T) {
 		creator := sdk.NewOpenAudioSDK(nodeUrl)
 		creator.SetPrivKey(creatorKey)
 
-		// Create a reward with specific amount
+		// Create a pool that names authority + a reward bound to it.
+		rmPubkey := freshSolanaPubkey(t)
+		if _, err := creator.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
+			RewardsManagerPubkey: rmPubkey,
+			Authorities:          []string{authorityAddr},
+		}, 999999); err != nil {
+			t.Fatalf("Failed to create pool: %v", err)
+		}
 		reward, err := creator.Rewards.CreateReward(ctx, &v1.CreateReward{
-			RewardId: "amount_test",
-			Name:     "Amount Test Reward",
-			Amount:   100, // Fixed amount
-			ClaimAuthorities: []*v1.ClaimAuthority{
-				{Address: authorityAddr, Name: "Test Authority"},
-			},
-			DeadlineBlockHeight: 999999,
-		})
+			RewardId:             "amount_test",
+			Name:                 "Amount Test Reward",
+			Amount:               100,
+			RewardsManagerPubkey: rmPubkey,
+		}, 999999)
 		if err != nil {
 			t.Fatalf("Failed to create reward: %v", err)
 		}

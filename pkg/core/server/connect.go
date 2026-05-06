@@ -1069,15 +1069,16 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 
 // GetRewards implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetRewards(ctx context.Context, req *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error) {
-	claimAuthority := req.Msg.ClaimAuthority
-	if claimAuthority == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority required"))
-	}
 	// Stored authorities are lowercased by rewards.CanonicalAuthorities; the
 	// underlying GetRewardsByClaimAuthority does a case-sensitive @> array
 	// containment check. Normalize the caller-supplied address (which is
 	// often checksum-case from common.PrivKeyToAddress) so lookups match.
-	claimAuthority = strings.ToLower(strings.TrimSpace(claimAuthority))
+	// Normalize before the empty check so whitespace-only input is rejected
+	// as InvalidArgument rather than silently producing an empty result.
+	claimAuthority := strings.ToLower(strings.TrimSpace(req.Msg.ClaimAuthority))
+	if claimAuthority == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority required"))
+	}
 
 	rewards, err := c.core.db.GetRewardsByClaimAuthority(ctx, claimAuthority)
 	if err != nil {
@@ -1155,6 +1156,34 @@ func (c *CoreService) GetReward(ctx context.Context, req *connect.Request[v1.Get
 	}
 
 	return nil, connect.NewError(connect.CodeNotFound, nil)
+}
+
+// GetRewardPool returns a reward pool keyed by its Solana reward manager
+// pubkey. Every pool in core_reward_pools is RM-bound (PR1's backfill
+// resolves each existing reward to a real RM via the launchpad mapping;
+// CreateRewardPool validates that new pools use a base58 32-byte pubkey).
+// There is no separate synthetic-pool surface to filter out.
+func (c *CoreService) GetRewardPool(ctx context.Context, req *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error) {
+	// Normalize and shape-validate up front so malformed input returns
+	// InvalidArgument deterministically instead of falling through to a DB
+	// lookup that returns NotFound. Reuses validateRewardsManagerPubkey
+	// (the same validator the CreateRewardPool / SetRewardPoolAuthorities
+	// tx path uses) so the contract is identical across read and write.
+	rewardsManagerPubkey := strings.TrimSpace(req.Msg.RewardsManagerPubkey)
+	if err := validateRewardsManagerPubkey(rewardsManagerPubkey); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	pool, err := c.core.db.GetRewardPool(ctx, rewardsManagerPubkey)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("pool not found for rewards_manager_pubkey: %s", rewardsManagerPubkey))
+		}
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get pool: %w", err))
+	}
+	return connect.NewResponse(&v1.GetRewardPoolResponse{
+		RewardsManagerPubkey: pool.RewardsManagerPubkey,
+		Authorities:          pool.Authorities,
+	}), nil
 }
 
 // GetERN implements v1connect.CoreServiceHandler.
