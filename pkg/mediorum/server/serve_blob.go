@@ -625,8 +625,17 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 }
 
 func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
-	if !ss.diskHasSpace() {
-		return c.String(http.StatusServiceUnavailable, "disk is too full to accept new blobs")
+	// Peer-driven push. Placement context, when known to the sender, rides
+	// along in the X-Placement-Hosts header. Validate it (must include self,
+	// all hosts must be registered peers) — the header is unsigned, so an
+	// unvalidated value would let any authenticated peer force primary
+	// routing and bypass archive. On invalid input, fall back to nil
+	// (rank-based routing).
+	placementHosts := decodePlacementHosts(c.Request().Header)
+	if err := ss.validatePlacementHosts(placementHosts); err != nil {
+		ss.logger.Warn("rejecting invalid X-Placement-Hosts header; routing by rank",
+			zap.Strings("placementHosts", placementHosts), zap.Error(err))
+		placementHosts = nil
 	}
 
 	form, err := c.MultipartForm()
@@ -639,6 +648,11 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 	for _, upload := range files {
 		cid := upload.Filename
 		logger := ss.logger.With(zap.String("cid", cid))
+
+		// Per-CID disk check: only the bucket this CID will write to matters.
+		if !ss.diskHasSpaceForCID(cid, placementHosts) {
+			return c.String(http.StatusServiceUnavailable, "disk is too full to accept new blobs")
+		}
 
 		inp, err := upload.Open()
 		if err != nil {
@@ -654,10 +668,6 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 			})
 		}
 
-		// Peer-driven push (/internal/blobs). Placement context, when known
-		// to the sender, rides along in the X-Placement-Hosts header so we
-		// route into the same bucket the sender expects.
-		placementHosts := decodePlacementHosts(c.Request().Header)
 		err = ss.replicateToMyBucket(c.Request().Context(), cid, inp, placementHosts)
 		if err != nil {
 			ss.logger.Error("accept ERR", zap.Error(err))

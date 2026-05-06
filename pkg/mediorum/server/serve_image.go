@@ -84,7 +84,11 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	}
 
 	serveSuccess := func(blobPath string) error {
-		if blob, err := ss.bucket.NewReader(ctx, blobPath, nil); err == nil {
+		// Use readBlob so original.jpg requests still resolve when the
+		// original lives in archive — variantStoragePath for original.jpg
+		// is the actual original's storage key, and only resized variants
+		// are guaranteed to live in primary.
+		if blob, _, err := ss.readBlob(ctx, blobPath); err == nil {
 			return serveSuccessWithReader(blob)
 		} else {
 			return err

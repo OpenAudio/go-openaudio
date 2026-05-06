@@ -90,6 +90,11 @@ func (ss *MediorumServer) presenceCacheKey(key string, bucket *blob.Bucket) stri
 // in. Reads should always go through this (or readBlob/blobExists) rather
 // than calling bucketForCID directly — bucketForCID is for picking write
 // destinations; on reads we want hot first, archive as a tier.
+//
+// Error semantics: a transient/permission error from archive surfaces to the
+// caller rather than being masked by the primary's NotFound, so upstream code
+// distinguishes "blob doesn't exist anywhere" from "archive is unhealthy."
+// Only when both buckets report NotFound do we return the primary NotFound.
 func (ss *MediorumServer) blobAttrs(ctx context.Context, key string) (*blob.Attributes, *blob.Bucket, error) {
 	attrs, err := ss.bucket.Attributes(ctx, key)
 	if err == nil {
@@ -102,12 +107,18 @@ func (ss *MediorumServer) blobAttrs(ctx context.Context, key string) (*blob.Attr
 	if err2 == nil {
 		return a2, ss.archiveBucket, nil
 	}
-	// Surface the original primary error (callers distinguish on NotFound).
+	if gcerrors.Code(err2) != gcerrors.NotFound {
+		// Real archive failure (permission, transient I/O). Surface it so
+		// callers see the actual problem instead of a misleading 404.
+		return nil, nil, err2
+	}
 	return nil, nil, err
 }
 
 // readBlob opens a reader from primary first, falling back to archive on
-// NotFound. Returns the bucket the blob was found in.
+// NotFound. Returns the bucket the blob was found in. Same error semantics
+// as blobAttrs: archive failures surface; only both-NotFound returns
+// primary's NotFound.
 func (ss *MediorumServer) readBlob(ctx context.Context, key string) (*blob.Reader, *blob.Bucket, error) {
 	r, err := ss.bucket.NewReader(ctx, key, nil)
 	if err == nil {
@@ -119,6 +130,9 @@ func (ss *MediorumServer) readBlob(ctx context.Context, key string) (*blob.Reade
 	r2, err2 := ss.archiveBucket.NewReader(ctx, key, nil)
 	if err2 == nil {
 		return r2, ss.archiveBucket, nil
+	}
+	if gcerrors.Code(err2) != gcerrors.NotFound {
+		return nil, nil, err2
 	}
 	return nil, nil, err
 }
