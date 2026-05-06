@@ -3,10 +3,12 @@ package entity_manager
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"strings"
 
 	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/jackc/pgx/v5"
 )
 
 var handleRegexp = regexp.MustCompile(`^[a-z0-9_.]+$`)
@@ -78,9 +80,10 @@ func ValidateDescription(desc string) error {
 	return nil
 }
 
-// ValidateSigner checks that the signer matches the user's wallet or has a valid grant.
-// For now this does a direct wallet comparison. Grant/DeveloperApp authorization
-// will be added as those entity types are implemented.
+// ValidateSigner checks that the signer is the user's wallet or holds a valid
+// grant from the user. Grants come from either a developer app (auto-approved
+// at creation) or another user wallet acting in manager mode (must be approved
+// by the grantor).
 func ValidateSigner(ctx context.Context, params *Params) error {
 	wallet, err := getUserWallet(ctx, params.DBTX, params.UserID)
 	if err != nil {
@@ -89,8 +92,37 @@ func ValidateSigner(ctx context.Context, params *Params) error {
 	if wallet == "" {
 		return NewValidationError("user %d does not exist", params.UserID)
 	}
-	if !strings.EqualFold(wallet, params.Signer) {
-		return NewValidationError("signer %s does not match user %d wallet", params.Signer, params.UserID)
+	if strings.EqualFold(wallet, params.Signer) {
+		return nil
+	}
+
+	signer := strings.ToLower(params.Signer)
+	grant, err := getActiveGrant(ctx, params.DBTX, signer, params.UserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return NewValidationError("signer %s is not authorized for user %d", params.Signer, params.UserID)
+		}
+		return err
+	}
+	if grant.isRevoked {
+		return NewValidationError("signer %s grant for user %d is revoked", params.Signer, params.UserID)
+	}
+
+	isApp, err := developerAppExists(ctx, params.DBTX, signer)
+	if err != nil {
+		return err
+	}
+	isUser, err := activeUserWalletExists(ctx, params.DBTX, signer)
+	if err != nil {
+		return err
+	}
+	if !isApp && !isUser {
+		return NewValidationError("signer %s is no longer a valid developer app or active user", params.Signer)
+	}
+
+	approved := isApp || (grant.isApproved != nil && *grant.isApproved)
+	if !approved {
+		return NewValidationError("signer %s grant for user %d is not approved", params.Signer, params.UserID)
 	}
 	return nil
 }

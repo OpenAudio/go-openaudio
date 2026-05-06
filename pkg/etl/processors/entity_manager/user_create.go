@@ -144,6 +144,14 @@ func walletExists(ctx context.Context, dbtx db.DBTX, wallet string) (bool, error
 	return exists, err
 }
 
+func activeUserWalletExists(ctx context.Context, dbtx db.DBTX, wallet string) (bool, error) {
+	var exists bool
+	err := dbtx.QueryRow(ctx,
+		"SELECT EXISTS(SELECT 1 FROM users WHERE wallet = $1 AND is_current = true AND is_deactivated = false)",
+		strings.ToLower(wallet)).Scan(&exists)
+	return exists, err
+}
+
 func developerAppExists(ctx context.Context, dbtx db.DBTX, address string) (bool, error) {
 	var exists bool
 	err := dbtx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM developer_apps WHERE address = $1 AND is_delete = false)", strings.ToLower(address)).Scan(&exists)
