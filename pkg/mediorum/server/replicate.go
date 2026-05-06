@@ -39,6 +39,9 @@ func (ss *MediorumServer) replicateFileParallel(ctx context.Context, cid string,
 	for _, p := range hosts {
 		queue <- p
 	}
+	// Close after enqueueing so workers exit when the buffer drains.
+	// Without this, an all-peers-fail run blocks workers forever on `range queue`.
+	close(queue)
 
 	mu := sync.Mutex{}
 	results := []string{}
@@ -108,8 +111,9 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 	logger := ss.logger.With(zap.String("task", "replicateToMyBucket"), zap.String("cid", fileName))
 	logger.Debug("replicateToMyBucket")
 	key := cidutil.ShardCID(fileName)
+	bucket := ss.bucketForCID(fileName, placementHosts)
 
-	w, err := ss.bucketForCID(fileName, placementHosts).NewWriter(ctx, key, nil)
+	w, err := bucket.NewWriter(ctx, key, nil)
 	if err != nil {
 		return err
 	}
@@ -123,7 +127,7 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 		return err
 	}
 
-	ss.knownPresent.Set(key, n, imcache.WithNoExpiration())
+	ss.knownPresent.Set(ss.presenceCacheKey(key, bucket), n, imcache.WithNoExpiration())
 	return nil
 }
 
@@ -132,12 +136,13 @@ func (ss *MediorumServer) dropFromMyBucket(fileName string, placementHosts []str
 	logger.Debug("deleting blob")
 
 	key := cidutil.ShardCID(fileName)
+	bucket := ss.bucketForCID(fileName, placementHosts)
 	ctx := context.Background()
-	err := ss.bucketForCID(fileName, placementHosts).Delete(ctx, key)
+	err := bucket.Delete(ctx, key)
 	if err != nil {
 		logger.Error("failed to delete", zap.Error(err))
 	} else {
-		ss.knownPresent.Remove(key)
+		ss.knownPresent.Remove(ss.presenceCacheKey(key, bucket))
 	}
 
 	return nil

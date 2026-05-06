@@ -352,6 +352,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	key := cidutil.ShardCID(cid)
 	bucket := ss.bucketForCID(cid, placementHosts)
 	isArchive := ss.archiveBucket != nil && bucket == ss.archiveBucket
+	presenceKey := ss.presenceCacheKey(key, bucket)
 
 	// Per-cycle dedupe: repair iterates uploads, audio_previews, and qm_cids,
 	// and the same CID can appear across those tables. Skip the duplicate
@@ -372,7 +373,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	// previous cycle. Cleanup cycles bypass the cache because they need
 	// ModTime for over-replication decisions and run full blob validation.
 	if !tracker.CleanupMode {
-		if size, ok := ss.knownPresent.Get(key); ok {
+		if size, ok := ss.knownPresent.Get(presenceKey); ok {
 			tracker.SeenKeys[key] = seenKeyResult{alreadyHave: true, size: size}
 			tracker.Counters["already_have"]++
 			tracker.Counters["repair_known_present"]++
@@ -441,7 +442,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 				if errDel := bucket.Delete(ctx, key); errDel == nil {
 					tracker.Counters["delete_invalid_success"]++
 					tracker.SeenKeys[key] = seenKeyResult{alreadyHave: false, size: 0}
-					ss.knownPresent.Remove(key)
+					ss.knownPresent.Remove(presenceKey)
 				} else {
 					tracker.Counters["delete_invalid_fail"]++
 					logger.Error("failed to delete invalid CID", zap.Error(errDel))
@@ -471,7 +472,8 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 				tracker.Counters["delete_resized_image_failed"]++
 			} else {
 				tracker.Counters["delete_resized_image_ok"]++
-				ss.knownPresent.Remove(key)
+				// Variants always live in primary; only the primary cache key matters.
+				ss.knownPresent.Remove(ss.presenceCacheKey(key, ss.bucket))
 			}
 		}
 		return nil
@@ -480,7 +482,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	if alreadyHave {
 		// Populate cross-cycle cache after all validation and cleanup has passed,
 		// so that corrupt or about-to-be-deleted blobs are never cached.
-		ss.knownPresent.Set(key, attrs.Size, imcache.WithNoExpiration())
+		ss.knownPresent.Set(presenceKey, attrs.Size, imcache.WithNoExpiration())
 		tracker.Counters["already_have"]++
 		tracker.ContentSize += attrs.Size
 	}

@@ -98,12 +98,19 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 		return c.String(500, "database connection issue")
 	}
 
-	if attr, ok := ss.attrCache.Get(key); ok {
+	// Bucket selection must happen before the cache lookup: the cache key is
+	// scoped per bucket so that a hit cached for one routing decision can't
+	// satisfy a different one (e.g. cached primary attrs returning 200 for a
+	// later request whose archive routing would correctly return 404).
+	placementHosts := decodePlacementHosts(c.Request().Header)
+	bucket := ss.bucketForCID(cid, placementHosts)
+	cacheKey := ss.presenceCacheKey(key, bucket)
+
+	if attr, ok := ss.attrCache.Get(cacheKey); ok {
 		return c.JSON(200, attr)
 	}
 
-	placementHosts := decodePlacementHosts(c.Request().Header)
-	attr, err := ss.bucketForCID(cid, placementHosts).Attributes(ctx, key)
+	attr, err := bucket.Attributes(ctx, key)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return c.String(404, "blob not found")
@@ -112,7 +119,7 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 		return err
 	}
 
-	ss.attrCache.Set(key, attr, imcache.WithExpiration(60*time.Second))
+	ss.attrCache.Set(cacheKey, attr, imcache.WithExpiration(60*time.Second))
 	return c.JSON(200, attr)
 }
 

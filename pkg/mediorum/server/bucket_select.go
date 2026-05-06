@@ -71,3 +71,14 @@ func (ss *MediorumServer) bucketForCID(cid string, placementHosts []string) *blo
 func (ss *MediorumServer) isArchiveCID(cid string, placementHosts []string) bool {
 	return ss.archiveBucket != nil && ss.bucketForCID(cid, placementHosts) == ss.archiveBucket
 }
+
+// presenceCacheKey scopes a storage-key cache entry to a specific bucket.
+// attrCache and knownPresent must use this — without bucket scoping, a
+// presence record from one bucket can mask a true miss in the other after
+// a rank flip or via placement-aware lookups.
+func (ss *MediorumServer) presenceCacheKey(key string, bucket *blob.Bucket) string {
+	if bucket == ss.archiveBucket {
+		return "a:" + key
+	}
+	return "p:" + key
+}

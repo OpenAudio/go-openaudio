@@ -193,7 +193,7 @@ func TestRepairCidWithPresenceIndexUsesListedState(t *testing.T) {
 	assert.NoError(t, err)
 
 	key := cidutil.ShardCID(cid)
-	ss.knownPresent.Remove(key)
+	ss.knownPresent.Remove(ss.presenceCacheKey(key, ss.bucket))
 	assert.NoError(t, ss.dropFromMyBucket(cid, nil))
 
 	tracker := &RepairTracker{
