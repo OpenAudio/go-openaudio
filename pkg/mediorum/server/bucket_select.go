@@ -1,9 +1,35 @@
 package server
 
 import (
+	"net/http"
+	"strings"
+
 	"gocloud.dev/blob"
 	"golang.org/x/exp/slices"
 )
+
+// placementHostsHeader carries upload placement context across peer-to-peer
+// /internal/blobs requests. Without it, a receiver on a StoreAll node with an
+// archive bucket configured would route purely by rendezvous rank and could
+// place a placement-required CID into archive while readers with placement
+// context expect it in primary.
+//
+// The header is unsigned (no auth value to manipulating it; effect is local
+// routing only) and absent on the wire means "no placement context — route by
+// rank," matching pre-header behavior for backwards compatibility.
+const placementHostsHeader = "X-Placement-Hosts"
+
+func encodePlacementHosts(hosts []string) string {
+	return strings.Join(hosts, ",")
+}
+
+func decodePlacementHosts(h http.Header) []string {
+	v := h.Get(placementHostsHeader)
+	if v == "" {
+		return nil
+	}
+	return strings.Split(v, ",")
+}
 
 // bucketForCID returns the bucket that should hold this CID on this node.
 //

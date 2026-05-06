@@ -44,7 +44,10 @@ func (ss *MediorumServer) buildRepairPresenceIndex(ctx context.Context) (*repair
 	if err := listIntoIndex(ctx, ss.bucket, index); err != nil {
 		return nil, err
 	}
-	if ss.archiveBucket != nil {
+	// Only list archive when it can actually receive routing. With StoreAll
+	// off, bucketForCID never returns archive — listing it is pure overhead
+	// (and potentially expensive for cloud backends with many objects).
+	if ss.archiveBucket != nil && ss.Config.StoreAll {
 		if err := listIntoIndex(ctx, ss.archiveBucket, index); err != nil {
 			return nil, err
 		}

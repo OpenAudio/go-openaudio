@@ -102,7 +102,8 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 		return c.JSON(200, attr)
 	}
 
-	attr, err := ss.bucketForCID(cid, nil).Attributes(ctx, key)
+	placementHosts := decodePlacementHosts(c.Request().Header)
+	attr, err := ss.bucketForCID(cid, placementHosts).Attributes(ctx, key)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return c.String(404, "blob not found")
@@ -601,7 +602,8 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 	cid := c.Param("cid")
 	key := cidutil.ShardCID(cid)
 
-	blob, err := ss.bucketForCID(cid, nil).NewReader(ctx, key, nil)
+	placementHosts := decodePlacementHosts(c.Request().Header)
+	blob, err := ss.bucketForCID(cid, placementHosts).NewReader(ctx, key, nil)
 	if err != nil {
 		return err
 	}
@@ -640,11 +642,11 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 			})
 		}
 
-		// Peer-driven push (/internal/blobs): no placement context on the wire,
-		// route by rendezvous rank only. A peer pushing to a placement target
-		// will only push CIDs the target should hold; opportunistic pushes to
-		// non-target StoreAll nodes correctly route to archive.
-		err = ss.replicateToMyBucket(c.Request().Context(), cid, inp, nil)
+		// Peer-driven push (/internal/blobs). Placement context, when known
+		// to the sender, rides along in the X-Placement-Hosts header so we
+		// route into the same bucket the sender expects.
+		placementHosts := decodePlacementHosts(c.Request().Header)
+		err = ss.replicateToMyBucket(c.Request().Context(), cid, inp, placementHosts)
 		if err != nil {
 			ss.logger.Error("accept ERR", zap.Error(err))
 			return err

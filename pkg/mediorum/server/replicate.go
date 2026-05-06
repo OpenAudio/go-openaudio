@@ -186,6 +186,9 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 	if err != nil {
 		return err
 	}
+	if len(placementHosts) > 0 {
+		req.Header.Set(placementHostsHeader, encodePlacementHosts(placementHosts))
+	}
 
 	// send it
 	resp, err := ss.peerHTTPClient.Do(req)
@@ -233,6 +236,9 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 	req, err := signature.SignedGet(ctx, u, ss.Config.privateKey, ss.Config.Self.Host)
 	if err != nil {
 		return err
+	}
+	if len(placementHosts) > 0 {
+		req.Header.Set(placementHostsHeader, encodePlacementHosts(placementHosts))
 	}
 
 	resp, err := ss.peerHTTPClient.Do(req)

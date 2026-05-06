@@ -432,9 +432,14 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 			return
 		}
 
-		// Store in bucket. This is a peer-driven replication push — placement
-		// context isn't carried over the wire, so route by rendezvous rank only.
-		if err := ss.replicateToMyBucket(ctx, filename, file, nil); err != nil {
+		// Store in bucket. The TUS sender (replicateToHost) sets placementHosts
+		// in the upload metadata, so we can route consistent with what the
+		// origin used.
+		var replPlacementHosts []string
+		if hostsStr, ok := event.Upload.MetaData["placementHosts"]; ok && hostsStr != "" {
+			replPlacementHosts = strings.Split(hostsStr, ",")
+		}
+		if err := ss.replicateToMyBucket(ctx, filename, file, replPlacementHosts); err != nil {
 			ss.logger.Error("failed to store replicated file", zap.String("id", event.Upload.ID), zap.String("filename", filename), zap.Error(err))
 			return
 		}
