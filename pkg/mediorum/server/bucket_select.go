@@ -1,10 +1,12 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
 	"gocloud.dev/blob"
+	"gocloud.dev/gcerrors"
 	"golang.org/x/exp/slices"
 )
 
@@ -81,4 +83,55 @@ func (ss *MediorumServer) presenceCacheKey(key string, bucket *blob.Bucket) stri
 		return "a:" + key
 	}
 	return "p:" + key
+}
+
+// blobAttrs reads attributes from primary first, falling back to archive on
+// NotFound when archive is configured. Returns the bucket the blob was found
+// in. Reads should always go through this (or readBlob/blobExists) rather
+// than calling bucketForCID directly — bucketForCID is for picking write
+// destinations; on reads we want hot first, archive as a tier.
+func (ss *MediorumServer) blobAttrs(ctx context.Context, key string) (*blob.Attributes, *blob.Bucket, error) {
+	attrs, err := ss.bucket.Attributes(ctx, key)
+	if err == nil {
+		return attrs, ss.bucket, nil
+	}
+	if ss.archiveBucket == nil || gcerrors.Code(err) != gcerrors.NotFound {
+		return nil, nil, err
+	}
+	a2, err2 := ss.archiveBucket.Attributes(ctx, key)
+	if err2 == nil {
+		return a2, ss.archiveBucket, nil
+	}
+	// Surface the original primary error (callers distinguish on NotFound).
+	return nil, nil, err
+}
+
+// readBlob opens a reader from primary first, falling back to archive on
+// NotFound. Returns the bucket the blob was found in.
+func (ss *MediorumServer) readBlob(ctx context.Context, key string) (*blob.Reader, *blob.Bucket, error) {
+	r, err := ss.bucket.NewReader(ctx, key, nil)
+	if err == nil {
+		return r, ss.bucket, nil
+	}
+	if ss.archiveBucket == nil || gcerrors.Code(err) != gcerrors.NotFound {
+		return nil, nil, err
+	}
+	r2, err2 := ss.archiveBucket.NewReader(ctx, key, nil)
+	if err2 == nil {
+		return r2, ss.archiveBucket, nil
+	}
+	return nil, nil, err
+}
+
+// blobExists reports whether the blob is in either bucket.
+func (ss *MediorumServer) blobExists(ctx context.Context, key string) bool {
+	if ok, _ := ss.bucket.Exists(ctx, key); ok {
+		return true
+	}
+	if ss.archiveBucket != nil {
+		if ok, _ := ss.archiveBucket.Exists(ctx, key); ok {
+			return true
+		}
+	}
+	return false
 }

@@ -137,10 +137,10 @@ func (ss *MediorumServer) replicateTranscode(ctx context.Context, upload *Upload
 
 // replicateFile is the shared implementation for replicating files to all necessary mirrors in parallel
 func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, cid string, existingMirrors []string, isTranscoded bool) error {
-	// Get the file from our bucket
+	// Get the file from our bucket — hot first, archive fallback so we
+	// source from wherever the blob actually lives on this node.
 	shardedCid := cidutil.ShardCID(cid)
-	srcBucket := ss.bucketForCID(cid, upload.PlacementHosts)
-	_, err := srcBucket.Attributes(ctx, shardedCid)
+	_, srcBucket, err := ss.blobAttrs(ctx, shardedCid)
 	if err != nil {
 		return fmt.Errorf("failed to get file attributes: %w", err)
 	}

@@ -98,30 +98,21 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 		return c.String(500, "database connection issue")
 	}
 
-	// Bucket selection must happen before the cache lookup: the cache key is
-	// scoped per bucket so that a hit cached for one routing decision can't
-	// satisfy a different one (e.g. cached primary attrs returning 200 for a
-	// later request whose archive routing would correctly return 404).
-	placementHosts := decodePlacementHosts(c.Request().Header)
-	bucket := ss.bucketForCID(cid, placementHosts)
-
-	// Check the cache against both buckets — this endpoint is hit by peers
-	// who don't always have placement context, so the same physical blob may
-	// have been cached under either scope.
-	if attr, ok := ss.attrCache.Get(ss.presenceCacheKey(key, bucket)); ok {
+	// Reads use hot-first-then-archive: the bucket the blob lives in falls out
+	// of where we find it, not where bucketForCID would route a fresh write.
+	// The attrCache is keyed per bucket so a primary hit doesn't satisfy an
+	// archive request (and vice versa); we check both keys before going to
+	// the bucket.
+	if attr, ok := ss.attrCache.Get(ss.presenceCacheKey(key, ss.bucket)); ok {
 		return c.JSON(200, attr)
 	}
-	if ss.archiveBucket != nil && bucket != ss.archiveBucket {
+	if ss.archiveBucket != nil {
 		if attr, ok := ss.attrCache.Get(ss.presenceCacheKey(key, ss.archiveBucket)); ok {
 			return c.JSON(200, attr)
 		}
-	} else if ss.archiveBucket != nil && bucket == ss.archiveBucket {
-		if attr, ok := ss.attrCache.Get(ss.presenceCacheKey(key, ss.bucket)); ok {
-			return c.JSON(200, attr)
-		}
 	}
 
-	attr, foundIn, err := ss.blobAttributesWithFallback(ctx, cid, key, placementHosts)
+	attr, foundIn, err := ss.blobAttrs(ctx, key)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return c.String(404, "blob not found")
@@ -132,39 +123,6 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 
 	ss.attrCache.Set(ss.presenceCacheKey(key, foundIn), attr, imcache.WithExpiration(60*time.Second))
 	return c.JSON(200, attr)
-}
-
-// blobAttributesWithFallback resolves attrs from the routed bucket and, when
-// placement context is absent and an archive bucket is configured, falls back
-// to the other bucket on NotFound. Required because peer-to-peer presence
-// checks (hostGetBlobInfo) don't carry placement context: a placed CID on a
-// StoreAll+archive node lives in primary, but rank-based routing without a
-// header would check archive and report a false NotFound, breaking peer
-// hostHasBlob/redirect decisions.
-func (ss *MediorumServer) blobAttributesWithFallback(ctx context.Context, cid, key string, placementHosts []string) (*gcblob.Attributes, *gcblob.Bucket, error) {
-	primaryBucket := ss.bucketForCID(cid, placementHosts)
-	attr, err := primaryBucket.Attributes(ctx, key)
-	if err == nil {
-		return attr, primaryBucket, nil
-	}
-	if gcerrors.Code(err) != gcerrors.NotFound {
-		return nil, nil, err
-	}
-	// Only fall back when the caller didn't tell us where to look and we
-	// actually have somewhere else to look.
-	if len(placementHosts) > 0 || ss.archiveBucket == nil {
-		return nil, nil, err
-	}
-	otherBucket := ss.archiveBucket
-	if primaryBucket == ss.archiveBucket {
-		otherBucket = ss.bucket
-	}
-	attr2, err2 := otherBucket.Attributes(ctx, key)
-	if err2 == nil {
-		return attr2, otherBucket, nil
-	}
-	// Return the original NotFound; caller distinguishes on it.
-	return nil, nil, err
 }
 
 func (ss *MediorumServer) ensureNotDelisted(next echo.HandlerFunc) echo.HandlerFunc {
@@ -214,7 +172,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 		c.Response().Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, contentDisposition))
 	}
 
-	blob, err := ss.bucketForCID(cid, nil).NewReader(ctx, key, nil)
+	blob, foundIn, err := ss.readBlob(ctx, key)
 
 	// If our bucket doesn't have the file, try to pull it first
 	if err != nil {
@@ -228,7 +186,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 			_, pullErr := ss.findAndPullBlob(ctx, cid, nil)
 			if pullErr == nil {
 				// Successfully pulled, try reading again
-				blob, err = ss.bucketForCID(cid, nil).NewReader(ctx, key, nil)
+				blob, foundIn, err = ss.readBlob(ctx, key)
 				if err == nil {
 					// Successfully read after pull, continue with normal serving
 				} else {
@@ -300,7 +258,11 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 				durationSeconds, _ := c.Get("trackDurationSeconds").(float64)
 				expiry := presignedURLExpiry(durationSeconds)
 
-				signedURL, err := ss.bucketForCID(cid, nil).SignedURL(ctx, key, &gcblob.SignedURLOptions{
+				// Use the bucket the blob was actually found in for the
+				// presigned URL — readBlob's fallback may have located it
+				// in archive even when rank-based routing would have looked
+				// in primary.
+				signedURL, err := foundIn.SignedURL(ctx, key, &gcblob.SignedURLOptions{
 					Expiry: expiry,
 					Method: http.MethodGet,
 				})
@@ -653,26 +615,9 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 	cid := c.Param("cid")
 	key := cidutil.ShardCID(cid)
 
-	placementHosts := decodePlacementHosts(c.Request().Header)
-	primaryBucket := ss.bucketForCID(cid, placementHosts)
-	blob, err := primaryBucket.NewReader(ctx, key, nil)
+	blob, _, err := ss.readBlob(ctx, key)
 	if err != nil {
-		// Same fallback as serveBlobInfo: peers calling /internal/blobs/:cid
-		// without a placement header on a StoreAll+archive node need the
-		// "other" bucket checked too, otherwise placed CIDs get false 404s.
-		if gcerrors.Code(err) == gcerrors.NotFound && len(placementHosts) == 0 && ss.archiveBucket != nil {
-			otherBucket := ss.archiveBucket
-			if primaryBucket == ss.archiveBucket {
-				otherBucket = ss.bucket
-			}
-			if blob2, err2 := otherBucket.NewReader(ctx, key, nil); err2 == nil {
-				blob = blob2
-				err = nil
-			}
-		}
-		if err != nil {
-			return err
-		}
+		return err
 	}
 	defer blob.Close()
 
@@ -781,7 +726,7 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 		c.Response().Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, contentDisposition))
 	}
 
-	blob, err := ss.bucketForCID(cid, nil).NewReader(ctx, key, nil)
+	blob, _, err := ss.readBlob(ctx, key)
 	// If our bucket doesn't have the file, find a different node
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {

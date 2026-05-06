@@ -118,8 +118,9 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 		}
 	}
 
-	// open the orig for resizing
-	origReader, err := ss.bucketForCID(origImageCID, nil).NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
+	// open the orig for resizing — readBlob falls back to archive when the
+	// original lives there (e.g. on a StoreAll+archive node).
+	origReader, _, err := ss.readBlob(ctx, cidutil.ShardCID(origImageCID))
 
 	// if we don't have orig, fetch from network
 	if err != nil {
@@ -155,7 +156,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 		c.Response().Header().Set("x-fetch-host", host)
 		c.Response().Header().Set("x-fetch-ok", fmt.Sprintf("%.2fs", time.Since(startFetch).Seconds()))
 
-		origReader, err = ss.bucketForCID(origImageCID, nil).NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
+		origReader, _, err = ss.readBlob(ctx, cidutil.ShardCID(origImageCID))
 		if err != nil {
 			return err
 		}

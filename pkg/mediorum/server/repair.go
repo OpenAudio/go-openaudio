@@ -544,7 +544,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	if !isPlaced && !ss.Config.StoreAll && tracker.CleanupMode && alreadyHave && myRank > rankThreshold && !wasReplicatedThisWeek {
 		// if i'm the first node that over-replicated, keep the file for a week as a buffer since a node ahead of me in the preferred order will likely be down temporarily at some point
 		tracker.Counters["delete_over_replicated_needed"]++
-		err := ss.dropFromMyBucket(cid, placementHosts)
+		err := ss.dropFromMyBucket(cid)
 		if err != nil {
 			tracker.Counters["delete_over_replicated_fail"]++
 			logger.Error("delete failed", zap.Error(err))

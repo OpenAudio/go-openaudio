@@ -139,14 +139,14 @@ func (ss *MediorumServer) startTranscodeWorker(ctx context.Context) error {
 	}
 }
 
-func (ss *MediorumServer) getKeyToTempFile(fileHash string, placementHosts []string) (*os.File, error) {
+func (ss *MediorumServer) getKeyToTempFile(fileHash string) (*os.File, error) {
 	temp, err := os.CreateTemp("", "mediorumTemp")
 	if err != nil {
 		return nil, err
 	}
 
 	key := cidutil.ShardCID(fileHash)
-	blob, err := ss.bucketForCID(fileHash, placementHosts).NewReader(context.Background(), key, nil)
+	blob, _, err := ss.readBlob(context.Background(), key)
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +356,7 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 
 	logger := ss.logger.With(zap.Any("template", upload.Template), zap.String("cid", fileHash))
 
-	if !ss.haveInMyBucket(fileHash, upload.PlacementHosts) {
+	if !ss.haveInMyBucket(fileHash) {
 		_, err := ss.findAndPullBlob(ctx, fileHash, upload.PlacementHosts)
 		if err != nil {
 			logger.Warn("failed to find blob", zap.Error(err))
@@ -392,7 +392,7 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 		return errMsg
 	}
 
-	temp, err := ss.getKeyToTempFile(fileHash, upload.PlacementHosts)
+	temp, err := ss.getKeyToTempFile(fileHash)
 	if err != nil {
 		return onError(err, upload.Status, "getting file")
 	}

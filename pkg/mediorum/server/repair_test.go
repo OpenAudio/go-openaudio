@@ -137,7 +137,7 @@ func TestRepair(t *testing.T) {
 
 		// make leader lose file
 		leader := rendezvousOrder[0]
-		leader.dropFromMyBucket(cid, nil)
+		leader.dropFromMyBucket(cid)
 
 		// normally a standby server wouldn't pull this file
 		standby := rendezvousOrder[replicationFactor+2]
@@ -194,7 +194,7 @@ func TestRepairCidWithPresenceIndexUsesListedState(t *testing.T) {
 
 	key := cidutil.ShardCID(cid)
 	ss.knownPresent.Remove(ss.presenceCacheKey(key, ss.bucket))
-	assert.NoError(t, ss.dropFromMyBucket(cid, nil))
+	assert.NoError(t, ss.dropFromMyBucket(cid))
 
 	tracker := &RepairTracker{
 		StartedAt:   time.Now(),

@@ -35,16 +35,15 @@ func (ss *MediorumServer) generateAudioPreviewForUpload(ctx context.Context, upl
 // It returns an AudioPreview record, and the client can use that to update a track record.
 func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash string, previewStartSeconds string) (*AudioPreview, error) {
 
-	if !ss.haveInMyBucket(fileHash, nil) {
+	if !ss.haveInMyBucket(fileHash) {
 		_, err := ss.findAndPullBlob(ctx, fileHash, nil)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// pull to temp file. Preview generation has no upload-level placement
-	// context — pass nil so routing falls back to rendezvous rank.
-	temp, err := ss.getKeyToTempFile(fileHash, nil)
+	// pull to temp file
+	temp, err := ss.getKeyToTempFile(fileHash)
 	if err != nil {
 		return nil, err
 	}

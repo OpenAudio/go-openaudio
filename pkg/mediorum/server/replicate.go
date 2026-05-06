@@ -18,6 +18,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 
 	"gocloud.dev/blob"
+	"gocloud.dev/gcerrors"
 )
 
 func (ss *MediorumServer) replicateFileParallel(ctx context.Context, cid string, filePath string, placementHosts []string) ([]string, error) {
@@ -131,28 +132,34 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 	return nil
 }
 
-func (ss *MediorumServer) dropFromMyBucket(fileName string, placementHosts []string) error {
+// dropFromMyBucket removes the blob from both buckets (NotFound is benign).
+// Reads are hot-first-then-archive, so a blob can legitimately live in either
+// bucket; deleting from both ensures cleanup is complete regardless of which
+// bucket the original write landed in (covers rank-flip orphans too).
+func (ss *MediorumServer) dropFromMyBucket(fileName string) error {
 	logger := ss.logger.With(zap.String("task", "dropFromMyBucket"), zap.String("cid", fileName))
 	logger.Debug("deleting blob")
 
 	key := cidutil.ShardCID(fileName)
-	bucket := ss.bucketForCID(fileName, placementHosts)
 	ctx := context.Background()
-	err := bucket.Delete(ctx, key)
-	if err != nil {
-		logger.Error("failed to delete", zap.Error(err))
-	} else {
-		ss.knownPresent.Remove(ss.presenceCacheKey(key, bucket))
+
+	deleteFrom := func(b *blob.Bucket) {
+		if err := b.Delete(ctx, key); err != nil && gcerrors.Code(err) != gcerrors.NotFound {
+			logger.Error("failed to delete", zap.Error(err))
+			return
+		}
+		ss.knownPresent.Remove(ss.presenceCacheKey(key, b))
 	}
 
+	deleteFrom(ss.bucket)
+	if ss.archiveBucket != nil {
+		deleteFrom(ss.archiveBucket)
+	}
 	return nil
 }
 
-func (ss *MediorumServer) haveInMyBucket(fileName string, placementHosts []string) bool {
-	shardedCid := cidutil.ShardCID(fileName)
-	ctx := context.Background()
-	exists, _ := ss.bucketForCID(fileName, placementHosts).Exists(ctx, shardedCid)
-	return exists
+func (ss *MediorumServer) haveInMyBucket(fileName string) bool {
+	return ss.blobExists(context.Background(), cidutil.ShardCID(fileName))
 }
 
 func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, fileName string, file io.Reader, placementHosts []string) error {
@@ -242,9 +249,11 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 	if err != nil {
 		return err
 	}
-	if len(placementHosts) > 0 {
-		req.Header.Set(placementHostsHeader, encodePlacementHosts(placementHosts))
-	}
+	// Note: placementHosts is NOT sent on the wire. The peer's GET
+	// endpoint uses hot-first-then-archive fallback, so it'll find the
+	// blob wherever it lives without needing routing context. The
+	// placementHosts param here only governs where *this node's* local
+	// write lands after we receive the blob.
 
 	resp, err := ss.peerHTTPClient.Do(req)
 	if err != nil {
