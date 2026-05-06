@@ -104,13 +104,24 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 	// later request whose archive routing would correctly return 404).
 	placementHosts := decodePlacementHosts(c.Request().Header)
 	bucket := ss.bucketForCID(cid, placementHosts)
-	cacheKey := ss.presenceCacheKey(key, bucket)
 
-	if attr, ok := ss.attrCache.Get(cacheKey); ok {
+	// Check the cache against both buckets — this endpoint is hit by peers
+	// who don't always have placement context, so the same physical blob may
+	// have been cached under either scope.
+	if attr, ok := ss.attrCache.Get(ss.presenceCacheKey(key, bucket)); ok {
 		return c.JSON(200, attr)
 	}
+	if ss.archiveBucket != nil && bucket != ss.archiveBucket {
+		if attr, ok := ss.attrCache.Get(ss.presenceCacheKey(key, ss.archiveBucket)); ok {
+			return c.JSON(200, attr)
+		}
+	} else if ss.archiveBucket != nil && bucket == ss.archiveBucket {
+		if attr, ok := ss.attrCache.Get(ss.presenceCacheKey(key, ss.bucket)); ok {
+			return c.JSON(200, attr)
+		}
+	}
 
-	attr, err := bucket.Attributes(ctx, key)
+	attr, foundIn, err := ss.blobAttributesWithFallback(ctx, cid, key, placementHosts)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return c.String(404, "blob not found")
@@ -119,8 +130,41 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 		return err
 	}
 
-	ss.attrCache.Set(cacheKey, attr, imcache.WithExpiration(60*time.Second))
+	ss.attrCache.Set(ss.presenceCacheKey(key, foundIn), attr, imcache.WithExpiration(60*time.Second))
 	return c.JSON(200, attr)
+}
+
+// blobAttributesWithFallback resolves attrs from the routed bucket and, when
+// placement context is absent and an archive bucket is configured, falls back
+// to the other bucket on NotFound. Required because peer-to-peer presence
+// checks (hostGetBlobInfo) don't carry placement context: a placed CID on a
+// StoreAll+archive node lives in primary, but rank-based routing without a
+// header would check archive and report a false NotFound, breaking peer
+// hostHasBlob/redirect decisions.
+func (ss *MediorumServer) blobAttributesWithFallback(ctx context.Context, cid, key string, placementHosts []string) (*gcblob.Attributes, *gcblob.Bucket, error) {
+	primaryBucket := ss.bucketForCID(cid, placementHosts)
+	attr, err := primaryBucket.Attributes(ctx, key)
+	if err == nil {
+		return attr, primaryBucket, nil
+	}
+	if gcerrors.Code(err) != gcerrors.NotFound {
+		return nil, nil, err
+	}
+	// Only fall back when the caller didn't tell us where to look and we
+	// actually have somewhere else to look.
+	if len(placementHosts) > 0 || ss.archiveBucket == nil {
+		return nil, nil, err
+	}
+	otherBucket := ss.archiveBucket
+	if primaryBucket == ss.archiveBucket {
+		otherBucket = ss.bucket
+	}
+	attr2, err2 := otherBucket.Attributes(ctx, key)
+	if err2 == nil {
+		return attr2, otherBucket, nil
+	}
+	// Return the original NotFound; caller distinguishes on it.
+	return nil, nil, err
 }
 
 func (ss *MediorumServer) ensureNotDelisted(next echo.HandlerFunc) echo.HandlerFunc {
@@ -610,9 +654,25 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 	key := cidutil.ShardCID(cid)
 
 	placementHosts := decodePlacementHosts(c.Request().Header)
-	blob, err := ss.bucketForCID(cid, placementHosts).NewReader(ctx, key, nil)
+	primaryBucket := ss.bucketForCID(cid, placementHosts)
+	blob, err := primaryBucket.NewReader(ctx, key, nil)
 	if err != nil {
-		return err
+		// Same fallback as serveBlobInfo: peers calling /internal/blobs/:cid
+		// without a placement header on a StoreAll+archive node need the
+		// "other" bucket checked too, otherwise placed CIDs get false 404s.
+		if gcerrors.Code(err) == gcerrors.NotFound && len(placementHosts) == 0 && ss.archiveBucket != nil {
+			otherBucket := ss.archiveBucket
+			if primaryBucket == ss.archiveBucket {
+				otherBucket = ss.bucket
+			}
+			if blob2, err2 := otherBucket.NewReader(ctx, key, nil); err2 == nil {
+				blob = blob2
+				err = nil
+			}
+		}
+		if err != nil {
+			return err
+		}
 	}
 	defer blob.Close()
 
