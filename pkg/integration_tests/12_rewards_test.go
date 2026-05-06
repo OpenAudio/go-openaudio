@@ -145,7 +145,6 @@ func TestRewardsLifecycle(t *testing.T) {
 	})
 
 	t.Run("Test Reward Attestations with Claim Authorities", func(t *testing.T) {
-		t.Skip("artist-coin attestations are temporarily disabled; see GetRewardAttestation in pkg/core/server/connect.go")
 
 		// Generate random private keys for claim authorities
 		authority1Key, err := crypto.GenerateKey()
@@ -283,7 +282,6 @@ func TestRewardsLifecycle(t *testing.T) {
 	})
 
 	t.Run("Test with Amount Validation", func(t *testing.T) {
-		t.Skip("artist-coin attestations are temporarily disabled; see GetRewardAttestation in pkg/core/server/connect.go")
 
 		// Generate a new claim authority key
 		authorityKey, err := crypto.GenerateKey()

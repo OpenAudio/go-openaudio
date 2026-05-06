@@ -151,6 +151,40 @@ func (r *Rewards) SetRewardPoolAuthorities(ctx context.Context, msg *v1.SetRewar
 	return r.signAndSendRewardPool(ctx, body)
 }
 
+// GetRewardSenderAttestation requests an attestation that the validator will
+// sign authorizing addr to be added as a sender on the Solana reward manager
+// account identified by rewardsManagerPubkey. For pool-managed RMs, the
+// validator signs iff addr ∈ pool.authorities; for unmanaged RMs (notably
+// AUDIO), the validator falls back to its validator/AAO trust set. The
+// returned attestation is meant to be combined with attestations from other
+// validators and submitted to Solana via CreateSenderPublic.
+func (r *Rewards) GetRewardSenderAttestation(ctx context.Context, addr string, rewardsManagerPubkey string) (*v1.GetRewardSenderAttestationResponse, error) {
+	resp, err := r.core.GetRewardSenderAttestation(ctx, connect.NewRequest(&v1.GetRewardSenderAttestationRequest{
+		Address:              addr,
+		RewardsManagerPubkey: rewardsManagerPubkey,
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+// GetDeleteRewardSenderAttestation is the inverse of GetRewardSenderAttestation:
+// the validator signs an attestation authorizing the removal of addr as a
+// sender on the Solana RM. For pool-managed RMs, the validator signs iff
+// addr ∉ pool.authorities (proving OAP-side rotation already happened).
+// Used to deregister leaked / rotated-out keys from Solana.
+func (r *Rewards) GetDeleteRewardSenderAttestation(ctx context.Context, addr string, rewardsManagerPubkey string) (*v1.GetDeleteRewardSenderAttestationResponse, error) {
+	resp, err := r.core.GetDeleteRewardSenderAttestation(ctx, connect.NewRequest(&v1.GetDeleteRewardSenderAttestationRequest{
+		Address:              addr,
+		RewardsManagerPubkey: rewardsManagerPubkey,
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
 func (r *Rewards) GetRewardAttestation(ctx context.Context, req *v1.GetRewardAttestationRequest) (*v1.GetRewardAttestationResponse, error) {
 	// Create a RewardClaim to compile the data in the correct format
 	claim := pkgrewards.RewardClaim{

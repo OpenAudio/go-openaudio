@@ -24,6 +24,7 @@ import (
 	storagev1connect "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	"github.com/jackc/pgx/v5"
@@ -1060,11 +1061,97 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 
 // GetRewardAttestation implements v1connect.CoreServiceHandler.
 //
-// TODO: temporarily disabled. Restore the programmatic-reward attestation
-// flow (see git history for the previous implementation) once artist-coin
-// attestations are ready to be re-enabled.
+// Restored from the temporary kill-switch (#215) now that the rotation
+// primitive is in place. The authority check uses dbReward.ClaimAuthorities,
+// which post-PR1 is sourced from coalesce(p.authorities, '{}') via the
+// LEFT JOIN on core_reward_pools — i.e., it reflects the current pool
+// membership for the reward's RM, not the stale row-frozen list. So
+// rotating an authority out via SetRewardPoolAuthorities immediately
+// revokes their ability to authenticate claim attestations.
 func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
-	return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("artist-coin attestations are temporarily disabled"))
+	ethRecipientAddress := req.Msg.EthRecipientAddress
+	if ethRecipientAddress == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("eth_recipient_address is required"))
+	}
+	rewardAddress := req.Msg.RewardAddress
+	if rewardAddress == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward_address is required"))
+	}
+	specifier := req.Msg.Specifier
+	if specifier == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("specifier is required"))
+	}
+	if len(specifier) > 256 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("specifier too long"))
+	}
+	claimAuthority := req.Msg.ClaimAuthority
+	if claimAuthority == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority is required"))
+	}
+	signature := req.Msg.Signature
+	if signature == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("signature is required"))
+	}
+	amount := req.Msg.Amount
+	if amount == 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount is required"))
+	}
+	rewardId := req.Msg.RewardId
+	if rewardId == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward_id is required"))
+	}
+	if req.Msg.AmountDecimals > 18 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount_decimals too large; max 18"))
+	}
+
+	dbReward, err := c.core.db.GetReward(ctx, rewardAddress)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("programmatic reward not found"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to load reward: %w", err))
+	}
+
+	// dbReward.ClaimAuthorities is fed by the pool's current authorities
+	// (post-PR1 LEFT JOIN aliasing). Building a Reward from it gives us
+	// pool-gated authentication for free.
+	claimAuthorities := make([]rewards.ClaimAuthority, len(dbReward.ClaimAuthorities))
+	for i, ca := range dbReward.ClaimAuthorities {
+		claimAuthorities[i] = rewards.ClaimAuthority{Address: ca}
+	}
+	reward := rewards.Reward{
+		ClaimAuthorities: claimAuthorities,
+		Amount:           uint64(dbReward.Amount),
+		RewardId:         dbReward.RewardID,
+		Name:             dbReward.Name,
+	}
+
+	claim := rewards.RewardClaim{
+		RecipientEthAddress: ethRecipientAddress,
+		Amount:              amount,
+		RewardID:            req.Msg.RewardId,
+		Specifier:           specifier,
+		ClaimAuthority:      claimAuthority,
+		Decimals:            req.Msg.AmountDecimals,
+	}
+
+	attester := rewards.NewRewardAttester(c.core.config.EthereumKey, []rewards.Reward{reward})
+
+	if err := attester.Validate(claim); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("claim validation failed: %w", err))
+	}
+	if err := attester.Authenticate(claim, signature); err != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("authentication failed: %w", err))
+	}
+	_, attestation, err := attester.Attest(claim)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("attestation generation failed: %w", err))
+	}
+
+	return connect.NewResponse(&v1.GetRewardAttestationResponse{
+		Owner:       attester.EthereumAddress,
+		Attestation: attestation,
+	}), nil
 }
 
 // GetRewards implements v1connect.CoreServiceHandler.
@@ -1666,12 +1753,16 @@ func (c *CoreService) GetSlashAttestations(ctx context.Context, req *connect.Req
 
 // gatherEligibleSenderAddresses returns the union of registered validator
 // eth addresses and anti-abuse oracle eth addresses. This is the set the
-// rewards-manager program treats as eligible senders: add attestations are
-// only signed for addresses in this set, delete attestations are only signed
-// for addresses NOT in this set.
+// rewards-manager program treats as eligible senders for RMs that are NOT
+// managed by the pool primitive: add attestations are only signed for
+// addresses in this set, delete attestations are only signed for addresses
+// NOT in this set.
 //
 // Validators come from the local consensus-populated core_validators table.
 // AAOs come from the L1 EthRewardsManager contract via the eth-bridge sync.
+//
+// Pool-managed RMs (those with a row in core_reward_pools) bypass this and
+// gate on pool.authorities instead — see senderGateForRM.
 func (c *CoreService) gatherEligibleSenderAddresses(ctx context.Context) ([]string, error) {
 	validators, err := c.core.db.GetAllEthAddressesOfRegisteredNodes(ctx)
 	if err != nil {
@@ -1684,7 +1775,43 @@ func (c *CoreService) gatherEligibleSenderAddresses(ctx context.Context) ([]stri
 	return append(validators, aaos...), nil
 }
 
+// senderGateForRM resolves which gating regime applies to a given Solana
+// reward manager pubkey:
+//
+//   - If a row exists in core_reward_pools for the requested RM, the pool
+//     is the source of truth: addAttestation iff addr ∈ pool.authorities;
+//     deleteAttestation iff addr ∉ pool.authorities. This is the rotation
+//     path — once OAP rotates a key out of the pool, validators can be
+//     asked to deregister it from Solana, and once a new key is rotated in,
+//     validators can register it.
+//
+//   - If no pool exists for the RM, fall through to the legacy
+//     validator/AAO trust set (see gatherEligibleSenderAddresses). AUDIO
+//     deliberately stays on this path: no pool is ever created for the
+//     AUDIO RM (validateCreateRewardPool refuses), so AUDIO attestation
+//     authority remains the network-wide trust set.
+//
+// Returns (pool, true, nil) when pool gating applies, (nil, false, nil)
+// when validator/AAO gating applies, and a non-nil error only on real DB
+// failures (transient errors do NOT silently fall through to validator/AAO
+// — that would let a temporary blip downgrade the gate from per-RM to
+// network-wide).
+func (c *CoreService) senderGateForRM(ctx context.Context, rmPubkey string) (*db.CoreRewardPool, bool, error) {
+	pool, err := c.core.db.GetRewardPool(ctx, rmPubkey)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("failed to load pool for RM %s: %w", rmPubkey, err)
+	}
+	return &pool, true, nil
+}
+
 // GetRewardSenderAttestation implements v1connect.CoreServiceHandler.
+//
+// Dispatches by RM:
+//   - If a pool exists for the requested RM, sign iff address ∈ pool.authorities.
+//   - Otherwise, sign iff address ∈ validator/AAO trust set (legacy AUDIO path).
 func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
 	address := req.Msg.Address
 	if address == "" {
@@ -1696,15 +1823,25 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
 	}
 
-	eligible, err := c.gatherEligibleSenderAddresses(ctx)
+	pool, isPoolGated, err := c.senderGateForRM(ctx, rewardsManagerPubkey)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	if !slices.ContainsFunc(eligible, func(eth string) bool {
-		return strings.EqualFold(eth, address)
-	}) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address not a registered validator or anti-abuse oracle"))
+	if isPoolGated {
+		if !contains(pool.Authorities, address) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("address not in pool.authorities for RM %s", rewardsManagerPubkey))
+		}
+	} else {
+		eligible, err := c.gatherEligibleSenderAddresses(ctx)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if !slices.ContainsFunc(eligible, func(eth string) bool {
+			return strings.EqualFold(eth, address)
+		}) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address not a registered validator or anti-abuse oracle"))
+		}
 	}
 
 	owner, attestation, err := rewards.GetCreateSenderAttestation(c.core.config.EthereumKey, &rewards.CreateSenderAttestationParams{
@@ -1723,6 +1860,13 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 }
 
 // GetDeleteRewardSenderAttestation implements v1connect.CoreServiceHandler.
+//
+// Dispatches by RM:
+//   - If a pool exists for the requested RM, sign iff address ∉ pool.authorities.
+//     This is the rotation-out signal: OAP has already removed the key from the
+//     pool, and validators are catching Solana up.
+//   - Otherwise (AUDIO path), sign iff address is NOT in the validator/AAO
+//     trust set (existing behavior).
 func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error) {
 	address := req.Msg.Address
 	if address == "" {
@@ -1734,15 +1878,25 @@ func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req 
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
 	}
 
-	eligible, err := c.gatherEligibleSenderAddresses(ctx)
+	pool, isPoolGated, err := c.senderGateForRM(ctx, rewardsManagerPubkey)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	if slices.ContainsFunc(eligible, func(eth string) bool {
-		return strings.EqualFold(eth, address)
-	}) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is a registered validator or anti-abuse oracle"))
+	if isPoolGated {
+		if contains(pool.Authorities, address) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("address is still a current authority of the pool for RM %s; rotate it out first via SetRewardPoolAuthorities", rewardsManagerPubkey))
+		}
+	} else {
+		eligible, err := c.gatherEligibleSenderAddresses(ctx)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if slices.ContainsFunc(eligible, func(eth string) bool {
+			return strings.EqualFold(eth, address)
+		}) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is a registered validator or anti-abuse oracle"))
+		}
 	}
 
 	owner, attestation, err := rewards.GetDeleteSenderAttestation(c.core.config.EthereumKey, &rewards.DeleteSenderAttestationParams{

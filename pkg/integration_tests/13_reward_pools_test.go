@@ -238,6 +238,47 @@ func TestRewardPoolsLifecycle(t *testing.T) {
 			t.Fatalf("expected rotated-out bob to be rejected")
 		}
 	})
+
+	// === PR3 sender attestation flow ===
+	//
+	// Pool at rmPubkey now has authorities = [alice]; bob has been rotated out.
+	// Validator should: sign create for alice (current authority), refuse
+	// create for bob (not in pool), sign delete for bob (rotated out → ok to
+	// remove from Solana), refuse delete for alice (still authorized).
+
+	t.Run("CreateSender attestation: pool member alice is signed", func(t *testing.T) {
+		resp, err := alice.Rewards.GetRewardSenderAttestation(ctx, aliceAddr, rmPubkey)
+		if err != nil {
+			t.Fatalf("expected create-sender attestation for current authority alice: %v", err)
+		}
+		if resp.Attestation == "" {
+			t.Fatalf("expected attestation string")
+		}
+	})
+
+	t.Run("CreateSender attestation: rotated-out bob is rejected", func(t *testing.T) {
+		_, err := alice.Rewards.GetRewardSenderAttestation(ctx, bobAddr, rmPubkey)
+		if err == nil {
+			t.Fatalf("expected create-sender attestation to be refused for rotated-out bob")
+		}
+	})
+
+	t.Run("DeleteSender attestation: rotated-out bob is signed", func(t *testing.T) {
+		resp, err := alice.Rewards.GetDeleteRewardSenderAttestation(ctx, bobAddr, rmPubkey)
+		if err != nil {
+			t.Fatalf("expected delete-sender attestation for rotated-out bob: %v", err)
+		}
+		if resp.Attestation == "" {
+			t.Fatalf("expected attestation string")
+		}
+	})
+
+	t.Run("DeleteSender attestation: current authority alice is rejected", func(t *testing.T) {
+		_, err := alice.Rewards.GetDeleteRewardSenderAttestation(ctx, aliceAddr, rmPubkey)
+		if err == nil {
+			t.Fatalf("expected delete-sender attestation to be refused for current authority alice")
+		}
+	})
 }
 
 func containsFold(haystack []string, needle string) bool {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
@@ -109,6 +110,15 @@ func validateRewardsManagerPubkey(pubkey string) error {
 	}
 	if len(bytes) != solanaPubkeyByteLen {
 		return fmt.Errorf("%w: rewards_manager_pubkey must decode to %d bytes; got %d", ErrRewardMessageValidation, solanaPubkeyByteLen, len(bytes))
+	}
+	// Reserved-RM denylist: AUDIO continues to be governed by the network-wide
+	// validator/AAO trust set in PR3's sender-attestation gate (the gate falls
+	// back to validator/AAO for any RM that has no pool). Allowing a pool to
+	// be created for the AUDIO RM would shift AUDIO sender attestations to
+	// pool-controlled authorities — defeating the AUDIO trust model. Refuse
+	// here so the AUDIO RM can never have a pool.
+	if audioRM := config.AudioRewardsManagerPubkey(); audioRM != "" && pubkey == audioRM {
+		return fmt.Errorf("%w: rewards_manager_pubkey is reserved (AUDIO); pools cannot be created for it", ErrRewardMessageValidation)
 	}
 	return nil
 }
