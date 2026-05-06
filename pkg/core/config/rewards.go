@@ -17,9 +17,9 @@ import "github.com/OpenAudio/go-openaudio/pkg/rewards"
 // Sandbox / devnet typically don't have a real AUDIO RM and can be left
 // empty; staging and prod must be filled in before merge.
 var (
-	DevAudioRewardsManagerPubkey   = "" // TODO: fill in for devnet, or leave empty
-	StageAudioRewardsManagerPubkey = "" // TODO: fill in for staging
-	ProdAudioRewardsManagerPubkey  = "" // TODO: fill in for production
+	DevAudioRewardsManagerPubkey   = "DJPzVothq58SmkpRb1ATn5ddN2Rpv1j2TcGvM3XsHf1c"
+	StageAudioRewardsManagerPubkey = "" // intentionally unset; staging shares prod's denylist tolerance
+	ProdAudioRewardsManagerPubkey  = "71hWFVYokLaN1PNYzTAWi13EfJ7Xt9VbSWUKsXUT8mxE"
 )
 
 // AudioRewardsManagerPubkey returns the configured AUDIO RM pubkey for the
