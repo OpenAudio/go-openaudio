@@ -459,15 +459,19 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 		}
 	}
 
-	// delete derived image variants since they'll be dynamically resized
+	// Delete derived image variants since they'll be dynamically resized.
+	// Variants are pure cache — generated on-demand by serveImage and
+	// always written to the primary bucket regardless of where the
+	// original lives — so cleanup only needs to touch primary.
 	if strings.HasSuffix(cid, ".jpg") && !strings.HasSuffix(cid, "original.jpg") {
 		if tracker.CleanupMode && alreadyHave {
-			err := ss.dropFromMyBucket(cid, placementHosts)
-			if err != nil {
+			err := ss.bucket.Delete(ctx, key)
+			if err != nil && gcerrors.Code(err) != gcerrors.NotFound {
 				logger.Error("delete_resized_image_failed", zap.Error(err))
 				tracker.Counters["delete_resized_image_failed"]++
 			} else {
 				tracker.Counters["delete_resized_image_ok"]++
+				ss.knownPresent.Remove(key)
 			}
 		}
 		return nil

@@ -70,15 +70,21 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	// origImageCID is the identifier findAndPullBlob/replicateToMyBucket use
 	// when fetching the original. For non-legacy CIDs it equals containerCID;
 	// for legacy CIDs it's "<cid>/original.jpg" — a *different* rendezvous-rank
-	// input. Route the original AND its derived variants by origImageCID so
-	// reads land in the same bucket the pull wrote to.
+	// input. Route reads of the original by origImageCID so they land in the
+	// same bucket the pull wrote to.
+	//
+	// Variants (resized derivatives) are pure on-demand cache — regenerated
+	// from the original by Resized() below — and always live in the primary
+	// bucket. Putting regeneratable cache in cold storage would force
+	// retrieval fees on every image request that hit a node holding the
+	// original in archive.
 	origImageCID := containerCID
 	if cidutil.IsLegacyCID(origImageCID) {
 		origImageCID += "/original.jpg"
 	}
 
 	serveSuccess := func(blobPath string) error {
-		if blob, err := ss.bucketForCID(origImageCID, nil).NewReader(ctx, blobPath, nil); err == nil {
+		if blob, err := ss.bucket.NewReader(ctx, blobPath, nil); err == nil {
 			return serveSuccessWithReader(blob)
 		} else {
 			return err
@@ -105,9 +111,9 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 
 	c.Response().Header().Set("x-variant-storage-path", variantStoragePath)
 
-	// we already have the resized version
+	// we already have the resized version (variants always live in primary)
 	if !skipCache {
-		if blob, err := ss.bucketForCID(origImageCID, nil).NewReader(ctx, variantStoragePath, nil); err == nil {
+		if blob, err := ss.bucket.NewReader(ctx, variantStoragePath, nil); err == nil {
 			return serveSuccessWithReader(blob)
 		}
 	}
@@ -155,11 +161,11 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 		}
 	}
 
-	// do resize if not original.jpg
+	// do resize if not original.jpg. Variants always go to primary — see comment above.
 	if !isOriginalJpg {
 		resizeStart := time.Now()
 		resized, _, _ := Resized(".jpg", origReader, w, h, "fill")
-		w, _ := ss.bucketForCID(origImageCID, nil).NewWriter(ctx, variantStoragePath, nil)
+		w, _ := ss.bucket.NewWriter(ctx, variantStoragePath, nil)
 		io.Copy(w, resized)
 		w.Close()
 		c.Response().Header().Set("x-resize-ok", fmt.Sprintf("%.2fs", time.Since(resizeStart).Seconds()))
