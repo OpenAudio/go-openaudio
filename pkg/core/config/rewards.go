@@ -15,10 +15,16 @@ import "github.com/OpenAudio/go-openaudio/pkg/rewards"
 //
 // Empty values disable the denylist for that environment (no enforcement).
 // Sandbox / devnet typically don't have a real AUDIO RM and can be left
-// empty; staging and prod must be filled in before merge.
+// empty; prod is required.
+//
+// Staging is intentionally left empty: staging doesn't run with a real
+// AUDIO mint, and the rotation flow is exercised against test launchpad
+// RMs that have first-class pools, so the denylist would never fire for
+// any legitimate staging request. Setting a non-empty staging value
+// would just be a misconfiguration risk with no upside.
 var (
 	DevAudioRewardsManagerPubkey   = "DJPzVothq58SmkpRb1ATn5ddN2Rpv1j2TcGvM3XsHf1c"
-	StageAudioRewardsManagerPubkey = "" // intentionally unset; staging shares prod's denylist tolerance
+	StageAudioRewardsManagerPubkey = ""
 	ProdAudioRewardsManagerPubkey  = "71hWFVYokLaN1PNYzTAWi13EfJ7Xt9VbSWUKsXUT8mxE"
 )
 

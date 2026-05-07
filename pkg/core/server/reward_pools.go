@@ -117,7 +117,11 @@ func validateRewardsManagerPubkey(pubkey string) error {
 	// be created for the AUDIO RM would shift AUDIO sender attestations to
 	// pool-controlled authorities — defeating the AUDIO trust model. Refuse
 	// here so the AUDIO RM can never have a pool.
-	if audioRM := config.AudioRewardsManagerPubkey(); audioRM != "" && pubkey == audioRM {
+	// Trim the configured AUDIO RM defensively: if these per-env constants
+	// ever start being populated from env vars or config, surrounding
+	// whitespace would silently disable the denylist check (the equality
+	// would be false). Trimming here makes the gate robust to that.
+	if audioRM := strings.TrimSpace(config.AudioRewardsManagerPubkey()); audioRM != "" && pubkey == audioRM {
 		return fmt.Errorf("%w: rewards_manager_pubkey is reserved (AUDIO); pools cannot be created for it", ErrRewardMessageValidation)
 	}
 	return nil
