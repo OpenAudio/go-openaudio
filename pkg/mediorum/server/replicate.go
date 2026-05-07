@@ -108,7 +108,7 @@ func (ss *MediorumServer) replicateFile(ctx context.Context, fileName string, fi
 // placementHosts MUST be passed when the caller has placement context (repair,
 // upload replication path) so writes go to the same bucket reads expect.
 // Pass nil for opportunistic peer pushes that have no placement context.
-func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName string, file io.Reader, placementHosts []string) error {
+func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName string, file io.Reader, placementHosts []string) (err error) {
 	logger := ss.logger.With(zap.String("task", "replicateToMyBucket"), zap.String("cid", fileName))
 	logger.Debug("replicateToMyBucket")
 	key := cidutil.ShardCID(fileName)
@@ -118,13 +118,19 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 	if err != nil {
 		return err
 	}
+	// Ensure the writer is always closed. For most blob drivers, failing to
+	// Close after a partial write leaks resources or leaves uncommitted
+	// objects. Surface a Close error only when the operation otherwise
+	// succeeded — when the io.Copy below failed, that error is more useful.
+	defer func() {
+		closeErr := w.Close()
+		if err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
 
 	n, err := io.Copy(w, file)
 	if err != nil {
-		return err
-	}
-
-	if err := w.Close(); err != nil {
 		return err
 	}
 

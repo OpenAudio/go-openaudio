@@ -12,6 +12,7 @@ import (
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/erni27/imcache"
+	"go.uber.org/zap"
 
 	"github.com/labstack/echo/v4"
 	"gocloud.dev/blob"
@@ -170,9 +171,21 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	if !isOriginalJpg {
 		resizeStart := time.Now()
 		resized, _, _ := Resized(".jpg", origReader, w, h, "fill")
-		w, _ := ss.bucket.NewWriter(ctx, variantStoragePath, nil)
-		io.Copy(w, resized)
-		w.Close()
+		// Variants are best-effort cache. If the write to primary fails (full
+		// disk, transient backend error), log and skip the cache step rather
+		// than nil-deref on io.Copy or fail the user's request — the resized
+		// bytes are served from `serveSuccess` below either way (next request
+		// regenerates the variant).
+		if vw, vwErr := ss.bucket.NewWriter(ctx, variantStoragePath, nil); vwErr == nil {
+			if _, copyErr := io.Copy(vw, resized); copyErr != nil {
+				ss.logger.Warn("variant cache write copy failed", zap.String("path", variantStoragePath), zap.Error(copyErr))
+			}
+			if closeErr := vw.Close(); closeErr != nil {
+				ss.logger.Warn("variant cache write close failed", zap.String("path", variantStoragePath), zap.Error(closeErr))
+			}
+		} else {
+			ss.logger.Warn("variant cache writer open failed", zap.String("path", variantStoragePath), zap.Error(vwErr))
+		}
 		c.Response().Header().Set("x-resize-ok", fmt.Sprintf("%.2fs", time.Since(resizeStart).Seconds()))
 	}
 	origReader.Close()

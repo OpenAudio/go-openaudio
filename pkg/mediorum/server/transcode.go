@@ -285,8 +285,12 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 	}
 	resultKey := resultHash
 
-	// transcode server will retain transcode result for analysis
-	ss.replicateToMyBucket(ctx, resultHash, dest, upload.PlacementHosts)
+	// transcode server will retain transcode result for analysis. If the
+	// local write fails we can't claim to be a transcoded mirror — analysis
+	// and downstream replication would look for the blob here and 404.
+	if err := ss.replicateToMyBucket(ctx, resultHash, dest, upload.PlacementHosts); err != nil {
+		return onError(err, upload.Status, "replicateToMyBucket")
+	}
 
 	upload.TranscodeResults["320"] = resultKey
 

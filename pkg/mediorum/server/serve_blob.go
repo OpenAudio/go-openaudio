@@ -633,7 +633,7 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 	// (rank-based routing).
 	placementHosts := decodePlacementHosts(c.Request().Header)
 	if err := ss.validatePlacementHosts(placementHosts); err != nil {
-		ss.logger.Warn("rejecting invalid X-Placement-Hosts header; routing by rank",
+		ss.logger.Warn("ignoring invalid X-Placement-Hosts header; routing by rank",
 			zap.Strings("placementHosts", placementHosts), zap.Error(err))
 		placementHosts = nil
 	}
