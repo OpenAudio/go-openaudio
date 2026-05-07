@@ -358,12 +358,11 @@ where address = $1;
 
 -- name: UpsertSyntheticRewardPool :exec
 -- Used by the legacy CreateReward replay flow (wire-compat layer) to ensure
--- a synthetic pool exists with the requested authority set. The pool's
--- rewards_manager_pubkey is deterministic from the canonical (trim/lower/
--- dedup/sort) authorities — prefixed 'mig_' to mark the row as not-RM-bound,
--- matching the PR1 backfill. DO UPDATE makes the canonical-form ↔ row
--- correspondence an enforced invariant: any drift in canonicalization will
--- self-correct on next replay rather than hiding a divergent row.
+-- a reward-pool row exists for the provided rewards_manager_pubkey, which is
+-- the pool identity in the current schema. On replay, DO UPDATE refreshes the
+-- stored authority set for that same pool identity so legacy backfills remain
+-- aligned with the latest replayed state instead of leaving stale authorities
+-- on an existing row.
 insert into core_reward_pools (
     rewards_manager_pubkey,
     authorities
