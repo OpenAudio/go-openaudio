@@ -10,7 +10,7 @@ permissions:
 jobs:
   # Only run for fork PRs — same-repo PRs are handled by ci.yml
   test:
-    if: github.event.pull_request.head.repo.full_name != github.repository
+    if: true # temporarily enabled for same-repo testing
     runs-on: ubuntu-latest
     services:
       postgres:
