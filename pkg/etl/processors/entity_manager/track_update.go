@@ -63,6 +63,7 @@ func updateTrack(ctx context.Context, params *Params) error {
 	if err != nil {
 		return err
 	}
+	stripImmutableFields(params.Metadata, immutableTrackFields)
 	oldTitle := base.Title
 	merged := mergeTrackFromMetadata(params, base)
 
