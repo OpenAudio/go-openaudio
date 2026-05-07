@@ -52,8 +52,8 @@ func (h *commentCreateHandler) Handle(ctx context.Context, params *Params) error
 		}
 	}
 
-	// Insert thread relationship if this is a reply
-	if parentID, ok := params.MetadataInt64("parent_comment_id"); ok && parentID > 0 {
+	// Insert thread relationship if this is a reply.
+	if parentID, ok := getCommentParentID(params); ok {
 		_, err := params.DBTX.Exec(ctx, `
 			INSERT INTO comment_threads (parent_comment_id, comment_id)
 			VALUES ($1, $2)
@@ -65,6 +65,19 @@ func (h *commentCreateHandler) Handle(ctx context.Context, params *Params) error
 	}
 
 	return nil
+}
+
+// getCommentParentID returns the parent comment id from metadata, accepting
+// either parent_comment_id (preferred) or parent_id (alt; the API may send
+// either, mirroring apps' comment.py).
+func getCommentParentID(params *Params) (int64, bool) {
+	if id, ok := params.MetadataInt64("parent_comment_id"); ok && id > 0 {
+		return id, true
+	}
+	if id, ok := params.MetadataInt64("parent_id"); ok && id > 0 {
+		return id, true
+	}
+	return 0, false
 }
 
 func validateCommentWrite(ctx context.Context, params *Params, isCreate bool) error {
@@ -118,14 +131,45 @@ func validateCommentWrite(ctx context.Context, params *Params, isCreate bool) er
 		return NewValidationError("comment body exceeds %d character limit", CharacterLimitCommentBody)
 	}
 
-	// Validate parent_comment_id if provided
-	if parentID, ok := params.MetadataInt64("parent_comment_id"); ok && parentID > 0 {
+	// Validate parent_comment_id (or parent_id) if provided.
+	if parentID, ok := getCommentParentID(params); ok && isCreate {
 		pExists, err := commentExists(ctx, params.DBTX, parentID)
 		if err != nil {
 			return err
 		}
 		if !pExists {
 			return NewValidationError("parent comment %d does not exist", parentID)
+		}
+
+		// Parent must be on the same entity (track/fanclub) as this child,
+		// matching apps' check that parent_c.entity_type/entity_id align.
+		var parentEntityType string
+		var parentEntityID int64
+		err = params.DBTX.QueryRow(ctx,
+			"SELECT entity_type, entity_id FROM comments WHERE comment_id = $1",
+			parentID).Scan(&parentEntityType, &parentEntityID)
+		if err != nil {
+			return err
+		}
+		childEntityType := et
+		if childEntityType == "" {
+			childEntityType = EntityTypeTrack
+		}
+		if parentEntityType != childEntityType || parentEntityID != entityID {
+			return NewValidationError("parent comment %d does not belong to %s %d",
+				parentID, childEntityType, entityID)
+		}
+
+		// Reject duplicate (parent, child) pair — matches apps' existing_records check.
+		var dup bool
+		err = params.DBTX.QueryRow(ctx,
+			"SELECT EXISTS(SELECT 1 FROM comment_threads WHERE parent_comment_id = $1 AND comment_id = $2)",
+			parentID, params.EntityID).Scan(&dup)
+		if err != nil {
+			return err
+		}
+		if dup {
+			return NewValidationError("comment_thread (%d, %d) already exists", parentID, params.EntityID)
 		}
 	}
 
