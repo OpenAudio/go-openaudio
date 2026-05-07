@@ -65,6 +65,12 @@ func updatePlaylist(ctx context.Context, params *Params) error {
 		return err
 	}
 
+	if _, ok := params.Metadata["playlist_contents"]; ok {
+		if err := updatePlaylistTracks(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+			return err
+		}
+	}
+
 	// Update playlist route if name changed
 	newName := ""
 	if merged.PlaylistName != nil {
