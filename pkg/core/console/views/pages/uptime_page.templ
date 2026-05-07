@@ -216,14 +216,14 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
             <h2 class="text-lg text-gray-400">
                 SLA Performance Dashboard
             </h2>
-            <h1 class="text-4xl p-3">
+            <h1 class="text-2xl md:text-4xl p-3 break-all">
                 { strippedEndpoint(props.ActiveEndpoint.Endpoint) }
             </h1>
-            <h3 class="text-sm text-gray-400 px-3">
+            <h3 class="text-sm text-gray-400 px-3 break-all">
                 <span class="text-gray-300">Owned by </span><a href={ templ.URL(fmt.Sprintf("/console/adjudicate/%s", props.ActiveEndpoint.Owner)) }>{ props.ActiveEndpoint.Owner }</a>
             </h3>
 
-            <ul class="m-2">
+            <ul class="m-2 overflow-x-auto pb-2">
                 for _, r := range props.ActiveEndpoint.SlaReports {
                     <li class={ "slaBar", templ.KV("activeSlaBar", props.ActiveEndpoint.ActiveReport.BlockEnd == r.BlockEnd), getSlaBarClassFromStatus(r.Status) }>
                         <a class="reportLink" href={ templ.URL(fmt.Sprintf("/console/uptime/%d/%s", r.BlockEnd, strippedEndpoint(props.ActiveEndpoint.Endpoint))) }></a>
@@ -236,9 +236,9 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                 <a href={ templ.URL(fmt.Sprintf("/console/tx/%s", props.ActiveEndpoint.ActiveReport.TxHash)) }>{ fmt.Sprintf("SLA Report at End Block %d", props.ActiveEndpoint.ActiveReport.BlockEnd) }</a>
             </h2>
 
-            <div class="flex flex-row text-center p-2">
-                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
-                    <dt class="text-lg">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center p-2">
+                <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
+                    <dt class="text-base sm:text-lg">
                         { props.ActiveEndpoint.ActiveReport.Time.Format("06-01-02") }
                         <br />
                         { props.ActiveEndpoint.ActiveReport.Time.Format("15:04:05 MST") }
@@ -246,44 +246,44 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                     <dd class="text-sm">Date Finalized</dd>
                 </div>
 
-                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
-                    <dt class="text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlockStart) }</dt>
+                <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
+                    <dt class="text-2xl sm:text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlockStart) }</dt>
                     <dd class="text-sm">Start Block</dd>
                 </div>
 
-                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
-                    <dt class="text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlockEnd) }</dt>
+                <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
+                    <dt class="text-2xl sm:text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlockEnd) }</dt>
                     <dd class="text-sm">End Block</dd>
                 </div>
 
-                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
-                    <dt class="text-4xl">{ fmt.Sprintf("%.1fs", float64(props.AvgBlockTimeMs)/1000.0) }</dt>
+                <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
+                    <dt class="text-2xl sm:text-4xl">{ fmt.Sprintf("%.1fs", float64(props.AvgBlockTimeMs)/1000.0) }</dt>
                     <dd class="text-sm">Avg Block Time</dd>
                 </div>
             </div>
 
-            <div class="flex flex-row text-center p-2">
-                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
-                    <dt class="text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.Quota) }</dt>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center p-2">
+                <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
+                    <dt class="text-2xl sm:text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.Quota) }</dt>
                     <dd class="text-sm">Block Quota</dd>
                 </div>
 
-                <div class={ "basis-1/4 rounded-md bg-secondary py-8 mx-1", getSlaClassFromStatus(props.ActiveEndpoint.ActiveReport.Status) }>
+                <div class={ "rounded-md bg-secondary py-6 sm:py-8 px-2", getSlaClassFromStatus(props.ActiveEndpoint.ActiveReport.Status) }>
                     if props.ActiveEndpoint.ActiveReport.Status == SlaExempt {
-                        <dt class="text-4xl">N/A</dt>
+                        <dt class="text-2xl sm:text-4xl">N/A</dt>
                     } else {
-                        <dt class="text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlocksProposed) }</dt>
+                        <dt class="text-2xl sm:text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.BlocksProposed) }</dt>
                     }
                     <dd class="text-sm">Blocks Proposed</dd>
                 </div>
 
-                <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
-                    <dt class="text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.PoSChallengesTotal) }</dt>
+                <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
+                    <dt class="text-2xl sm:text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.PoSChallengesTotal) }</dt>
                     <dd class="text-sm">Challenges Received</dd>
                 </div>
 
-                <div class={ "basis-1/4 rounded-md bg-secondary py-8 mx-1", templ.KV(slaMissClass(), props.ActiveEndpoint.IsEthRegistered && !meetsPoSSla(props.ActiveEndpoint.ActiveReport)) }>
-                    <a href={ 
+                <div class={ "rounded-md bg-secondary py-6 sm:py-8 px-2", templ.KV(slaMissClass(), props.ActiveEndpoint.IsEthRegistered && !meetsPoSSla(props.ActiveEndpoint.ActiveReport)) }>
+                    <a href={
                         templ.URL(
                             fmt.Sprintf(
                                 "/console/pos/%s?block_start=%d&block_end=%d",
@@ -291,19 +291,20 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                                 props.ActiveEndpoint.ActiveReport.BlockStart,
                                 props.ActiveEndpoint.ActiveReport.BlockEnd,
                             ),
-                        ) 
+                        )
                     }>
                         if !props.ActiveEndpoint.IsEthRegistered {
-                            <dt class="text-4xl">N/A</dt>
+                            <dt class="text-2xl sm:text-4xl">N/A</dt>
                         } else {
-                            <dt class="text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.PoSChallengesFailed) }</dt>
+                            <dt class="text-2xl sm:text-4xl">{ fmt.Sprintf("%d", props.ActiveEndpoint.ActiveReport.PoSChallengesFailed) }</dt>
                         }
                         <dd class="text-sm">Challenges Failed</dd>
                     </a>
                 </div>
             </div>
 
-            <table class="bg-tertiary p-2 rounded validatorReports text-left m-4">
+            <div class="overflow-x-auto m-4">
+            <table class="bg-tertiary p-2 rounded validatorReports text-left w-full min-w-[600px]">
                 <colgroup>
                     <col />
                     <col class="bg-primary" />
@@ -329,6 +330,7 @@ templ (c *Pages) UptimePageHTML(props *UptimePageView) {
                     }
                 </tbody>
             </table>
+            </div>
         }
 	}
 }

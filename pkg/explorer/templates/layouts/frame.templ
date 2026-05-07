@@ -21,15 +21,15 @@ templ Frame(pageTitle string) {
 				}
 			})();
 		</script>
-		<div class="flex-none space-y-4 p-8 pt-6">
-			<div class="flex justify-between space-y-2">
+		<div class="flex-none space-y-4 p-4 pt-4 md:p-8 md:pt-6">
+			<div class="flex flex-col gap-4 lg:flex-row lg:justify-between lg:gap-2 lg:space-y-2">
 				<div class="flex flex-col items-start space-y-4">
 					<a href="/" class="flex items-center !no-underline hover:opacity-80 transition-opacity">
-						<img src="/assets/images/OAPLogo.svg" alt="Audius Logo" class="mx-4 h-12 w-12 object-contain invert dark:invert-0"/>
-						<h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Open Audio Explorer</h1>
+						<img src="/assets/images/OAPLogo.svg" alt="Audius Logo" class="mx-2 md:mx-4 h-10 w-10 md:h-12 md:w-12 object-contain invert dark:invert-0"/>
+						<h1 class="text-lg md:text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Open Audio Explorer</h1>
 					</a>
-					<div class="ml-4">
-						<ul class="flex gap-6 list-none p-0 m-0">
+					<div class="ml-2 md:ml-4 w-full">
+						<ul class="flex flex-wrap gap-x-6 gap-y-2 list-none p-0 m-0">
 							<li>
 								<a href="/" class="!text-gray-600 dark:!text-white !no-underline hover:!opacity-80 transition-opacity text-sm">Dashboard</a>
 							</li>
@@ -48,8 +48,8 @@ templ Frame(pageTitle string) {
 						</ul>
 					</div>
 				</div>
-				<div class="flex items-center">
-					<div class="relative w-[500px]" x-data="searchBar()" x-init="init()" @navigate.window="window.location.href = $event.detail.path" data-env={ getEnvFromContext(ctx) }>
+				<div class="flex items-center w-full lg:w-auto">
+					<div class="relative w-full lg:w-[500px]" x-data="searchBar()" x-init="init()" @navigate.window="window.location.href = $event.detail.path" data-env={ getEnvFromContext(ctx) }>
 						<div class="relative">
 							<input
 								type="text"
@@ -87,8 +87,8 @@ templ Frame(pageTitle string) {
 				</div>
 			</div>
 		</div>
-		<div id="page-content" class="flex-grow space-y-4 p-8 pt-6 flex flex-col">
-			<div class="p-4 flex-grow flex flex-col">
+		<div id="page-content" class="flex-grow space-y-4 p-2 pt-4 md:p-8 md:pt-6 flex flex-col">
+			<div class="p-2 md:p-4 flex-grow flex flex-col">
 				{ children... }
 			</div>
 		</div>

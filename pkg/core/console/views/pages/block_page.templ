@@ -17,7 +17,7 @@ type BlockView struct {
 
 templ (p *Pages) BlockPageHTML(view *BlockView) {
 	@p.layout.SiteFrame() {
-		<div class="flex justify-between mt-4 text-sm">
+		<div class="flex justify-between mt-4 text-sm gap-2">
 			@p.components.Link("/block/%d", view.Height-1) {
 				<div>Previous Block</div>
 			}
@@ -25,11 +25,11 @@ templ (p *Pages) BlockPageHTML(view *BlockView) {
 				<div>Next Block</div>
 			}
 		</div>
-		<div class="p-4">
+		<div class="p-2 md:p-4">
 			<h1 class="text-xl">
 				Block { fmt.Sprint(view.Height) } Details
 			</h1>
-			<div class="p-4 h-full">
+			<div class="p-2 md:p-4 h-full break-all">
 				// <div>
 				// 	@p.components.Link("/block/%s", view.Hash) {
 				// 		<div>Hash: { view.Hash }</div>

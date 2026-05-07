@@ -97,20 +97,20 @@ func Validator(props ValidatorProps) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><!-- Validator Info Card --><div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><div class=\"flex justify-between items-start mb-4\"><div><h2 class=\"text-2xl font-bold text-gray-900 dark:text-white\">Validator Details</h2><p class=\"text-gray-500 dark:text-[#b3b3b3] font-mono text-sm mt-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><!-- Validator Info Card --><div class=\"shadow-xl rounded-lg p-4 md:p-6 bg-white dark:bg-[#0a0a0a]\"><div class=\"flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start mb-4\"><div class=\"min-w-0\"><h2 class=\"text-2xl font-bold text-gray-900 dark:text-white\">Validator Details</h2><p class=\"text-gray-500 dark:text-[#b3b3b3] font-mono text-sm mt-1 break-all\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(props.Validator.Address)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/validator.templ`, Line: 67, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/validator.templ`, Line: 67, Col: 109}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</p></div><div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</p></div><div class=\"flex-shrink-0\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -251,12 +251,12 @@ func Validator(props ValidatorProps) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if len(props.Events) > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-white mb-4\">Event History</h3><div class=\"space-y-4\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"shadow-xl rounded-lg p-4 md:p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-white mb-4\">Event History</h3><div class=\"space-y-4\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, event := range props.Events {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<div class=\"border border-gray-200 dark:border-gray-800 rounded-lg p-4 hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors\"><div class=\"flex justify-between items-start mb-2\"><div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<div class=\"border border-gray-200 dark:border-gray-800 rounded-lg p-4 hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors\"><div class=\"flex flex-wrap justify-between items-start gap-2 mb-2\"><div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -290,7 +290,7 @@ func Validator(props ValidatorProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div></div><div class=\"text-sm text-gray-600 dark:text-[#b3b3b3] space-y-1\"><div>Block:  <a href=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div></div><div class=\"text-sm text-gray-600 dark:text-[#b3b3b3] space-y-1 min-w-0\"><div>Block: <a href=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -316,7 +316,7 @@ func Validator(props ValidatorProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</a></div><div>Tx:  <a href=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</a></div><div class=\"break-all\">Tx: <a href=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -352,7 +352,7 @@ func Validator(props ValidatorProps) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<!-- Uptime History Section --><div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-white mb-4\">SLA Rollup History</h3><p class=\"text-gray-500 dark:text-[#b3b3b3] text-sm mb-4\">Recent SLA rollup performance for this validator. Green indicates meeting SLA requirements, red indicates missing SLA, and dark gray indicates no activity.</p><div class=\"flex items-center gap-6 text-sm text-gray-600 dark:text-[#b3b3b3] mb-6\"><div class=\"flex items-center gap-2\"><div class=\"w-4 h-5 bg-green-400 rounded-sm\"></div><span>Meeting SLA</span></div><div class=\"flex items-center gap-2\"><div class=\"w-4 h-5 bg-red-500 rounded-sm\"></div><span>Missing SLA</span></div><div class=\"flex items-center gap-2\"><div class=\"w-4 h-5 bg-gray-800 rounded-sm\"></div><span>Offline/Dead</span></div></div><!-- Uptime bars with actual rollup data --><div class=\"flex items-center gap-2 mb-6\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<!-- Uptime History Section --><div class=\"shadow-xl rounded-lg p-4 md:p-6 bg-white dark:bg-[#0a0a0a]\"><h3 class=\"text-xl font-bold text-gray-900 dark:text-white mb-4\">SLA Rollup History</h3><p class=\"text-gray-500 dark:text-[#b3b3b3] text-sm mb-4\">Recent SLA rollup performance for this validator. Green indicates meeting SLA requirements, red indicates missing SLA, and dark gray indicates no activity.</p><div class=\"flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600 dark:text-[#b3b3b3] mb-6\"><div class=\"flex items-center gap-2\"><div class=\"w-4 h-5 bg-green-400 rounded-sm\"></div><span>Meeting SLA</span></div><div class=\"flex items-center gap-2\"><div class=\"w-4 h-5 bg-red-500 rounded-sm\"></div><span>Missing SLA</span></div><div class=\"flex items-center gap-2\"><div class=\"w-4 h-5 bg-gray-800 rounded-sm\"></div><span>Offline/Dead</span></div></div><!-- Uptime bars with actual rollup data --><div class=\"flex items-center gap-2 mb-6 overflow-x-auto pb-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
