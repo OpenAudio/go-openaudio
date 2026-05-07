@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	v1 "github.com/cometbft/cometbft/api/cometbft/abci/v1"
@@ -149,6 +150,49 @@ func (s *Server) startSnapshotCreator(ctx context.Context) error {
 		logger.Info("ServeSnapshots is not enabled, skipping snapshot creation")
 		s.CompleteProcess(ProcessStateSnapshotCreator)
 		return nil
+	}
+
+	// Wait for block sync to complete before creating snapshots.
+	// Snapshots taken while catching up would be stale, and createSnapshot
+	// already skips CatchingUp=true — this makes the wait explicit.
+	s.SleepingProcessWithMetadata(ProcessStateSnapshotCreator, "Waiting for block sync to complete")
+	for {
+		status, err := s.rpc.Status(context.Background())
+		if err == nil && !status.SyncInfo.CatchingUp {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			s.CompleteProcess(ProcessStateSnapshotCreator)
+			return ctx.Err()
+		case <-time.After(30 * time.Second):
+		}
+	}
+
+	// Create an immediate snapshot if all snapshot intervals were missed during
+	// block sync catch-up (e.g. after a node restart). This ensures other nodes
+	// can always state sync without waiting up to BlockInterval blocks.
+	{
+		status, err := s.rpc.Status(context.Background())
+		snapshots, _ := s.getStoredSnapshots()
+		if err == nil {
+			latestHeight := status.SyncInfo.LatestBlockHeight
+			newestSnapshot := int64(0)
+			if len(snapshots) > 0 {
+				newestSnapshot = int64(snapshots[len(snapshots)-1].Height)
+			}
+			if latestHeight-newestSnapshot >= s.config.StateSync.BlockInterval {
+				logger.Info("creating catch-up snapshot after block sync",
+					zap.Int64("height", latestHeight),
+					zap.Int64("lastSnapshot", newestSnapshot))
+				if err := s.createSnapshot(logger, latestHeight); err != nil {
+					logger.Error("error creating catch-up snapshot", zap.Error(err))
+				}
+				if err := s.pruneSnapshots(logger); err != nil {
+					logger.Error("error pruning snapshots after catch-up", zap.Error(err))
+				}
+			}
+		}
 	}
 
 	node := s.node
