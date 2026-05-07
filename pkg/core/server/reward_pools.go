@@ -90,13 +90,9 @@ func validateAuthorityList(addrs []string) error {
 }
 
 // validateRewardsManagerPubkey checks the wire shape of a Solana reward
-// manager pubkey: non-empty, base58-decodable, exactly 32 bytes.
-//
-// First-class pools must use a real RM pubkey because PR3's
-// sender-attestation gate uses the same value to bind the pool↔RM. PR1's
-// backfill resolves each existing reward row to a real RM via the
-// launchpad_authority_rm mapping, so there are no synthetic-pool
-// identifiers in production state to special-case here.
+// manager pubkey: non-empty, base58-decodable, exactly 32 bytes. Pools are
+// keyed by RM pubkey, so this also validates the pool's identity at
+// CreateRewardPool / SetRewardPoolAuthorities time.
 func validateRewardsManagerPubkey(pubkey string) error {
 	if pubkey == "" {
 		return fmt.Errorf("%w: rewards_manager_pubkey is required", ErrRewardMessageValidation)

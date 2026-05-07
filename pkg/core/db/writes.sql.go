@@ -1177,30 +1177,3 @@ func (q *Queries) UpsertSlaRollupReport(ctx context.Context, address string) err
 	_, err := q.db.Exec(ctx, upsertSlaRollupReport, address)
 	return err
 }
-
-const upsertSyntheticRewardPool = `-- name: UpsertSyntheticRewardPool :exec
-insert into core_reward_pools (
-    rewards_manager_pubkey,
-    authorities
-) values ($1, $2)
-on conflict (rewards_manager_pubkey) do update set
-    authorities = excluded.authorities,
-    updated_at = now()
-`
-
-type UpsertSyntheticRewardPoolParams struct {
-	RewardsManagerPubkey string
-	Authorities          []string
-}
-
-// Used by the legacy CreateReward path to ensure a reward-pool row exists
-// for the provided rewards_manager_pubkey with the requested authority
-// set. The pubkey may be a real Solana RM (when the row's
-// claim_authorities included a known launchpad-derived per-mint key) or
-// a synthetic 'mig_<md5>' identifier (otherwise). DO UPDATE refreshes
-// the stored authorities so multiple CreateReward txs targeting the
-// same pool converge instead of leaving stale rows.
-func (q *Queries) UpsertSyntheticRewardPool(ctx context.Context, arg UpsertSyntheticRewardPoolParams) error {
-	_, err := q.db.Exec(ctx, upsertSyntheticRewardPool, arg.RewardsManagerPubkey, arg.Authorities)
-	return err
-}
