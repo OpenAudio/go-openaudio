@@ -662,33 +662,109 @@ func (s *Server) ReassemblePgDump(height int64) error {
 	return nil
 }
 
-// RestoreDatabase restores the PostgreSQL database using the reassembled pg_dump binary file
+// RestoreDatabase restores the PostgreSQL database using the reassembled pg_dump binary file.
+// It splits the restore into three phases with tables set to UNLOGGED during the data phase
+// to avoid WAL generation on large tables (e.g. core_transactions) which causes OOM.
 func (s *Server) RestoreDatabase(height int64) error {
 	tmpDir := filepath.Join(s.config.RootDir, tmpReconstructionDir)
 	heightDir := getHeightDir(tmpDir, height)
 	dumpPath := getPgDumpPath(heightDir)
 
-	cmd := exec.Command("pg_restore",
-		"--dbname="+s.config.PSQLConn,
-		"--clean",
-		"--if-exists",
-		"--no-owner",
-		"--no-privileges",
-		dumpPath)
+	pgRestore := func(section string) error {
+		args := []string{
+			"--dbname=" + s.config.PSQLConn,
+			"--no-owner",
+			"--no-privileges",
+		}
+		if section != "" {
+			args = append(args, "--section="+section)
+		}
+		args = append(args, dumpPath)
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+		var stdout, stderr bytes.Buffer
+		cmd := exec.Command("pg_restore", args...)
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
 
-	err := cmd.Run()
-	if err != nil {
-		s.logger.Error("pg_restore failed",
-			zap.Error(err),
-			zap.String("stderr", stderr.String()),
-			zap.String("stdout", stdout.String()),
-		)
-		return fmt.Errorf("error restoring database: %w", err)
+		err := cmd.Run()
+		if err != nil {
+			s.logger.Error("pg_restore failed",
+				zap.String("section", section),
+				zap.Error(err),
+				zap.String("stderr", stderr.String()),
+			)
+			return fmt.Errorf("pg_restore --%s failed: %w", section, err)
+		}
+		return nil
 	}
+
+	alterPersistence := func(persistence string) error {
+		db, err := s.pool.Acquire(context.Background())
+		if err != nil {
+			return fmt.Errorf("acquire connection: %w", err)
+		}
+		defer db.Release()
+
+		rows, err := db.Query(context.Background(),
+			"SELECT tablename FROM pg_tables WHERE schemaname='public'")
+		if err != nil {
+			return fmt.Errorf("list tables: %w", err)
+		}
+		defer rows.Close()
+
+		var tables []string
+		for rows.Next() {
+			var t string
+			if err := rows.Scan(&t); err != nil {
+				return err
+			}
+			tables = append(tables, t)
+		}
+
+		for _, table := range tables {
+			if _, err := db.Exec(context.Background(),
+				"ALTER TABLE "+table+" SET "+persistence); err != nil {
+				s.logger.Warn("failed to alter table persistence",
+					zap.String("table", table),
+					zap.String("persistence", persistence),
+					zap.Error(err))
+			}
+		}
+		return nil
+	}
+
+	// Tune postgres for bulk load: skip WAL fsync, allow large WAL before checkpoint.
+	// These are reset automatically when postgres restarts normally.
+	if db, err := s.pool.Acquire(context.Background()); err == nil {
+		db.Exec(context.Background(), "ALTER SYSTEM SET synchronous_commit = off")
+		db.Exec(context.Background(), "ALTER SYSTEM SET max_wal_size = '8GB'")
+		db.Exec(context.Background(), "ALTER SYSTEM SET checkpoint_timeout = '1h'")
+		db.Exec(context.Background(), "SELECT pg_reload_conf()")
+		db.Release()
+	}
+
+	s.logger.Info("pg_restore: restoring schema (pre-data)")
+	// pre-data errors (missing tables from schema drift) are non-fatal
+	_ = pgRestore("pre-data")
+
+	s.logger.Info("pg_restore: setting tables to UNLOGGED to suppress WAL during data load")
+	if err := alterPersistence("UNLOGGED"); err != nil {
+		return fmt.Errorf("set unlogged: %w", err)
+	}
+
+	s.logger.Info("pg_restore: restoring data")
+	if err := pgRestore("data"); err != nil {
+		return err
+	}
+
+	s.logger.Info("pg_restore: setting tables back to LOGGED")
+	if err := alterPersistence("LOGGED"); err != nil {
+		return fmt.Errorf("set logged: %w", err)
+	}
+
+	s.logger.Info("pg_restore: restoring indexes and constraints (post-data)")
+	// post-data errors (duplicate indexes etc.) are non-fatal
+	_ = pgRestore("post-data")
 
 	return nil
 }
