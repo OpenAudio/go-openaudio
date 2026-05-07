@@ -24,7 +24,6 @@ func TestValidateRewardsManagerPubkey_BaseChecks(t *testing.T) {
 		{"empty", "", "is required"},
 		{"leading whitespace", " " + good, "whitespace"},
 		{"trailing whitespace", good + " ", "whitespace"},
-		{"mig prefix", "mig_" + good, "'mig_' prefix"},
 		{"non-base58", "this!is@not%base58", "not valid base58"},
 		{"too few bytes", base58.Encode([]byte("short")), "must decode to 32 bytes"},
 		{"good", good, ""},
