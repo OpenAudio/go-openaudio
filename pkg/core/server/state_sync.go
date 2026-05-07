@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
@@ -151,6 +152,56 @@ func (s *Server) startSnapshotCreator(ctx context.Context) error {
 		logger.Info("ServeSnapshots is not enabled, skipping snapshot creation")
 		s.CompleteProcess(ProcessStateSnapshotCreator)
 		return nil
+	}
+
+	// Wait for block sync to complete before creating snapshots.
+	// Snapshots taken while catching up would be stale, and createSnapshot
+	// already skips CatchingUp=true — this makes the wait explicit.
+	s.SleepingProcessWithMetadata(ProcessStateSnapshotCreator, "Waiting for block sync to complete")
+	for {
+		status, err := s.rpc.Status(context.Background())
+		if err == nil && !status.SyncInfo.CatchingUp {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			s.CompleteProcess(ProcessStateSnapshotCreator)
+			return ctx.Err()
+		case <-time.After(30 * time.Second):
+		}
+	}
+
+	// Create an immediate snapshot if all snapshot intervals were missed during
+	// block sync catch-up (e.g. after a node restart). This ensures other nodes
+	// can always state sync without waiting up to BlockInterval blocks.
+	//
+	// Round down to the nearest interval boundary so the snapshot height matches
+	// the expected interval grid (e.g. 24200000, 24100000) and the postgres state
+	// is guaranteed to have processed past that height.
+	{
+		status, err := s.rpc.Status(context.Background())
+		snapshots, _ := s.getStoredSnapshots()
+		if err == nil {
+			latestHeight := status.SyncInfo.LatestBlockHeight
+			blockInterval := s.config.StateSync.BlockInterval
+			snapshotHeight := latestHeight - (latestHeight % blockInterval)
+			newestSnapshot := int64(0)
+			if len(snapshots) > 0 {
+				newestSnapshot = int64(snapshots[len(snapshots)-1].Height)
+			}
+			if snapshotHeight > newestSnapshot {
+				logger.Info("creating catch-up snapshot after block sync",
+					zap.Int64("height", snapshotHeight),
+					zap.Int64("latestHeight", latestHeight),
+					zap.Int64("lastSnapshot", newestSnapshot))
+				if err := s.createSnapshot(logger, snapshotHeight); err != nil {
+					logger.Error("error creating catch-up snapshot", zap.Error(err))
+				}
+				if err := s.pruneSnapshots(logger); err != nil {
+					logger.Error("error pruning snapshots after catch-up", zap.Error(err))
+				}
+			}
+		}
 	}
 
 	node := s.node
@@ -757,7 +808,6 @@ func (s *Server) RestoreDatabase(height int64) error {
 	// Truncate all tables before loading dump data. Migrations pre-populate some tables
 	// (e.g. core_db_migrations) which cause COPY to fail with duplicate key errors.
 	// Collect names first so the connection isn't held open (busy) during TRUNCATE.
-	setMessage("Clearing existing table data")
 	s.logger.Info("pg_restore: truncating tables to clear migration-created data")
 	if db, err := s.pool.Acquire(context.Background()); err == nil {
 		rows, err := db.Query(context.Background(),
@@ -780,7 +830,6 @@ func (s *Server) RestoreDatabase(height int64) error {
 		db.Release()
 	}
 
-	setMessage("Preparing tables for bulk load")
 	s.logger.Info("pg_restore: setting tables to UNLOGGED to suppress WAL during data load")
 	if err := alterPersistence("UNLOGGED"); err != nil {
 		return fmt.Errorf("set unlogged: %w", err)
