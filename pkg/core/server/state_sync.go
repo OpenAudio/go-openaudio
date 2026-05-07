@@ -15,9 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	"connectrpc.com/connect"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
-	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 	v1 "github.com/cometbft/cometbft/api/cometbft/abci/v1"
 	"github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/cometbft/cometbft/types"
@@ -861,36 +859,27 @@ func (s *Server) cacheSnapshots() error {
 
 func (s *Server) stateSyncLatestBlock(rpcServers []string) (trustHeight int64, trustHash string, err error) {
 	for _, rpcServer := range rpcServers {
-		oapRPC := strings.TrimSuffix(rpcServer, "/core/crpc")
-		oap := sdk.NewOpenAudioSDK(oapRPC)
-		snapshots, err := oap.Core.GetStoredSnapshots(context.Background(), connect.NewRequest(&corev1.GetStoredSnapshotsRequest{}))
-		if err != nil {
-			s.logger.Error("error getting stored snapshots", zap.String("rpcServer", rpcServer), zap.Error(err))
-			continue
-		}
-		if len(snapshots.Msg.Snapshots) == 0 {
-			s.logger.Warn("no snapshots returned from host", zap.String("rpcServer", rpcServer))
-			continue
-		}
-
-		// get last snapshot in list, this is the latest snapshot
-		lastSnapshot := snapshots.Msg.Snapshots[len(snapshots.Msg.Snapshots)-1]
-		trustBuffer := int64(10) // number of blocks to step back
-		safeHeight := lastSnapshot.Height - trustBuffer
-
-		// Ensure safeHeight is at least 1 (block height starts at 1)
-		if safeHeight < 1 {
-			s.logger.Warn("snapshot height too low for trust buffer",
-				zap.String("rpcServer", rpcServer),
-				zap.Int64("snapshotHeight", lastSnapshot.Height),
-				zap.Int64("safeHeight", safeHeight))
-			safeHeight = 1
-		}
-
 		client, err := http.New(rpcServer)
 		if err != nil {
 			s.logger.Error("error creating rpc client", zap.String("rpcServer", rpcServer), zap.Error(err))
 			continue
+		}
+
+		status, err := client.Status(context.Background())
+		if err != nil {
+			s.logger.Error("error getting status", zap.String("rpcServer", rpcServer), zap.Error(err))
+			continue
+		}
+
+		latestHeight := status.SyncInfo.LatestBlockHeight
+
+		// Set trust height ~2 days before current (288,000 blocks at ~600ms/block).
+		// This keeps it well within the 168h trust period while staying below
+		// any recently created snapshots (snapshot interval is ~100,000 blocks).
+		const trustLookback = int64(288000)
+		safeHeight := latestHeight - trustLookback
+		if safeHeight < 1 {
+			safeHeight = 1
 		}
 
 		block, err := client.Block(context.Background(), &safeHeight)
