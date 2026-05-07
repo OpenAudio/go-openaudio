@@ -706,7 +706,7 @@ func (s *Server) RestoreDatabase(height int64) error {
 		defer db.Release()
 
 		rows, err := db.Query(context.Background(),
-			"SELECT tablename FROM pg_tables WHERE schemaname='public'")
+			"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
 		if err != nil {
 			return fmt.Errorf("list tables: %w", err)
 		}
@@ -733,13 +733,20 @@ func (s *Server) RestoreDatabase(height int64) error {
 		return nil
 	}
 
-	// Tune postgres for bulk load: skip WAL fsync, allow large WAL before checkpoint.
-	// These are reset automatically when postgres restarts normally.
+	// Tune postgres for bulk load. These are reset automatically when postgres restarts normally.
 	if db, err := s.pool.Acquire(context.Background()); err == nil {
-		db.Exec(context.Background(), "ALTER SYSTEM SET synchronous_commit = off")
-		db.Exec(context.Background(), "ALTER SYSTEM SET max_wal_size = '8GB'")
-		db.Exec(context.Background(), "ALTER SYSTEM SET checkpoint_timeout = '1h'")
-		db.Exec(context.Background(), "SELECT pg_reload_conf()")
+		for _, sql := range []string{
+			"ALTER SYSTEM SET synchronous_commit = off",
+			"ALTER SYSTEM SET max_wal_size = '8GB'",
+			"ALTER SYSTEM SET checkpoint_timeout = '1h'",
+			"SELECT pg_reload_conf()",
+		} {
+			if _, err := db.Exec(context.Background(), sql); err != nil {
+				s.logger.Warn("pg_restore: failed to apply tuning setting", zap.String("sql", sql), zap.Error(err))
+			} else {
+				s.logger.Info("pg_restore: applied setting", zap.String("sql", sql))
+			}
+		}
 		db.Release()
 	}
 
@@ -747,6 +754,28 @@ func (s *Server) RestoreDatabase(height int64) error {
 	// pre-data errors (missing tables from schema drift) are non-fatal
 	_ = pgRestore("pre-data")
 
+	// Truncate all tables before loading dump data. Migrations pre-populate some tables
+	// (e.g. core_db_migrations) which cause COPY to fail with duplicate key errors.
+	setMessage("Clearing existing table data")
+	s.logger.Info("pg_restore: truncating tables to clear migration-created data")
+	if db, err := s.pool.Acquire(context.Background()); err == nil {
+		rows, err := db.Query(context.Background(),
+			"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var t string
+				if err := rows.Scan(&t); err == nil {
+					if _, err := db.Exec(context.Background(), "TRUNCATE TABLE "+t+" CASCADE"); err != nil {
+						s.logger.Warn("pg_restore: failed to truncate table", zap.String("table", t), zap.Error(err))
+					}
+				}
+			}
+		}
+		db.Release()
+	}
+
+	setMessage("Preparing tables for bulk load")
 	s.logger.Info("pg_restore: setting tables to UNLOGGED to suppress WAL during data load")
 	if err := alterPersistence("UNLOGGED"); err != nil {
 		return fmt.Errorf("set unlogged: %w", err)
