@@ -16,7 +16,7 @@ jobs:
     secrets: inherit
 
   tag-edge:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: false # temporarily disabled: edge tag pushes trigger auto-upgrade restarts which break snapshot creation (see PR #226)
     needs: build-test-push
     runs-on: ubuntu-latest
     steps:
