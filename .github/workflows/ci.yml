@@ -12,7 +12,7 @@ jobs:
     with:
       tag: ${{ github.sha }}
       ref: ${{ github.ref }}
-      push: true
+      push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     secrets: inherit
 
   tag-edge:
