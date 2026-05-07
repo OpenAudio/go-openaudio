@@ -108,6 +108,10 @@ func insertPlaylistAndRoute(ctx context.Context, params *Params) error {
 		return err
 	}
 
+	if err := updatePlaylistTracks(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+		return err
+	}
+
 	// Insert playlist routes if a name is provided.
 	//
 	// Two rows get written on create, both mirroring discovery-provider's
