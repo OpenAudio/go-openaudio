@@ -1194,12 +1194,12 @@ type UpsertSyntheticRewardPoolParams struct {
 }
 
 // Used by the legacy CreateReward replay flow (wire-compat layer) to ensure
-// a synthetic pool exists with the requested authority set. The pool's
-// rewards_manager_pubkey is deterministic from the canonical (trim/lower/
-// dedup/sort) authorities — prefixed 'mig_' to mark the row as not-RM-bound,
-// matching the PR1 backfill. DO UPDATE makes the canonical-form ↔ row
-// correspondence an enforced invariant: any drift in canonicalization will
-// self-correct on next replay rather than hiding a divergent row.
+// a reward pool row exists for the caller-provided rewards_manager_pubkey
+// with the requested authority set. This helper does not derive a synthetic
+// 'mig_<md5>' key from authorities; it upserts by the supplied
+// rewards_manager_pubkey, which is the primary key used by the current
+// schema/migration and callers. DO UPDATE keeps authorities in sync for that
+// rewards manager pubkey on replay.
 func (q *Queries) UpsertSyntheticRewardPool(ctx context.Context, arg UpsertSyntheticRewardPoolParams) error {
 	_, err := q.db.Exec(ctx, upsertSyntheticRewardPool, arg.RewardsManagerPubkey, arg.Authorities)
 	return err
