@@ -108,7 +108,7 @@ func (ss *MediorumServer) replicateFile(ctx context.Context, fileName string, fi
 // placementHosts MUST be passed when the caller has placement context (repair,
 // upload replication path) so writes go to the same bucket reads expect.
 // Pass nil for opportunistic peer pushes that have no placement context.
-func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName string, file io.Reader, placementHosts []string) (err error) {
+func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName string, file io.Reader, placementHosts []string) error {
 	logger := ss.logger.With(zap.String("task", "replicateToMyBucket"), zap.String("cid", fileName))
 	logger.Debug("replicateToMyBucket")
 	key := cidutil.ShardCID(fileName)
@@ -118,19 +118,20 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 	if err != nil {
 		return err
 	}
-	// Ensure the writer is always closed. For most blob drivers, failing to
-	// Close after a partial write leaks resources or leaves uncommitted
-	// objects. Surface a Close error only when the operation otherwise
-	// succeeded — when the io.Copy below failed, that error is more useful.
-	defer func() {
-		closeErr := w.Close()
-		if err == nil && closeErr != nil {
-			err = closeErr
-		}
-	}()
 
 	n, err := io.Copy(w, file)
 	if err != nil {
+		// Best-effort close so we don't leak temp files / abandon multipart
+		// uploads. The copy error is what matters; ignore close error here.
+		_ = w.Close()
+		return err
+	}
+
+	// Close is the commit step for many blob drivers (S3, GCS multipart).
+	// Only record the blob as locally present after a successful close,
+	// so repair's knownPresent fast-path doesn't think we have a blob whose
+	// upload never actually finalized.
+	if err := w.Close(); err != nil {
 		return err
 	}
 
