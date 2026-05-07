@@ -27,6 +27,17 @@ func TestExtractPlaylistTrackIDs(t *testing.T) {
 			raw:  `{}`,
 			want: nil,
 		},
+		{
+			name: "hashid-encoded track ids decode (apps#14033 fix)",
+			raw:  `{"playlist_contents":{"track_ids":[{"track":"1aV5byE","time":100}]}}`,
+			// Verified against Python: Hashids(min_length=5, salt='azowernasdfoia').decode('1aV5byE') == (1031900541,)
+			want: []int64{1031900541},
+		},
+		{
+			name: "numeric string track id falls back to atoi",
+			raw:  `{"playlist_contents":{"track_ids":[{"track":"2007777","time":100}]}}`,
+			want: []int64{2007777},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

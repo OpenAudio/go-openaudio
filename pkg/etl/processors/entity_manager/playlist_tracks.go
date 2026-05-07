@@ -2,9 +2,45 @@ package entity_manager
 
 import (
 	"context"
+	"errors"
+	"strconv"
+	"sync"
 
 	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/speps/go-hashids/v2"
 )
+
+// Hashids decoder matching apps' helpers.decode_string_id (HASH_SALT
+// "azowernasdfoia", min length 5). Initialized lazily so the etl module
+// stays decoupled from the cross-package pkg/hashes helper.
+var (
+	hasherOnce sync.Once
+	hasher     *hashids.HashID
+)
+
+func playlistContentsHasher() *hashids.HashID {
+	hasherOnce.Do(func() {
+		hd := hashids.NewData()
+		hd.Salt = "azowernasdfoia"
+		hd.MinLength = 5
+		hasher, _ = hashids.NewWithData(hd)
+	})
+	return hasher
+}
+
+func decodeTrackIDFromString(s string) (int64, error) {
+	h := playlistContentsHasher()
+	if h != nil {
+		ids, err := h.DecodeWithError(s)
+		if err == nil && len(ids) > 0 {
+			return int64(ids[0]), nil
+		}
+	}
+	if v, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return v, nil
+	}
+	return 0, errors.New("invalid track_id string")
+}
 
 // extractPlaylistTrackIDs reads track_ids out of a playlist_contents metadata
 // blob. Mirrors apps' playlist.py behavior: accepts either the new array
@@ -43,15 +79,39 @@ func extractPlaylistTrackIDs(metadata map[string]any) []int64 {
 		if !ok {
 			continue
 		}
-		if id, ok := metadataMapInt64(obj, "track_id"); ok {
-			ids = append(ids, id)
-			continue
-		}
-		if id, ok := metadataMapInt64(obj, "track"); ok {
+		if id, ok := pickPlaylistTrackID(obj); ok {
 			ids = append(ids, id)
 		}
 	}
 	return ids
+}
+
+// pickPlaylistTrackID extracts a track_id from a playlist_contents entry.
+// Accepts integer values directly; decodes hashid-encoded strings via the
+// shared `pkg/hashes` helper. Mirrors apps#14033 fix.
+func pickPlaylistTrackID(entry map[string]any) (int64, bool) {
+	for _, key := range []string{"track_id", "track"} {
+		raw, ok := entry[key]
+		if !ok {
+			continue
+		}
+		switch v := raw.(type) {
+		case float64:
+			return int64(v), true
+		case int:
+			return int64(v), true
+		case int64:
+			return v, true
+		case string:
+			if v == "" {
+				continue
+			}
+			if decoded, err := decodeTrackIDFromString(v); err == nil {
+				return decoded, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // updatePlaylistTracks materializes the playlist_tracks junction table from
