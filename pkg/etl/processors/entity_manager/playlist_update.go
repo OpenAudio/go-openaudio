@@ -55,6 +55,7 @@ func updatePlaylist(ctx context.Context, params *Params) error {
 	if err != nil {
 		return err
 	}
+	stripImmutableFields(params.Metadata, immutablePlaylistFields)
 	oldName := ""
 	if base.PlaylistName != nil {
 		oldName = *base.PlaylistName
