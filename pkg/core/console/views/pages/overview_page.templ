@@ -121,6 +121,11 @@ templ (p *Pages) OverviewCriticalFragment(status *v1.GetStatusResponse) {
 					<div class="text-sm text-secondary">
 						{ getSyncPhaseText(status.SyncInfo.GetStateSync().Phase) }
 					</div>
+					if status.SyncInfo.GetStateSync().Message != "" {
+						<div class="text-xs text-secondary font-mono">
+							{ status.SyncInfo.GetStateSync().Message }
+						</div>
+					}
 					if status.SyncInfo.GetStateSync().Snapshot != nil {
 						<div class="text-xs text-secondary">
 							Snapshot: { fmt.Sprintf("%d", status.SyncInfo.GetStateSync().Snapshot.Height) }

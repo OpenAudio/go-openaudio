@@ -95,6 +95,7 @@ message GetStatusResponse {
       int64 chunk_fetchers = 4;
       google.protobuf.Timestamp started_at = 5;
       google.protobuf.Timestamp completed_at = 6;
+      string message = 7;
     }
 
     message BlockSyncInfo {

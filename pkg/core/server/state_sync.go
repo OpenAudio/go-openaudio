@@ -743,29 +743,45 @@ func (s *Server) RestoreDatabase(height int64) error {
 		db.Release()
 	}
 
+	setMessage := func(msg string) {
+		s.updateStateSyncInfo(func(info *corev1.GetStatusResponse_SyncInfo_StateSyncInfo) *corev1.GetStatusResponse_SyncInfo_StateSyncInfo {
+			if info == nil {
+				return info
+			}
+			info.Message = msg
+			return info
+		})
+	}
+
+	setMessage("Restoring schema")
 	s.logger.Info("pg_restore: restoring schema (pre-data)")
 	// pre-data errors (missing tables from schema drift) are non-fatal
 	_ = pgRestore("pre-data")
 
+	setMessage("Preparing tables for bulk load")
 	s.logger.Info("pg_restore: setting tables to UNLOGGED to suppress WAL during data load")
 	if err := alterPersistence("UNLOGGED"); err != nil {
 		return fmt.Errorf("set unlogged: %w", err)
 	}
 
+	setMessage("Restoring data (this may take 20+ minutes)")
 	s.logger.Info("pg_restore: restoring data")
 	if err := pgRestore("data"); err != nil {
 		return err
 	}
 
+	setMessage("Finalizing tables")
 	s.logger.Info("pg_restore: setting tables back to LOGGED")
 	if err := alterPersistence("LOGGED"); err != nil {
 		return fmt.Errorf("set logged: %w", err)
 	}
 
+	setMessage("Building indexes")
 	s.logger.Info("pg_restore: restoring indexes and constraints (post-data)")
 	// post-data errors (duplicate indexes etc.) are non-fatal
 	_ = pgRestore("post-data")
 
+	setMessage("Complete")
 	return nil
 }
 
