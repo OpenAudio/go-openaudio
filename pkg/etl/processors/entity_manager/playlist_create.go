@@ -108,9 +108,25 @@ func insertPlaylistAndRoute(ctx context.Context, params *Params) error {
 		return err
 	}
 
-	// Create playlist route if name is provided
+	// Insert playlist routes if a name is provided.
+	//
+	// Two rows get written on create, both mirroring discovery-provider's
+	// is_create=True branch:
+	//
+	//   1. The current route — `<sanitized-title>` (with a numeric `-N`
+	//      collision suffix appended if another playlist by this owner
+	//      already claimed the same slug). This is the canonical URL.
+	//
+	//   2. A NON-current "legacy ID-suffixed" route of the form
+	//      `<sanitized-title>-<playlist_id>`. Before apps moved to
+	//      collision-aware routing, every playlist URL was just
+	//      `<slug>-<playlist_id>`. Shared/bookmarked URLs from that era
+	//      keep resolving because we still record this row even though it's
+	//      not the canonical route. We only insert it when it would differ
+	//      from the current slug — e.g. if the user happened to name their
+	//      playlist literally `my-playlist-400123` we'd skip the duplicate.
 	if playlistName != "" {
-		slug, titleSlug, collisionID, err := GeneratePlaylistSlugAndCollisionID(ctx, params.DBTX, params.UserID, params.EntityID, playlistName)
+		currentSlug, titleSlug, collisionID, err := GeneratePlaylistSlugAndCollisionID(ctx, params.DBTX, params.UserID, params.EntityID, playlistName)
 		if err != nil {
 			return err
 		}
@@ -122,9 +138,29 @@ func insertPlaylistAndRoute(ctx context.Context, params *Params) error {
 				$1, $2, $3, $4, $5, true,
 				$6, $7, $8
 			)
-		`, slug, titleSlug, collisionID, params.UserID, params.EntityID, params.BlockHash, params.BlockNumber, params.TxHash)
+		`, currentSlug, titleSlug, collisionID, params.UserID, params.EntityID, params.BlockHash, params.BlockNumber, params.TxHash)
 		if err != nil {
 			return err
+		}
+
+		// Legacy ID-suffixed slug: SanitizeSlug appends `-<collision_id>`
+		// when the collision id is non-zero, so passing playlist_id as the
+		// collision_id produces `<title>-<playlist_id>`.
+		legacyIDSlug := SanitizeSlug(playlistName, params.EntityID, int(params.EntityID))
+		if legacyIDSlug != currentSlug {
+			_, err = params.DBTX.Exec(ctx, `
+				INSERT INTO playlist_routes (
+					slug, title_slug, collision_id, owner_id, playlist_id, is_current,
+					blockhash, blocknumber, txhash
+				) VALUES (
+					$1, $2, $3, $4, $5, false,
+					$6, $7, $8
+				)
+				ON CONFLICT (owner_id, slug) DO NOTHING
+			`, legacyIDSlug, legacyIDSlug, collisionID, params.UserID, params.EntityID, params.BlockHash, params.BlockNumber, params.TxHash)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

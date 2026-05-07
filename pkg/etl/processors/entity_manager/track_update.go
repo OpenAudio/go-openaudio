@@ -66,11 +66,30 @@ func updateTrack(ctx context.Context, params *Params) error {
 	oldTitle := base.Title
 	merged := mergeTrackFromMetadata(params, base)
 
+	titleChanged := params.MetadataString("title") != "" && merged.Title != oldTitle
+
 	if err := updateTrackRow(ctx, params.DBTX, merged, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
 		return err
 	}
 
-	if params.MetadataString("title") != "" && merged.Title != oldTitle {
+	if _, ok := params.Metadata["remix_of"]; ok {
+		if err := updateRemixesTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+			return err
+		}
+	}
+
+	if titleChanged {
+		handle, err := getTrackOwnerHandle(ctx, params.DBTX, merged.OwnerID)
+		if err != nil {
+			return err
+		}
+		routeID := CreateTrackRouteID(merged.Title, handle)
+		if _, err := params.DBTX.Exec(ctx, `
+			UPDATE tracks SET route_id = $2 WHERE track_id = $1 AND is_current = true
+		`, params.EntityID, routeID); err != nil {
+			return err
+		}
+
 		_, err = params.DBTX.Exec(ctx, `
 			UPDATE track_routes SET is_current = false WHERE track_id = $1 AND is_current = true
 		`, params.EntityID)
