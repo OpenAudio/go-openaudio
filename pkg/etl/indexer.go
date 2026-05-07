@@ -165,6 +165,10 @@ func (e *Indexer) Run() error {
 	// Initialize materialized view refresher
 	e.mvRefresher = NewMaterializedViewRefresher(e.pool, e.logger)
 
+	// Initialize scheduled release publisher (publishes scheduled tracks/albums
+	// when their release_date passes; mirrors apps' publish_scheduled_releases task).
+	e.scheduledReleases = NewScheduledReleasePublisher(e.pool, e.logger)
+
 	// Initialize chain ID from core service
 	err = e.InitializeChainID(context.Background())
 	if err != nil {
@@ -200,6 +204,12 @@ func (e *Indexer) Run() error {
 	if e.config.EnableMaterializedViewRefresh {
 		g.Go(func() error {
 			return e.mvRefresher.Start(gCtx)
+		})
+	}
+
+	if e.config.EnableScheduledReleases {
+		g.Go(func() error {
+			return e.scheduledReleases.Start(gCtx)
 		})
 	}
 

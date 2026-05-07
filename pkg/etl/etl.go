@@ -33,7 +33,8 @@ type Indexer struct {
 	blockPubsub *BlockPubsub
 	playPubsub  *PlayPubsub
 
-	mvRefresher *MaterializedViewRefresher
+	mvRefresher       *MaterializedViewRefresher
+	scheduledReleases *ScheduledReleasePublisher
 }
 
 // New creates a new ETL indexer.
