@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/hashes"
 )
 
 // extractPlaylistTrackIDs reads track_ids out of a playlist_contents metadata
@@ -43,15 +44,38 @@ func extractPlaylistTrackIDs(metadata map[string]any) []int64 {
 		if !ok {
 			continue
 		}
-		if id, ok := metadataMapInt64(obj, "track_id"); ok {
-			ids = append(ids, id)
-			continue
-		}
-		if id, ok := metadataMapInt64(obj, "track"); ok {
+		if id, ok := pickPlaylistTrackID(obj); ok {
 			ids = append(ids, id)
 		}
 	}
 	return ids
+}
+
+// pickPlaylistTrackID extracts a track_id from a playlist_contents entry.
+// Accepts integer values directly; decodes hashid-encoded strings.
+func pickPlaylistTrackID(entry map[string]any) (int64, bool) {
+	for _, key := range []string{"track_id", "track"} {
+		raw, ok := entry[key]
+		if !ok {
+			continue
+		}
+		switch v := raw.(type) {
+		case float64:
+			return int64(v), true
+		case int:
+			return int64(v), true
+		case int64:
+			return v, true
+		case string:
+			if v == "" {
+				continue
+			}
+			if decoded, err := hashes.MaybeDecode(v); err == nil {
+				return int64(decoded), true
+			}
+		}
+	}
+	return 0, false
 }
 
 // updatePlaylistTracks materializes the playlist_tracks junction table from
