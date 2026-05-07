@@ -30,6 +30,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Create mediorum test databases
+        run: |
+          for i in $(seq 1 9); do
+            PGPASSWORD=example psql -h localhost -p 5454 -U postgres -c "CREATE DATABASE m$i"
+          done
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
