@@ -767,20 +767,25 @@ func (s *Server) RestoreDatabase(height int64) error {
 
 	// Truncate all tables before loading dump data. Migrations pre-populate some tables
 	// (e.g. core_db_migrations) which cause COPY to fail with duplicate key errors.
+	// Collect names first so the connection isn't held open (busy) during TRUNCATE.
 	setMessage("Clearing existing table data")
 	s.logger.Info("pg_restore: truncating tables to clear migration-created data")
 	if db, err := s.pool.Acquire(context.Background()); err == nil {
 		rows, err := db.Query(context.Background(),
 			"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
+		var tables []string
 		if err == nil {
-			defer rows.Close()
 			for rows.Next() {
 				var t string
-				if err := rows.Scan(&t); err == nil {
-					if _, err := db.Exec(context.Background(), "TRUNCATE TABLE "+t+" CASCADE"); err != nil {
-						s.logger.Warn("pg_restore: failed to truncate table", zap.String("table", t), zap.Error(err))
-					}
+				if rows.Scan(&t) == nil {
+					tables = append(tables, t)
 				}
+			}
+			rows.Close()
+		}
+		for _, t := range tables {
+			if _, err := db.Exec(context.Background(), "TRUNCATE TABLE "+t+" CASCADE"); err != nil {
+				s.logger.Warn("pg_restore: failed to truncate table", zap.String("table", t), zap.Error(err))
 			}
 		}
 		db.Release()
