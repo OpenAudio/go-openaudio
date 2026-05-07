@@ -92,7 +92,17 @@ func insertDeveloperApp(ctx context.Context, params *Params) error {
 		params.TxHash,
 		params.BlockNumber,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Index redirect_uris if provided (apps#13863).
+	if uris, present, _ := extractRedirectURIs(params.Metadata); present && len(uris) > 0 {
+		if err := replaceRedirectURIs(ctx, params.DBTX, address, uris); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DeveloperAppCreate returns the DeveloperApp Create handler.
