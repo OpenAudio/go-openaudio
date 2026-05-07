@@ -585,10 +585,14 @@ func (s *Server) OfferSnapshot(_ context.Context, req *abcitypes.OfferSnapshotRe
 		}
 		// Check hash matches too
 		if !bytes.Equal(req.Snapshot.Hash, s.acceptedSnapshotHash) {
-			s.logger.Info("rejecting snapshot: hash mismatch",
+			s.logger.Info("rejecting snapshot: hash mismatch, will accept next offer",
 				zap.Uint64("height", req.Snapshot.Height),
 				zap.String("offered_hash", hex.EncodeToString(req.Snapshot.Hash)),
 				zap.String("accepted_hash", hex.EncodeToString(s.acceptedSnapshotHash)))
+			s.snapshotMutex.Lock()
+			s.acceptedSnapshotHeight = 0
+			s.acceptedSnapshotHash = nil
+			s.snapshotMutex.Unlock()
 			return &abcitypes.OfferSnapshotResponse{
 				Result: abcitypes.OFFER_SNAPSHOT_RESULT_REJECT,
 			}, nil
