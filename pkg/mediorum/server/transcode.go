@@ -351,6 +351,9 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 		ss.logger.Error("failed to update transcode status", zap.String("id", dbUpload.ID), zap.Error(err))
 		return err
 	}
+	// Keep in-memory upload in sync so analyzeAudio's error callback doesn't
+	// clobber TranscodedBy with an empty string when it calls crud.Update(upload).
+	upload.TranscodedBy = dbUpload.TranscodedBy
 
 	fileHash := upload.OrigFileCID
 
