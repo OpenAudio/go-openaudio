@@ -77,6 +77,9 @@ func updateTrack(ctx context.Context, params *Params) error {
 			return err
 		}
 	}
+	if err := updateTrackPriceHistory(ctx, params.DBTX, params.EntityID, params.BlockNumber, params.BlockTime, params.Metadata); err != nil {
+		return err
+	}
 
 	if titleChanged {
 		handle, err := getTrackOwnerHandle(ctx, params.DBTX, merged.OwnerID)

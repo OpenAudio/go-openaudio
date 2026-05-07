@@ -70,6 +70,9 @@ func updatePlaylist(ctx context.Context, params *Params) error {
 			return err
 		}
 	}
+	if err := updateAlbumPriceHistory(ctx, params.DBTX, params.EntityID, params.BlockNumber, params.BlockTime, params.Metadata); err != nil {
+		return err
+	}
 
 	// Update playlist route if name changed
 	newName := ""
