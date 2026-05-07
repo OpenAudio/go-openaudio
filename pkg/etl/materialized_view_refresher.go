@@ -69,6 +69,7 @@ func (r *MaterializedViewRefresher) refreshViews(ctx context.Context) {
 	views := []string{
 		"mv_dashboard_transaction_stats",
 		"mv_dashboard_transaction_types",
+		"tag_track_user",
 	}
 
 	// Refresh views in parallel for better performance
