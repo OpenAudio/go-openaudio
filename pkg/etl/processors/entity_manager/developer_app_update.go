@@ -102,7 +102,18 @@ func updateDeveloperApp(ctx context.Context, params *Params) error {
 		params.TxHash,
 		params.BlockNumber,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Re-index redirect_uris when present in metadata: delete all existing
+	// for client_id, then insert the new set.
+	if uris, present, _ := extractRedirectURIs(params.Metadata); present {
+		if err := replaceRedirectURIs(ctx, params.DBTX, address, uris); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func getDeveloperAppOwner(ctx context.Context, dbtx db.DBTX, address string) (int64, error) {
