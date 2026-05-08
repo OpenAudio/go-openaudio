@@ -2,18 +2,18 @@ package server
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"google.golang.org/protobuf/proto"
 )
@@ -91,75 +91,94 @@ var (
 )
 
 func (s *Server) isValidRewardTransaction(ctx context.Context, signedTx *corev1.SignedTransaction, blockHeight int64) error {
-	rewardMsg := signedTx.GetReward()
-	if rewardMsg == nil {
+	envelope := signedTx.GetReward()
+	if envelope == nil {
 		return fmt.Errorf("%w: reward message is nil", ErrRewardMessageValidation)
 	}
+	if envelope.Body == nil {
+		// Legacy wire-format detected (pre-pool-rollout shape with deadline +
+		// signature embedded in CreateReward / DeleteReward at tags 1000/1001).
+		//
+		// We REJECT legacy here — at CheckTx and ProcessProposal — because
+		// legacy CreateReward is inherently permissionless: it carries no
+		// pool_address and the old signing scheme had no membership check on
+		// claim_authorities. Allowing live legacy txs through validation would
+		// reopen the exact exploit class this PR is closing (an attacker
+		// crafts legacy bytes, picks any reward_id / amount / claim_authorities,
+		// and bypasses the pool gate).
+		//
+		// The corresponding code path in finalizeRewards still APPLIES legacy
+		// txs — that's intentional, for block-sync-from-genesis replay of
+		// already-committed historical blocks. Block sync only invokes
+		// FinalizeBlock; it does not re-run CheckTx or ProcessProposal. So
+		// "reject at validate, accept at finalize" gives us correct historical
+		// replay without admitting any new legacy traffic.
+		if legacy, err := tryParseLegacyReward(envelope); err == nil && legacy != nil {
+			return fmt.Errorf("%w: legacy reward wire format is not accepted for new transactions; clients must use the body+signature envelope", ErrRewardMessageValidation)
+		}
+		return fmt.Errorf("%w: reward message body is nil", ErrRewardMessageValidation)
+	}
 
-	switch action := rewardMsg.Action.(type) {
-	case *corev1.RewardMessage_Create:
-		return s.validateCreateReward(ctx, action.Create, blockHeight)
-	case *corev1.RewardMessage_Delete:
-		return s.validateDeleteReward(ctx, action.Delete, blockHeight)
+	signer, err := s.recoverDeadlinedSigner(blockHeight, envelope.Body.DeadlineBlockHeight, envelope.Body, envelope.Signature)
+	if err != nil {
+		return fmt.Errorf("reward validation failed: %w", err)
+	}
+
+	switch action := envelope.Body.Action.(type) {
+	case *corev1.RewardBody_Create:
+		return s.validateCreateReward(ctx, action.Create, signer)
+	case *corev1.RewardBody_Delete:
+		return s.validateDeleteReward(ctx, action.Delete, signer)
 	default:
 		return fmt.Errorf("%w: unsupported reward action type", ErrRewardMessageValidation)
 	}
 }
 
-func (s *Server) validateCreateReward(_ context.Context, createReward *corev1.CreateReward, blockHeight int64) error {
-	signatureData := common.CreateDeterministicCreateRewardData(createReward)
-	_, err := s.validateRewardSignature(blockHeight, createReward.Signature, createReward.DeadlineBlockHeight, signatureData)
-	if err != nil {
-		return fmt.Errorf("create reward validation failed: %w", err)
+func (s *Server) validateCreateReward(ctx context.Context, createReward *corev1.CreateReward, signer string) error {
+	// New CreateReward requires a first-class pool. The pool is identified
+	// by the Solana reward manager pubkey, and only pool members can issue
+	// rewards under that RM. Without this binding, a member of one pool
+	// could issue rewards under any other pool's RM and inherit its
+	// attestation rights — which is exactly what PR3's per-RM gate is
+	// designed to prevent.
+	//
+	// The legacy permissionless path (inline claim_authorities, no RM) is
+	// preserved only for historical replay via the wire-compat layer; new
+	// live txs must specify rewards_manager_pubkey.
+	if err := validateRewardsManagerPubkey(createReward.RewardsManagerPubkey); err != nil {
+		return err
 	}
-	return nil
+	return s.checkPoolAuthorization(ctx, s.db, createReward.RewardsManagerPubkey, signer)
 }
 
-func (s *Server) validateDeleteReward(ctx context.Context, deleteReward *corev1.DeleteReward, blockHeight int64) error {
-	signatureData := common.CreateDeterministicDeleteRewardData(deleteReward)
-	signer, err := s.validateRewardSignature(blockHeight, deleteReward.Signature, deleteReward.DeadlineBlockHeight, signatureData)
-	if err != nil {
-		return fmt.Errorf("delete reward validation failed: %w", err)
-	}
-
+func (s *Server) validateDeleteReward(ctx context.Context, deleteReward *corev1.DeleteReward, signer string) error {
 	existingReward, err := s.db.GetReward(ctx, deleteReward.Address)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: reward %s not found", ErrRewardMessageValidation, deleteReward.Address)
+		}
 		return fmt.Errorf("failed to get existing reward for validation: %w", err)
 	}
-
-	authorized := false
-	for _, auth := range existingReward.ClaimAuthorities {
-		if strings.EqualFold(auth, signer) {
-			authorized = true
-			break
-		}
-	}
-	if !authorized {
+	if !contains(existingReward.ClaimAuthorities, signer) {
 		return fmt.Errorf("%w: signer %s not authorized to delete reward %s", ErrRewardUnauthorized, signer, deleteReward.Address)
 	}
-
 	return nil
 }
 
-// validateRewardSignature validates the signature and expiry for reward messages
-func (s *Server) validateRewardSignature(currentHeight int64, signature string, deadlineHeight int64, signatureData string) (string, error) {
-	// Check expiry
+// recoverDeadlinedSigner enforces the message's deadline against the current
+// block height and recovers the eth address that produced signature over
+// the deterministic-protobuf marshaling of msg. msg is expected to be a
+// signed body (RewardBody / RewardPoolBody) — there is no signature field
+// on the body, so common.ProtoRecover marshals it as-is. Used by every
+// reward / reward-pool validator and finalizer.
+func (s *Server) recoverDeadlinedSigner(currentHeight, deadlineHeight int64, msg proto.Message, signature string) (string, error) {
 	if currentHeight > deadlineHeight {
 		return "", fmt.Errorf("%w: current height %d > deadline %d", ErrRewardExpired, currentHeight, deadlineHeight)
 	}
-
-	// Convert hex data to bytes for signing
-	dataBytes, err := hex.DecodeString(signatureData)
+	signer, err := common.ProtoRecover(msg, signature)
 	if err != nil {
-		return "", fmt.Errorf("%w: invalid hex data: %v", ErrRewardSignatureInvalid, err)
+		return "", fmt.Errorf("%w: %v", ErrRewardSignatureInvalid, err)
 	}
-
-	// Recover signer from signature
-	_, signer, err := common.EthRecover(signature, dataBytes)
-	if err != nil {
-		return "", fmt.Errorf("%w: failed to recover signer: %v", ErrRewardSignatureInvalid, err)
-	}
-
 	return signer, nil
 }
 
@@ -172,20 +191,36 @@ func (s *Server) finalizeRewardTransaction(ctx context.Context, req *abcitypes.F
 	return rewardMsg, nil
 }
 
-func (s *Server) finalizeRewards(ctx context.Context, req *abcitypes.FinalizeBlockRequest, txhash string, messageIndex int64, rewardMsg *corev1.RewardMessage, sender string) error {
-	if rewardMsg == nil {
+func (s *Server) finalizeRewards(ctx context.Context, req *abcitypes.FinalizeBlockRequest, txhash string, messageIndex int64, envelope *corev1.RewardMessage, sender string) error {
+	if envelope == nil {
 		return fmt.Errorf("tx: %s, message index: %d, reward message not found", txhash, messageIndex)
 	}
+	if envelope.Body == nil {
+		// Legacy wire-format path; see rewards_legacy.go.
+		legacy, err := tryParseLegacyReward(envelope)
+		if err != nil {
+			return errors.Join(ErrRewardMessageFinalization, err)
+		}
+		if legacy == nil {
+			return fmt.Errorf("tx: %s, message index: %d, reward message body not found", txhash, messageIndex)
+		}
+		return s.finalizeLegacyRewardTransaction(ctx, req, legacy, txhash, messageIndex)
+	}
 
-	switch action := rewardMsg.Action.(type) {
-	case *corev1.RewardMessage_Create:
-		if err := s.finalizeCreateReward(ctx, req, txhash, messageIndex, action.Create, sender); err != nil {
+	signer, err := s.recoverDeadlinedSigner(req.Height, envelope.Body.DeadlineBlockHeight, envelope.Body, envelope.Signature)
+	if err != nil {
+		return errors.Join(ErrRewardMessageFinalization, fmt.Errorf("signature validation failed: %w", err))
+	}
+
+	switch action := envelope.Body.Action.(type) {
+	case *corev1.RewardBody_Create:
+		if err := s.finalizeCreateReward(ctx, req, txhash, messageIndex, action.Create, signer); err != nil {
 			return errors.Join(ErrRewardMessageFinalization, err)
 		}
 		return nil
 
-	case *corev1.RewardMessage_Delete:
-		if err := s.finalizeDeleteReward(ctx, req, txhash, messageIndex, action.Delete, sender); err != nil {
+	case *corev1.RewardBody_Delete:
+		if err := s.finalizeDeleteReward(ctx, action.Delete, signer); err != nil {
 			return errors.Join(ErrRewardMessageFinalization, err)
 		}
 		return nil
@@ -195,45 +230,37 @@ func (s *Server) finalizeRewards(ctx context.Context, req *abcitypes.FinalizeBlo
 	}
 }
 
-func (s *Server) finalizeCreateReward(ctx context.Context, req *abcitypes.FinalizeBlockRequest, txhash string, messageIndex int64, createReward *corev1.CreateReward, sender string) error {
-	// Validate signature and get signer
-	signatureData := common.CreateDeterministicCreateRewardData(createReward)
-	signer, err := s.validateRewardSignature(req.Height, createReward.Signature, createReward.DeadlineBlockHeight, signatureData)
-	if err != nil {
-		return fmt.Errorf("create reward signature validation failed: %w", err)
+func (s *Server) finalizeCreateReward(ctx context.Context, req *abcitypes.FinalizeBlockRequest, txhash string, messageIndex int64, createReward *corev1.CreateReward, signer string) error {
+	// New CreateReward must reference an existing first-class pool. Re-check
+	// authorization against post-prior-tx state — block ordering can rotate
+	// the signer out between validate and finalize.
+	qtx := s.getDb()
+	if err := s.checkPoolAuthorization(ctx, qtx, createReward.RewardsManagerPubkey, signer); err != nil {
+		return err
 	}
 
-	// Generate deterministic address for the new reward
 	txhashBytes, err := common.HexToBytes(txhash)
 	if err != nil {
 		return fmt.Errorf("invalid txhash: %w", err)
 	}
 	rewardAddress := common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, "")
 
-	// Convert claim authorities to string array
-	claimAuthorities := make([]string, len(createReward.ClaimAuthorities))
-	for i, auth := range createReward.ClaimAuthorities {
-		claimAuthorities[i] = auth.Address
-	}
-
-	// Marshal the raw message
 	rawMessage, err := proto.Marshal(createReward)
 	if err != nil {
 		return fmt.Errorf("failed to marshal create reward message: %w", err)
 	}
 
-	qtx := s.getDb()
 	if err := qtx.InsertCoreReward(ctx, db.InsertCoreRewardParams{
-		TxHash:           txhash,
-		Index:            messageIndex,
-		Address:          rewardAddress,
-		Sender:           signer, // Use verified signer instead of passed sender
-		RewardID:         createReward.RewardId,
-		Name:             createReward.Name,
-		Amount:           int64(createReward.Amount),
-		ClaimAuthorities: claimAuthorities,
-		RawMessage:       rawMessage,
-		BlockHeight:      req.Height,
+		TxHash:      txhash,
+		Index:       messageIndex,
+		Address:     rewardAddress,
+		Sender:      signer,
+		RewardID:    createReward.RewardId,
+		Name:        createReward.Name,
+		Amount:      int64(createReward.Amount),
+		RewardsManagerPubkey: pgtype.Text{String: createReward.RewardsManagerPubkey, Valid: true},
+		RawMessage:  rawMessage,
+		BlockHeight: req.Height,
 	}); err != nil {
 		return fmt.Errorf("failed to insert reward: %w", err)
 	}
@@ -241,36 +268,23 @@ func (s *Server) finalizeCreateReward(ctx context.Context, req *abcitypes.Finali
 	return nil
 }
 
-func (s *Server) finalizeDeleteReward(ctx context.Context, req *abcitypes.FinalizeBlockRequest, txhash string, messageIndex int64, deleteReward *corev1.DeleteReward, sender string) error {
-	// Validate signature and get signer
-	signatureData := common.CreateDeterministicDeleteRewardData(deleteReward)
-	signer, err := s.validateRewardSignature(req.Height, deleteReward.Signature, deleteReward.DeadlineBlockHeight, signatureData)
-	if err != nil {
-		return fmt.Errorf("delete reward signature validation failed: %w", err)
-	}
-
-	// Verify signer is authorized to delete this reward
-	existingReward, err := s.getDb().GetReward(ctx, deleteReward.Address)
-	if err != nil {
-		return fmt.Errorf("failed to get existing reward: %w", err)
-	}
-
-	// Check if signer is in the claim authorities (case insensitive)
-	authorized := false
-	for _, auth := range existingReward.ClaimAuthorities {
-		if strings.EqualFold(auth, signer) {
-			authorized = true
-			break
-		}
-	}
-	if !authorized {
-		return fmt.Errorf("signer %s not authorized to delete reward %s", signer, deleteReward.Address)
-	}
-
+func (s *Server) finalizeDeleteReward(ctx context.Context, deleteReward *corev1.DeleteReward, signer string) error {
+	// Re-check authorization against post-prior-tx state — a sibling tx in
+	// the same block can rotate the signer out of the reward's pool between
+	// validate (pre-block state) and finalize (post-prior-tx state).
 	qtx := s.getDb()
+	existingReward, err := qtx.GetReward(ctx, deleteReward.Address)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: reward %s not found", ErrRewardMessageValidation, deleteReward.Address)
+		}
+		return fmt.Errorf("failed to get reward at finalize: %w", err)
+	}
+	if !contains(existingReward.ClaimAuthorities, signer) {
+		return fmt.Errorf("%w: signer %s no longer authorized to delete reward %s", ErrRewardUnauthorized, signer, deleteReward.Address)
+	}
 	if err := qtx.DeleteCoreReward(ctx, deleteReward.Address); err != nil {
 		return fmt.Errorf("failed to delete reward: %w", err)
 	}
-
 	return nil
 }

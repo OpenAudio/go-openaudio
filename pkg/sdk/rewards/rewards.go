@@ -27,65 +27,68 @@ func (r *Rewards) SetPrivKey(privKey *ecdsa.PrivateKey) {
 	r.privKey = privKey
 }
 
-func (r *Rewards) CreateReward(ctx context.Context, cr *v1.CreateReward) (*v1.GetRewardResponse, error) {
-	sig, err := common.SignCreateReward(r.privKey, cr)
+// signAndSendReward signs the body, wraps it in the RewardMessage envelope
+// alongside the signature, and submits the resulting SignedTransaction.
+func (r *Rewards) signAndSendReward(ctx context.Context, body *v1.RewardBody) (string, error) {
+	sig, err := common.ProtoSign(r.privKey, body)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	cr.Signature = sig
-
 	tx := &v1.SendTransactionRequest{
 		Transaction: &v1.SignedTransaction{
 			Transaction: &v1.SignedTransaction_Reward{
-				Reward: &v1.RewardMessage{
-					Action: &v1.RewardMessage_Create{Create: cr},
-				},
+				Reward: &v1.RewardMessage{Body: body, Signature: sig},
 			},
 		},
 	}
+	resp, err := r.core.SendTransaction(ctx, connect.NewRequest(tx))
+	if err != nil {
+		return "", err
+	}
+	return resp.Msg.GetTransaction().GetHash(), nil
+}
 
-	req := connect.NewRequest(tx)
-	resp, err := r.core.SendTransaction(ctx, req)
+func (r *Rewards) signAndSendRewardPool(ctx context.Context, body *v1.RewardPoolBody) (string, error) {
+	sig, err := common.ProtoSign(r.privKey, body)
+	if err != nil {
+		return "", err
+	}
+	tx := &v1.SendTransactionRequest{
+		Transaction: &v1.SignedTransaction{
+			Transaction: &v1.SignedTransaction_RewardPool{
+				RewardPool: &v1.RewardPoolMessage{Body: body, Signature: sig},
+			},
+		},
+	}
+	resp, err := r.core.SendTransaction(ctx, connect.NewRequest(tx))
+	if err != nil {
+		return "", err
+	}
+	return resp.Msg.GetTransaction().GetHash(), nil
+}
+
+func (r *Rewards) CreateReward(ctx context.Context, cr *v1.CreateReward, deadlineBlockHeight int64) (*v1.GetRewardResponse, error) {
+	body := &v1.RewardBody{
+		DeadlineBlockHeight: deadlineBlockHeight,
+		Action:              &v1.RewardBody_Create{Create: cr},
+	}
+	txhash, err := r.signAndSendReward(ctx, body)
 	if err != nil {
 		return nil, err
 	}
-
-	txhash := resp.Msg.Transaction.Hash
-	reward, err := r.core.GetReward(ctx, connect.NewRequest(&v1.GetRewardRequest{
-		Txhash: txhash,
-	}))
+	reward, err := r.core.GetReward(ctx, connect.NewRequest(&v1.GetRewardRequest{Txhash: txhash}))
 	if err != nil {
 		return nil, err
 	}
-
 	return reward.Msg, nil
 }
 
-func (r *Rewards) DeleteReward(ctx context.Context, dr *v1.DeleteReward) (string, error) {
-	sig, err := common.SignDeleteReward(r.privKey, dr)
-	if err != nil {
-		return "", err
+func (r *Rewards) DeleteReward(ctx context.Context, dr *v1.DeleteReward, deadlineBlockHeight int64) (string, error) {
+	body := &v1.RewardBody{
+		DeadlineBlockHeight: deadlineBlockHeight,
+		Action:              &v1.RewardBody_Delete{Delete: dr},
 	}
-	dr.Signature = sig
-
-	tx := &v1.SendTransactionRequest{
-		Transaction: &v1.SignedTransaction{
-			Transaction: &v1.SignedTransaction_Reward{
-				Reward: &v1.RewardMessage{
-					Action: &v1.RewardMessage_Delete{Delete: dr},
-				},
-			},
-		},
-	}
-
-	req := connect.NewRequest(tx)
-	deleteRes, err := r.core.SendTransaction(ctx, req)
-	if err != nil {
-		return "", err
-	}
-
-	txhash := deleteRes.Msg.GetTransaction().GetHash()
-	return txhash, nil
+	return r.signAndSendReward(ctx, body)
 }
 
 func (r *Rewards) GetReward(ctx context.Context, address string) (*v1.GetRewardResponse, error) {
@@ -107,6 +110,75 @@ func (r *Rewards) GetRewards(ctx context.Context, claim_authority string) (*v1.G
 		ClaimAuthority: claim_authority,
 	})
 	resp, err := r.core.GetRewards(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+// CreateRewardPool submits a CreateRewardPool transaction. The pool is
+// keyed by msg.RewardsManagerPubkey (the Solana reward manager pubkey it
+// will govern, base58 32 bytes); subsequent SetRewardPoolAuthorities /
+// CreateReward calls reference the pool by this same value, so callers
+// can compose dependent transactions without round-tripping through
+// GetRewardPool. Returns the cometbft tx hash.
+func (r *Rewards) CreateRewardPool(ctx context.Context, msg *v1.CreateRewardPool, deadlineBlockHeight int64) (string, error) {
+	body := &v1.RewardPoolBody{
+		DeadlineBlockHeight: deadlineBlockHeight,
+		Action:              &v1.RewardPoolBody_Create{Create: msg},
+	}
+	return r.signAndSendRewardPool(ctx, body)
+}
+
+// GetRewardPool fetches a pool by its rewards_manager_pubkey (Solana RM
+// pubkey, base58, 32 bytes).
+func (r *Rewards) GetRewardPool(ctx context.Context, rewardsManagerPubkey string) (*v1.GetRewardPoolResponse, error) {
+	resp, err := r.core.GetRewardPool(ctx, connect.NewRequest(&v1.GetRewardPoolRequest{RewardsManagerPubkey: rewardsManagerPubkey}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+// SetRewardPoolAuthorities replaces the pool's authority set wholesale. The
+// caller composes the desired list (current minus the one to remove, current
+// plus the one to add, etc.); add and remove are derived views.
+func (r *Rewards) SetRewardPoolAuthorities(ctx context.Context, msg *v1.SetRewardPoolAuthorities, deadlineBlockHeight int64) (string, error) {
+	body := &v1.RewardPoolBody{
+		DeadlineBlockHeight: deadlineBlockHeight,
+		Action:              &v1.RewardPoolBody_SetAuthorities{SetAuthorities: msg},
+	}
+	return r.signAndSendRewardPool(ctx, body)
+}
+
+// GetRewardSenderAttestation requests an attestation that the validator will
+// sign authorizing addr to be added as a sender on the Solana reward manager
+// account identified by rewardsManagerPubkey. For pool-managed RMs, the
+// validator signs iff addr ∈ pool.authorities; for unmanaged RMs (notably
+// AUDIO), the validator falls back to its validator/AAO trust set. The
+// returned attestation is meant to be combined with attestations from other
+// validators and submitted to Solana via CreateSenderPublic.
+func (r *Rewards) GetRewardSenderAttestation(ctx context.Context, addr string, rewardsManagerPubkey string) (*v1.GetRewardSenderAttestationResponse, error) {
+	resp, err := r.core.GetRewardSenderAttestation(ctx, connect.NewRequest(&v1.GetRewardSenderAttestationRequest{
+		Address:              addr,
+		RewardsManagerPubkey: rewardsManagerPubkey,
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+// GetDeleteRewardSenderAttestation is the inverse of GetRewardSenderAttestation:
+// the validator signs an attestation authorizing the removal of addr as a
+// sender on the Solana RM. For pool-managed RMs, the validator signs iff
+// addr ∉ pool.authorities (proving OAP-side rotation already happened).
+// Used to deregister leaked / rotated-out keys from Solana.
+func (r *Rewards) GetDeleteRewardSenderAttestation(ctx context.Context, addr string, rewardsManagerPubkey string) (*v1.GetDeleteRewardSenderAttestationResponse, error) {
+	resp, err := r.core.GetDeleteRewardSenderAttestation(ctx, connect.NewRequest(&v1.GetDeleteRewardSenderAttestationRequest{
+		Address:              addr,
+		RewardsManagerPubkey: rewardsManagerPubkey,
+	}))
 	if err != nil {
 		return nil, err
 	}

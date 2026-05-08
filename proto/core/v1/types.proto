@@ -288,6 +288,7 @@ message SignedTransaction {
     ddex.v1beta1.NewReleaseMessage release = 1008;
     RewardMessage reward = 1009;
     FileUpload file_upload = 1010;
+    RewardPoolMessage reward_pool = 1011;
   }
 }
 
@@ -513,7 +514,21 @@ message GetPIEResponse {
   ddex.v1beta1.PieMessage pie = 1;
 }
 
+// RewardMessage is the wire envelope: it bundles a signed body with its
+// signature. The body is what gets signed (deterministic protobuf bytes);
+// the signature lives alongside the body, not inside it, so signing has no
+// chicken-and-egg.
 message RewardMessage {
+  RewardBody body = 1;
+  string signature = 2; // signature over the deterministic marshaling of body
+}
+
+// RewardBody is the signed payload. deadline_block_height bounds the
+// signature's validity (the validator rejects after expiry); the action is
+// the actual operation. The oneof tag discriminates Create from Delete so
+// two actions with otherwise-identical inner shapes produce different bytes.
+message RewardBody {
+  int64 deadline_block_height = 1;
   oneof action {
     CreateReward create = 1000;
     DeleteReward delete = 1001;
@@ -524,15 +539,112 @@ message CreateReward {
   string reward_id = 1;
   string name = 2;
   uint64 amount = 3;
-  repeated ClaimAuthority claim_authorities = 4;
-  int64 deadline_block_height = 5;
-  string signature = 6; // Signature over deterministic reward data
+  // Tags 4–6 are reserved: previously held claim_authorities (4),
+  // deadline_block_height (5), and signature (6) on the pre-pool
+  // CreateReward shape. The wire-compat layer routes legacy bytes
+  // through LegacyCreateReward (which preserves those tags), so the
+  // new CreateReward never decodes legacy data — but reusing those
+  // tag numbers for new fields would still be a footgun for any
+  // future tool that bypasses the wire-compat layer or any refactor
+  // that drops it. Reserve them.
+  reserved 4, 5, 6;
+  reserved "claim_authorities", "deadline_block_height", "signature";
+  // Solana reward manager pubkey (base58, 32 bytes). Identifies the pool
+  // whose authorities are allowed to issue rewards in this RM. The
+  // recovered signer must be a current member of pool.authorities; the
+  // reward inherits attestation rights from the pool going forward.
+  // The pool itself is identified by this same pubkey: pool address ==
+  // rewards_manager_pubkey for first-class pools.
+  string rewards_manager_pubkey = 7;
 }
 
 message DeleteReward {
+  // Tags 2–3 are reserved: previously held deadline_block_height (2)
+  // and signature (3) on the pre-pool DeleteReward shape (now
+  // preserved on LegacyDeleteReward).
+  reserved 2, 3;
+  reserved "deadline_block_height", "signature";
   string address = 1; // The deployed reward address
+}
+
+// RewardPoolMessage is the wire envelope for pool-management transactions.
+// Same shape as RewardMessage: body + signature.
+message RewardPoolMessage {
+  RewardPoolBody body = 1;
+  string signature = 2;
+}
+
+message RewardPoolBody {
+  int64 deadline_block_height = 1;
+  oneof action {
+    CreateRewardPool create = 2000;
+    SetRewardPoolAuthorities set_authorities = 2001;
+  }
+}
+
+message CreateRewardPool {
+  // The pool is identified by its Solana reward manager pubkey (base58,
+  // 32 bytes). Subsequent CreateReward / SetRewardPoolAuthorities messages
+  // and PR3's sender-attestation gate use this same value to resolve the
+  // pool. There is no separate "pool address" — the pool's identity IS the
+  // RM pubkey, so pool↔RM binding cannot be set wrong by construction.
+  string rewards_manager_pubkey = 1;
+  // Initial set of eth addresses authorized to attest for rewards in this
+  // pool. The recovered signer must be a member of this list. Each entry
+  // must be a valid eth hex address.
+  repeated string authorities = 2;
+}
+
+// SetRewardPoolAuthorities replaces the pool's authority set wholesale. The
+// signer must be in the *current* pool.authorities; the new list must be
+// non-empty and contain only valid eth addresses (otherwise the pool is
+// permanently orphaned). Add and remove are derived views: callers compose
+// the new list themselves.
+message SetRewardPoolAuthorities {
+  string rewards_manager_pubkey = 1;
+  repeated string authorities = 2;
+}
+
+// === Legacy reward wire format (pre-pool-rollout) ===
+//
+// These messages are the on-the-wire shape used before the body+signature
+// envelope was introduced. They are NOT used by new clients or new code paths
+// — they exist solely so that the new binary can decode and apply historical
+// reward transactions encountered during block-sync-from-genesis.
+//
+// DO NOT REMOVE these types or their field tags: removing them would break
+// replay of any chain history that contains rewards committed before the
+// upgrade. Adding new fields here is also forbidden — the wire shape must
+// remain pinned to what the old network produced.
+message LegacyRewardMessage {
+  oneof action {
+    LegacyCreateReward create = 1000;
+    LegacyDeleteReward delete = 1001;
+  }
+}
+
+message LegacyCreateReward {
+  string reward_id = 1;
+  string name = 2;
+  uint64 amount = 3;
+  repeated ClaimAuthority claim_authorities = 4;
+  int64 deadline_block_height = 5;
+  string signature = 6;
+}
+
+message LegacyDeleteReward {
+  string address = 1;
   int64 deadline_block_height = 2;
-  string signature = 3; // Signature over deterministic delete data
+  string signature = 3;
+}
+
+message GetRewardPoolRequest {
+  string rewards_manager_pubkey = 1;
+}
+
+message GetRewardPoolResponse {
+  string rewards_manager_pubkey = 1;
+  repeated string authorities = 2;
 }
 
 message GetRewardRequest {

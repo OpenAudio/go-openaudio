@@ -38,15 +38,32 @@ func main() {
 	currentHeight := resp.Msg.ChainInfo.CurrentHeight
 	deadline := currentHeight + 100
 
+	// Replace with the actual Solana reward manager pubkey for the mint
+	// you're issuing rewards under (base58, 32 bytes).
+	rewardsManagerPubkey := os.Getenv("REWARDS_MANAGER_PUBKEY")
+	if rewardsManagerPubkey == "" {
+		log.Fatalf("REWARDS_MANAGER_PUBKEY environment variable is not set")
+	}
+
+	// First-class CreateReward requires an existing pool keyed by the
+	// reward manager pubkey. Create one — fail loudly on any error so the
+	// next call doesn't proceed against a broken setup. If the pool was
+	// created in a previous run, this will surface as a "pool already
+	// exists" error and the example needs to be rerun against a fresh RM
+	// pubkey (or the existing pool's tx hash recorded for the reuse path).
+	if _, err := oap.Rewards.CreateRewardPool(context.Background(), &v1.CreateRewardPool{
+		RewardsManagerPubkey: rewardsManagerPubkey,
+		Authorities:          []string{oap.Address()},
+	}, deadline); err != nil {
+		log.Fatalf("Failed to create reward pool: %v", err)
+	}
+
 	reward, err := oap.Rewards.CreateReward(context.Background(), &v1.CreateReward{
-		RewardId: "reward1",
-		Name:     "Test Reward 1",
-		Amount:   1000,
-		ClaimAuthorities: []*v1.ClaimAuthority{
-			{Address: oap.Address(), Name: "Alec"},
-		},
-		DeadlineBlockHeight: deadline,
-	})
+		RewardId:             "reward1",
+		Name:                 "Test Reward 1",
+		Amount:               1000,
+		RewardsManagerPubkey: rewardsManagerPubkey,
+	}, deadline)
 	if err != nil {
 		log.Fatalf("Failed to create reward: %v", err)
 	}

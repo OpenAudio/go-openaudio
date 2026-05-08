@@ -12,20 +12,41 @@ import (
 )
 
 const getActiveRewards = `-- name: GetActiveRewards :many
-select id, address, index, tx_hash, sender, reward_id, name, amount, claim_authorities, raw_message, block_height, created_at, updated_at
-from core_rewards
-order by address
+select
+    r.id, r.address, r.index, r.tx_hash, r.sender, r.reward_id, r.name, r.amount,
+    coalesce(p.authorities, '{}'::text[])::text[] as claim_authorities,
+    r.raw_message, r.block_height, r.rewards_manager_pubkey, r.created_at, r.updated_at
+from core_rewards r
+left join core_reward_pools p on p.rewards_manager_pubkey = r.rewards_manager_pubkey
+order by r.address
 `
 
-func (q *Queries) GetActiveRewards(ctx context.Context) ([]CoreReward, error) {
+type GetActiveRewardsRow struct {
+	ID                   int64
+	Address              string
+	Index                int64
+	TxHash               string
+	Sender               string
+	RewardID             string
+	Name                 string
+	Amount               int64
+	ClaimAuthorities     []string
+	RawMessage           []byte
+	BlockHeight          int64
+	RewardsManagerPubkey pgtype.Text
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
+func (q *Queries) GetActiveRewards(ctx context.Context) ([]GetActiveRewardsRow, error) {
 	rows, err := q.db.Query(ctx, getActiveRewards)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CoreReward
+	var items []GetActiveRewardsRow
 	for rows.Next() {
-		var i CoreReward
+		var i GetActiveRewardsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Address,
@@ -38,6 +59,7 @@ func (q *Queries) GetActiveRewards(ctx context.Context) ([]CoreReward, error) {
 			&i.ClaimAuthorities,
 			&i.RawMessage,
 			&i.BlockHeight,
+			&i.RewardsManagerPubkey,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -215,23 +237,41 @@ func (q *Queries) GetAllRegisteredNodesSorted(ctx context.Context) ([]CoreValida
 }
 
 const getAllRewards = `-- name: GetAllRewards :many
-select id, address, index, tx_hash, sender, reward_id, name, amount, claim_authorities, raw_message, block_height, created_at, updated_at from core_rewards
-where address in (
-    select distinct address
-    from core_rewards
-)
-order by block_height desc
+select
+    r.id, r.address, r.index, r.tx_hash, r.sender, r.reward_id, r.name, r.amount,
+    coalesce(p.authorities, '{}'::text[])::text[] as claim_authorities,
+    r.raw_message, r.block_height, r.rewards_manager_pubkey, r.created_at, r.updated_at
+from core_rewards r
+left join core_reward_pools p on p.rewards_manager_pubkey = r.rewards_manager_pubkey
+order by r.block_height desc
 `
 
-func (q *Queries) GetAllRewards(ctx context.Context) ([]CoreReward, error) {
+type GetAllRewardsRow struct {
+	ID                   int64
+	Address              string
+	Index                int64
+	TxHash               string
+	Sender               string
+	RewardID             string
+	Name                 string
+	Amount               int64
+	ClaimAuthorities     []string
+	RawMessage           []byte
+	BlockHeight          int64
+	RewardsManagerPubkey pgtype.Text
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
+func (q *Queries) GetAllRewards(ctx context.Context) ([]GetAllRewardsRow, error) {
 	rows, err := q.db.Query(ctx, getAllRewards)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CoreReward
+	var items []GetAllRewardsRow
 	for rows.Next() {
-		var i CoreReward
+		var i GetAllRewardsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Address,
@@ -244,6 +284,7 @@ func (q *Queries) GetAllRewards(ctx context.Context) ([]CoreReward, error) {
 			&i.ClaimAuthorities,
 			&i.RawMessage,
 			&i.BlockHeight,
+			&i.RewardsManagerPubkey,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -1442,6 +1483,30 @@ func (q *Queries) GetLatestSlaRollup(ctx context.Context) (SlaRollup, error) {
 	return i, err
 }
 
+const getLaunchpadRMByAuthority = `-- name: GetLaunchpadRMByAuthority :one
+select rewards_manager_pubkey
+from launchpad_authority_rm
+where authority = any($1::text[])
+order by rewards_manager_pubkey, authority
+limit 1
+`
+
+// Resolves a launchpad-derived per-mint claim authority (lowercased eth
+// hex) to the Solana reward manager state account that mint's rewards
+// live under. Used by PR2's wire-compat layer at block-sync replay time:
+// when finalizeLegacyCreateReward sees an inline claim_authorities array,
+// it looks up the RM from any one of its lowercased entries and routes
+// the reward into a pool keyed by that RM — matching exactly what PR1's
+// backfill produced for pre-migration rows. Returns ErrNoRows if none of
+// the requested authorities is in the launchpad mapping (e.g., AUDIO
+// rewards or test fixtures).
+func (q *Queries) GetLaunchpadRMByAuthority(ctx context.Context, dollar_1 []string) (string, error) {
+	row := q.db.QueryRow(ctx, getLaunchpadRMByAuthority, dollar_1)
+	var rewards_manager_pubkey string
+	err := row.Scan(&rewards_manager_pubkey)
+	return rewards_manager_pubkey, err
+}
+
 const getMEAD = `-- name: GetMEAD :one
 select id, address, tx_hash, index, sender, resource_addresses, release_addresses, raw_message, raw_acknowledgment, block_height from core_mead where address = $1 order by block_height desc limit 1
 `
@@ -2017,15 +2082,37 @@ func (q *Queries) GetRegisteredNodesByType(ctx context.Context, nodeType string)
 }
 
 const getReward = `-- name: GetReward :one
-select id, address, index, tx_hash, sender, reward_id, name, amount, claim_authorities, raw_message, block_height, created_at, updated_at from core_rewards
-where address = $1
-order by block_height desc
+select
+    r.id, r.address, r.index, r.tx_hash, r.sender, r.reward_id, r.name, r.amount,
+    coalesce(p.authorities, '{}'::text[])::text[] as claim_authorities,
+    r.raw_message, r.block_height, r.rewards_manager_pubkey, r.created_at, r.updated_at
+from core_rewards r
+left join core_reward_pools p on p.rewards_manager_pubkey = r.rewards_manager_pubkey
+where r.address = $1
+order by r.block_height desc
 limit 1
 `
 
-func (q *Queries) GetReward(ctx context.Context, address string) (CoreReward, error) {
+type GetRewardRow struct {
+	ID                   int64
+	Address              string
+	Index                int64
+	TxHash               string
+	Sender               string
+	RewardID             string
+	Name                 string
+	Amount               int64
+	ClaimAuthorities     []string
+	RawMessage           []byte
+	BlockHeight          int64
+	RewardsManagerPubkey pgtype.Text
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
+func (q *Queries) GetReward(ctx context.Context, address string) (GetRewardRow, error) {
 	row := q.db.QueryRow(ctx, getReward, address)
-	var i CoreReward
+	var i GetRewardRow
 	err := row.Scan(
 		&i.ID,
 		&i.Address,
@@ -2038,6 +2125,7 @@ func (q *Queries) GetReward(ctx context.Context, address string) (CoreReward, er
 		&i.ClaimAuthorities,
 		&i.RawMessage,
 		&i.BlockHeight,
+		&i.RewardsManagerPubkey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -2045,15 +2133,37 @@ func (q *Queries) GetReward(ctx context.Context, address string) (CoreReward, er
 }
 
 const getRewardByID = `-- name: GetRewardByID :one
-select id, address, index, tx_hash, sender, reward_id, name, amount, claim_authorities, raw_message, block_height, created_at, updated_at from core_rewards
-where reward_id = $1
-order by block_height desc
+select
+    r.id, r.address, r.index, r.tx_hash, r.sender, r.reward_id, r.name, r.amount,
+    coalesce(p.authorities, '{}'::text[])::text[] as claim_authorities,
+    r.raw_message, r.block_height, r.rewards_manager_pubkey, r.created_at, r.updated_at
+from core_rewards r
+left join core_reward_pools p on p.rewards_manager_pubkey = r.rewards_manager_pubkey
+where r.reward_id = $1
+order by r.block_height desc
 limit 1
 `
 
-func (q *Queries) GetRewardByID(ctx context.Context, rewardID string) (CoreReward, error) {
+type GetRewardByIDRow struct {
+	ID                   int64
+	Address              string
+	Index                int64
+	TxHash               string
+	Sender               string
+	RewardID             string
+	Name                 string
+	Amount               int64
+	ClaimAuthorities     []string
+	RawMessage           []byte
+	BlockHeight          int64
+	RewardsManagerPubkey pgtype.Text
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
+func (q *Queries) GetRewardByID(ctx context.Context, rewardID string) (GetRewardByIDRow, error) {
 	row := q.db.QueryRow(ctx, getRewardByID, rewardID)
-	var i CoreReward
+	var i GetRewardByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Address,
@@ -2066,6 +2176,7 @@ func (q *Queries) GetRewardByID(ctx context.Context, rewardID string) (CoreRewar
 		&i.ClaimAuthorities,
 		&i.RawMessage,
 		&i.BlockHeight,
+		&i.RewardsManagerPubkey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -2073,15 +2184,37 @@ func (q *Queries) GetRewardByID(ctx context.Context, rewardID string) (CoreRewar
 }
 
 const getRewardByTxHash = `-- name: GetRewardByTxHash :one
-select id, address, index, tx_hash, sender, reward_id, name, amount, claim_authorities, raw_message, block_height, created_at, updated_at from core_rewards
-where tx_hash = $1
-order by block_height desc
+select
+    r.id, r.address, r.index, r.tx_hash, r.sender, r.reward_id, r.name, r.amount,
+    coalesce(p.authorities, '{}'::text[])::text[] as claim_authorities,
+    r.raw_message, r.block_height, r.rewards_manager_pubkey, r.created_at, r.updated_at
+from core_rewards r
+left join core_reward_pools p on p.rewards_manager_pubkey = r.rewards_manager_pubkey
+where r.tx_hash = $1
+order by r.block_height desc
 limit 1
 `
 
-func (q *Queries) GetRewardByTxHash(ctx context.Context, txHash string) (CoreReward, error) {
+type GetRewardByTxHashRow struct {
+	ID                   int64
+	Address              string
+	Index                int64
+	TxHash               string
+	Sender               string
+	RewardID             string
+	Name                 string
+	Amount               int64
+	ClaimAuthorities     []string
+	RawMessage           []byte
+	BlockHeight          int64
+	RewardsManagerPubkey pgtype.Text
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
+func (q *Queries) GetRewardByTxHash(ctx context.Context, txHash string) (GetRewardByTxHashRow, error) {
 	row := q.db.QueryRow(ctx, getRewardByTxHash, txHash)
-	var i CoreReward
+	var i GetRewardByTxHashRow
 	err := row.Scan(
 		&i.ID,
 		&i.Address,
@@ -2094,28 +2227,103 @@ func (q *Queries) GetRewardByTxHash(ctx context.Context, txHash string) (CoreRew
 		&i.ClaimAuthorities,
 		&i.RawMessage,
 		&i.BlockHeight,
+		&i.RewardsManagerPubkey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const getRewardsByClaimAuthority = `-- name: GetRewardsByClaimAuthority :many
-select id, address, index, tx_hash, sender, reward_id, name, amount, claim_authorities, raw_message, block_height, created_at, updated_at
-from core_rewards
-where $1::text = any(claim_authorities)
-order by address
+const getRewardPool = `-- name: GetRewardPool :one
+select rewards_manager_pubkey, authorities, created_at, updated_at
+from core_reward_pools
+where rewards_manager_pubkey = $1
 `
 
-func (q *Queries) GetRewardsByClaimAuthority(ctx context.Context, dollar_1 string) ([]CoreReward, error) {
+func (q *Queries) GetRewardPool(ctx context.Context, rewardsManagerPubkey string) (CoreRewardPool, error) {
+	row := q.db.QueryRow(ctx, getRewardPool, rewardsManagerPubkey)
+	var i CoreRewardPool
+	err := row.Scan(
+		&i.RewardsManagerPubkey,
+		&i.Authorities,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getRewardPoolsByAuthority = `-- name: GetRewardPoolsByAuthority :many
+select rewards_manager_pubkey, authorities, created_at, updated_at
+from core_reward_pools
+where authorities @> array[$1::text]
+order by rewards_manager_pubkey
+`
+
+// Uses array containment (@>) so the gin index on authorities is used.
+func (q *Queries) GetRewardPoolsByAuthority(ctx context.Context, dollar_1 string) ([]CoreRewardPool, error) {
+	rows, err := q.db.Query(ctx, getRewardPoolsByAuthority, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CoreRewardPool
+	for rows.Next() {
+		var i CoreRewardPool
+		if err := rows.Scan(
+			&i.RewardsManagerPubkey,
+			&i.Authorities,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRewardsByClaimAuthority = `-- name: GetRewardsByClaimAuthority :many
+select
+    r.id, r.address, r.index, r.tx_hash, r.sender, r.reward_id, r.name, r.amount,
+    coalesce(p.authorities, '{}'::text[])::text[] as claim_authorities,
+    r.raw_message, r.block_height, r.rewards_manager_pubkey, r.created_at, r.updated_at
+from core_rewards r
+join core_reward_pools p on p.rewards_manager_pubkey = r.rewards_manager_pubkey
+where p.authorities @> array[$1::text]
+order by r.address
+`
+
+type GetRewardsByClaimAuthorityRow struct {
+	ID                   int64
+	Address              string
+	Index                int64
+	TxHash               string
+	Sender               string
+	RewardID             string
+	Name                 string
+	Amount               int64
+	ClaimAuthorities     []string
+	RawMessage           []byte
+	BlockHeight          int64
+	RewardsManagerPubkey pgtype.Text
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
+// Uses array containment (@>) so the gin index on core_reward_pools.authorities
+// can be used. = ANY(...) cannot leverage the gin opclass.
+func (q *Queries) GetRewardsByClaimAuthority(ctx context.Context, dollar_1 string) ([]GetRewardsByClaimAuthorityRow, error) {
 	rows, err := q.db.Query(ctx, getRewardsByClaimAuthority, dollar_1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CoreReward
+	var items []GetRewardsByClaimAuthorityRow
 	for rows.Next() {
-		var i CoreReward
+		var i GetRewardsByClaimAuthorityRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Address,
@@ -2128,6 +2336,7 @@ func (q *Queries) GetRewardsByClaimAuthority(ctx context.Context, dollar_1 strin
 			&i.ClaimAuthorities,
 			&i.RawMessage,
 			&i.BlockHeight,
+			&i.RewardsManagerPubkey,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

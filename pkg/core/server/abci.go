@@ -1020,6 +1020,11 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 			s.logger.Error("Invalid block: invalid file upload tx", zap.Error(err))
 			return false, nil
 		}
+	case *v1.SignedTransaction_RewardPool:
+		if err := s.isValidRewardPoolTransaction(ctx, signedTx, blockHeight); err != nil {
+			s.logger.Error("Invalid block: invalid reward pool tx", zap.Error(err))
+			return false, nil
+		}
 	}
 	return true, nil
 }
@@ -1028,6 +1033,8 @@ func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64,
 	switch signedTx.Transaction.(type) {
 	case *v1.SignedTransaction_Reward:
 		return s.isValidRewardTransaction(ctx, signedTx, currentHeight)
+	case *v1.SignedTransaction_RewardPool:
+		return s.isValidRewardPoolTransaction(ctx, signedTx, currentHeight)
 	default:
 		// For other transaction types, no validation needed during SendTransaction
 		return nil
@@ -1059,6 +1066,8 @@ func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.Finaliz
 		return s.finalizeRelease(ctx, msg, txHash)
 	case *v1.SignedTransaction_Reward:
 		return s.finalizeRewardTransaction(ctx, req, msg.GetReward(), txHash, sender)
+	case *v1.SignedTransaction_RewardPool:
+		return s.finalizeRewardPoolTransaction(ctx, req, msg.GetRewardPool(), txHash, 0)
 	case *v1.SignedTransaction_FileUpload:
 		return s.finalizeFileUpload(ctx, msg, txHash, req.Height)
 	default:
