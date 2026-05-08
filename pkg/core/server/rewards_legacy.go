@@ -187,6 +187,9 @@ func (s *Server) finalizeLegacyDeleteReward(ctx context.Context, dr *corev1.Lega
 	qtx := s.getDb()
 	existingReward, err := qtx.GetReward(ctx, dr.Address)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: reward %s not found", ErrRewardMessageValidation, dr.Address)
+		}
 		return fmt.Errorf("legacy delete: failed to get reward: %w", err)
 	}
 	if !contains(existingReward.ClaimAuthorities, signer) {
