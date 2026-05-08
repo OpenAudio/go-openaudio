@@ -592,39 +592,6 @@ message SetRewardPoolAuthorities {
   repeated string authorities = 2;
 }
 
-// === Legacy reward wire format (pre-pool-rollout) ===
-//
-// These messages are the on-the-wire shape used before the body+signature
-// envelope was introduced. They are NOT used by new clients or new code paths
-// — they exist solely so that the new binary can decode and apply historical
-// reward transactions encountered during block-sync-from-genesis.
-//
-// DO NOT REMOVE these types or their field tags: removing them would break
-// replay of any chain history that contains rewards committed before the
-// upgrade. Adding new fields here is also forbidden — the wire shape must
-// remain pinned to what the old network produced.
-message LegacyRewardMessage {
-  oneof action {
-    LegacyCreateReward create = 1000;
-    LegacyDeleteReward delete = 1001;
-  }
-}
-
-message LegacyCreateReward {
-  string reward_id = 1;
-  string name = 2;
-  uint64 amount = 3;
-  repeated ClaimAuthority claim_authorities = 4;
-  int64 deadline_block_height = 5;
-  string signature = 6;
-}
-
-message LegacyDeleteReward {
-  string address = 1;
-  int64 deadline_block_height = 2;
-  string signature = 3;
-}
-
 message GetRewardPoolRequest {
   string rewards_manager_pubkey = 1;
 }

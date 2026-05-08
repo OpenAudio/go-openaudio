@@ -356,22 +356,6 @@ where address = $1;
 delete from core_rewards
 where address = $1;
 
--- name: UpsertSyntheticRewardPool :exec
--- Used by the legacy CreateReward path to ensure a reward-pool row exists
--- for the provided rewards_manager_pubkey with the requested authority
--- set. The pubkey may be a real Solana RM (when the row's
--- claim_authorities included a known launchpad-derived per-mint key) or
--- a synthetic 'mig_<md5>' identifier (otherwise). DO UPDATE refreshes
--- the stored authorities so multiple CreateReward txs targeting the
--- same pool converge instead of leaving stale rows.
-insert into core_reward_pools (
-    rewards_manager_pubkey,
-    authorities
-) values ($1, $2)
-on conflict (rewards_manager_pubkey) do update set
-    authorities = excluded.authorities,
-    updated_at = now();
-
 -- name: InsertRewardPool :exec
 -- Inserts a first-class reward pool created via a CreateRewardPool cometbft
 -- transaction. The pool's identity IS the Solana reward manager pubkey;

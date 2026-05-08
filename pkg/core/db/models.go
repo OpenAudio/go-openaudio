@@ -312,12 +312,6 @@ type CoreValidator struct {
 	Jailed       bool
 }
 
-type LaunchpadAuthorityRm struct {
-	Authority            string
-	RewardsManagerPubkey string
-	CreatedAt            pgtype.Timestamptz
-}
-
 type ManagementKey struct {
 	ID        int32
 	TrackID   string
