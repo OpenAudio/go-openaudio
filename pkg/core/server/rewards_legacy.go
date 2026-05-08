@@ -27,9 +27,12 @@ import (
 // during block-sync-from-genesis. We re-decode the unknown fields as
 // LegacyRewardMessage, recover the signer using the legacy signing scheme
 // (sha256 over a pipe-delimited canonical string — see
-// pkg/common/legacy_reward_signing.go), and apply the same business logic
-// the new code applies to a CreateReward / DeleteReward without pool_address
-// (synthetic-pool fallback for create; claim-authorities check for delete).
+// pkg/common/legacy_reward_signing.go), and bind the reward to a real-RM
+// pool by looking up any one of its inline claim_authorities in the
+// launchpad_authority_rm seed (matching the migration backfill exactly).
+// For DeleteReward we re-check authorization against the existing reward's
+// pool authorities. Rewards whose authorities don't match any launchpad
+// entry are inserted with NULL rewards_manager_pubkey.
 //
 // Live-traffic note: post-rollout, no client should produce legacy bytes —
 // the SDK and API repo only emit the new envelope. This path is dormant
@@ -150,9 +153,10 @@ func (s *Server) finalizeLegacyCreateReward(ctx context.Context, req *abcitypes.
 		case err != nil:
 			return fmt.Errorf("failed to resolve launchpad RM: %w", err)
 		default:
-			// Upsert the pool so any subsequent legacy replays of rewards
-			// targeting the same RM converge on the same authority set.
-			if err := qtx.UpsertSyntheticRewardPool(ctx, db.UpsertSyntheticRewardPoolParams{
+			// Upsert (UNION) the pool so successive legacy replays of
+			// rewards under the same RM accumulate into the same authority
+			// set the migration's UNION-based backfill produces.
+			if err := qtx.UpsertLegacyReplayRewardPool(ctx, db.UpsertLegacyReplayRewardPoolParams{
 				RewardsManagerPubkey: rm,
 				Authorities:          canonicalAuthorities,
 			}); err != nil {

@@ -1161,6 +1161,44 @@ func (q *Queries) UpsertAppState(ctx context.Context, arg UpsertAppStateParams) 
 	return err
 }
 
+const upsertLegacyReplayRewardPool = `-- name: UpsertLegacyReplayRewardPool :exec
+insert into core_reward_pools (
+    rewards_manager_pubkey,
+    authorities
+) values ($1, $2)
+on conflict (rewards_manager_pubkey) do update set
+    authorities = (
+        select array(
+            select distinct lower(trim(a))
+            from unnest(core_reward_pools.authorities || excluded.authorities) as a
+            where a is not null and trim(a) <> ''
+            order by 1
+        )
+    ),
+    updated_at = now()
+`
+
+type UpsertLegacyReplayRewardPoolParams struct {
+	RewardsManagerPubkey string
+	Authorities          []string
+}
+
+// Used only by finalizeLegacyCreateReward during block-sync replay of
+// legacy-shape CreateReward bytes. Materializes a real-RM pool from the
+// legacy reward's inline claim_authorities.
+//
+// DO UPDATE unions the new authorities with the existing set rather than
+// overwriting. This matches the migration backfill, which UNIONs authorities
+// across every legacy reward referencing the RM. Without the union, a
+// from-genesis-syncing node would end up with
+// pool.authorities = last-replayed-reward.authorities, while an in-place-
+// upgraded node would have UNION(every reward) — different DB state ⇒
+// different validation outcomes for downstream txs ⇒ apphash divergence.
+func (q *Queries) UpsertLegacyReplayRewardPool(ctx context.Context, arg UpsertLegacyReplayRewardPoolParams) error {
+	_, err := q.db.Exec(ctx, upsertLegacyReplayRewardPool, arg.RewardsManagerPubkey, arg.Authorities)
+	return err
+}
+
 const upsertSlaRollupReport = `-- name: UpsertSlaRollupReport :exec
 with updated as (
     update sla_node_reports 
@@ -1175,32 +1213,5 @@ where not exists (select 1 from updated)
 
 func (q *Queries) UpsertSlaRollupReport(ctx context.Context, address string) error {
 	_, err := q.db.Exec(ctx, upsertSlaRollupReport, address)
-	return err
-}
-
-const upsertSyntheticRewardPool = `-- name: UpsertSyntheticRewardPool :exec
-insert into core_reward_pools (
-    rewards_manager_pubkey,
-    authorities
-) values ($1, $2)
-on conflict (rewards_manager_pubkey) do update set
-    authorities = excluded.authorities,
-    updated_at = now()
-`
-
-type UpsertSyntheticRewardPoolParams struct {
-	RewardsManagerPubkey string
-	Authorities          []string
-}
-
-// Used by the legacy CreateReward path to ensure a reward-pool row exists
-// for the provided rewards_manager_pubkey with the requested authority
-// set. The pubkey may be a real Solana RM (when the row's
-// claim_authorities included a known launchpad-derived per-mint key) or
-// a synthetic 'mig_<md5>' identifier (otherwise). DO UPDATE refreshes
-// the stored authorities so multiple CreateReward txs targeting the
-// same pool converge instead of leaving stale rows.
-func (q *Queries) UpsertSyntheticRewardPool(ctx context.Context, arg UpsertSyntheticRewardPoolParams) error {
-	_, err := q.db.Exec(ctx, upsertSyntheticRewardPool, arg.RewardsManagerPubkey, arg.Authorities)
 	return err
 }

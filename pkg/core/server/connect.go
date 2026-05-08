@@ -1791,6 +1791,11 @@ func (c *CoreService) gatherEligibleSenderAddresses(ctx context.Context) ([]stri
 	return append(validators, aaos...), nil
 }
 
+// ErrSenderGateUnknownRM is returned by senderGateForRM when the requested
+// RM has no core_reward_pools row AND is not the configured AUDIO RM.
+// Callers should map it to connect.CodeInvalidArgument.
+var ErrSenderGateUnknownRM = errors.New("rewards_manager_pubkey has no pool and is not AUDIO")
+
 // senderGateForRM resolves which gating regime applies to a given Solana
 // reward manager pubkey:
 //
@@ -1801,33 +1806,47 @@ func (c *CoreService) gatherEligibleSenderAddresses(ctx context.Context) ([]stri
 //     asked to deregister it from Solana, and once a new key is rotated in,
 //     validators can register it.
 //
-//   - If no pool exists for the RM, fall through to the legacy
-//     validator/AAO trust set (see gatherEligibleSenderAddresses). AUDIO
-//     deliberately stays on this path: no pool is ever created for the
-//     AUDIO RM (validateCreateRewardPool refuses), so AUDIO attestation
-//     authority remains the network-wide trust set.
+//   - If no pool exists AND the RM is the configured AUDIO RM, fall through
+//     to the legacy validator/AAO trust set (see
+//     gatherEligibleSenderAddresses). AUDIO is the only RM that may use
+//     this path: no pool is ever created for it (validateCreateRewardPool
+//     refuses), so AUDIO attestation authority remains the network-wide
+//     trust set.
 //
-// Returns (pool, true, nil) when pool gating applies, (nil, false, nil)
-// when validator/AAO gating applies, and a non-nil error only on real DB
-// failures (transient errors do NOT silently fall through to validator/AAO
-// — that would let a temporary blip downgrade the gate from per-RM to
-// network-wide).
+//   - If no pool exists AND the RM is NOT AUDIO, return
+//     ErrSenderGateUnknownRM. We deliberately refuse to fall through —
+//     pools are now the only authorization mechanism for non-AUDIO RMs,
+//     and a quietly-permissive fallback would re-open the exact gap the
+//     pool primitive is meant to close (any caller could request
+//     validator-signed attestations for an arbitrary unknown RM).
+//
+// Returns (pool, true, nil) for pool gating, (nil, false, nil) for the
+// AUDIO legacy path, ErrSenderGateUnknownRM for any other no-pool RM, and
+// other errors only on real DB failures (transient errors do NOT silently
+// fall through to validator/AAO — that would let a temporary blip
+// downgrade the gate).
 func (c *CoreService) senderGateForRM(ctx context.Context, rmPubkey string) (*db.CoreRewardPool, bool, error) {
 	pool, err := c.core.db.GetRewardPool(ctx, rmPubkey)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, false, nil
-		}
+	switch {
+	case err == nil:
+		return &pool, true, nil
+	case !errors.Is(err, pgx.ErrNoRows):
 		return nil, false, fmt.Errorf("failed to load pool for RM %s: %w", rmPubkey, err)
 	}
-	return &pool, true, nil
+	if audioRM := strings.TrimSpace(config.AudioRewardsManagerPubkey()); audioRM != "" && rmPubkey == audioRM {
+		return nil, false, nil
+	}
+	return nil, false, ErrSenderGateUnknownRM
 }
 
 // GetRewardSenderAttestation implements v1connect.CoreServiceHandler.
 //
 // Dispatches by RM:
 //   - If a pool exists for the requested RM, sign iff address ∈ pool.authorities.
-//   - Otherwise, sign iff address ∈ validator/AAO trust set (legacy AUDIO path).
+//   - If no pool exists and the RM is the configured AUDIO RM, sign iff
+//     address ∈ validator/AAO trust set (legacy AUDIO path).
+//   - Otherwise (no pool, not AUDIO), refuse — there is no authorization
+//     mechanism to consult.
 func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
 	address := strings.TrimSpace(req.Msg.Address)
 	if address == "" {
@@ -1841,6 +1860,9 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 
 	pool, isPoolGated, err := c.senderGateForRM(ctx, rewardsManagerPubkey)
 	if err != nil {
+		if errors.Is(err, ErrSenderGateUnknownRM) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -1881,8 +1903,10 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 //   - If a pool exists for the requested RM, sign iff address ∉ pool.authorities.
 //     This is the rotation-out signal: OAP has already removed the key from the
 //     pool, and validators are catching Solana up.
-//   - Otherwise (AUDIO path), sign iff address is NOT in the validator/AAO
-//     trust set (existing behavior).
+//   - If no pool exists and the RM is the configured AUDIO RM, sign iff
+//     address is NOT in the validator/AAO trust set (legacy AUDIO path).
+//   - Otherwise (no pool, not AUDIO), refuse — there is no authorization
+//     mechanism to consult.
 func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error) {
 	address := strings.TrimSpace(req.Msg.Address)
 	if address == "" {
@@ -1896,6 +1920,9 @@ func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req 
 
 	pool, isPoolGated, err := c.senderGateForRM(ctx, rewardsManagerPubkey)
 	if err != nil {
+		if errors.Is(err, ErrSenderGateUnknownRM) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
