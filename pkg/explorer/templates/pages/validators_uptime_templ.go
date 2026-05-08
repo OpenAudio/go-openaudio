@@ -283,7 +283,7 @@ func ValidatorsUptime(props ValidatorsUptimeProps) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6\"><div class=\"flex items-center justify-between mb-6\"><div><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">Validators Uptime</h2><p class=\"text-gray-500 dark:text-[#b3b3b3] text-sm mt-1\">Recent SLA rollup performance across all validators. Green indicates meeting SLA requirements, red indicates missing SLA.</p></div><div class=\"flex items-center gap-6 text-sm text-gray-600 dark:text-[#b3b3b3]\"><div class=\"flex items-center gap-2\"><div class=\"w-4 h-4 bg-green-400 rounded\"></div><span>Meeting SLA</span></div><div class=\"flex items-center gap-2\"><div class=\"w-4 h-4 bg-red-500 rounded\"></div><span>Missing SLA</span></div><div class=\"flex items-center gap-2\"><div class=\"w-4 h-4 bg-gray-800 rounded\"></div><span>Offline/Dead</span></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6\"><div class=\"flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-6\"><div><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">Validators Uptime</h2><p class=\"text-gray-500 dark:text-[#b3b3b3] text-sm mt-1\">Recent SLA rollup performance across all validators. Green indicates meeting SLA requirements, red indicates missing SLA.</p></div><div class=\"flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600 dark:text-[#b3b3b3]\"><div class=\"flex items-center gap-2\"><div class=\"w-4 h-4 bg-green-400 rounded\"></div><span>Meeting SLA</span></div><div class=\"flex items-center gap-2\"><div class=\"w-4 h-4 bg-red-500 rounded\"></div><span>Missing SLA</span></div><div class=\"flex items-center gap-2\"><div class=\"w-4 h-4 bg-gray-800 rounded\"></div><span>Offline/Dead</span></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -344,7 +344,7 @@ func ValidatorsUptimeByRollup(props ValidatorsUptimeByRollupProps) templ.Compone
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6\"><div class=\"flex items-center justify-between mb-6\"><div><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">SLA Rollup #")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-6\"><div><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">SLA Rollup #")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

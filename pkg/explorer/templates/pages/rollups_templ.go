@@ -58,7 +58,7 @@ func Rollups(props RollupsProps) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6\"><div class=\"flex justify-between items-center mb-6\"><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">SLA Rollups</h2><div class=\"text-sm text-gray-500 dark:text-[#b3b3b3]\">Page ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6\"><div class=\"flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-6\"><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">SLA Rollups</h2><div class=\"text-sm text-gray-500 dark:text-[#b3b3b3]\">Page ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -107,7 +107,7 @@ func Rollups(props RollupsProps) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				for _, rollup := range props.Rollups {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors\"><div class=\"flex items-center gap-6 flex-1\"><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Rollup ID</div><a href=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"flex flex-col gap-3 md:flex-row md:items-center md:justify-between py-4 px-4 md:px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors\"><div class=\"grid grid-cols-2 gap-3 md:gap-6 md:flex md:items-center md:flex-1\"><div class=\"md:flex-1\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Rollup ID</div><a href=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -133,7 +133,7 @@ func Rollups(props RollupsProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</a></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Block Range</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</a></div><div class=\"md:flex-1\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Block Range</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -146,7 +146,7 @@ func Rollups(props RollupsProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Validators</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></div><div class=\"md:flex-1\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Validators</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -159,7 +159,7 @@ func Rollups(props RollupsProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Transaction</div><a href=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div><div class=\"md:flex-1\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Transaction</div><a href=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -180,7 +180,7 @@ func Rollups(props RollupsProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</a></div></div><div class=\"text-right flex-shrink-0\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Time</div><div class=\"text-sm text-gray-700 dark:text-white\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</a></div></div><div class=\"md:text-right md:flex-shrink-0\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Time</div><div class=\"text-sm text-gray-700 dark:text-white\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

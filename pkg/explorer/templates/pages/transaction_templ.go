@@ -93,7 +93,7 @@ func Transaction(props TransactionProps) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><!-- Transaction Info Card --><div class=\"shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]\"><div class=\"flex justify-between items-start mb-4\"><div><h2 class=\"text-2xl font-bold text-gray-900 dark:text-white\">Transaction Details</h2><div class=\"text-gray-500 dark:text-[#b3b3b3] mt-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><!-- Transaction Info Card --><div class=\"shadow-xl rounded-lg p-4 md:p-6 bg-white dark:bg-[#0a0a0a]\"><div class=\"flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start mb-4\"><div class=\"min-w-0\"><h2 class=\"text-2xl font-bold text-gray-900 dark:text-white\">Transaction Details</h2><div class=\"text-gray-500 dark:text-[#b3b3b3] mt-1 break-all text-sm md:text-base\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -106,7 +106,7 @@ func Transaction(props TransactionProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div></div><div><span class=\"px-3 py-1 text-sm rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div></div><div class=\"flex-shrink-0\"><span class=\"px-3 py-1 text-sm rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

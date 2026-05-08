@@ -99,7 +99,7 @@ func (p *Pages) TxPageHTML(view *TxView) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"uk-card\"><div class=\"uk-card-header\"><h1 class=\"font-semibold leading-none tracking-tight\">Transaction Details</h1></div><div class=\"uk-card-body space-y-2\"><div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"uk-card\"><div class=\"uk-card-header\"><h1 class=\"font-semibold leading-none tracking-tight\">Transaction Details</h1></div><div class=\"uk-card-body space-y-2\"><div class=\"break-all\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -190,14 +190,14 @@ func (p *Pages) TxPageHTML(view *TxView) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div><div class=\"text-small p-4 rounded-lg\"><pre class=\"bg-secondary p-4 rounded-lg overflow-x-scroll\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div><div class=\"text-small p-2 md:p-4 rounded-lg\"><pre class=\"bg-secondary p-3 md:p-4 rounded-lg overflow-x-auto text-xs md:text-sm\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(p.renderJSON(p.toJSON(view.Tx)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 84, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/tx_page.templ`, Line: 84, Col: 121}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {

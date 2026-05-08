@@ -119,7 +119,7 @@ func Validators(props ValidatorsProps) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6\"><div class=\"flex items-center gap-6 mb-6\"><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">Validators</h2><div class=\"flex-1 max-w-md\"><input type=\"text\" id=\"endpointFilter\" placeholder=\"Filter by endpoint (e.g. audius.co)...\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6\"><div class=\"flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6 mb-6\"><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">Validators</h2><div class=\"flex-1 lg:max-w-md\"><input type=\"text\" id=\"endpointFilter\" placeholder=\"Filter by endpoint (e.g. audius.co)...\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -132,7 +132,7 @@ func Validators(props ValidatorsProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-800 rounded-lg bg-white dark:bg-[#0a0a0a] text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500 focus:border-transparent\" onchange=\"updateFilters()\"></div><div class=\"flex items-center gap-4 ml-auto\"><div class=\"text-sm text-gray-500 dark:text-[#b3b3b3]\">Page ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-800 rounded-lg bg-white dark:bg-[#0a0a0a] text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500 focus:border-transparent\" onchange=\"updateFilters()\"></div><div class=\"flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4 lg:ml-auto\"><div class=\"text-sm text-gray-500 dark:text-[#b3b3b3]\">Page ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -162,7 +162,7 @@ func Validators(props ValidatorsProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var6 = []any{"px-4 py-2 text-sm font-medium transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "active"), templ.KV("text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700", props.QueryType != "active")}
+			var templ_7745c5c3_Var6 = []any{"flex-1 text-center px-3 sm:px-4 py-2 text-sm font-medium transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "active"), templ.KV("text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700", props.QueryType != "active")}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var6...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -197,7 +197,7 @@ func Validators(props ValidatorsProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var9 = []any{"px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-800 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "registrations"), templ.KV("text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#383838]", props.QueryType != "registrations")}
+			var templ_7745c5c3_Var9 = []any{"flex-1 text-center px-3 sm:px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-800 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "registrations"), templ.KV("text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#383838]", props.QueryType != "registrations")}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var9...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -232,7 +232,7 @@ func Validators(props ValidatorsProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var12 = []any{"px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-800 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "deregistrations"), templ.KV("text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#383838]", props.QueryType != "deregistrations")}
+			var templ_7745c5c3_Var12 = []any{"flex-1 text-center px-3 sm:px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-800 transition-colors", templ.KV("bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900", props.QueryType == "deregistrations"), templ.KV("text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#383838]", props.QueryType != "deregistrations")}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var12...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -286,7 +286,7 @@ func Validators(props ValidatorsProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" class=\"block\"><div class=\"flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors cursor-pointer\"><div class=\"flex items-center gap-6 flex-1\"><div class=\"flex-2\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Endpoint</div><div class=\"relative\"><div class=\"font-mono text-sm text-gray-700 dark:text-gray-300 overflow-x-auto scrollbar-hide whitespace-nowrap pb-1\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" class=\"block\"><div class=\"py-4 px-4 md:px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors cursor-pointer\"><div class=\"grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 lg:gap-6 lg:items-center\"><div class=\"col-span-2 sm:col-span-3 lg:col-span-1 lg:flex-2 min-w-0\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Endpoint</div><div class=\"relative\"><div class=\"font-mono text-sm text-gray-700 dark:text-gray-300 overflow-x-auto scrollbar-hide whitespace-nowrap pb-1\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -299,7 +299,7 @@ func Validators(props ValidatorsProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div><div class=\"absolute top-0 right-0 w-8 h-full bg-white dark:bg-[#0a0a0a] pointer-events-none\"></div></div></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Address</div><div class=\"font-mono text-sm text-gray-400 dark:text-[#b3b3b3]\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div><div class=\"absolute top-0 right-0 w-8 h-full bg-white dark:bg-[#0a0a0a] pointer-events-none\"></div></div></div><div class=\"min-w-0\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Address</div><div class=\"font-mono text-sm text-gray-400 dark:text-[#b3b3b3]\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -307,7 +307,7 @@ func Validators(props ValidatorsProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Node Type</div><span class=\"px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-[#0a0a0a] text-gray-700 dark:text-gray-300 rounded\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div></div><div><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Node Type</div><span class=\"px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-[#0a0a0a] text-gray-700 dark:text-gray-300 rounded\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -320,7 +320,7 @@ func Validators(props ValidatorsProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</span></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Voting Power</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</span></div><div><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Voting Power</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -333,7 +333,7 @@ func Validators(props ValidatorsProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Status</div><div class=\"flex items-center gap-2 text-sm\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div></div><div><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Status</div><div class=\"flex flex-wrap items-center gap-2 text-sm\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -359,7 +359,7 @@ func Validators(props ValidatorsProps) templ.Component {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<span class=\"text-gray-400 dark:text-gray-500\">|</span><div class=\"text-xs text-gray-500 dark:text-[#b3b3b3]\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<span class=\"text-gray-400 dark:text-gray-500 hidden sm:inline\">|</span><div class=\"text-xs text-gray-500 dark:text-[#b3b3b3]\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -374,7 +374,7 @@ func Validators(props ValidatorsProps) templ.Component {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div></div></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Uptime</div><div class=\"flex items-center gap-1\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div></div></div><div><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Uptime</div><div class=\"flex items-center gap-1\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
