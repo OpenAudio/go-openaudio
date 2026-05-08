@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"connectrpc.com/connect"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/integration_tests/utils"
@@ -228,10 +229,13 @@ func TestRewardsLifecycle(t *testing.T) {
 		}
 		t.Logf("authority2 successfully got attestation: %s", attestation2.Attestation)
 
-		// Test 3: unauthorized user should NOT be able to get attestation
+		// Test 3: unauthorized user should NOT be able to get attestation.
+		// Amount must match the reward amount (5000) so that the call
+		// passes Validate and actually exercises the auth gate; otherwise
+		// it would fail at amount validation instead.
 		_, err = unauthorized.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
 			EthRecipientAddress: recipientAddr,
-			Amount:              1000,
+			Amount:              5000,
 			RewardAddress:       reward.Address,
 			RewardId:            "attestation_test_reward",
 			Specifier:           specifier,
@@ -240,6 +244,9 @@ func TestRewardsLifecycle(t *testing.T) {
 		})
 		if err == nil {
 			t.Fatalf("unauthorized user should NOT be able to get attestation, but it succeeded")
+		}
+		if got := connect.CodeOf(err); got != connect.CodePermissionDenied {
+			t.Fatalf("expected PermissionDenied for unauthorized user, got %v: %v", got, err)
 		}
 		t.Logf("unauthorized user correctly failed to get attestation: %v", err)
 
@@ -263,10 +270,12 @@ func TestRewardsLifecycle(t *testing.T) {
 		}
 		t.Logf("Created reward2 at address: %s", reward2.Address)
 
-		// authority1 should NOT be able to get attestation for reward2
+		// authority1 should NOT be able to get attestation for reward2.
+		// Amount matches reward2 (3000) so the call reaches the auth gate
+		// rather than failing earlier at amount validation.
 		_, err = authority1.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
 			EthRecipientAddress: recipientAddr,
-			Amount:              500,
+			Amount:              3000,
 			RewardAddress:       reward2.Address,
 			RewardId:            "attestation_test_reward_2",
 			Specifier:           specifier,
@@ -275,6 +284,9 @@ func TestRewardsLifecycle(t *testing.T) {
 		})
 		if err == nil {
 			t.Fatalf("authority1 should NOT be able to get attestation for reward2, but it succeeded")
+		}
+		if got := connect.CodeOf(err); got != connect.CodePermissionDenied {
+			t.Fatalf("expected PermissionDenied for cross-pool authority, got %v: %v", got, err)
 		}
 		t.Logf("authority1 correctly failed to get attestation for reward2: %v", err)
 

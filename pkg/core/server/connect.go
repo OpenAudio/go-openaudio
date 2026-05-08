@@ -1126,6 +1126,17 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 		Name:             dbReward.Name,
 	}
 
+	// RewardAddress is intentionally NOT set here, even though the proto
+	// field exists and RewardClaim.Compile supports a 3-piece
+	// RewardAddress:RewardID:Specifier disbursement_id form. The bytes
+	// produced by Compile are exactly what the Solana reward manager
+	// program reconstructs and verifies during evaluate_attestations,
+	// and that program expects the 2-piece RewardID:Specifier form.
+	// Adding RewardAddress here would break on-chain signature
+	// verification, not just change the validator-side signing contract.
+	// Cross-reward replay protection therefore relies on Specifier being
+	// disbursement-unique (per recipient + per event), which is the
+	// existing contract — not on the address binding.
 	claim := rewards.RewardClaim{
 		RecipientEthAddress: ethRecipientAddress,
 		Amount:              amount,
