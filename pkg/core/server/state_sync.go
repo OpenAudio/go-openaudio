@@ -331,7 +331,6 @@ func (s *Server) createPgDump(logger *zap.Logger, latestSnapshotDir string) erro
 		"core_deals",
 		"core_rewards",
 		"core_reward_pools",
-		"launchpad_authority_rm",
 		"core_uploads",
 		"validator_history",
 	}
