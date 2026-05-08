@@ -1251,9 +1251,14 @@ func (c *CoreService) GetReward(ctx context.Context, req *connect.Request[v1.Get
 // CreateRewardPool validates that new pools use a base58 32-byte pubkey).
 // There is no separate synthetic-pool surface to filter out.
 func (c *CoreService) GetRewardPool(ctx context.Context, req *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error) {
-	rewardsManagerPubkey := req.Msg.RewardsManagerPubkey
-	if rewardsManagerPubkey == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("rewards_manager_pubkey is required"))
+	// Normalize and shape-validate up front so malformed input returns
+	// InvalidArgument deterministically instead of falling through to a DB
+	// lookup that returns NotFound. Reuses validateRewardsManagerPubkey
+	// (the same validator the CreateRewardPool / SetRewardPoolAuthorities
+	// tx path uses) so the contract is identical across read and write.
+	rewardsManagerPubkey := strings.TrimSpace(req.Msg.RewardsManagerPubkey)
+	if err := validateRewardsManagerPubkey(rewardsManagerPubkey); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	pool, err := c.core.db.GetRewardPool(ctx, rewardsManagerPubkey)
 	if err != nil {
