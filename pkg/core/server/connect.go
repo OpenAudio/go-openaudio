@@ -1069,15 +1069,16 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 
 // GetRewards implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetRewards(ctx context.Context, req *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error) {
-	claimAuthority := req.Msg.ClaimAuthority
-	if claimAuthority == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority required"))
-	}
 	// Stored authorities are lowercased by rewards.CanonicalAuthorities; the
 	// underlying GetRewardsByClaimAuthority does a case-sensitive @> array
 	// containment check. Normalize the caller-supplied address (which is
 	// often checksum-case from common.PrivKeyToAddress) so lookups match.
-	claimAuthority = strings.ToLower(strings.TrimSpace(claimAuthority))
+	// Normalize before the empty check so whitespace-only input is rejected
+	// as InvalidArgument rather than silently producing an empty result.
+	claimAuthority := strings.ToLower(strings.TrimSpace(req.Msg.ClaimAuthority))
+	if claimAuthority == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority required"))
+	}
 
 	rewards, err := c.core.db.GetRewardsByClaimAuthority(ctx, claimAuthority)
 	if err != nil {
