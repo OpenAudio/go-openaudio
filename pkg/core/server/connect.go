@@ -1251,9 +1251,14 @@ func (c *CoreService) GetReward(ctx context.Context, req *connect.Request[v1.Get
 // CreateRewardPool validates that new pools use a base58 32-byte pubkey).
 // There is no separate synthetic-pool surface to filter out.
 func (c *CoreService) GetRewardPool(ctx context.Context, req *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error) {
-	rewardsManagerPubkey := req.Msg.RewardsManagerPubkey
-	if rewardsManagerPubkey == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("rewards_manager_pubkey is required"))
+	// Normalize and shape-validate up front so malformed input returns
+	// InvalidArgument deterministically instead of falling through to a DB
+	// lookup that returns NotFound. Reuses validateRewardsManagerPubkey
+	// (the same validator the CreateRewardPool / SetRewardPoolAuthorities
+	// tx path uses) so the contract is identical across read and write.
+	rewardsManagerPubkey := strings.TrimSpace(req.Msg.RewardsManagerPubkey)
+	if err := validateRewardsManagerPubkey(rewardsManagerPubkey); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	pool, err := c.core.db.GetRewardPool(ctx, rewardsManagerPubkey)
 	if err != nil {
@@ -1813,12 +1818,12 @@ func (c *CoreService) senderGateForRM(ctx context.Context, rmPubkey string) (*db
 //   - If a pool exists for the requested RM, sign iff address ∈ pool.authorities.
 //   - Otherwise, sign iff address ∈ validator/AAO trust set (legacy AUDIO path).
 func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
-	address := req.Msg.Address
+	address := strings.TrimSpace(req.Msg.Address)
 	if address == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is required"))
 	}
 
-	rewardsManagerPubkey := req.Msg.RewardsManagerPubkey
+	rewardsManagerPubkey := strings.TrimSpace(req.Msg.RewardsManagerPubkey)
 	if rewardsManagerPubkey == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
 	}
@@ -1868,12 +1873,12 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 //   - Otherwise (AUDIO path), sign iff address is NOT in the validator/AAO
 //     trust set (existing behavior).
 func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error) {
-	address := req.Msg.Address
+	address := strings.TrimSpace(req.Msg.Address)
 	if address == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is required"))
 	}
 
-	rewardsManagerPubkey := req.Msg.RewardsManagerPubkey
+	rewardsManagerPubkey := strings.TrimSpace(req.Msg.RewardsManagerPubkey)
 	if rewardsManagerPubkey == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
 	}

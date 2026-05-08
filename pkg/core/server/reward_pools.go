@@ -107,13 +107,15 @@ func validateRewardsManagerPubkey(pubkey string) error {
 	if len(bytes) != solanaPubkeyByteLen {
 		return fmt.Errorf("%w: rewards_manager_pubkey must decode to %d bytes; got %d", ErrRewardMessageValidation, solanaPubkeyByteLen, len(bytes))
 	}
-	// Reserved-RM denylist: AUDIO continues to be governed by the network-wide
-	// validator/AAO trust set in PR3's sender-attestation gate (the gate falls
-	// back to validator/AAO for any RM that has no pool). Allowing a pool to
-	// be created for the AUDIO RM would shift AUDIO sender attestations to
-	// pool-controlled authorities — defeating the AUDIO trust model. Refuse
-	// here so the AUDIO RM can never have a pool.
-	if audioRM := config.AudioRewardsManagerPubkey(); audioRM != "" && pubkey == audioRM {
+	// Reserved-RM denylist: AUDIO continues to be governed by the
+	// network-wide validator/AAO trust set in PR3's sender-attestation
+	// gate (the gate falls back to validator/AAO for any RM that has no
+	// pool). Allowing a pool to be created for the AUDIO RM would shift
+	// AUDIO sender attestations to pool-controlled authorities —
+	// defeating the AUDIO trust model. Trim defensively: if these
+	// per-env constants ever start being populated from env vars or
+	// config, surrounding whitespace would silently disable the check.
+	if audioRM := strings.TrimSpace(config.AudioRewardsManagerPubkey()); audioRM != "" && pubkey == audioRM {
 		return fmt.Errorf("%w: rewards_manager_pubkey is reserved (AUDIO); pools cannot be created for it", ErrRewardMessageValidation)
 	}
 	return nil
@@ -151,7 +153,7 @@ func (s *Server) finalizeRewardPoolTransaction(ctx context.Context, req *abcityp
 
 	switch action := envelope.Body.Action.(type) {
 	case *corev1.RewardPoolBody_Create:
-		if err := s.finalizeCreateRewardPool(ctx, action.Create); err != nil {
+		if err := s.finalizeCreateRewardPool(ctx, action.Create, signer); err != nil {
 			return nil, errors.Join(ErrRewardMessageFinalization, err)
 		}
 	case *corev1.RewardPoolBody_SetAuthorities:
@@ -167,10 +169,27 @@ func (s *Server) finalizeRewardPoolTransaction(ctx context.Context, req *abcityp
 // finalizeCreateRewardPool: pool address == rewards_manager_pubkey. Same-RM
 // in-block collisions surface as a PK violation from InsertRewardPool, which
 // fails the tx (block continues; no chain crash).
-func (s *Server) finalizeCreateRewardPool(ctx context.Context, msg *corev1.CreateRewardPool) error {
+//
+// Re-validates the message shape at finalize time as defense-in-depth:
+// block-sync replay calls FinalizeBlock without re-running ProcessProposal,
+// so any malformed bytes that ever reached the chain would skip the
+// validate-time checks. Repeating the same shape + signer-membership
+// validation here keeps the post-replay state identical to what the live
+// validate path produces.
+func (s *Server) finalizeCreateRewardPool(ctx context.Context, msg *corev1.CreateRewardPool, signer string) error {
+	if err := validateRewardsManagerPubkey(msg.RewardsManagerPubkey); err != nil {
+		return err
+	}
+	if err := validateAuthorityList(msg.Authorities); err != nil {
+		return err
+	}
+	canonical := rewards.CanonicalAuthorities(msg.Authorities)
+	if !contains(canonical, strings.ToLower(strings.TrimSpace(signer))) {
+		return fmt.Errorf("%w: signer %s not in initial authorities", ErrRewardUnauthorized, signer)
+	}
 	return s.getDb().InsertRewardPool(ctx, db.InsertRewardPoolParams{
 		RewardsManagerPubkey: msg.RewardsManagerPubkey,
-		Authorities: rewards.CanonicalAuthorities(msg.Authorities),
+		Authorities:          canonical,
 	})
 }
 

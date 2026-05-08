@@ -9,9 +9,9 @@ import (
 	"github.com/mr-tron/base58/base58"
 )
 
-// TestValidateRewardsManagerPubkey_BaseChecks covers shape rejection: empty,
-// surrounding whitespace, legacy 'mig_' prefix, non-base58, and wrong byte
-// length. The AUDIO denylist is exercised separately by
+// TestValidateRewardsManagerPubkey_BaseChecks covers shape rejection:
+// empty, surrounding whitespace, non-base58, and wrong byte length.
+// The AUDIO denylist is exercised separately by
 // TestValidateRewardsManagerPubkey_AudioDenylist.
 func TestValidateRewardsManagerPubkey_BaseChecks(t *testing.T) {
 	good := freshSolanaPubkeyForTest(t)
