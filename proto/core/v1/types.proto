@@ -539,18 +539,31 @@ message CreateReward {
   string reward_id = 1;
   string name = 2;
   uint64 amount = 3;
-  reserved 4; // claim_authorities; replaced by per-RM pool gating
-  reserved "claim_authorities";
+  // Tags 4–6 are reserved: previously held claim_authorities (4),
+  // deadline_block_height (5), and signature (6) on the pre-pool
+  // CreateReward shape. The wire-compat layer routes legacy bytes
+  // through LegacyCreateReward (which preserves those tags), so the
+  // new CreateReward never decodes legacy data — but reusing those
+  // tag numbers for new fields would still be a footgun for any
+  // future tool that bypasses the wire-compat layer or any refactor
+  // that drops it. Reserve them.
+  reserved 4, 5, 6;
+  reserved "claim_authorities", "deadline_block_height", "signature";
   // Solana reward manager pubkey (base58, 32 bytes). Identifies the pool
   // whose authorities are allowed to issue rewards in this RM. The
   // recovered signer must be a current member of pool.authorities; the
   // reward inherits attestation rights from the pool going forward.
   // The pool itself is identified by this same pubkey: pool address ==
   // rewards_manager_pubkey for first-class pools.
-  string rewards_manager_pubkey = 5;
+  string rewards_manager_pubkey = 7;
 }
 
 message DeleteReward {
+  // Tags 2–3 are reserved: previously held deadline_block_height (2)
+  // and signature (3) on the pre-pool DeleteReward shape (now
+  // preserved on LegacyDeleteReward).
+  reserved 2, 3;
+  reserved "deadline_block_height", "signature";
   string address = 1; // The deployed reward address
 }
 

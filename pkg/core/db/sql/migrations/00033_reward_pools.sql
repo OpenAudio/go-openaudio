@@ -197,6 +197,14 @@ from (
 ) mapped
 where r.address = mapped.reward_address;
 
+-- Rows whose claim_authorities don't include any launchpad-mapped per-mint
+-- key are intentionally left with NULL rewards_manager_pubkey and have no
+-- pool. The launchpad_authority_rm seed above is the complete set of RM
+-- init events; rows that don't match are stale fixture data, never live
+-- production rewards. Such rewards are unclaimable post-migration; their
+-- claim authority recovers by submitting CreateRewardPool + a fresh
+-- CreateReward via PR2's transactions.
+
 alter table core_rewards
     add constraint fk_core_rewards_rewards_manager_pubkey
     foreign key (rewards_manager_pubkey) references core_reward_pools(rewards_manager_pubkey)

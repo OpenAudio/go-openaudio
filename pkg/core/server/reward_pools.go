@@ -200,13 +200,27 @@ func (s *Server) finalizeCreateRewardPool(ctx context.Context, msg *corev1.Creat
 // finalizeSetRewardPoolAuthorities re-checks signer authorization against
 // post-prior-tx state via s.getDb(), guarding against same-block ordering
 // where an earlier tx rotates the signer out before this one runs.
+//
+// Also re-runs the same shape validation as the live validate path
+// (defense-in-depth, matching finalizeCreateRewardPool): block-sync
+// replay calls FinalizeBlock without re-running ProcessProposal, so any
+// malformed bytes that ever reached the chain would skip the validate-
+// time checks. Repeating them here keeps the post-replay state identical
+// to live and prevents an orphaned/empty-authority pool from being
+// written.
 func (s *Server) finalizeSetRewardPoolAuthorities(ctx context.Context, msg *corev1.SetRewardPoolAuthorities, signer string) error {
+	if err := validateRewardsManagerPubkey(msg.RewardsManagerPubkey); err != nil {
+		return err
+	}
+	if err := validateAuthorityList(msg.Authorities); err != nil {
+		return err
+	}
 	if err := s.checkPoolAuthorization(ctx, s.getDb(), msg.RewardsManagerPubkey, signer); err != nil {
 		return err
 	}
 	return s.getDb().UpdateRewardPoolAuthorities(ctx, db.UpdateRewardPoolAuthoritiesParams{
 		RewardsManagerPubkey: msg.RewardsManagerPubkey,
-		Authorities: rewards.CanonicalAuthorities(msg.Authorities),
+		Authorities:          rewards.CanonicalAuthorities(msg.Authorities),
 	})
 }
 
