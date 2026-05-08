@@ -14,6 +14,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"google.golang.org/protobuf/proto"
@@ -212,26 +213,50 @@ func (s *Server) finalizeCreateReward(ctx context.Context, req *abcitypes.Finali
 	rewardAddress := common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, "")
 
 	// Legacy CreateReward (this path) carries inline claim_authorities but
-	// no rewards_manager_pubkey, so we cannot bind the reward to a pool
-	// from the message alone. Two reasons we don't upsert a pool here:
+	// no rewards_manager_pubkey. We resolve the RM via launchpad lookup
+	// (the same mapping the migration backfill uses) and bind the reward
+	// to the RM's pool — but only if the pool already exists. We never
+	// upsert into the pool from this path:
 	//
-	//  1. Privilege escalation. validateCreateReward checks only the tx
-	//     signature, not signer ∈ pool.authorities, so an attacker could
-	//     submit CreateReward with [legitimate_launchpad_key, attacker_key]
-	//     and overwrite the legitimate RM's pool, taking attestation
-	//     control of every reward under the RM.
-	//  2. The launchpad seed in the migration is the complete set of RM
-	//     init events; the only authoritative way to bind a reward to its
-	//     RM is the migration's backfill (already run) or PR2's
-	//     CreateRewardPool + RM-bound CreateReward.
+	//   - validateCreateReward checks only the tx signature, not
+	//     signer ∈ pool.authorities. If we upserted authorities here, an
+	//     attacker could submit CreateReward with [legitimate_launchpad_key,
+	//     attacker_key] and overwrite the legitimate RM's pool, taking
+	//     attestation control of every reward under the RM.
 	//
-	// Live CreateReward therefore inserts the reward with NULL
-	// rewards_manager_pubkey. The reward is unclaimable until its claim
-	// authority submits a CreateRewardPool tx and re-creates the reward
-	// against that pool. In practice this path runs only briefly between
-	// PR1 and PR2 landing.
+	// Pool absent (mint in launchpad seed but no pre-existing rewards) ⇒
+	// leave rewards_manager_pubkey NULL; the reward is unclaimable until
+	// its claim authority submits CreateRewardPool via PR2 and re-creates
+	// the reward. Same fallback applies if no message authority maps to a
+	// known launchpad RM.
 	qtx := s.getDb()
 	var rmPubkey pgtype.Text
+
+	authorityLookup := make([]string, 0, len(createReward.ClaimAuthorities))
+	for _, auth := range createReward.ClaimAuthorities {
+		canon := strings.ToLower(strings.TrimSpace(auth.Address))
+		if canon != "" {
+			authorityLookup = append(authorityLookup, canon)
+		}
+	}
+	if len(authorityLookup) > 0 {
+		rm, err := qtx.GetLaunchpadRMByAuthority(ctx, authorityLookup)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			// no launchpad authority match; reward stays unmapped
+		case err != nil:
+			return fmt.Errorf("failed to resolve launchpad RM: %w", err)
+		default:
+			if _, err := qtx.GetRewardPool(ctx, rm); err != nil {
+				if !errors.Is(err, pgx.ErrNoRows) {
+					return fmt.Errorf("failed to load pool for RM %s: %w", rm, err)
+				}
+				// pool not yet created for this RM; reward stays unmapped
+			} else {
+				rmPubkey = pgtype.Text{String: rm, Valid: true}
+			}
+		}
+	}
 
 	rawMessage, err := proto.Marshal(createReward)
 	if err != nil {
