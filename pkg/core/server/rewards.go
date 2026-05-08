@@ -211,40 +211,27 @@ func (s *Server) finalizeCreateReward(ctx context.Context, req *abcitypes.Finali
 	}
 	rewardAddress := common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, "")
 
-	// Synthesize a per-authority-set pool from the message's inline
-	// claim_authorities. Pool key = "mig_" + md5(canonical authorities) — a
-	// deterministic synthetic identifier that never decodes as a real
-	// Solana reward manager pubkey, so PR3's per-RM sender-attestation
-	// gate ignores it (synthetic pools cannot grant Solana sender
-	// registration).
+	// Legacy CreateReward (this path) carries inline claim_authorities but
+	// no rewards_manager_pubkey, so we cannot bind the reward to a pool
+	// from the message alone. Two reasons we don't upsert a pool here:
 	//
-	// Why synthetic-only here, never RM-bound: validateCreateReward only
-	// checks the tx signature; it does NOT require the signer to be in
-	// the resolved pool's authorities. If finalizeCreateReward upserted
-	// into a real-RM pool from the message's claim_authorities, an
-	// attacker could submit CreateReward with [legitimate_launchpad_key,
-	// attacker_key] in claim_authorities and overwrite that RM's pool
-	// authorities, escalating to full attestation control over every
-	// reward under the RM. The migration backfill is the only source of
-	// truth that writes real-RM pools; live CreateReward stays in mig_*.
-	authorityAddrs := make([]string, 0, len(createReward.ClaimAuthorities))
-	for _, auth := range createReward.ClaimAuthorities {
-		authorityAddrs = append(authorityAddrs, auth.Address)
-	}
-	canonicalAuthorities := rewards.CanonicalAuthorities(authorityAddrs)
-
+	//  1. Privilege escalation. validateCreateReward checks only the tx
+	//     signature, not signer ∈ pool.authorities, so an attacker could
+	//     submit CreateReward with [legitimate_launchpad_key, attacker_key]
+	//     and overwrite the legitimate RM's pool, taking attestation
+	//     control of every reward under the RM.
+	//  2. The launchpad seed in the migration is the complete set of RM
+	//     init events; the only authoritative way to bind a reward to its
+	//     RM is the migration's backfill (already run) or PR2's
+	//     CreateRewardPool + RM-bound CreateReward.
+	//
+	// Live CreateReward therefore inserts the reward with NULL
+	// rewards_manager_pubkey. The reward is unclaimable until its claim
+	// authority submits a CreateRewardPool tx and re-creates the reward
+	// against that pool. In practice this path runs only briefly between
+	// PR1 and PR2 landing.
 	qtx := s.getDb()
 	var rmPubkey pgtype.Text
-	if len(canonicalAuthorities) > 0 {
-		poolAddress := rewards.MigratedPoolAddress(authorityAddrs)
-		if err := qtx.UpsertSyntheticRewardPool(ctx, db.UpsertSyntheticRewardPoolParams{
-			RewardsManagerPubkey: poolAddress,
-			Authorities:          canonicalAuthorities,
-		}); err != nil {
-			return fmt.Errorf("failed to upsert reward pool: %w", err)
-		}
-		rmPubkey = pgtype.Text{String: poolAddress, Valid: true}
-	}
 
 	rawMessage, err := proto.Marshal(createReward)
 	if err != nil {

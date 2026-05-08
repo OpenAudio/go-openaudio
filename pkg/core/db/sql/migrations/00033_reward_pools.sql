@@ -197,54 +197,13 @@ from (
 ) mapped
 where r.address = mapped.reward_address;
 
--- Backfill step 3: for rewards whose claim_authorities don't include any
--- launchpad-mapped per-mint key, create a synthetic mig_<md5> pool keyed
--- deterministically by the canonical (trim/lower/dedup/sort) authority
--- set. mig_<md5> identifiers fail base58 decoding, so PR3's per-RM
--- sender-attestation gate naturally ignores them; they exist so legacy
--- claim/delete authorization (which iterates the row's claim_authorities
--- via the LEFT JOIN coalesce(p.authorities, '{}') on reads) keeps
--- working for unmapped rewards. Live finalizeCreateReward uses the
--- identical mig_<md5> scheme, so the migration and live paths agree on
--- synthetic pool keys.
-insert into core_reward_pools (rewards_manager_pubkey, authorities)
-select distinct
-    'mig_' || md5(array_to_string(canon, ',')) as rewards_manager_pubkey,
-    canon as authorities
-from (
-    select
-        array(
-            select distinct lower(trim(a))
-            from unnest(r.claim_authorities) as a
-            where a is not null and trim(a) <> ''
-            order by 1
-        ) as canon
-    from core_rewards r
-    where r.claim_authorities is not null
-      and array_length(r.claim_authorities, 1) > 0
-      and r.rewards_manager_pubkey is null
-) sets
-where array_length(sets.canon, 1) > 0
-on conflict (rewards_manager_pubkey) do update set
-    authorities = excluded.authorities,
-    updated_at = now();
-
--- Backfill step 4: point each unmapped core_rewards row at its synthetic
--- pool. After this, every core_rewards row with non-empty
--- claim_authorities has a non-NULL rewards_manager_pubkey.
-update core_rewards r
-set rewards_manager_pubkey = 'mig_' || md5(array_to_string(
-    array(
-        select distinct lower(trim(a))
-        from unnest(r.claim_authorities) as a
-        where a is not null and trim(a) <> ''
-        order by 1
-    ),
-    ','
-))
-where r.claim_authorities is not null
-  and array_length(r.claim_authorities, 1) > 0
-  and r.rewards_manager_pubkey is null;
+-- Rows whose claim_authorities don't include any launchpad-mapped per-mint
+-- key are intentionally left with NULL rewards_manager_pubkey and have no
+-- pool. The launchpad_authority_rm seed above is the complete set of RM
+-- init events; rows that don't match are stale fixture data, never live
+-- production rewards. Such rewards are unclaimable post-migration; their
+-- claim authority recovers by submitting CreateRewardPool + a fresh
+-- CreateReward via PR2's transactions.
 
 alter table core_rewards
     add constraint fk_core_rewards_rewards_manager_pubkey
