@@ -30,6 +30,9 @@ func TestRewardsLifecycle(t *testing.T) {
 		creatorAddr := common.PrivKeyToAddress(creatorKey)
 		creator := sdk.NewOpenAudioSDK(nodeUrl)
 		creator.SetPrivKey(creatorKey)
+		if err := creator.Init(ctx); err != nil {
+			t.Fatalf("creator init: %v", err)
+		}
 
 		deleterKey, err := crypto.GenerateKey()
 		if err != nil {
@@ -46,18 +49,12 @@ func TestRewardsLifecycle(t *testing.T) {
 		// the reward. To preserve the per-reward authority granularity of
 		// the original test (reward1: creator only; reward2: creator +
 		// deleter), we create two pools.
-		rmPubkeyA := freshSolanaPubkey(t)
-		rmPubkeyB := freshSolanaPubkey(t)
-		if _, err := creator.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
-			RewardsManagerPubkey: rmPubkeyA,
-			Authorities:          []string{creatorAddr},
-		}, 999999); err != nil {
+		rmPubkeyA, rmPrivA := freshRewardManager(t)
+		rmPubkeyB, rmPrivB := freshRewardManager(t)
+		if _, err := creator.Rewards.CreateRewardPool(ctx, signedCreateRewardPool(creator, rmPubkeyA, rmPrivA, []string{creatorAddr}), 999999); err != nil {
 			t.Fatalf("Failed to create pool A: %v", err)
 		}
-		if _, err := creator.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
-			RewardsManagerPubkey: rmPubkeyB,
-			Authorities:          []string{creatorAddr, deleterAddr},
-		}, 999999); err != nil {
+		if _, err := creator.Rewards.CreateRewardPool(ctx, signedCreateRewardPool(creator, rmPubkeyB, rmPrivB, []string{creatorAddr, deleterAddr}), 999999); err != nil {
 			t.Fatalf("Failed to create pool B: %v", err)
 		}
 
@@ -155,6 +152,9 @@ func TestRewardsLifecycle(t *testing.T) {
 		authority1Addr := common.PrivKeyToAddress(authority1Key)
 		authority1 := sdk.NewOpenAudioSDK(nodeUrl)
 		authority1.SetPrivKey(authority1Key)
+		if err := authority1.Init(ctx); err != nil {
+			t.Fatalf("authority1 init: %v", err)
+		}
 
 		authority2Key, err := crypto.GenerateKey()
 		if err != nil {
@@ -163,6 +163,9 @@ func TestRewardsLifecycle(t *testing.T) {
 		authority2Addr := common.PrivKeyToAddress(authority2Key)
 		authority2 := sdk.NewOpenAudioSDK(nodeUrl)
 		authority2.SetPrivKey(authority2Key)
+		if err := authority2.Init(ctx); err != nil {
+			t.Fatalf("authority2 init: %v", err)
+		}
 
 		unauthorizedKey, err := crypto.GenerateKey()
 		if err != nil {
@@ -177,11 +180,8 @@ func TestRewardsLifecycle(t *testing.T) {
 		t.Logf("unauthorized address: %s", unauthorizedAddr)
 
 		// Create a pool with both authorities and a reward in it.
-		rmPubkey := freshSolanaPubkey(t)
-		if _, err := authority1.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
-			RewardsManagerPubkey: rmPubkey,
-			Authorities:          []string{authority1Addr, authority2Addr},
-		}, 999999); err != nil {
+		rmPubkey, rmPriv := freshRewardManager(t)
+		if _, err := authority1.Rewards.CreateRewardPool(ctx, signedCreateRewardPool(authority1, rmPubkey, rmPriv, []string{authority1Addr, authority2Addr}), 999999); err != nil {
 			t.Fatalf("Failed to create pool: %v", err)
 		}
 		reward, err := authority1.Rewards.CreateReward(ctx, &v1.CreateReward{
@@ -252,11 +252,8 @@ func TestRewardsLifecycle(t *testing.T) {
 
 		// Test 4: Verify authority1 cannot get attestation for a reward they're not authorized for
 		// Create another pool with only authority2 + a reward in it.
-		rmPubkey2 := freshSolanaPubkey(t)
-		if _, err := authority2.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
-			RewardsManagerPubkey: rmPubkey2,
-			Authorities:          []string{authority2Addr},
-		}, 999999); err != nil {
+		rmPubkey2, rmPriv2 := freshRewardManager(t)
+		if _, err := authority2.Rewards.CreateRewardPool(ctx, signedCreateRewardPool(authority2, rmPubkey2, rmPriv2, []string{authority2Addr}), 999999); err != nil {
 			t.Fatalf("Failed to create pool 2: %v", err)
 		}
 		reward2, err := authority2.Rewards.CreateReward(ctx, &v1.CreateReward{
@@ -304,23 +301,31 @@ func TestRewardsLifecycle(t *testing.T) {
 		authority := sdk.NewOpenAudioSDK(nodeUrl)
 		authority.SetPrivKey(authorityKey)
 
-		// Generate a key for creating the reward
+		// Generate a key for creating the reward. Note this isn't the pool
+		// authority; the pool is created via authority's SDK so the envelope
+		// signer is in the initial authority list.
 		creatorKey, err := crypto.GenerateKey()
 		if err != nil {
 			t.Fatalf("Failed to generate creator key: %v", err)
 		}
 		creator := sdk.NewOpenAudioSDK(nodeUrl)
 		creator.SetPrivKey(creatorKey)
+		if err := authority.Init(ctx); err != nil {
+			t.Fatalf("authority init: %v", err)
+		}
 
 		// Create a pool that names authority + a reward bound to it.
-		rmPubkey := freshSolanaPubkey(t)
-		if _, err := creator.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
-			RewardsManagerPubkey: rmPubkey,
-			Authorities:          []string{authorityAddr},
-		}, 999999); err != nil {
+		// Authority signs the envelope (it's the lone initial authority);
+		// the RM keypair signs the inner rm_owner_signature.
+		rmPubkey, rmPriv := freshRewardManager(t)
+		if _, err := authority.Rewards.CreateRewardPool(ctx, signedCreateRewardPool(authority, rmPubkey, rmPriv, []string{authorityAddr}), 999999); err != nil {
 			t.Fatalf("Failed to create pool: %v", err)
 		}
-		reward, err := creator.Rewards.CreateReward(ctx, &v1.CreateReward{
+		// authority is the only pool member, so it must create the reward
+		// (validateCreateReward gates on signer ∈ pool.authorities). The
+		// `creator` SDK above is unused under the pool model.
+		_ = creator
+		reward, err := authority.Rewards.CreateReward(ctx, &v1.CreateReward{
 			RewardId:             "amount_test",
 			Name:                 "Amount Test Reward",
 			Amount:               100,

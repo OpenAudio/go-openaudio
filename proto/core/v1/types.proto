@@ -593,6 +593,17 @@ message CreateRewardPool {
   // pool. The recovered signer must be a member of this list. Each entry
   // must be a valid eth hex address.
   repeated string authorities = 2;
+  // ed25519 signature over the canonical payload
+  //   "audius:create-reward-pool:" + chain_id + ":" + rewards_manager_pubkey
+  //   + ":" + sorted_lowercased_authorities.join(",")
+  // produced by the ed25519 private key whose public key IS
+  // rewards_manager_pubkey. Proves possession of the Solana reward
+  // manager state account's keypair, which only the legitimate creator
+  // (the launchpad relay, deterministically deriving the keypair from
+  // (launchpadDeterministicSecret, mint)) holds. Defends against
+  // frontrunning where an observer races to register a pool for a
+  // freshly-minted RM with attacker-chosen authorities. Required.
+  bytes rm_owner_signature = 3;
 }
 
 // SetRewardPoolAuthorities replaces the pool's authority set wholesale. The

@@ -2,6 +2,7 @@ package integration_tests
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"strings"
 	"testing"
@@ -9,24 +10,47 @@ import (
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/integration_tests/utils"
+	pkgrewards "github.com/OpenAudio/go-openaudio/pkg/rewards"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/mr-tron/base58/base58"
 )
 
-// freshSolanaPubkey returns a random 32-byte value base58-encoded — a
-// well-formed Solana pubkey for the validator's wire-shape check
-// (validateRewardsManagerPubkey). The value doesn't have to correspond to a
-// real Solana account because the test only exercises the OAP-side pool
-// primitive; PR3's sender-attestation gate will eventually consult Solana,
-// but PR2's transactions only care about the wire shape.
+// freshRewardManager returns a random ed25519 keypair representing a
+// freshly-minted Solana reward manager state account. The pubkey (base58-
+// encoded) doubles as the cometbft rewards_manager_pubkey; the private
+// key is needed to sign CreateRewardPool.RmOwnerSignature, which proves
+// to the validator that the caller controls the RM keypair (defeating
+// frontrunning of pool creation).
+func freshRewardManager(t *testing.T) (string, ed25519.PrivateKey) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("ed25519.GenerateKey: %v", err)
+	}
+	return base58.Encode(pub), priv
+}
+
+// freshSolanaPubkey is a convenience wrapper for tests that only need a
+// well-formed Solana pubkey shape and don't need to sign with the keypair
+// (e.g., negative tests that exercise rejection on the pubkey itself).
 func freshSolanaPubkey(t *testing.T) string {
 	t.Helper()
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		t.Fatalf("rand: %v", err)
+	pub, _ := freshRewardManager(t)
+	return pub
+}
+
+// signedCreateRewardPool builds a CreateRewardPool message with a valid
+// RmOwnerSignature, given the RM keypair, the SDK's chainID (for cross-
+// chain replay protection in the signed payload), and the desired initial
+// authorities. Centralizes the boilerplate so test sites read at the
+// "what" level, not the "how".
+func signedCreateRewardPool(s *sdk.OpenAudioSDK, rmPubkey string, rmPriv ed25519.PrivateKey, authorities []string) *v1.CreateRewardPool {
+	return &v1.CreateRewardPool{
+		RewardsManagerPubkey: rmPubkey,
+		Authorities:          authorities,
+		RmOwnerSignature:     pkgrewards.SignCreateRewardPool(rmPriv, s.ChainID(), rmPubkey, authorities),
 	}
-	return base58.Encode(b[:])
 }
 
 // TestRewardPoolsLifecycle exercises the cometbft RewardPool transactions:
@@ -41,10 +65,11 @@ func TestRewardPoolsLifecycle(t *testing.T) {
 		t.Fatalf("Devnet not ready: %v", err)
 	}
 
-	// Each test run gets its own fresh RM pubkey so reruns don't collide on
-	// the pool's identity (uniqueness is enforced server-side).
-	rmPubkey := freshSolanaPubkey(t)
-	otherRmPubkey := freshSolanaPubkey(t)
+	// Each test run gets its own fresh RM keypair so reruns don't collide on
+	// the pool's identity (uniqueness is enforced server-side). The private
+	// key is needed to produce the RmOwnerSignature on CreateRewardPool.
+	rmPubkey, rmPriv := freshRewardManager(t)
+	otherRmPubkey, otherRmPriv := freshRewardManager(t)
 
 	aliceKey, err := crypto.GenerateKey()
 	if err != nil {
@@ -53,6 +78,9 @@ func TestRewardPoolsLifecycle(t *testing.T) {
 	aliceAddr := common.PrivKeyToAddress(aliceKey)
 	alice := sdk.NewOpenAudioSDK(nodeUrl)
 	alice.SetPrivKey(aliceKey)
+	if err := alice.Init(ctx); err != nil {
+		t.Fatalf("alice init: %v", err)
+	}
 
 	bobKey, err := crypto.GenerateKey()
 	if err != nil {
@@ -70,6 +98,9 @@ func TestRewardPoolsLifecycle(t *testing.T) {
 	mallory.SetPrivKey(malloryKey)
 
 	t.Run("CreateRewardPool rejects non-pubkey rewards_manager_pubkey", func(t *testing.T) {
+		// Pubkey shape check fires before signature verification, so the
+		// signature value here doesn't matter — we just need a non-base58
+		// rewards_manager_pubkey to land at the shape rejection.
 		_, err := alice.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
 			RewardsManagerPubkey: "not-a-real-pubkey",
 			Authorities:          []string{aliceAddr},
@@ -79,11 +110,35 @@ func TestRewardPoolsLifecycle(t *testing.T) {
 		}
 	})
 
-	t.Run("CreateRewardPool requires signer in initial authorities", func(t *testing.T) {
-		_, err := mallory.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
+	t.Run("CreateRewardPool rejects missing rm_owner_signature", func(t *testing.T) {
+		// Valid pubkey, valid authorities, signer ∈ authorities — but no
+		// signature. Must fail at the rm_owner_signature check.
+		_, err := alice.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
 			RewardsManagerPubkey: otherRmPubkey,
-			Authorities:          []string{aliceAddr, bobAddr},
+			Authorities:          []string{aliceAddr},
 		}, 999999)
+		if err == nil {
+			t.Fatalf("expected missing rm_owner_signature to be rejected")
+		}
+	})
+
+	t.Run("CreateRewardPool rejects signature signed by wrong RM keypair", func(t *testing.T) {
+		// Signature is well-formed and the inner ed25519 verifies — but
+		// against the WRONG public key (rmPriv signs but message claims
+		// otherRmPubkey). Defends against attacker reusing a signature
+		// they made for their own RM against a different RM.
+		msg := signedCreateRewardPool(alice, otherRmPubkey, rmPriv, []string{aliceAddr})
+		_, err := alice.Rewards.CreateRewardPool(ctx, msg, 999999)
+		if err == nil {
+			t.Fatalf("expected mismatched-keypair signature to be rejected")
+		}
+	})
+
+	t.Run("CreateRewardPool requires signer in initial authorities", func(t *testing.T) {
+		// Mallory submits a perfectly-signed CreateRewardPool but isn't in
+		// the initial authorities. The RM-keypair gate passes; the
+		// signer-membership gate fails.
+		_, err := mallory.Rewards.CreateRewardPool(ctx, signedCreateRewardPool(alice, otherRmPubkey, otherRmPriv, []string{aliceAddr, bobAddr}), 999999)
 		if err == nil {
 			t.Fatalf("expected CreateRewardPool to reject signer not in initial authorities")
 		}
@@ -93,10 +148,7 @@ func TestRewardPoolsLifecycle(t *testing.T) {
 	})
 
 	t.Run("Alice creates the pool with [alice, bob]", func(t *testing.T) {
-		_, err := alice.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
-			RewardsManagerPubkey: rmPubkey,
-			Authorities:          []string{aliceAddr, bobAddr},
-		}, 999999)
+		_, err := alice.Rewards.CreateRewardPool(ctx, signedCreateRewardPool(alice, rmPubkey, rmPriv, []string{aliceAddr, bobAddr}), 999999)
 		if err != nil {
 			t.Fatalf("create pool: %v", err)
 		}
@@ -114,10 +166,7 @@ func TestRewardPoolsLifecycle(t *testing.T) {
 	})
 
 	t.Run("CreateRewardPool with duplicate rewards_manager_pubkey is rejected", func(t *testing.T) {
-		_, err := alice.Rewards.CreateRewardPool(ctx, &v1.CreateRewardPool{
-			RewardsManagerPubkey: rmPubkey,
-			Authorities:          []string{aliceAddr},
-		}, 999999)
+		_, err := alice.Rewards.CreateRewardPool(ctx, signedCreateRewardPool(alice, rmPubkey, rmPriv, []string{aliceAddr}), 999999)
 		if err == nil {
 			t.Fatalf("expected duplicate rewards_manager_pubkey to be rejected")
 		}

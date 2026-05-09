@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"strings"
@@ -23,6 +24,43 @@ import (
 // shape of an actual on-chain reward manager account, not an arbitrary
 // caller-chosen string.
 const solanaPubkeyByteLen = 32
+
+// ErrRewardPoolOwnerSignatureInvalid signals that the rm_owner_signature
+// on a CreateRewardPool message did not verify against the message's
+// rewards_manager_pubkey.
+var ErrRewardPoolOwnerSignatureInvalid = errors.New("reward pool owner signature invalid")
+
+// verifyRewardPoolOwnerSignature checks that the supplied ed25519
+// signature, produced by the keypair whose public key is rmPubkey, covers
+// the canonical CreateRewardPool payload for (chainID, rmPubkey,
+// authorities). Returns nil iff the signature is valid; otherwise returns
+// a wrapped ErrRewardPoolOwnerSignatureInvalid.
+//
+// The verification key IS rmPubkey, decoded from base58. There is no
+// trusted-key registry: the message claims an RM, the RM IS its
+// verification key, and possession of the matching ed25519 secret key
+// proves authorization to register a pool for that RM. The launchpad
+// relay derives both the keypair and the per-mint claim authority eth
+// address from (launchpadDeterministicSecret, mint), so the launchpad
+// can always produce this signature; an attacker who lacks the secret
+// cannot.
+func verifyRewardPoolOwnerSignature(chainID, rmPubkey string, authorities []string, signature []byte) error {
+	if len(signature) != ed25519.SignatureSize {
+		return fmt.Errorf("%w: signature length is %d, want %d", ErrRewardPoolOwnerSignatureInvalid, len(signature), ed25519.SignatureSize)
+	}
+	pubkeyBytes, err := base58.Decode(rmPubkey)
+	if err != nil {
+		return fmt.Errorf("%w: rewards_manager_pubkey is not valid base58: %v", ErrRewardPoolOwnerSignatureInvalid, err)
+	}
+	if len(pubkeyBytes) != ed25519.PublicKeySize {
+		return fmt.Errorf("%w: rewards_manager_pubkey decodes to %d bytes, want %d", ErrRewardPoolOwnerSignatureInvalid, len(pubkeyBytes), ed25519.PublicKeySize)
+	}
+	payload := rewards.CanonicalCreateRewardPoolPayload(chainID, rmPubkey, authorities)
+	if !ed25519.Verify(ed25519.PublicKey(pubkeyBytes), payload, signature) {
+		return ErrRewardPoolOwnerSignatureInvalid
+	}
+	return nil
+}
 
 // isValidRewardPoolTransaction is the entry point for both CheckTx and
 // block validation. Signature + deadline live on the envelope; we recover
@@ -49,14 +87,31 @@ func (s *Server) isValidRewardPoolTransaction(ctx context.Context, signedTx *cor
 }
 
 // validateCreateRewardPool: pool is identified by the Solana reward manager
-// pubkey (must be valid base58 32 bytes); signer must be in the initial
-// authorities; the initial authority list must be non-empty and contain
-// only valid eth addresses.
+// pubkey (must be valid base58 32 bytes); the rm_owner_signature must
+// verify against that pubkey over the canonical payload (proves the
+// caller controls the RM keypair, defeating frontrunning); signer must
+// be in the initial authorities; the initial authority list must be
+// non-empty and contain only valid eth addresses.
+//
+// Two independent authorization checks are required intentionally:
+//   - rm_owner_signature (ed25519, against rm_pubkey): proves the
+//     legitimate RM keypair holder authorized this exact (rm,
+//     authorities) tuple. Defeats frontrunning by an observer who sees
+//     the RM pubkey on Solana but lacks the keypair.
+//   - envelope signer (secp256k1) ∈ initial authorities: proves the
+//     fee-paying eth address is in the pool's initial set, which keeps
+//     the existing "you can't create a pool you have no membership in"
+//     property. Operationally the launchpad relay holds the per-mint
+//     claim authority eth key and uses it as both the envelope signer
+//     and the only initial authority.
 func (s *Server) validateCreateRewardPool(ctx context.Context, msg *corev1.CreateRewardPool, signer string) error {
 	if err := validateRewardsManagerPubkey(msg.RewardsManagerPubkey); err != nil {
 		return err
 	}
 	if err := validateAuthorityList(msg.Authorities); err != nil {
+		return err
+	}
+	if err := verifyRewardPoolOwnerSignature(s.config.GenesisFile.ChainID, msg.RewardsManagerPubkey, msg.Authorities, msg.RmOwnerSignature); err != nil {
 		return err
 	}
 	canonical := rewards.CanonicalAuthorities(msg.Authorities)
@@ -185,6 +240,9 @@ func (s *Server) finalizeCreateRewardPool(ctx context.Context, msg *corev1.Creat
 		return err
 	}
 	if err := validateAuthorityList(msg.Authorities); err != nil {
+		return err
+	}
+	if err := verifyRewardPoolOwnerSignature(s.config.GenesisFile.ChainID, msg.RewardsManagerPubkey, msg.Authorities, msg.RmOwnerSignature); err != nil {
 		return err
 	}
 	canonical := rewards.CanonicalAuthorities(msg.Authorities)
