@@ -332,6 +332,21 @@ templ (p *Pages) OverviewProcessesFragment(status *v1.GetStatusResponse) {
 						}
 					}
 				</div>
+				if status.ProcessInfo.Restore != nil && status.ProcessInfo.Restore.GetState() != v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED {
+					<div class="bg-secondary rounded-lg p-4">
+						<div class="flex items-center justify-between mb-2">
+							<span class="font-medium">DB Restore</span>
+							@getProcessStateIcon(status.ProcessInfo.Restore.GetState())
+						</div>
+						<div class="text-sm text-secondary">{ getProcessStateText(status.ProcessInfo.Restore.GetState()) }</div>
+						if status.ProcessInfo.Restore.Metadata != "" {
+							<div class="text-xs text-secondary mt-1">{ status.ProcessInfo.Restore.Metadata }</div>
+						}
+						if status.ProcessInfo.Restore.Error != "" {
+							<div class="text-xs text-red-600 mt-1">{ status.ProcessInfo.Restore.Error }</div>
+						}
+					</div>
+				}
 			</div>
 		</div>
 	}
