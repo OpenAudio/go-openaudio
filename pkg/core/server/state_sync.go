@@ -731,6 +731,11 @@ func (s *Server) RestoreDatabase(height int64) error {
 		if section != "" {
 			args = append(args, "--section="+section)
 		}
+		if section == "data" {
+			// Disable FK/check triggers during COPY so table restore order doesn't matter.
+			// Requires superuser (postgres user satisfies this).
+			args = append(args, "--disable-triggers")
+		}
 		args = append(args, dumpPath)
 
 		var stdout, stderr bytes.Buffer
