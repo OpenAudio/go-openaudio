@@ -205,7 +205,7 @@ func ReadConfig() (*Config, error) {
 		ServeSnapshots: GetEnvWithDefault("stateSyncServeSnapshots", "false") == "true",
 		Enable:         GetEnvWithDefault("stateSyncEnable", "true") == "true",
 		Keep:           getEnvIntWithDefault("stateSyncKeep", 2),
-		BlockInterval:  int64(getEnvIntWithDefault("stateSyncBlockInterval", 100)),
+		BlockInterval:  int64(getEnvIntWithDefault("stateSyncBlockInterval", 100000)),
 		ChunkFetchers:  int32(getEnvIntWithDefault("stateSyncChunkFetchers", 10)),
 		RPCServers:     strings.Split(GetEnvWithDefault("stateSyncRPCServers", ssRpcServers), ","),
 	}
