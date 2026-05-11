@@ -308,13 +308,34 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 		return nil
 	} else {
 		// non audio (images)
+		go ss.recordMetric(ServeImage)
+
+		// Presigned URL redirect: send client directly to storage backend.
+		// Skip when a download filename was requested so the Content-Disposition
+		// header set above is preserved.
+		if ss.Config.BlobStorageStreaming && filenameForDownload == "" {
+			signedURL, err := foundIn.SignedURL(ctx, key, &gcblob.SignedURLOptions{
+				Expiry: presignedURLDefaultExpiry,
+				Method: http.MethodGet,
+			})
+			if err != nil {
+				ss.logger.Error("presigned URL generation failed for image",
+					zap.String("cid", cid), zap.Error(err))
+				return c.JSON(http.StatusInternalServerError, map[string]string{
+					"error": "blob storage streaming is enabled but presigned URL generation failed",
+				})
+			}
+			blob.Close()
+			blob = nil // prevent double-close in defer
+			return c.Redirect(http.StatusTemporaryRedirect, signedURL)
+		}
+
 		// images: cache 30 days
 		c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=2592000, immutable")
 		blobData, err := io.ReadAll(blob)
 		if err != nil {
 			return err
 		}
-		go ss.recordMetric(ServeImage)
 		return c.Blob(200, blob.ContentType(), blobData)
 	}
 
