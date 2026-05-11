@@ -867,6 +867,7 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 	logSyncState, _ := c.core.cache.logSyncState.Get(ProcessStateLogSync)
 	snapshotCreatorState, _ := c.core.cache.snapshotCreatorState.Get(ProcessStateSnapshotCreator)
 	mempoolCacheState, _ := c.core.cache.mempoolCacheState.Get(ProcessStateMempoolCache)
+	restoreState, _ := c.core.cache.restoreState.Get(ProcessStateRestore)
 
 	// pruning state
 	pruningInfo.Enabled = !c.core.config.Archive
@@ -930,6 +931,7 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 		LogSync:        logSyncState,
 		StateSync:      snapshotCreatorState,
 		MempoolCache:   mempoolCacheState,
+		Restore:        restoreState,
 	}
 
 	peersOk := len(peers.Peers) > 0

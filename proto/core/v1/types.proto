@@ -55,6 +55,7 @@ message GetStatusResponse {
     ProcessStateInfo log_sync = 8;
     ProcessStateInfo state_sync = 9;
     ProcessStateInfo mempool_cache = 10;
+    ProcessStateInfo restore = 11;
   }
 
   message NodeInfo {

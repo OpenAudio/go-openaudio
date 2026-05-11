@@ -801,6 +801,9 @@ func (s *Server) RestoreDatabase(height int64) error {
 		db.Release()
 	}
 
+	s.StartProcess(ProcessStateRestore)
+
+	s.RunningProcessWithMetadata(ProcessStateRestore, "restoring schema")
 	s.logger.Info("pg_restore: restoring schema (pre-data)")
 	// pre-data errors (missing tables from schema drift) are non-fatal
 	_ = pgRestore("pre-data")
@@ -808,6 +811,7 @@ func (s *Server) RestoreDatabase(height int64) error {
 	// Truncate all tables before loading dump data. Migrations pre-populate some tables
 	// (e.g. core_db_migrations) which cause COPY to fail with duplicate key errors.
 	// Collect names first so the connection isn't held open (busy) during TRUNCATE.
+	s.RunningProcessWithMetadata(ProcessStateRestore, "truncating tables")
 	s.logger.Info("pg_restore: truncating tables to clear migration-created data")
 	if db, err := s.pool.Acquire(context.Background()); err == nil {
 		rows, err := db.Query(context.Background(),
@@ -835,20 +839,30 @@ func (s *Server) RestoreDatabase(height int64) error {
 		return fmt.Errorf("set unlogged: %w", err)
 	}
 
+	s.RunningProcessWithMetadata(ProcessStateRestore, "data COPY: starting")
 	s.logger.Info("pg_restore: restoring data")
-	if err := pgRestore("data"); err != nil {
-		return err
+	pollCtx, stopPoll := context.WithCancel(context.Background())
+	go pollCopyProgress(pollCtx, s.pool, 2*time.Second, func(msg string) {
+		s.RunningProcessWithMetadata(ProcessStateRestore, "data COPY: "+msg)
+	})
+	dataErr := pgRestore("data")
+	stopPoll()
+	if dataErr != nil {
+		return dataErr
 	}
 
+	s.RunningProcessWithMetadata(ProcessStateRestore, "converting tables to LOGGED")
 	s.logger.Info("pg_restore: setting tables back to LOGGED")
 	if err := alterPersistence("LOGGED"); err != nil {
 		return fmt.Errorf("set logged: %w", err)
 	}
 
+	s.RunningProcessWithMetadata(ProcessStateRestore, "building indexes")
 	s.logger.Info("pg_restore: restoring indexes and constraints (post-data)")
 	// post-data errors (duplicate indexes etc.) are non-fatal
 	_ = pgRestore("post-data")
 
+	s.CompleteProcess(ProcessStateRestore)
 	return nil
 }
 
