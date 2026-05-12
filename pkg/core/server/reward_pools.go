@@ -46,8 +46,8 @@ var ErrRewardPoolOwnerSignatureInvalid = errors.New("reward pool owner signature
 //
 // bodyBytes are the deterministic-protobuf marshaling of RewardPoolBody —
 // the same bytes the secp256k1 envelope signature covers. This means
-// chain_id (in the body) and deadline_block_height are both implicitly
-// covered, defeating cross-chain replay and stale-signature replay
+// fields present in the body, including deadline_block_height, are
+// implicitly covered by both signatures, defeating stale-signature replay
 // without a separate signed-string format.
 func verifyRewardPoolOwnerSignature(rmPubkey string, bodyBytes, signature []byte) error {
 	if len(signature) != ed25519.SignatureSize {
