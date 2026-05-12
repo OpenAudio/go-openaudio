@@ -516,12 +516,13 @@ message GetPIEResponse {
 }
 
 // RewardMessage is the wire envelope: it bundles a signed body with its
-// signature. The body is what gets signed (deterministic protobuf bytes);
-// the signature lives alongside the body, not inside it, so signing has no
-// chicken-and-egg.
+// signature. The body is signed by first taking the deterministic protobuf
+// marshaling of body, then computing sha256 over those bytes, and signing
+// that digest; the signature lives alongside the body, not inside it, so
+// signing has no chicken-and-egg.
 message RewardMessage {
   RewardBody body = 1;
-  string signature = 2; // signature over the deterministic marshaling of body
+  string signature = 2; // signature over sha256(deterministic marshaling of body)
 }
 
 // RewardBody is the signed payload. deadline_block_height bounds the
