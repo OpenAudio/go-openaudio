@@ -63,17 +63,14 @@ func TestValidateRewardsManagerPubkey_AudioDenylist(t *testing.T) {
 
 	// Save and restore so the test is hermetic.
 	prevDev := config.DevAudioRewardsManagerPubkey
-	prevStage := config.StageAudioRewardsManagerPubkey
 	prevProd := config.ProdAudioRewardsManagerPubkey
 	defer func() {
 		config.DevAudioRewardsManagerPubkey = prevDev
-		config.StageAudioRewardsManagerPubkey = prevStage
 		config.ProdAudioRewardsManagerPubkey = prevProd
 	}()
-	// Set all three so the test passes regardless of which env happens to be
+	// Set both so the test passes regardless of which env happens to be
 	// resolved (default is "prod" per GetRuntimeEnvironment).
 	config.DevAudioRewardsManagerPubkey = audioRM
-	config.StageAudioRewardsManagerPubkey = audioRM
 	config.ProdAudioRewardsManagerPubkey = audioRM
 
 	if err := validateRewardsManagerPubkey(audioRM); err == nil {

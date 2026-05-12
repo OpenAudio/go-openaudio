@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/hex"
+	"crypto/rand"
 	"fmt"
 	"log"
 	"os"
@@ -41,38 +41,15 @@ func main() {
 	currentHeight := resp.Msg.ChainInfo.CurrentHeight
 	deadline := currentHeight + 100
 
-	// CreateRewardPool requires possession of the RM's ed25519 keypair —
-	// the same keypair that signed the InitRewardManager instruction on
-	// Solana. The launchpad relay derives this from
-	// (launchpadDeterministicSecret, mint) and so always has it.
-	//
-	// REWARDS_MANAGER_SECRET_HEX is the 64-byte ed25519 secret key, hex-
-	// encoded. We derive the public key (which IS the rewards_manager_pubkey,
-	// base58-encoded) from it.
-	secretHex := os.Getenv("REWARDS_MANAGER_SECRET_HEX")
-	if secretHex == "" {
-		log.Fatalf("REWARDS_MANAGER_SECRET_HEX environment variable is not set (64-byte ed25519 secret, hex-encoded)")
-	}
-	rmSecret, err := hex.DecodeString(secretHex)
+	rmPubKey, rmPrivKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		log.Fatalf("Failed to decode REWARDS_MANAGER_SECRET_HEX: %v", err)
+		log.Fatalf("Failed to generate RM keypair: %v", err)
 	}
-	if len(rmSecret) != ed25519.PrivateKeySize {
-		log.Fatalf("REWARDS_MANAGER_SECRET_HEX must decode to %d bytes; got %d", ed25519.PrivateKeySize, len(rmSecret))
-	}
-	rmPrivKey := ed25519.PrivateKey(rmSecret)
-	rewardsManagerPubkey := base58.Encode(rmPrivKey.Public().(ed25519.PublicKey))
+	rewardsManagerPubkey := base58.Encode(rmPubKey)
 
-	// First-class CreateReward requires an existing pool keyed by the
-	// reward manager pubkey. Create one — fail loudly on any error so the
-	// next call doesn't proceed against a broken setup. If the pool was
-	// created in a previous run, this will surface as a "pool already
-	// exists" error and the example needs to be rerun against a fresh RM
-	// pubkey (or the existing pool's tx hash recorded for the reuse path).
-	authorities := []string{oap.Address()}
 	if _, err := oap.Rewards.CreateRewardPool(context.Background(), &v1.CreateRewardPool{
 		RewardsManagerPubkey: rewardsManagerPubkey,
-		Authorities:          authorities,
+		Authorities:          []string{oap.Address()},
 	}, rmPrivKey, deadline); err != nil {
 		log.Fatalf("Failed to create reward pool: %v", err)
 	}

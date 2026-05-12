@@ -3,42 +3,23 @@ package config
 import "github.com/OpenAudio/go-openaudio/pkg/rewards"
 
 // Solana reward manager pubkeys for the AUDIO mint, per environment.
-//
-// AUDIO is intentionally outside the reward-pool primitive: pool-managed
-// authority sets are for per-launchpad-coin rotation, while AUDIO continues
-// to be governed by the network-wide validator/AAO trust set. The values
-// here are used as a denylist by validateCreateRewardPool, which refuses
-// to create a pool whose rewards_manager_pubkey matches the AUDIO RM —
-// otherwise an attacker could create a pool for the AUDIO RM with their
-// own keys as initial authorities and have validators sign AUDIO sender
-// attestations on their behalf.
-//
-// Empty values disable the denylist for that environment (no enforcement).
-// Sandbox / devnet typically don't have a real AUDIO RM and can be left
-// empty; prod is required.
-//
-// Staging is intentionally left empty: staging doesn't run with a real
-// AUDIO mint, and the rotation flow is exercised against test launchpad
-// RMs that have first-class pools, so the denylist would never fire for
-// any legitimate staging request. Setting a non-empty staging value
-// would just be a misconfiguration risk with no upside.
+// Used as a denylist by validateCreateRewardPool: pools cannot be
+// created for the AUDIO RM, so AUDIO sender attestations stay on the
+// network-wide validator/AAO trust set rather than shifting to pool-
+// controlled authorities. Empty values disable the denylist for that
+// environment.
 var (
-	DevAudioRewardsManagerPubkey   = "DJPzVothq58SmkpRb1ATn5ddN2Rpv1j2TcGvM3XsHf1c"
-	StageAudioRewardsManagerPubkey = ""
-	ProdAudioRewardsManagerPubkey  = "71hWFVYokLaN1PNYzTAWi13EfJ7Xt9VbSWUKsXUT8mxE"
+	DevAudioRewardsManagerPubkey  = "DJPzVothq58SmkpRb1ATn5ddN2Rpv1j2TcGvM3XsHf1c"
+	ProdAudioRewardsManagerPubkey = "71hWFVYokLaN1PNYzTAWi13EfJ7Xt9VbSWUKsXUT8mxE"
 )
 
-// AudioRewardsManagerPubkey returns the configured AUDIO RM pubkey for the
-// current runtime environment, or "" if none is configured. Callers MUST
-// treat "" as "no denylist enforcement" — they should not refuse to do work
-// just because the constant is empty (the validator network was running
-// before this denylist existed).
+// AudioRewardsManagerPubkey returns the configured AUDIO RM pubkey for
+// the current runtime environment, or "" if none is configured. Callers
+// MUST treat "" as "no denylist enforcement."
 func AudioRewardsManagerPubkey() string {
 	switch GetRuntimeEnvironment() {
 	case "prod", "production", "mainnet":
 		return ProdAudioRewardsManagerPubkey
-	case "stage", "staging", "testnet":
-		return StageAudioRewardsManagerPubkey
 	case "dev", "development", "devnet", "local", "sandbox":
 		return DevAudioRewardsManagerPubkey
 	default:

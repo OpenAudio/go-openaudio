@@ -3,10 +3,10 @@
 -- Reward pools group the eth addresses authorized to attest for rewards
 -- under a specific Solana reward manager. The pool is identified BY the
 -- reward manager pubkey (32-byte base58) — there is no separate "pool
--- address" concept. PR2's CreateRewardPool / SetRewardPoolAuthorities txs
--- mutate this table; PR3's sender-attestation gate consults it to decide
--- whether to sign add/delete attestations for a given (RM, eth address)
--- pair.
+-- address" concept. The CreateRewardPool / SetRewardPoolAuthorities
+-- cometbft txs mutate this table; the validator's sender-attestation
+-- gate consults it to decide whether to sign add/delete attestations
+-- for a given (RM, eth address) pair.
 create table if not exists core_reward_pools (
     rewards_manager_pubkey text primary key,
     authorities            text[] not null default '{}',
@@ -26,10 +26,10 @@ create index if not exists idx_core_reward_pools_authorities on core_reward_pool
 --   1. The backfill block below uses it to find each existing reward row's
 --      RM (by looking for any one of its claim_authorities that matches a
 --      known launchpad authority).
---   2. PR2's wire-compat layer (finalizeLegacyCreateReward) queries it at
---      block-sync replay time to produce the same RM-bound state the
---      migration produces, so historical replay and the migration agree
---      on the resulting apphash.
+--   2. The wire-compat layer (finalizeLegacyCreateReward) queries it
+--      at block-sync replay time to produce the same RM-bound state
+--      the migration produces, so historical replay and the migration
+--      agree on the resulting apphash.
 --
 -- The table must remain populated and queryable as long as any legacy-
 -- format CreateReward txs may still be replayed during block sync. Future
@@ -115,20 +115,19 @@ on conflict (authority) do nothing;
 -- Add rewards_manager_pubkey FK to core_rewards. Nullable: rows whose
 -- claim_authorities don't include any known launchpad-derived authority
 -- (e.g., test fixtures, abandoned rewards) stay NULL after the backfill
--- and have no pool. PR3's sender-attestation gate refuses to operate on
--- NULL-RM rewards (no pool, no authority data).
+-- and have no pool. The validator's sender-attestation gate refuses to
+-- operate on NULL-RM rewards (no pool, no authority data).
 alter table core_rewards add column if not exists rewards_manager_pubkey text;
 create index if not exists idx_core_rewards_rewards_manager_pubkey on core_rewards (rewards_manager_pubkey);
 
 -- Backfill step 1: insert one core_reward_pools row per (RM, canonical
 -- authorities) pair seen in core_rewards. The pool's RM is determined by
 -- finding any one of the row's claim_authorities that matches a launchpad
--- authority — so each unique authority set becomes a real RM-bound pool,
--- not a synthetic mig_<md5> identifier. The pool's authorities array is
--- the canonical (trim, lower, dedup, sort) form of the row's full
--- claim_authorities, preserving the partner-signer / leaked-key entries
--- as the pool's *initial* authorities. PR2's SetRewardPoolAuthorities is
--- the rotation surface that drains them out.
+-- authority — so each unique authority set becomes a real RM-bound pool.
+-- The pool's authorities array is the canonical (trim, lower, dedup,
+-- sort) form of the row's full claim_authorities, preserving any
+-- additional entries as the pool's *initial* authorities; rotation via
+-- SetRewardPoolAuthorities is the surface that drains them out.
 -- Per-RM authority union: for each RM, take the UNION of authorities
 -- across every reward whose claim_authorities contain ANY of that RM's
 -- launchpad-derived keys. This guards against the case where two
@@ -203,7 +202,7 @@ where r.address = mapped.reward_address;
 -- init events; rows that don't match are stale fixture data, never live
 -- production rewards. Such rewards are unclaimable post-migration; their
 -- claim authority recovers by submitting CreateRewardPool + a fresh
--- CreateReward via PR2's transactions.
+-- CreateReward via the cometbft tx surface.
 
 alter table core_rewards
     add constraint fk_core_rewards_rewards_manager_pubkey

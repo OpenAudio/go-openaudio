@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
@@ -128,7 +129,7 @@ func (s *Server) validateCreateRewardPool(ctx context.Context, envelope *corev1.
 		return err
 	}
 	canonical := rewards.CanonicalAuthorities(msg.Authorities)
-	if !contains(canonical, strings.ToLower(strings.TrimSpace(signer))) {
+	if !slices.Contains(canonical, strings.ToLower(strings.TrimSpace(signer))) {
 		return fmt.Errorf("%w: signer %s not in initial authorities", ErrRewardUnauthorized, signer)
 	}
 	if _, err := s.db.GetRewardPool(ctx, msg.RewardsManagerPubkey); err == nil {
@@ -185,15 +186,15 @@ func validateRewardsManagerPubkeyShape(pubkey string) error {
 // CreateReward. Allowing a pool to be created for the AUDIO RM would
 // shift AUDIO sender attestations to pool-controlled authorities,
 // defeating the AUDIO trust model — AUDIO is intentionally governed by
-// the network-wide validator/AAO trust set in PR3's sender-attestation
-// gate (the gate falls back to validator/AAO for any RM that has no
-// pool).
+// the network-wide validator/AAO trust set in senderGateForRM (the
+// gate falls back to validator/AAO when the configured AUDIO RM has
+// no pool).
 //
-// First-class pools must use a real RM pubkey because PR3's
-// sender-attestation gate uses the same value to bind the pool↔RM. PR1's
-// backfill resolves each existing reward row to a real RM via the
-// launchpad_authority_rm mapping, so there are no synthetic-pool
-// identifiers in production state to special-case here.
+// First-class pools must use a real RM pubkey because senderGateForRM
+// uses the same value to bind the pool↔RM. The backfill resolves each
+// existing reward row to a real RM via the launchpad_authority_rm
+// mapping, so there are no synthetic-pool identifiers in production
+// state to special-case here.
 func validateRewardsManagerPubkey(pubkey string) error {
 	if err := validateRewardsManagerPubkeyShape(pubkey); err != nil {
 		return err
@@ -283,7 +284,7 @@ func (s *Server) finalizeCreateRewardPool(ctx context.Context, envelope *corev1.
 		return err
 	}
 	canonical := rewards.CanonicalAuthorities(msg.Authorities)
-	if !contains(canonical, strings.ToLower(strings.TrimSpace(signer))) {
+	if !slices.Contains(canonical, strings.ToLower(strings.TrimSpace(signer))) {
 		return fmt.Errorf("%w: signer %s not in initial authorities", ErrRewardUnauthorized, signer)
 	}
 	return s.getDb().InsertRewardPool(ctx, db.InsertRewardPoolParams{
@@ -331,17 +332,9 @@ func (s *Server) checkPoolAuthorization(ctx context.Context, q *db.Queries, rewa
 		}
 		return fmt.Errorf("failed to load pool %s: %w", rewardsManagerPubkey, err)
 	}
-	if !contains(pool.Authorities, strings.ToLower(strings.TrimSpace(signer))) {
+	if !slices.Contains(pool.Authorities, strings.ToLower(strings.TrimSpace(signer))) {
 		return fmt.Errorf("%w: signer %s not authorized for pool %s", ErrRewardUnauthorized, signer, rewardsManagerPubkey)
 	}
 	return nil
 }
 
-func contains(haystack []string, needle string) bool {
-	for _, h := range haystack {
-		if strings.EqualFold(h, needle) {
-			return true
-		}
-	}
-	return false
-}

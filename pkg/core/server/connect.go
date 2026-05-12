@@ -1065,11 +1065,11 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 //
 // Restored from the temporary kill-switch (#215) now that the rotation
 // primitive is in place. The authority check uses dbReward.ClaimAuthorities,
-// which post-PR1 is sourced from coalesce(p.authorities, '{}') via the
-// LEFT JOIN on core_reward_pools — i.e., it reflects the current pool
-// membership for the reward's RM, not the stale row-frozen list. So
-// rotating an authority out via SetRewardPoolAuthorities immediately
-// revokes their ability to authenticate claim attestations.
+// which is sourced from coalesce(p.authorities, '{}') via the LEFT JOIN
+// on core_reward_pools — i.e., it reflects the current pool membership
+// for the reward's RM, not the stale row-frozen list. So rotating an
+// authority out via SetRewardPoolAuthorities immediately revokes their
+// ability to authenticate claim attestations.
 func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
 	// Trim user-supplied addresses up front. RewardClaim.Compile
 	// hex-decodes ethRecipientAddress / claimAuthority and surfaces
@@ -1120,8 +1120,8 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 	}
 
 	// dbReward.ClaimAuthorities is fed by the pool's current authorities
-	// (post-PR1 LEFT JOIN aliasing). Building a Reward from it gives us
-	// pool-gated authentication for free.
+	// via the LEFT JOIN aliasing in GetReward. Building a Reward from it
+	// gives us pool-gated authentication for free.
 	claimAuthorities := make([]rewards.ClaimAuthority, len(dbReward.ClaimAuthorities))
 	for i, ca := range dbReward.ClaimAuthorities {
 		claimAuthorities[i] = rewards.ClaimAuthority{Address: ca}
@@ -1264,10 +1264,11 @@ func (c *CoreService) GetReward(ctx context.Context, req *connect.Request[v1.Get
 }
 
 // GetRewardPool returns a reward pool keyed by its Solana reward manager
-// pubkey. Every pool in core_reward_pools is RM-bound (PR1's backfill
-// resolves each existing reward to a real RM via the launchpad mapping;
-// CreateRewardPool validates that new pools use a base58 32-byte pubkey).
-// There is no separate synthetic-pool surface to filter out.
+// pubkey. Every pool in core_reward_pools is RM-bound (the backfill
+// resolves each pre-existing reward to a real RM via the launchpad
+// mapping; CreateRewardPool validates that new pools use a base58
+// 32-byte pubkey). There is no separate synthetic-pool surface to
+// filter out.
 func (c *CoreService) GetRewardPool(ctx context.Context, req *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error) {
 	// Normalize and shape-validate up front so malformed input returns
 	// InvalidArgument deterministically instead of falling through to a
@@ -1879,7 +1880,7 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 	}
 
 	if isPoolGated {
-		if !contains(pool.Authorities, address) {
+		if !slices.Contains(pool.Authorities, strings.ToLower(address)) {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("address not in pool.authorities for RM %s", rewardsManagerPubkey))
 		}
 	} else {
@@ -1943,7 +1944,7 @@ func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req 
 	}
 
 	if isPoolGated {
-		if contains(pool.Authorities, address) {
+		if slices.Contains(pool.Authorities, strings.ToLower(address)) {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("address is still a current authority of the pool for RM %s; rotate it out first via SetRewardPoolAuthorities", rewardsManagerPubkey))
 		}
 	} else {

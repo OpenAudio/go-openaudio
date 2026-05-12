@@ -1493,13 +1493,13 @@ limit 1
 
 // Resolves a launchpad-derived per-mint claim authority (lowercased eth
 // hex) to the Solana reward manager state account that mint's rewards
-// live under. Used by PR2's wire-compat layer at block-sync replay time:
-// when finalizeLegacyCreateReward sees an inline claim_authorities array,
-// it looks up the RM from any one of its lowercased entries and routes
-// the reward into a pool keyed by that RM — matching exactly what PR1's
-// backfill produced for pre-migration rows. Returns ErrNoRows if none of
-// the requested authorities is in the launchpad mapping (e.g., AUDIO
-// rewards or test fixtures).
+// live under. Used by the wire-compat layer at block-sync replay time:
+// when finalizeLegacyCreateReward sees an inline claim_authorities
+// array, it looks up the RM from any one of its lowercased entries and
+// routes the reward into a pool keyed by that RM — matching exactly
+// what the migration backfill produced for pre-migration rows.
+// Returns ErrNoRows if none of the requested authorities is in the
+// launchpad mapping (e.g., AUDIO rewards or test fixtures).
 func (q *Queries) GetLaunchpadRMByAuthority(ctx context.Context, dollar_1 []string) (string, error) {
 	row := q.db.QueryRow(ctx, getLaunchpadRMByAuthority, dollar_1)
 	var rewards_manager_pubkey string

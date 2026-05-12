@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
@@ -18,9 +20,9 @@ import (
 // Legacy reward wire-compat layer.
 //
 // Pre-pool-rollout, RewardMessage was a oneof of CreateReward / DeleteReward
-// with deadline + signature embedded inside each action. PR #225 introduced
-// the body+signature envelope, which is wire-incompatible: legacy bytes have
-// no field at tag 1 (the new body) so the new proto unmarshals them with
+// with deadline + signature embedded inside each action. The current
+// body+signature envelope is wire-incompatible: legacy bytes have no
+// field at tag 1 (the new body) so the new proto unmarshals them with
 // Body == nil.
 //
 // This file handles the case where a legacy-shaped reward tx is encountered
@@ -67,11 +69,12 @@ func tryParseLegacyReward(rm *corev1.RewardMessage) (*corev1.LegacyRewardMessage
 
 // finalizeLegacyRewardTransaction applies a legacy-shape reward tx. For
 // CreateReward, the reward's RM is resolved by looking up any one of its
-// inline claim_authorities in the launchpad_authority_rm mapping (PR1's
-// migration populates this table); rewards whose authorities don't match
-// any known launchpad authority are inserted with NULL rewards_manager_pubkey.
-// For DeleteReward, the row is removed after re-checking authorization
-// against the existing reward's pool authorities.
+// inline claim_authorities in the launchpad_authority_rm mapping (the
+// schema migration populates this table); rewards whose authorities
+// don't match any known launchpad authority are inserted with NULL
+// rewards_manager_pubkey. For DeleteReward, the row is removed after
+// re-checking authorization against the existing reward's pool
+// authorities.
 func (s *Server) finalizeLegacyRewardTransaction(ctx context.Context, req *abcitypes.FinalizeBlockRequest, legacy *corev1.LegacyRewardMessage, txhash string, messageIndex int64) error {
 	switch a := legacy.Action.(type) {
 	case *corev1.LegacyRewardMessage_Create:
@@ -130,11 +133,12 @@ func (s *Server) finalizeLegacyCreateReward(ctx context.Context, req *abcitypes.
 
 	// Resolve the reward's RM by looking for a launchpad-derived authority
 	// among the message's inline claim_authorities. The launchpad_authority_rm
-	// table (populated in PR1) maps each per-mint claim authority (lowercased
-	// eth hex) to the Solana reward manager state account that mint's rewards
-	// live under. This produces the SAME (RM, authorities) state PR1's
-	// backfill produced for pre-migration rows, so historical replay and the
-	// migration agree on the resulting apphash.
+	// table (populated by the schema migration) maps each per-mint claim
+	// authority (lowercased eth hex) to the Solana reward manager state
+	// account that mint's rewards live under. This produces the SAME
+	// (RM, authorities) state the migration backfill produced for
+	// pre-migration rows, so historical replay and the migration agree
+	// on the resulting apphash.
 	authorityAddrs := make([]string, 0, len(cr.ClaimAuthorities))
 	for _, auth := range cr.ClaimAuthorities {
 		authorityAddrs = append(authorityAddrs, auth.Address)
@@ -196,7 +200,7 @@ func (s *Server) finalizeLegacyDeleteReward(ctx context.Context, dr *corev1.Lega
 		}
 		return fmt.Errorf("legacy delete: failed to get reward: %w", err)
 	}
-	if !contains(existingReward.ClaimAuthorities, signer) {
+	if !slices.Contains(existingReward.ClaimAuthorities, strings.ToLower(strings.TrimSpace(signer))) {
 		return fmt.Errorf("%w: legacy signer %s no longer authorized to delete reward %s", ErrRewardUnauthorized, signer, dr.Address)
 	}
 	if err := qtx.DeleteCoreReward(ctx, dr.Address); err != nil {

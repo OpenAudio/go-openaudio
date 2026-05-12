@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
@@ -139,8 +141,8 @@ func (s *Server) validateCreateReward(ctx context.Context, createReward *corev1.
 	// by the Solana reward manager pubkey, and only pool members can issue
 	// rewards under that RM. Without this binding, a member of one pool
 	// could issue rewards under any other pool's RM and inherit its
-	// attestation rights — which is exactly what PR3's per-RM gate is
-	// designed to prevent.
+	// attestation rights — which is exactly what the per-RM
+	// sender-attestation gate is designed to prevent.
 	//
 	// The legacy permissionless path (inline claim_authorities, no RM) is
 	// preserved only for historical replay via the wire-compat layer; new
@@ -159,7 +161,7 @@ func (s *Server) validateDeleteReward(ctx context.Context, deleteReward *corev1.
 		}
 		return fmt.Errorf("failed to get existing reward for validation: %w", err)
 	}
-	if !contains(existingReward.ClaimAuthorities, signer) {
+	if !slices.Contains(existingReward.ClaimAuthorities, strings.ToLower(strings.TrimSpace(signer))) {
 		return fmt.Errorf("%w: signer %s not authorized to delete reward %s", ErrRewardUnauthorized, signer, deleteReward.Address)
 	}
 	return nil
@@ -280,7 +282,7 @@ func (s *Server) finalizeDeleteReward(ctx context.Context, deleteReward *corev1.
 		}
 		return fmt.Errorf("failed to get reward at finalize: %w", err)
 	}
-	if !contains(existingReward.ClaimAuthorities, signer) {
+	if !slices.Contains(existingReward.ClaimAuthorities, strings.ToLower(strings.TrimSpace(signer))) {
 		return fmt.Errorf("%w: signer %s no longer authorized to delete reward %s", ErrRewardUnauthorized, signer, deleteReward.Address)
 	}
 	if err := qtx.DeleteCoreReward(ctx, deleteReward.Address); err != nil {

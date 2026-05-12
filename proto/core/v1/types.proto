@@ -622,9 +622,10 @@ message RewardPoolBody {
 message CreateRewardPool {
   // The pool is identified by its Solana reward manager pubkey (base58,
   // 32 bytes). Subsequent CreateReward / SetRewardPoolAuthorities messages
-  // and PR3's sender-attestation gate use this same value to resolve the
-  // pool. There is no separate "pool address" — the pool's identity IS the
-  // RM pubkey, so pool↔RM binding cannot be set wrong by construction.
+  // and the validator's sender-attestation gate use this same value to
+  // resolve the pool. There is no separate "pool address" — the pool's
+  // identity IS the RM pubkey, so pool↔RM binding cannot be set wrong
+  // by construction.
   string rewards_manager_pubkey = 1;
   // Initial set of eth addresses authorized to attest for rewards in this
   // pool. The recovered signer must be a member of this list. Each entry

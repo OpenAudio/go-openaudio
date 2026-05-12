@@ -4582,9 +4582,10 @@ type CreateRewardPool struct {
 
 	// The pool is identified by its Solana reward manager pubkey (base58,
 	// 32 bytes). Subsequent CreateReward / SetRewardPoolAuthorities messages
-	// and PR3's sender-attestation gate use this same value to resolve the
-	// pool. There is no separate "pool address" — the pool's identity IS the
-	// RM pubkey, so pool↔RM binding cannot be set wrong by construction.
+	// and the validator's sender-attestation gate use this same value to
+	// resolve the pool. There is no separate "pool address" — the pool's
+	// identity IS the RM pubkey, so pool↔RM binding cannot be set wrong
+	// by construction.
 	RewardsManagerPubkey string `protobuf:"bytes,1,opt,name=rewards_manager_pubkey,json=rewardsManagerPubkey,proto3" json:"rewards_manager_pubkey,omitempty"`
 	// Initial set of eth addresses authorized to attest for rewards in this
 	// pool. The recovered signer must be a member of this list. Each entry

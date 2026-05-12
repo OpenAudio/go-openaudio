@@ -272,7 +272,7 @@ func TestRewardPoolsLifecycle(t *testing.T) {
 		}
 	})
 
-	// === PR3 sender attestation flow ===
+	// === Sender attestation flow ===
 	//
 	// Pool at rmPubkey now has authorities = [alice]; bob has been rotated out.
 	// Validator should: sign create for alice (current authority), refuse
