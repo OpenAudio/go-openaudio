@@ -4111,16 +4111,23 @@ func (x *GetPIEResponse) GetPie() *v1beta11.PieMessage {
 }
 
 // RewardMessage is the wire envelope: it bundles a signed body with its
-// signature. The body is what gets signed (deterministic protobuf bytes);
-// the signature lives alongside the body, not inside it, so signing has no
-// chicken-and-egg.
+// signature. The body is signed by first taking the deterministic protobuf
+// marshaling of body, then computing sha256 over those bytes, and signing
+// that digest; the signature lives alongside the body, not inside it, so
+// signing has no chicken-and-egg.
 type RewardMessage struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Body      *RewardBody `protobuf:"bytes,1,opt,name=body,proto3" json:"body,omitempty"`
-	Signature string      `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"` // signature over the deterministic marshaling of body
+	Body *RewardBody `protobuf:"bytes,1,opt,name=body,proto3" json:"body,omitempty"`
+	// secp256k1 (Ethereum-style) signature, hex-encoded. The signed
+	// digest is sha256(deterministic-protobuf-marshaling of body) — i.e.,
+	// marshal body with proto.MarshalOptions{Deterministic: true}, then
+	// sha256-hash, then crypto.Sign as eth-recoverable. Non-Go clients
+	// must reproduce this pre-hash (sha256, NOT keccak256) to produce a
+	// signature the validator will accept.
+	Signature string `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
 }
 
 func (x *RewardMessage) Reset() {
@@ -4388,18 +4395,25 @@ func (x *DeleteReward) GetAddress() string {
 }
 
 // RewardPoolMessage is the wire envelope for pool-management transactions.
-// Two signatures cover the same body bytes:
-//   - signature: secp256k1 (eth) recoverable signature, identifies the
-//     fee-paying tx submitter who must be in the pool's current
-//     authority set (Create: initial authorities; SetAuthorities:
-//     existing pool authorities).
-//   - rm_owner_signature: ed25519 signature, REQUIRED when body.action
-//     is Create. Verification key IS body.create.rewards_manager_pubkey
-//     (the Solana RM state account is itself an ed25519 keypair). Proves
-//     possession of the RM keypair, defeating pool-creation frontrunning
-//     by an observer who watches Solana RM init events but lacks the
-//     launchpad's deterministic-secret. Ignored for SetAuthorities
-//     because rotation is meant to work without the launchpad.
+// Two signatures cover the same body bytes (`deterministic-protobuf-
+// marshaling of body`); the schemes differ in pre-hashing:
+//
+//   - signature: secp256k1 (eth) recoverable signature, hex-encoded.
+//     Pre-hash is sha256(body_bytes) — see RewardMessage.signature for
+//     the cross-language reproduction recipe. Identifies the fee-paying
+//     tx submitter who must be in the pool's current authority set
+//     (Create: initial authorities; SetAuthorities: existing pool
+//     authorities).
+//   - rm_owner_signature: ed25519 signature over body_bytes directly
+//     (ed25519 handles its own internal hashing — sign body_bytes raw,
+//     do NOT pre-hash). REQUIRED when body.action is Create.
+//     Verification key IS body.create.rewards_manager_pubkey (the
+//     Solana RM state account is itself an ed25519 keypair). Proves
+//     possession of the RM keypair, defeating pool-creation
+//     frontrunning by an observer who watches Solana RM init events
+//     but lacks the launchpad's deterministic-secret. Ignored for
+//     SetAuthorities because rotation is meant to work without the
+//     launchpad.
 type RewardPoolMessage struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

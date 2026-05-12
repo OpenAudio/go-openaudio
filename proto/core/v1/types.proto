@@ -522,7 +522,13 @@ message GetPIEResponse {
 // signing has no chicken-and-egg.
 message RewardMessage {
   RewardBody body = 1;
-  string signature = 2; // signature over sha256(deterministic marshaling of body)
+  // secp256k1 (Ethereum-style) signature, hex-encoded. The signed
+  // digest is sha256(deterministic-protobuf-marshaling of body) — i.e.,
+  // marshal body with proto.MarshalOptions{Deterministic: true}, then
+  // sha256-hash, then crypto.Sign as eth-recoverable. Non-Go clients
+  // must reproduce this pre-hash (sha256, NOT keccak256) to produce a
+  // signature the validator will accept.
+  string signature = 2;
 }
 
 // RewardBody is the signed payload. deadline_block_height bounds the
@@ -571,18 +577,25 @@ message DeleteReward {
 }
 
 // RewardPoolMessage is the wire envelope for pool-management transactions.
-// Two signatures cover the same body bytes:
-//   - signature: secp256k1 (eth) recoverable signature, identifies the
-//     fee-paying tx submitter who must be in the pool's current
-//     authority set (Create: initial authorities; SetAuthorities:
-//     existing pool authorities).
-//   - rm_owner_signature: ed25519 signature, REQUIRED when body.action
-//     is Create. Verification key IS body.create.rewards_manager_pubkey
-//     (the Solana RM state account is itself an ed25519 keypair). Proves
-//     possession of the RM keypair, defeating pool-creation frontrunning
-//     by an observer who watches Solana RM init events but lacks the
-//     launchpad's deterministic-secret. Ignored for SetAuthorities
-//     because rotation is meant to work without the launchpad.
+// Two signatures cover the same body bytes (`deterministic-protobuf-
+// marshaling of body`); the schemes differ in pre-hashing:
+//
+//   - signature: secp256k1 (eth) recoverable signature, hex-encoded.
+//     Pre-hash is sha256(body_bytes) — see RewardMessage.signature for
+//     the cross-language reproduction recipe. Identifies the fee-paying
+//     tx submitter who must be in the pool's current authority set
+//     (Create: initial authorities; SetAuthorities: existing pool
+//     authorities).
+//   - rm_owner_signature: ed25519 signature over body_bytes directly
+//     (ed25519 handles its own internal hashing — sign body_bytes raw,
+//     do NOT pre-hash). REQUIRED when body.action is Create.
+//     Verification key IS body.create.rewards_manager_pubkey (the
+//     Solana RM state account is itself an ed25519 keypair). Proves
+//     possession of the RM keypair, defeating pool-creation
+//     frontrunning by an observer who watches Solana RM init events
+//     but lacks the launchpad's deterministic-secret. Ignored for
+//     SetAuthorities because rotation is meant to work without the
+//     launchpad.
 message RewardPoolMessage {
   RewardPoolBody body = 1;
   string signature = 2;

@@ -1071,11 +1071,16 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 // rotating an authority out via SetRewardPoolAuthorities immediately
 // revokes their ability to authenticate claim attestations.
 func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
-	ethRecipientAddress := req.Msg.EthRecipientAddress
+	// Trim user-supplied addresses up front. RewardClaim.Compile
+	// hex-decodes ethRecipientAddress / claimAuthority and surfaces
+	// surrounding whitespace as a confusing "failed to decode" error
+	// deeper in the flow; trimming here lets the same input return
+	// InvalidArgument at the boundary instead.
+	ethRecipientAddress := strings.TrimSpace(req.Msg.EthRecipientAddress)
 	if ethRecipientAddress == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("eth_recipient_address is required"))
 	}
-	rewardAddress := req.Msg.RewardAddress
+	rewardAddress := strings.TrimSpace(req.Msg.RewardAddress)
 	if rewardAddress == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward_address is required"))
 	}
@@ -1086,7 +1091,7 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 	if len(specifier) > 256 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("specifier too long"))
 	}
-	claimAuthority := req.Msg.ClaimAuthority
+	claimAuthority := strings.TrimSpace(req.Msg.ClaimAuthority)
 	if claimAuthority == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority is required"))
 	}
@@ -1265,12 +1270,13 @@ func (c *CoreService) GetReward(ctx context.Context, req *connect.Request[v1.Get
 // There is no separate synthetic-pool surface to filter out.
 func (c *CoreService) GetRewardPool(ctx context.Context, req *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error) {
 	// Normalize and shape-validate up front so malformed input returns
-	// InvalidArgument deterministically instead of falling through to a DB
-	// lookup that returns NotFound. Reuses validateRewardsManagerPubkey
-	// (the same validator the CreateRewardPool / SetRewardPoolAuthorities
-	// tx path uses) so the contract is identical across read and write.
+	// InvalidArgument deterministically instead of falling through to a
+	// DB lookup that returns NotFound. Use the shape-only validator
+	// here, NOT the create-time AUDIO denylist: a caller probing
+	// GetRewardPool(AudioRM) should get a clean NotFound, not a "pool
+	// reserved" InvalidArgument that hides whether a pool exists.
 	rewardsManagerPubkey := strings.TrimSpace(req.Msg.RewardsManagerPubkey)
-	if err := validateRewardsManagerPubkey(rewardsManagerPubkey); err != nil {
+	if err := validateRewardsManagerPubkeyShape(rewardsManagerPubkey); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	pool, err := c.core.db.GetRewardPool(ctx, rewardsManagerPubkey)
@@ -1856,8 +1862,12 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 	}
 
 	rewardsManagerPubkey := strings.TrimSpace(req.Msg.RewardsManagerPubkey)
-	if rewardsManagerPubkey == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
+	if err := validateRewardsManagerPubkeyShape(rewardsManagerPubkey); err != nil {
+		// Shape-validate up front so a malformed pubkey returns
+		// InvalidArgument with a clear message instead of falling through
+		// to senderGateForRM and surfacing as ErrSenderGateUnknownRM
+		// (which is misleading — it's invalid input, not an unknown RM).
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
 	pool, isPoolGated, err := c.senderGateForRM(ctx, rewardsManagerPubkey)
@@ -1916,8 +1926,12 @@ func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req 
 	}
 
 	rewardsManagerPubkey := strings.TrimSpace(req.Msg.RewardsManagerPubkey)
-	if rewardsManagerPubkey == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward manager pubkey is required"))
+	if err := validateRewardsManagerPubkeyShape(rewardsManagerPubkey); err != nil {
+		// Shape-validate up front so a malformed pubkey returns
+		// InvalidArgument with a clear message instead of falling through
+		// to senderGateForRM and surfacing as ErrSenderGateUnknownRM
+		// (which is misleading — it's invalid input, not an unknown RM).
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
 	pool, isPoolGated, err := c.senderGateForRM(ctx, rewardsManagerPubkey)

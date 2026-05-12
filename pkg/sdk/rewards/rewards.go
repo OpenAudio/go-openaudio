@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"errors"
+	"fmt"
 
 	"connectrpc.com/connect"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
@@ -143,6 +144,12 @@ func (r *Rewards) GetRewards(ctx context.Context, claim_authority string) (*v1.G
 //
 // Returns the cometbft tx hash.
 func (r *Rewards) CreateRewardPool(ctx context.Context, msg *v1.CreateRewardPool, rmKey ed25519.PrivateKey, deadlineBlockHeight int64) (string, error) {
+	// ed25519.Sign panics on wrong-length keys; surface as a typed error
+	// instead so callers passing nil / hex-decoded-wrong / public-key-by-
+	// mistake see a recoverable failure rather than a runtime crash.
+	if len(rmKey) != ed25519.PrivateKeySize {
+		return "", fmt.Errorf("rmKey is %d bytes; want ed25519 private key (%d bytes)", len(rmKey), ed25519.PrivateKeySize)
+	}
 	body := &v1.RewardPoolBody{
 		DeadlineBlockHeight: deadlineBlockHeight,
 		Action:              &v1.RewardPoolBody_Create{Create: msg},

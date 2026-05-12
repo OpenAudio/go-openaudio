@@ -109,7 +109,10 @@ func (s *Server) isValidRewardPoolTransaction(ctx context.Context, signedTx *cor
 // common.ProtoRecover (which marshals deterministically); the ed25519
 // path verifies against common.ProtoSignableBytes(body) directly. body
 // covers deadline_block_height and the action oneof, so stale-deadline
-// replay is blocked for both signatures together.
+// replay is blocked for both signatures together. Cross-chain replay
+// isn't a threat: each environment's launchpad uses a different
+// deterministic secret, so the same rewards_manager_pubkey cannot exist
+// on more than one chain.
 func (s *Server) validateCreateRewardPool(ctx context.Context, envelope *corev1.RewardPoolMessage, msg *corev1.CreateRewardPool, signer string) error {
 	if err := validateRewardsManagerPubkey(msg.RewardsManagerPubkey); err != nil {
 		return err
@@ -154,15 +157,13 @@ func validateAuthorityList(addrs []string) error {
 	return nil
 }
 
-// validateRewardsManagerPubkey checks the wire shape of a Solana reward
-// manager pubkey: non-empty, base58-decodable, exactly 32 bytes.
-//
-// First-class pools must use a real RM pubkey because PR3's
-// sender-attestation gate uses the same value to bind the pool↔RM. PR1's
-// backfill resolves each existing reward row to a real RM via the
-// launchpad_authority_rm mapping, so there are no synthetic-pool
-// identifiers in production state to special-case here.
-func validateRewardsManagerPubkey(pubkey string) error {
+// validateRewardsManagerPubkeyShape checks the wire shape of a Solana
+// reward manager pubkey: non-empty, no surrounding whitespace, base58-
+// decodable, exactly 32 bytes. Pure shape validation — no policy. Use
+// from read paths and rotation paths where the AUDIO RM is a legitimate
+// input that should round-trip cleanly (read paths return NotFound;
+// sender-gate falls back to validator/AAO).
+func validateRewardsManagerPubkeyShape(pubkey string) error {
 	if pubkey == "" {
 		return fmt.Errorf("%w: rewards_manager_pubkey is required", ErrRewardMessageValidation)
 	}
@@ -176,14 +177,30 @@ func validateRewardsManagerPubkey(pubkey string) error {
 	if len(bytes) != solanaPubkeyByteLen {
 		return fmt.Errorf("%w: rewards_manager_pubkey must decode to %d bytes; got %d", ErrRewardMessageValidation, solanaPubkeyByteLen, len(bytes))
 	}
-	// Reserved-RM denylist: AUDIO continues to be governed by the
-	// network-wide validator/AAO trust set in PR3's sender-attestation
-	// gate (the gate falls back to validator/AAO for any RM that has no
-	// pool). Allowing a pool to be created for the AUDIO RM would shift
-	// AUDIO sender attestations to pool-controlled authorities —
-	// defeating the AUDIO trust model. Trim defensively: if these
-	// per-env constants ever start being populated from env vars or
-	// config, surrounding whitespace would silently disable the check.
+	return nil
+}
+
+// validateRewardsManagerPubkey is the WRITE-path validator: shape +
+// the AUDIO reserved-RM denylist. Use from CreateRewardPool and
+// CreateReward. Allowing a pool to be created for the AUDIO RM would
+// shift AUDIO sender attestations to pool-controlled authorities,
+// defeating the AUDIO trust model — AUDIO is intentionally governed by
+// the network-wide validator/AAO trust set in PR3's sender-attestation
+// gate (the gate falls back to validator/AAO for any RM that has no
+// pool).
+//
+// First-class pools must use a real RM pubkey because PR3's
+// sender-attestation gate uses the same value to bind the pool↔RM. PR1's
+// backfill resolves each existing reward row to a real RM via the
+// launchpad_authority_rm mapping, so there are no synthetic-pool
+// identifiers in production state to special-case here.
+func validateRewardsManagerPubkey(pubkey string) error {
+	if err := validateRewardsManagerPubkeyShape(pubkey); err != nil {
+		return err
+	}
+	// Trim defensively on the configured side: if these per-env
+	// constants ever start being populated from env vars or config,
+	// surrounding whitespace would silently disable the check.
 	if audioRM := strings.TrimSpace(config.AudioRewardsManagerPubkey()); audioRM != "" && pubkey == audioRM {
 		return fmt.Errorf("%w: rewards_manager_pubkey is reserved (AUDIO); pools cannot be created for it", ErrRewardMessageValidation)
 	}
@@ -199,7 +216,12 @@ func validateRewardsManagerPubkey(pubkey string) error {
 // addresses (otherwise the pool can be rotated into a permanently-orphaned
 // state).
 func (s *Server) validateSetRewardPoolAuthorities(ctx context.Context, msg *corev1.SetRewardPoolAuthorities, signer string) error {
-	if err := validateRewardsManagerPubkey(msg.RewardsManagerPubkey); err != nil {
+	// Shape-only here, not the AUDIO denylist: SetRewardPoolAuthorities
+	// targets an existing pool, and AUDIO has no pool by construction
+	// (validateCreateRewardPool refuses), so checkPoolAuthorization
+	// surfaces the AUDIO case as the more accurate "pool not found"
+	// rather than the create-time "is reserved" message.
+	if err := validateRewardsManagerPubkeyShape(msg.RewardsManagerPubkey); err != nil {
 		return err
 	}
 	if err := validateAuthorityList(msg.Authorities); err != nil {
@@ -282,7 +304,7 @@ func (s *Server) finalizeCreateRewardPool(ctx context.Context, envelope *corev1.
 // to live and prevents an orphaned/empty-authority pool from being
 // written.
 func (s *Server) finalizeSetRewardPoolAuthorities(ctx context.Context, msg *corev1.SetRewardPoolAuthorities, signer string) error {
-	if err := validateRewardsManagerPubkey(msg.RewardsManagerPubkey); err != nil {
+	if err := validateRewardsManagerPubkeyShape(msg.RewardsManagerPubkey); err != nil {
 		return err
 	}
 	if err := validateAuthorityList(msg.Authorities); err != nil {
