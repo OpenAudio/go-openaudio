@@ -3,6 +3,7 @@ package rewards
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"errors"
 
 	"connectrpc.com/connect"
@@ -48,7 +49,14 @@ func (r *Rewards) signAndSendReward(ctx context.Context, body *v1.RewardBody) (s
 	return resp.Msg.GetTransaction().GetHash(), nil
 }
 
-func (r *Rewards) signAndSendRewardPool(ctx context.Context, body *v1.RewardPoolBody) (string, error) {
+// signAndSendRewardPool signs the body with the envelope signer's
+// secp256k1 key and submits. rmOwnerSig, when non-nil, is placed in the
+// envelope's rm_owner_signature field. It is required when the body's
+// action is CreateRewardPool (the validator rejects unsigned creates as
+// frontrunning) and ignored otherwise. Callers produce the ed25519
+// signature over common.ProtoSignableBytes(body) using the RM keypair —
+// see CreateRewardPool below for the canonical helper.
+func (r *Rewards) signAndSendRewardPool(ctx context.Context, body *v1.RewardPoolBody, rmOwnerSig []byte) (string, error) {
 	sig, err := common.ProtoSign(r.privKey, body)
 	if err != nil {
 		return "", err
@@ -56,7 +64,11 @@ func (r *Rewards) signAndSendRewardPool(ctx context.Context, body *v1.RewardPool
 	tx := &v1.SendTransactionRequest{
 		Transaction: &v1.SignedTransaction{
 			Transaction: &v1.SignedTransaction_RewardPool{
-				RewardPool: &v1.RewardPoolMessage{Body: body, Signature: sig},
+				RewardPool: &v1.RewardPoolMessage{
+					Body:             body,
+					Signature:        sig,
+					RmOwnerSignature: rmOwnerSig,
+				},
 			},
 		},
 	}
@@ -119,15 +131,28 @@ func (r *Rewards) GetRewards(ctx context.Context, claim_authority string) (*v1.G
 // CreateRewardPool submits a CreateRewardPool transaction. The pool is
 // keyed by msg.RewardsManagerPubkey (the Solana reward manager pubkey it
 // will govern, base58 32 bytes); subsequent SetRewardPoolAuthorities /
-// CreateReward calls reference the pool by this same value, so callers
-// can compose dependent transactions without round-tripping through
-// GetRewardPool. Returns the cometbft tx hash.
-func (r *Rewards) CreateRewardPool(ctx context.Context, msg *v1.CreateRewardPool, deadlineBlockHeight int64) (string, error) {
+// CreateReward calls reference the pool by this same value.
+//
+// rmKey is the ed25519 PRIVATE key whose public key is
+// msg.RewardsManagerPubkey — i.e., the Solana RM state account's
+// keypair. For launchpad-minted coins, the relay derives this from
+// (launchpadDeterministicSecret, mint). The validator requires the
+// envelope-level rm_owner_signature to verify against
+// msg.RewardsManagerPubkey, so possession of the matching ed25519 secret
+// is the proof-of-RM-control that defeats pool-creation frontrunning.
+//
+// Returns the cometbft tx hash.
+func (r *Rewards) CreateRewardPool(ctx context.Context, msg *v1.CreateRewardPool, rmKey ed25519.PrivateKey, deadlineBlockHeight int64) (string, error) {
 	body := &v1.RewardPoolBody{
 		DeadlineBlockHeight: deadlineBlockHeight,
 		Action:              &v1.RewardPoolBody_Create{Create: msg},
 	}
-	return r.signAndSendRewardPool(ctx, body)
+	bodyBytes, err := common.ProtoSignableBytes(body)
+	if err != nil {
+		return "", err
+	}
+	rmSig := ed25519.Sign(rmKey, bodyBytes)
+	return r.signAndSendRewardPool(ctx, body, rmSig)
 }
 
 // GetRewardPool fetches a pool by its rewards_manager_pubkey (Solana RM
@@ -142,13 +167,15 @@ func (r *Rewards) GetRewardPool(ctx context.Context, rewardsManagerPubkey string
 
 // SetRewardPoolAuthorities replaces the pool's authority set wholesale. The
 // caller composes the desired list (current minus the one to remove, current
-// plus the one to add, etc.); add and remove are derived views.
+// plus the one to add, etc.); add and remove are derived views. No RM
+// keypair signature is needed — rotation is gated by signer ∈ current
+// pool authorities, by design (the launchpad needn't be online to rotate).
 func (r *Rewards) SetRewardPoolAuthorities(ctx context.Context, msg *v1.SetRewardPoolAuthorities, deadlineBlockHeight int64) (string, error) {
 	body := &v1.RewardPoolBody{
 		DeadlineBlockHeight: deadlineBlockHeight,
 		Action:              &v1.RewardPoolBody_SetAuthorities{SetAuthorities: msg},
 	}
-	return r.signAndSendRewardPool(ctx, body)
+	return r.signAndSendRewardPool(ctx, body, nil)
 }
 
 // GetRewardSenderAttestation requests an attestation that the validator will

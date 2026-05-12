@@ -524,9 +524,10 @@ message RewardMessage {
 }
 
 // RewardBody is the signed payload. deadline_block_height bounds the
-// signature's validity (the validator rejects after expiry); the action is
-// the actual operation. The oneof tag discriminates Create from Delete so
-// two actions with otherwise-identical inner shapes produce different bytes.
+// signature's validity (the validator rejects after expiry); the action
+// is the actual operation. The oneof tag discriminates Create from
+// Delete so two actions with otherwise-identical inner shapes produce
+// different bytes.
 message RewardBody {
   int64 deadline_block_height = 1;
   oneof action {
@@ -568,12 +569,33 @@ message DeleteReward {
 }
 
 // RewardPoolMessage is the wire envelope for pool-management transactions.
-// Same shape as RewardMessage: body + signature.
+// Two signatures cover the same body bytes:
+//   - signature: secp256k1 (eth) recoverable signature, identifies the
+//     fee-paying tx submitter who must be in the pool's current
+//     authority set (Create: initial authorities; SetAuthorities:
+//     existing pool authorities).
+//   - rm_owner_signature: ed25519 signature, REQUIRED when body.action
+//     is Create. Verification key IS body.create.rewards_manager_pubkey
+//     (the Solana RM state account is itself an ed25519 keypair). Proves
+//     possession of the RM keypair, defeating pool-creation frontrunning
+//     by an observer who watches Solana RM init events but lacks the
+//     launchpad's deterministic-secret. Ignored for SetAuthorities
+//     because rotation is meant to work without the launchpad.
 message RewardPoolMessage {
   RewardPoolBody body = 1;
   string signature = 2;
+  bytes rm_owner_signature = 3;
 }
 
+// RewardPoolBody is the signed payload. deadline_block_height bounds the
+// signature's validity; action discriminates Create from SetAuthorities
+// so two otherwise-identical messages produce different bytes.
+//
+// Cross-chain replay isn't a threat surface here: each environment's
+// launchpad uses a different deterministic secret, so the same
+// rewards_manager_pubkey cannot be derived on more than one chain. A
+// captured CreateRewardPool replayed on a different chain refers to an
+// RM that doesn't exist there.
 message RewardPoolBody {
   int64 deadline_block_height = 1;
   oneof action {
@@ -591,19 +613,9 @@ message CreateRewardPool {
   string rewards_manager_pubkey = 1;
   // Initial set of eth addresses authorized to attest for rewards in this
   // pool. The recovered signer must be a member of this list. Each entry
-  // must be a valid eth hex address.
+  // must be a valid eth hex address. Frontrunning defense lives at the
+  // envelope level (RewardPoolMessage.rm_owner_signature).
   repeated string authorities = 2;
-  // ed25519 signature over the canonical payload
-  //   "audius:create-reward-pool:" + chain_id + ":" + rewards_manager_pubkey
-  //   + ":" + sorted_lowercased_authorities.join(",")
-  // produced by the ed25519 private key whose public key IS
-  // rewards_manager_pubkey. Proves possession of the Solana reward
-  // manager state account's keypair, which only the legitimate creator
-  // (the launchpad relay, deterministically deriving the keypair from
-  // (launchpadDeterministicSecret, mint)) holds. Defends against
-  // frontrunning where an observer races to register a pool for a
-  // freshly-minted RM with attacker-chosen authorities. Required.
-  bytes rm_owner_signature = 3;
 }
 
 // SetRewardPoolAuthorities replaces the pool's authority set wholesale. The

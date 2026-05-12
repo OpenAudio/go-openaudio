@@ -53,6 +53,16 @@ func ProtoRecover(body proto.Message, signature string) (string, error) {
 	return address, err
 }
 
+// ProtoSignableBytes returns the deterministic-protobuf marshaling of body —
+// the exact byte sequence ProtoSign / ProtoRecover hash and recover from.
+// Exposed so callers that verify a second signature scheme (e.g., ed25519
+// alongside the secp256k1 envelope sig) can hash the same bytes without
+// reaching into the package internals or having to duplicate the
+// MarshalOptions.
+func ProtoSignableBytes(body proto.Message) ([]byte, error) {
+	return signableBytes(body)
+}
+
 func signableBytes(body proto.Message) ([]byte, error) {
 	opts := proto.MarshalOptions{Deterministic: true}
 	return opts.Marshal(body)

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/rewards"
@@ -25,26 +26,30 @@ import (
 // caller-chosen string.
 const solanaPubkeyByteLen = 32
 
-// ErrRewardPoolOwnerSignatureInvalid signals that the rm_owner_signature
-// on a CreateRewardPool message did not verify against the message's
-// rewards_manager_pubkey.
+// ErrRewardPoolOwnerSignatureInvalid signals that the envelope's
+// rm_owner_signature did not verify against the body's claimed RM pubkey.
 var ErrRewardPoolOwnerSignatureInvalid = errors.New("reward pool owner signature invalid")
 
 // verifyRewardPoolOwnerSignature checks that the supplied ed25519
-// signature, produced by the keypair whose public key is rmPubkey, covers
-// the canonical CreateRewardPool payload for (chainID, rmPubkey,
-// authorities). Returns nil iff the signature is valid; otherwise returns
-// a wrapped ErrRewardPoolOwnerSignatureInvalid.
+// signature, produced by the keypair whose public key is rmPubkey,
+// covers bodyBytes. Returns nil iff the signature is valid; otherwise
+// returns a wrapped ErrRewardPoolOwnerSignatureInvalid.
 //
 // The verification key IS rmPubkey, decoded from base58. There is no
-// trusted-key registry: the message claims an RM, the RM IS its
-// verification key, and possession of the matching ed25519 secret key
-// proves authorization to register a pool for that RM. The launchpad
-// relay derives both the keypair and the per-mint claim authority eth
-// address from (launchpadDeterministicSecret, mint), so the launchpad
-// can always produce this signature; an attacker who lacks the secret
+// trusted-key registry: the body claims an RM, the RM IS its ed25519
+// verification key, and possession of the matching secret key proves
+// authorization to register a pool for that RM. The launchpad relay
+// derives both the keypair and the per-mint claim authority eth address
+// from (launchpadDeterministicSecret, mint), so the launchpad can
+// always produce this signature; an attacker who lacks the secret
 // cannot.
-func verifyRewardPoolOwnerSignature(chainID, rmPubkey string, authorities []string, signature []byte) error {
+//
+// bodyBytes are the deterministic-protobuf marshaling of RewardPoolBody —
+// the same bytes the secp256k1 envelope signature covers. This means
+// chain_id (in the body) and deadline_block_height are both implicitly
+// covered, defeating cross-chain replay and stale-signature replay
+// without a separate signed-string format.
+func verifyRewardPoolOwnerSignature(rmPubkey string, bodyBytes, signature []byte) error {
 	if len(signature) != ed25519.SignatureSize {
 		return fmt.Errorf("%w: signature length is %d, want %d", ErrRewardPoolOwnerSignatureInvalid, len(signature), ed25519.SignatureSize)
 	}
@@ -55,16 +60,17 @@ func verifyRewardPoolOwnerSignature(chainID, rmPubkey string, authorities []stri
 	if len(pubkeyBytes) != ed25519.PublicKeySize {
 		return fmt.Errorf("%w: rewards_manager_pubkey decodes to %d bytes, want %d", ErrRewardPoolOwnerSignatureInvalid, len(pubkeyBytes), ed25519.PublicKeySize)
 	}
-	payload := rewards.CanonicalCreateRewardPoolPayload(chainID, rmPubkey, authorities)
-	if !ed25519.Verify(ed25519.PublicKey(pubkeyBytes), payload, signature) {
+	if !ed25519.Verify(ed25519.PublicKey(pubkeyBytes), bodyBytes, signature) {
 		return ErrRewardPoolOwnerSignatureInvalid
 	}
 	return nil
 }
 
 // isValidRewardPoolTransaction is the entry point for both CheckTx and
-// block validation. Signature + deadline live on the envelope; we recover
-// the signer once here and pass it to per-action validators.
+// block validation. Signatures + deadline live on the envelope; we
+// recover the secp256k1 signer once here, then dispatch to per-action
+// validators that handle the rest (including the ed25519
+// rm_owner_signature for Create).
 func (s *Server) isValidRewardPoolTransaction(ctx context.Context, signedTx *corev1.SignedTransaction, blockHeight int64) error {
 	envelope := signedTx.GetRewardPool()
 	if envelope == nil || envelope.Body == nil {
@@ -78,7 +84,7 @@ func (s *Server) isValidRewardPoolTransaction(ctx context.Context, signedTx *cor
 
 	switch action := envelope.Body.Action.(type) {
 	case *corev1.RewardPoolBody_Create:
-		return s.validateCreateRewardPool(ctx, action.Create, signer)
+		return s.validateCreateRewardPool(ctx, envelope, action.Create, signer)
 	case *corev1.RewardPoolBody_SetAuthorities:
 		return s.validateSetRewardPoolAuthorities(ctx, action.SetAuthorities, signer)
 	default:
@@ -86,32 +92,36 @@ func (s *Server) isValidRewardPoolTransaction(ctx context.Context, signedTx *cor
 	}
 }
 
-// validateCreateRewardPool: pool is identified by the Solana reward manager
-// pubkey (must be valid base58 32 bytes); the rm_owner_signature must
-// verify against that pubkey over the canonical payload (proves the
-// caller controls the RM keypair, defeating frontrunning); signer must
-// be in the initial authorities; the initial authority list must be
-// non-empty and contain only valid eth addresses.
+// validateCreateRewardPool runs two independent authorization checks
+// alongside the structural validation:
 //
-// Two independent authorization checks are required intentionally:
-//   - rm_owner_signature (ed25519, against rm_pubkey): proves the
-//     legitimate RM keypair holder authorized this exact (rm,
-//     authorities) tuple. Defeats frontrunning by an observer who sees
-//     the RM pubkey on Solana but lacks the keypair.
-//   - envelope signer (secp256k1) ∈ initial authorities: proves the
-//     fee-paying eth address is in the pool's initial set, which keeps
-//     the existing "you can't create a pool you have no membership in"
-//     property. Operationally the launchpad relay holds the per-mint
-//     claim authority eth key and uses it as both the envelope signer
-//     and the only initial authority.
-func (s *Server) validateCreateRewardPool(ctx context.Context, msg *corev1.CreateRewardPool, signer string) error {
+//   - envelope.rm_owner_signature (ed25519, verified against
+//     msg.rewards_manager_pubkey): proves the caller controls the
+//     RM keypair. Defeats frontrunning by an observer who sees the RM
+//     pubkey on Solana but lacks the launchpad's deterministic secret.
+//   - envelope signer (secp256k1, recovered from envelope.signature) ∈
+//     msg.authorities: keeps the "you can't create a pool you have no
+//     membership in" property. Operationally the launchpad relay holds
+//     both keys and uses the per-mint claim authority eth key as the
+//     envelope signer and as the only initial authority.
+//
+// Both signatures cover the same body bytes — the secp256k1 path uses
+// common.ProtoRecover (which marshals deterministically); the ed25519
+// path verifies against common.ProtoSignableBytes(body) directly. body
+// covers deadline_block_height and the action oneof, so stale-deadline
+// replay is blocked for both signatures together.
+func (s *Server) validateCreateRewardPool(ctx context.Context, envelope *corev1.RewardPoolMessage, msg *corev1.CreateRewardPool, signer string) error {
 	if err := validateRewardsManagerPubkey(msg.RewardsManagerPubkey); err != nil {
 		return err
 	}
 	if err := validateAuthorityList(msg.Authorities); err != nil {
 		return err
 	}
-	if err := verifyRewardPoolOwnerSignature(s.config.GenesisFile.ChainID, msg.RewardsManagerPubkey, msg.Authorities, msg.RmOwnerSignature); err != nil {
+	bodyBytes, err := common.ProtoSignableBytes(envelope.Body)
+	if err != nil {
+		return fmt.Errorf("%w: marshal body for rm signature: %v", ErrRewardPoolOwnerSignatureInvalid, err)
+	}
+	if err := verifyRewardPoolOwnerSignature(msg.RewardsManagerPubkey, bodyBytes, envelope.RmOwnerSignature); err != nil {
 		return err
 	}
 	canonical := rewards.CanonicalAuthorities(msg.Authorities)
@@ -199,8 +209,9 @@ func (s *Server) validateSetRewardPoolAuthorities(ctx context.Context, msg *core
 }
 
 // finalizeRewardPoolTransaction is invoked after a tx is included in a block.
-// Signature was already verified at validate time; we re-recover here only
-// because the finalize path is its own consensus boundary.
+// Signatures were already verified at validate time; we re-check here as
+// defense-in-depth because the finalize path is its own consensus boundary
+// (block-sync replay does not re-run ProcessProposal / CheckTx).
 func (s *Server) finalizeRewardPoolTransaction(ctx context.Context, req *abcitypes.FinalizeBlockRequest, envelope *corev1.RewardPoolMessage, txhash string, messageIndex int64) (proto.Message, error) {
 	if envelope == nil || envelope.Body == nil {
 		return nil, fmt.Errorf("tx: %s, message index: %d, reward pool message body not found", txhash, messageIndex)
@@ -212,7 +223,7 @@ func (s *Server) finalizeRewardPoolTransaction(ctx context.Context, req *abcityp
 
 	switch action := envelope.Body.Action.(type) {
 	case *corev1.RewardPoolBody_Create:
-		if err := s.finalizeCreateRewardPool(ctx, action.Create, signer); err != nil {
+		if err := s.finalizeCreateRewardPool(ctx, envelope, action.Create, signer); err != nil {
 			return nil, errors.Join(ErrRewardMessageFinalization, err)
 		}
 	case *corev1.RewardPoolBody_SetAuthorities:
@@ -235,14 +246,18 @@ func (s *Server) finalizeRewardPoolTransaction(ctx context.Context, req *abcityp
 // validate-time checks. Repeating the same shape + signer-membership
 // validation here keeps the post-replay state identical to what the live
 // validate path produces.
-func (s *Server) finalizeCreateRewardPool(ctx context.Context, msg *corev1.CreateRewardPool, signer string) error {
+func (s *Server) finalizeCreateRewardPool(ctx context.Context, envelope *corev1.RewardPoolMessage, msg *corev1.CreateRewardPool, signer string) error {
 	if err := validateRewardsManagerPubkey(msg.RewardsManagerPubkey); err != nil {
 		return err
 	}
 	if err := validateAuthorityList(msg.Authorities); err != nil {
 		return err
 	}
-	if err := verifyRewardPoolOwnerSignature(s.config.GenesisFile.ChainID, msg.RewardsManagerPubkey, msg.Authorities, msg.RmOwnerSignature); err != nil {
+	bodyBytes, err := common.ProtoSignableBytes(envelope.Body)
+	if err != nil {
+		return fmt.Errorf("%w: marshal body for rm signature: %v", ErrRewardPoolOwnerSignatureInvalid, err)
+	}
+	if err := verifyRewardPoolOwnerSignature(msg.RewardsManagerPubkey, bodyBytes, envelope.RmOwnerSignature); err != nil {
 		return err
 	}
 	canonical := rewards.CanonicalAuthorities(msg.Authorities)

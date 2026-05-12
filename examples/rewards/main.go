@@ -11,7 +11,6 @@ import (
 	"connectrpc.com/connect"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
-	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 	"github.com/mr-tron/base58/base58"
 )
@@ -33,9 +32,6 @@ func main() {
 
 	oap := sdk.NewOpenAudioSDK("creatornode11.staging.audius.co")
 	oap.SetPrivKey(privateKey)
-	if err := oap.Init(context.Background()); err != nil {
-		log.Fatalf("Failed to init SDK: %v", err)
-	}
 
 	resp, err := oap.Core.GetStatus(context.Background(), connect.NewRequest(&v1.GetStatusRequest{}))
 	if err != nil {
@@ -77,8 +73,7 @@ func main() {
 	if _, err := oap.Rewards.CreateRewardPool(context.Background(), &v1.CreateRewardPool{
 		RewardsManagerPubkey: rewardsManagerPubkey,
 		Authorities:          authorities,
-		RmOwnerSignature:     rewards.SignCreateRewardPool(rmPrivKey, oap.ChainID(), rewardsManagerPubkey, authorities),
-	}, deadline); err != nil {
+	}, rmPrivKey, deadline); err != nil {
 		log.Fatalf("Failed to create reward pool: %v", err)
 	}
 
