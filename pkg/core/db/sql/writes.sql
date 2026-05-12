@@ -337,7 +337,7 @@ insert into core_rewards (
     reward_id,
     name,
     amount,
-    claim_authorities,
+    rewards_manager_pubkey,
     raw_message,
     block_height
 ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
@@ -346,7 +346,7 @@ insert into core_rewards (
 update core_rewards
 set name = $2,
     amount = $3,
-    claim_authorities = $4,
+    rewards_manager_pubkey = $4,
     raw_message = $5,
     block_height = $6,
     updated_at = now()
@@ -355,6 +355,52 @@ where address = $1;
 -- name: DeleteCoreReward :exec
 delete from core_rewards
 where address = $1;
+
+-- name: UpsertLegacyReplayRewardPool :exec
+-- Used only by finalizeLegacyCreateReward during block-sync replay of
+-- legacy-shape CreateReward bytes. Materializes a real-RM pool from the
+-- legacy reward's inline claim_authorities.
+--
+-- DO UPDATE unions the new authorities with the existing set rather than
+-- overwriting. This matches the migration backfill, which UNIONs authorities
+-- across every legacy reward referencing the RM. Without the union, a
+-- from-genesis-syncing node would end up with
+-- pool.authorities = last-replayed-reward.authorities, while an in-place-
+-- upgraded node would have UNION(every reward) — different DB state ⇒
+-- different validation outcomes for downstream txs ⇒ apphash divergence.
+insert into core_reward_pools (
+    rewards_manager_pubkey,
+    authorities
+) values ($1, $2)
+on conflict (rewards_manager_pubkey) do update set
+    authorities = (
+        select array(
+            select distinct lower(trim(a))
+            from unnest(core_reward_pools.authorities || excluded.authorities) as a
+            where a is not null and trim(a) <> ''
+            order by 1
+        )
+    ),
+    updated_at = now();
+
+-- name: InsertRewardPool :exec
+-- Inserts a first-class reward pool created via a CreateRewardPool cometbft
+-- transaction. The pool's identity IS the Solana reward manager pubkey;
+-- uniqueness is validated at validate time and same-block collisions
+-- surface here as a PK violation that fails the second tx in the block.
+insert into core_reward_pools (
+    rewards_manager_pubkey,
+    authorities
+) values ($1, $2);
+
+-- name: UpdateRewardPoolAuthorities :exec
+-- Replaces the authority set on an existing pool wholesale. Used by the
+-- SetRewardPoolAuthorities finalizer; callers compose the new list themselves
+-- (current minus the removed key, current plus the added key, etc.).
+update core_reward_pools
+set authorities = $2,
+    updated_at = now()
+where rewards_manager_pubkey = $1;
 
 -- name: InsertFileUpload :exec
 insert into core_uploads(
