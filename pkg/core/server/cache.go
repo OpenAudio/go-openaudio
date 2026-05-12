@@ -30,6 +30,7 @@ const (
 	ProcessStateLogSync         = "logSync"
 	ProcessStateSnapshotCreator = "snapshotCreator"
 	ProcessStateMempoolCache    = "mempoolCache"
+	ProcessStateRestore         = "restore"
 
 	NodeInfoKey      = "nodeInfo"
 	PeersKey         = "peers"
@@ -63,6 +64,7 @@ type Cache struct {
 	logSyncState         otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
 	snapshotCreatorState otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
 	mempoolCacheState    otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
+	restoreState         otter.Cache[string, *v1.GetStatusResponse_ProcessInfo_ProcessStateInfo]
 
 	// info
 	nodeInfo     otter.Cache[string, *v1.GetStatusResponse_NodeInfo]
@@ -166,6 +168,12 @@ func (c *Cache) initCaches(config *config.Config) error {
 
 	c.mempoolCacheState = initCache(ProcessStateMempoolCache, &v1.GetStatusResponse_ProcessInfo_ProcessStateInfo{
 		State:     v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_STARTING,
+		StartedAt: timestamppb.New(time.Now()),
+	})
+
+	// Restore starts as completed so it only appears in the console during active restores.
+	c.restoreState = initCache(ProcessStateRestore, &v1.GetStatusResponse_ProcessInfo_ProcessStateInfo{
+		State:     v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED,
 		StartedAt: timestamppb.New(time.Now()),
 	})
 
@@ -471,6 +479,8 @@ func (c *Cache) UpdateProcessState(processKey string, state v1.GetStatusResponse
 		processCache = c.snapshotCreatorState
 	case ProcessStateMempoolCache:
 		processCache = c.mempoolCacheState
+	case ProcessStateRestore:
+		processCache = c.restoreState
 	default:
 		return fmt.Errorf("unknown process: %s", processKey)
 	}
