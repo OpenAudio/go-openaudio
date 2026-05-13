@@ -18,6 +18,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/bdragon300/tusgo"
+	"github.com/erni27/imcache"
 	"go.uber.org/zap"
 )
 
@@ -348,8 +349,15 @@ func (ss *MediorumServer) findMissedReplications() {
 
 	for _, upload := range uploads {
 		if len(upload.Mirrors) < ss.Config.ReplicationFactor {
+			// Backoff so we don't re-queue the same upload every cycle while
+			// it stays under-replicated (e.g. its source blob is gone or
+			// peers keep rejecting it). After the cache TTL we'll try again.
+			if _, attempted := ss.replicationAttempts.Get(upload.ID); attempted {
+				continue
+			}
 			select {
 			case ss.replicationWork <- upload:
+				ss.replicationAttempts.Set(upload.ID, struct{}{}, imcache.WithDefaultExpiration())
 				ss.logger.Info("queued upload for replication", zap.String("uploadID", upload.ID))
 			default:
 				// Channel full, skip for now

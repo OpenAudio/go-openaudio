@@ -140,6 +140,8 @@ type MediorumServer struct {
 	trackAccessInfoCache  *imcache.Cache[string, trackAccessInfo]
 	attrCache             *imcache.Cache[string, *blob.Attributes]
 	knownPresent          *imcache.Cache[string, int64]
+	bgPullBackoff         *imcache.Cache[string, struct{}]
+	replicationAttempts   *imcache.Cache[string, struct{}]
 	failsPeerReachability bool
 
 	StartedAt time.Time
@@ -394,6 +396,8 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		trackAccessInfoCache: imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
 		attrCache:            imcache.New(imcache.WithMaxEntriesLimitOption[string, *blob.Attributes](10_000, imcache.EvictionPolicyLRU)),
 		knownPresent:         imcache.New(imcache.WithMaxEntriesLimitOption[string, int64](500_000, imcache.EvictionPolicyLRU)),
+		bgPullBackoff:        imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
+		replicationAttempts:  imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
 
 		StartedAt: time.Now().UTC(),
 		Config:    config,
