@@ -123,11 +123,12 @@ func mergePlaylistFromMetadata(p *Params, base *playlistRow) *playlistRow {
 		out.IsScheduledRelease = v
 	}
 
-	if v, ok := p.MetadataJSON("playlist_contents"); ok {
-		out.PlaylistContents = marshalJSONOrNil(v)
-		if len(out.PlaylistContents) == 0 {
-			out.PlaylistContents = []byte("{}")
-		}
+	// playlist_contents: present when the metadata key exists, including the
+	// SDK-sent empty list `[]`. Normalize to `{"track_ids":[...]}` regardless
+	// of whether the SDK sent the legacy dict or the new bare-array shape so
+	// downstream readers see one schema.
+	if _, ok := p.Metadata["playlist_contents"]; ok {
+		out.PlaylistContents = normalizePlaylistContentsJSON(p.Metadata)
 	}
 	if v, ok := p.MetadataJSON("stream_conditions"); ok {
 		out.StreamConditions = marshalJSONOrNil(v)
@@ -242,13 +243,49 @@ func insertPlaylistRow(ctx context.Context, dbtx db.DBTX, r *playlistRow, isDele
 }
 
 func metadataPlaylistContentsJSON(p *Params) []byte {
-	v, ok := p.MetadataJSON("playlist_contents")
-	if !ok || v == nil {
-		return []byte("{}")
+	if p == nil || p.Metadata == nil {
+		return []byte(`{"track_ids":[]}`)
 	}
-	b, err := json.Marshal(v)
+	if _, ok := p.Metadata["playlist_contents"]; !ok {
+		return []byte(`{"track_ids":[]}`)
+	}
+	return normalizePlaylistContentsJSON(p.Metadata)
+}
+
+// normalizePlaylistContentsJSON returns the JSONB payload to persist to
+// playlists.playlist_contents — always `{"track_ids": [...]}` regardless
+// of input shape.
+//
+// Accepts:
+//   - bare array form (new SDK):  [{"track":..,"time":..}, ...]  or  []
+//   - dict form (legacy):         {"track_ids": [...]}
+//   - explicit null / missing key: empty list
+//
+// Inner entries pass through as-is; only the outer wrapper is normalized.
+// The hashid-decode + dedupe + index-time logic lives at the junction-table
+// layer (updatePlaylistTracks).
+func normalizePlaylistContentsJSON(metadata map[string]any) []byte {
+	raw, ok := metadata["playlist_contents"]
+	if !ok || raw == nil {
+		return []byte(`{"track_ids":[]}`)
+	}
+	var entries []any
+	switch v := raw.(type) {
+	case []any:
+		entries = v
+	case map[string]any:
+		if t, ok := v["track_ids"]; ok {
+			if arr, ok := t.([]any); ok {
+				entries = arr
+			}
+		}
+	}
+	if entries == nil {
+		entries = []any{}
+	}
+	out, err := json.Marshal(map[string]any{"track_ids": entries})
 	if err != nil {
-		return []byte("{}")
+		return []byte(`{"track_ids":[]}`)
 	}
-	return b
+	return out
 }
