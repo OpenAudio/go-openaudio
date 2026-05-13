@@ -2,9 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Terminology
+
+The Open Audio Protocol uses a single canonical node type: the **Open Audio Validator Node**. The earlier *Discovery Node* / *Content Node* / *Creator Node* split is deprecated — both roles are now served by validator nodes. When writing new code, docs, comments, error messages, or commit messages, use "Open Audio Validator Node" (or "validator node"). Do not introduce new references to *Discovery Node*, *Content Node*, *Creator Node*, or *Discovery Provider*. Existing identifiers such as `creatorNodeEndpoint`, `audius_discprov_url`, and `ServiceProviderFactory` are retained for on-chain / env-var compatibility only and do not reflect the current architecture.
+
 ## Overview
 
-OpenAudio Protocol (go-openaudio) is a Go implementation of the Audius decentralized music distribution protocol. The system consists of validator nodes that run both consensus (CometBFT-based blockchain) and optional storage services (Mediorum) for decentralized audio content.
+OpenAudio Protocol (go-openaudio) is a Go implementation of the Audius decentralized music distribution protocol. The system is built around the **Open Audio Validator Node** — a single node type that runs both consensus (CometBFT-based blockchain) and storage services (Mediorum) for decentralized audio content.
 
 ## Build and Test Commands
 
@@ -108,11 +112,11 @@ make lint-fix
    - Handles node registration and peer management
    - Runs on ports 26656 (P2P), 26657 (RPC), 26659 (custom API)
 
-2. **Mediorum** (`pkg/mediorum/`): Optional content storage service
+2. **Mediorum** (`pkg/mediorum/`): Optional media storage service
    - Decentralized blob storage for audio files and metadata
    - Implements replication across multiple nodes (default: 4x replication)
    - Supports multiple storage backends (local filesystem, S3, GCS)
-   - Only runs on "content nodes" (not "discovery nodes")
+   - Enabled on validator nodes that opt in to storage; legacy *discovery node* registrations run core only
    - Runs on port 1991
 
 3. **ETH Bridge** (`pkg/eth/`): Ethereum integration layer
@@ -146,24 +150,25 @@ The main entry point (`cmd/openaudio/main.go`) starts multiple services:
 - `pos.PoSRequest` channel coordinates Proof of Stake operations between services
 - The `CoreService` is shared across components and set via `SetCore()` after initialization
 
-### Node Types
+### Node Type
 
-**Validators**: Run both core + mediorum storage
+The Open Audio Protocol has a single canonical node type — the **Open Audio Validator Node** — that runs both core consensus and mediorum storage. The two registration modes below are legacy: they exist because some operators are still registered under the older Audius split-node model, and the binary continues to honor those env vars for compatibility.
+
+**Open Audio Validator Node** (canonical)
 - Identified by `nodeEndpoint` env var
+- Runs both core consensus and mediorum storage
 - Store and serve audio content
-- Require more resources (storage, bandwidth)
-- Are meant to be the replacement for content nodes and the sole supported node type
+- Sole supported node type going forward
 
-**Content Nodes**: Run both core + mediorum storage
+**Legacy *Content Node* registration** (deprecated — same software, different env vars)
 - Identified by `creatorNodeEndpoint` env var
-- Store and serve audio content
-- Require more resources (storage, bandwidth)
+- Behaves as a validator node with storage enabled
+- Retained for operators not yet re-registered
 
-**Discovery Nodes**: Run core only (consensus + indexing)
+**Legacy *Discovery Node* registration** (deprecated — same software, storage disabled)
 - Identified by `audius_discprov_url` env var
-- Do not store content
-- Lighter resource requirements
-- Are deprecated
+- Runs core only (consensus + indexing); no storage
+- Retained for operators not yet re-registered
 
 ### Database
 
@@ -176,9 +181,9 @@ The main entry point (`cmd/openaudio/main.go`) starts multiple services:
 ### Configuration
 
 Node configuration is primarily environment-variable driven:
-- **Validators**: `nodeEndpoint`, `delegatePrivateKey`, `delegateOwnerWallet`, `spOwnerWallet`
-- **Content nodes**: `creatorNodeEndpoint`, `delegatePrivateKey`, `delegateOwnerWallet`, `spOwnerWallet`
-- **Discovery nodes**: `audius_discprov_url`, `audius_delegate_private_key`, `audius_delegate_owner_wallet`
+- **Open Audio Validator Node** (canonical): `nodeEndpoint`, `delegatePrivateKey`, `delegateOwnerWallet`, `spOwnerWallet`
+- Legacy *content node* registration (deprecated): `creatorNodeEndpoint`, `delegatePrivateKey`, `delegateOwnerWallet`, `spOwnerWallet`
+- Legacy *discovery node* registration (deprecated): `audius_discprov_url`, `audius_delegate_private_key`, `audius_delegate_owner_wallet`
 - **Network**: `NETWORK` (prod/stage/dev)
 - **Storage**: `AUDIUS_STORAGE_DRIVER_URL` (local/s3/gcs)
 - **TLS**: `OPENAUDIO_TLS_DISABLED`, `OPENAUDIO_TLS_SELF_SIGNED`
