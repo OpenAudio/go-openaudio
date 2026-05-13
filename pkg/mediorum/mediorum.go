@@ -178,6 +178,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		RepairEnabled:            repairEnabled,
 		RepairInterval:           repairInterval,
 		BlobStorageStreaming:      os.Getenv("OPENAUDIO_BLOB_STORAGE_STREAMING") == "true",
+		RedirectOnMiss:            os.Getenv("OPENAUDIO_REDIRECT_ON_MISS") == "true",
 	}
 
 	ss, err := server.New(lc, logger, config, posChannel, core, ethService)

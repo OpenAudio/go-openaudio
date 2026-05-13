@@ -182,6 +182,25 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 				return c.String(404, "blob not found")
 			}
 
+			// Redirect-on-miss: send the user straight to a peer that has
+			// the blob, and kick off a backgrounded pull (with backoff) so
+			// we eventually hold blobs that are rendezvous-ours. Avoids the
+			// doubled-egress cost of pulling-then-serving inline with the
+			// user request.
+			if ss.Config.RedirectOnMiss {
+				host := ss.findNodeToServeBlob(ctx, cid)
+				if host == "" {
+					return c.String(404, "blob not found")
+				}
+				ss.maybeBackgroundPull(cid)
+
+				dest := ss.replaceHost(c, host)
+				query := dest.Query()
+				query.Add("allow_unhealthy", "true") // we confirmed the node has it
+				dest.RawQuery = query.Encode()
+				return c.Redirect(302, dest.String())
+			}
+
 			// Try to pull the file first
 			_, pullErr := ss.findAndPullBlob(ctx, cid, nil)
 			if pullErr == nil {
@@ -389,6 +408,33 @@ func (ss *MediorumServer) findNodeToServeBlob(_ context.Context, key string) str
 	}
 
 	return ""
+}
+
+// maybeBackgroundPull starts an async pull of cid into our local bucket so
+// we eventually hold blobs we're rendezvous-supposed-to-hold, without doing
+// the pull inline with the user request. Skips if the CID isn't ours (no
+// reason to acquire it), if disk is full, or if we already attempted a pull
+// for this CID within the backoff window.
+func (ss *MediorumServer) maybeBackgroundPull(cid string) {
+	_, isMine := ss.rendezvousAllHosts(cid)
+	if !isMine {
+		return
+	}
+	if _, found := ss.bgPullBackoff.Get(cid); found {
+		return
+	}
+	if !ss.diskHasSpaceForCID(cid, nil) {
+		return
+	}
+	ss.bgPullBackoff.Set(cid, struct{}{}, imcache.WithDefaultExpiration())
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if _, err := ss.findAndPullBlob(ctx, cid, nil); err != nil {
+			ss.logger.Debug("background pull failed", zap.String("cid", cid), zap.Error(err))
+		}
+	}()
 }
 
 // findAndPullBlob locates a CID on the network and pulls it into the local
