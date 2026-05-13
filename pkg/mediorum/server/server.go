@@ -60,6 +60,7 @@ type MediorumConfig struct {
 	ReplicationFactor         int
 	Dir                       string `default:"/tmp/mediorum"`
 	BlobStoreDSN              string `json:"-"`
+	ArchiveBlobStoreDSN       string `json:"-"`
 	MoveFromBlobStoreDSN      string `json:"-"`
 	PostgresDSN               string `json:"-"`
 	PrivateKey                string `json:"-"`
@@ -78,7 +79,6 @@ type MediorumConfig struct {
 	DeadHosts                 []string
 	RepairEnabled              bool          `default:"true"`
 	RepairInterval             time.Duration `default:"1h"`
-	RepairQmCidsUseListIndex   bool
 
 	ProgrammableDistributionEnabled bool
 	BlobStorageStreaming             bool
@@ -94,6 +94,7 @@ type MediorumServer struct {
 	lc               *lifecycle.Lifecycle
 	echo             *echo.Echo
 	bucket           *blob.Bucket
+	archiveBucket    *blob.Bucket
 	logger           *zap.Logger
 	crud             *crudr.Crudr
 	pgPool           *pgxpool.Pool
@@ -113,6 +114,11 @@ type MediorumServer struct {
 	mediorumPathSize   uint64
 	mediorumPathFree   uint64
 	storageExpectation uint64
+
+	// archive bucket stats (only populated when ArchiveBlobStoreDSN is set)
+	archivePathUsed uint64
+	archivePathSize uint64
+	archivePathFree uint64
 
 	databaseSize          uint64
 	dbSizeErr             string
@@ -134,6 +140,8 @@ type MediorumServer struct {
 	trackAccessInfoCache  *imcache.Cache[string, trackAccessInfo]
 	attrCache             *imcache.Cache[string, *blob.Attributes]
 	knownPresent          *imcache.Cache[string, int64]
+	bgPullBackoff         *imcache.Cache[string, struct{}]
+	replicationAttempts   *imcache.Cache[string, struct{}]
 	failsPeerReachability bool
 
 	StartedAt time.Time
@@ -195,17 +203,11 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 
 	if config.BlobStoreDSN == "" {
 		config.BlobStoreDSN = "file://" + config.Dir + "/blobs?no_tmp_dir=true"
-	} else if strings.HasPrefix(config.BlobStoreDSN, "file://") {
-		// If using file storage, ensure no_tmp_dir=true is set to avoid cross-device link errors
-		// when /tmp and the blob storage path are on different mount points
-		if !strings.Contains(config.BlobStoreDSN, "no_tmp_dir") {
-			// Add the parameter, handling existing query params
-			if strings.Contains(config.BlobStoreDSN, "?") {
-				config.BlobStoreDSN += "&no_tmp_dir=true"
-			} else {
-				config.BlobStoreDSN += "?no_tmp_dir=true"
-			}
-		}
+	} else {
+		config.BlobStoreDSN = ensureNoTmpDir(config.BlobStoreDSN)
+	}
+	if config.ArchiveBlobStoreDSN != "" {
+		config.ArchiveBlobStoreDSN = ensureNoTmpDir(config.ArchiveBlobStoreDSN)
 	}
 
 	if pk, err := ethcontracts.ParsePrivateKeyHex(config.PrivateKey); err != nil {
@@ -238,6 +240,23 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	if err != nil {
 		logger.Error("failed to open persistent storage bucket", zap.Error(err))
 		return nil, err
+	}
+
+	// archive bucket: only opened if configured. Routes CIDs that this node
+	// only stores due to StoreAll (rendezvous rank >= ReplicationFactor).
+	var archiveBucket *blob.Bucket
+	if config.ArchiveBlobStoreDSN != "" {
+		if config.ArchiveBlobStoreDSN == config.BlobStoreDSN {
+			return nil, errors.New("OPENAUDIO_ARCHIVE_STORAGE_DRIVER_URL must differ from OPENAUDIO_STORAGE_DRIVER_URL")
+		}
+		if !config.StoreAll {
+			logger.Warn("OPENAUDIO_ARCHIVE_STORAGE_DRIVER_URL is set but STORE_ALL is false; archive bucket will be unused")
+		}
+		archiveBucket, err = persistence.Open(config.ArchiveBlobStoreDSN)
+		if err != nil {
+			logger.Error("failed to open archive storage bucket", zap.Error(err))
+			return nil, err
+		}
 	}
 
 	// bucket to move all files from
@@ -354,6 +373,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		lc:               mediorumLifecycle,
 		echo:             echoServer,
 		bucket:           bucket,
+		archiveBucket:    archiveBucket,
 		crud:             crud,
 		pgPool:           pgPool,
 		reqClient:        reqClient,
@@ -376,6 +396,8 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		trackAccessInfoCache: imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
 		attrCache:            imcache.New(imcache.WithMaxEntriesLimitOption[string, *blob.Attributes](10_000, imcache.EvictionPolicyLRU)),
 		knownPresent:         imcache.New(imcache.WithMaxEntriesLimitOption[string, int64](500_000, imcache.EvictionPolicyLRU)),
+		bgPullBackoff:        imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
+		replicationAttempts:  imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
 
 		StartedAt: time.Now().UTC(),
 		Config:    config,
@@ -501,6 +523,22 @@ func setResponseACAOHeaderFromRequest(req http.Request, resp echo.Response) {
 		echo.HeaderAccessControlAllowOrigin,
 		req.Header.Get(echo.HeaderOrigin),
 	)
+}
+
+// ensureNoTmpDir ensures file:// DSNs carry no_tmp_dir=true to avoid cross-device
+// link errors when /tmp and the blob storage path are on different mount points.
+// Non-file DSNs are returned unchanged.
+func ensureNoTmpDir(dsn string) string {
+	if !strings.HasPrefix(dsn, "file://") {
+		return dsn
+	}
+	if strings.Contains(dsn, "no_tmp_dir") {
+		return dsn
+	}
+	if strings.Contains(dsn, "?") {
+		return dsn + "&no_tmp_dir=true"
+	}
+	return dsn + "?no_tmp_dir=true"
 }
 
 func ACAOHeaderOverwriteMiddleware(next echo.HandlerFunc) echo.HandlerFunc {

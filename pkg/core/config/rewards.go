@@ -2,6 +2,31 @@ package config
 
 import "github.com/OpenAudio/go-openaudio/pkg/rewards"
 
+// Solana reward manager pubkeys for the AUDIO mint, per environment.
+// Used as a denylist by validateCreateRewardPool: pools cannot be
+// created for the AUDIO RM, so AUDIO sender attestations stay on the
+// network-wide validator/AAO trust set rather than shifting to pool-
+// controlled authorities. Empty values disable the denylist for that
+// environment.
+var (
+	DevAudioRewardsManagerPubkey  = "DJPzVothq58SmkpRb1ATn5ddN2Rpv1j2TcGvM3XsHf1c"
+	ProdAudioRewardsManagerPubkey = "71hWFVYokLaN1PNYzTAWi13EfJ7Xt9VbSWUKsXUT8mxE"
+)
+
+// AudioRewardsManagerPubkey returns the configured AUDIO RM pubkey for
+// the current runtime environment, or "" if none is configured. Callers
+// MUST treat "" as "no denylist enforcement."
+func AudioRewardsManagerPubkey() string {
+	switch GetRuntimeEnvironment() {
+	case "prod", "production", "mainnet":
+		return ProdAudioRewardsManagerPubkey
+	case "dev", "development", "devnet", "local", "sandbox":
+		return DevAudioRewardsManagerPubkey
+	default:
+		return ""
+	}
+}
+
 var (
 	DevClaimAuthorities = []rewards.ClaimAuthority{
 		{

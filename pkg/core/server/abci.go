@@ -91,12 +91,13 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 	s.logger.Info("got latest block", zap.Bool("ss_enabled", s.config.StateSync.Enable), zap.Bool("already_synced", alreadySynced), zap.Int("rpc_servers", len(s.config.StateSync.RPCServers)))
 
-	// Check if we already have downloaded the snapshot
-	skipCometStateSync := false
+	// Restore in-progress state sync tracking from stored metadata (e.g. after a restart
+	// mid-download). CometBFT will re-offer the snapshot and ApplySnapshotChunk will reuse
+	// any chunks already on disk, so we never need to bypass CometBFT's state sync — doing
+	// so would leave CometBFT's state.db at height 0 and cause a handshake mismatch.
 	if s.config.StateSync.Enable && !alreadySynced {
 		offeredSnapshot, err := s.GetOfferedSnapshot()
 		if err == nil && offeredSnapshot != nil {
-			// Restore accepted snapshot tracking from stored metadata (for hot reload recovery)
 			s.snapshotMutex.Lock()
 			s.acceptedSnapshotHeight = offeredSnapshot.Height
 			s.acceptedSnapshotHash = make([]byte, len(offeredSnapshot.Hash))
@@ -107,39 +108,25 @@ func (s *Server) startABCI(ctx context.Context) error {
 				zap.Uint64("height", offeredSnapshot.Height),
 				zap.String("hash", hex.EncodeToString(offeredSnapshot.Hash)))
 
-			if s.haveAllChunks(offeredSnapshot.Height, int(offeredSnapshot.Chunks)) {
-				s.logger.Info("all chunks already downloaded, reconstructing directly and skipping CometBFT state sync",
+			// Restore partial download progress to the console display
+			downloadedChunks, err := s.countReconstructionChunks(int64(offeredSnapshot.Height))
+			if err == nil && downloadedChunks > 0 {
+				s.logger.Info("resuming state sync: chunks already on disk will be reused",
 					zap.Uint64("height", offeredSnapshot.Height),
-					zap.Uint32("chunks", offeredSnapshot.Chunks))
+					zap.Int64("downloadedChunks", downloadedChunks),
+					zap.Uint32("totalChunks", offeredSnapshot.Chunks))
 
-				if err := s.ReassemblePgDump(int64(offeredSnapshot.Height)); err == nil {
-					if err := s.RestoreDatabase(int64(offeredSnapshot.Height)); err == nil {
-						s.logger.Info("state sync completed from existing chunks")
-						s.clearStateSyncInfo()
-						skipCometStateSync = true
-					}
-				}
-			} else {
-				// We have partial progress, restore it in state sync info
-				downloadedChunks, err := s.countReconstructionChunks(int64(offeredSnapshot.Height))
-				if err == nil && downloadedChunks > 0 {
-					s.logger.Info("restoring partial state sync progress",
-						zap.Uint64("height", offeredSnapshot.Height),
-						zap.Int64("downloadedChunks", downloadedChunks),
-						zap.Uint32("totalChunks", offeredSnapshot.Chunks))
-
-					s.updateStateSyncInfo(func(info *v1.GetStatusResponse_SyncInfo_StateSyncInfo) *v1.GetStatusResponse_SyncInfo_StateSyncInfo {
-						info = s.ensureStateSyncInfo(info, offeredSnapshot.Height, offeredSnapshot.Hash, offeredSnapshot.Chunks)
-						info.Phase = v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_DOWNLOADING_CHUNKS
-						info.DownloadedChunks = downloadedChunks
-						return info
-					})
-				}
+				s.updateStateSyncInfo(func(info *v1.GetStatusResponse_SyncInfo_StateSyncInfo) *v1.GetStatusResponse_SyncInfo_StateSyncInfo {
+					info = s.ensureStateSyncInfo(info, offeredSnapshot.Height, offeredSnapshot.Hash, offeredSnapshot.Chunks)
+					info.Phase = v1.GetStatusResponse_SyncInfo_StateSyncInfo_PHASE_DOWNLOADING_CHUNKS
+					info.DownloadedChunks = downloadedChunks
+					return info
+				})
 			}
 		}
 	}
 
-	if s.config.StateSync.Enable && !alreadySynced && !skipCometStateSync {
+	if s.config.StateSync.Enable && !alreadySynced {
 		rpcServers := s.config.StateSync.RPCServers
 		s.logger.Info("state sync enabled", zap.Any("rpcservers", rpcServers))
 
@@ -1020,6 +1007,11 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 			s.logger.Error("Invalid block: invalid file upload tx", zap.Error(err))
 			return false, nil
 		}
+	case *v1.SignedTransaction_RewardPool:
+		if err := s.isValidRewardPoolTransaction(ctx, signedTx, blockHeight); err != nil {
+			s.logger.Error("Invalid block: invalid reward pool tx", zap.Error(err))
+			return false, nil
+		}
 	}
 	return true, nil
 }
@@ -1028,6 +1020,8 @@ func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64,
 	switch signedTx.Transaction.(type) {
 	case *v1.SignedTransaction_Reward:
 		return s.isValidRewardTransaction(ctx, signedTx, currentHeight)
+	case *v1.SignedTransaction_RewardPool:
+		return s.isValidRewardPoolTransaction(ctx, signedTx, currentHeight)
 	default:
 		// For other transaction types, no validation needed during SendTransaction
 		return nil
@@ -1059,6 +1053,8 @@ func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.Finaliz
 		return s.finalizeRelease(ctx, msg, txHash)
 	case *v1.SignedTransaction_Reward:
 		return s.finalizeRewardTransaction(ctx, req, msg.GetReward(), txHash, sender)
+	case *v1.SignedTransaction_RewardPool:
+		return s.finalizeRewardPoolTransaction(ctx, req, msg.GetRewardPool(), txHash, 0)
 	case *v1.SignedTransaction_FileUpload:
 		return s.finalizeFileUpload(ctx, msg, txHash, req.Height)
 	default:

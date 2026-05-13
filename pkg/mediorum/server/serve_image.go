@@ -12,6 +12,7 @@ import (
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/erni27/imcache"
+	"go.uber.org/zap"
 
 	"github.com/labstack/echo/v4"
 	"gocloud.dev/blob"
@@ -54,14 +55,6 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 		}
 	}
 
-	serveSuccess := func(blobPath string) error {
-		if blob, err := ss.bucket.NewReader(ctx, blobPath, nil); err == nil {
-			return serveSuccessWithReader(blob)
-		} else {
-			return err
-		}
-	}
-
 	// if the client provided a filename, set it in the header to be auto-populated in download prompt
 	filenameForDownload := c.QueryParam("filename")
 	if filenameForDownload != "" {
@@ -73,6 +66,34 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	if cid, err := ss.getUploadOrigCID(containerCID); err == nil {
 		c.Response().Header().Set("x-orig-cid", cid)
 		containerCID = cid
+	}
+
+	// origImageCID is the identifier findAndPullBlob/replicateToMyBucket use
+	// when fetching the original. For non-legacy CIDs it equals containerCID;
+	// for legacy CIDs it's "<cid>/original.jpg" — a *different* rendezvous-rank
+	// input. Route reads of the original by origImageCID so they land in the
+	// same bucket the pull wrote to.
+	//
+	// Variants (resized derivatives) are pure on-demand cache — regenerated
+	// from the original by Resized() below — and always live in the primary
+	// bucket. Putting regeneratable cache in cold storage would force
+	// retrieval fees on every image request that hit a node holding the
+	// original in archive.
+	origImageCID := containerCID
+	if cidutil.IsLegacyCID(origImageCID) {
+		origImageCID += "/original.jpg"
+	}
+
+	serveSuccess := func(blobPath string) error {
+		// Use readBlob so original.jpg requests still resolve when the
+		// original lives in archive — variantStoragePath for original.jpg
+		// is the actual original's storage key, and only resized variants
+		// are guaranteed to live in primary.
+		if blob, _, err := ss.readBlob(ctx, blobPath); err == nil {
+			return serveSuccessWithReader(blob)
+		} else {
+			return err
+		}
 	}
 
 	// 2. serve variant
@@ -95,27 +116,24 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 
 	c.Response().Header().Set("x-variant-storage-path", variantStoragePath)
 
-	// we already have the resized version
+	// we already have the resized version (variants always live in primary)
 	if !skipCache {
 		if blob, err := ss.bucket.NewReader(ctx, variantStoragePath, nil); err == nil {
 			return serveSuccessWithReader(blob)
 		}
 	}
 
-	// open the orig for resizing
-	origImageCID := containerCID
-	if cidutil.IsLegacyCID(origImageCID) {
-		origImageCID += "/original.jpg"
-	}
-	origReader, err := ss.bucket.NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
+	// open the orig for resizing — readBlob falls back to archive when the
+	// original lives there (e.g. on a StoreAll+archive node).
+	origReader, _, err := ss.readBlob(ctx, cidutil.ShardCID(origImageCID))
 
 	// if we don't have orig, fetch from network
 	if err != nil {
 		startFetch := time.Now()
-		host, pullErr := ss.findAndPullBlob(ctx, origImageCID)
+		host, pullErr := ss.findAndPullBlob(ctx, origImageCID, nil)
 		if pullErr != nil {
 			// Pull failed - check if it's due to disk space
-			if !ss.diskHasSpace() {
+			if !ss.diskHasSpaceForCID(origImageCID, nil) {
 				// Disk is full, proxy the request instead of erroring
 				// Redirect to a node that can serve this variant
 				redirectHost := ss.findNodeToServeBlob(ctx, origImageCID)
@@ -143,19 +161,31 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 		c.Response().Header().Set("x-fetch-host", host)
 		c.Response().Header().Set("x-fetch-ok", fmt.Sprintf("%.2fs", time.Since(startFetch).Seconds()))
 
-		origReader, err = ss.bucket.NewReader(ctx, cidutil.ShardCID(origImageCID), nil)
+		origReader, _, err = ss.readBlob(ctx, cidutil.ShardCID(origImageCID))
 		if err != nil {
 			return err
 		}
 	}
 
-	// do resize if not original.jpg
+	// do resize if not original.jpg. Variants always go to primary — see comment above.
 	if !isOriginalJpg {
 		resizeStart := time.Now()
 		resized, _, _ := Resized(".jpg", origReader, w, h, "fill")
-		w, _ := ss.bucket.NewWriter(ctx, variantStoragePath, nil)
-		io.Copy(w, resized)
-		w.Close()
+		// Variants are best-effort cache. If the write to primary fails (full
+		// disk, transient backend error), log and skip the cache step rather
+		// than nil-deref on io.Copy or fail the user's request — the resized
+		// bytes are served from `serveSuccess` below either way (next request
+		// regenerates the variant).
+		if vw, vwErr := ss.bucket.NewWriter(ctx, variantStoragePath, nil); vwErr == nil {
+			if _, copyErr := io.Copy(vw, resized); copyErr != nil {
+				ss.logger.Warn("variant cache write copy failed", zap.String("path", variantStoragePath), zap.Error(copyErr))
+			}
+			if closeErr := vw.Close(); closeErr != nil {
+				ss.logger.Warn("variant cache write close failed", zap.String("path", variantStoragePath), zap.Error(closeErr))
+			}
+		} else {
+			ss.logger.Warn("variant cache writer open failed", zap.String("path", variantStoragePath), zap.Error(vwErr))
+		}
 		c.Response().Header().Set("x-resize-ok", fmt.Sprintf("%.2fs", time.Since(resizeStart).Seconds()))
 	}
 	origReader.Close()

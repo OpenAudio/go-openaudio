@@ -329,26 +329,8 @@ func (e *Indexer) indexBlocks() error {
 			e.lastEmBlock++
 			emBlock = e.lastEmBlock
 
-			// Get the previous current block's hash (for parenthash).
-			var prevHash *string
-			_ = e.pool.QueryRow(context.Background(),
-				"SELECT blockhash FROM blocks WHERE is_current = true").Scan(&prevHash)
-
-			// Mark previous block as not current.
-			_, err = e.pool.Exec(context.Background(),
-				"UPDATE blocks SET is_current = false WHERE is_current = true")
-			if err != nil {
-				e.logger.Error("error marking previous block not current", zap.Error(err))
-			}
-
-			// Insert new block as current.
-			_, err = e.pool.Exec(context.Background(),
-				`INSERT INTO blocks (blockhash, parenthash, number, is_current)
-				 VALUES ($1, $2, $3, true)`,
-				block.Hash, prevHash, emBlock)
-			if err != nil {
-				e.logger.Error("error inserting into blocks table", zap.Int64("height", block.Height), zap.Error(err))
-				e.lastEmBlock-- // roll back
+			if err := e.insertCurrentBlock(block.Hash, emBlock, block.Height); err != nil {
+				e.lastEmBlock--
 				continue
 			}
 		}
@@ -698,6 +680,49 @@ func (e *Indexer) indexBlocks() error {
 		}
 	}
 
+	return nil
+}
+
+// insertCurrentBlock atomically swaps the is_current block in a transaction.
+func (e *Indexer) insertCurrentBlock(blockHash string, emBlock int64, height int64) error {
+	tx, err := e.pool.Begin(context.Background())
+	if err != nil {
+		e.logger.Error("error starting blocks transaction", zap.Error(err))
+		return err
+	}
+	defer tx.Rollback(context.Background())
+
+	// Get the previous current block's hash (for parenthash).
+	var prevHash *string
+	err = tx.QueryRow(context.Background(),
+		"SELECT blockhash FROM blocks WHERE is_current IS TRUE").Scan(&prevHash)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		e.logger.Error("error fetching previous current block hash", zap.Error(err))
+		return err
+	}
+
+	// Mark previous block as not current.
+	_, err = tx.Exec(context.Background(),
+		"UPDATE blocks SET is_current = false WHERE is_current IS TRUE")
+	if err != nil {
+		e.logger.Error("error marking previous block not current", zap.Error(err))
+		return err
+	}
+
+	// Insert new block as current.
+	_, err = tx.Exec(context.Background(),
+		`INSERT INTO blocks (blockhash, parenthash, number, is_current)
+		 VALUES ($1, $2, $3, true)`,
+		blockHash, prevHash, emBlock)
+	if err != nil {
+		e.logger.Error("error inserting into blocks table", zap.Int64("height", height), zap.Error(err))
+		return err
+	}
+
+	if err := tx.Commit(context.Background()); err != nil {
+		e.logger.Error("error committing blocks transaction", zap.Error(err))
+		return err
+	}
 	return nil
 }
 

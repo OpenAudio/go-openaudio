@@ -27,14 +27,14 @@ templ (l *Layout) NavBlockData(totalBlocks string, syncing bool) {
 templ (l *Layout) SiteFrame() {
 	@l.Base() {
 		<div class="min-h-screen flex flex-col">
-			<div class="flex-none space-y-4 p-8 pt-6">
-				<div class="flex justify-between space-y-2">
+			<div class="flex-none space-y-4 p-4 pt-4 md:p-8 md:pt-6">
+				<div class="flex flex-col gap-4 sm:flex-row sm:justify-between sm:gap-2 sm:space-y-2">
 					<div class="uk-navbar-item flex flex-col items-start space-y-4">
 						<a href="/console" class="flex items-center">
-							<img src={ assets.OAPLogoInverse } alt="audius logo" class="mx-4 h-12 w-12 object-contain"/>
-							<h1 class="text-2xl font-bold tracking-tight">Open Audio Console</h1>
+							<img src={ assets.OAPLogoInverse } alt="audius logo" class="mx-2 md:mx-4 h-10 w-10 md:h-12 md:w-12 object-contain"/>
+							<h1 class="text-lg md:text-2xl font-bold tracking-tight">Open Audio Console</h1>
 						</a>
-						<div class="space-y-4">
+						<div class="space-y-4 w-full">
 							<ul class="uk-tab-alt max-w-96">
 								<li>
 									@l.components.Link("/overview") {
@@ -54,8 +54,8 @@ templ (l *Layout) SiteFrame() {
 							</ul>
 						</div>
 					</div>
-					<div class="flex space-x-2">
-						<div class="text-right text-sm text-secondary tracking-tight">
+					<div class="flex space-x-2 sm:justify-end">
+						<div class="text-left sm:text-right text-sm text-secondary tracking-tight">
 							<div>
 								<span>
 									@l.components.Link("/genesis") {
@@ -68,8 +68,8 @@ templ (l *Layout) SiteFrame() {
 					</div>
 				</div>
 			</div>
-			<div id="page-content" class="flex-grow space-y-4 p-8 pt-6 flex flex-col">
-				<div class="p-4 flex-grow flex flex-col">
+			<div id="page-content" class="flex-grow space-y-4 p-2 pt-4 md:p-8 md:pt-6 flex flex-col">
+				<div class="p-2 md:p-4 flex-grow flex flex-col">
 					{ children... }
 				</div>
 			</div>

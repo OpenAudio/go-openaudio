@@ -72,7 +72,7 @@ func (ss *MediorumServer) startPoSHandler(ctx context.Context) error {
 func (ss *MediorumServer) getStorageProof(ctx context.Context, cid string, nonce []byte) ([]byte, error) {
 	key := cidutil.ShardCID(cid)
 	var proof []byte
-	blob, err := ss.bucket.NewReader(ctx, key, nil)
+	blob, _, err := ss.readBlob(ctx, key)
 	if err != nil {
 		return proof, err
 	}

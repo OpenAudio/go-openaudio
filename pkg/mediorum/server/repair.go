@@ -162,6 +162,23 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 		}
 	}
 
+	// Build a presence index from bucket listing to avoid per-key HeadObject.
+	// Replaces hundreds of thousands of HeadObject calls with one ListObjects pagination.
+	var presenceIndex *repairPresenceIndex
+	ss.logger.Info("building repair presence index from bucket listing")
+	indexStart := time.Now()
+	idx, err := ss.buildRepairPresenceIndex(ctx)
+	if err != nil {
+		ss.logger.Warn("failed to build presence index; falling back to per-key attrs", zap.Error(err))
+		tracker.Counters["qm_cids_list_index_build_fail"]++
+	} else {
+		presenceIndex = idx
+		tracker.Counters["qm_cids_list_index_entries"] = len(idx.entries)
+		ss.logger.Info("presence index built",
+			zap.Int("entries", len(idx.entries)),
+			zap.Duration("took", time.Since(indexStart)))
+	}
+
 	// scroll uploads and repair CIDs
 	// (later this can clean up "derivative" images if we make image resizing dynamic)
 	for {
@@ -195,14 +212,14 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 			}
 
 			tracker.CursorUploadID = u.ID
-			ss.repairCid(ctx, u.OrigFileCID, u.PlacementHosts, tracker, nil)
+			ss.repairCid(ctx, u.OrigFileCID, u.PlacementHosts, tracker, presenceIndex)
 			// images are resized dynamically
 			// so only consider audio TranscodeResults for repair
 			if u.Template != JobTemplateAudio {
 				continue
 			}
 			for _, cid := range u.TranscodeResults {
-				ss.repairCid(ctx, cid, u.PlacementHosts, tracker, nil)
+				ss.repairCid(ctx, cid, u.PlacementHosts, tracker, presenceIndex)
 			}
 		}
 
@@ -242,31 +259,11 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 			}
 
 			tracker.CursorPreviewCID = u.CID
-			ss.repairCid(ctx, u.CID, nil, tracker, nil)
+			ss.repairCid(ctx, u.CID, nil, tracker, presenceIndex)
 		}
 
 		tracker.Duration += time.Since(startIter)
 		saveTracker()
-	}
-
-	// optionally build a presence index from bucket.List to avoid per-key
-	// HeadObject calls during qm_cids cleanup. This replaces millions of
-	// HeadObject calls with a single ListObjects pagination.
-	var presenceIndex *repairPresenceIndex
-	if tracker.CleanupMode && ss.Config.RepairQmCidsUseListIndex {
-		ss.logger.Info("building qm_cids presence index from bucket listing")
-		indexStart := time.Now()
-		idx, err := ss.buildRepairPresenceIndex(ctx)
-		if err != nil {
-			ss.logger.Warn("failed to build presence index; falling back to per-key attrs", zap.Error(err))
-			tracker.Counters["qm_cids_list_index_build_fail"]++
-		} else {
-			presenceIndex = idx
-			tracker.Counters["qm_cids_list_index_entries"] = len(idx.entries)
-			ss.logger.Info("presence index built",
-				zap.Int("entries", len(idx.entries)),
-				zap.Duration("took", time.Since(indexStart)))
-		}
 	}
 
 	// scroll older qm_cids table and repair
@@ -350,6 +347,9 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	myRank := slices.Index(preferredHosts, ss.Config.Self.Host)
 
 	key := cidutil.ShardCID(cid)
+	bucket := ss.bucketForCID(cid, placementHosts)
+	isArchive := ss.archiveBucket != nil && bucket == ss.archiveBucket
+	presenceKey := ss.presenceCacheKey(key, bucket)
 
 	// Per-cycle dedupe: repair iterates uploads, audio_previews, and qm_cids,
 	// and the same CID can appear across those tables. Skip the duplicate
@@ -370,7 +370,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	// previous cycle. Cleanup cycles bypass the cache because they need
 	// ModTime for over-replication decisions and run full blob validation.
 	if !tracker.CleanupMode {
-		if size, ok := ss.knownPresent.Get(key); ok {
+		if size, ok := ss.knownPresent.Get(presenceKey); ok {
 			tracker.SeenKeys[key] = seenKeyResult{alreadyHave: true, size: size}
 			tracker.Counters["already_have"]++
 			tracker.Counters["repair_known_present"]++
@@ -380,31 +380,43 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	}
 
 	// Resolve blob presence: use the presence index (from bucket.List) if
-	// available, otherwise fall back to per-key HeadObject.
+	// available, otherwise fall back to per-key HeadObject. The lookup is
+	// bucket-scoped — if the key only exists in the *other* bucket
+	// (rank-flip orphan), treat as missing so the repair pull below writes
+	// it into the bucket the routing decision selected.
 	alreadyHave := false
 	attrs := &blob.Attributes{}
 	if presenceIndex != nil {
-		if entry, ok := presenceIndex.Lookup(key); ok {
+		if entry, ok := presenceIndex.Lookup(key, bucket); ok {
 			alreadyHave = true
 			attrs.Size = entry.Size
 			attrs.ModTime = entry.ModTime
 			tracker.Counters["qm_cids_list_index_hit"]++
+			if isArchive {
+				tracker.Counters["archive_blob_present"]++
+			}
 		} else {
 			tracker.Counters["qm_cids_list_index_miss"]++
 		}
 	} else {
 		var err error
-		attrs, err = ss.bucket.Attributes(ctx, key)
+		attrs, err = bucket.Attributes(ctx, key)
 		if err != nil {
 			if gcerrors.Code(err) == gcerrors.NotFound || strings.Contains(err.Error(), "notFound") {
 				attrs = &blob.Attributes{}
 			} else {
 				tracker.Counters["read_attrs_fail"]++
+				if isArchive {
+					tracker.Counters["archive_blob_attrs_fail"]++
+				}
 				logger.Error("exist check failed", zap.Error(err))
 				attrs = &blob.Attributes{}
 			}
 		} else {
 			alreadyHave = true
+			if isArchive {
+				tracker.Counters["archive_blob_present"]++
+			}
 		}
 	}
 
@@ -414,7 +426,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	// in cleanup mode do some extra checks:
 	// - validate CID, delete if invalid (doesn't apply to Qm keys because their hash is not the CID)
 	if tracker.CleanupMode && alreadyHave && !cidutil.IsLegacyCID(cid) {
-		if r, errRead := ss.bucket.NewReader(ctx, key, nil); errRead == nil {
+		if r, errRead := bucket.NewReader(ctx, key, nil); errRead == nil {
 			computed, errCompute := cidutil.ComputeFileCID(r)
 			errClose := r.Close()
 			if errCompute != nil {
@@ -424,10 +436,10 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 			} else if computed != cid {
 				tracker.Counters["delete_invalid_needed"]++
 				logger.Error("deleting invalid CID", zap.String("expected", cid), zap.String("computed", computed))
-				if errDel := ss.bucket.Delete(ctx, key); errDel == nil {
+				if errDel := bucket.Delete(ctx, key); errDel == nil {
 					tracker.Counters["delete_invalid_success"]++
 					tracker.SeenKeys[key] = seenKeyResult{alreadyHave: false, size: 0}
-					ss.knownPresent.Remove(key)
+					ss.knownPresent.Remove(presenceKey)
 				} else {
 					tracker.Counters["delete_invalid_fail"]++
 					logger.Error("failed to delete invalid CID", zap.Error(errDel))
@@ -445,15 +457,20 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 		}
 	}
 
-	// delete derived image variants since they'll be dynamically resized
+	// Delete derived image variants since they'll be dynamically resized.
+	// Variants are pure cache — generated on-demand by serveImage and
+	// always written to the primary bucket regardless of where the
+	// original lives — so cleanup only needs to touch primary.
 	if strings.HasSuffix(cid, ".jpg") && !strings.HasSuffix(cid, "original.jpg") {
 		if tracker.CleanupMode && alreadyHave {
-			err := ss.dropFromMyBucket(cid)
-			if err != nil {
+			err := ss.bucket.Delete(ctx, key)
+			if err != nil && gcerrors.Code(err) != gcerrors.NotFound {
 				logger.Error("delete_resized_image_failed", zap.Error(err))
 				tracker.Counters["delete_resized_image_failed"]++
 			} else {
 				tracker.Counters["delete_resized_image_ok"]++
+				// Variants always live in primary; only the primary cache key matters.
+				ss.knownPresent.Remove(ss.presenceCacheKey(key, ss.bucket))
 			}
 		}
 		return nil
@@ -462,13 +479,13 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	if alreadyHave {
 		// Populate cross-cycle cache after all validation and cleanup has passed,
 		// so that corrupt or about-to-be-deleted blobs are never cached.
-		ss.knownPresent.Set(key, attrs.Size, imcache.WithNoExpiration())
+		ss.knownPresent.Set(presenceKey, attrs.Size, imcache.WithNoExpiration())
 		tracker.Counters["already_have"]++
 		tracker.ContentSize += attrs.Size
 	}
 
 	// get blobs that I should have (regardless of health of other nodes)
-	if isMine && !alreadyHave && ss.diskHasSpace() {
+	if isMine && !alreadyHave && ss.diskHasSpaceForCID(cid, placementHosts) {
 		tracker.Counters["pull_mine_needed"]++
 
 		success := false
@@ -477,16 +494,19 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 			if host == ss.Config.Self.Host {
 				continue
 			}
-			err := ss.pullFileFromHost(ctx, host, cid)
+			err := ss.pullFileFromHost(ctx, host, cid, placementHosts)
 			if err != nil {
 				tracker.Counters["pull_mine_fail"]++
 				logger.Error("pull failed (blob I should have)", zap.Error(err), zap.String("host", host))
 			} else {
 				tracker.Counters["pull_mine_success"]++
+				if isArchive {
+					tracker.Counters["archive_blob_pulled"]++
+				}
 				logger.Debug("pull OK (blob I should have)", zap.String("host", host))
 				success = true
 
-				pulledAttrs, errAttrs := ss.bucket.Attributes(ctx, key)
+				pulledAttrs, errAttrs := bucket.Attributes(ctx, key)
 				if errAttrs == nil {
 					tracker.ContentSize += pulledAttrs.Size
 				}

@@ -200,6 +200,23 @@ func (ss *MediorumServer) updateDiskAndDbStatus(ctx context.Context) {
 	} else {
 		slog.Error("Error getting mediorum disk status", "err", err, "path", diskPath)
 	}
+
+	// Archive bucket disk status (file:// only — mirrors primary's behavior).
+	if ss.archiveBucket != nil && strings.HasPrefix(ss.Config.ArchiveBlobStoreDSN, "file://") {
+		_, uri, found := strings.Cut(ss.Config.ArchiveBlobStoreDSN, "://")
+		if found {
+			archivePath := strings.Split(uri, "?")[0]
+			archiveTotal, archiveFree, archiveErr := getDiskStatus(archivePath)
+			if archiveErr == nil {
+				ss.archivePathFree = archiveFree
+				ss.archivePathUsed = archiveTotal - archiveFree
+				ss.archivePathSize = archiveTotal
+			} else {
+				slog.Error("Error getting archive disk status", "err", archiveErr, "path", archivePath)
+			}
+		}
+	}
+
 	ss.storageExpectation, err = getStorageExpectation(ctx, ss.pgPool, ss.Config.ReplicationFactor)
 	slog.Info("Storage expectation", "size", ss.storageExpectation)
 	slog.Info("Replication factor", "replicationFactor", ss.Config.ReplicationFactor)

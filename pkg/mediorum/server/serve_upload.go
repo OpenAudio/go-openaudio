@@ -280,7 +280,11 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 			upload.FFProbe.Format.Filename = formFile.Filename
 
 			// replicate to my bucket + others
-			ss.replicateToMyBucket(ctx, formFileCID, tmpFile)
+			if err := ss.replicateToMyBucket(ctx, formFileCID, tmpFile, placementHosts); err != nil {
+				ss.logger.Error("local replicateToMyBucket failed", zap.String("uploadID", upload.ID), zap.String("cid", formFileCID), zap.Error(err))
+				upload.Error = err.Error()
+				return err
+			}
 			upload.Mirrors, err = ss.replicateFileParallel(ctx, formFileCID, tmpFile.Name(), placementHosts)
 			if err != nil {
 				upload.Error = err.Error()

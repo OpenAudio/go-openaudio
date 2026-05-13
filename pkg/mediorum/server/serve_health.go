@@ -46,6 +46,10 @@ type HealthData struct {
 	Dir                       string                     `json:"dir"`
 	BlobStorePrefix           string                     `json:"blobStorePrefix"`
 	MoveFromBlobStorePrefix   string                     `json:"moveFromBlobStorePrefix"`
+	ArchiveStorageConfigured  bool                       `json:"archiveStorageConfigured"`
+	ArchiveStoragePrefix      string                     `json:"archiveStoragePrefix"`
+	ArchivePathUsed           uint64                     `json:"archivePathUsed"` // bytes
+	ArchivePathSize           uint64                     `json:"archivePathSize"` // bytes
 	ListenPort                string                     `json:"listenPort"`
 	TrustedNotifierID         int                        `json:"trustedNotifierId"`
 	PeerHealths               map[string]*PeerHealth     `json:"peerHealths"`
@@ -69,6 +73,10 @@ func (ss *MediorumServer) getHealth() HealthData {
 	blobStoreMoveFromPrefix, _, foundBlobStoreMoveFrom := strings.Cut(ss.Config.MoveFromBlobStoreDSN, "://")
 	if !foundBlobStoreMoveFrom {
 		blobStoreMoveFromPrefix = ""
+	}
+	archiveStoragePrefix, _, foundArchive := strings.Cut(ss.Config.ArchiveBlobStoreDSN, "://")
+	if !foundArchive {
+		archiveStoragePrefix = ""
 	}
 
 	// since we're using peerHealth
@@ -101,6 +109,10 @@ func (ss *MediorumServer) getHealth() HealthData {
 		Dir:                       ss.Config.Dir,
 		BlobStorePrefix:           blobStorePrefix,
 		MoveFromBlobStorePrefix:   blobStoreMoveFromPrefix,
+		ArchiveStorageConfigured:  ss.archiveBucket != nil,
+		ArchiveStoragePrefix:      archiveStoragePrefix,
+		ArchivePathUsed:           ss.archivePathUsed,
+		ArchivePathSize:           ss.archivePathSize,
 		ListenPort:                ss.Config.ListenPort,
 		ReplicationFactor:         ss.Config.ReplicationFactor,
 		Env:                       ss.Config.Env,

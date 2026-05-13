@@ -111,7 +111,7 @@ func (l *Layout) SiteFrame() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"min-h-screen flex flex-col\"><div class=\"flex-none space-y-4 p-8 pt-6\"><div class=\"flex justify-between space-y-2\"><div class=\"uk-navbar-item flex flex-col items-start space-y-4\"><a href=\"/console\" class=\"flex items-center\"><img src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"min-h-screen flex flex-col\"><div class=\"flex-none space-y-4 p-4 pt-4 md:p-8 md:pt-6\"><div class=\"flex flex-col gap-4 sm:flex-row sm:justify-between sm:gap-2 sm:space-y-2\"><div class=\"uk-navbar-item flex flex-col items-start space-y-4\"><a href=\"/console\" class=\"flex items-center\"><img src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -124,7 +124,7 @@ func (l *Layout) SiteFrame() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" alt=\"audius logo\" class=\"mx-4 h-12 w-12 object-contain\"><h1 class=\"text-2xl font-bold tracking-tight\">Open Audio Console</h1></a><div class=\"space-y-4\"><ul class=\"uk-tab-alt max-w-96\"><li>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" alt=\"audius logo\" class=\"mx-2 md:mx-4 h-10 w-10 md:h-12 md:w-12 object-contain\"><h1 class=\"text-lg md:text-2xl font-bold tracking-tight\">Open Audio Console</h1></a><div class=\"space-y-4 w-full\"><ul class=\"uk-tab-alt max-w-96\"><li>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -202,7 +202,7 @@ func (l *Layout) SiteFrame() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</li></ul></div></div><div class=\"flex space-x-2\"><div class=\"text-right text-sm text-secondary tracking-tight\"><div><span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</li></ul></div></div><div class=\"flex space-x-2 sm:justify-end\"><div class=\"text-left sm:text-right text-sm text-secondary tracking-tight\"><div><span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -241,7 +241,7 @@ func (l *Layout) SiteFrame() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</span></div><div hx-get=\"/console/fragments/nav/chain_data\" hx-swap=\"innerHTML\" hx-trigger=\"load, every 1s\"></div></div></div></div></div><div id=\"page-content\" class=\"flex-grow space-y-4 p-8 pt-6 flex flex-col\"><div class=\"p-4 flex-grow flex flex-col\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</span></div><div hx-get=\"/console/fragments/nav/chain_data\" hx-swap=\"innerHTML\" hx-trigger=\"load, every 1s\"></div></div></div></div></div><div id=\"page-content\" class=\"flex-grow space-y-4 p-2 pt-4 md:p-8 md:pt-6 flex flex-col\"><div class=\"p-2 md:p-4 flex-grow flex flex-col\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

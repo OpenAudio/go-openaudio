@@ -79,6 +79,9 @@ const (
 	CoreServiceGetRewardProcedure = "/core.v1.CoreService/GetReward"
 	// CoreServiceGetRewardsProcedure is the fully-qualified name of the CoreService's GetRewards RPC.
 	CoreServiceGetRewardsProcedure = "/core.v1.CoreService/GetRewards"
+	// CoreServiceGetRewardPoolProcedure is the fully-qualified name of the CoreService's GetRewardPool
+	// RPC.
+	CoreServiceGetRewardPoolProcedure = "/core.v1.CoreService/GetRewardPool"
 	// CoreServiceGetRewardAttestationProcedure is the fully-qualified name of the CoreService's
 	// GetRewardAttestation RPC.
 	CoreServiceGetRewardAttestationProcedure = "/core.v1.CoreService/GetRewardAttestation"
@@ -120,6 +123,7 @@ type CoreServiceClient interface {
 	GetPIE(context.Context, *connect.Request[v1.GetPIERequest]) (*connect.Response[v1.GetPIEResponse], error)
 	GetReward(context.Context, *connect.Request[v1.GetRewardRequest]) (*connect.Response[v1.GetRewardResponse], error)
 	GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error)
+	GetRewardPool(context.Context, *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error)
 	GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error)
 	GetRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error)
 	GetDeleteRewardSenderAttestation(context.Context, *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error)
@@ -253,6 +257,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("GetRewards")),
 			connect.WithClientOptions(opts...),
 		),
+		getRewardPool: connect.NewClient[v1.GetRewardPoolRequest, v1.GetRewardPoolResponse](
+			httpClient,
+			baseURL+CoreServiceGetRewardPoolProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetRewardPool")),
+			connect.WithClientOptions(opts...),
+		),
 		getRewardAttestation: connect.NewClient[v1.GetRewardAttestationRequest, v1.GetRewardAttestationResponse](
 			httpClient,
 			baseURL+CoreServiceGetRewardAttestationProcedure,
@@ -313,6 +323,7 @@ type coreServiceClient struct {
 	getPIE                           *connect.Client[v1.GetPIERequest, v1.GetPIEResponse]
 	getReward                        *connect.Client[v1.GetRewardRequest, v1.GetRewardResponse]
 	getRewards                       *connect.Client[v1.GetRewardsRequest, v1.GetRewardsResponse]
+	getRewardPool                    *connect.Client[v1.GetRewardPoolRequest, v1.GetRewardPoolResponse]
 	getRewardAttestation             *connect.Client[v1.GetRewardAttestationRequest, v1.GetRewardAttestationResponse]
 	getRewardSenderAttestation       *connect.Client[v1.GetRewardSenderAttestationRequest, v1.GetRewardSenderAttestationResponse]
 	getDeleteRewardSenderAttestation *connect.Client[v1.GetDeleteRewardSenderAttestationRequest, v1.GetDeleteRewardSenderAttestationResponse]
@@ -416,6 +427,11 @@ func (c *coreServiceClient) GetRewards(ctx context.Context, req *connect.Request
 	return c.getRewards.CallUnary(ctx, req)
 }
 
+// GetRewardPool calls core.v1.CoreService.GetRewardPool.
+func (c *coreServiceClient) GetRewardPool(ctx context.Context, req *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error) {
+	return c.getRewardPool.CallUnary(ctx, req)
+}
+
 // GetRewardAttestation calls core.v1.CoreService.GetRewardAttestation.
 func (c *coreServiceClient) GetRewardAttestation(ctx context.Context, req *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
 	return c.getRewardAttestation.CallUnary(ctx, req)
@@ -467,6 +483,7 @@ type CoreServiceHandler interface {
 	GetPIE(context.Context, *connect.Request[v1.GetPIERequest]) (*connect.Response[v1.GetPIEResponse], error)
 	GetReward(context.Context, *connect.Request[v1.GetRewardRequest]) (*connect.Response[v1.GetRewardResponse], error)
 	GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error)
+	GetRewardPool(context.Context, *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error)
 	GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error)
 	GetRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error)
 	GetDeleteRewardSenderAttestation(context.Context, *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error)
@@ -596,6 +613,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("GetRewards")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceGetRewardPoolHandler := connect.NewUnaryHandler(
+		CoreServiceGetRewardPoolProcedure,
+		svc.GetRewardPool,
+		connect.WithSchema(coreServiceMethods.ByName("GetRewardPool")),
+		connect.WithHandlerOptions(opts...),
+	)
 	coreServiceGetRewardAttestationHandler := connect.NewUnaryHandler(
 		CoreServiceGetRewardAttestationProcedure,
 		svc.GetRewardAttestation,
@@ -672,6 +695,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceGetRewardHandler.ServeHTTP(w, r)
 		case CoreServiceGetRewardsProcedure:
 			coreServiceGetRewardsHandler.ServeHTTP(w, r)
+		case CoreServiceGetRewardPoolProcedure:
+			coreServiceGetRewardPoolHandler.ServeHTTP(w, r)
 		case CoreServiceGetRewardAttestationProcedure:
 			coreServiceGetRewardAttestationHandler.ServeHTTP(w, r)
 		case CoreServiceGetRewardSenderAttestationProcedure:
@@ -767,6 +792,10 @@ func (UnimplementedCoreServiceHandler) GetReward(context.Context, *connect.Reque
 
 func (UnimplementedCoreServiceHandler) GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetRewards is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetRewardPool(context.Context, *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetRewardPool is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {

@@ -146,7 +146,7 @@ func (ss *MediorumServer) getKeyToTempFile(fileHash string) (*os.File, error) {
 	}
 
 	key := cidutil.ShardCID(fileHash)
-	blob, err := ss.bucket.NewReader(context.Background(), key, nil)
+	blob, _, err := ss.readBlob(context.Background(), key)
 	if err != nil {
 		return nil, err
 	}
@@ -285,8 +285,12 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 	}
 	resultKey := resultHash
 
-	// transcode server will retain transcode result for analysis
-	ss.replicateToMyBucket(ctx, resultHash, dest)
+	// transcode server will retain transcode result for analysis. If the
+	// local write fails we can't claim to be a transcoded mirror — analysis
+	// and downstream replication would look for the blob here and 404.
+	if err := ss.replicateToMyBucket(ctx, resultHash, dest, upload.PlacementHosts); err != nil {
+		return onError(err, upload.Status, "replicateToMyBucket")
+	}
 
 	upload.TranscodeResults["320"] = resultKey
 
@@ -351,13 +355,16 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 		ss.logger.Error("failed to update transcode status", zap.String("id", dbUpload.ID), zap.Error(err))
 		return err
 	}
+	// Keep in-memory upload in sync so analyzeAudio's error callback doesn't
+	// clobber TranscodedBy with an empty string when it calls crud.Update(upload).
+	upload.TranscodedBy = dbUpload.TranscodedBy
 
 	fileHash := upload.OrigFileCID
 
 	logger := ss.logger.With(zap.Any("template", upload.Template), zap.String("cid", fileHash))
 
 	if !ss.haveInMyBucket(fileHash) {
-		_, err := ss.findAndPullBlob(ctx, fileHash)
+		_, err := ss.findAndPullBlob(ctx, fileHash, upload.PlacementHosts)
 		if err != nil {
 			logger.Warn("failed to find blob", zap.Error(err))
 			return err

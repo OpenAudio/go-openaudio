@@ -41,14 +41,14 @@ func (p *Pages) GenesisHTML(genesis map[string]interface{}) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"text-small p-4 rounded-lg\"><pre class=\"bg-secondary p-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"text-small p-2 md:p-4 rounded-lg\"><pre class=\"bg-secondary p-3 md:p-4 overflow-x-auto text-xs md:text-sm\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(p.renderJSON(genesis))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/genesis_page.templ`, Line: 6, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/genesis_page.templ`, Line: 6, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {

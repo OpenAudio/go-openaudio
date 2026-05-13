@@ -2,8 +2,8 @@ package pages
 
 templ (p *Pages) GenesisHTML(genesis map[string]interface{}) {
 	@p.layout.SiteFrame() {
-		<div class="text-small p-4 rounded-lg">
-			<pre class="bg-secondary p-4">{ p.renderJSON(genesis) }</pre>
+		<div class="text-small p-2 md:p-4 rounded-lg">
+			<pre class="bg-secondary p-3 md:p-4 overflow-x-auto text-xs md:text-sm">{ p.renderJSON(genesis) }</pre>
 		</div>
 	}
 }

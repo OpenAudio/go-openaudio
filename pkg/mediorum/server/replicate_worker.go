@@ -18,6 +18,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/bdragon300/tusgo"
+	"github.com/erni27/imcache"
 	"go.uber.org/zap"
 )
 
@@ -137,9 +138,10 @@ func (ss *MediorumServer) replicateTranscode(ctx context.Context, upload *Upload
 
 // replicateFile is the shared implementation for replicating files to all necessary mirrors in parallel
 func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, cid string, existingMirrors []string, isTranscoded bool) error {
-	// Get the file from our bucket
+	// Get the file from our bucket — hot first, archive fallback so we
+	// source from wherever the blob actually lives on this node.
 	shardedCid := cidutil.ShardCID(cid)
-	_, err := ss.bucket.Attributes(ctx, shardedCid)
+	_, srcBucket, err := ss.blobAttrs(ctx, shardedCid)
 	if err != nil {
 		return fmt.Errorf("failed to get file attributes: %w", err)
 	}
@@ -192,14 +194,14 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 			defer wg.Done()
 
 			// Get a fresh reader for this host
-			reader, err := ss.bucket.NewReader(ctx, shardedCid, nil)
+			reader, err := srcBucket.NewReader(ctx, shardedCid, nil)
 			if err != nil {
 				resultsChan <- replicationResult{host: targetHost, err: err}
 				return
 			}
 			defer reader.Close()
 
-			err = ss.replicateFileToHost(ctx, targetHost, cid, reader)
+			err = ss.replicateFileToHost(ctx, targetHost, cid, reader, upload.PlacementHosts)
 			// TODO: Replicate with TUSD
 			// err = ss.replicateToHost(targetHost, cid, reader, attrs.Size, placementHosts)
 			resultsChan <- replicationResult{host: targetHost, err: err}
@@ -347,8 +349,15 @@ func (ss *MediorumServer) findMissedReplications() {
 
 	for _, upload := range uploads {
 		if len(upload.Mirrors) < ss.Config.ReplicationFactor {
+			// Backoff so we don't re-queue the same upload every cycle while
+			// it stays under-replicated (e.g. its source blob is gone or
+			// peers keep rejecting it). After the cache TTL we'll try again.
+			if _, attempted := ss.replicationAttempts.Get(upload.ID); attempted {
+				continue
+			}
 			select {
 			case ss.replicationWork <- upload:
+				ss.replicationAttempts.Set(upload.ID, struct{}{}, imcache.WithDefaultExpiration())
 				ss.logger.Info("queued upload for replication", zap.String("uploadID", upload.ID))
 			default:
 				// Channel full, skip for now

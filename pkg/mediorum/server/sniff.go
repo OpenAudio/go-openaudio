@@ -64,7 +64,7 @@ func (ss *MediorumServer) sniffAndFix(ctx context.Context, cid string, fix bool)
 			if a.Attr.Size < best.Attr.Size {
 				break
 			}
-			if err := ss.pullFileFromHost(ctx, a.Host, cid); err == nil {
+			if err := ss.pullFileFromHost(ctx, a.Host, cid, nil); err == nil {
 				break
 			}
 		}

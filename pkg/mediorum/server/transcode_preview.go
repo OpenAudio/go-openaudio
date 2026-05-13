@@ -33,10 +33,16 @@ func (ss *MediorumServer) generateAudioPreviewForUpload(ctx context.Context, upl
 
 // generateAudioPreview is the new preview impl which requires only a CID + previewStartSeconds, so that it works with Qm CIDs too.
 // It returns an AudioPreview record, and the client can use that to update a track record.
+//
+// Note: previews are deliberately rendezvous-routed without placement
+// context. The HTTP /generate_preview endpoint takes a bare CID and has
+// no upload row to draw placement from (especially for legacy Qm CIDs);
+// rather than thread placement only through the upload-driven path and
+// leave the HTTP path inconsistent, both go through rendezvous.
 func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash string, previewStartSeconds string) (*AudioPreview, error) {
 
 	if !ss.haveInMyBucket(fileHash) {
-		_, err := ss.findAndPullBlob(ctx, fileHash)
+		_, err := ss.findAndPullBlob(ctx, fileHash, nil)
 		if err != nil {
 			return nil, err
 		}

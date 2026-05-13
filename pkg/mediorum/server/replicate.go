@@ -18,23 +18,31 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 
 	"gocloud.dev/blob"
+	"gocloud.dev/gcerrors"
 )
 
 func (ss *MediorumServer) replicateFileParallel(ctx context.Context, cid string, filePath string, placementHosts []string) ([]string, error) {
 	replicaCount := ss.Config.ReplicationFactor
 
-	if len(placementHosts) > 0 {
-		// use all explicit placement hosts
-		replicaCount = len(placementHosts)
+	// Preserve the original placement context separately from the host list
+	// we iterate. bucketForCID treats any non-empty placementHosts as "force
+	// primary," so we must NOT pass the rendezvous-expanded list when the
+	// upload had no explicit placement.
+	originalPlacement := placementHosts
+	hosts := placementHosts
+	if len(hosts) > 0 {
+		replicaCount = len(hosts)
 	} else {
-		// use rendezvous
-		placementHosts, _ = ss.rendezvousAllHosts(cid)
+		hosts, _ = ss.rendezvousAllHosts(cid)
 	}
 
-	queue := make(chan string, len(placementHosts))
-	for _, p := range placementHosts {
+	queue := make(chan string, len(hosts))
+	for _, p := range hosts {
 		queue <- p
 	}
+	// Close after enqueueing so workers exit when the buffer drains.
+	// Without this, an all-peers-fail run blocks workers forever on `range queue`.
+	close(queue)
 
 	mu := sync.Mutex{}
 	results := []string{}
@@ -54,7 +62,7 @@ func (ss *MediorumServer) replicateFileParallel(ctx context.Context, cid string,
 			defer file.Close()
 			for peer := range queue {
 				file.Seek(0, 0)
-				err := ss.replicateFileToHost(ctx, peer, cid, file)
+				err := ss.replicateFileToHost(ctx, peer, cid, file, originalPlacement)
 				if err == nil {
 					mu.Lock()
 					results = append(results, peer)
@@ -81,7 +89,7 @@ func (ss *MediorumServer) replicateFile(ctx context.Context, fileName string, fi
 		logger.Debug("replicating")
 
 		file.Seek(0, 0)
-		err := ss.replicateFileToHost(ctx, peer, fileName, file)
+		err := ss.replicateFileToHost(ctx, peer, fileName, file, nil)
 		if err != nil {
 			logger.Error("replication failed", zap.Error(err))
 		} else {
@@ -96,56 +104,75 @@ func (ss *MediorumServer) replicateFile(ctx context.Context, fileName string, fi
 	return success, nil
 }
 
-func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName string, file io.Reader) error {
+// replicateToMyBucket writes the blob to the bucket selected by bucketForCID.
+// placementHosts MUST be passed when the caller has placement context (repair,
+// upload replication path) so writes go to the same bucket reads expect.
+// Pass nil for opportunistic peer pushes that have no placement context.
+func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName string, file io.Reader, placementHosts []string) error {
 	logger := ss.logger.With(zap.String("task", "replicateToMyBucket"), zap.String("cid", fileName))
 	logger.Debug("replicateToMyBucket")
 	key := cidutil.ShardCID(fileName)
+	bucket := ss.bucketForCID(fileName, placementHosts)
 
-	w, err := ss.bucket.NewWriter(ctx, key, nil)
+	w, err := bucket.NewWriter(ctx, key, nil)
 	if err != nil {
 		return err
 	}
 
 	n, err := io.Copy(w, file)
 	if err != nil {
+		// Best-effort close so we don't leak temp files / abandon multipart
+		// uploads. The copy error is what matters; ignore close error here.
+		_ = w.Close()
 		return err
 	}
 
+	// Close is the commit step for many blob drivers (S3, GCS multipart).
+	// Only record the blob as locally present after a successful close,
+	// so repair's knownPresent fast-path doesn't think we have a blob whose
+	// upload never actually finalized.
 	if err := w.Close(); err != nil {
 		return err
 	}
 
-	ss.knownPresent.Set(key, n, imcache.WithNoExpiration())
+	ss.knownPresent.Set(ss.presenceCacheKey(key, bucket), n, imcache.WithNoExpiration())
 	return nil
 }
 
+// dropFromMyBucket removes the blob from both buckets (NotFound is benign).
+// Reads are hot-first-then-archive, so a blob can legitimately live in either
+// bucket; deleting from both ensures cleanup is complete regardless of which
+// bucket the original write landed in (covers rank-flip orphans too).
 func (ss *MediorumServer) dropFromMyBucket(fileName string) error {
 	logger := ss.logger.With(zap.String("task", "dropFromMyBucket"), zap.String("cid", fileName))
 	logger.Debug("deleting blob")
 
 	key := cidutil.ShardCID(fileName)
 	ctx := context.Background()
-	err := ss.bucket.Delete(ctx, key)
-	if err != nil {
-		logger.Error("failed to delete", zap.Error(err))
-	} else {
-		ss.knownPresent.Remove(key)
+
+	deleteFrom := func(b *blob.Bucket) {
+		if err := b.Delete(ctx, key); err != nil && gcerrors.Code(err) != gcerrors.NotFound {
+			logger.Error("failed to delete", zap.Error(err))
+			return
+		}
+		ss.knownPresent.Remove(ss.presenceCacheKey(key, b))
 	}
 
+	deleteFrom(ss.bucket)
+	if ss.archiveBucket != nil {
+		deleteFrom(ss.archiveBucket)
+	}
 	return nil
 }
 
 func (ss *MediorumServer) haveInMyBucket(fileName string) bool {
-	shardedCid := cidutil.ShardCID(fileName)
-	ctx := context.Background()
-	exists, _ := ss.bucket.Exists(ctx, shardedCid)
-	return exists
+	return ss.blobExists(context.Background(), cidutil.ShardCID(fileName))
 }
 
-func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, fileName string, file io.Reader) error {
+func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, fileName string, file io.Reader, placementHosts []string) error {
 	// logger := ss.logger.With()
 	if peer == ss.Config.Self.Host {
-		return ss.replicateToMyBucket(ctx, fileName, file)
+		return ss.replicateToMyBucket(ctx, fileName, file, placementHosts)
 	}
 
 	r, w := io.Pipe()
@@ -177,6 +204,9 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 	)
 	if err != nil {
 		return err
+	}
+	if len(placementHosts) > 0 {
+		req.Header.Set(placementHostsHeader, encodePlacementHosts(placementHosts))
 	}
 
 	// send it
@@ -212,7 +242,11 @@ func (ss *MediorumServer) hostGetBlobInfo(host, key string) (*blob.Attributes, e
 	return attr, nil
 }
 
-func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string) error {
+// pullFileFromHost fetches a CID from a peer and writes it to the bucket
+// selected by bucketForCID(cid, placementHosts). Pass placementHosts when the
+// caller has placement context (repair) so the local write lands in the same
+// bucket reads expect; pass nil for opportunistic pulls (e.g. serveBlob fallback).
+func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string, placementHosts []string) error {
 	if host == ss.Config.Self.Host {
 		return errors.New("should not pull blob from self")
 	}
@@ -222,6 +256,11 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 	if err != nil {
 		return err
 	}
+	// Note: placementHosts is NOT sent on the wire. The peer's GET
+	// endpoint uses hot-first-then-archive fallback, so it'll find the
+	// blob wherever it lives without needing routing context. The
+	// placementHosts param here only governs where *this node's* local
+	// write lands after we receive the blob.
 
 	resp, err := ss.peerHTTPClient.Do(req)
 	if err != nil {
@@ -233,44 +272,35 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 		return fmt.Errorf("pull blob: bad status: %d cid: %s host: %s", resp.StatusCode, cid, host)
 	}
 
-	return ss.replicateToMyBucket(ctx, cid, resp.Body)
+	return ss.replicateToMyBucket(ctx, cid, resp.Body, placementHosts)
 }
 
-// if the node is using local (disk) storage, do not replicate if there is <10GB remaining
-func (ss *MediorumServer) diskHasSpace() bool {
-	// don't worry about running out of space on dev or stage
-	if ss.Config.Env != "prod" {
+// dsnHasSpace reports whether a file:// DSN has enough free disk to accept new
+// blobs. Non-file DSNs (S3/GCS/etc) always return true. The fallbackFreeBytes
+// argument is used when we can't statfs the path (e.g. it doesn't exist yet);
+// callers pass the most relevant cached free-bytes count for their bucket.
+func (ss *MediorumServer) dsnHasSpace(dsn string, fallbackFreeBytes uint64) bool {
+	if !strings.HasPrefix(dsn, "file://") {
 		return true
 	}
 
-	// If not using file storage, always allow (S3, GCS, etc. don't have local disk constraints)
-	if !strings.HasPrefix(ss.Config.BlobStoreDSN, "file://") {
-		return true
-	}
-
-	// Extract the path from file:// URL (e.g., "file:///data/blobs?no_tmp_dir=true" -> "/data/blobs")
-	_, uri, found := strings.Cut(ss.Config.BlobStoreDSN, "://")
+	_, uri, found := strings.Cut(dsn, "://")
 	if !found {
-		// Malformed URL, fall back to checking Config.Dir
-		ss.logger.Warn("malformed BlobStoreDSN, falling back to Config.Dir check",
-			zap.String("blobStoreDSN", ss.Config.BlobStoreDSN))
-		return ss.mediorumPathFree/uint64(1e9) > 10
+		ss.logger.Warn("malformed blob store DSN, falling back to cached free-bytes check",
+			zap.String("dsn", dsn))
+		return fallbackFreeBytes/uint64(1e9) > 10
 	}
 
-	// Remove query parameters if present (e.g., "?no_tmp_dir=true")
 	blobPath := strings.Split(uri, "?")[0]
 
-	// Check disk space on the actual blob storage path
 	_, free, err := getDiskStatus(blobPath)
 	if err != nil {
-		// If we can't check the blob path (e.g., doesn't exist yet), fall back to Config.Dir
-		ss.logger.Warn("failed to check blob storage disk space, falling back to Config.Dir",
+		ss.logger.Warn("failed to check blob storage disk space, falling back to cached free-bytes",
 			zap.String("blobPath", blobPath),
 			zap.Error(err))
-		return ss.mediorumPathFree/uint64(1e9) > 10
+		return fallbackFreeBytes/uint64(1e9) > 10
 	}
 
-	// Check if free space > 10GB on the actual blob storage path
 	freeGB := free / uint64(1e9)
 	hasSpace := freeGB > 10
 
@@ -278,8 +308,43 @@ func (ss *MediorumServer) diskHasSpace() bool {
 		ss.logger.Warn("blob storage disk space below threshold",
 			zap.String("blobPath", blobPath),
 			zap.Uint64("freeGB", freeGB),
-			zap.Uint64("thresholdGB", 200))
+			zap.Uint64("thresholdGB", 10))
 	}
 
 	return hasSpace
+}
+
+// diskHasSpace returns true only when every configured bucket that can
+// actually receive writes has headroom. Used by paths that don't have a CID
+// yet (e.g. the inbound /internal/blobs precheck) so we don't accept a write
+// we can't place.
+func (ss *MediorumServer) diskHasSpace() bool {
+	if ss.Config.Env != "prod" {
+		return true
+	}
+	if !ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree) {
+		return false
+	}
+	// Archive only routes when archiveBucket is open AND StoreAll is on. If
+	// the DSN is set but StoreAll is false, archive is logged as "unused" at
+	// startup and no CID will ever land there — don't gate writes on it.
+	if ss.archiveBucket != nil && ss.Config.StoreAll {
+		if !ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree) {
+			return false
+		}
+	}
+	return true
+}
+
+// diskHasSpaceForCID checks only the bucket the given CID would land in. Use
+// this anywhere the CID is known so we don't reject writes to a healthy primary
+// because the archive bucket is full (or vice versa).
+func (ss *MediorumServer) diskHasSpaceForCID(cid string, placementHosts []string) bool {
+	if ss.Config.Env != "prod" {
+		return true
+	}
+	if ss.archiveBucket != nil && ss.bucketForCID(cid, placementHosts) == ss.archiveBucket {
+		return ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree)
+	}
+	return ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree)
 }

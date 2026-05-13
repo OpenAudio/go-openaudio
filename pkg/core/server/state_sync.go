@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
@@ -151,6 +152,56 @@ func (s *Server) startSnapshotCreator(ctx context.Context) error {
 		logger.Info("ServeSnapshots is not enabled, skipping snapshot creation")
 		s.CompleteProcess(ProcessStateSnapshotCreator)
 		return nil
+	}
+
+	// Wait for block sync to complete before creating snapshots.
+	// Snapshots taken while catching up would be stale, and createSnapshot
+	// already skips CatchingUp=true — this makes the wait explicit.
+	s.SleepingProcessWithMetadata(ProcessStateSnapshotCreator, "Waiting for block sync to complete")
+	for {
+		status, err := s.rpc.Status(context.Background())
+		if err == nil && !status.SyncInfo.CatchingUp {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			s.CompleteProcess(ProcessStateSnapshotCreator)
+			return ctx.Err()
+		case <-time.After(30 * time.Second):
+		}
+	}
+
+	// Create an immediate snapshot if all snapshot intervals were missed during
+	// block sync catch-up (e.g. after a node restart). This ensures other nodes
+	// can always state sync without waiting up to BlockInterval blocks.
+	//
+	// Round down to the nearest interval boundary so the snapshot height matches
+	// the expected interval grid (e.g. 24200000, 24100000) and the postgres state
+	// is guaranteed to have processed past that height.
+	{
+		status, err := s.rpc.Status(context.Background())
+		snapshots, _ := s.getStoredSnapshots()
+		if err == nil {
+			latestHeight := status.SyncInfo.LatestBlockHeight
+			blockInterval := s.config.StateSync.BlockInterval
+			snapshotHeight := latestHeight - (latestHeight % blockInterval)
+			newestSnapshot := int64(0)
+			if len(snapshots) > 0 {
+				newestSnapshot = int64(snapshots[len(snapshots)-1].Height)
+			}
+			if snapshotHeight > newestSnapshot {
+				logger.Info("creating catch-up snapshot after block sync",
+					zap.Int64("height", snapshotHeight),
+					zap.Int64("latestHeight", latestHeight),
+					zap.Int64("lastSnapshot", newestSnapshot))
+				if err := s.createSnapshot(logger, snapshotHeight); err != nil {
+					logger.Error("error creating catch-up snapshot", zap.Error(err))
+				}
+				if err := s.pruneSnapshots(logger); err != nil {
+					logger.Error("error pruning snapshots after catch-up", zap.Error(err))
+				}
+			}
+		}
 	}
 
 	node := s.node
@@ -330,6 +381,8 @@ func (s *Server) createPgDump(logger *zap.Logger, latestSnapshotDir string) erro
 		"core_parties",
 		"core_deals",
 		"core_rewards",
+		"core_reward_pools",
+		"launchpad_authority_rm",
 		"core_uploads",
 		"validator_history",
 	}
@@ -662,34 +715,156 @@ func (s *Server) ReassemblePgDump(height int64) error {
 	return nil
 }
 
-// RestoreDatabase restores the PostgreSQL database using the reassembled pg_dump binary file
+// RestoreDatabase restores the PostgreSQL database using the reassembled pg_dump binary file.
+// It splits the restore into three phases with tables set to UNLOGGED during the data phase
+// to avoid WAL generation on large tables (e.g. core_transactions) which causes OOM.
 func (s *Server) RestoreDatabase(height int64) error {
 	tmpDir := filepath.Join(s.config.RootDir, tmpReconstructionDir)
 	heightDir := getHeightDir(tmpDir, height)
 	dumpPath := getPgDumpPath(heightDir)
 
-	cmd := exec.Command("pg_restore",
-		"--dbname="+s.config.PSQLConn,
-		"--clean",
-		"--if-exists",
-		"--no-owner",
-		"--no-privileges",
-		dumpPath)
+	pgRestore := func(section string) error {
+		args := []string{
+			"--dbname=" + s.config.PSQLConn,
+			"--no-owner",
+			"--no-privileges",
+		}
+		if section != "" {
+			args = append(args, "--section="+section)
+		}
+		args = append(args, dumpPath)
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+		var stdout, stderr bytes.Buffer
+		cmd := exec.Command("pg_restore", args...)
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
 
-	err := cmd.Run()
-	if err != nil {
-		s.logger.Error("pg_restore failed",
-			zap.Error(err),
-			zap.String("stderr", stderr.String()),
-			zap.String("stdout", stdout.String()),
-		)
-		return fmt.Errorf("error restoring database: %w", err)
+		err := cmd.Run()
+		if err != nil {
+			s.logger.Error("pg_restore failed",
+				zap.String("section", section),
+				zap.Error(err),
+				zap.String("stderr", stderr.String()),
+			)
+			return fmt.Errorf("pg_restore --%s failed: %w", section, err)
+		}
+		return nil
 	}
 
+	alterPersistence := func(persistence string) error {
+		db, err := s.pool.Acquire(context.Background())
+		if err != nil {
+			return fmt.Errorf("acquire connection: %w", err)
+		}
+		defer db.Release()
+
+		rows, err := db.Query(context.Background(),
+			"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
+		if err != nil {
+			return fmt.Errorf("list tables: %w", err)
+		}
+		defer rows.Close()
+
+		var tables []string
+		for rows.Next() {
+			var t string
+			if err := rows.Scan(&t); err != nil {
+				return err
+			}
+			tables = append(tables, t)
+		}
+
+		for _, table := range tables {
+			if _, err := db.Exec(context.Background(),
+				"ALTER TABLE "+table+" SET "+persistence); err != nil {
+				s.logger.Warn("failed to alter table persistence",
+					zap.String("table", table),
+					zap.String("persistence", persistence),
+					zap.Error(err))
+			}
+		}
+		return nil
+	}
+
+	// Tune postgres for bulk load. These are reset automatically when postgres restarts normally.
+	if db, err := s.pool.Acquire(context.Background()); err == nil {
+		for _, sql := range []string{
+			"ALTER SYSTEM SET synchronous_commit = off",
+			"ALTER SYSTEM SET max_wal_size = '8GB'",
+			"ALTER SYSTEM SET checkpoint_timeout = '1h'",
+			"SELECT pg_reload_conf()",
+		} {
+			if _, err := db.Exec(context.Background(), sql); err != nil {
+				s.logger.Warn("pg_restore: failed to apply tuning setting", zap.String("sql", sql), zap.Error(err))
+			} else {
+				s.logger.Info("pg_restore: applied setting", zap.String("sql", sql))
+			}
+		}
+		db.Release()
+	}
+
+	s.StartProcess(ProcessStateRestore)
+
+	s.RunningProcessWithMetadata(ProcessStateRestore, "restoring schema")
+	s.logger.Info("pg_restore: restoring schema (pre-data)")
+	// pre-data errors (missing tables from schema drift) are non-fatal
+	_ = pgRestore("pre-data")
+
+	// Truncate all tables before loading dump data. Migrations pre-populate some tables
+	// (e.g. core_db_migrations) which cause COPY to fail with duplicate key errors.
+	// Collect names first so the connection isn't held open (busy) during TRUNCATE.
+	s.RunningProcessWithMetadata(ProcessStateRestore, "truncating tables")
+	s.logger.Info("pg_restore: truncating tables to clear migration-created data")
+	if db, err := s.pool.Acquire(context.Background()); err == nil {
+		rows, err := db.Query(context.Background(),
+			"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
+		var tables []string
+		if err == nil {
+			for rows.Next() {
+				var t string
+				if rows.Scan(&t) == nil {
+					tables = append(tables, t)
+				}
+			}
+			rows.Close()
+		}
+		for _, t := range tables {
+			if _, err := db.Exec(context.Background(), "TRUNCATE TABLE "+t+" CASCADE"); err != nil {
+				s.logger.Warn("pg_restore: failed to truncate table", zap.String("table", t), zap.Error(err))
+			}
+		}
+		db.Release()
+	}
+
+	s.logger.Info("pg_restore: setting tables to UNLOGGED to suppress WAL during data load")
+	if err := alterPersistence("UNLOGGED"); err != nil {
+		return fmt.Errorf("set unlogged: %w", err)
+	}
+
+	s.RunningProcessWithMetadata(ProcessStateRestore, "data COPY: starting")
+	s.logger.Info("pg_restore: restoring data")
+	pollCtx, stopPoll := context.WithCancel(context.Background())
+	go pollCopyProgress(pollCtx, s.pool, 2*time.Second, func(msg string) {
+		s.RunningProcessWithMetadata(ProcessStateRestore, "data COPY: "+msg)
+	})
+	dataErr := pgRestore("data")
+	stopPoll()
+	if dataErr != nil {
+		return dataErr
+	}
+
+	s.RunningProcessWithMetadata(ProcessStateRestore, "converting tables to LOGGED")
+	s.logger.Info("pg_restore: setting tables back to LOGGED")
+	if err := alterPersistence("LOGGED"); err != nil {
+		return fmt.Errorf("set logged: %w", err)
+	}
+
+	s.RunningProcessWithMetadata(ProcessStateRestore, "building indexes")
+	s.logger.Info("pg_restore: restoring indexes and constraints (post-data)")
+	// post-data errors (duplicate indexes etc.) are non-fatal
+	_ = pgRestore("post-data")
+
+	s.CompleteProcess(ProcessStateRestore)
 	return nil
 }
 
