@@ -1,0 +1,550 @@
+package pages
+
+import (
+	"fmt"
+	"sort"
+	"time"
+
+	storagev1 "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/components"
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// short, stable display of a timestamp
+func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.UTC().Format("2006-01-02 15:04:05 UTC")
+}
+
+func formatRelative(t time.Time) string {
+	if t.IsZero() {
+		return "never"
+	}
+	d := time.Since(t).Round(time.Second)
+	if d < 0 {
+		return "in the future"
+	}
+	return d.String() + " ago"
+}
+
+func formatDuration(ns int64) string {
+	if ns <= 0 {
+		return "—"
+	}
+	return time.Duration(ns).Round(time.Second).String()
+}
+
+func sortedCounters(counters map[string]int64) []string {
+	keys := make([]string, 0, len(counters))
+	for k := range counters {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func repairKindLabel(r *storagev1.RepairRun) string {
+	if r == nil {
+		return "—"
+	}
+	if r.CleanupMode {
+		return "cleanup"
+	}
+	return "repair"
+}
+
+func repairStatusLabel(r *storagev1.RepairRun) string {
+	if r == nil {
+		return "—"
+	}
+	if r.FinishedAt == nil {
+		return "in progress"
+	}
+	if r.AbortedReason != "" {
+		return "aborted: " + r.AbortedReason
+	}
+	return "ok"
+}
+
+templ (p *Pages) StoragePage(diag *storagev1.GetStorageDiagnosticsResponse) {
+	@p.layout.SiteFrame() {
+		<div class="space-y-6">
+			<h1 class="text-3xl font-bold">Storage</h1>
+			if diag == nil {
+				<div class="bg-tertiary rounded-lg p-6 text-secondary">
+					Storage service unavailable. This node may not run storage, or the service is still starting.
+				</div>
+			} else {
+				@storageOverviewSection(diag)
+				@repairSection(diag)
+				@readRepairSection(diag)
+				@posSection(diag)
+				@bandwidthSection(diag)
+				@recentServedSection(diag)
+				@peersSection(diag)
+				@servedSection(diag)
+			}
+		</div>
+	}
+}
+
+templ storageOverviewSection(d *storagev1.GetStorageDiagnosticsResponse) {
+	<div class="bg-tertiary rounded-lg p-6">
+		<h2 class="text-xl font-semibold mb-4">Media Storage</h2>
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+			<div class="bg-secondary rounded-lg p-4">
+				<div class="font-medium mb-2">This Node</div>
+				<div class="text-sm text-secondary break-all">{ d.SelfHost }</div>
+				if d.BlobStorePrefix != "" {
+					<div class="text-xs text-secondary mt-1">backend: { d.BlobStorePrefix }</div>
+				}
+			</div>
+			<div class="bg-secondary rounded-lg p-4">
+				<div class="flex items-center justify-between mb-2">
+					<span class="font-medium">Disk Has Space</span>
+					if d.DiskHasSpace {
+						@components.StatusGreenLg("Has Space")
+					} else {
+						@components.StatusRedLg("Full")
+					}
+				</div>
+				<div class="text-sm text-secondary">
+					if d.DiskHasSpace {
+						Has Space
+					} else {
+						Full
+					}
+				</div>
+			</div>
+			if d.DiskTotalBytes > 0 {
+				<div class="bg-secondary rounded-lg p-4">
+					<div class="font-medium mb-2">Disk Used</div>
+					<div class="text-sm text-secondary">{ formatBytes(d.DiskUsedBytes) }</div>
+					<div class="text-xs text-secondary mt-1">
+						{ formatPercentage(d.DiskUsedBytes, d.DiskTotalBytes) } of { formatBytes(d.DiskTotalBytes) }
+					</div>
+				</div>
+			} else {
+				<div class="bg-secondary rounded-lg p-4">
+					<div class="font-medium mb-2">Disk Used</div>
+					<div class="text-sm text-secondary">{ formatBytes(d.DiskUsedBytes) }</div>
+				</div>
+			}
+			<div class="bg-secondary rounded-lg p-4">
+				<div class="font-medium mb-2">Storage Expectation</div>
+				<div class="text-sm text-secondary">{ formatBytes(d.StorageExpectationBytes) }</div>
+			</div>
+			<div class="bg-secondary rounded-lg p-4">
+				<div class="font-medium mb-2">Replication Factor</div>
+				<div class="text-sm text-secondary">{ fmt.Sprintf("%d", d.ReplicationFactor) }</div>
+			</div>
+			<div class="bg-secondary rounded-lg p-4">
+				<div class="font-medium mb-2">Uploads (this node)</div>
+				<div class="text-sm text-secondary">{ fmt.Sprintf("%d", d.UploadsCount) }</div>
+			</div>
+		</div>
+	</div>
+}
+
+templ repairSection(d *storagev1.GetStorageDiagnosticsResponse) {
+	<div class="bg-tertiary rounded-lg p-6">
+		<h2 class="text-xl font-semibold mb-4">Repair & Cleanup</h2>
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+			@repairRunCard("Last Successful Repair", d.LastSuccessfulRepair)
+			@repairRunCard("Last Successful Cleanup", d.LastSuccessfulCleanup)
+			@repairRunCard("In Progress", d.InProgressRepair)
+		</div>
+		<h3 class="text-lg font-semibold mb-2">Recent Runs</h3>
+		if len(d.RecentRepairRuns) == 0 {
+			<div class="text-sm text-secondary">No recorded runs yet.</div>
+		} else {
+			<div class="overflow-x-auto">
+				<table class="min-w-full text-sm text-tertiary table-fixed">
+					@repairColgroup()
+					<thead class="bg-secondary">
+						<tr>
+							<th class="text-left p-2">Started</th>
+							<th class="text-left p-2">Kind</th>
+							<th class="text-left p-2">Status</th>
+							<th class="text-left p-2">Duration</th>
+							<th class="text-left p-2">Content Size</th>
+							<th class="text-left p-2">Run #</th>
+						</tr>
+					</thead>
+					<tbody class="bg-primary divide-y divide-gray-800">
+						{{ headN := len(d.RecentRepairRuns); if headN > 5 { headN = 5 } }}
+						for i := 0; i < headN; i++ {
+							@repairRunRow(d.RecentRepairRuns[i])
+						}
+					</tbody>
+				</table>
+			</div>
+			if len(d.RecentRepairRuns) > 5 {
+				<details class="mt-2">
+					<summary class="text-xs text-secondary cursor-pointer">Show { fmt.Sprintf("%d", len(d.RecentRepairRuns)-5) } more</summary>
+					<div class="overflow-x-auto mt-2">
+						<table class="min-w-full text-sm text-tertiary table-fixed">
+							@repairColgroup()
+							<tbody class="bg-primary divide-y divide-gray-800">
+								for i := 5; i < len(d.RecentRepairRuns); i++ {
+									@repairRunRow(d.RecentRepairRuns[i])
+								}
+							</tbody>
+						</table>
+					</div>
+				</details>
+			}
+		}
+	</div>
+}
+
+templ repairColgroup() {
+	<colgroup>
+		<col class="w-56"/>
+		<col class="w-24"/>
+		<col class="w-32"/>
+		<col class="w-28"/>
+		<col class="w-32"/>
+		<col class="w-20"/>
+	</colgroup>
+}
+
+templ repairRunRow(r *storagev1.RepairRun) {
+	<tr>
+		<td class="p-2">{ formatTime(r.StartedAt.AsTime()) }</td>
+		<td class="p-2">{ repairKindLabel(r) }</td>
+		<td class="p-2">{ repairStatusLabel(r) }</td>
+		<td class="p-2">{ formatDuration(r.DurationNs) }</td>
+		<td class="p-2">{ formatBytes(r.ContentSizeBytes) }</td>
+		<td class="p-2">{ fmt.Sprintf("%d", r.CursorI) }</td>
+	</tr>
+}
+
+templ repairRunCard(label string, r *storagev1.RepairRun) {
+	<div class="bg-secondary rounded-lg p-4">
+		<div class="font-medium mb-2">{ label }</div>
+		if r == nil {
+			<div class="text-sm text-secondary">—</div>
+		} else {
+			<div class="text-sm text-secondary">{ formatTime(r.StartedAt.AsTime()) }</div>
+			<div class="text-xs text-secondary mt-1">{ formatRelative(r.StartedAt.AsTime()) }</div>
+			<div class="text-xs text-secondary mt-1">kind: { repairKindLabel(r) }</div>
+			<div class="text-xs text-secondary">status: { repairStatusLabel(r) }</div>
+			if r.DurationNs > 0 {
+				<div class="text-xs text-secondary">duration: { formatDuration(r.DurationNs) }</div>
+			}
+			if r.ContentSizeBytes > 0 {
+				<div class="text-xs text-secondary">content size: { formatBytes(r.ContentSizeBytes) }</div>
+			}
+			if len(r.Counters) > 0 {
+				<details class="mt-2">
+					<summary class="text-xs text-secondary cursor-pointer">counters ({ fmt.Sprintf("%d", len(r.Counters)) })</summary>
+					<div class="text-xs mt-2 font-mono space-y-0.5">
+						for _, k := range sortedCounters(r.Counters) {
+							<div class="flex justify-between gap-4">
+								<span class="text-secondary">{ k }</span>
+								<span>{ fmt.Sprintf("%d", r.Counters[k]) }</span>
+							</div>
+						}
+					</div>
+				</details>
+			}
+		}
+	</div>
+}
+
+templ peersSection(d *storagev1.GetStorageDiagnosticsResponse) {
+	<div class="bg-tertiary rounded-lg p-6">
+		<h2 class="text-xl font-semibold mb-4">Peers ({ fmt.Sprintf("%d", len(d.Peers)) })</h2>
+		if len(d.Peers) == 0 {
+			<div class="text-sm text-secondary">No peers tracked yet.</div>
+		} else {
+			<div class="overflow-x-auto">
+				<table class="min-w-full text-sm text-tertiary">
+					<thead class="bg-secondary">
+						<tr>
+							<th class="text-left p-2">Host</th>
+							<th class="text-left p-2">Last Reachable</th>
+							<th class="text-left p-2">Last Healthy</th>
+							<th class="text-left p-2">Reachable Peers Seen</th>
+						</tr>
+					</thead>
+					<tbody class="bg-primary divide-y divide-gray-800">
+						for _, p := range d.Peers {
+							<tr>
+								<td class="p-2 break-all">{ p.Host }</td>
+								<td class="p-2">
+									if p.LastReachable != nil {
+										{ formatRelative(p.LastReachable.AsTime()) }
+									} else {
+										never
+									}
+								</td>
+								<td class="p-2">
+									if p.LastHealthy != nil {
+										{ formatRelative(p.LastHealthy.AsTime()) }
+									} else {
+										never
+									}
+								</td>
+								<td class="p-2">{ fmt.Sprintf("%d", p.ReachablePeerCount) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+	</div>
+}
+
+templ servedSection(d *storagev1.GetStorageDiagnosticsResponse) {
+	<div class="bg-tertiary rounded-lg p-6">
+		<h2 class="text-xl font-semibold mb-4">Served Traffic</h2>
+		if len(d.ServedCounts) == 0 {
+			<div class="text-sm text-secondary">No traffic recorded.</div>
+		} else {
+			<div class="overflow-x-auto">
+				<table class="min-w-full text-sm text-tertiary">
+					<thead class="bg-secondary">
+						<tr>
+							<th class="text-left p-2">Day</th>
+							<th class="text-left p-2">Action</th>
+							<th class="text-left p-2">Count</th>
+						</tr>
+					</thead>
+					<tbody class="bg-primary divide-y divide-gray-800">
+						for _, m := range d.ServedCounts {
+							<tr>
+								<td class="p-2">
+									if m.Day != nil {
+										{ m.Day.AsTime().UTC().Format("2006-01-02") }
+									}
+								</td>
+								<td class="p-2">{ m.Action }</td>
+								<td class="p-2">{ fmt.Sprintf("%d", m.Count) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+	</div>
+}
+
+templ placeholderSection(title, note string) {
+	<div class="bg-tertiary rounded-lg p-6">
+		<h2 class="text-xl font-semibold mb-2">{ title }</h2>
+		<div class="text-sm text-secondary">{ note }</div>
+	</div>
+}
+
+templ statCard(label, value, sub string) {
+	<div class="bg-secondary rounded-lg p-4">
+		<div class="font-medium mb-2">{ label }</div>
+		<div class="text-sm text-secondary">{ value }</div>
+		if sub != "" {
+			<div class="text-xs text-secondary mt-1">{ sub }</div>
+		}
+	</div>
+}
+
+templ readRepairSection(d *storagev1.GetStorageDiagnosticsResponse) {
+	<div class="bg-tertiary rounded-lg p-6">
+		<h2 class="text-xl font-semibold mb-4">Read Repair</h2>
+		if d.ReadRepair == nil {
+			<div class="text-sm text-secondary">No data.</div>
+		} else {
+			<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+				@statCard("Local Hits", fmt.Sprintf("%d", d.ReadRepair.LocalHits), "served from local disk")
+				@statCard("Misses", fmt.Sprintf("%d", d.ReadRepair.Misses), "not present locally")
+				@statCard("Pull Attempts", fmt.Sprintf("%d", d.ReadRepair.PullAttempts), "")
+				@statCard("Pull Successes", fmt.Sprintf("%d", d.ReadRepair.PullSuccesses), pullRateLabel(d.ReadRepair))
+				@statCard("Proxied", fmt.Sprintf("%d", d.ReadRepair.Proxied), "served via reverse proxy")
+				@statCard("Redirected", fmt.Sprintf("%d", d.ReadRepair.Redirected), "client redirected to peer")
+			</div>
+		}
+	</div>
+}
+
+func pullRateLabel(s *storagev1.ReadRepairStats) string {
+	if s == nil || s.PullAttempts == 0 {
+		return ""
+	}
+	return formatPercentage(s.PullSuccesses, s.PullAttempts) + " success"
+}
+
+templ posSection(d *storagev1.GetStorageDiagnosticsResponse) {
+	<div class="bg-tertiary rounded-lg p-6">
+		<h2 class="text-xl font-semibold mb-4">Proof of Storage</h2>
+		if d.Pos == nil {
+			<div class="text-sm text-secondary">No data.</div>
+		} else {
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+				@statCard("Attempted", fmt.Sprintf("%d", d.Pos.Attempted), posSinceLabel(d))
+				@statCard("Passed", fmt.Sprintf("%d", d.Pos.Passed), posPassRate(d.Pos))
+				@statCard("Failed", fmt.Sprintf("%d", d.Pos.Failed), "")
+			</div>
+		}
+		if len(d.RecentPosChallenges) > 0 {
+			<h3 class="text-lg font-semibold mb-2">Recent Challenges</h3>
+			<div class="overflow-x-auto">
+				<table class="min-w-full text-sm text-tertiary table-fixed">
+					@posColgroup()
+					<thead class="bg-secondary">
+						<tr>
+							<th class="text-left p-2">When</th>
+							<th class="text-left p-2">CID</th>
+							<th class="text-left p-2">Result</th>
+							<th class="text-left p-2">Error</th>
+						</tr>
+					</thead>
+					<tbody class="bg-primary divide-y divide-gray-800">
+						{{ ordered := reversedPoS(d.RecentPosChallenges) }}
+						{{ headN := len(ordered); if headN > 5 { headN = 5 } }}
+						for i := 0; i < headN; i++ {
+							@posRow(ordered[i])
+						}
+					</tbody>
+				</table>
+			</div>
+			if len(d.RecentPosChallenges) > 5 {
+				<details class="mt-2">
+					<summary class="text-xs text-secondary cursor-pointer">Show { fmt.Sprintf("%d", len(d.RecentPosChallenges)-5) } more</summary>
+					<div class="overflow-x-auto mt-2">
+						<table class="min-w-full text-sm text-tertiary table-fixed">
+							@posColgroup()
+							<tbody class="bg-primary divide-y divide-gray-800">
+								{{ ordered := reversedPoS(d.RecentPosChallenges) }}
+								for i := 5; i < len(ordered); i++ {
+									@posRow(ordered[i])
+								}
+							</tbody>
+						</table>
+					</div>
+				</details>
+			}
+		} else {
+			<div class="text-sm text-secondary">No challenges recorded yet.</div>
+		}
+	</div>
+}
+
+templ posColgroup() {
+	<colgroup>
+		<col class="w-32"/>
+		<col/>
+		<col class="w-20"/>
+		<col class="w-48"/>
+	</colgroup>
+}
+
+templ posRow(p *storagev1.PoSChallenge) {
+	<tr>
+		<td class="p-2">
+			if p.At != nil {
+				{ formatRelative(p.At.AsTime()) }
+			}
+		</td>
+		<td class="p-2 font-mono break-all">{ p.Cid }</td>
+		<td class="p-2">
+			if p.Ok {
+				@components.StatusGreen("ok")
+			} else {
+				@components.StatusRed("fail")
+			}
+		</td>
+		<td class="p-2 text-xs text-secondary">{ p.Error }</td>
+	</tr>
+}
+
+func reversedPoS(in []*storagev1.PoSChallenge) []*storagev1.PoSChallenge {
+	out := make([]*storagev1.PoSChallenge, len(in))
+	for i, v := range in {
+		out[len(in)-1-i] = v
+	}
+	return out
+}
+
+func posPassRate(s *storagev1.PoSStats) string {
+	if s == nil || s.Attempted == 0 {
+		return ""
+	}
+	return formatPercentage(s.Passed, s.Attempted) + " pass rate"
+}
+
+func posSinceLabel(d *storagev1.GetStorageDiagnosticsResponse) string {
+	if d.Bandwidth != nil && d.Bandwidth.Since != nil {
+		return "since " + formatRelative(d.Bandwidth.Since.AsTime())
+	}
+	return ""
+}
+
+templ bandwidthSection(d *storagev1.GetStorageDiagnosticsResponse) {
+	<div class="bg-tertiary rounded-lg p-6">
+		<h2 class="text-xl font-semibold mb-4">Bandwidth</h2>
+		if d.Bandwidth == nil {
+			<div class="text-sm text-secondary">No data.</div>
+		} else {
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+				@statCard("Ingress", formatBytes(d.Bandwidth.IngressBytes), bandwidthRate(d.Bandwidth.IngressBytes, d.Bandwidth.Since))
+				@statCard("Egress", formatBytes(d.Bandwidth.EgressBytes), bandwidthRate(d.Bandwidth.EgressBytes, d.Bandwidth.Since))
+				@statCard("Since", sinceLabel(d.Bandwidth.Since), "")
+			</div>
+		}
+	</div>
+}
+
+func sinceLabel(ts *timestamppb.Timestamp) string {
+	if ts == nil {
+		return "—"
+	}
+	return formatRelative(ts.AsTime())
+}
+
+func bandwidthRate(bytes int64, since *timestamppb.Timestamp) string {
+	if since == nil || bytes <= 0 {
+		return ""
+	}
+	elapsed := time.Since(since.AsTime()).Seconds()
+	if elapsed <= 0 {
+		return ""
+	}
+	return formatBytes(int64(float64(bytes)/elapsed)) + "/s avg"
+}
+
+templ recentServedSection(d *storagev1.GetStorageDiagnosticsResponse) {
+	<div class="bg-tertiary rounded-lg p-6">
+		<h2 class="text-xl font-semibold mb-4">Recently Streamed</h2>
+		if len(d.RecentServed) == 0 {
+			<div class="text-sm text-secondary">No recent activity.</div>
+		} else {
+			<div class="overflow-x-auto">
+				<table class="min-w-full text-sm text-tertiary">
+					<thead class="bg-secondary">
+						<tr>
+							<th class="text-left p-2">When</th>
+							<th class="text-left p-2">Action</th>
+							<th class="text-left p-2">CID</th>
+						</tr>
+					</thead>
+					<tbody class="bg-primary divide-y divide-gray-800">
+						for i := len(d.RecentServed) - 1; i >= 0; i-- {
+							{{ s := d.RecentServed[i] }}
+							<tr>
+								<td class="p-2">
+									if s.At != nil {
+										{ formatRelative(s.At.AsTime()) }
+									}
+								</td>
+								<td class="p-2">{ s.Action }</td>
+								<td class="p-2 font-mono break-all">{ s.Cid }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+	</div>
+}

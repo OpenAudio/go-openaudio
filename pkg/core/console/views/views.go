@@ -2,6 +2,7 @@ package views
 
 import (
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	storagev1 "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/layout"
 	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/pages"
@@ -90,4 +91,8 @@ func (v *Views) RenderOverviewStorage(c echo.Context, status *v1.GetStatusRespon
 
 func (v *Views) RenderOverviewNetwork(c echo.Context, status *v1.GetStatusResponse) error {
 	return v.pages.OverviewNetworkFragment(status).Render(c.Request().Context(), c.Response().Writer)
+}
+
+func (v *Views) RenderStorageView(c echo.Context, diag *storagev1.GetStorageDiagnosticsResponse) error {
+	return v.pages.StoragePage(diag).Render(c.Request().Context(), c.Response().Writer)
 }

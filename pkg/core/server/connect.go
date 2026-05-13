@@ -59,6 +59,11 @@ func (c *CoreService) SetStorageService(storageService storagev1connect.StorageS
 	c.storageService = storageService
 }
 
+// GetStorageService returns the registered storage service handler, or nil.
+func (c *CoreService) GetStorageService() storagev1connect.StorageServiceHandler {
+	return c.storageService
+}
+
 // GetEthService returns the eth service handler for accessing registered endpoints.
 func (c *CoreService) GetEthService() ethv1connect.EthServiceHandler {
 	c.coreMu.RLock()

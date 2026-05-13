@@ -48,6 +48,7 @@ services:
     environment:
       - OPENAUDIO_HOT_RELOAD=true
       - OPENAUDIO_CI=${OPENAUDIO_CI:-}
+      - OPENAUDIO_REPAIR_INTERVAL=2m
     extra_hosts:
       - 'node1.oap.devnet:host-gateway'
       - 'node2.oap.devnet:host-gateway'
