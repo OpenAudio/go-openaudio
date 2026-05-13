@@ -71,7 +71,7 @@ func EnsureProtocol(endpoint string) string {
 }
 
 func WaitForDevnetHealthy(timeout ...time.Duration) error {
-	timeoutDuration := 60 * time.Second
+	timeoutDuration := 120 * time.Second
 	if len(timeout) > 0 {
 		timeoutDuration = timeout[0]
 	}
