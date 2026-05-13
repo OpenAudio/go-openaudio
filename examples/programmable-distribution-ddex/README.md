@@ -6,7 +6,7 @@ This example demonstrates programmable distribution using DDEX ERN. Same flow as
 
 1. Uploads a demo track via DDEX ERN
 2. Runs an HTTP server that signs stream URLs via GetStreamURLs
-3. On `GET /stream`, signs and redirects to the content node's cidstream URL
+3. On `GET /stream`, signs and redirects to the validator node's cidstream URL
 4. On `GET /stream-no-signature`, redirects without signature (returns 401 from node)
 
 ## Setup
