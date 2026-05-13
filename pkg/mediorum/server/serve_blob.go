@@ -8,8 +8,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -174,7 +172,10 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 
 	blob, foundIn, err := ss.readBlob(ctx, key)
 
-	// If our bucket doesn't have the file, try to pull it first
+	// Cache miss: redirect the client to a peer that has the blob and
+	// fire a backgrounded pull (with backoff) so we eventually hold blobs
+	// that are rendezvous-ours. Avoids the doubled-egress cost of
+	// pulling-then-serving inline with the user request.
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			// don't redirect if the client only wants to know if we have it (ie localOnly query param is true)
@@ -182,64 +183,17 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 				return c.String(404, "blob not found")
 			}
 
-			// Redirect-on-miss: send the user straight to a peer that has
-			// the blob, and kick off a backgrounded pull (with backoff) so
-			// we eventually hold blobs that are rendezvous-ours. Avoids the
-			// doubled-egress cost of pulling-then-serving inline with the
-			// user request.
-			if ss.Config.RedirectOnMiss {
-				host := ss.findNodeToServeBlob(ctx, cid)
-				if host == "" {
-					return c.String(404, "blob not found")
-				}
-				ss.maybeBackgroundPull(cid)
-
-				dest := ss.replaceHost(c, host)
-				query := dest.Query()
-				query.Add("allow_unhealthy", "true") // we confirmed the node has it
-				dest.RawQuery = query.Encode()
-				return c.Redirect(302, dest.String())
+			host := ss.findNodeToServeBlob(ctx, cid)
+			if host == "" {
+				return c.String(404, "blob not found")
 			}
+			ss.maybeBackgroundPull(cid)
 
-			// Try to pull the file first
-			_, pullErr := ss.findAndPullBlob(ctx, cid, nil)
-			if pullErr == nil {
-				// Successfully pulled, try reading again
-				blob, foundIn, err = ss.readBlob(ctx, key)
-				if err == nil {
-					// Successfully read after pull, continue with normal serving
-				} else {
-					// Still can't read after pull, fall through to proxy/redirect
-					ss.logger.Warn("failed to read blob after pull", zap.String("cid", cid), zap.Error(err))
-				}
-			} else {
-				// Pull failed - check if it's due to disk space
-				if !ss.diskHasSpaceForCID(cid, nil) {
-					// Disk is full, proxy the request instead of erroring
-					ss.logger.Info("disk full, proxying blob request", zap.String("cid", cid), zap.Error(pullErr))
-					host := ss.findNodeToServeBlob(ctx, cid)
-					if host == "" {
-						return c.String(404, "blob not found")
-					}
-					return ss.proxyBlobRequest(c, host, cid)
-				}
-				// Pull failed for other reasons, fall through to redirect
-				ss.logger.Debug("failed to pull blob, will redirect", zap.String("cid", cid), zap.Error(pullErr))
-			}
-
-			// If we still don't have the blob, redirect to a node that has it
-			if blob == nil {
-				host := ss.findNodeToServeBlob(ctx, cid)
-				if host == "" {
-					return c.String(404, "blob not found")
-				}
-
-				dest := ss.replaceHost(c, host)
-				query := dest.Query()
-				query.Add("allow_unhealthy", "true") // we confirmed the node has it, so allow it to serve it even if unhealthy
-				dest.RawQuery = query.Encode()
-				return c.Redirect(302, dest.String())
-			}
+			dest := ss.replaceHost(c, host)
+			query := dest.Query()
+			query.Add("allow_unhealthy", "true") // we confirmed the node has it
+			dest.RawQuery = query.Encode()
+			return c.Redirect(302, dest.String())
 		} else {
 			return err
 		}
@@ -512,39 +466,6 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 	})
 
 	ss.logger.Info("play logged", zap.String("user_id", userId), zap.String("track_id", trackID))
-}
-
-// proxyBlobRequest proxies a blob request to another node when we don't have disk space to pull it
-func (ss *MediorumServer) proxyBlobRequest(c echo.Context, targetHost, cid string) error {
-	// Build the target URL
-	targetURL, err := url.Parse(targetHost)
-	if err != nil {
-		return c.String(500, "invalid target host")
-	}
-	targetURL.Scheme = ss.getScheme()
-	targetURL.Path = c.Request().URL.Path
-	targetURL.RawQuery = c.Request().URL.RawQuery
-
-	// Add allow_unhealthy query param
-	query := targetURL.Query()
-	query.Add("allow_unhealthy", "true")
-	targetURL.RawQuery = query.Encode()
-
-	// Create reverse proxy
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
-
-	// Modify the request for proxying
-	originalURL := c.Request().URL
-	c.Request().URL = targetURL
-	c.Request().Host = targetURL.Host
-
-	// Proxy the request
-	proxy.ServeHTTP(c.Response(), c.Request())
-
-	// Restore original URL (though response is already sent)
-	c.Request().URL = originalURL
-
-	return nil
 }
 
 // checks signature from discovery node
