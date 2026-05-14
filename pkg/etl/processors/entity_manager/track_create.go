@@ -72,6 +72,12 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		return NewValidationError("title is required for track creation")
 	}
 
+	handle, err := getTrackOwnerHandle(ctx, params.DBTX, params.UserID)
+	if err != nil {
+		return err
+	}
+	routeID := CreateTrackRouteID(title, handle)
+
 	genre := params.MetadataString("genre")
 	mood := params.MetadataString("mood")
 	tags := params.MetadataString("tags")
@@ -115,21 +121,21 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		}
 	}
 
-	_, err := params.DBTX.Exec(ctx, `
+	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO tracks (
 			track_id, owner_id, is_current, is_delete, title, genre, mood, tags, description,
 			cover_art, cover_art_sizes, is_unlisted, field_visibility, remix_of, stem_of,
 			track_cid, preview_cid, orig_file_cid, duration,
 			is_downloadable, is_download_gated, download_conditions, is_stream_gated, stream_conditions,
 			release_date, is_scheduled_release, ai_attribution_user_id, is_playlist_upload, ddex_app, ddex_release_ids,
-			is_available, track_segments, created_at, updated_at, txhash, blocknumber
+			is_available, route_id, track_segments, created_at, updated_at, txhash, blocknumber
 		) VALUES (
 			$1, $2, true, false, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22,
 			$23, $24, $25, $26, $27, $28,
-			$29, '[]'::jsonb, $30, $30, $31, $32
+			$29, $30, '[]'::jsonb, $31, $31, $32, $33
 		)
 	`,
 		params.EntityID,
@@ -161,11 +167,19 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		nullString(ddexApp),
 		ddexReleaseIDs,
 		isAvailable,
+		routeID,
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,
 	)
 	if err != nil {
+		return err
+	}
+
+	if err := updateStemsTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+		return err
+	}
+	if err := updateRemixesTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
 		return err
 	}
 
