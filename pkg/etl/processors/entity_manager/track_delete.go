@@ -44,13 +44,15 @@ func validateTrackDelete(ctx context.Context, params *Params) error {
 }
 
 func deleteTrack(ctx context.Context, params *Params) error {
-	_, err := params.DBTX.Exec(ctx, `
+	if _, err := params.DBTX.Exec(ctx, `
 		UPDATE tracks SET
 			is_delete = true, stem_of = NULL,
 			updated_at = $2, txhash = $3, blocknumber = $4
 		WHERE track_id = $1 AND is_current = true
-	`, params.EntityID, params.BlockTime, params.TxHash, params.BlockNumber)
-	return err
+	`, params.EntityID, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
+		return err
+	}
+	return deleteStemsForChild(ctx, params.DBTX, params.EntityID)
 }
 
 // TrackDelete returns the Track Delete handler.

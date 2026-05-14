@@ -14,6 +14,20 @@ import (
 	"go.uber.org/zap"
 )
 
+// seedBlock inserts the block referenced by buildParams (number=100) so
+// FK references from tracks/playlists/etc. resolve. Lives here so any test
+// that goes through buildParams can satisfy the blocks FK.
+func seedBlock(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO blocks (blockhash, parenthash, is_current, number)
+		VALUES ($1, $2, true, 100)
+		ON CONFLICT (blockhash) DO NOTHING
+	`, "test-block-100", ""); err != nil {
+		t.Fatalf("seedBlock: %v", err)
+	}
+}
+
 // setupTestDB connects to a test Postgres, runs all ETL migrations (down then up),
 // and returns the pool and a cleanup function.
 //

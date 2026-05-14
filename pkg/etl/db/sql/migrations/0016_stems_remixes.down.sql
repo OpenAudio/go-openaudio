@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS remixes;
+DROP TABLE IF EXISTS stems;
