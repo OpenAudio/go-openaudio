@@ -42,6 +42,11 @@ templ (l *Layout) SiteFrame() {
 									}
 								</li>
 								<li>
+									@l.components.Link("/storage") {
+										<div>Storage</div>
+									}
+								</li>
+								<li>
 									@l.components.Link("/validators") {
 										<div>Validators</div>
 									}

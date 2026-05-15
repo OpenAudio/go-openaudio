@@ -31,6 +31,7 @@ func (c *Console) registerRoutes() {
 	g.StaticFS("/*", embeddedAssets)
 
 	g.GET("/overview", c.overviewPage)
+	g.GET("/storage", c.storagePage)
 	g.GET("/validators", c.nodesPage)
 	g.GET("/validator", c.nodesPage)
 	g.GET("/api/core-validators-endpoints", c.coreValidatorsEndpointsAPI)

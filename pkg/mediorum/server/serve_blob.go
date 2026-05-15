@@ -178,6 +178,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 	// pulling-then-serving inline with the user request.
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
+			ss.metrics.readMisses.Add(1)
 			// don't redirect if the client only wants to know if we have it (ie localOnly query param is true)
 			if localOnly, _ := strconv.ParseBool(c.QueryParam("localOnly")); localOnly {
 				return c.String(404, "blob not found")
@@ -193,10 +194,13 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 			query := dest.Query()
 			query.Add("allow_unhealthy", "true") // we confirmed the node has it
 			dest.RawQuery = query.Encode()
+			ss.metrics.readRedirected.Add(1)
 			return c.Redirect(302, dest.String())
 		} else {
 			return err
 		}
+	} else {
+		ss.metrics.readLocalHits.Add(1)
 	}
 
 	defer func() {
@@ -218,6 +222,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 		}
 		// track metrics in separate threads
 		go ss.recordMetric(StreamTrack)
+		ss.metrics.recordServed(ServedItem{At: time.Now().UTC(), CID: cid, Action: StreamTrack})
 		// synchronously write track listen to event queue
 		ss.logTrackListen(c)
 		setTimingHeader(c)
@@ -288,6 +293,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 			return err
 		}
 		go ss.recordMetric(ServeImage)
+		ss.metrics.recordServed(ServedItem{At: time.Now().UTC(), CID: cid, Action: ServeImage})
 		return c.Blob(200, blob.ContentType(), blobData)
 	}
 
@@ -382,12 +388,15 @@ func (ss *MediorumServer) maybeBackgroundPull(cid string) {
 	}
 	ss.bgPullBackoff.Set(cid, struct{}{}, imcache.WithDefaultExpiration())
 
+	ss.metrics.readPullAttempts.Add(1)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		if _, err := ss.findAndPullBlob(ctx, cid, nil); err != nil {
 			ss.logger.Debug("background pull failed", zap.String("cid", cid), zap.Error(err))
+			return
 		}
+		ss.metrics.readPullSuccesses.Add(1)
 	}()
 }
 
@@ -730,6 +739,7 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 	go ss.logTrackListen(c)
 	setTimingHeader(c)
 	go ss.recordMetric(StreamTrack)
+	ss.metrics.recordServed(ServedItem{At: time.Now().UTC(), CID: cid, Action: StreamTrack})
 
 	// stream audio
 	http.ServeContent(c.Response(), c.Request(), cid, blob.ModTime(), blob)

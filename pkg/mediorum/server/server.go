@@ -158,6 +158,8 @@ type MediorumServer struct {
 	geoIPdbReady chan struct{}
 
 	playEventQueue *PlayEventQueue
+
+	metrics *storageMetrics
 }
 
 type PeerHealth struct {
@@ -406,7 +408,11 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		core: core,
 
 		playEventQueue: NewPlayEventQueue(),
+
+		metrics: newStorageMetrics(),
 	}
+
+	echoServer.Use(ss.bandwidthMiddleware)
 
 	routes := echoServer.Group(apiBasePath)
 
