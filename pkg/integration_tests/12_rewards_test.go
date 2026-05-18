@@ -358,10 +358,25 @@ func TestRewardsLifecycle(t *testing.T) {
 		}
 		t.Logf("Successfully got attestation with correct amount: %s", attestation.Attestation)
 
-		// Test 2: Wrong amount should fail
+		// Test 2: Amount below cap should succeed (rank-dependent rewards use amounts < configured max)
+		attestation, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
+			EthRecipientAddress: recipientAddr,
+			Amount:              50, // Below cap of 100 - should succeed
+			RewardAddress:       reward.Address,
+			RewardId:            "amount_test",
+			Specifier:           specifier + "_rank6",
+			ClaimAuthority:      authorityAddr,
+			AmountDecimals:      8,
+		})
+		if err != nil {
+			t.Fatalf("Should succeed with amount below cap: %v", err)
+		}
+		t.Logf("Successfully got attestation with below-cap amount: %s", attestation.Attestation)
+
+		// Test 2b: Amount exceeding cap should fail
 		_, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
 			EthRecipientAddress: recipientAddr,
-			Amount:              50, // Wrong amount
+			Amount:              150, // Exceeds cap of 100
 			RewardAddress:       reward.Address,
 			RewardId:            "amount_test",
 			Specifier:           specifier,
@@ -369,9 +384,9 @@ func TestRewardsLifecycle(t *testing.T) {
 			AmountDecimals:      8,
 		})
 		if err == nil {
-			t.Fatalf("Should have failed with wrong amount")
+			t.Fatalf("Should have failed with amount exceeding cap")
 		}
-		t.Logf("Correctly failed with wrong amount: %v", err)
+		t.Logf("Correctly failed with amount exceeding cap: %v", err)
 
 		// Test 3: Zero amount should fail
 		_, err = authority.Rewards.GetRewardAttestation(ctx, &v1.GetRewardAttestationRequest{
