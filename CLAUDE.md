@@ -155,7 +155,7 @@ The main entry point (`cmd/openaudio/main.go`) starts multiple services:
 The Open Audio Protocol has a single canonical node type — the **Open Audio Validator Node** — that runs both core consensus and mediorum storage. The two registration modes below are legacy: they exist because some operators are still registered under the older Audius split-node model, and the binary continues to honor those env vars for compatibility.
 
 **Open Audio Validator Node** (canonical)
-- Identified by `nodeEndpoint` env var
+- Identified by `OPENAUDIO_NODE_ENDPOINT` env var (legacy: `nodeEndpoint`)
 - Runs both core consensus and mediorum storage
 - Store and serve audio content
 - Sole supported node type going forward
@@ -180,12 +180,14 @@ The Open Audio Protocol has a single canonical node type — the **Open Audio Va
 
 ### Configuration
 
-Node configuration is primarily environment-variable driven:
-- **Open Audio Validator Node** (canonical): `nodeEndpoint`, `delegatePrivateKey`, `delegateOwnerWallet`, `spOwnerWallet`
+All environment variables support an `OPENAUDIO_`-prefixed canonical name (preferred) with fallback to legacy names for backward compatibility. The `pkg/env` package provides helpers for this pattern (`Get`, `String`, `Bool`, `GetInt`, `GetDuration`, `Lookup`, `IsSet`).
+
+- **Open Audio Validator Node** (canonical): `OPENAUDIO_NODE_ENDPOINT`, `OPENAUDIO_DELEGATE_PRIVATE_KEY`, `OPENAUDIO_DELEGATE_WALLET`, `OPENAUDIO_OWNER_WALLET`
 - Legacy *content node* registration (deprecated): `creatorNodeEndpoint`, `delegatePrivateKey`, `delegateOwnerWallet`, `spOwnerWallet`
 - Legacy *discovery node* registration (deprecated): `audius_discprov_url`, `audius_delegate_private_key`, `audius_delegate_owner_wallet`
-- **Network**: `NETWORK` (prod/stage/dev)
-- **Storage**: `AUDIUS_STORAGE_DRIVER_URL` (local/s3/gcs)
+- **Network**: `OPENAUDIO_ENV` (prod/stage/dev)
+- **Database**: `OPENAUDIO_DB_URL`
+- **Storage**: `OPENAUDIO_STORAGE_DRIVER_URL` (local/s3/gcs)
 - **TLS**: `OPENAUDIO_TLS_DISABLED`, `OPENAUDIO_TLS_SELF_SIGNED`
 
 Genesis configurations are in `pkg/core/config/genesis/` as JSON files.

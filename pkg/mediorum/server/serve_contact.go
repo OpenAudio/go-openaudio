@@ -1,8 +1,7 @@
 package server
 
 import (
-	"os"
-
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/labstack/echo/v4"
 )
 
@@ -15,7 +14,7 @@ func (ss *MediorumServer) serveContact(c echo.Context) error {
 		return c.JSON(200, ContactResponse{Email: ss.trustedNotifier.Email})
 	}
 
-	email := os.Getenv("nodeOperatorEmailAddress")
+	email := env.String("OPENAUDIO_NODE_OPERATOR_EMAIL", "nodeOperatorEmailAddress")
 	if email == "" {
 		return c.String(200, "Email address unavailable at the moment")
 	}

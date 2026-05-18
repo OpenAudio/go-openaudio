@@ -5,10 +5,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/crudr"
 	"go.uber.org/zap"
 
@@ -62,7 +62,7 @@ func (ss *MediorumServer) serveCrudPush(c echo.Context) error {
 		return c.String(http.StatusBadRequest, err.Error())
 	}
 
-	if v, _ := strconv.ParseBool(os.Getenv("LOG_CRUD_PUSH")); v {
+	if v, _ := strconv.ParseBool(env.String("OPENAUDIO_LOG_CRUD_PUSH", "LOG_CRUD_PUSH")); v {
 		ss.logger.Debug("CRUD_PUSH", zap.Any("op", op))
 	}
 

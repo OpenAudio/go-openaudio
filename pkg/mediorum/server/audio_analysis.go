@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"go.uber.org/zap"
 	"gocloud.dev/gcerrors"
@@ -23,7 +24,7 @@ func (ss *MediorumServer) startAudioAnalyzer(ctx context.Context) error {
 	work := make(chan *Upload)
 
 	numWorkers := 4
-	numWorkersOverride := os.Getenv("AUDIO_ANALYSIS_WORKERS")
+	numWorkersOverride := env.String("OPENAUDIO_AUDIO_ANALYSIS_WORKERS", "AUDIO_ANALYSIS_WORKERS")
 	if numWorkersOverride != "" {
 		num, err := strconv.ParseInt(numWorkersOverride, 10, 64)
 		if err != nil {
