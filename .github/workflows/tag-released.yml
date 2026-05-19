@@ -32,33 +32,16 @@ jobs:
             -t openaudio/go-openaudio:${{ github.ref_name }} \
             openaudio/go-openaudio:${{ steps.lookup.outputs.sha }}
 
-  # Move :stable only when the released tag is reachable from main.
-  # mainnet-alpha-beta backports get a versioned image but do not move :stable.
   retag-stable:
     needs: retag-from-sha
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          fetch-depth: 0
-      - id: on_main
-        run: |
-          git fetch origin main --depth=1
-          if git merge-base --is-ancestor "${{ github.ref_name }}" origin/main; then
-            echo "yes=true" >> $GITHUB_OUTPUT
-          else
-            echo "yes=false" >> $GITHUB_OUTPUT
-            echo "Tag ${{ github.ref_name }} is not reachable from main; skipping :stable retag (likely a mainnet-alpha-beta backport)."
-          fi
-      - if: steps.on_main.outputs.yes == 'true'
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      - if: steps.on_main.outputs.yes == 'true'
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - if: steps.on_main.outputs.yes == 'true'
-        name: Retag version tag as :stable
+      - name: Retag version tag as :stable
         run: |
           docker buildx imagetools create \
             -t openaudio/go-openaudio:stable \

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, mainnet-alpha-beta ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, mainnet-alpha-beta ]
+    branches: [ main ]
 
 jobs:
   build-test-push:

@@ -63,11 +63,14 @@ Scopes are optional, e.g. `feat(console): surface archive storage stats`.
 
 For the tag push to fire those downstream workflows, repo admins must set a `RELEASE_PLEASE_TOKEN` secret to a fine-grained PAT (or GitHub App token) with `contents: write` and `pull-requests: write`. Without it, release-please still opens the PR but the `:stable` retag and buf publish must be triggered manually.
 
-### Backports to `mainnet-alpha-beta`
+### Manual release fallback
 
-The long-lived chain branch does not use release-please. Cut a backport release by manually dispatching `.github/workflows/release.yml` (branch input: `mainnet-alpha-beta`, version input: e.g. `v1.2.15-mainnet.1`). The resulting tag still triggers the standard image build via `tag-released.yml`, but `:stable` is intentionally **not** moved for backports — `:stable` only ever points at a release cut from `main`.
+If release-please is broken or unavailable, you can cut a release by hand:
 
-To avoid colliding with release-please's tag namespace, use a prerelease suffix (`-mainnet.N`) for backport versions.
+1. Hand-edit `pkg/version/.version.json` on `main` to the new version and merge.
+2. Dispatch `.github/workflows/release.yml` with the matching version (e.g. `v1.2.16`).
+
+The resulting tag still triggers `tag-released.yml` and `buf-publish.yml`, so the image and buf module land the same way they do from a release-please release.
 
 ## Testing
 

@@ -1,8 +1,10 @@
-name: Create Release (mainnet-alpha-beta backport)
+name: Create Release (manual fallback)
 
-# Releases from `main` are automated by .github/workflows/release-please.yml.
-# This workflow is the manual fallback for cutting a release from the
-# long-lived `mainnet-alpha-beta` backport branch.
+# Releases from `main` are normally automated by
+# .github/workflows/release-please.yml. This workflow is the manual fallback
+# used only if release-please is broken or unavailable. To use it:
+#   1. Hand-edit `pkg/version/.version.json` on `main` to the new version.
+#   2. Dispatch this workflow with the matching version (e.g. v1.2.16).
 on:
   workflow_dispatch:
     inputs:
@@ -11,7 +13,7 @@ on:
         required: true
         type: choice
         options:
-          - mainnet-alpha-beta
+          - main
       version:
         description: 'Release version (e.g., v1.0.0, v2.0.0-beta.1)'
         required: true
@@ -79,6 +81,6 @@ jobs:
           generate_release_notes: true
 
   # Pushing the tag above triggers:
-  #   - .github/workflows/tag-released.yml (multi-arch image + version tag;
-  #     :stable is NOT moved because the tag is not reachable from main)
+  #   - .github/workflows/tag-released.yml (multi-arch image + version tag,
+  #     :stable retagged to the new version)
   #   - .github/workflows/buf-publish.yml  (buf module published with the tag)
