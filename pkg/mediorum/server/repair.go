@@ -365,6 +365,12 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 		return nil
 	}
 
+	// Safety net for direct callers (tests). runRepair initializes mu before
+	// spawning workers, so production calls never hit this branch racing.
+	if tracker.mu == nil {
+		tracker.mu = &sync.Mutex{}
+	}
+
 	logger := ss.logger.With(zap.String("task", "repair"), zap.String("cid", cid), zap.Bool("cleanup", tracker.CleanupMode))
 
 	preferredHosts, isMine := ss.rendezvousAllHosts(cid)
