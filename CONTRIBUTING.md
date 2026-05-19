@@ -61,7 +61,14 @@ Scopes are optional, e.g. `feat(console): surface archive storage stats`.
    - `tag-released.yml` — retags the multi-arch image as `openaudio/go-openaudio:vX.Y.Z` and promotes `:stable` to that version.
    - `buf-publish.yml` — publishes the proto module to the Buf Schema Registry under the version label.
 
-For the tag push to fire those downstream workflows, repo admins must set a `RELEASE_PLEASE_TOKEN` secret to a fine-grained PAT (or GitHub App token) with `contents: write` and `pull-requests: write`. Without it, release-please still opens the PR but the `:stable` retag and buf publish must be triggered manually.
+For the tag push to fire those downstream workflows, release-please authenticates as a dedicated GitHub App (`openaudio-release-bot`) rather than using the default `GITHUB_TOKEN`. The workflow mints a short-lived installation token at run time via `actions/create-github-app-token`, so there is no PAT to rotate or human-owned credential to maintain.
+
+Repo admins maintain two configuration values for this:
+
+- `vars.RELEASE_PLEASE_APP_ID` — the App's numeric ID (a repo or org **variable**, not sensitive).
+- `secrets.RELEASE_PLEASE_APP_PRIVATE_KEY` — the App's private key (PEM contents).
+
+The App is installed only on this repository and granted the minimum permissions: **Contents: read/write** (push the release tag, create the GitHub Release) and **Pull requests: read/write** (open and maintain the release PR). If the App is ever removed or its key is rotated, the workflow falls back to no-op auth and the release PR will fail to open until the values are restored.
 
 ### Manual release fallback
 
