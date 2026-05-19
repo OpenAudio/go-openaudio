@@ -80,6 +80,7 @@ type MediorumConfig struct {
 	DeadHosts                 []string
 	RepairEnabled              bool          `default:"true"`
 	RepairInterval             time.Duration `default:"1h"`
+	RepairConcurrency          int           `default:"1"`
 
 	ProgrammableDistributionEnabled bool
 	BlobStorageStreaming             bool
