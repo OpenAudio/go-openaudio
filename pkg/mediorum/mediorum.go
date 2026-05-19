@@ -139,6 +139,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	// Repair configuration
 	repairEnabled := env.Get("true", "OPENAUDIO_REPAIR_ENABLED") == "true"
 	repairInterval := env.GetDuration(time.Hour, "OPENAUDIO_REPAIR_INTERVAL")
+	repairConcurrency := env.GetInt(1, "OPENAUDIO_REPAIR_CONCURRENCY")
 
 	config := server.MediorumConfig{
 		Self: registrar.Peer{
@@ -168,6 +169,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		DeadHosts:                 []string{},
 		RepairEnabled:             repairEnabled,
 		RepairInterval:            repairInterval,
+		RepairConcurrency:         repairConcurrency,
 		BlobStorageStreaming:      env.Bool("OPENAUDIO_BLOB_STORAGE_STREAMING"),
 	}
 
