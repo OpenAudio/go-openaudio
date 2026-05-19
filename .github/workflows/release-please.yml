@@ -12,7 +12,11 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      # Pinned to a full commit SHA to harden against supply-chain attacks on
+      # the upstream action. To upgrade: look up the commit at the desired tag
+      # with `gh api repos/googleapis/release-please-action/commits/<tag> --jq .sha`
+      # and update both the SHA and the trailing `# <tag>` comment.
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         with:
           # When release-please pushes the release tag using the default
           # GITHUB_TOKEN, GitHub will NOT fire downstream workflows like
