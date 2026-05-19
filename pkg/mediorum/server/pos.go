@@ -55,6 +55,11 @@ func (ss *MediorumServer) startPoSHandler(ctx context.Context) error {
 				if err != nil {
 					ss.metrics.recordPoS(PoSResult{At: time.Now().UTC(), CID: cid, OK: false, Error: err.Error()})
 					ss.logger.Error("Failed to get storage proof", zap.String("cid", cid), zap.Error(err))
+					if host, pullErr := ss.findAndPullBlob(ctx, cid, replicaSet); pullErr == nil {
+						ss.logger.Info("PoS read-repair succeeded", zap.String("cid", cid), zap.String("host", host))
+					} else {
+						ss.logger.Warn("PoS read-repair failed", zap.String("cid", cid), zap.Error(pullErr))
+					}
 					continue
 				}
 				ss.metrics.recordPoS(PoSResult{At: time.Now().UTC(), CID: cid, OK: true})
