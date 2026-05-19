@@ -65,8 +65,10 @@ For the tag push to fire those downstream workflows, release-please authenticate
 
 Repo admins maintain two configuration values for this:
 
-- `vars.RELEASE_PLEASE_APP_ID` — the App's numeric ID (a repo or org **variable**, not sensitive).
+- `vars.RELEASE_PLEASE_APP_CLIENT_ID` — the App's **Client ID** (a string like `Iv23li…`, shown on the App's settings page). Stored as a repository **variable**, not a secret — Client IDs are public.
 - `secrets.RELEASE_PLEASE_APP_PRIVATE_KEY` — the App's private key (PEM contents).
+
+Note: the App's **Client ID** is a string, distinct from the numeric **App ID** also shown on the same page. `actions/create-github-app-token@v3` expects the Client ID (the App ID input is deprecated).
 
 The App is installed only on this repository and granted the minimum permissions: **Contents: read/write** (push the release tag, create the GitHub Release) and **Pull requests: read/write** (open and maintain the release PR). If the App is ever removed or its key is rotated, the workflow falls back to no-op auth and the release PR will fail to open until the values are restored.
 

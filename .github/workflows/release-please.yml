@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Mint a short-lived installation token from the release-bot GitHub App
-      # (vars.RELEASE_PLEASE_APP_ID + secrets.RELEASE_PLEASE_APP_PRIVATE_KEY).
+      # (vars.RELEASE_PLEASE_APP_CLIENT_ID + secrets.RELEASE_PLEASE_APP_PRIVATE_KEY).
       # Using an App token instead of the default GITHUB_TOKEN is what allows
       # the tag release-please pushes to fire downstream workflows like
       # tag-released.yml and buf-publish.yml — GitHub's loop-prevention rule
@@ -26,7 +26,7 @@ jobs:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app-token
         with:
-          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          client-id: ${{ vars.RELEASE_PLEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
 
       - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
