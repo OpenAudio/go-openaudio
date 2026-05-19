@@ -25,14 +25,7 @@ func (ss *MediorumServer) serveCrudSweep(c echo.Context) error {
 	defer cancel()
 
 	after := c.QueryParam("after")
-	var ops []*crudr.Op
-	err := ss.crud.DB.
-		WithContext(ctx).
-		Where("ulid > ?", after).
-		Limit(PullLimit).
-		Order("ulid asc").
-		Find(&ops).
-		Error
+	ops, gapMinULID, err := ss.crud.ServeCrudSweep(ctx, after, PullLimit)
 	if err != nil {
 		return c.String(500, fmt.Sprintf("Failed to query ops: %v", err))
 	}
@@ -50,6 +43,16 @@ func (ss *MediorumServer) serveCrudSweep(c echo.Context) error {
 			continue
 		}
 		filteredOps = append(filteredOps, op)
+	}
+
+	// Retention-gap signal: when the caller's cursor falls below our
+	// retention floor, expose the lowest available ULID so the client
+	// can advance its cursor explicitly rather than silently skip the
+	// gap. The body remains a normal ops array for wire compatibility;
+	// older clients ignore these headers and behave as before.
+	if gapMinULID != "" {
+		c.Response().Header().Set(crudr.HeaderRetentionGap, "true")
+		c.Response().Header().Set(crudr.HeaderAvailableMin, gapMinULID)
 	}
 
 	c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=300")

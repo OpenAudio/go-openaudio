@@ -149,6 +149,7 @@ type MediorumServer struct {
 	Config    MediorumConfig
 
 	crudSweepMutex sync.Mutex
+	retentionCfg   crudr.RetentionConfig
 
 	// handle communication between core and mediorum for Proof of Storage
 	posChannel chan pos.PoSRequest
@@ -332,6 +333,22 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db, mediorumLifecycle, logger, peerHTTPClient)
 	dbMigrate(crud, config.Self.Host)
 
+	// Load retention config once so the dormant cleanup and the
+	// ongoing retention sweep see a stable view of env vars (an
+	// operator who edits env between the two reads cannot diverge
+	// their semantics).
+	retentionCfg := crudr.LoadRetentionConfig()
+
+	// One-time dormant-table cleanup: drops ops rows for CRUD-registered
+	// tables that haven't received a write within the dormancy threshold
+	// (default 90d). Runs once per process start; opt out with
+	// OPENAUDIO_MEDIORUM_KEEP_DORMANT_OPS=true. Idempotent on re-run.
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	if _, err := crud.CleanupDormantOps(cleanupCtx, retentionCfg); err != nil {
+		logger.Warn("dormant ops cleanup failed", zap.Error(err))
+	}
+	cleanupCancel()
+
 	deadHosts := config.DeadHosts
 	if deadHosts == nil {
 		deadHosts = []string{}
@@ -388,6 +405,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		transcodeWork:    make(chan *Upload, 100),
 		replicationWork:  make(chan *Upload, 100),
 		posChannel:       posChannel,
+		retentionCfg:     retentionCfg,
 
 		peerHealths:          map[string]*PeerHealth{},
 		redirectCache:        imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
@@ -611,6 +629,14 @@ func (ss *MediorumServer) MustStart() error {
 	// only start if we have a valid registered wallet
 	if ss.Config.WalletIsRegistered {
 		ss.crud.StartClients()
+
+		// Ongoing retention sweep: opt-in via OPENAUDIO_MEDIORUM_OPS_RETENTION_DAYS.
+		// When unset, RunRetention blocks on ctx.Done() and never deletes.
+		// Uses the same RetentionConfig captured at server New() time so the
+		// dormant cleanup and the ongoing sweep share one snapshot of env.
+		ss.lc.AddManagedRoutine("crudr ops retention", func(ctx context.Context) error {
+			return ss.crud.RunRetention(ctx, ss.retentionCfg)
+		})
 
 		ss.lc.AddManagedRoutine("health poller", ss.startHealthPoller)
 		ss.lc.AddManagedRoutine("repairer", ss.startRepairer)
