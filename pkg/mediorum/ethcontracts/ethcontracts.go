@@ -35,7 +35,7 @@ func GetNotifierForID(ID string, delegateOwnerWallet string) (NotifierInfo, erro
 		return NotifierInfo{}, fmt.Errorf("failed to connect to Ethereum node: %v", err)
 	}
 
-	ethRegistryAddress := config.GetEnvWithDefault("ethRegistryAddress", config.DefaultRegistryAddress())
+	ethRegistryAddress := config.GetRegistryAddress()
 	notifierContractAddress, err := GetContractAddr(client, common.HexToAddress(ethRegistryAddress), "TrustedNotifierManagerProxy")
 	if err != nil {
 		return NotifierInfo{}, fmt.Errorf("failed to get contract address: %v", err)
@@ -82,7 +82,7 @@ func GetServiceProviderIdFromEndpoint(endpoint string, delegateOwnerWallet strin
 		return 0, fmt.Errorf("failed to connect to Ethereum node: %v", err)
 	}
 
-	ethRegistryAddress := config.GetEnvWithDefault("ethRegistryAddress", config.DefaultRegistryAddress())
+	ethRegistryAddress := config.GetRegistryAddress()
 	serviceProviderFactoryAddress, err := GetContractAddr(client, common.HexToAddress(ethRegistryAddress), "ServiceProviderFactory")
 	if err != nil {
 		return 0, fmt.Errorf("failed to get contract address: %v", err)
@@ -119,7 +119,7 @@ func GetServiceProviderList(serviceType string) ([]ServiceProvider, error) {
 		return nil, fmt.Errorf("failed to connect to Ethereum node: %v", err)
 	}
 
-	serviceProviderFactoryAddress, err := GetContractAddr(client, common.HexToAddress(config.GetEnvWithDefault("ethRegistryAddress", config.DefaultRegistryAddress())), "ServiceProviderFactory")
+	serviceProviderFactoryAddress, err := GetContractAddr(client, common.HexToAddress(config.GetRegistryAddress()), "ServiceProviderFactory")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get contract address: %v", err)
 	}

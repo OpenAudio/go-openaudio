@@ -31,6 +31,30 @@ source_env_file() {
     done < "$file"
 }
 
+# Promote externally-set legacy env vars to their OPENAUDIO_ counterparts
+# BEFORE sourcing /env/${NETWORK}.env. The bundled prod.env/stage.env files
+# ship OPENAUDIO_ defaults (e.g. OPENAUDIO_CORE_ROOT_DIR=/data/core); without
+# this step, a legacy creator/discovery node that customised the legacy name
+# (e.g. audius_core_root_dir=/data/bolt) would silently have its real data
+# path masked by the bundled OPENAUDIO_ default, because the Go env helper
+# prefers OPENAUDIO_-prefixed keys. source_env_file is no-op for already-set
+# keys, so this preserves the node's actual on-disk layout.
+promote_legacy() {
+    local legacy_name=$1
+    local canonical_name=$2
+    local legacy_val="${!legacy_name:-}"
+    local canonical_val="${!canonical_name:-}"
+    if [ -n "$legacy_val" ] && [ -z "$canonical_val" ]; then
+        export "$canonical_name"="$legacy_val"
+    fi
+}
+
+promote_legacy audius_core_root_dir       OPENAUDIO_CORE_ROOT_DIR
+promote_legacy uptimeDataDir              OPENAUDIO_UPTIME_DATA_DIR
+promote_legacy ethProviderUrl             OPENAUDIO_ETH_PROVIDER_URL
+promote_legacy ethRegistryAddress         OPENAUDIO_ETH_REGISTRY_ADDRESS
+promote_legacy discoveryListensEndpoints  OPENAUDIO_DISCOVERY_LISTENS_ENDPOINTS
+
 source_env_file "$ENV_FILE"
 
 if [ -d "/data/creator-node-db-15" ] && [ "$(ls -A /data/creator-node-db-15)" ]; then
