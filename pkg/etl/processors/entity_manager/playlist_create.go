@@ -111,6 +111,9 @@ func insertPlaylistAndRoute(ctx context.Context, params *Params) error {
 	if err := updatePlaylistTracks(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
 		return err
 	}
+	if err := updateAlbumPriceHistory(ctx, params.DBTX, params.EntityID, params.BlockNumber, params.BlockTime, params.Metadata); err != nil {
+		return err
+	}
 
 	// Insert playlist routes if a name is provided.
 	//
