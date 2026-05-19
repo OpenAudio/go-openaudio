@@ -1,0 +1,24 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # When release-please pushes the release tag using the default
+          # GITHUB_TOKEN, GitHub will NOT fire downstream workflows like
+          # tag-released.yml or buf-publish.yml (loop-prevention rule).
+          # To get the auto :stable retag and buf publish, set a repo secret
+          # named RELEASE_PLEASE_TOKEN to a fine-grained PAT with
+          # `contents: write` + `pull-requests: write`, or a GitHub App token.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          target-branch: main
