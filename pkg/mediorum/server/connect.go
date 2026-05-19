@@ -286,6 +286,8 @@ func (s *StorageService) GetStorageDiagnostics(ctx context.Context, _ *connect.R
 	ss := s.mediorum
 
 	blobStorePrefix, _, _ := strings.Cut(ss.Config.BlobStoreDSN, "://")
+	archiveBlobStorePrefix, _, _ := strings.Cut(ss.Config.ArchiveBlobStoreDSN, "://")
+	archiveConfigured := ss.archiveBucket != nil
 
 	resp := &v1.GetStorageDiagnosticsResponse{
 		SelfHost:                ss.Config.Self.Host,
@@ -293,9 +295,15 @@ func (s *StorageService) GetStorageDiagnostics(ctx context.Context, _ *connect.R
 		DiskTotalBytes:          int64(ss.mediorumPathSize),
 		StorageExpectationBytes: int64(ss.storageExpectation),
 		DiskHasSpace:            ss.diskHasSpace(),
+		PrimaryDiskHasSpace:     ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree),
 		ReplicationFactor:       int32(ss.Config.ReplicationFactor),
 		UploadsCount:            ss.uploadsCount,
 		BlobStorePrefix:         blobStorePrefix,
+		ArchiveConfigured:       archiveConfigured,
+		ArchiveDiskUsedBytes:    int64(ss.archivePathUsed),
+		ArchiveDiskTotalBytes:   int64(ss.archivePathSize),
+		ArchiveBlobStorePrefix:  archiveBlobStorePrefix,
+		ArchiveDiskHasSpace:     archiveConfigured && ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree),
 		LastSuccessfulRepair:    repairRunToProto(ss.lastSuccessfulRepair),
 		LastSuccessfulCleanup:   repairRunToProto(ss.lastSuccessfulCleanup),
 	}

@@ -437,7 +437,17 @@ templ (p *Pages) OverviewResourcesFragment(status *v1.GetStatusResponse) {
 templ (p *Pages) OverviewStorageFragment(status *v1.GetStatusResponse) {
 	if status.StorageInfo != nil {
 		<div class="bg-tertiary shadow-md rounded-lg p-6">
-			<h2 class="text-xl font-semibold mb-4">Media Storage</h2>
+			<div class="flex items-center justify-between mb-4">
+				<h2 class="text-xl font-semibold">Media Storage</h2>
+				<div class="flex items-center gap-2">
+					<span class="text-sm text-secondary">Has Space</span>
+					if status.StorageInfo.DiskHasSpace {
+						@components.StatusGreen("Has Space")
+					} else {
+						@components.StatusRed("Full")
+					}
+				</div>
+			</div>
 			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 				if status.StorageInfo.StorageType != "" {
 					<div class="bg-secondary rounded-lg p-4">
@@ -450,14 +460,14 @@ templ (p *Pages) OverviewStorageFragment(status *v1.GetStatusResponse) {
 				<div class="bg-secondary rounded-lg p-4">
 					<div class="flex items-center justify-between mb-2">
 						<span class="font-medium">Disk Has Space</span>
-						if status.StorageInfo.DiskHasSpace {
+						if status.StorageInfo.PrimaryDiskHasSpace {
 							@components.StatusGreenLg("Has Space")
 						} else {
 							@components.StatusRedLg("Full")
 						}
 					</div>
 					<div class="text-sm text-secondary">
-						if status.StorageInfo.DiskHasSpace {
+						if status.StorageInfo.PrimaryDiskHasSpace {
 							Has Space
 						} else {
 							Full
@@ -508,6 +518,66 @@ templ (p *Pages) OverviewStorageFragment(status *v1.GetStatusResponse) {
 					</div>
 				}
 			</div>
+			if status.StorageInfo.ArchiveConfigured {
+				<h2 class="text-xl font-semibold mb-4 mt-6">Archive Storage</h2>
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+					if status.StorageInfo.ArchiveStorageType != "" {
+						<div class="bg-secondary rounded-lg p-4">
+							<div class="flex items-center justify-between mb-2">
+								<span class="font-medium">Storage Type</span>
+							</div>
+							<div class="text-sm text-secondary">{ status.StorageInfo.ArchiveStorageType }</div>
+							if status.StorageInfo.ArchiveStoragePrefix != "" {
+								<div class="text-xs text-secondary mt-1">backend: { status.StorageInfo.ArchiveStoragePrefix }</div>
+							}
+						</div>
+					}
+					<div class="bg-secondary rounded-lg p-4">
+						<div class="flex items-center justify-between mb-2">
+							<span class="font-medium">Disk Has Space</span>
+							if status.StorageInfo.ArchiveDiskHasSpace {
+								@components.StatusGreenLg("Has Space")
+							} else {
+								@components.StatusRedLg("Full")
+							}
+						</div>
+						<div class="text-sm text-secondary">
+							if status.StorageInfo.ArchiveDiskHasSpace {
+								Has Space
+							} else {
+								Full
+							}
+						</div>
+					</div>
+					if !status.StorageInfo.ArchiveIsBlobStorage {
+						if status.StorageInfo.ArchiveDiskTotal > 0 {
+							<div class="bg-secondary rounded-lg p-4">
+								<div class="flex items-center justify-between mb-2">
+									<span class="font-medium">Disk Used</span>
+								</div>
+								<div class="text-sm text-secondary">{ formatBytes(status.StorageInfo.ArchiveDiskUsed) }</div>
+								<div class="text-xs text-secondary mt-1">
+									{ formatPercentage(status.StorageInfo.ArchiveDiskUsed, status.StorageInfo.ArchiveDiskTotal) } of { formatBytes(status.StorageInfo.ArchiveDiskTotal) }
+								</div>
+							</div>
+							<div class="bg-secondary rounded-lg p-4">
+								<div class="flex items-center justify-between mb-2">
+									<span class="font-medium">Disk Total</span>
+								</div>
+								<div class="text-sm text-secondary">{ formatBytes(status.StorageInfo.ArchiveDiskTotal) }</div>
+							</div>
+						} else {
+							<div class="bg-secondary rounded-lg p-4">
+								<div class="flex items-center justify-between mb-2">
+									<span class="font-medium">Disk Usage</span>
+								</div>
+								<div class="text-sm text-secondary">Not available</div>
+								<div class="text-xs text-secondary mt-1">Disk information not yet loaded</div>
+							</div>
+						}
+					}
+				</div>
+			}
 		</div>
 	}
 }
