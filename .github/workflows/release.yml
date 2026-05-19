@@ -1,5 +1,8 @@
-name: Create Release
+name: Create Release (mainnet-alpha-beta backport)
 
+# Releases from `main` are automated by .github/workflows/release-please.yml.
+# This workflow is the manual fallback for cutting a release from the
+# long-lived `mainnet-alpha-beta` backport branch.
 on:
   workflow_dispatch:
     inputs:
@@ -8,7 +11,6 @@ on:
         required: true
         type: choice
         options:
-          - main
           - mainnet-alpha-beta
       version:
         description: 'Release version (e.g., v1.0.0, v2.0.0-beta.1)'
@@ -76,17 +78,7 @@ jobs:
           draft: false
           generate_release_notes: true
 
-  build-test-push:
-    uses: ./.github/workflows/docker-build.yml
-    with:
-      tag: ${{ inputs.version }}
-      ref: ${{ inputs.version }}
-      push: true
-    secrets: inherit
-
-  publish-to-buf:
-    needs: create-release
-    uses: ./.github/workflows/buf-publish.yml
-    with:
-      label: ${{ inputs.version }}
-    secrets: inherit
+  # Pushing the tag above triggers:
+  #   - .github/workflows/tag-released.yml (multi-arch image + version tag;
+  #     :stable is NOT moved because the tag is not reachable from main)
+  #   - .github/workflows/buf-publish.yml  (buf module published with the tag)
