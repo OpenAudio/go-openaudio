@@ -18,7 +18,18 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const MAX_TRIES = 3
+const (
+	MAX_TRIES = 3
+
+	// audioAnalysisBacklogLimit caps the per-tick backlog scan so a node with
+	// a large failing set cannot stall on a single sweep.
+	audioAnalysisBacklogLimit = 100
+
+	// audioAnalysisRetryBackoff defers re-attempts of previously-failed
+	// uploads. Without it, failing rows are picked up every tick and burn
+	// worker time on the same hot set.
+	audioAnalysisRetryBackoff = 24 * time.Hour
+)
 
 func (ss *MediorumServer) startAudioAnalyzer(ctx context.Context) error {
 	work := make(chan *Upload)
@@ -59,14 +70,10 @@ func (ss *MediorumServer) startAudioAnalyzer(ctx context.Context) error {
 }
 
 func (ss *MediorumServer) findMissedAudioAnalysisJobs(ctx context.Context, work chan<- *Upload) {
-	uploads := []*Upload{}
-	err := ss.crud.DB.Where("template = ? and (audio_analysis_status is null or audio_analysis_status != ?)", JobTemplateAudio, JobStatusDone).
-		Order("random()").
-		Find(&uploads).
-		Error
-
+	uploads, err := ss.findMissedAudioAnalysisCandidates(ctx, time.Now().UTC(), audioAnalysisBacklogLimit)
 	if err != nil {
 		ss.logger.Warn("failed to find backlog work", zap.Error(err))
+		return
 	}
 
 	for _, upload := range uploads {
@@ -86,10 +93,40 @@ func (ss *MediorumServer) findMissedAudioAnalysisJobs(ctx context.Context, work 
 		}
 		if ok {
 			if ss.blobExists(ctx, cidutil.ShardCID(cid)) {
-				work <- upload
+				select {
+				case work <- upload:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}
+}
+
+func (ss *MediorumServer) findMissedAudioAnalysisCandidates(ctx context.Context, now time.Time, limit int) ([]*Upload, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	cutoff := now.Add(-audioAnalysisRetryBackoff)
+	uploads := []*Upload{}
+	// Keep these literals aligned with idx_uploads_audio_analysis_backlog so
+	// Postgres can use the partial index even with generic plans.
+	err := ss.crud.DB.WithContext(ctx).
+		Where(`
+			template = 'audio'
+			AND audio_analysis_status IS DISTINCT FROM 'done'
+			AND COALESCE(audio_analysis_error_count, 0) < ?
+			AND (audio_analyzed_at IS NULL OR audio_analyzed_at <= ?)
+		`, MAX_TRIES, cutoff).
+		Order("COALESCE(audio_analysis_error_count, 0) ASC").
+		Order("audio_analyzed_at ASC NULLS FIRST").
+		Order("id ASC").
+		Limit(limit).
+		Find(&uploads).
+		Error
+
+	return uploads, err
 }
 
 func (ss *MediorumServer) startAudioAnalysisWorker(workerId int, work chan *Upload) {
