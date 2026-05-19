@@ -496,6 +496,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	internalApi := routes.Group("/internal")
 
 	// internal: crud
+	internalApi.GET("/crud/status", ss.serveCrudStatus, middleware.BasicAuth(ss.checkBasicAuth))
 	internalApi.GET("/crud/sweep", ss.serveCrudSweep)
 	internalApi.POST("/crud/push", ss.serveCrudPush, middleware.BasicAuth(ss.checkBasicAuth))
 
