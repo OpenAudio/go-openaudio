@@ -35,6 +35,43 @@ $ git cherry-pick {commit SHA from main}
 $ git push origin {new branch name}
 ```
 
+## Releases
+
+Releases on `main` are automated with [release-please](https://github.com/googleapis/release-please). You do not bump `pkg/version/.version.json` by hand and you do not dispatch a release workflow manually for `main`.
+
+### Commit conventions
+
+All commits on `main` must follow the [Conventional Commits](https://www.conventionalcommits.org/) format. Because PRs are squash-merged, the **PR title** is what lands on `main` — it is what release-please reads and what `.github/workflows/pr-title-lint.yml` checks.
+
+Bump rules:
+
+| Commit prefix | Bump |
+| --- | --- |
+| `fix:`, `perf:` | patch |
+| `feat:` | minor |
+| `feat!:`, or any type with a `BREAKING CHANGE:` footer | major |
+| `docs:`, `test:`, `build:`, `ci:`, `chore:`, `refactor:`, `deps:`, `revert:` | no bump (some hidden from CHANGELOG) |
+
+Scopes are optional, e.g. `feat(console): surface archive storage stats`.
+
+### How a release ships
+
+1. As Conventional Commits land on `main`, release-please opens (and keeps updated) a PR titled `chore: release X.Y.Z`. The PR bumps `pkg/version/.version.json`, updates `.release-please-manifest.json`, and rewrites `CHANGELOG.md`.
+2. Merging the release PR creates a GitHub Release, pushes the `vX.Y.Z` git tag, and triggers:
+   - `tag-released.yml` — retags the multi-arch image as `openaudio/go-openaudio:vX.Y.Z` and promotes `:stable` to that version.
+   - `buf-publish.yml` — publishes the proto module to the Buf Schema Registry under the version label.
+
+For the tag push to fire those downstream workflows, repo admins must set a `RELEASE_PLEASE_TOKEN` secret to a fine-grained PAT (or GitHub App token) with `contents: write` and `pull-requests: write`. Without it, release-please still opens the PR but the `:stable` retag and buf publish must be triggered manually.
+
+### Manual release fallback
+
+If release-please is broken or unavailable, you can cut a release by hand:
+
+1. Hand-edit `pkg/version/.version.json` on `main` to the new version and merge.
+2. Dispatch `.github/workflows/release.yml` with the matching version (e.g. `v1.2.16`).
+
+The resulting tag still triggers `tag-released.yml` and `buf-publish.yml`, so the image and buf module land the same way they do from a release-please release.
+
 ## Testing
 
 Tests are located in _test.go files as directed by the Go testing package. If you're adding or removing a function, please check there's a TestType_Method test for it.

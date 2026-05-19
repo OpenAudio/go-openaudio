@@ -1,0 +1,48 @@
+name: Tag Released
+
+# All third-party actions are pinned to a full commit SHA to harden against
+# supply-chain attacks on upstream tags. To upgrade an action, look up the
+# commit at the desired tag with `gh api repos/<owner>/<repo>/commits/<tag>
+# --jq .sha` and update both the SHA and the trailing `# <tag>` comment.
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  # Reuse the multi-arch manifest that ci.yml already built and pushed for
+  # the merge commit (openaudio/go-openaudio:<sha>). Retag it to the version
+  # tag instead of rebuilding from source.
+  retag-from-sha:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+      - id: lookup
+        run: echo "sha=$(git rev-list -n 1 ${{ github.ref_name }})" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Retag SHA manifest as version tag
+        run: |
+          docker buildx imagetools create \
+            -t openaudio/go-openaudio:${{ github.ref_name }} \
+            openaudio/go-openaudio:${{ steps.lookup.outputs.sha }}
+
+  retag-stable:
+    needs: retag-from-sha
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Retag version tag as :stable
+        run: |
+          docker buildx imagetools create \
+            -t openaudio/go-openaudio:stable \
+            openaudio/go-openaudio:${{ github.ref_name }}

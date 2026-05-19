@@ -1,5 +1,10 @@
-name: Create Release
+name: Create Release (manual fallback)
 
+# Releases from `main` are normally automated by
+# .github/workflows/release-please.yml. This workflow is the manual fallback
+# used only if release-please is broken or unavailable. To use it:
+#   1. Hand-edit `pkg/version/.version.json` on `main` to the new version.
+#   2. Dispatch this workflow with the matching version (e.g. v1.2.16).
 on:
   workflow_dispatch:
     inputs:
@@ -9,7 +14,6 @@ on:
         type: choice
         options:
           - main
-          - mainnet-alpha-beta
       version:
         description: 'Release version (e.g., v1.0.0, v2.0.0-beta.1)'
         required: true
@@ -76,17 +80,7 @@ jobs:
           draft: false
           generate_release_notes: true
 
-  build-test-push:
-    uses: ./.github/workflows/docker-build.yml
-    with:
-      tag: ${{ inputs.version }}
-      ref: ${{ inputs.version }}
-      push: true
-    secrets: inherit
-
-  publish-to-buf:
-    needs: create-release
-    uses: ./.github/workflows/buf-publish.yml
-    with:
-      label: ${{ inputs.version }}
-    secrets: inherit
+  # Pushing the tag above triggers:
+  #   - .github/workflows/tag-released.yml (multi-arch image + version tag,
+  #     :stable retagged to the new version)
+  #   - .github/workflows/buf-publish.yml  (buf module published with the tag)

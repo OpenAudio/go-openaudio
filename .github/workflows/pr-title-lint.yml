@@ -1,0 +1,35 @@
+name: Lint PR Title
+
+# Third-party actions are pinned to a full commit SHA to harden against
+# supply-chain attacks on upstream tags. To upgrade, look up the commit at the
+# desired tag with `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha` and
+# update both the SHA and the trailing `# <tag>` comment.
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@e32d7e603df1aa1ba07e981f2a23455dee596825 # v5.5.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            revert
+            refactor
+            docs
+            test
+            build
+            ci
+            chore
+            deps
+          requireScope: false
