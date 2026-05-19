@@ -141,7 +141,7 @@ templ storageOverviewSection(d *storagev1.GetStorageDiagnosticsResponse) {
 				<div class="text-sm text-secondary">{ fmt.Sprintf("%d", d.ReplicationFactor) }</div>
 			</div>
 			<div class="bg-secondary rounded-lg p-4">
-				<div class="font-medium mb-2">Uploads (this node)</div>
+				<div class="font-medium mb-2">Uploads</div>
 				<div class="text-sm text-secondary">{ fmt.Sprintf("%d", d.UploadsCount) }</div>
 			</div>
 		</div>
@@ -170,7 +170,7 @@ templ repairSection(d *storagev1.GetStorageDiagnosticsResponse) {
 							<th class="text-left p-2">Status</th>
 							<th class="text-left p-2">Duration</th>
 							<th class="text-left p-2">Content Size</th>
-							<th class="text-left p-2">Run #</th>
+							<th class="text-left p-2">Files Changed</th>
 						</tr>
 					</thead>
 					<tbody class="bg-primary divide-y divide-gray-800">
@@ -207,7 +207,7 @@ templ repairColgroup() {
 		<col class="w-32"/>
 		<col class="w-28"/>
 		<col class="w-32"/>
-		<col class="w-20"/>
+		<col class="w-32"/>
 	</colgroup>
 }
 
@@ -218,7 +218,7 @@ templ repairRunRow(r *storagev1.RepairRun) {
 		<td class="p-2">{ repairStatusLabel(r) }</td>
 		<td class="p-2">{ formatDuration(r.DurationNs) }</td>
 		<td class="p-2">{ formatBytes(r.ContentSizeBytes) }</td>
-		<td class="p-2">{ fmt.Sprintf("%d", r.CursorI) }</td>
+		<td class="p-2">{ fmt.Sprintf("%d", r.FilesChanged) }</td>
 	</tr>
 }
 
@@ -262,7 +262,8 @@ templ peersSection(d *storagev1.GetStorageDiagnosticsResponse) {
 			<div class="text-sm text-secondary">No peers tracked yet.</div>
 		} else {
 			<div class="overflow-x-auto">
-				<table class="min-w-full text-sm text-tertiary">
+				<table class="min-w-full text-sm text-tertiary table-fixed">
+					@peersColgroup()
 					<thead class="bg-secondary">
 						<tr>
 							<th class="text-left p-2">Host</th>
@@ -272,31 +273,60 @@ templ peersSection(d *storagev1.GetStorageDiagnosticsResponse) {
 						</tr>
 					</thead>
 					<tbody class="bg-primary divide-y divide-gray-800">
-						for _, p := range d.Peers {
-							<tr>
-								<td class="p-2 break-all">{ p.Host }</td>
-								<td class="p-2">
-									if p.LastReachable != nil {
-										{ formatRelative(p.LastReachable.AsTime()) }
-									} else {
-										never
-									}
-								</td>
-								<td class="p-2">
-									if p.LastHealthy != nil {
-										{ formatRelative(p.LastHealthy.AsTime()) }
-									} else {
-										never
-									}
-								</td>
-								<td class="p-2">{ fmt.Sprintf("%d", p.ReachablePeerCount) }</td>
-							</tr>
+						{{ headN := len(d.Peers); if headN > 5 { headN = 5 } }}
+						for i := 0; i < headN; i++ {
+							@peerRow(d.Peers[i])
 						}
 					</tbody>
 				</table>
 			</div>
+			if len(d.Peers) > 5 {
+				<details class="mt-2">
+					<summary class="text-xs text-secondary cursor-pointer">Show { fmt.Sprintf("%d", len(d.Peers)-5) } more</summary>
+					<div class="overflow-x-auto mt-2">
+						<table class="min-w-full text-sm text-tertiary table-fixed">
+							@peersColgroup()
+							<tbody class="bg-primary divide-y divide-gray-800">
+								for i := 5; i < len(d.Peers); i++ {
+									@peerRow(d.Peers[i])
+								}
+							</tbody>
+						</table>
+					</div>
+				</details>
+			}
 		}
 	</div>
+}
+
+templ peersColgroup() {
+	<colgroup>
+		<col/>
+		<col class="w-40"/>
+		<col class="w-40"/>
+		<col class="w-32"/>
+	</colgroup>
+}
+
+templ peerRow(p *storagev1.PeerStatus) {
+	<tr>
+		<td class="p-2 break-all">{ p.Host }</td>
+		<td class="p-2">
+			if p.LastReachable != nil {
+				{ formatRelative(p.LastReachable.AsTime()) }
+			} else {
+				never
+			}
+		</td>
+		<td class="p-2">
+			if p.LastHealthy != nil {
+				{ formatRelative(p.LastHealthy.AsTime()) }
+			} else {
+				never
+			}
+		</td>
+		<td class="p-2">{ fmt.Sprintf("%d", p.ReachablePeerCount) }</td>
+	</tr>
 }
 
 templ servedSection(d *storagev1.GetStorageDiagnosticsResponse) {
@@ -305,8 +335,10 @@ templ servedSection(d *storagev1.GetStorageDiagnosticsResponse) {
 		if len(d.ServedCounts) == 0 {
 			<div class="text-sm text-secondary">No traffic recorded.</div>
 		} else {
+			{{ ordered := reversedServedCounts(d.ServedCounts) }}
 			<div class="overflow-x-auto">
-				<table class="min-w-full text-sm text-tertiary">
+				<table class="min-w-full text-sm text-tertiary table-fixed">
+					@servedColgroup()
 					<thead class="bg-secondary">
 						<tr>
 							<th class="text-left p-2">Day</th>
@@ -315,22 +347,58 @@ templ servedSection(d *storagev1.GetStorageDiagnosticsResponse) {
 						</tr>
 					</thead>
 					<tbody class="bg-primary divide-y divide-gray-800">
-						for _, m := range d.ServedCounts {
-							<tr>
-								<td class="p-2">
-									if m.Day != nil {
-										{ m.Day.AsTime().UTC().Format("2006-01-02") }
-									}
-								</td>
-								<td class="p-2">{ m.Action }</td>
-								<td class="p-2">{ fmt.Sprintf("%d", m.Count) }</td>
-							</tr>
+						{{ headN := len(ordered); if headN > 5 { headN = 5 } }}
+						for i := 0; i < headN; i++ {
+							@servedRow(ordered[i])
 						}
 					</tbody>
 				</table>
 			</div>
+			if len(ordered) > 5 {
+				<details class="mt-2">
+					<summary class="text-xs text-secondary cursor-pointer">Show { fmt.Sprintf("%d", len(ordered)-5) } more</summary>
+					<div class="overflow-x-auto mt-2">
+						<table class="min-w-full text-sm text-tertiary table-fixed">
+							@servedColgroup()
+							<tbody class="bg-primary divide-y divide-gray-800">
+								for i := 5; i < len(ordered); i++ {
+									@servedRow(ordered[i])
+								}
+							</tbody>
+						</table>
+					</div>
+				</details>
+			}
 		}
 	</div>
+}
+
+templ servedColgroup() {
+	<colgroup>
+		<col class="w-32"/>
+		<col class="w-32"/>
+		<col/>
+	</colgroup>
+}
+
+templ servedRow(m *storagev1.DailyServedCount) {
+	<tr>
+		<td class="p-2">
+			if m.Day != nil {
+				{ m.Day.AsTime().UTC().Format("2006-01-02") }
+			}
+		</td>
+		<td class="p-2">{ m.Action }</td>
+		<td class="p-2">{ fmt.Sprintf("%d", m.Count) }</td>
+	</tr>
+}
+
+func reversedServedCounts(in []*storagev1.DailyServedCount) []*storagev1.DailyServedCount {
+	out := make([]*storagev1.DailyServedCount, len(in))
+	for i, v := range in {
+		out[len(in)-1-i] = v
+	}
+	return out
 }
 
 templ placeholderSection(title, note string) {
@@ -520,8 +588,10 @@ templ recentServedSection(d *storagev1.GetStorageDiagnosticsResponse) {
 		if len(d.RecentServed) == 0 {
 			<div class="text-sm text-secondary">No recent activity.</div>
 		} else {
+			{{ ordered := reversedRecentServed(d.RecentServed) }}
 			<div class="overflow-x-auto">
-				<table class="min-w-full text-sm text-tertiary">
+				<table class="min-w-full text-sm text-tertiary table-fixed">
+					@recentServedColgroup()
 					<thead class="bg-secondary">
 						<tr>
 							<th class="text-left p-2">When</th>
@@ -530,21 +600,56 @@ templ recentServedSection(d *storagev1.GetStorageDiagnosticsResponse) {
 						</tr>
 					</thead>
 					<tbody class="bg-primary divide-y divide-gray-800">
-						for i := len(d.RecentServed) - 1; i >= 0; i-- {
-							{{ s := d.RecentServed[i] }}
-							<tr>
-								<td class="p-2">
-									if s.At != nil {
-										{ formatRelative(s.At.AsTime()) }
-									}
-								</td>
-								<td class="p-2">{ s.Action }</td>
-								<td class="p-2 font-mono break-all">{ s.Cid }</td>
-							</tr>
+						{{ headN := len(ordered); if headN > 5 { headN = 5 } }}
+						for i := 0; i < headN; i++ {
+							@recentServedRow(ordered[i])
 						}
 					</tbody>
 				</table>
 			</div>
+			if len(ordered) > 5 {
+				<details class="mt-2">
+					<summary class="text-xs text-secondary cursor-pointer">Show { fmt.Sprintf("%d", len(ordered)-5) } more</summary>
+					<div class="overflow-x-auto mt-2">
+						<table class="min-w-full text-sm text-tertiary table-fixed">
+							@recentServedColgroup()
+							<tbody class="bg-primary divide-y divide-gray-800">
+								for i := 5; i < len(ordered); i++ {
+									@recentServedRow(ordered[i])
+								}
+							</tbody>
+						</table>
+					</div>
+				</details>
+			}
 		}
 	</div>
+}
+
+templ recentServedColgroup() {
+	<colgroup>
+		<col class="w-32"/>
+		<col class="w-32"/>
+		<col/>
+	</colgroup>
+}
+
+templ recentServedRow(s *storagev1.ServedEvent) {
+	<tr>
+		<td class="p-2">
+			if s.At != nil {
+				{ formatRelative(s.At.AsTime()) }
+			}
+		</td>
+		<td class="p-2">{ s.Action }</td>
+		<td class="p-2 font-mono break-all">{ s.Cid }</td>
+	</tr>
+}
+
+func reversedRecentServed(in []*storagev1.ServedEvent) []*storagev1.ServedEvent {
+	out := make([]*storagev1.ServedEvent, len(in))
+	for i, v := range in {
+		out[len(in)-1-i] = v
+	}
+	return out
 }
