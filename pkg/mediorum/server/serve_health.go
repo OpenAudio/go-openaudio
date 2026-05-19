@@ -57,7 +57,9 @@ type HealthData struct {
 	FailsPeerReachability     bool                       `json:"failsPeerReachability"`
 	StoreAll                  bool                       `json:"storeAll"`
 	IsDbLocalhost             bool                       `json:"isDbLocalhost"`
-	DiskHasSpace              bool                       `json:"diskHasSpace"`
+	DiskHasSpace              bool                       `json:"diskHasSpace"`        // aggregate (AND of primary + archive, if archive routes writes)
+	PrimaryDiskHasSpace       bool                       `json:"primaryDiskHasSpace"` // primary bucket only
+	ArchiveDiskHasSpace       bool                       `json:"archiveDiskHasSpace"` // archive bucket only; false when archive not configured
 	IsDiscoveryListensEnabled bool                       `json:"isDiscoveryListensEnabled"`
 	TranscodeQueueLength      int                        `json:"transcodeQueueLength"`
 	TranscodeStats            *TranscodeStats            `json:"transcodeStats"`
@@ -127,6 +129,8 @@ func (ss *MediorumServer) getHealth() HealthData {
 		IsDbLocalhost:             isDbLocalhost(ss.Config.PostgresDSN),
 		IsDiscoveryListensEnabled: ss.Config.discoveryListensEnabled(),
 		DiskHasSpace:              ss.diskHasSpace(),
+		PrimaryDiskHasSpace:       ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree),
+		ArchiveDiskHasSpace:       ss.archiveBucket != nil && ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree),
 		TranscodeQueueLength:      len(ss.transcodeWork),
 		TranscodeStats:            ss.getTranscodeStats(),
 	}
