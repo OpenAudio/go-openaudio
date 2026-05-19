@@ -234,6 +234,9 @@ message RepairRun {
   string aborted_reason = 6;
   int32 cursor_i = 7;
   map<string, int64> counters = 8;
+  // Sum of successful pull + delete actions in this run (pull_mine_success +
+  // delete_invalid_success + delete_resized_image_ok + delete_over_replicated_success).
+  int64 files_changed = 9;
 }
 
 message PeerStatus {

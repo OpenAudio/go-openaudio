@@ -396,6 +396,12 @@ func repairRunToProto(r RepairTracker) *v1.RepairRun {
 	for k, v := range r.Counters {
 		counters[k] = int64(v)
 	}
+	// Sum the per-CID successful actions this run took. Keys are produced
+	// by the repair loop in pkg/mediorum/server/repair.go.
+	filesChanged := int64(counters["pull_mine_success"]) +
+		int64(counters["delete_invalid_success"]) +
+		int64(counters["delete_resized_image_ok"]) +
+		int64(counters["delete_over_replicated_success"])
 	return &v1.RepairRun{
 		StartedAt:        timeToProto(r.StartedAt),
 		FinishedAt:       timeToProto(r.FinishedAt),
@@ -405,6 +411,7 @@ func repairRunToProto(r RepairTracker) *v1.RepairRun {
 		AbortedReason:    r.AbortedReason,
 		CursorI:          int32(r.CursorI),
 		Counters:         counters,
+		FilesChanged:     filesChanged,
 	}
 }
 

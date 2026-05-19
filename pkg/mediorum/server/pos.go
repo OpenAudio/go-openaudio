@@ -55,6 +55,7 @@ func (ss *MediorumServer) startPoSHandler(ctx context.Context) error {
 				if err != nil {
 					ss.metrics.recordPoS(PoSResult{At: time.Now().UTC(), CID: cid, OK: false, Error: err.Error()})
 					ss.logger.Error("Failed to get storage proof", zap.String("cid", cid), zap.Error(err))
+					ss.maybeBackgroundPull(cid)
 					continue
 				}
 				ss.metrics.recordPoS(PoSResult{At: time.Now().UTC(), CID: cid, OK: true})
