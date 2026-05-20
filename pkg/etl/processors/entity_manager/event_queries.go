@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 func eventExists(ctx context.Context, dbtx db.DBTX, eventID int64) (bool, error) {

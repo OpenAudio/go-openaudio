@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )

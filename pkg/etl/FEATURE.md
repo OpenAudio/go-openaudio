@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Standalone Go package (`github.com/OpenAudio/go-openaudio/etl`) that indexes OpenAudio blockchain data into PostgreSQL. **Indexer-only**: no query API. Used by go-openaudio via a wrapper; also importable by external projects.
+Standalone Go package (`github.com/OpenAudio/go-openaudio/pkg/etl`) that indexes OpenAudio blockchain data into PostgreSQL. **Indexer-only**: no query API. Used by go-openaudio via a wrapper; also importable by external projects.
 
 ## Architecture
 
@@ -14,7 +14,7 @@ go-openaudio (main module)
 ├── pkg/explorer/              # Explorer UI (templ); uses etlserver.GetDB(), GetLocationDB()
 ├── examples/etl/              # Standalone local runner for manual testing
 └── pkg/etl/                   # THIS PACKAGE (submodule)
-    ├── go.mod                 # Module github.com/OpenAudio/go-openaudio/etl
+    ├── go.mod                 # Module github.com/OpenAudio/go-openaudio/pkg/etl
     ├── etl.go                 # Indexer struct, New(), setters
     ├── indexer.go             # Run(), indexBlocks() loop, tx type switch
     ├── schema.go              # Tx type constants (re-exports from processors)

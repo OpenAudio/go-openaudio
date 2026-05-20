@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 // --- Grant Delete (Revoke) ---

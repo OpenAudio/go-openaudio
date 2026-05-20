@@ -10,9 +10,9 @@ import (
 
 	"connectrpc.com/connect"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
-	"github.com/OpenAudio/go-openaudio/etl/db"
-	"github.com/OpenAudio/go-openaudio/etl/processors"
-	em "github.com/OpenAudio/go-openaudio/etl/processors/entity_manager"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/processors"
+	em "github.com/OpenAudio/go-openaudio/pkg/etl/processors/entity_manager"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"

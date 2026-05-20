@@ -1,4 +1,4 @@
-module github.com/OpenAudio/go-openaudio/etl
+module github.com/OpenAudio/go-openaudio/pkg/etl
 
 go 1.25
 
