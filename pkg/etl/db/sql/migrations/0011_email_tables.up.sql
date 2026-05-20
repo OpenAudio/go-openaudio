@@ -1,4 +1,4 @@
--- Encrypted email tables matching discovery-provider schema.
+-- Encrypted email tables.
 
 CREATE TABLE IF NOT EXISTS encrypted_emails (
   email_owner_user_id integer NOT NULL,

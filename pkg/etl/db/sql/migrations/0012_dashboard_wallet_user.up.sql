@@ -1,4 +1,4 @@
--- Dashboard wallet user table matching discovery-provider schema.
+-- Dashboard wallet user table.
 
 CREATE TABLE IF NOT EXISTS dashboard_wallet_users (
   wallet character varying NOT NULL,

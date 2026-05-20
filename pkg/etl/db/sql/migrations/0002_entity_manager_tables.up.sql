@@ -1,11 +1,9 @@
--- Entity manager domain tables matching discovery-provider schema.
--- These tables are the target for entity manager validation and writes,
--- enabling the ETL indexer to replace the discovery-provider celery indexer.
+-- Entity manager domain tables: the target for entity-manager validation
+-- and writes.
 --
--- PKs, FKs, and constraints match the production schema exactly
--- (see: AudiusProject/api sql/01_schema.sql) so this migration is
--- safe to run against an existing discovery-provider database via
--- CREATE TABLE IF NOT EXISTS.
+-- CREATE TABLE IF NOT EXISTS throughout so this migration is a no-op
+-- against a database that already has these tables (e.g. a consumer that
+-- brought its own schema).
 
 -- Enums
 

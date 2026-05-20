@@ -1,4 +1,4 @@
--- Track downloads table matching discovery-provider schema.
+-- Track downloads table.
 
 CREATE TABLE IF NOT EXISTS track_downloads (
   txhash character varying NOT NULL,

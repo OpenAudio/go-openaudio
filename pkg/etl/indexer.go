@@ -176,8 +176,8 @@ func (e *Indexer) Run() error {
 	}
 
 	// Initialize lastEmBlock: the last assigned blocks.number value.
-	// Python increments this sequentially, only for blocks with EM transactions.
-	// We continue the sequence from wherever the production DB left off.
+	// em_block is incremented sequentially, only for blocks with EM transactions.
+	// We continue the sequence from wherever the existing DB left off.
 	err = e.pool.QueryRow(context.Background(),
 		"SELECT COALESCE(MAX(number), 0) FROM blocks").Scan(&e.lastEmBlock)
 	if err != nil {
@@ -321,7 +321,7 @@ func (e *Indexer) indexBlocks() error {
 		}
 
 		// Check if this block has any ManageEntity transactions.
-		// Python only assigns a blocks.number (em_block) for blocks with EM txs.
+		// blocks.number (em_block) is only assigned for blocks with EM txs.
 		hasEM := false
 		for _, tx := range block.Transactions {
 			if _, ok := tx.Transaction.Transaction.(*corev1.SignedTransaction_ManageEntity); ok {
@@ -330,10 +330,11 @@ func (e *Indexer) indexBlocks() error {
 			}
 		}
 
-		// Assign em_block only for blocks with EM transactions (matching Python behavior).
-		// Python: marks previous block is_current=false, then inserts new block is_current=true.
-		// The blocks table has a unique partial index on (is_current) WHERE is_current IS TRUE,
-		// so we must update the previous block BEFORE inserting the new one.
+		// Assign em_block only for blocks with EM transactions. Marks the previous
+		// block is_current=false then inserts the new one is_current=true. The
+		// blocks table has a unique partial index on (is_current) WHERE
+		// is_current IS TRUE, so the previous block must be updated BEFORE
+		// inserting the new one.
 		var emBlock int64
 		if hasEM {
 			e.lastEmBlock++
@@ -346,7 +347,7 @@ func (e *Indexer) indexBlocks() error {
 		}
 
 		// Update core_indexed_blocks to track what we've indexed.
-		// em_block is NULL for blocks without EM transactions (matching Python).
+		// em_block is NULL for blocks without EM transactions.
 		var emBlockParam any
 		if hasEM {
 			emBlockParam = emBlock

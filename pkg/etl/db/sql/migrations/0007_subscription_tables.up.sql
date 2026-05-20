@@ -1,4 +1,4 @@
--- Subscriptions table matching discovery-provider schema.
+-- Subscriptions table.
 
 CREATE TABLE IF NOT EXISTS subscriptions (
   blockhash character varying,

@@ -1,6 +1,4 @@
 -- track_price_history + album_price_history: USDC gating audit trail.
--- Combined schema from apps#0017_track_price_history, #0051_usdc_purchase_access,
--- and #0058_album_price_history.
 
 DO $$ BEGIN
   CREATE TYPE usdc_purchase_access_type AS ENUM ('stream', 'download');
