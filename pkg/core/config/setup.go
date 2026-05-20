@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"math/big"
@@ -12,6 +13,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/core/config/genesis"
 	"github.com/OpenAudio/go-openaudio/pkg/env"
 	cconfig "github.com/cometbft/cometbft/config"
+	"github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
 	"go.uber.org/zap"
@@ -86,17 +88,9 @@ func SetupNode(logger *zap.Logger) (*Config, *cconfig.Config, error) {
 	privValKeyFile := cometConfig.PrivValidatorKeyFile()
 	privValStateFile := cometConfig.PrivValidatorStateFile()
 
-	// set validator and state file for derived comet key
-	var pv *privval.FilePV
-	if common.FileExists(privValKeyFile) {
-		logger.Info("Found private validator", zap.String("keyFile", privValKeyFile),
-			zap.String("stateFile", privValStateFile))
-		pv = privval.LoadFilePV(privValKeyFile, privValStateFile)
-	} else {
-		pv = privval.NewFilePV(envConfig.CometKey, privValKeyFile, privValStateFile)
-		pv.Save()
-		logger.Info("Generated private validator", zap.String("keyFile", privValKeyFile),
-			zap.String("stateFile", privValStateFile))
+	pv, err := ensurePrivValidator(logger, envConfig.CometKey, privValKeyFile, privValStateFile)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// now that we know proposer addr, set in config
@@ -217,6 +211,51 @@ func SetupNode(logger *zap.Logger) (*Config, *cconfig.Config, error) {
 	}
 
 	return envConfig, cometConfig, nil
+}
+
+// ensurePrivValidator returns a FilePV whose key matches the comet key derived
+// from the node's delegate private key. If priv_validator_key.json is missing,
+// it's generated. If it's present but holds a key that doesn't match the
+// derived one, it's regenerated — but only when the on-disk key has no prior
+// signing history (LastSignState.Height == 0), so we can't introduce a
+// double-sign risk.
+//
+// The mismatch case arises when an operator rotates OPENAUDIO_DELEGATE_PRIVATE_KEY
+// without also regenerating the CometBFT key files. The node then submits
+// registration txs whose PubKey (derived from the current delegate key) does
+// not hash to the CometAddress (loaded from the stale file), and peers reject
+// the tx with "address does not match public key".
+func ensurePrivValidator(logger *zap.Logger, derivedKey crypto.PrivKey, keyFile, stateFile string) (*privval.FilePV, error) {
+	if !common.FileExists(keyFile) {
+		pv := privval.NewFilePV(derivedKey, keyFile, stateFile)
+		pv.Save()
+		logger.Info("generated private validator", zap.String("keyFile", keyFile), zap.String("stateFile", stateFile))
+		return pv, nil
+	}
+
+	pv := privval.LoadFilePV(keyFile, stateFile)
+	if bytes.Equal(pv.Key.PubKey.Bytes(), derivedKey.PubKey().Bytes()) {
+		logger.Info("loaded private validator", zap.String("keyFile", keyFile), zap.String("stateFile", stateFile))
+		return pv, nil
+	}
+
+	diskAddr := pv.GetAddress().String()
+	derivedAddr := derivedKey.PubKey().Address().String()
+
+	if pv.LastSignState.Height > 0 {
+		return nil, fmt.Errorf(
+			"priv_validator_key.json (address %s) does not match key derived from delegate private key (address %s); on-disk key has prior signing history at height %d, refusing to auto-regenerate to avoid double-sign risk — resolve manually",
+			diskAddr, derivedAddr, pv.LastSignState.Height,
+		)
+	}
+
+	logger.Warn("priv_validator_key.json does not match derived comet key; regenerating (no prior signing history)",
+		zap.String("disk_address", diskAddr),
+		zap.String("derived_address", derivedAddr),
+	)
+	pv = privval.NewFilePV(derivedKey, keyFile, stateFile)
+	pv.Save()
+	return pv, nil
 }
 
 func moduloPersistentPeers(nodeAddress string, persistentPeers string, groupSize int) string {
