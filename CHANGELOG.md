@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.4.0](https://github.com/OpenAudio/go-openaudio/compare/v1.3.0...v1.4.0) (2026-05-20)
+
+
+### Features
+
+* **etl:** allowed_api_keys + access_authorities normalization (parity 5B) ([#250](https://github.com/OpenAudio/go-openaudio/issues/250)) ([247007a](https://github.com/OpenAudio/go-openaudio/commit/247007a881984cff9a29320a66ac39863225b0a5))
+* **etl:** decode hashid-encoded track_ids in playlist_contents (parity 5A) ([#269](https://github.com/OpenAudio/go-openaudio/issues/269)) ([c8fddb6](https://github.com/OpenAudio/go-openaudio/commit/c8fddb6fb9a51db7baf7fa5f00b8e7adb79e88dd))
+* **etl:** index oauth_redirect_uris on developer app create/update (parity 5E) ([#252](https://github.com/OpenAudio/go-openaudio/issues/252)) ([bc86dea](https://github.com/OpenAudio/go-openaudio/commit/bc86deab948b20673c3bfa315a469592344f0d68))
+* **mediorum:** flip health-check unhealthy when bucket writes fail ([#297](https://github.com/OpenAudio/go-openaudio/issues/297)) ([94793f9](https://github.com/OpenAudio/go-openaudio/commit/94793f91594f81f80421e3e00668552e8c1f9af8))
+
+
+### Bug Fixes
+
+* **ci:** wait for SHA-tagged image before retagging release tag ([#291](https://github.com/OpenAudio/go-openaudio/issues/291)) ([cc875ef](https://github.com/OpenAudio/go-openaudio/commit/cc875ef5459d6cca28a112cfc2694f6b6fe6ee88))
+* **core:** pass --disable-triggers to pg_restore data section ([#293](https://github.com/OpenAudio/go-openaudio/issues/293)) ([438c29f](https://github.com/OpenAudio/go-openaudio/commit/438c29f52683d823f751a003360b2439e86b6c06))
+* **core:** regenerate stale priv_validator_key.json when delegate key rotates ([#299](https://github.com/OpenAudio/go-openaudio/issues/299)) ([5a2e0cd](https://github.com/OpenAudio/go-openaudio/commit/5a2e0cdf639820ae4de1cfc290dcad8aaf810d27))
+* **etl:** comment threading guards (parity 5C) ([#251](https://github.com/OpenAudio/go-openaudio/issues/251)) ([56db895](https://github.com/OpenAudio/go-openaudio/commit/56db89571b49d79008885fc01cb81daac7c8f3ce))
+* **etl:** normalize empty playlist_contents on update (apps[#14306](https://github.com/OpenAudio/go-openaudio/issues/14306) parity) ([#265](https://github.com/OpenAudio/go-openaudio/issues/265)) ([a8016e9](https://github.com/OpenAudio/go-openaudio/commit/a8016e9e1661ec5344d3d0d29a1346f7dd190c69))
+
 ## [1.3.0](https://github.com/OpenAudio/go-openaudio/compare/v1.2.14...v1.3.0) (2026-05-19)
 
 
