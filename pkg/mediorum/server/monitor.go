@@ -90,6 +90,7 @@ func (ss *MediorumServer) monitorMetrics(ctx context.Context) error {
 			ticker.Reset(1 * time.Minute) // set longer interval after first attempt
 			ss.updateDiskAndDbStatus(ctx)
 			ss.updateTranscodeStats(ctx)
+			ss.runBucketWriteCanary(ctx)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -104,10 +105,25 @@ func (ss *MediorumServer) monitorMetrics(ctx context.Context) error {
 		case <-ticker.C:
 			ss.updateDiskAndDbStatus(ctx)
 			ss.updateTranscodeStats(ctx)
+			ss.runBucketWriteCanary(ctx)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+// Probes the bucket so health-check catches backends that accept connections
+// but reject writes (e.g. provider quota hit).
+func (ss *MediorumServer) runBucketWriteCanary(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	if err := ss.bucket.WriteAll(ctx, "__healthcheck__/canary", []byte("ok"), nil); err != nil {
+		ss.bucketWriteErr = err.Error()
+		slog.Error("bucket write canary failed", "err", err)
+		return
+	}
+	ss.bucketWriteErr = ""
 }
 
 func (ss *MediorumServer) monitorPeerReachability(ctx context.Context) error {

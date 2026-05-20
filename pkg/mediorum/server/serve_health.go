@@ -36,6 +36,7 @@ type HealthData struct {
 	LastSuccessfulCleanup     RepairTracker              `json:"lastSuccessfulCleanup"`
 	UploadsCount              int64                      `json:"uploadsCount"`
 	UploadsCountErr           string                     `json:"uploadsCountErr"`
+	BucketWriteErr            string                     `json:"bucketWriteErr"`
 	AutoUpgradeEnabled        bool                       `json:"autoUpgradeEnabled"`
 	TrustedNotifier           *ethcontracts.NotifierInfo `json:"trustedNotifier"`
 	Env                       string                     `json:"env"`
@@ -66,7 +67,7 @@ type HealthData struct {
 }
 
 func (ss *MediorumServer) getHealth() HealthData {
-	healthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == ""
+	healthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == "" && ss.bucketWriteErr == ""
 
 	blobStorePrefix, _, foundBlobStore := strings.Cut(ss.Config.BlobStoreDSN, "://")
 	if !foundBlobStore {
@@ -106,6 +107,7 @@ func (ss *MediorumServer) getHealth() HealthData {
 		LastSuccessfulCleanup:     ss.lastSuccessfulCleanup,
 		UploadsCount:              ss.uploadsCount,
 		UploadsCountErr:           ss.uploadsCountErr,
+		BucketWriteErr:            ss.bucketWriteErr,
 		AutoUpgradeEnabled:        ss.Config.AutoUpgradeEnabled,
 		TrustedNotifier:           ss.trustedNotifier,
 		Dir:                       ss.Config.Dir,
