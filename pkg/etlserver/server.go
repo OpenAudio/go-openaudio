@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/OpenAudio/go-openaudio/etl"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/etl/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/api/etl/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/location"

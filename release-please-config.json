@@ -22,7 +22,7 @@
     {
       "type": "linked-versions",
       "groupName": "openaudio",
-      "components": ["go-openaudio", "etl"]
+      "components": ["go-openaudio", "pkg/etl"]
     }
   ],
   "packages": {
@@ -36,8 +36,8 @@
       ]
     },
     "pkg/etl": {
-      "package-name": "etl",
-      "component": "etl",
+      "package-name": "pkg/etl",
+      "component": "pkg/etl",
       "include-component-in-tag": true,
       "tag-separator": "/",
       "extra-files": [

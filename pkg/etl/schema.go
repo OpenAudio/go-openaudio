@@ -1,6 +1,6 @@
 package etl
 
-import "github.com/OpenAudio/go-openaudio/etl/processors"
+import "github.com/OpenAudio/go-openaudio/pkg/etl/processors"
 
 var (
 	TxTypePlay                        = processors.TxTypePlay

@@ -11,7 +11,7 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates"
 	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates/layouts"
 	"regexp"

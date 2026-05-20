@@ -3,7 +3,7 @@ package entity_manager
 import (
 	"context"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 // updateRemixesTable replaces the set of remix parents for a track:

@@ -3,7 +3,7 @@ package entity_manager
 import (
 	"context"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 // upsertStemRow links a stem child to its parent track. Idempotent on the

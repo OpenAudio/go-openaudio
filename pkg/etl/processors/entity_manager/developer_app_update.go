@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 type developerAppUpdateHandler struct{}

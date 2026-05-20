@@ -7,7 +7,7 @@ Standalone, importable Go package for indexing OpenAudio blockchain data into Po
 ```go
 import (
     "net/http"
-    "github.com/OpenAudio/go-openaudio/etl"
+    "github.com/OpenAudio/go-openaudio/pkg/etl"
     corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 )
 
