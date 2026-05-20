@@ -8,9 +8,9 @@ import (
 )
 
 // extractPlaylistTrackIDs reads track_ids out of a playlist_contents metadata
-// blob. Mirrors apps' playlist.py behavior: accepts either the new array
-// format `[{track:..., time:...}]` or the legacy `{track_ids: [...]}` form.
-// Each entry can use `track` or `track_id` as the field name.
+// blob. Accepts either the new array form `[{track:..., time:...}]` or the
+// legacy `{track_ids: [...]}` dict form. Each entry can use `track` or
+// `track_id` as the field name.
 func extractPlaylistTrackIDs(metadata map[string]any) []int64 {
 	if metadata == nil {
 		return nil
@@ -79,13 +79,12 @@ func pickPlaylistTrackID(entry map[string]any) (int64, bool) {
 }
 
 // updatePlaylistTracks materializes the playlist_tracks junction table from
-// the playlist_contents metadata. Mirrors apps' update_playlist_tracks (in
-// playlist.py): rows missing from the new contents are marked is_removed=true,
-// new rows are inserted, and previously removed rows that reappear are
-// recovered (is_removed=false).
+// the playlist_contents metadata: rows missing from the new contents are
+// marked is_removed=true, new rows are inserted, and previously removed
+// rows that reappear are recovered (is_removed=false).
 //
-// Side effects on tracks.playlists_containing_track / playlists_previously_containing_track
-// are deferred — they're touched by apps' Python helper but not strictly
+// Side effects on tracks.playlists_containing_track and
+// tracks.playlists_previously_containing_track are deferred — not strictly
 // required for parity of the junction table itself.
 func updatePlaylistTracks(ctx context.Context, dbtx db.DBTX, playlistID int64, metadata map[string]any) error {
 	updatedIDs := extractPlaylistTrackIDs(metadata)

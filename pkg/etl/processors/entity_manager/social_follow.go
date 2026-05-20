@@ -94,7 +94,7 @@ func insertFollow(ctx context.Context, params *Params, isDelete bool) error {
 		return err
 	}
 
-	// Python parity: Follow/Unfollow also creates/deletes a Subscription record
+	// Follow/Unfollow also creates/deletes a Subscription record
 	_, err = params.DBTX.Exec(ctx,
 		"UPDATE subscriptions SET is_current = false WHERE subscriber_id = $1 AND user_id = $2 AND is_current = true",
 		params.UserID, params.EntityID)

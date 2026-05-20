@@ -1,9 +1,5 @@
--- playlist_tracks: explicit junction table mirroring playlist_contents JSONB.
--- Schema from apps#0055_playlists_tracks.sql.
---
--- handle_playlist_track is intentionally not ported: apps' trigger only does
--- usdc_purchase notification fan-out (Solana, out of scope). Go-side
--- entity_manager handlers populate this table directly via updatePlaylistTracks.
+-- playlist_tracks: explicit junction table mirroring the playlist_contents
+-- JSONB. Entity-manager handlers populate it directly via updatePlaylistTracks.
 
 CREATE TABLE IF NOT EXISTS playlist_tracks (
   playlist_id INTEGER NOT NULL,

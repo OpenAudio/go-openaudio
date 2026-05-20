@@ -1,7 +1,4 @@
 -- oauth_redirect_uris: per-developer-app redirect URI list for OAuth.
--- Schema matches api/'s sql/01_schema.sql; IF NOT EXISTS makes this a
--- no-op against api/'s DB, while still creating the table for any
--- standalone consumer.
 
 CREATE TABLE IF NOT EXISTS oauth_redirect_uris (
   id serial NOT NULL,

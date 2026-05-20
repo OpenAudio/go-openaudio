@@ -16,7 +16,7 @@ type compareTable struct {
 	Columns    []string          // columns to compare
 	Where      string            // filter for rows to compare (applied to ETL db)
 	ProdWhere  string            // filter for prod lookup (defaults to "is_current = true" if empty)
-	KnownDiffs []string          // columns with known Python/Go divergence (reported separately)
+	KnownDiffs []string          // columns with known legacy/Go divergence (reported separately)
 	CastCols   map[string]string // column -> cast expression for SELECT (e.g. "save_type" -> "save_type::text")
 }
 
@@ -32,7 +32,7 @@ var compareTables = []compareTable{
 			"wallet", "allow_ai_attribution",
 		},
 		Where: "is_current = true",
-		// profile_picture and cover_photo are immutable in Python but updatable in Go
+		// profile_picture and cover_photo were immutable in the legacy indexer but are updatable here
 		KnownDiffs: []string{"profile_picture", "cover_photo"},
 	},
 	{
@@ -59,7 +59,7 @@ var compareTables = []compareTable{
 			"is_stream_gated", "is_scheduled_release",
 		},
 		Where: "is_current = true AND is_delete = false",
-		// Python bug: playlist_image_multihash gets sizes_multihash value during create
+		// Legacy indexer bug: playlist_image_multihash got the sizes_multihash value during create
 		KnownDiffs: []string{"playlist_image_multihash"},
 	},
 	{
@@ -142,7 +142,7 @@ func Compare(ctx context.Context, etlPool *pgxpool.Pool, prodPool *pgxpool.Pool)
 	// Find the em_block boundary using etl_blocks, which only the Go ETL writes to.
 	// The first etl_blocks row marks where Go started indexing. We then find the
 	// minimum em_block assigned by Go in core_indexed_blocks for that height range.
-	// Everything below that em_block is Python-written; everything at or above is Go-written.
+	// Everything below that em_block was written by the legacy indexer; everything at or above is written here.
 	var minGoHeight, maxGoHeight int64
 	err := etlPool.QueryRow(ctx,
 		`SELECT MIN(block_height), MAX(block_height) FROM etl_blocks`).Scan(&minGoHeight, &maxGoHeight)
@@ -388,7 +388,7 @@ func compareOneTable(ctx context.Context, etlPool, prodPool *pgxpool.Pool, ct co
 		fmt.Printf("  Match rate: %.1f%%\n", float64(r.matched)/float64(r.compared)*100)
 	}
 	if knownDiffCount > 0 {
-		fmt.Printf("  Known divergences (Python immutable/bug): %d rows\n", knownDiffCount)
+		fmt.Printf("  Known divergences (legacy indexer immutable/bug): %d rows\n", knownDiffCount)
 	}
 	if len(diffs) > 0 {
 		fmt.Println("  Differences (first 20):")

@@ -1,4 +1,4 @@
--- Shares table matching discovery-provider schema.
+-- Shares table.
 
 DO $$ BEGIN
   CREATE TYPE sharetype AS ENUM ('track', 'playlist', 'album');

@@ -1,4 +1,4 @@
--- Notification tables matching discovery-provider schema.
+-- Notification tables.
 
 CREATE TABLE IF NOT EXISTS notification (
   id serial NOT NULL,

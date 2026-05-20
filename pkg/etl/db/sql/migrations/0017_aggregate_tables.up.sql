@@ -2,8 +2,9 @@
 --
 -- Migration 0017 originally created aggregate_user / aggregate_track /
 -- aggregate_playlist / aggregate_plays / aggregate_monthly_plays /
--- milestones (#238). #267 reverted that work — those tables are owned by
--- api/'s pg_migrate.sh, not pkg/etl.
+-- milestones (#238). #267 reverted that work — those derived tables are
+-- owned by the consumer (and maintained via Postgres triggers there),
+-- not by pkg/etl.
 --
 -- We keep an empty 0017 file so golang-migrate can step past version 17
 -- on production DBs that already recorded it. Deleting the file outright

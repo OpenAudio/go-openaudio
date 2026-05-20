@@ -6,8 +6,8 @@ import (
 	"github.com/OpenAudio/go-openaudio/etl/db"
 )
 
-// updateRemixesTable replaces the set of remix parents for a track.
-// Mirrors discovery-provider's update_remixes_table: delete-all-then-insert.
+// updateRemixesTable replaces the set of remix parents for a track:
+// delete-all-then-insert.
 func updateRemixesTable(ctx context.Context, dbtx db.DBTX, childTrackID int64, metadata map[string]any) error {
 	if _, err := dbtx.Exec(ctx, "DELETE FROM remixes WHERE child_track_id = $1", childTrackID); err != nil {
 		return err
@@ -26,8 +26,7 @@ func updateRemixesTable(ctx context.Context, dbtx db.DBTX, childTrackID int64, m
 }
 
 // getRemixParentTrackIDs extracts parent track IDs from track metadata's
-// `remix_of.tracks[].parent_track_id`. Mirrors discovery-provider's
-// get_remix_parent_track_ids.
+// `remix_of.tracks[].parent_track_id`.
 func getRemixParentTrackIDs(metadata map[string]any) []int64 {
 	if metadata == nil {
 		return nil

@@ -1,12 +1,9 @@
 package entity_manager
 
 // immutableFields lists metadata keys that cannot be modified by an Update
-// action. Mirrors apps/packages/discovery-provider/src/tasks/metadata.py
-// (immutable_fields, immutable_track_fields, immutable_playlist_fields).
-//
-// On Update, mergeTrackFromMetadata / mergePlaylistFromMetadata strip these
-// keys from the metadata map before merging so they can't override the
-// stored values.
+// action. On Update, mergeTrackFromMetadata / mergePlaylistFromMetadata
+// strip these keys from the metadata map before merging so they can't
+// override the stored values.
 
 var immutableFields = map[string]struct{}{
 	"blocknumber":        {},

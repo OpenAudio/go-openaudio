@@ -1,4 +1,4 @@
--- Tip-related tables matching discovery-provider schema.
+-- Tip-related tables.
 
 CREATE TABLE IF NOT EXISTS user_tips (
   slot integer NOT NULL,
