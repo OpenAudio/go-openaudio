@@ -310,9 +310,14 @@ CREATE TABLE IF NOT EXISTS developer_apps (
   updated_at timestamp without time zone NOT NULL,
   description character varying(255),
   image_url character varying,
-  CONSTRAINT developer_apps_pkey PRIMARY KEY (address, txhash),
-  CONSTRAINT unique_developer_apps_address UNIQUE (address)
+  CONSTRAINT developer_apps_pkey PRIMARY KEY (address, txhash)
 );
+
+-- Intentionally no UNIQUE (address) constraint here: developer_app update
+-- and delete use the row-versioning pattern (INSERT a new row with the same
+-- address, mark the previous row is_current=false), which a UNIQUE (address)
+-- would block. Older databases that picked up the constraint before this
+-- migration land drop it in 0026_drop_developer_apps_unique_address.up.sql.
 
 -- grants
 
