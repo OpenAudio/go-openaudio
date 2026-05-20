@@ -130,6 +130,8 @@ type MediorumServer struct {
 	uploadsCount    int64
 	uploadsCountErr string
 
+	bucketWriteErr string
+
 	isSeeding        bool
 	isAudiusdManaged bool
 
