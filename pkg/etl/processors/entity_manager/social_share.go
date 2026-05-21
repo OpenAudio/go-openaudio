@@ -27,10 +27,14 @@ func (h *shareHandler) Handle(ctx context.Context, params *Params) error {
 		return err
 	}
 
+	// PK is (user_id, share_item_id, share_type, txhash); re-delivery of the
+	// same chain tx would otherwise 23505 on the PK. Same txhash = identical
+	// row content, so DO NOTHING is correct.
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO shares (
 			user_id, share_item_id, share_type, created_at, txhash, blocknumber
 		) VALUES ($1, $2, $3::sharetype, $4, $5, $6)
+		ON CONFLICT (user_id, share_item_id, share_type, txhash) DO NOTHING
 	`, params.UserID, params.EntityID, shareType, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }

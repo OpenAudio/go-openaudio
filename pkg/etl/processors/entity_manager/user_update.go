@@ -165,15 +165,25 @@ func updateUser(ctx context.Context, params *Params) error {
 	return err
 }
 
-// mergeNullStr returns the metadata value if present, otherwise the existing value.
-// If metadata provides an empty string, it clears the field (returns nil).
+// mergeNullStr returns the metadata value if present and non-empty;
+// otherwise it preserves the existing value.
+//
+// The chain convention is "empty string = no change". Treating "" as "clear
+// the field" caused real data corruption against production data: User
+// Update txs with `"handle":""` (meaning the client didn't want to change
+// handle) were wiping `users.handle` to NULL while leaving `handle_lc`
+// populated, producing an inconsistent row. Matches the prod indexer's
+// behavior.
+//
+// Callers that genuinely need to clear a field on chain-supplied null
+// should check for that explicitly upstream of this helper.
 func mergeNullStr(p *Params, key string, existing *string) *string {
 	if _, ok := p.Metadata[key]; !ok {
 		return existing
 	}
 	s := p.MetadataString(key)
 	if s == "" {
-		return nil
+		return existing
 	}
 	return &s
 }

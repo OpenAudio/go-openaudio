@@ -65,14 +65,15 @@ func (h *unmuteUserHandler) Handle(ctx context.Context, params *Params) error {
 // --- shared ---
 
 func insertMutedUser(ctx context.Context, params *Params, isDelete bool) error {
+	// blockhash is NOT NULL on prod's muted_users table.
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO muted_users (
 			muted_user_id, user_id, is_delete,
-			created_at, updated_at, txhash, blocknumber
-		) VALUES ($1, $2, $3, $4, $4, $5, $6)
+			created_at, updated_at, txhash, blockhash, blocknumber
+		) VALUES ($1, $2, $3, $4, $4, $5, $6, $7)
 		ON CONFLICT (muted_user_id, user_id)
-		DO UPDATE SET is_delete = $3, updated_at = $4, txhash = $5, blocknumber = $6
-	`, params.EntityID, params.UserID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
+		DO UPDATE SET is_delete = $3, updated_at = $4, txhash = $5, blockhash = $6, blocknumber = $7
+	`, params.EntityID, params.UserID, isDelete, params.BlockTime, params.TxHash, params.BlockHash, params.BlockNumber)
 	return err
 }
 
