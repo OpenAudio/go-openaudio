@@ -119,13 +119,41 @@ func (con *Console) nodesPage(c echo.Context) error {
 		}
 	}
 
+	// Validators registered in core_validators but not in the consensus set,
+	// matched by comet address.
+	consensusSet := make(map[string]bool, len(consensusNodes))
+	for _, cn := range consensusNodes {
+		consensusSet[strings.ToUpper(cn.CometAddress)] = true
+	}
+	var missingFromConsensus []db.CoreValidator
+	for _, n := range nodes {
+		if !consensusSet[strings.ToUpper(n.CometAddress)] {
+			missingFromConsensus = append(missingFromConsensus, n)
+		}
+	}
+
+	// Eth registry endpoints not present in core_validators, matched by
+	// normalized endpoint URL.
+	validatorEndpoints := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		validatorEndpoints[normalizeEndpoint(n.Endpoint)] = true
+	}
+	var missingFromValidators []pages.EthEndpoint
+	for _, ep := range ethEndpoints {
+		if !validatorEndpoints[normalizeEndpoint(ep.Endpoint)] {
+			missingFromValidators = append(missingFromValidators, ep)
+		}
+	}
+
 	return con.views.RenderNodesView(c, &pages.NodesView{
-		ConsensusNodes:      consensusNodes,
-		ConsensusNodesCount: len(consensusNodes),
-		Nodes:               nodes,
-		ValidatorNodesCount: len(nodes),
-		EthEndpoints:        ethEndpoints,
-		EthEndpointsCount:   len(ethEndpoints),
+		ConsensusNodes:        consensusNodes,
+		ConsensusNodesCount:   len(consensusNodes),
+		Nodes:                 nodes,
+		ValidatorNodesCount:   len(nodes),
+		EthEndpoints:          ethEndpoints,
+		EthEndpointsCount:     len(ethEndpoints),
+		MissingFromConsensus:  missingFromConsensus,
+		MissingFromValidators: missingFromValidators,
 	})
 }
 
