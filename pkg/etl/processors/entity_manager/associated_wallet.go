@@ -15,8 +15,8 @@ func (h *associatedWalletCreateHandler) EntityType() string { return EntityTypeA
 func (h *associatedWalletCreateHandler) Action() string     { return ActionCreate }
 
 func (h *associatedWalletCreateHandler) Handle(ctx context.Context, params *Params) error {
-	wallet := strings.ToLower(params.MetadataString("wallet"))
 	chain := params.MetadataString("chain")
+	wallet := canonicalizeWallet(params.MetadataString("wallet"), chain)
 
 	if err := validateAssociatedWalletCreate(ctx, params, wallet, chain); err != nil {
 		return err
@@ -84,6 +84,20 @@ func verifyAssociatedWalletSignature(params *Params, wallet, chain string) error
 		}
 	}
 	return nil
+}
+
+// canonicalizeWallet normalizes a wallet address for storage and lookup.
+// ETH (hex) addresses are case-insensitive; we canonicalize to lowercase so
+// that the same wallet typed in any case maps to a single row. Solana
+// addresses are base58 — case-sensitive by construction — and MUST be
+// preserved verbatim (`L`→`l` would produce a base58-invalid character).
+// When the chain isn't known (e.g., delete tx that omits "chain"), the
+// `0x` prefix is a reliable ETH discriminator.
+func canonicalizeWallet(wallet, chain string) string {
+	if chain == "eth" || strings.HasPrefix(wallet, "0x") || strings.HasPrefix(wallet, "0X") {
+		return strings.ToLower(wallet)
+	}
+	return wallet
 }
 
 // verifySolSignature verifies an ed25519 signature from a Solana wallet.
@@ -154,16 +168,22 @@ func (h *associatedWalletDeleteHandler) EntityType() string { return EntityTypeA
 func (h *associatedWalletDeleteHandler) Action() string     { return ActionDelete }
 
 func (h *associatedWalletDeleteHandler) Handle(ctx context.Context, params *Params) error {
-	wallet := strings.ToLower(params.MetadataString("wallet"))
+	// Delete tx may not include `chain` in metadata (chain is implicit in the
+	// stored row), so canonicalize off the wallet format itself: `0x`-prefixed
+	// → ETH hex → lowercase; otherwise (Solana base58) preserve case.
 	chain := params.MetadataString("chain")
+	wallet := canonicalizeWallet(params.MetadataString("wallet"), chain)
 
 	if err := validateAssociatedWalletDelete(ctx, params, wallet, chain); err != nil {
 		return err
 	}
 
+	// Match validateAssociatedWalletDelete's lookup (no chain filter) — the
+	// (user_id, wallet) pair already uniquely identifies the row, and the
+	// delete metadata isn't required to repeat `chain`.
 	_, err := params.DBTX.Exec(ctx,
-		"UPDATE associated_wallets SET is_current = false, is_delete = true, updated_at = $1 WHERE user_id = $2 AND wallet = $3 AND chain = $4 AND is_current = true",
-		params.BlockTime, params.UserID, wallet, chain)
+		"UPDATE associated_wallets SET is_current = false, is_delete = true, updated_at = $1 WHERE user_id = $2 AND wallet = $3 AND is_current = true",
+		params.BlockTime, params.UserID, wallet)
 	return err
 }
 

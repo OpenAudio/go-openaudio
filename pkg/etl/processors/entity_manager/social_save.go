@@ -25,14 +25,7 @@ func validateSave(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	// Use tx entity_type first (e.g. "Track", "Playlist"), then metadata, then DB inference
-	saveType := saveTypeFromEntityType(params.EntityType)
-	if saveType == "" {
-		saveType = saveTypeFromEntityType(params.MetadataString("type"))
-	}
-	if saveType == "" {
-		saveType = inferSaveType(ctx, params.DBTX, params.EntityID)
-	}
+	saveType := resolveSaveType(ctx, params)
 	if saveType == "" {
 		return NewValidationError("cannot determine save type for entity %d", params.EntityID)
 	}
@@ -92,13 +85,7 @@ func validateUnsave(ctx context.Context, params *Params) error {
 // --- shared ---
 
 func insertSave(ctx context.Context, params *Params, isDelete bool) error {
-	saveType := saveTypeFromEntityType(params.EntityType)
-	if saveType == "" {
-		saveType = saveTypeFromEntityType(params.MetadataString("type"))
-	}
-	if saveType == "" {
-		saveType = inferSaveType(ctx, params.DBTX, params.EntityID)
-	}
+	saveType := resolveSaveType(ctx, params)
 	isSaveOfRepost := params.MetadataBoolOr("is_save_of_repost", false)
 
 	// Mark existing save rows as not current
@@ -124,6 +111,29 @@ func saveExists(ctx context.Context, dbtx db.DBTX, userID, itemID int64, saveTyp
 		"SELECT EXISTS(SELECT 1 FROM saves WHERE user_id = $1 AND save_item_id = $2 AND save_type = $3::savetype AND is_current = true AND is_delete = false)",
 		userID, itemID, saveType).Scan(&exists)
 	return exists, err
+}
+
+// resolveSaveType determines the save_type for the saves row. Metadata `type`
+// wins over the chain-level entity_type because the chain only knows
+// "Playlist" vs "Track" — but albums are stored as playlists with is_album=true,
+// so a chain entity_type of "Playlist" can mean either playlist or album. The
+// signed metadata "type" disambiguates. Falls back to DB inference last (which
+// inspects `playlists.is_album`).
+func resolveSaveType(ctx context.Context, params *Params) string {
+	if t := saveTypeFromEntityType(params.MetadataString("type")); t != "" {
+		return t
+	}
+	if t := saveTypeFromEntityType(params.EntityType); t != "" {
+		// Chain entity_type "Playlist" is ambiguous wrt playlist/album; resolve
+		// from DB before trusting it.
+		if t == "playlist" {
+			if dbT := inferSaveType(ctx, params.DBTX, params.EntityID); dbT != "" {
+				return dbT
+			}
+		}
+		return t
+	}
+	return inferSaveType(ctx, params.DBTX, params.EntityID)
 }
 
 func saveTypeFromEntityType(entityType string) string {

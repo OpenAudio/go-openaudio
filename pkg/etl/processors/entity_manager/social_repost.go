@@ -25,13 +25,7 @@ func validateRepost(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	repostType := repostTypeFromEntityType(params.EntityType)
-	if repostType == "" {
-		repostType = repostTypeFromEntityType(params.MetadataString("type"))
-	}
-	if repostType == "" {
-		repostType = inferRepostType(ctx, params.DBTX, params.EntityID)
-	}
+	repostType := resolveRepostType(ctx, params)
 	if repostType == "" {
 		return NewValidationError("cannot determine repost type for entity %d", params.EntityID)
 	}
@@ -68,13 +62,7 @@ func validateUnrepost(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	repostType := repostTypeFromEntityType(params.EntityType)
-	if repostType == "" {
-		repostType = repostTypeFromEntityType(params.MetadataString("type"))
-	}
-	if repostType == "" {
-		repostType = inferRepostType(ctx, params.DBTX, params.EntityID)
-	}
+	repostType := resolveRepostType(ctx, params)
 	if repostType == "" {
 		return NewValidationError("cannot determine repost type for entity %d", params.EntityID)
 	}
@@ -91,13 +79,7 @@ func validateUnrepost(ctx context.Context, params *Params) error {
 // --- shared ---
 
 func insertRepost(ctx context.Context, params *Params, isDelete bool) error {
-	repostType := repostTypeFromEntityType(params.EntityType)
-	if repostType == "" {
-		repostType = repostTypeFromEntityType(params.MetadataString("type"))
-	}
-	if repostType == "" {
-		repostType = inferRepostType(ctx, params.DBTX, params.EntityID)
-	}
+	repostType := resolveRepostType(ctx, params)
 	isRepostOfRepost := params.MetadataBoolOr("is_repost_of_repost", false)
 
 	// Mark existing repost rows as not current
@@ -123,6 +105,27 @@ func repostExists(ctx context.Context, dbtx db.DBTX, userID, itemID int64, repos
 		"SELECT EXISTS(SELECT 1 FROM reposts WHERE user_id = $1 AND repost_item_id = $2 AND repost_type = $3::reposttype AND is_current = true AND is_delete = false)",
 		userID, itemID, repostType).Scan(&exists)
 	return exists, err
+}
+
+// resolveRepostType determines the repost_type for the reposts row. Metadata
+// `type` wins over the chain-level entity_type because the chain only knows
+// "Playlist" vs "Track" — but albums are stored as playlists with is_album=true,
+// so a chain entity_type of "Playlist" can mean either playlist or album.
+// Falls back to DB inference (inspecting `playlists.is_album`) for the
+// ambiguous case.
+func resolveRepostType(ctx context.Context, params *Params) string {
+	if t := repostTypeFromEntityType(params.MetadataString("type")); t != "" {
+		return t
+	}
+	if t := repostTypeFromEntityType(params.EntityType); t != "" {
+		if t == "playlist" {
+			if dbT := inferRepostType(ctx, params.DBTX, params.EntityID); dbT != "" {
+				return dbT
+			}
+		}
+		return t
+	}
+	return inferRepostType(ctx, params.DBTX, params.EntityID)
 }
 
 func repostTypeFromEntityType(entityType string) string {

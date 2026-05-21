@@ -33,7 +33,9 @@ func TestTrackUpdate_NotFound(t *testing.T) {
 	pool := setupTestDB(t)
 	uid := int64(UserIDOffset + 1)
 	tid := int64(TrackIDOffset + 99)
-	seedUser(t, pool, uid, "0xo", "o")
+	// Seed user with wallet matching the signer so ValidateSigner passes and
+	// the test reaches the track-existence check it actually means to exercise.
+	seedUser(t, pool, uid, "0xowner", "o")
 	params := buildParams(t, pool, EntityTypeTrack, ActionUpdate, uid, tid, "0xOwner", `{"title":"X"}`)
 	mustReject(t, TrackUpdate(), params, "does not exist")
 }
