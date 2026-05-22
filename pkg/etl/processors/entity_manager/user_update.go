@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	"github.com/jackc/pgx/v5"
 )
 
 type userUpdateHandler struct{}
@@ -258,6 +260,13 @@ func getCurrentUser(ctx context.Context, dbtx db.DBTX, userID int64) (*currentUs
 func getUserHandle(ctx context.Context, dbtx db.DBTX, userID int64) (string, error) {
 	var handleLC sql.NullString
 	err := dbtx.QueryRow(ctx, "SELECT handle_lc FROM users WHERE user_id = $1 AND is_current = true LIMIT 1", userID).Scan(&handleLC)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// User has no current row (deleted between validation and now, or
+		// never existed under is_current=true). Treat as empty handle —
+		// callers compare against the new handle, so empty here means
+		// "different, run the uniqueness check".
+		return "", nil
+	}
 	if handleLC.Valid {
 		return handleLC.String, err
 	}

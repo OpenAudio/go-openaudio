@@ -93,11 +93,16 @@ func (h *notificationViewPlaylistHandler) Handle(ctx context.Context, params *Pa
 		return NewValidationError("playlist %d does not exist", params.EntityID)
 	}
 
+	// PK on prod is (user_id, playlist_id, seen_at) — `is_current` is not
+	// part of the unique index, so it must not appear in the ON CONFLICT
+	// target (Postgres 42P10 otherwise). Observed firing during the
+	// prod-clone validation run: same user seeing the same playlist twice
+	// in the indexed window.
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO playlist_seen (
 			is_current, user_id, playlist_id, seen_at, txhash, blocknumber
 		) VALUES (true, $1, $2, $3, $4, $5)
-		ON CONFLICT (is_current, user_id, playlist_id, seen_at) DO NOTHING
+		ON CONFLICT (user_id, playlist_id, seen_at) DO NOTHING
 	`, params.UserID, params.EntityID, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }
