@@ -194,37 +194,48 @@ func (s *Server) startValidatorWarden(ctx context.Context) error {
 	}
 }
 
-// startRegistrationWatchdog re-runs RegisterSelf periodically if the node's
-// row is missing from core_validators. The initial registration loop in
+// startRegistrationWatchdog periodically re-runs RegisterSelf so the node
+// recovers from any reason it might have dropped out of core_validators (or
+// been jailed) — e.g. a hostile dereg from a peer's warden acting on a
+// transiently stale eth-registry cache. The initial registration loop in
 // startRegistryBridge exits after one success and never retries, so without
-// this a hostile dereg (e.g. another peer's warden acting on a transiently
-// stale eth-registry cache) would leave the node stranded until the process
-// restarts.
+// this the node would sit stranded until the process restarts.
 //
-// This intentionally only re-registers when the row is fully absent. A row
-// that exists but is jailed is left alone: jailing is a sticky signal to the
-// operator that the node was underperforming, and auto-unjailing would both
-// erase that signal and trigger a flap loop with the warden re-jailing on
-// every subsequent SLA check.
+// RegisterSelf is idempotent: when the node is already registered and
+// unjailed, it returns immediately without contacting peers or submitting a
+// tx. So calling it blindly on a schedule is cheap in steady state and
+// self-healing under failure.
+//
+// To bound flap when something is genuinely wrong (e.g. node persistently
+// can't propose blocks and the warden keeps re-jailing), the interval grows
+// linearly each cycle, capping at 24h. Restart resets the schedule to 1h.
 func (s *Server) startRegistrationWatchdog(ctx context.Context) error {
-	ticker := time.NewTicker(time.Hour)
-	defer ticker.Stop()
+	interval := time.Hour
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
 	for {
 		select {
-		case <-ticker.C:
-			_, err := s.db.GetNodeByEndpoint(ctx, s.config.NodeEndpoint)
-			if !errors.Is(err, pgx.ErrNoRows) {
-				// row exists (jailed or not), or DB error we shouldn't act on
-				continue
-			}
-			s.logger.Info("registration watchdog: row missing from core_validators, re-running RegisterSelf")
+		case <-timer.C:
 			if err := s.RegisterSelf(); err != nil {
 				s.logger.Error("registration watchdog: RegisterSelf failed", zap.Error(err))
 			}
+			interval = nextWatchdogInterval(interval)
+			timer.Reset(interval)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+// nextWatchdogInterval grows the watchdog interval by 1h each tick, capping
+// at 24h. Backoff state is in-memory only — process restart resets to 1h.
+func nextWatchdogInterval(prev time.Duration) time.Duration {
+	const cap = 24 * time.Hour
+	next := prev + time.Hour
+	if next > cap {
+		return cap
+	}
+	return next
 }
 
 // checks mainnet eth for itself, if registered and not
