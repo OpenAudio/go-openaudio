@@ -22,16 +22,26 @@ func (h *commentCreateHandler) Handle(ctx context.Context, params *Params) error
 	}
 	trackTimestamp, hasTimestamp := params.MetadataInt64("track_timestamp_s")
 
+	// Fan-club text post fields (apps#14029, #14080). is_members_only is
+	// only honored when entity_type='FanClub'; the matching validation in
+	// validateCommentWrite rejects the truthy-on-non-FanClub case so we
+	// never silently flip the bit here.
+	isMembersOnly := entityType == "FanClub" && params.MetadataBoolOr("is_members_only", false)
+	videoURL := params.MetadataString("video_url")
+
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO comments (
 			comment_id, text, user_id, entity_id, entity_type,
 			track_timestamp_s, created_at, updated_at,
 			is_delete, is_visible, is_edited,
+			is_members_only, video_url,
 			txhash, blockhash, blocknumber
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, false, true, false, $8, $9, $10)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, false, true, false, $8, $9, $10, $11, $12)
 	`, params.EntityID, body, params.UserID, entityID, entityType,
 		nullableInt(trackTimestamp, hasTimestamp),
-		params.BlockTime, params.TxHash, params.BlockHash, params.BlockNumber)
+		params.BlockTime,
+		isMembersOnly, nullString(videoURL),
+		params.TxHash, params.BlockHash, params.BlockNumber)
 	if err != nil {
 		return err
 	}
@@ -129,6 +139,24 @@ func validateCommentWrite(ctx context.Context, params *Params, isCreate bool) er
 	}
 	if len(body) > CharacterLimitCommentBody {
 		return NewValidationError("comment body exceeds %d character limit", CharacterLimitCommentBody)
+	}
+
+	// Fan-club text post fields. is_members_only is only meaningful on
+	// FanClub comments — reject a truthy flag on any other entity type so
+	// we don't silently drop user intent. video_url has a length cap that
+	// mirrors apps' MAX_REDIRECT_URI_LENGTH (no separate constant in apps
+	// for this; reuse 2000 as a sane upper bound).
+	if isCreate && params.MetadataBoolOr("is_members_only", false) {
+		etCheck := et
+		if etCheck == "" {
+			etCheck = EntityTypeTrack
+		}
+		if etCheck != "FanClub" {
+			return NewValidationError("is_members_only requires entity_type=FanClub (got %q)", etCheck)
+		}
+	}
+	if v := params.MetadataString("video_url"); len(v) > 2000 {
+		return NewValidationError("video_url exceeds 2000 character limit")
 	}
 
 	// Validate parent_comment_id (or parent_id) if provided.
