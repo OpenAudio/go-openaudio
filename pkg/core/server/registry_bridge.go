@@ -194,22 +194,30 @@ func (s *Server) startValidatorWarden(ctx context.Context) error {
 	}
 }
 
-// startRegistrationWatchdog re-runs RegisterSelf periodically if the node has
-// dropped out of core_validators. The initial registration loop in
+// startRegistrationWatchdog re-runs RegisterSelf periodically if the node's
+// row is missing from core_validators. The initial registration loop in
 // startRegistryBridge exits after one success and never retries, so without
 // this a hostile dereg (e.g. another peer's warden acting on a transiently
 // stale eth-registry cache) would leave the node stranded until the process
 // restarts.
+//
+// This intentionally only re-registers when the row is fully absent. A row
+// that exists but is jailed is left alone: jailing is a sticky signal to the
+// operator that the node was underperforming, and auto-unjailing would both
+// erase that signal and trigger a flap loop with the warden re-jailing on
+// every subsequent SLA check.
 func (s *Server) startRegistrationWatchdog(ctx context.Context) error {
 	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			if s.isSelfAlreadyRegistered(ctx) {
+			_, err := s.db.GetNodeByEndpoint(ctx, s.config.NodeEndpoint)
+			if !errors.Is(err, pgx.ErrNoRows) {
+				// row exists (jailed or not), or DB error we shouldn't act on
 				continue
 			}
-			s.logger.Info("registration watchdog: not in core_validators, re-running RegisterSelf")
+			s.logger.Info("registration watchdog: row missing from core_validators, re-running RegisterSelf")
 			if err := s.RegisterSelf(); err != nil {
 				s.logger.Error("registration watchdog: RegisterSelf failed", zap.Error(err))
 			}
