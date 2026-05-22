@@ -25,13 +25,7 @@ func validateRepost(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	repostType := repostTypeFromEntityType(params.EntityType)
-	if repostType == "" {
-		repostType = repostTypeFromEntityType(params.MetadataString("type"))
-	}
-	if repostType == "" {
-		repostType = inferRepostType(ctx, params.DBTX, params.EntityID)
-	}
+	repostType := resolveRepostType(ctx, params)
 	if repostType == "" {
 		return NewValidationError("cannot determine repost type for entity %d", params.EntityID)
 	}
@@ -68,13 +62,7 @@ func validateUnrepost(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	repostType := repostTypeFromEntityType(params.EntityType)
-	if repostType == "" {
-		repostType = repostTypeFromEntityType(params.MetadataString("type"))
-	}
-	if repostType == "" {
-		repostType = inferRepostType(ctx, params.DBTX, params.EntityID)
-	}
+	repostType := resolveRepostType(ctx, params)
 	if repostType == "" {
 		return NewValidationError("cannot determine repost type for entity %d", params.EntityID)
 	}
@@ -91,13 +79,7 @@ func validateUnrepost(ctx context.Context, params *Params) error {
 // --- shared ---
 
 func insertRepost(ctx context.Context, params *Params, isDelete bool) error {
-	repostType := repostTypeFromEntityType(params.EntityType)
-	if repostType == "" {
-		repostType = repostTypeFromEntityType(params.MetadataString("type"))
-	}
-	if repostType == "" {
-		repostType = inferRepostType(ctx, params.DBTX, params.EntityID)
-	}
+	repostType := resolveRepostType(ctx, params)
 	isRepostOfRepost := params.MetadataBoolOr("is_repost_of_repost", false)
 
 	// Mark existing repost rows as not current
@@ -108,11 +90,16 @@ func insertRepost(ctx context.Context, params *Params, isDelete bool) error {
 		return err
 	}
 
+	// PK is (user_id, repost_item_id, repost_type, txhash); re-delivery of
+	// the same chain tx would otherwise 23505 on the PK. Same txhash means
+	// identical row content by construction, so DO NOTHING is the correct
+	// dedup.
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO reposts (
 			user_id, repost_item_id, repost_type, is_current, is_delete, is_repost_of_repost,
 			created_at, txhash, blocknumber
 		) VALUES ($1, $2, $3::reposttype, true, $4, $5, $6, $7, $8)
+		ON CONFLICT (user_id, repost_item_id, repost_type, txhash) DO NOTHING
 	`, params.UserID, params.EntityID, repostType, isDelete, isRepostOfRepost, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }
@@ -123,6 +110,29 @@ func repostExists(ctx context.Context, dbtx db.DBTX, userID, itemID int64, repos
 		"SELECT EXISTS(SELECT 1 FROM reposts WHERE user_id = $1 AND repost_item_id = $2 AND repost_type = $3::reposttype AND is_current = true AND is_delete = false)",
 		userID, itemID, repostType).Scan(&exists)
 	return exists, err
+}
+
+// resolveRepostType — same priority as resolveSaveType (metadata.type wins,
+// chain entity_type next with is_album disambiguation for "Playlist", DB
+// inference last). See social_save.go:resolveSaveType for full rationale.
+// Crucially: when entity_type is "Playlist" we never cross over to "track"
+// even if a same-id track exists.
+func resolveRepostType(ctx context.Context, params *Params) string {
+	if t := repostTypeFromEntityType(params.MetadataString("type")); t != "" {
+		return t
+	}
+	switch repostTypeFromEntityType(params.EntityType) {
+	case "track":
+		return "track"
+	case "album":
+		return "album"
+	case "playlist":
+		if isAlbumPlaylist(ctx, params.DBTX, params.EntityID) {
+			return "album"
+		}
+		return "playlist"
+	}
+	return inferRepostType(ctx, params.DBTX, params.EntityID)
 }
 
 func repostTypeFromEntityType(entityType string) string {

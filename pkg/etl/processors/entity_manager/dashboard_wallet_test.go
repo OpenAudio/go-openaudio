@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -57,8 +58,9 @@ func TestDashboardWalletCreate_Success(t *testing.T) {
 	mustHandle(t, DashboardWalletCreate(), params)
 
 	var walletUserID int64
+	// Handler stores ETH addresses lowercased (canonical form); match that.
 	err := pool.QueryRow(context.Background(),
-		"SELECT user_id FROM dashboard_wallet_users WHERE wallet = $1", dashAddr).Scan(&walletUserID)
+		"SELECT user_id FROM dashboard_wallet_users WHERE wallet = $1", strings.ToLower(dashAddr)).Scan(&walletUserID)
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -138,7 +140,7 @@ func TestDashboardWalletDelete_Success(t *testing.T) {
 
 	var isDelete bool
 	err := pool.QueryRow(context.Background(),
-		"SELECT is_delete FROM dashboard_wallet_users WHERE wallet = $1", dashAddr).Scan(&isDelete)
+		"SELECT is_delete FROM dashboard_wallet_users WHERE wallet = $1", strings.ToLower(dashAddr)).Scan(&isDelete)
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
