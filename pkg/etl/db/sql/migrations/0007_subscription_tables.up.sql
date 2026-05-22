@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   is_delete boolean NOT NULL,
   created_at timestamp without time zone NOT NULL,
   txhash character varying NOT NULL DEFAULT '',
+  -- When entity_type='Event', user_id is overloaded to hold the event_id.
+  entity_type text NOT NULL DEFAULT 'User',
+  entity_id integer,
   CONSTRAINT subscriptions_pkey PRIMARY KEY (subscriber_id, user_id, txhash)
 );
 

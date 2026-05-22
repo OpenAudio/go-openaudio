@@ -113,8 +113,7 @@ func validateCommentWrite(ctx context.Context, params *Params, isCreate bool) er
 		}
 	}
 
-	// entity_type supports Track and FanClub
-	if et := params.MetadataString("entity_type"); et != "" && et != EntityTypeTrack && et != "FanClub" {
+	if et := params.MetadataString("entity_type"); et != "" && et != EntityTypeTrack && et != "FanClub" && et != EntityTypeEvent {
 		return NewValidationError("entity type %q is not supported for comments", et)
 	}
 
@@ -130,6 +129,17 @@ func validateCommentWrite(ctx context.Context, params *Params, isCreate bool) er
 		}
 		if !exists {
 			return NewValidationError("track %d does not exist", entityID)
+		}
+	}
+	if et == EntityTypeEvent {
+		var exists bool
+		if err := params.DBTX.QueryRow(ctx,
+			"SELECT EXISTS(SELECT 1 FROM events WHERE event_id = $1 AND is_deleted = false)",
+			entityID).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return NewValidationError("event %d does not exist", entityID)
 		}
 	}
 
