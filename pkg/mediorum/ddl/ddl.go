@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 
 	_ "embed"
 )
@@ -65,7 +67,21 @@ func Migrate(db *sql.DB, myHost string) {
 ON uploads (COALESCE(audio_analysis_error_count, 0), audio_analyzed_at ASC NULLS FIRST, id)
 WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 
+	runVacuumFull(db)
+}
+
+func runVacuumFull(db *sql.DB) {
+	if !vacuumFullEnabled() {
+		log.Println("skipping mediorum vacuum full; set OPENAUDIO_MEDIORUM_VACUUM_FULL=true to run it")
+		return
+	}
+
 	runMigration(db, `vacuum full`)
+}
+
+func vacuumFullEnabled() bool {
+	enabled, err := strconv.ParseBool(os.Getenv("OPENAUDIO_MEDIORUM_VACUUM_FULL"))
+	return err == nil && enabled
 }
 
 func runMigration(db *sql.DB, ddl string) {
