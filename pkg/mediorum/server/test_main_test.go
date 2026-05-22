@@ -91,9 +91,31 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 		}()
 	}
 
-	// give each server time to startup + health check
-	time.Sleep(time.Second)
-	log.Printf("started %d servers", serverCount)
+	// Wait until each server's health poller has observed every peer at least
+	// once. startHealthPoller sleeps 1s then ticks every 1s, so this typically
+	// converges in 2-3s. A fixed sleep here was previously enough only because
+	// startup migrations (notably vacuum full) padded New()'s runtime.
+	expectedPeers := serverCount - 1
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		ready := 0
+		for _, s := range servers {
+			s.peerHealthsMutex.RLock()
+			n := len(s.peerHealths)
+			s.peerHealthsMutex.RUnlock()
+			if n >= expectedPeers {
+				ready++
+			}
+		}
+		if ready == len(servers) {
+			break
+		}
+		if time.Now().After(deadline) {
+			log.Fatalf("test network did not become healthy: %d/%d servers ready", ready, len(servers))
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	log.Printf("started %d servers, all peer healths populated", serverCount)
 
 	return servers
 
