@@ -182,6 +182,9 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 	if err := updateRemixesTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
 		return err
 	}
+	if err := autoSubscribeToContestOnSubmission(ctx, params); err != nil {
+		return err
+	}
 	if err := updateTrackPriceHistory(ctx, params.DBTX, params.EntityID, params.BlockNumber, params.BlockTime, params.Metadata); err != nil {
 		return err
 	}
