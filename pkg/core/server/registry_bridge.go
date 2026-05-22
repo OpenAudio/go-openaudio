@@ -102,6 +102,7 @@ ethstatus:
 				s.RunningProcess(ProcessStateRegistryBridge)
 				s.lc.AddManagedRoutine("eth contract event listener", s.listenForEthContractEvents)
 				s.lc.AddManagedRoutine("validator warden", s.startValidatorWarden)
+				s.lc.AddManagedRoutine("registration watchdog", s.startRegistrationWatchdog)
 				return nil
 			}
 		case <-ctx.Done():
@@ -186,6 +187,31 @@ func (s *Server) startValidatorWarden(ctx context.Context) error {
 				} else if err != nil {
 					s.logger.Error("error checking if validator should be purged", zap.Error(err))
 				}
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+// startRegistrationWatchdog re-runs RegisterSelf periodically if the node has
+// dropped out of core_validators. The initial registration loop in
+// startRegistryBridge exits after one success and never retries, so without
+// this a hostile dereg (e.g. another peer's warden acting on a transiently
+// stale eth-registry cache) would leave the node stranded until the process
+// restarts.
+func (s *Server) startRegistrationWatchdog(ctx context.Context) error {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if s.isSelfAlreadyRegistered(ctx) {
+				continue
+			}
+			s.logger.Info("registration watchdog: not in core_validators, re-running RegisterSelf")
+			if err := s.RegisterSelf(); err != nil {
+				s.logger.Error("registration watchdog: RegisterSelf failed", zap.Error(err))
 			}
 		case <-ctx.Done():
 			return ctx.Err()
