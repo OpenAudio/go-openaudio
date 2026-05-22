@@ -1,0 +1,3 @@
+-- Reverting to the broken (is_current,...) PK is intentionally a no-op —
+-- it would re-introduce the 42P10 incompatibility with prod and break the
+-- ON CONFLICT in the playlist_seen handler. Leave the down side empty.

@@ -422,7 +422,18 @@ func (e *Indexer) indexBlocks() error {
 							zap.String("hash", tx.Hash),
 						)
 					} else {
-						e.logger.Error("entity manager dispatch error", zap.Error(dErr))
+						// Include entity_type / action / hash so we can attribute
+						// non-validation handler errors. Without this context the
+						// log line is unreadable (e.g. a bare "no rows in result
+						// set" with no clue which handler emitted it).
+						e.logger.Error("entity manager dispatch error",
+							zap.String("entity_type", me.GetEntityType()),
+							zap.String("action", me.GetAction()),
+							zap.Int64("entity_id", me.GetEntityId()),
+							zap.Int64("user_id", me.GetUserId()),
+							zap.String("hash", tx.Hash),
+							zap.Error(dErr),
+						)
 					}
 				} else {
 					e.logger.Debug("tx indexed",

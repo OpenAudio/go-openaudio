@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -59,6 +61,11 @@ func loadCurrentPlaylistRow(ctx context.Context, dbtx db.DBTX, playlistID int64)
 		&upc, &ddex, &ddexRel, &artists, &copyright, &producerCopyright,
 		&parentalWarning, &r.CreatedAt,
 	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Same race as loadCurrentTrackRow: validation accepts is_delete=true
+		// rows but this loader filters them out. Convert to ValidationError.
+		return nil, NewValidationError("playlist %d is deleted or does not exist", playlistID)
+	}
 	if err != nil {
 		return nil, err
 	}

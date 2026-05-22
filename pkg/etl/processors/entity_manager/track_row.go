@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -68,6 +70,13 @@ func loadCurrentTrackRow(ctx context.Context, dbtx db.DBTX, trackID int64) (*tra
 		&releaseDate, &r.IsScheduledRelease, &aiAttr, &r.IsPlaylistUpload, &ddex, &ddexRel,
 		&r.IsAvailable, &segments, &r.CreatedAt,
 	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Track was soft-deleted between validation and now (validateTrackUpdate
+		// uses trackExists which accepts is_delete=true; this function filters
+		// is_delete=false). Convert raw ErrNoRows to a ValidationError so the
+		// dispatcher logs it at WARN, not ERROR.
+		return nil, NewValidationError("track %d is deleted or does not exist", trackID)
+	}
 	if err != nil {
 		return nil, err
 	}
