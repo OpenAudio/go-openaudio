@@ -14,6 +14,22 @@ sql:
             go_type:
               import: "time"
               type: "time.Time"
+          # Map custom ENUM types to string. Without these overrides sqlc
+          # generates `interface{}` for each enum column, which pgx then
+          # cannot scan back into (`cannot scan unknown type (OID NNNNN) in
+          # text format into *interface {}`). Every caller already passes
+          # plain string literals like "pass" / "unresolved" / "track", so
+          # `string` is a drop-in fit and silently fixes reads too.
+          - db_type: "etl_proof_status"
+            go_type: "string"
+          - db_type: "reposttype"
+            go_type: "string"
+          - db_type: "savetype"
+            go_type: "string"
+          - db_type: "sharetype"
+            go_type: "string"
+          - db_type: "usdc_purchase_access_type"
+            go_type: "string"
 
   - engine: "postgresql"
     queries: "sql/writes.sql"
@@ -29,3 +45,13 @@ sql:
             go_type:
               import: "time"
               type: "time.Time"
+          - db_type: "etl_proof_status"
+            go_type: "string"
+          - db_type: "reposttype"
+            go_type: "string"
+          - db_type: "savetype"
+            go_type: "string"
+          - db_type: "sharetype"
+            go_type: "string"
+          - db_type: "usdc_purchase_access_type"
+            go_type: "string"

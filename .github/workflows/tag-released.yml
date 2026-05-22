@@ -1,0 +1,72 @@
+name: Tag Released
+
+# All third-party actions are pinned to a full commit SHA to harden against
+# supply-chain attacks on upstream tags. To upgrade an action, look up the
+# commit at the desired tag with `gh api repos/<owner>/<repo>/commits/<tag>
+# --jq .sha` and update both the SHA and the trailing `# <tag>` comment.
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  # Reuse the multi-arch manifest that ci.yml already built and pushed for
+  # the merge commit (openaudio/go-openaudio:<sha>). Retag it to the version
+  # tag instead of rebuilding from source.
+  retag-from-sha:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+      - id: lookup
+        run: echo "sha=$(git rev-list -n 1 ${{ github.ref_name }})" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # When release-please's release PR is merged, the merge commit's
+      # `push: branches: [main]` event and the tag-push event fire
+      # simultaneously. ci.yml builds the SHA-tagged manifest from the
+      # `push: main` event, but this workflow (triggered by the tag push)
+      # may start first and find no image to retag. Poll DockerHub for the
+      # SHA manifest with a 25-minute budget — comfortably longer than the
+      # multi-arch build + integration tests in docker-build.yml.
+      - name: Wait for SHA-tagged manifest to exist
+        timeout-minutes: 30
+        run: |
+          SHA="${{ steps.lookup.outputs.sha }}"
+          IMAGE="openaudio/go-openaudio:$SHA"
+          for i in $(seq 1 100); do
+            if docker buildx imagetools inspect "$IMAGE" >/dev/null 2>&1; then
+              echo "Found $IMAGE after $((i * 15))s"
+              exit 0
+            fi
+            echo "Waiting for $IMAGE... ($((i * 15))s elapsed)"
+            sleep 15
+          done
+          echo "Timed out waiting for $IMAGE." >&2
+          echo "Likely cause: ci.yml on $SHA failed or has not yet started." >&2
+          echo "Investigate the CI run for that commit, then re-run this workflow." >&2
+          exit 1
+      - name: Retag SHA manifest as version tag
+        run: |
+          docker buildx imagetools create \
+            -t openaudio/go-openaudio:${{ github.ref_name }} \
+            openaudio/go-openaudio:${{ steps.lookup.outputs.sha }}
+
+  retag-stable:
+    needs: retag-from-sha
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Retag version tag as :stable
+        run: |
+          docker buildx imagetools create \
+            -t openaudio/go-openaudio:stable \
+            openaudio/go-openaudio:${{ github.ref_name }}

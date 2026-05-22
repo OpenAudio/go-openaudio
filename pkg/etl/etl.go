@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/OpenAudio/go-openaudio/etl/db"
-	em "github.com/OpenAudio/go-openaudio/etl/processors/entity_manager"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	em "github.com/OpenAudio/go-openaudio/pkg/etl/processors/entity_manager"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,7 +33,8 @@ type Indexer struct {
 	blockPubsub *BlockPubsub
 	playPubsub  *PlayPubsub
 
-	mvRefresher *MaterializedViewRefresher
+	mvRefresher       *MaterializedViewRefresher
+	scheduledReleases *ScheduledReleasePublisher
 }
 
 // New creates a new ETL indexer.

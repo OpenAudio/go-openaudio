@@ -35,7 +35,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/explorer"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/eth"
-	"github.com/OpenAudio/go-openaudio/etl"
+	"github.com/OpenAudio/go-openaudio/pkg/etl"
 	"github.com/OpenAudio/go-openaudio/pkg/etlserver"
 	"github.com/OpenAudio/go-openaudio/pkg/location"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"

@@ -5,16 +5,15 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 // updateTrackPriceHistory writes a track_price_history row when track metadata
-// includes USDC gating with a price + splits. Mirrors apps' Python helper in
-// track.py (update_track_price_history).
+// includes USDC gating with a price + splits.
 //
 // access: 'stream' if is_stream_gated, otherwise 'download' if is_download_gated.
-// Only writes when there's no existing row at the same block_timestamp with the
-// same total_price_cents + splits (apps' equality check via .equals()).
+// Skipped when the latest existing row already records the same
+// (price, splits, access) — no row written for unchanged prices.
 func updateTrackPriceHistory(ctx context.Context, dbtx db.DBTX, trackID int64, blocknumber int64, blockTime time.Time, metadata map[string]any) error {
 	access, conditions := pickPriceConditions(metadata)
 	if conditions == nil {
@@ -53,7 +52,7 @@ func updateTrackPriceHistory(ctx context.Context, dbtx db.DBTX, trackID int64, b
 }
 
 // updateAlbumPriceHistory writes an album_price_history row when playlist
-// metadata declares USDC stream-gating. Mirrors apps' update_album_price_history.
+// metadata declares USDC stream-gating.
 func updateAlbumPriceHistory(ctx context.Context, dbtx db.DBTX, playlistID int64, blocknumber int64, blockTime time.Time, metadata map[string]any) error {
 	if metadata == nil {
 		return nil
@@ -98,7 +97,7 @@ func updateAlbumPriceHistory(ctx context.Context, dbtx db.DBTX, playlistID int64
 
 // pickPriceConditions returns ("stream", stream_conditions) when stream-gated,
 // ("download", download_conditions) when download-only-gated, or ("", nil)
-// when not USDC-gated. Mirrors apps' is_stream_gated / is_download_gated logic.
+// when not USDC-gated.
 func pickPriceConditions(metadata map[string]any) (string, map[string]any) {
 	if metadata == nil {
 		return "", nil

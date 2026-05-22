@@ -178,6 +178,17 @@ message GetStorageDiagnosticsResponse {
   BandwidthStats bandwidth = 17;
   repeated PoSChallenge recent_pos_challenges = 18;
   repeated ServedEvent recent_served = 19;
+
+  // Archive bucket (set when OPENAUDIO_ARCHIVE_STORAGE_DRIVER_URL is configured).
+  // When archive_configured=false, the remaining archive fields are zero.
+  bool archive_configured = 20;
+  int64 archive_disk_used_bytes = 21;
+  int64 archive_disk_total_bytes = 22;
+  string archive_blob_store_prefix = 23;
+
+  // Per-bucket headroom; disk_has_space (#5) stays as the AND aggregate.
+  bool primary_disk_has_space = 24;
+  bool archive_disk_has_space = 25;
 }
 
 message ReadRepairStats {
@@ -223,6 +234,9 @@ message RepairRun {
   string aborted_reason = 6;
   int32 cursor_i = 7;
   map<string, int64> counters = 8;
+  // Sum of successful pull + delete actions in this run (pull_mine_success +
+  // delete_invalid_success + delete_resized_image_ok + delete_over_replicated_success).
+  int64 files_changed = 9;
 }
 
 message PeerStatus {

@@ -1015,13 +1015,56 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 							diskHasSpace = true
 						}
 
+						// Archive bucket fields (only meaningful when ArchiveStorageConfigured)
+						archiveConfigured := false
+						archivePathUsed := uint64(0)
+						archivePathSize := uint64(0)
+						archiveStoragePrefix := ""
+						primaryDiskHasSpace := false
+						archiveDiskHasSpace := false
+						if field := val.FieldByName("ArchiveStorageConfigured"); field.IsValid() && field.Kind() == reflect.Bool {
+							archiveConfigured = field.Bool()
+						}
+						if field := val.FieldByName("ArchivePathUsed"); field.IsValid() && field.Kind() == reflect.Uint64 {
+							archivePathUsed = field.Uint()
+						}
+						if field := val.FieldByName("ArchivePathSize"); field.IsValid() && field.Kind() == reflect.Uint64 {
+							archivePathSize = field.Uint()
+						}
+						if field := val.FieldByName("ArchiveStoragePrefix"); field.IsValid() && field.Kind() == reflect.String {
+							archiveStoragePrefix = field.String()
+						}
+						if field := val.FieldByName("PrimaryDiskHasSpace"); field.IsValid() && field.Kind() == reflect.Bool {
+							primaryDiskHasSpace = field.Bool()
+						}
+						if field := val.FieldByName("ArchiveDiskHasSpace"); field.IsValid() && field.Kind() == reflect.Bool {
+							archiveDiskHasSpace = field.Bool()
+						}
+						archiveStorageType := ""
+						archiveIsDisk := archiveStoragePrefix == "file" || archiveStoragePrefix == ""
+						if archiveConfigured {
+							if archiveIsDisk {
+								archiveStorageType = "Disk Storage"
+							} else {
+								archiveStorageType = "Blob Storage"
+							}
+						}
+
 						storageInfo = &v1.GetStatusResponse_StorageInfo{
-							IsBlobStorage:      !isDiskStorage, // true for blob storage, false for disk storage
-							DiskUsed:           int64(mediorumPathUsed),
-							DiskTotal:          int64(mediorumPathSize),
-							DiskHasSpace:       diskHasSpace,
-							StorageExpectation: int64(storageExpectation),
-							StorageType:        storageType,
+							IsBlobStorage:        !isDiskStorage, // true for blob storage, false for disk storage
+							DiskUsed:             int64(mediorumPathUsed),
+							DiskTotal:            int64(mediorumPathSize),
+							DiskHasSpace:         diskHasSpace,
+							StorageExpectation:   int64(storageExpectation),
+							StorageType:          storageType,
+							ArchiveConfigured:    archiveConfigured,
+							ArchiveIsBlobStorage: archiveConfigured && !archiveIsDisk,
+							ArchiveDiskUsed:      int64(archivePathUsed),
+							ArchiveDiskTotal:     int64(archivePathSize),
+							ArchiveStorageType:   archiveStorageType,
+							ArchiveStoragePrefix: archiveStoragePrefix,
+							PrimaryDiskHasSpace:  primaryDiskHasSpace,
+							ArchiveDiskHasSpace:  archiveDiskHasSpace,
 						}
 					}
 				}

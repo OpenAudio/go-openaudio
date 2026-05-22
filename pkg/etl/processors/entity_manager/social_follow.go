@@ -3,7 +3,7 @@ package entity_manager
 import (
 	"context"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 // --- Follow ---
@@ -84,28 +84,34 @@ func insertFollow(ctx context.Context, params *Params, isDelete bool) error {
 		return err
 	}
 
+	// PK is (follower_user_id, followee_user_id, txhash); re-delivery of the
+	// same chain tx would otherwise 23505 on the PK. Same txhash means
+	// identical row content, so DO NOTHING is correct.
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO follows (
 			follower_user_id, followee_user_id, is_current, is_delete,
 			created_at, txhash, blocknumber
 		) VALUES ($1, $2, true, $3, $4, $5, $6)
+		ON CONFLICT (follower_user_id, followee_user_id, txhash) DO NOTHING
 	`, params.UserID, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
 	if err != nil {
 		return err
 	}
 
-	// Python parity: Follow/Unfollow also creates/deletes a Subscription record
+	// Follow/Unfollow also creates/deletes a Subscription record
 	_, err = params.DBTX.Exec(ctx,
 		"UPDATE subscriptions SET is_current = false WHERE subscriber_id = $1 AND user_id = $2 AND is_current = true",
 		params.UserID, params.EntityID)
 	if err != nil {
 		return err
 	}
+	// PK is (subscriber_id, user_id, txhash); same DO NOTHING rationale.
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO subscriptions (
 			subscriber_id, user_id, is_current, is_delete,
 			created_at, txhash, blocknumber
 		) VALUES ($1, $2, true, $3, $4, $5, $6)
+		ON CONFLICT (subscriber_id, user_id, txhash) DO NOTHING
 	`, params.UserID, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }

@@ -9,14 +9,17 @@ import (
 	"time"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
 
 // seedBlock inserts the block referenced by buildParams (number=100) so
-// FK references from tracks/playlists/etc. resolve. Lives here so any test
-// that goes through buildParams can satisfy the blocks FK.
+// FK references from users/tracks/playlists/etc. resolve. setupTestDB
+// calls this automatically — every handler that writes a domain row ends
+// up touching the blocks FK, so making it implicit means no test needs to
+// remember the call. Kept exported for tests that need to re-seed after a
+// custom migration reset.
 func seedBlock(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	if _, err := pool.Exec(context.Background(), `
@@ -29,7 +32,7 @@ func seedBlock(t *testing.T, pool *pgxpool.Pool) {
 }
 
 // setupTestDB connects to a test Postgres, runs all ETL migrations (down then up),
-// and returns the pool and a cleanup function.
+// seeds the block referenced by buildParams, and returns the pool.
 //
 // Set ETL_TEST_DB_URL to override the default connection string.
 // Example: ETL_TEST_DB_URL="postgres://localhost:5432/etl_test?sslmode=disable"
@@ -52,6 +55,8 @@ func setupTestDB(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("failed to connect to test db: %v", err)
 	}
 	t.Cleanup(func() { pool.Close() })
+
+	seedBlock(t, pool)
 
 	return pool
 }

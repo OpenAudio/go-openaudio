@@ -1,4 +1,4 @@
--- Notification tables matching discovery-provider schema.
+-- Notification tables.
 
 CREATE TABLE IF NOT EXISTS notification (
   id serial NOT NULL,
@@ -26,6 +26,13 @@ CREATE TABLE IF NOT EXISTS notification_seen (
   CONSTRAINT notification_seen_pkey PRIMARY KEY (user_id, seen_at)
 );
 
+-- playlist_seen PK matches prod's schema: (user_id, playlist_id, seen_at).
+-- The `is_current` column is retained for backward compatibility with the
+-- legacy schema (always written as `true` by the playlist-seen handler), but
+-- is NOT part of the uniqueness contract — including it in the PK would
+-- mismatch prod and cause 42P10 on any ON CONFLICT clause that names the
+-- prod target columns. Older databases that were created with the wrong PK
+-- get fixed by migration 0027_fix_playlist_seen_pkey.up.sql.
 CREATE TABLE IF NOT EXISTS playlist_seen (
   is_current boolean NOT NULL,
   user_id integer NOT NULL,
@@ -34,5 +41,5 @@ CREATE TABLE IF NOT EXISTS playlist_seen (
   blocknumber integer,
   blockhash character varying,
   txhash character varying,
-  CONSTRAINT playlist_seen_pkey PRIMARY KEY (is_current, user_id, playlist_id, seen_at)
+  CONSTRAINT playlist_seen_pkey PRIMARY KEY (user_id, playlist_id, seen_at)
 );

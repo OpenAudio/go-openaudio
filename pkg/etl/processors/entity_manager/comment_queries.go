@@ -3,7 +3,7 @@ package entity_manager
 import (
 	"context"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 func commentExists(ctx context.Context, dbtx db.DBTX, commentID int64) (bool, error) {

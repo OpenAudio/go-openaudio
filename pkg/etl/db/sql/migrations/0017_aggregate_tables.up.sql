@@ -1,0 +1,13 @@
+-- No-op stub.
+--
+-- Migration 0017 originally created aggregate_user / aggregate_track /
+-- aggregate_playlist / aggregate_plays / aggregate_monthly_plays /
+-- milestones (#238). #267 reverted that work — those derived tables are
+-- owned by the consumer (and maintained via Postgres triggers there),
+-- not by pkg/etl.
+--
+-- We keep an empty 0017 file so golang-migrate can step past version 17
+-- on production DBs that already recorded it. Deleting the file outright
+-- causes Up() to fail with "no migration found for version 17: read down
+-- for version 17 sql/migrations: file does not exist", which blocks every
+-- newer migration (0021, 0022, …) and leaves the ETL DB stuck.

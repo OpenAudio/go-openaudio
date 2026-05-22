@@ -9,15 +9,14 @@ import (
 // from the same owner inserted "in the same block" (no transaction boundary
 // between them) get distinct collision_ids on their track_routes rows.
 //
-// In apps this is handled by an explicit pending_track_routes list passed
-// through block processing because Python defers the actual INSERT to the
-// end of the block. In go-openaudio handlers Exec inserts immediately and
-// the pool auto-commits, so the second handler's slug query already sees
-// the first handler's row — same-block collisions resolve naturally.
+// Handlers Exec inserts immediately and the pool auto-commits, so the second
+// handler's slug query already sees the first handler's row — same-block
+// collisions resolve naturally.
 //
-// This test locks that behavior in: if a future refactor batches INSERTs
-// into a single transaction (e.g. for performance), it will need an explicit
-// pending_routes mechanism.
+// This test locks that behavior in: a future refactor that batches INSERTs
+// into a single transaction (e.g. for write throughput) will also need an
+// explicit pending-routes mechanism, or same-title same-block tracks will
+// silently get duplicate slugs.
 func TestSameBlock_TrackRouteCollision(t *testing.T) {
 	pool := setupTestDB(t)
 	seedBlock(t, pool)

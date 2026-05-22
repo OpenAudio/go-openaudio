@@ -115,23 +115,18 @@ func insertPlaylistAndRoute(ctx context.Context, params *Params) error {
 		return err
 	}
 
-	// Insert playlist routes if a name is provided.
-	//
-	// Two rows get written on create, both mirroring discovery-provider's
-	// is_create=True branch:
+	// Insert playlist routes if a name is provided. Two rows get written:
 	//
 	//   1. The current route — `<sanitized-title>` (with a numeric `-N`
 	//      collision suffix appended if another playlist by this owner
 	//      already claimed the same slug). This is the canonical URL.
 	//
 	//   2. A NON-current "legacy ID-suffixed" route of the form
-	//      `<sanitized-title>-<playlist_id>`. Before apps moved to
-	//      collision-aware routing, every playlist URL was just
-	//      `<slug>-<playlist_id>`. Shared/bookmarked URLs from that era
-	//      keep resolving because we still record this row even though it's
-	//      not the canonical route. We only insert it when it would differ
-	//      from the current slug — e.g. if the user happened to name their
-	//      playlist literally `my-playlist-400123` we'd skip the duplicate.
+	//      `<sanitized-title>-<playlist_id>`. Before collision-aware routing,
+	//      every playlist URL was just `<slug>-<playlist_id>`. Shared/bookmarked
+	//      URLs from that era keep resolving because we still record this row.
+	//      Skipped when it would equal the current slug — e.g. a playlist
+	//      named literally `my-playlist-400123`.
 	if playlistName != "" {
 		currentSlug, titleSlug, collisionID, err := GeneratePlaylistSlugAndCollisionID(ctx, params.DBTX, params.UserID, params.EntityID, playlistName)
 		if err != nil {

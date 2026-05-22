@@ -1,4 +1,4 @@
--- Events table matching discovery-provider schema.
+-- Events table.
 
 CREATE TABLE IF NOT EXISTS events (
   event_id integer NOT NULL,

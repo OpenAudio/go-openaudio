@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -23,8 +23,7 @@ func CreateTrackRouteID(title, handle string) string {
 }
 
 // getTrackOwnerHandle returns the user's handle, or a synthetic guest handle
-// (`user-<id>`) when no handle is set, matching discovery-provider's
-// `get_handle` behavior for guest users.
+// (`user-<id>`) when no handle is set.
 func getTrackOwnerHandle(ctx context.Context, dbtx db.DBTX, userID int64) (string, error) {
 	var handle *string
 	err := dbtx.QueryRow(ctx, "SELECT handle FROM users WHERE user_id = $1 AND is_current = true LIMIT 1", userID).Scan(&handle)

@@ -1,5 +1,4 @@
--- Add user verification/social columns (matching discovery-provider 0073_add_user_socials).
--- Required for User Verify handler.
+-- Add user verification/social columns required by the User Verify handler.
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_handle character varying;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_handle character varying;

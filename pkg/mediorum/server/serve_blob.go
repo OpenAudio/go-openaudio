@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 	gcblob "gocloud.dev/blob"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 
@@ -27,7 +28,7 @@ import (
 )
 
 const (
-	presignedURLDefaultExpiry = 2 * time.Hour  // fallback when duration unknown
+	presignedURLDefaultExpiry = 2 * time.Hour   // fallback when duration unknown
 	presignedURLMinExpiry     = 5 * time.Minute // floor for very short tracks
 	presignedURLBufferRatio   = 1.1             // 10% buffer over track duration
 )
@@ -304,44 +305,30 @@ func (ss *MediorumServer) recordMetric(action string) {
 	firstOfMonth := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
 
 	// Increment daily metric
-	err := ss.crud.DB.Transaction(func(tx *gorm.DB) error {
-		var metric DailyMetrics
-		if err := tx.FirstOrCreate(&metric, DailyMetrics{
-			Timestamp: today,
-			Action:    action,
-		}).Error; err != nil {
-			return err
-		}
-		metric.Count += 1
-		if err := tx.Save(&metric).Error; err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
+	if err := ss.crud.DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "timestamp"}, {Name: "action"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"count": gorm.Expr("daily_metrics.count + EXCLUDED.count"),
+		}),
+	}).Create(&DailyMetrics{
+		Timestamp: today,
+		Action:    action,
+		Count:     1,
+	}).Error; err != nil {
 		ss.logger.Error("unable to increment daily metric", zap.Error(err), zap.String("action", action))
 	}
 
 	// Increment monthly metric
-	err = ss.crud.DB.Transaction(func(tx *gorm.DB) error {
-		var metric MonthlyMetrics
-		if err := tx.FirstOrCreate(&metric, MonthlyMetrics{
-			Timestamp: firstOfMonth,
-			Action:    action,
-		}).Error; err != nil {
-			return err
-		}
-		metric.Count += 1
-		if err := tx.Save(&metric).Error; err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
+	if err := ss.crud.DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "timestamp"}, {Name: "action"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"count": gorm.Expr("monthly_metrics.count + EXCLUDED.count"),
+		}),
+	}).Create(&MonthlyMetrics{
+		Timestamp: firstOfMonth,
+		Action:    action,
+		Count:     1,
+	}).Error; err != nil {
 		ss.logger.Error("unable to increment monthly metric", zap.Error(err), zap.String("action", action))
 	}
 }

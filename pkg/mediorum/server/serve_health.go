@@ -36,6 +36,7 @@ type HealthData struct {
 	LastSuccessfulCleanup     RepairTracker              `json:"lastSuccessfulCleanup"`
 	UploadsCount              int64                      `json:"uploadsCount"`
 	UploadsCountErr           string                     `json:"uploadsCountErr"`
+	BucketWriteErr            string                     `json:"bucketWriteErr"`
 	AutoUpgradeEnabled        bool                       `json:"autoUpgradeEnabled"`
 	TrustedNotifier           *ethcontracts.NotifierInfo `json:"trustedNotifier"`
 	Env                       string                     `json:"env"`
@@ -57,14 +58,16 @@ type HealthData struct {
 	FailsPeerReachability     bool                       `json:"failsPeerReachability"`
 	StoreAll                  bool                       `json:"storeAll"`
 	IsDbLocalhost             bool                       `json:"isDbLocalhost"`
-	DiskHasSpace              bool                       `json:"diskHasSpace"`
+	DiskHasSpace              bool                       `json:"diskHasSpace"`        // aggregate (AND of primary + archive, if archive routes writes)
+	PrimaryDiskHasSpace       bool                       `json:"primaryDiskHasSpace"` // primary bucket only
+	ArchiveDiskHasSpace       bool                       `json:"archiveDiskHasSpace"` // archive bucket only; false when archive not configured
 	IsDiscoveryListensEnabled bool                       `json:"isDiscoveryListensEnabled"`
 	TranscodeQueueLength      int                        `json:"transcodeQueueLength"`
 	TranscodeStats            *TranscodeStats            `json:"transcodeStats"`
 }
 
 func (ss *MediorumServer) getHealth() HealthData {
-	healthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == ""
+	healthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == "" && ss.bucketWriteErr == ""
 
 	blobStorePrefix, _, foundBlobStore := strings.Cut(ss.Config.BlobStoreDSN, "://")
 	if !foundBlobStore {
@@ -104,6 +107,7 @@ func (ss *MediorumServer) getHealth() HealthData {
 		LastSuccessfulCleanup:     ss.lastSuccessfulCleanup,
 		UploadsCount:              ss.uploadsCount,
 		UploadsCountErr:           ss.uploadsCountErr,
+		BucketWriteErr:            ss.bucketWriteErr,
 		AutoUpgradeEnabled:        ss.Config.AutoUpgradeEnabled,
 		TrustedNotifier:           ss.trustedNotifier,
 		Dir:                       ss.Config.Dir,
@@ -127,6 +131,8 @@ func (ss *MediorumServer) getHealth() HealthData {
 		IsDbLocalhost:             isDbLocalhost(ss.Config.PostgresDSN),
 		IsDiscoveryListensEnabled: ss.Config.discoveryListensEnabled(),
 		DiskHasSpace:              ss.diskHasSpace(),
+		PrimaryDiskHasSpace:       ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree),
+		ArchiveDiskHasSpace:       ss.archiveBucket != nil && ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree),
 		TranscodeQueueLength:      len(ss.transcodeWork),
 		TranscodeStats:            ss.getTranscodeStats(),
 	}

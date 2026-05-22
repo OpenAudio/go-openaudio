@@ -284,7 +284,7 @@ type InsertStorageProofParams struct {
 	Cid             string           `json:"cid"`
 	ProofSignature  []byte           `json:"proof_signature"`
 	Proof           []byte           `json:"proof"`
-	Status          interface{}      `json:"status"`
+	Status          string           `json:"status"`
 	BlockHeight     int64            `json:"block_height"`
 	TxHash          string           `json:"tx_hash"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
@@ -333,6 +333,7 @@ func (q *Queries) InsertStorageProofVerification(ctx context.Context, arg Insert
 const insertTransaction = `-- name: InsertTransaction :exec
 insert into etl_transactions (tx_hash, block_height, tx_index, tx_type, address, created_at)
 values ($1, $2, $3, $4, $5, $6)
+on conflict (tx_hash) do nothing
 `
 
 type InsertTransactionParams struct {
@@ -344,6 +345,11 @@ type InsertTransactionParams struct {
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 }
 
+// tx_hash is the content-addressable hash of the chain transaction, which the
+// migration declares UNIQUE. The indexer can occasionally re-deliver the same
+// chain tx (see the prefetcher re-delivery issue tracked separately) — when
+// that happens the payload is identical by construction, so DO NOTHING is the
+// correct dedup. DO UPDATE would have nothing to update.
 func (q *Queries) InsertTransaction(ctx context.Context, arg InsertTransactionParams) error {
 	_, err := q.db.Exec(ctx, insertTransaction,
 		arg.TxHash,

@@ -19,7 +19,7 @@ import (
 	"os"
 	"strings"
 
-	etl "github.com/OpenAudio/go-openaudio/etl"
+	etl "github.com/OpenAudio/go-openaudio/pkg/etl"
 	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	"go.uber.org/zap"
 )

@@ -1,0 +1,1 @@
+-- No-op: dropping these columns would lose Event-subscription data.

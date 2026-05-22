@@ -1,0 +1,5 @@
+-- Re-adding the UNIQUE constraint is intentionally a no-op: the constraint
+-- it would restore is incompatible with the row-versioning writes the
+-- entity manager performs against developer_apps, so reverting this
+-- migration on a database that has accumulated >1 row per address would
+-- fail. Leave the down side empty.

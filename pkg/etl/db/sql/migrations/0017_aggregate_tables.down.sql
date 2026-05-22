@@ -1,0 +1,1 @@
+-- No-op stub. See 0017_aggregate_tables.up.sql.

@@ -26,14 +26,17 @@ func (h *eventCreateHandler) Handle(ctx context.Context, params *Params) error {
 		eventDataJSON, _ = json.Marshal(ed)
 	}
 
+	// blockhash is NOT NULL on production's `events` table (our migration
+	// has a DEFAULT '' that masks the omission locally — see #305 follow-up).
+	// Always pass params.BlockHash so we don't rely on the default.
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO events (
 			event_id, event_type, user_id, entity_type, entity_id,
 			end_date, event_data, is_deleted,
-			created_at, updated_at, txhash, blocknumber
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $8, $9, $10)
+			created_at, updated_at, txhash, blockhash, blocknumber
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $8, $9, $10, $11)
 	`, params.EntityID, eventType, params.UserID, entityType, entityID,
-		endDateStr, eventDataJSON, params.BlockTime, params.TxHash, params.BlockNumber)
+		endDateStr, eventDataJSON, params.BlockTime, params.TxHash, params.BlockHash, params.BlockNumber)
 	return err
 }
 

@@ -732,6 +732,15 @@ func (s *Server) RestoreDatabase(height int64) error {
 		if section != "" {
 			args = append(args, "--section="+section)
 		}
+		// pg_dump emits COPY items in TOC order, which can place a child table
+		// (e.g. sla_node_reports) before its parent (sla_rollups). The FK trigger
+		// created by pre-data then rejects the child rows during COPY, pg_restore
+		// exits 1, and the ABCI handler retries the whole snapshot — looping forever.
+		// --disable-triggers turns FK enforcement off for the data load only;
+		// constraints are restored automatically when pg_restore re-enables triggers.
+		if section == "data" {
+			args = append(args, "--disable-triggers")
+		}
 		args = append(args, dumpPath)
 
 		var stdout, stderr bytes.Buffer

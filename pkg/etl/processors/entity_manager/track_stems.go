@@ -3,7 +3,7 @@ package entity_manager
 import (
 	"context"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 // upsertStemRow links a stem child to its parent track. Idempotent on the
@@ -18,7 +18,6 @@ func upsertStemRow(ctx context.Context, dbtx db.DBTX, parentTrackID, childTrackI
 }
 
 // updateStemsTable adds a stems row when track metadata declares a parent_track_id.
-// Mirrors discovery-provider's update_stems_table.
 func updateStemsTable(ctx context.Context, dbtx db.DBTX, childTrackID int64, metadata map[string]any) error {
 	if metadata == nil {
 		return nil
@@ -35,7 +34,6 @@ func updateStemsTable(ctx context.Context, dbtx db.DBTX, childTrackID int64, met
 }
 
 // deleteStemsForChild removes any stems rows where this track is the child.
-// Mirrors discovery-provider's delete on Stem(child_track_id=track_id).
 func deleteStemsForChild(ctx context.Context, dbtx db.DBTX, childTrackID int64) error {
 	_, err := dbtx.Exec(ctx, "DELETE FROM stems WHERE child_track_id = $1", childTrackID)
 	return err

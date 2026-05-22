@@ -102,6 +102,7 @@ ethstatus:
 				s.RunningProcess(ProcessStateRegistryBridge)
 				s.lc.AddManagedRoutine("eth contract event listener", s.listenForEthContractEvents)
 				s.lc.AddManagedRoutine("validator warden", s.startValidatorWarden)
+				s.lc.AddManagedRoutine("registration watchdog", s.startRegistrationWatchdog)
 				return nil
 			}
 		case <-ctx.Done():
@@ -191,6 +192,50 @@ func (s *Server) startValidatorWarden(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// startRegistrationWatchdog periodically re-runs RegisterSelf so the node
+// recovers from any reason it might have dropped out of core_validators (or
+// been jailed) — e.g. a hostile dereg from a peer's warden acting on a
+// transiently stale eth-registry cache. The initial registration loop in
+// startRegistryBridge exits after one success and never retries, so without
+// this the node would sit stranded until the process restarts.
+//
+// RegisterSelf is idempotent: when the node is already registered and
+// unjailed, it returns immediately without contacting peers or submitting a
+// tx. So calling it blindly on a schedule is cheap in steady state and
+// self-healing under failure.
+//
+// To bound flap when something is genuinely wrong (e.g. node persistently
+// can't propose blocks and the warden keeps re-jailing), the interval grows
+// linearly each cycle, capping at 24h. Restart resets the schedule to 1h.
+func (s *Server) startRegistrationWatchdog(ctx context.Context) error {
+	interval := time.Hour
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-timer.C:
+			if err := s.RegisterSelf(); err != nil {
+				s.logger.Error("registration watchdog: RegisterSelf failed", zap.Error(err))
+			}
+			interval = nextWatchdogInterval(interval)
+			timer.Reset(interval)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+// nextWatchdogInterval grows the watchdog interval by 1h each tick, capping
+// at 24h. Backoff state is in-memory only — process restart resets to 1h.
+func nextWatchdogInterval(prev time.Duration) time.Duration {
+	const cap = 24 * time.Hour
+	next := prev + time.Hour
+	if next > cap {
+		return cap
+	}
+	return next
 }
 
 // checks mainnet eth for itself, if registered and not

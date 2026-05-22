@@ -80,6 +80,7 @@ type MediorumConfig struct {
 	DeadHosts                 []string
 	RepairEnabled              bool          `default:"true"`
 	RepairInterval             time.Duration `default:"1h"`
+	RepairConcurrency          int           `default:"1"`
 
 	ProgrammableDistributionEnabled bool
 	BlobStorageStreaming             bool
@@ -128,6 +129,8 @@ type MediorumServer struct {
 
 	uploadsCount    int64
 	uploadsCountErr string
+
+	bucketWriteErr string
 
 	isSeeding        bool
 	isAudiusdManaged bool
@@ -496,6 +499,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	internalApi := routes.Group("/internal")
 
 	// internal: crud
+	internalApi.GET("/crud/status", ss.serveCrudStatus, middleware.BasicAuth(ss.checkBasicAuth))
 	internalApi.GET("/crud/sweep", ss.serveCrudSweep)
 	internalApi.POST("/crud/push", ss.serveCrudPush, middleware.BasicAuth(ss.checkBasicAuth))
 

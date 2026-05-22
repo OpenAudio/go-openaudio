@@ -30,6 +30,11 @@ type NodesView struct {
 	ValidatorNodesCount int
 	EthEndpoints        []EthEndpoint
 	EthEndpointsCount   int
+	// Validators registered in core_validators but not currently in the
+	// CometBFT consensus set.
+	MissingFromConsensus []db.CoreValidator
+	// Eth registry endpoints with no matching registered validator node.
+	MissingFromValidators []EthEndpoint
 }
 
 templ (p *Pages) NodesPageHTML(data *NodesView) {
@@ -109,6 +114,48 @@ templ (p *Pages) NodesPageHTML(data *NodesView) {
 					if len(data.ConsensusNodes) == 0 {
 						<div class="text-secondary text-sm p-4">No consensus validators found. CometBFT RPC may be unavailable.</div>
 					}
+					<details class="bg-tertiary rounded-lg px-4 py-3 mt-4">
+						<summary class="cursor-pointer text-sm font-medium select-none">
+							Registered validators missing from consensus ({ fmt.Sprintf("%d", len(data.MissingFromConsensus)) })
+						</summary>
+						<div class="mt-3 space-y-3">
+							for _, node := range data.MissingFromConsensus {
+								<div class="list-view-card p-4">
+									<div class="mb-2">
+										<h2>
+											if node.Endpoint != "" {
+												@p.components.ExternalLink("%s%s", node.Endpoint, "/console/overview") {
+													<div>{ node.Endpoint }</div>
+												}
+											} else {
+												<span class="text-secondary font-mono text-sm">{ node.CometAddress }</span>
+											}
+											if node.Jailed {
+												<span class="ml-2 px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-300">Jailed</span>
+											}
+										</h2>
+									</div>
+									<div class="text-sm space-y-1">
+										if node.EthAddress != "" {
+											<div>
+												@p.components.Link("/validator/%s", node.EthAddress) {
+													<div>Eth Address: { node.EthAddress }</div>
+												}
+											</div>
+										}
+										<div>
+											@p.components.Link("/validator/%s", node.CometAddress) {
+												<div>Comet Address: { node.CometAddress }</div>
+											}
+										</div>
+									</div>
+								</div>
+							}
+							if len(data.MissingFromConsensus) == 0 {
+								<div class="text-secondary text-sm">All registered validators are in the consensus set.</div>
+							}
+						</div>
+					</details>
 				</div>
 				<div id="consensus-matrix" class="view-panel hidden" data-panel="consensus">
 					<div class="matrix-loading p-4 text-secondary">Loading matrix...</div>
@@ -149,6 +196,33 @@ templ (p *Pages) NodesPageHTML(data *NodesView) {
 							</div>
 						</div>
 					}
+					<details class="bg-tertiary rounded-lg px-4 py-3 mt-4">
+						<summary class="cursor-pointer text-sm font-medium select-none">
+							Eth registry endpoints missing from validators ({ fmt.Sprintf("%d", len(data.MissingFromValidators)) })
+						</summary>
+						<div class="mt-3 space-y-3">
+							for _, ep := range data.MissingFromValidators {
+								<div class="list-view-card p-4">
+									<div class="mb-2">
+										<h2>
+											@p.components.ExternalLink("%s%s", ep.Endpoint, "/console/overview") {
+												<div>{ ep.Endpoint }</div>
+											}
+										</h2>
+									</div>
+									<div class="text-sm space-y-1">
+										<div>Service Type: { ep.ServiceType }</div>
+										<div>Owner: { ep.Owner }</div>
+										<div>Delegate Wallet: { ep.DelegateWallet }</div>
+										<div>Block Number: { fmt.Sprintf("%d", ep.BlockNumber) }</div>
+									</div>
+								</div>
+							}
+							if len(data.MissingFromValidators) == 0 {
+								<div class="text-secondary text-sm">All eth registry endpoints are registered as validators.</div>
+							}
+						</div>
+					</details>
 				</div>
 				<div id="validators-matrix" class="view-panel hidden" data-panel="validators">
 					<div class="matrix-loading p-4 text-secondary">Loading matrix...</div>
