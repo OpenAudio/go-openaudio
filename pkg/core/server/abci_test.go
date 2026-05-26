@@ -146,14 +146,14 @@ func TestIsValidSignedTransaction_Attestation(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("no signatures", func(t *testing.T) {
+	t.Run("empty signatures pass structural validation", func(t *testing.T) {
 		tx := marshal(t, &v1.Attestation{
 			Body: &v1.Attestation_ValidatorRegistration{
 				ValidatorRegistration: &v1.ValidatorRegistration{},
 			},
 		})
 		_, err := s.isValidSignedTransaction(tx)
-		require.ErrorContains(t, err, "no signatures")
+		require.NoError(t, err)
 	})
 
 	t.Run("no body", func(t *testing.T) {

@@ -940,9 +940,6 @@ func (s *Server) isValidSignedTransaction(tx []byte) (*v1.SignedTransaction, err
 		}
 	case *v1.SignedTransaction_Attestation:
 		att := msg.GetAttestation()
-		if len(att.Signatures) == 0 {
-			return nil, fmt.Errorf("attestation has no signatures")
-		}
 		if att.GetValidatorRegistration() == nil && att.GetValidatorDeregistration() == nil {
 			return nil, fmt.Errorf("attestation has no body")
 		}
