@@ -914,6 +914,10 @@ func (s *Server) isValidSignedTransaction(tx []byte) (*v1.SignedTransaction, err
 		return nil, err
 	}
 
+	if msg.Transaction == nil {
+		return nil, fmt.Errorf("transaction has no body")
+	}
+
 	switch msg.Transaction.(type) {
 	case *v1.SignedTransaction_StorageProof:
 		sp := msg.GetStorageProof()
@@ -925,6 +929,22 @@ func (s *Server) isValidSignedTransaction(tx []byte) (*v1.SignedTransaction, err
 		}
 		if sp.Height == 0 {
 			return nil, fmt.Errorf("storage proof has no height")
+		}
+	case *v1.SignedTransaction_StorageProofVerification:
+		spv := msg.GetStorageProofVerification()
+		if spv.Height == 0 {
+			return nil, fmt.Errorf("storage proof verification has no height")
+		}
+		if len(spv.Proof) == 0 {
+			return nil, fmt.Errorf("storage proof verification has no proof")
+		}
+	case *v1.SignedTransaction_Attestation:
+		att := msg.GetAttestation()
+		if len(att.Signatures) == 0 {
+			return nil, fmt.Errorf("attestation has no signatures")
+		}
+		if att.GetValidatorRegistration() == nil && att.GetValidatorDeregistration() == nil {
+			return nil, fmt.Errorf("attestation has no body")
 		}
 	}
 
