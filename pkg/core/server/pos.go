@@ -298,6 +298,14 @@ func (s *Server) finalizeStorageProof(ctx context.Context, tx *v1.SignedTransact
 
 	proofSigStr := base64.StdEncoding.EncodeToString(sp.ProofSignature)
 
+	// pgx serializes a nil slice as SQL NULL, which violates the NOT NULL
+	// constraint on storage_proofs.prover_addresses and aborts the
+	// FinalizeBlock transaction — halting the chain.
+	proverAddresses := sp.ProverAddresses
+	if proverAddresses == nil {
+		proverAddresses = []string{}
+	}
+
 	if err := qtx.InsertStorageProof(
 		ctx,
 		db.InsertStorageProofParams{
@@ -305,7 +313,7 @@ func (s *Server) finalizeStorageProof(ctx context.Context, tx *v1.SignedTransact
 			Address:         sp.Address,
 			Cid:             pgtype.Text{String: sp.Cid, Valid: true},
 			ProofSignature:  pgtype.Text{String: proofSigStr, Valid: true},
-			ProverAddresses: sp.ProverAddresses,
+			ProverAddresses: proverAddresses,
 		},
 	); err != nil {
 		return nil, fmt.Errorf("could not persist storage proof in db: %v", err)
