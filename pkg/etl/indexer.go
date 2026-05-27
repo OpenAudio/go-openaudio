@@ -335,20 +335,23 @@ func (e *Indexer) indexBlocks() error {
 			}
 		}
 
-		// Assign em_block only for blocks with EM transactions. Marks the previous
-		// block is_current=false then inserts the new one is_current=true. The
-		// blocks table has a unique partial index on (is_current) WHERE
-		// is_current IS TRUE, so the previous block must be updated BEFORE
-		// inserting the new one.
+		// Assign em_block only for blocks with EM transactions.
+		// resolveBlockNumber is tolerant of pre-existing rows: if another writer
+		// (e.g. a legacy Python indexer running in parallel during a cutover)
+		// has already written this block, we adopt its number rather than
+		// failing. This also re-syncs e.lastEmBlock from the DB if it has
+		// fallen behind a concurrent writer's progress — fixing the case where
+		// a previously-coexisting writer left "fossil" rows ahead of our
+		// in-memory counter that would otherwise cause repeated conflicts.
 		var emBlock int64
 		if hasEM {
-			e.lastEmBlock++
-			emBlock = e.lastEmBlock
-
-			if err := e.insertCurrentBlock(block.Hash, emBlock, block.Height); err != nil {
-				e.lastEmBlock--
+			n, err := e.resolveBlockNumber(block.Hash, block.Height)
+			if err != nil {
+				e.logger.Error("error resolving block number",
+					zap.Int64("height", block.Height), zap.Error(err))
 				continue
 			}
+			emBlock = n
 		}
 
 		// Update core_indexed_blocks to track what we've indexed.
@@ -710,47 +713,212 @@ func (e *Indexer) indexBlocks() error {
 	return nil
 }
 
-// insertCurrentBlock atomically swaps the is_current block in a transaction.
-func (e *Indexer) insertCurrentBlock(blockHash string, emBlock int64, height int64) error {
-	tx, err := e.pool.Begin(context.Background())
-	if err != nil {
-		e.logger.Error("error starting blocks transaction", zap.Error(err))
-		return err
-	}
-	defer tx.Rollback(context.Background())
+// resolveBlockNumber returns the blocks.number to use for this CometBFT block.
+//
+// Idempotent + cutover-tolerant: if another writer (e.g. a legacy Python
+// indexer running in parallel, or one that died leaving fossil rows ahead of
+// our in-memory counter) has already written this block, we adopt its
+// existing number. If no row exists for the hash yet, we resync
+// e.lastEmBlock from MAX(number) (to bridge any gap a concurrent writer
+// opened), increment, and INSERT with ON CONFLICT DO NOTHING. A final
+// lookup-by-hash confirms what number actually landed; if a race steered
+// the insert to a different number than we picked, we adopt the winner.
+//
+// This replaces the previous insertCurrentBlock, which:
+//   - had a plain INSERT that collided every time blocks.number was already
+//     taken (the prod cutover failure mode that dropped ray52726),
+//   - skipped the entire CometBFT block's EM dispatch on insert failure.
+//
+// Callers must NOT pre-increment e.lastEmBlock — this function manages it.
+func (e *Indexer) resolveBlockNumber(blockHash string, height int64) (int64, error) {
+	ctx := context.Background()
 
-	// Get the previous current block's hash (for parenthash).
+	// Fast path: if a row for this blockhash already exists, adopt its
+	// number. Handles the cutover case where Python indexed this block
+	// before ETL did. No write necessary; no is_current flip — Python
+	// (or whoever) owns that row's state.
+	var existingNum int64
+	err := e.pool.QueryRow(ctx,
+		"SELECT number FROM blocks WHERE blockhash = $1", blockHash).Scan(&existingNum)
+	if err == nil {
+		return existingNum, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("lookup blocks by hash: %w", err)
+	}
+
+	// Block isn't in `blocks` yet. Resync lastEmBlock from MAX(number) so we
+	// don't pick a number some other writer (alive or dead) already claimed.
+	// Important for the cutover transient state: a co-running writer dies
+	// after advancing MAX past our boot-time snapshot, leaving its writes as
+	// "fossils" we'd otherwise collide with on every subsequent INSERT.
+	var currentMax int64
+	err = e.pool.QueryRow(ctx,
+		"SELECT COALESCE(MAX(number), 0) FROM blocks").Scan(&currentMax)
+	if err != nil {
+		return 0, fmt.Errorf("read max blocks.number: %w", err)
+	}
+	if currentMax > e.lastEmBlock {
+		e.logger.Info("resyncing lastEmBlock from blocks.MAX(number)",
+			zap.Int64("previous", e.lastEmBlock),
+			zap.Int64("current", currentMax),
+			zap.Int64("height", height))
+		e.lastEmBlock = currentMax
+	}
+
+	// Atomically: read prev current, mark it not-current, INSERT new.
+	tx, err := e.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin blocks tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	var prevHash *string
-	err = tx.QueryRow(context.Background(),
+	err = tx.QueryRow(ctx,
 		"SELECT blockhash FROM blocks WHERE is_current IS TRUE").Scan(&prevHash)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		e.logger.Error("error fetching previous current block hash", zap.Error(err))
-		return err
+		return 0, fmt.Errorf("fetch previous current block hash: %w", err)
 	}
 
-	// Mark previous block as not current.
-	_, err = tx.Exec(context.Background(),
+	_, err = tx.Exec(ctx,
 		"UPDATE blocks SET is_current = false WHERE is_current IS TRUE")
 	if err != nil {
-		e.logger.Error("error marking previous block not current", zap.Error(err))
-		return err
+		return 0, fmt.Errorf("mark previous block not current: %w", err)
 	}
 
-	// Insert new block as current.
-	_, err = tx.Exec(context.Background(),
+	e.lastEmBlock++
+	candidateNum := e.lastEmBlock
+
+	// ON CONFLICT DO NOTHING handles the rare race where, between our SELECT
+	// MAX and INSERT, another writer claimed candidateNum. We re-verify
+	// below by looking up the just-processed blockhash and adopting whatever
+	// number actually landed for it.
+	_, err = tx.Exec(ctx,
 		`INSERT INTO blocks (blockhash, parenthash, number, is_current)
-		 VALUES ($1, $2, $3, true)`,
-		blockHash, prevHash, emBlock)
+		 VALUES ($1, $2, $3, true)
+		 ON CONFLICT DO NOTHING`,
+		blockHash, prevHash, candidateNum)
 	if err != nil {
-		e.logger.Error("error inserting into blocks table", zap.Int64("height", height), zap.Error(err))
-		return err
+		e.lastEmBlock--
+		return 0, fmt.Errorf("insert blocks: %w", err)
 	}
 
-	if err := tx.Commit(context.Background()); err != nil {
-		e.logger.Error("error committing blocks transaction", zap.Error(err))
-		return err
+	if err := tx.Commit(ctx); err != nil {
+		e.lastEmBlock--
+		return 0, fmt.Errorf("commit blocks tx: %w", err)
 	}
-	return nil
+
+	// Verify what number landed. Three cases:
+	//   (a) We inserted at candidateNum → returns candidateNum.
+	//   (b) Someone else inserted between our SELECT MAX and our INSERT,
+	//       claiming candidateNum with a different hash. Our INSERT was
+	//       a no-op (DO NOTHING); the lookup-by-hash returns nothing.
+	//       Retry by re-driving resolveBlockNumber.
+	//   (c) Someone else inserted the same hash we were about to insert
+	//       (different number, e.g. claimed earlier). Lookup returns
+	//       that number; we adopt it.
+	var landedNum int64
+	err = e.pool.QueryRow(ctx,
+		"SELECT number FROM blocks WHERE blockhash = $1", blockHash).Scan(&landedNum)
+	if err == nil {
+		if landedNum != candidateNum {
+			// Case (c): adopt the winner, rewind our counter so we don't gap.
+			e.logger.Info("block adopted by another writer's number",
+				zap.Int64("our_candidate", candidateNum),
+				zap.Int64("landed", landedNum),
+				zap.Int64("height", height))
+			e.lastEmBlock = landedNum
+		}
+		return landedNum, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("verify blocks insert by hash: %w", err)
+	}
+
+	// Case (b): our INSERT lost the race on (number); the row at candidateNum
+	// belongs to a different block. Rewind and retry. (Single retry — if we
+	// race again, surface the error so the caller skips the block.)
+	e.lastEmBlock--
+	e.logger.Warn("block insert raced; retrying once",
+		zap.Int64("candidate", candidateNum),
+		zap.Int64("height", height))
+	return e.resolveBlockNumberRetry(blockHash, height)
+}
+
+// resolveBlockNumberRetry is the single-retry path for resolveBlockNumber.
+// Split out to make the retry bound explicit (one extra attempt, never
+// recursive past this point).
+func (e *Indexer) resolveBlockNumberRetry(blockHash string, height int64) (int64, error) {
+	ctx := context.Background()
+
+	var existingNum int64
+	err := e.pool.QueryRow(ctx,
+		"SELECT number FROM blocks WHERE blockhash = $1", blockHash).Scan(&existingNum)
+	if err == nil {
+		return existingNum, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("retry lookup blocks by hash: %w", err)
+	}
+
+	var currentMax int64
+	err = e.pool.QueryRow(ctx,
+		"SELECT COALESCE(MAX(number), 0) FROM blocks").Scan(&currentMax)
+	if err != nil {
+		return 0, fmt.Errorf("retry read max blocks.number: %w", err)
+	}
+	if currentMax > e.lastEmBlock {
+		e.lastEmBlock = currentMax
+	}
+
+	tx, err := e.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("retry begin blocks tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var prevHash *string
+	err = tx.QueryRow(ctx,
+		"SELECT blockhash FROM blocks WHERE is_current IS TRUE").Scan(&prevHash)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("retry fetch previous current: %w", err)
+	}
+
+	_, err = tx.Exec(ctx,
+		"UPDATE blocks SET is_current = false WHERE is_current IS TRUE")
+	if err != nil {
+		return 0, fmt.Errorf("retry mark previous not current: %w", err)
+	}
+
+	e.lastEmBlock++
+	candidateNum := e.lastEmBlock
+	_, err = tx.Exec(ctx,
+		`INSERT INTO blocks (blockhash, parenthash, number, is_current)
+		 VALUES ($1, $2, $3, true)
+		 ON CONFLICT DO NOTHING`,
+		blockHash, prevHash, candidateNum)
+	if err != nil {
+		e.lastEmBlock--
+		return 0, fmt.Errorf("retry insert blocks: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		e.lastEmBlock--
+		return 0, fmt.Errorf("retry commit blocks tx: %w", err)
+	}
+
+	var landedNum int64
+	err = e.pool.QueryRow(ctx,
+		"SELECT number FROM blocks WHERE blockhash = $1", blockHash).Scan(&landedNum)
+	if err != nil {
+		// Two races in a row — abandon. Caller will log + skip this block.
+		e.lastEmBlock--
+		return 0, fmt.Errorf("blocks insert raced twice for hash %s height %d", blockHash, height)
+	}
+	if landedNum != candidateNum {
+		e.lastEmBlock = landedNum
+	}
+	return landedNum, nil
 }
 
 func (e *Indexer) startPgNotifyListener(ctx context.Context) error {
