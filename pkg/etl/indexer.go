@@ -152,6 +152,11 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.CommentUnmute())
 	}
 
+	// Apply any post-hooks registered by external consumers before Run().
+	// Done after handlers are registered so the dispatcher is in its
+	// final state when hooks attach.
+	e.applyPendingPostHooks()
+
 	if e.dispatcher.HandlerCount() > 0 {
 		e.logger.Info("entity manager enabled", zap.Int("handlers", e.dispatcher.HandlerCount()))
 	} else {

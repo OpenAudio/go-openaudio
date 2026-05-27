@@ -35,6 +35,17 @@ type Indexer struct {
 
 	mvRefresher       *MaterializedViewRefresher
 	scheduledReleases *ScheduledReleasePublisher
+
+	// Pending post-hooks staged before Run(). Applied to the dispatcher
+	// once it's constructed.
+	pendingPostHooks []pendingPostHook
+}
+
+// pendingPostHook stages a hook registration until the dispatcher exists.
+type pendingPostHook struct {
+	entityType string
+	action     string
+	fn         em.PostHook
 }
 
 // New creates a new ETL indexer.
@@ -87,6 +98,56 @@ func (e *Indexer) GetBlockPubsub() *BlockPubsub {
 // GetPlayPubsub returns the play pubsub instance.
 func (e *Indexer) GetPlayPubsub() *PlayPubsub {
 	return e.playPubsub
+}
+
+// RegisterPostHook registers fn to fire after every successful Handle for
+// the given (entityType, action) pair. Multiple hooks for the same key run
+// in registration order. Hook errors are logged but do not fail the parent
+// ManageEntity dispatch — see em.PostHook for full semantics.
+//
+// Must be called before Run() (hooks staged here are applied to the
+// internal dispatcher during Run() once it's constructed).
+//
+// Use the typed Set*CreatedHook helpers for the common create-time cases.
+func (e *Indexer) RegisterPostHook(entityType, action string, fn em.PostHook) {
+	e.pendingPostHooks = append(e.pendingPostHooks, pendingPostHook{
+		entityType: entityType,
+		action:     action,
+		fn:         fn,
+	})
+}
+
+// SetUserCreatedHook is convenience sugar for
+// RegisterPostHook(em.EntityTypeUser, em.ActionCreate, fn). Fires after
+// the User Create handler successfully writes the new user row.
+//
+// Typical use: api/ consumer recovers the EIP-712 pubkey from the proto
+// (Params.TX) and writes a derived row (e.g. user_pubkeys) in the same
+// transaction (Params.DBTX).
+func (e *Indexer) SetUserCreatedHook(fn em.PostHook) {
+	e.RegisterPostHook(em.EntityTypeUser, em.ActionCreate, fn)
+}
+
+// SetTrackCreatedHook is convenience sugar for
+// RegisterPostHook(em.EntityTypeTrack, em.ActionCreate, fn). Fires after
+// the Track Create handler succeeds.
+func (e *Indexer) SetTrackCreatedHook(fn em.PostHook) {
+	e.RegisterPostHook(em.EntityTypeTrack, em.ActionCreate, fn)
+}
+
+// SetPlaylistCreatedHook is convenience sugar for
+// RegisterPostHook(em.EntityTypePlaylist, em.ActionCreate, fn). Fires
+// after the Playlist Create handler succeeds.
+func (e *Indexer) SetPlaylistCreatedHook(fn em.PostHook) {
+	e.RegisterPostHook(em.EntityTypePlaylist, em.ActionCreate, fn)
+}
+
+// applyPendingPostHooks transfers any hooks registered before Run() onto
+// the freshly-constructed dispatcher.
+func (e *Indexer) applyPendingPostHooks() {
+	for _, h := range e.pendingPostHooks {
+		e.dispatcher.RegisterPostHook(h.entityType, h.action, h.fn)
+	}
 }
 
 // InitializeChainID fetches and caches the chain ID from the core service.
