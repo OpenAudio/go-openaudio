@@ -239,13 +239,12 @@ func (s *Server) Query(ctx context.Context, req *abcitypes.QueryRequest) (*abcit
 }
 
 func (s *Server) CheckTx(_ context.Context, check *abcitypes.CheckTxRequest) (*abcitypes.CheckTxResponse, error) {
-	// check if protobuf event
 	_, err := s.isValidSignedTransaction(check.Tx)
-	if err == nil {
-		return &abcitypes.CheckTxResponse{Code: abcitypes.CodeTypeOK}, nil
+	if err != nil {
+		return &abcitypes.CheckTxResponse{Code: 1}, nil
 	}
 
-	return &abcitypes.CheckTxResponse{Code: 1}, nil
+	return &abcitypes.CheckTxResponse{Code: abcitypes.CodeTypeOK}, nil
 }
 
 func (s *Server) InitChain(_ context.Context, chain *abcitypes.InitChainRequest) (*abcitypes.InitChainResponse, error) {
@@ -911,10 +910,41 @@ func (s *Server) commitInProgressTx(ctx context.Context) error {
 
 func (s *Server) isValidSignedTransaction(tx []byte) (*v1.SignedTransaction, error) {
 	var msg v1.SignedTransaction
-	err := proto.Unmarshal(tx, &msg)
-	if err != nil {
+	if err := proto.Unmarshal(tx, &msg); err != nil {
 		return nil, err
 	}
+
+	if msg.Transaction == nil {
+		return nil, fmt.Errorf("transaction has no body")
+	}
+
+	switch msg.Transaction.(type) {
+	case *v1.SignedTransaction_StorageProof:
+		sp := msg.GetStorageProof()
+		if len(sp.ProverAddresses) == 0 {
+			return nil, fmt.Errorf("storage proof has no prover addresses")
+		}
+		if sp.Address == "" {
+			return nil, fmt.Errorf("storage proof has no prover address")
+		}
+		if sp.Height == 0 {
+			return nil, fmt.Errorf("storage proof has no height")
+		}
+	case *v1.SignedTransaction_StorageProofVerification:
+		spv := msg.GetStorageProofVerification()
+		if spv.Height == 0 {
+			return nil, fmt.Errorf("storage proof verification has no height")
+		}
+		if len(spv.Proof) == 0 {
+			return nil, fmt.Errorf("storage proof verification has no proof")
+		}
+	case *v1.SignedTransaction_Attestation:
+		att := msg.GetAttestation()
+		if att.GetValidatorRegistration() == nil && att.GetValidatorDeregistration() == nil {
+			return nil, fmt.Errorf("attestation has no body")
+		}
+	}
+
 	return &msg, nil
 }
 
