@@ -180,19 +180,10 @@ func (e *Indexer) Run() error {
 		e.logger.Error("error initializing chain ID", zap.Error(err))
 	}
 
-	// Initialize lastEmBlock: the last assigned blocks.number value.
-	// em_block is incremented sequentially, only for blocks with EM transactions.
-	// We continue the sequence from wherever the existing DB left off.
-	err = e.pool.QueryRow(context.Background(),
-		"SELECT COALESCE(MAX(number), 0) FROM blocks").Scan(&e.lastEmBlock)
-	if err != nil {
-		e.logger.Warn("could not determine last em_block, starting from 0", zap.Error(err))
-		e.lastEmBlock = 0
-	} else {
-		e.logger.Info("last em_block (blocks.number) determined",
-			zap.Int64("last_em_block", e.lastEmBlock),
-		)
-	}
+	// blocks.number is resolved per-block at indexing time via
+	// resolveBlockNumber, which uses MAX(number)+1 in-statement. The DB is
+	// the source of truth — no in-memory counter to drift from concurrent
+	// writers or stale snapshots.
 
 	e.logger.Info("starting etl service")
 
@@ -335,20 +326,27 @@ func (e *Indexer) indexBlocks() error {
 			}
 		}
 
-		// Assign em_block only for blocks with EM transactions. Marks the previous
-		// block is_current=false then inserts the new one is_current=true. The
-		// blocks table has a unique partial index on (is_current) WHERE
-		// is_current IS TRUE, so the previous block must be updated BEFORE
-		// inserting the new one.
+		// Assign em_block only for blocks with EM transactions.
+		// resolveBlockNumber is idempotent and tolerant of co-existing writers:
+		// it adopts an existing row by blockhash if one is present, otherwise
+		// inserts MAX(number)+1 via ON CONFLICT DO NOTHING. After return, the
+		// invariant `exactly one row WHERE is_current IS TRUE` holds and the
+		// row for blockHash is the one that holds it.
 		var emBlock int64
 		if hasEM {
-			e.lastEmBlock++
-			emBlock = e.lastEmBlock
-
-			if err := e.insertCurrentBlock(block.Hash, emBlock, block.Height); err != nil {
-				e.lastEmBlock--
+			n, err := e.resolveBlockNumber(block.Hash)
+			if err != nil {
+				// One retry covers the rare race where two writers picked the
+				// same number for different hashes — by retrying, we re-read
+				// MAX and try again.
+				n, err = e.resolveBlockNumber(block.Hash)
+			}
+			if err != nil {
+				e.logger.Error("error resolving block number",
+					zap.Int64("height", block.Height), zap.Error(err))
 				continue
 			}
+			emBlock = n
 		}
 
 		// Update core_indexed_blocks to track what we've indexed.
@@ -710,47 +708,84 @@ func (e *Indexer) indexBlocks() error {
 	return nil
 }
 
-// insertCurrentBlock atomically swaps the is_current block in a transaction.
-func (e *Indexer) insertCurrentBlock(blockHash string, emBlock int64, height int64) error {
-	tx, err := e.pool.Begin(context.Background())
-	if err != nil {
-		e.logger.Error("error starting blocks transaction", zap.Error(err))
-		return err
-	}
-	defer tx.Rollback(context.Background())
+// resolveBlockNumber returns the blocks.number for blockHash and ensures
+// the row for blockHash is the unique tip (is_current = true).
+//
+// Idempotent and tolerant of co-existing writers (e.g. the legacy Python
+// indexer during a cutover): if a row for blockHash already exists, its
+// number is adopted and is_current is re-asserted. If not, a new row is
+// inserted at MAX(number)+1 computed in-statement. The DB is the source
+// of truth; no in-memory counter to drift from concurrent writers or
+// stale snapshots.
+//
+// On a number-collision race with another writer (our INSERT no-op'd
+// because some other hash claimed MAX+1 first), the final SELECT returns
+// pgx.ErrNoRows. The caller retries — the next attempt sees a higher MAX
+// and proceeds.
+func (e *Indexer) resolveBlockNumber(blockHash string) (int64, error) {
+	ctx := context.Background()
 
-	// Get the previous current block's hash (for parenthash).
-	var prevHash *string
-	err = tx.QueryRow(context.Background(),
-		"SELECT blockhash FROM blocks WHERE is_current IS TRUE").Scan(&prevHash)
+	tx, err := e.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Snapshot the prior tip's hash for our parenthash. nil when the table
+	// is empty or has no current row (e.g. mid-recovery after an interrupted
+	// writer left no is_current=true).
+	var parentHash *string
+	err = tx.QueryRow(ctx,
+		"SELECT blockhash FROM blocks WHERE is_current IS TRUE").Scan(&parentHash)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		e.logger.Error("error fetching previous current block hash", zap.Error(err))
-		return err
+		return 0, fmt.Errorf("read prev tip: %w", err)
 	}
 
-	// Mark previous block as not current.
-	_, err = tx.Exec(context.Background(),
-		"UPDATE blocks SET is_current = false WHERE is_current IS TRUE")
+	// Demote the prior tip — but not ourselves, so idempotent re-processing
+	// of the same block doesn't briefly flip its row to is_current=false.
+	if _, err := tx.Exec(ctx,
+		"UPDATE blocks SET is_current = false WHERE is_current IS TRUE AND blockhash != $1",
+		blockHash); err != nil {
+		return 0, fmt.Errorf("demote prev tip: %w", err)
+	}
+
+	// Insert with MAX(number)+1 computed atomically. If a row for blockHash
+	// already exists (we're re-processing, or another writer beat us), or
+	// if another writer claimed MAX+1 with a different hash, ON CONFLICT
+	// silently no-ops. The subsequent UPDATE + SELECT then decide what
+	// happened.
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO blocks (blockhash, parenthash, number, is_current)
+		SELECT $1, $2, COALESCE((SELECT MAX(number) FROM blocks), 0) + 1, true
+		ON CONFLICT DO NOTHING`,
+		blockHash, parentHash); err != nil {
+		return 0, fmt.Errorf("insert block: %w", err)
+	}
+
+	// Re-assert is_current on the row for blockHash. If we just inserted
+	// it, the INSERT already set is_current=true and this is a no-op. If
+	// the row pre-existed with is_current=false, this promotes it to tip.
+	if _, err := tx.Exec(ctx,
+		"UPDATE blocks SET is_current = true WHERE blockhash = $1 AND is_current IS FALSE",
+		blockHash); err != nil {
+		return 0, fmt.Errorf("re-assert is_current: %w", err)
+	}
+
+	var num int64
+	err = tx.QueryRow(ctx,
+		"SELECT number FROM blocks WHERE blockhash = $1", blockHash).Scan(&num)
 	if err != nil {
-		e.logger.Error("error marking previous block not current", zap.Error(err))
-		return err
+		// No row for our hash: we lost a (number) race with a different
+		// hash and our INSERT was the one ON CONFLICT skipped. Surface so
+		// the caller retries with a higher MAX.
+		return 0, fmt.Errorf("block %s not present after insert (number race): %w",
+			blockHash, err)
 	}
 
-	// Insert new block as current.
-	_, err = tx.Exec(context.Background(),
-		`INSERT INTO blocks (blockhash, parenthash, number, is_current)
-		 VALUES ($1, $2, $3, true)`,
-		blockHash, prevHash, emBlock)
-	if err != nil {
-		e.logger.Error("error inserting into blocks table", zap.Int64("height", height), zap.Error(err))
-		return err
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit: %w", err)
 	}
-
-	if err := tx.Commit(context.Background()); err != nil {
-		e.logger.Error("error committing blocks transaction", zap.Error(err))
-		return err
-	}
-	return nil
+	return num, nil
 }
 
 func (e *Indexer) startPgNotifyListener(ctx context.Context) error {
