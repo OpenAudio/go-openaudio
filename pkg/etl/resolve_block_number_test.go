@@ -39,6 +39,28 @@ func newTestIndexer(pool *pgxpool.Pool) *Indexer {
 	return &Indexer{pool: pool, logger: zap.NewNop()}
 }
 
+// callResolveBlockNumber wraps resolveBlockNumber in its own transaction
+// for the test. Production callers (processBlock) own the tx; in tests
+// we provide one inline so the assertions can read the committed state.
+func callResolveBlockNumber(t *testing.T, pool *pgxpool.Pool, ix *Indexer, blockHash string) (int64, error) {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	defer tx.Rollback(ctx)
+
+	num, err := ix.resolveBlockNumber(ctx, tx, blockHash)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit tx: %v", err)
+	}
+	return num, nil
+}
+
 // countCurrentTips counts how many blocks have is_current = true. The
 // partial unique index guarantees this is at most 1 in steady state;
 // we use it to assert the tip invariant after every resolveBlockNumber call.
@@ -94,7 +116,7 @@ func TestResolveBlockNumber_EmptyTable(t *testing.T) {
 	pool := setupBlocksTestDB(t)
 	ix := newTestIndexer(pool)
 
-	got, err := ix.resolveBlockNumber("blk-genesis")
+	got, err := callResolveBlockNumber(t, pool, ix, "blk-genesis")
 	if err != nil {
 		t.Fatalf("resolveBlockNumber: %v", err)
 	}
@@ -118,7 +140,7 @@ func TestResolveBlockNumber_AppendsToChain(t *testing.T) {
 
 	// Build up a 3-block chain via the function under test.
 	for i, hash := range []string{"blk-1", "blk-2", "blk-3"} {
-		n, err := ix.resolveBlockNumber(hash)
+		n, err := callResolveBlockNumber(t, pool, ix, hash)
 		if err != nil {
 			t.Fatalf("step %d resolveBlockNumber: %v", i, err)
 		}
@@ -154,7 +176,7 @@ func TestResolveBlockNumber_AdoptsExistingByHash(t *testing.T) {
 	}
 
 	ix := newTestIndexer(pool)
-	got, err := ix.resolveBlockNumber("blk-prewritten")
+	got, err := callResolveBlockNumber(t, pool, ix, "blk-prewritten")
 	if err != nil {
 		t.Fatalf("resolveBlockNumber: %v", err)
 	}
@@ -199,7 +221,7 @@ func TestResolveBlockNumber_TipInvariantAfterFossils(t *testing.T) {
 	}
 
 	ix := newTestIndexer(pool)
-	got, err := ix.resolveBlockNumber("blk-new")
+	got, err := callResolveBlockNumber(t, pool, ix, "blk-new")
 	if err != nil {
 		t.Fatalf("resolveBlockNumber: %v", err)
 	}
@@ -221,11 +243,11 @@ func TestResolveBlockNumber_IdempotentSameHash(t *testing.T) {
 	pool := setupBlocksTestDB(t)
 	ix := newTestIndexer(pool)
 
-	first, err := ix.resolveBlockNumber("blk-X")
+	first, err := callResolveBlockNumber(t, pool, ix, "blk-X")
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	second, err := ix.resolveBlockNumber("blk-X")
+	second, err := callResolveBlockNumber(t, pool, ix, "blk-X")
 	if err != nil {
 		t.Fatalf("second: %v", err)
 	}
@@ -248,10 +270,10 @@ func TestResolveBlockNumber_ParentHashIsPriorTip(t *testing.T) {
 	ctx := context.Background()
 	ix := newTestIndexer(pool)
 
-	if _, err := ix.resolveBlockNumber("blk-A"); err != nil {
+	if _, err := callResolveBlockNumber(t, pool, ix, "blk-A"); err != nil {
 		t.Fatalf("seed A: %v", err)
 	}
-	if _, err := ix.resolveBlockNumber("blk-B"); err != nil {
+	if _, err := callResolveBlockNumber(t, pool, ix, "blk-B"); err != nil {
 		t.Fatalf("insert B: %v", err)
 	}
 
@@ -276,7 +298,7 @@ func TestResolveBlockNumber_NumberValueIsStoredCorrectly(t *testing.T) {
 	pool := setupBlocksTestDB(t)
 	ix := newTestIndexer(pool)
 
-	got, err := ix.resolveBlockNumber("blk-Y")
+	got, err := callResolveBlockNumber(t, pool, ix, "blk-Y")
 	if err != nil {
 		t.Fatalf("resolveBlockNumber: %v", err)
 	}

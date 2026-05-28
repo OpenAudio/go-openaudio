@@ -305,373 +305,19 @@ func (e *Indexer) indexBlocks() error {
 	for pb := range pf.C() {
 		block := pb.Block
 
-		// Insert into etl_blocks
-		err := e.db.InsertBlock(context.Background(), db.InsertBlockParams{
-			ProposerAddress: block.Proposer,
-			BlockHeight:     block.Height,
-			BlockTime:       pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-		})
+		res, err := e.processBlock(ctx, pb)
 		if err != nil {
-			e.logger.Error("error inserting block", zap.Int64("height", block.Height), zap.Error(err))
+			// Block-level failure rolled back the entire block's tx — no
+			// partial state landed. Skip; the outer loop will reprocess
+			// when the prefetcher hands us this block on a future pass
+			// (or it stays unindexed if the failure is persistent and we
+			// crash-restart from MAX(core_indexed_blocks.height)).
+			e.logger.Error("processBlock failed",
+				zap.Int64("height", block.Height),
+				zap.Error(err))
 			continue
 		}
 
-		// Check if this block has any ManageEntity transactions.
-		// blocks.number (em_block) is only assigned for blocks with EM txs.
-		hasEM := false
-		for _, tx := range block.Transactions {
-			if _, ok := tx.Transaction.Transaction.(*corev1.SignedTransaction_ManageEntity); ok {
-				hasEM = true
-				break
-			}
-		}
-
-		// Assign em_block only for blocks with EM transactions.
-		// resolveBlockNumber is idempotent and tolerant of co-existing writers:
-		// it adopts an existing row by blockhash if one is present, otherwise
-		// inserts MAX(number)+1 via ON CONFLICT DO NOTHING. After return, the
-		// invariant `exactly one row WHERE is_current IS TRUE` holds and the
-		// row for blockHash is the one that holds it.
-		var emBlock int64
-		if hasEM {
-			n, err := e.resolveBlockNumber(block.Hash)
-			if err != nil {
-				// One retry covers the rare race where two writers picked the
-				// same number for different hashes — by retrying, we re-read
-				// MAX and try again.
-				n, err = e.resolveBlockNumber(block.Hash)
-			}
-			if err != nil {
-				e.logger.Error("error resolving block number",
-					zap.Int64("height", block.Height), zap.Error(err))
-				continue
-			}
-			emBlock = n
-		}
-
-		// Update core_indexed_blocks to track what we've indexed.
-		// em_block is NULL for blocks without EM transactions.
-		var emBlockParam any
-		if hasEM {
-			emBlockParam = emBlock
-		}
-		_, err = e.pool.Exec(context.Background(),
-			`INSERT INTO core_indexed_blocks (blockhash, chain_id, height, em_block)
-			 VALUES ($1, $2, $3, $4)
-			 ON CONFLICT (chain_id, height) DO UPDATE SET em_block = $4, blockhash = $1`,
-			block.Hash, e.ChainID, block.Height, emBlockParam)
-		if err != nil {
-			e.logger.Error("error inserting into core_indexed_blocks", zap.Int64("height", block.Height), zap.Error(err))
-		}
-
-		var emTxCount, emRejectCount int
-		blockStart := time.Now()
-
-		for index, tx := range block.Transactions {
-			insertTxParams := db.InsertTransactionParams{
-				TxHash:      tx.Hash,
-				BlockHeight: block.Height,
-				TxIndex:     int32(index),
-				TxType:      "",
-				Address:     pgtype.Text{Valid: false},
-				CreatedAt:   pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-			}
-
-			switch signedTx := tx.Transaction.Transaction.(type) {
-			case *corev1.SignedTransaction_Plays:
-				txCtx := &processors.TxContext{
-					Block:     block,
-					TxHash:    tx.Hash,
-					TxIndex:   index,
-					BlockTime: pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-					InsertTx:  insertTxParams,
-				}
-				res, err := processors.Play().Process(context.Background(), tx.Transaction, txCtx, e.db)
-				if err != nil {
-					e.logger.Error("error processing plays", zap.Error(err))
-				} else {
-					insertTxParams = res.InsertTx
-				}
-
-			case *corev1.SignedTransaction_ManageEntity:
-				me := signedTx.ManageEntity
-				emTxCount++
-
-				txCtx := &processors.TxContext{
-					Block:     block,
-					TxHash:    tx.Hash,
-					TxIndex:   index,
-					BlockTime: pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-					InsertTx:  insertTxParams,
-				}
-				res, err := processors.ManageEntity().Process(context.Background(), tx.Transaction, txCtx, e.db)
-				if err != nil {
-					e.logger.Error("error processing manage entity", zap.Error(err))
-				} else {
-					insertTxParams = res.InsertTx
-				}
-
-				txStart := time.Now()
-				emParams := em.NewParams(me, emBlock, block.Timestamp.AsTime(), block.Hash, tx.Hash, e.pool, e.logger)
-				if dErr := e.dispatcher.Dispatch(context.Background(), emParams); dErr != nil {
-					emRejectCount++
-					if em.IsValidationError(dErr) {
-						e.logger.Warn("entity manager validation rejected",
-							zap.String("entity_type", me.GetEntityType()),
-							zap.String("action", me.GetAction()),
-							zap.Int64("entity_id", me.GetEntityId()),
-							zap.Int64("user_id", me.GetUserId()),
-							zap.String("reason", dErr.Error()),
-							zap.String("hash", tx.Hash),
-						)
-					} else {
-						// Include entity_type / action / hash so we can attribute
-						// non-validation handler errors. Without this context the
-						// log line is unreadable (e.g. a bare "no rows in result
-						// set" with no clue which handler emitted it).
-						e.logger.Error("entity manager dispatch error",
-							zap.String("entity_type", me.GetEntityType()),
-							zap.String("action", me.GetAction()),
-							zap.Int64("entity_id", me.GetEntityId()),
-							zap.Int64("user_id", me.GetUserId()),
-							zap.String("hash", tx.Hash),
-							zap.Error(dErr),
-						)
-					}
-				} else {
-					e.logger.Debug("tx indexed",
-						zap.String("type", "manage_entity"),
-						zap.String("hash", tx.Hash),
-						zap.Duration("elapsed", time.Since(txStart)),
-					)
-				}
-
-				case *corev1.SignedTransaction_ValidatorRegistration:
-					insertTxParams.TxType = TxTypeValidatorRegistrationLegacy
-					// Legacy validator registration - no specific table insert needed
-				case *corev1.SignedTransaction_ValidatorDeregistration:
-					insertTxParams.TxType = TxTypeValidatorMisbehaviorDereg
-					vd := signedTx.ValidatorDeregistration
-					// For deregistration we only have comet address, we'll need to look up eth address
-					// For now use comet address, can be improved later
-					insertTxParams.Address = pgtype.Text{String: vd.CometAddress, Valid: true}
-					err = e.db.InsertValidatorMisbehaviorDeregistration(context.Background(), db.InsertValidatorMisbehaviorDeregistrationParams{
-						CometAddress: vd.CometAddress,
-						PubKey:       vd.PubKey,
-						BlockHeight:  block.Height,
-						TxHash:       tx.Hash,
-						CreatedAt:    pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-					})
-					if err != nil {
-						e.logger.Error("error inserting validator misbehavior deregistration", zap.Error(err))
-					}
-				case *corev1.SignedTransaction_SlaRollup:
-					insertTxParams.TxType = TxTypeSlaRollup
-					sr := signedTx.SlaRollup
-					// SLA rollups affect multiple validators, so we leave address as null
-
-					// Use the number of reports in the rollup as the validator count
-					// This matches what the original core system does
-					validatorCount := int32(len(sr.Reports))
-
-					// Calculate block quota (total blocks divided by number of validators)
-					var blockQuota int32 = 0
-					if sr.BlockEnd > sr.BlockStart && validatorCount > 0 {
-						blockQuota = int32(sr.BlockEnd-sr.BlockStart) / validatorCount
-					}
-
-					// Calculate BPS and TPS for this rollup period
-					blockRange := sr.BlockEnd - sr.BlockStart
-					var bps, tps float64 = 0.0, 0.0
-
-					if blockRange > 0 {
-						// Get transaction count for this block range
-						txCount := int64(0)
-						for blockHeight := sr.BlockStart; blockHeight <= sr.BlockEnd; blockHeight++ {
-							blockTxCount, err := e.db.GetBlockTransactionCount(context.Background(), blockHeight)
-							if err != nil {
-								e.logger.Debug("failed to get transaction count for block", zap.Int64("height", blockHeight), zap.Error(err))
-								continue
-							}
-							txCount += blockTxCount
-						}
-
-						// Calculate time duration from the rollup timestamp and previous rollup
-						rollupTime := sr.Timestamp.AsTime()
-						var duration float64 = 0
-
-						// Try to get the previous rollup to calculate time difference
-						if latestRollup, err := e.db.GetLatestSlaRollup(context.Background()); err == nil {
-							if latestRollup.CreatedAt.Valid {
-								duration = rollupTime.Sub(latestRollup.CreatedAt.Time).Seconds()
-							}
-						}
-
-						// If we couldn't get duration from previous rollup, estimate from block count
-						// Assuming average block time of 2 seconds
-						if duration <= 0 {
-							duration = float64(blockRange) * 2.0
-						}
-
-						// Calculate BPS and TPS
-						if duration > 0 {
-							bps = float64(blockRange) / duration
-							tps = float64(txCount) / duration
-						}
-					}
-
-					// Insert SLA rollup and get the ID
-					rollupId, err := e.db.InsertSlaRollupReturningId(context.Background(), db.InsertSlaRollupReturningIdParams{
-						BlockStart:     sr.BlockStart,
-						BlockEnd:       sr.BlockEnd,
-						BlockHeight:    block.Height,
-						ValidatorCount: validatorCount,
-						BlockQuota:     blockQuota,
-						Bps:            bps,
-						Tps:            tps,
-						TxHash:         tx.Hash,
-						CreatedAt:      pgtype.Timestamp{Time: sr.Timestamp.AsTime(), Valid: true}, // Use rollup timestamp, not block timestamp
-					})
-					if err != nil {
-						e.logger.Error("error inserting SLA rollup", zap.Error(err))
-					} else {
-						// Get storage proof challenge statistics for this SLA period
-						challengeStats, err := e.calculateChallengeStatistics(sr.BlockStart, sr.BlockEnd)
-						if err != nil {
-							e.logger.Error("error calculating challenge statistics", zap.Error(err))
-							challengeStats = make(map[string]ChallengeStats) // fallback to empty map
-						}
-
-						// Insert SLA node reports with the actual rollup ID and challenge data
-						for _, report := range sr.Reports {
-							stats := challengeStats[report.Address] // Get challenge stats for this validator
-
-							err = e.db.InsertSlaNodeReport(context.Background(), db.InsertSlaNodeReportParams{
-								SlaRollupID:        rollupId, // Use the actual rollup ID
-								Address:            report.Address,
-								NumBlocksProposed:  report.NumBlocksProposed,
-								ChallengesReceived: stats.ChallengesReceived,
-								ChallengesFailed:   stats.ChallengesFailed,
-								BlockHeight:        block.Height,
-								TxHash:             tx.Hash,
-								CreatedAt:          pgtype.Timestamp{Time: sr.Timestamp.AsTime(), Valid: true}, // Use rollup timestamp
-							})
-							if err != nil {
-								e.logger.Error("error inserting SLA node report", zap.Error(err))
-							}
-						}
-					}
-				case *corev1.SignedTransaction_StorageProof:
-					insertTxParams.TxType = TxTypeStorageProof
-					sp := signedTx.StorageProof
-					insertTxParams.Address = pgtype.Text{String: sp.Address, Valid: true}
-					err = e.db.InsertStorageProof(context.Background(), db.InsertStorageProofParams{
-						Height:          sp.Height,
-						Address:         sp.Address,
-						ProverAddresses: sp.ProverAddresses,
-						Cid:             sp.Cid,
-						ProofSignature:  sp.ProofSignature,
-						Proof:           nil, // Will be set during verification
-						Status:          "unresolved",
-						BlockHeight:     block.Height,
-						TxHash:          tx.Hash,
-						CreatedAt:       pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-					})
-					if err != nil {
-						e.logger.Error("error inserting storage proof", zap.Error(err))
-					}
-				case *corev1.SignedTransaction_StorageProofVerification:
-					insertTxParams.TxType = TxTypeStorageProofVerification
-					spv := signedTx.StorageProofVerification
-					// Storage proof verification doesn't have a specific address, leave as null
-					err = e.db.InsertStorageProofVerification(context.Background(), db.InsertStorageProofVerificationParams{
-						Height:      spv.Height,
-						Proof:       spv.Proof,
-						BlockHeight: block.Height,
-						TxHash:      tx.Hash,
-						CreatedAt:   pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-					})
-					if err != nil {
-						e.logger.Error("error inserting storage proof verification", zap.Error(err))
-					} else {
-						// Process consensus for this storage proof challenge
-						err = e.processStorageProofConsensus(spv.Height, spv.Proof, block.Height, tx.Hash, block.Timestamp.AsTime())
-						if err != nil {
-							e.logger.Error("error processing storage proof consensus", zap.Error(err))
-						}
-					}
-				case *corev1.SignedTransaction_Attestation:
-					at := signedTx.Attestation
-					if vr := at.GetValidatorRegistration(); vr != nil {
-						insertTxParams.TxType = TxTypeValidatorRegistration
-						insertTxParams.Address = pgtype.Text{String: vr.DelegateWallet, Valid: true}
-						err = e.db.InsertValidatorRegistration(context.Background(), db.InsertValidatorRegistrationParams{
-							Address:      vr.DelegateWallet,
-							Endpoint:     vr.Endpoint,
-							CometAddress: vr.CometAddress,
-							EthBlock:     fmt.Sprintf("%d", vr.EthBlock),
-							NodeType:     vr.NodeType,
-							Spid:         vr.SpId,
-							CometPubkey:  vr.PubKey,
-							VotingPower:  vr.Power,
-							BlockHeight:  block.Height,
-							TxHash:       tx.Hash,
-						})
-						if err != nil {
-							e.logger.Error("error inserting validator registration", zap.Error(err))
-						}
-						// insert RegisteredValidator record
-						err = e.db.RegisterValidator(context.Background(), db.RegisterValidatorParams{
-							Address:        vr.DelegateWallet,
-							Endpoint:       vr.Endpoint,
-							CometAddress:   vr.CometAddress,
-							NodeType:       vr.NodeType,
-							Spid:           vr.SpId,
-							VotingPower:    vr.Power,
-							Status:         "active",
-							RegisteredAt:   block.Height,
-							DeregisteredAt: pgtype.Int8{Valid: false},
-							CreatedAt:      pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-							UpdatedAt:      pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-						})
-						if err != nil {
-							e.logger.Error("error registering validator", zap.Error(err))
-						}
-					}
-					if vd := at.GetValidatorDeregistration(); vd != nil {
-						insertTxParams.TxType = TxTypeValidatorDeregistration
-						// For attestation deregistration we only have comet address, need to look up eth address
-						// For now use comet address, can be improved later
-						insertTxParams.Address = pgtype.Text{String: vd.CometAddress, Valid: true}
-						err = e.db.InsertValidatorDeregistration(context.Background(), db.InsertValidatorDeregistrationParams{
-							CometAddress: vd.CometAddress,
-							CometPubkey:  vd.PubKey,
-							BlockHeight:  block.Height,
-							TxHash:       tx.Hash,
-						})
-						if err != nil {
-							e.logger.Error("error inserting validator deregistration", zap.Error(err))
-						}
-						// insert DeregisteredValidator record
-						err = e.db.DeregisterValidator(context.Background(), db.DeregisterValidatorParams{
-							DeregisteredAt: pgtype.Int8{Int64: block.Height, Valid: true},
-							UpdatedAt:      pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
-							Status:         "deregistered",
-							CometAddress:   vd.CometAddress,
-						})
-						if err != nil {
-							e.logger.Error("error deregistering validator", zap.Error(err))
-						}
-					}
-				}
-
-			err = e.db.InsertTransaction(context.Background(), insertTxParams)
-			if err != nil {
-				e.logger.Error("error inserting transaction", zap.String("tx", tx.Hash), zap.Error(err))
-			}
-		}
-
-		blockElapsed := time.Since(blockStart)
 		blocksProcessed++
 		txsProcessed += int64(len(block.Transactions))
 
@@ -685,9 +331,9 @@ func (e *Indexer) indexBlocks() error {
 				zap.Int64("block", block.Height),
 				zap.Int64("blocks_behind", blocksBehind),
 				zap.Int("txs_in_block", len(block.Transactions)),
-				zap.Int("em_txs", emTxCount),
-				zap.Int("em_rejected", emRejectCount),
-				zap.Duration("block_time", blockElapsed),
+				zap.Int("em_txs", res.emTxCount),
+				zap.Int("em_rejected", res.emRejectCount),
+				zap.Duration("block_time", res.blockElapsed),
 				zap.Float64("blocks_per_sec", blocksPerSec),
 				zap.Float64("txs_per_sec", txsPerSec),
 				zap.Int64("total_blocks", blocksProcessed),
@@ -708,8 +354,469 @@ func (e *Indexer) indexBlocks() error {
 	return nil
 }
 
+// blockResult carries per-block stats out of processBlock for use by the
+// caller's progress logging.
+type blockResult struct {
+	emTxCount     int
+	emRejectCount int
+	blockElapsed  time.Duration
+}
+
+// processBlock indexes one CometBFT block atomically.
+//
+// All writes for the block — etl_blocks, blocks (chain head row + tip
+// promotion), core_indexed_blocks, and every entity-table write performed
+// by the per-tx handlers — share a single pgx.Tx and commit together or
+// roll back together. On any block-level error (e.g. failure to insert
+// etl_blocks, failure to resolve blocks.number even after a retry),
+// nothing for this block lands.
+//
+// Each individual transaction within the block runs inside its own
+// SAVEPOINT (via tx.Begin). A handler's failure rolls back only that
+// tx's writes; other txs in the same block continue. This matches the
+// Python discovery-provider's "swallow validation errors, continue
+// indexing" semantics, but does it correctly: partial writes from a
+// failed handler do not leak into the committed block state.
+//
+// On success the caller may advance its progress counters and assume
+// the block is fully indexed.
+func (e *Indexer) processBlock(ctx context.Context, pb prefetchedBlock) (*blockResult, error) {
+	block := pb.Block
+	blockStart := time.Now()
+	res := &blockResult{}
+
+	tx, err := e.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin block tx: %w", err)
+	}
+	defer tx.Rollback(ctx) // safe no-op after Commit
+
+	q := e.db.WithTx(tx)
+
+	// etl_blocks: our own per-CometBFT-block tracking row.
+	if err := q.InsertBlock(ctx, db.InsertBlockParams{
+		ProposerAddress: block.Proposer,
+		BlockHeight:     block.Height,
+		BlockTime:       pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+	}); err != nil {
+		return nil, fmt.Errorf("insert etl_blocks: %w", err)
+	}
+
+	// Decide whether this block needs a `blocks` row (only blocks with EM
+	// transactions get one in the legacy schema's chain-head model).
+	hasEM := false
+	for _, t := range block.Transactions {
+		if _, ok := t.Transaction.Transaction.(*corev1.SignedTransaction_ManageEntity); ok {
+			hasEM = true
+			break
+		}
+	}
+
+	var emBlock int64
+	if hasEM {
+		n, err := e.resolveBlockNumber(ctx, tx, block.Hash)
+		if err != nil {
+			// One retry for the rare race where another writer claimed
+			// our MAX+1 with a different hash. Within our tx, both calls
+			// see the same snapshot semantics (READ COMMITTED), so the
+			// retry only helps if the conflict was with a *committed*
+			// outside writer — which is exactly the cutover scenario.
+			n, err = e.resolveBlockNumber(ctx, tx, block.Hash)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("resolve block number: %w", err)
+		}
+		emBlock = n
+	}
+
+	// core_indexed_blocks: what chain height we've indexed. em_block is
+	// NULL for blocks without EM transactions.
+	var emBlockParam any
+	if hasEM {
+		emBlockParam = emBlock
+	}
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO core_indexed_blocks (blockhash, chain_id, height, em_block)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (chain_id, height) DO UPDATE SET em_block = $4, blockhash = $1`,
+		block.Hash, e.ChainID, block.Height, emBlockParam); err != nil {
+		return nil, fmt.Errorf("insert core_indexed_blocks: %w", err)
+	}
+
+	// Per-transaction loop. Each tx runs in a SAVEPOINT so a handler
+	// error rolls back only that tx's writes — not the whole block.
+	for index, t := range block.Transactions {
+		insertTxParams := db.InsertTransactionParams{
+			TxHash:      t.Hash,
+			BlockHeight: block.Height,
+			TxIndex:     int32(index),
+			TxType:      "",
+			Address:     pgtype.Text{Valid: false},
+			CreatedAt:   pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+		}
+
+		sp, err := tx.Begin(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("begin savepoint for tx %s: %w", t.Hash, err)
+		}
+		qsp := e.db.WithTx(sp)
+
+		spOK := e.processOneTx(ctx, sp, qsp, block, emBlock, &insertTxParams, t, res)
+
+		// Always try to persist the transactions row, even if the
+		// type-specific handler rolled back its savepoint — the
+		// transactions table is an audit log of what was on-chain,
+		// independent of whether handlers consumed it. If the savepoint
+		// is gone (rolled back), we use the outer tx's queries handle.
+		if spOK {
+			if err := qsp.InsertTransaction(ctx, insertTxParams); err != nil {
+				e.logger.Error("error inserting transaction",
+					zap.String("tx", t.Hash), zap.Error(err))
+				_ = sp.Rollback(ctx)
+				continue
+			}
+			if err := sp.Commit(ctx); err != nil {
+				e.logger.Error("error committing savepoint for tx",
+					zap.String("tx", t.Hash), zap.Error(err))
+			}
+		} else {
+			// processOneTx already rolled back sp; record the tx row in
+			// the outer tx so the audit log still reflects it.
+			if err := q.InsertTransaction(ctx, insertTxParams); err != nil {
+				e.logger.Error("error inserting transaction (post-rollback)",
+					zap.String("tx", t.Hash), zap.Error(err))
+			}
+		}
+	}
+
+	res.blockElapsed = time.Since(blockStart)
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit block tx: %w", err)
+	}
+	return res, nil
+}
+
+// processOneTx dispatches a single core transaction inside its caller-
+// supplied savepoint. Returns true if the savepoint is still active for
+// the caller to Commit; false if processOneTx already rolled it back due
+// to a handler error.
+//
+// Note: ManageEntity validation errors are logged but kept on the
+// savepoint (they don't roll back) because the validation-failed state
+// is "this tx was on-chain but our handler chose not to act on it",
+// which matches Python's swallow-and-continue behavior. Hard errors
+// from a handler do trigger a rollback so partial writes don't land.
+func (e *Indexer) processOneTx(
+	ctx context.Context,
+	sp pgx.Tx,
+	q *db.Queries,
+	block *corev1.Block,
+	emBlock int64,
+	insertTxParams *db.InsertTransactionParams,
+	t *corev1.Transaction,
+	res *blockResult,
+) bool {
+	txCtx := &processors.TxContext{
+		Block:     block,
+		TxHash:    t.Hash,
+		TxIndex:   int(insertTxParams.TxIndex),
+		BlockTime: pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+		InsertTx:  *insertTxParams,
+	}
+
+	switch signedTx := t.Transaction.Transaction.(type) {
+	case *corev1.SignedTransaction_Plays:
+		pr, err := processors.Play().Process(ctx, t.Transaction, txCtx, q)
+		if err != nil {
+			e.logger.Error("error processing plays",
+				zap.String("hash", t.Hash), zap.Error(err))
+			_ = sp.Rollback(ctx)
+			return false
+		}
+		*insertTxParams = pr.InsertTx
+
+	case *corev1.SignedTransaction_ManageEntity:
+		me := signedTx.ManageEntity
+		res.emTxCount++
+
+		pr, err := processors.ManageEntity().Process(ctx, t.Transaction, txCtx, q)
+		if err != nil {
+			e.logger.Error("error processing manage entity",
+				zap.String("hash", t.Hash), zap.Error(err))
+			_ = sp.Rollback(ctx)
+			return false
+		}
+		*insertTxParams = pr.InsertTx
+
+		txStart := time.Now()
+		emParams := em.NewParams(me, emBlock, block.Timestamp.AsTime(),
+			block.Hash, t.Hash, sp, e.logger)
+		if dErr := e.dispatcher.Dispatch(ctx, emParams); dErr != nil {
+			res.emRejectCount++
+			if em.IsValidationError(dErr) {
+				// Validation errors mean "the tx was on-chain but its
+				// payload was malformed, so we choose not to act on it".
+				// Match Python's swallow-and-continue: keep the savepoint
+				// alive so the tx's audit row still lands.
+				e.logger.Warn("entity manager validation rejected",
+					zap.String("entity_type", me.GetEntityType()),
+					zap.String("action", me.GetAction()),
+					zap.Int64("entity_id", me.GetEntityId()),
+					zap.Int64("user_id", me.GetUserId()),
+					zap.String("reason", dErr.Error()),
+					zap.String("hash", t.Hash),
+				)
+			} else {
+				// Hard error from the handler: any partial writes are
+				// rolled back via the savepoint. The tx's audit row is
+				// still recorded by processBlock using the outer tx.
+				e.logger.Error("entity manager dispatch error",
+					zap.String("entity_type", me.GetEntityType()),
+					zap.String("action", me.GetAction()),
+					zap.Int64("entity_id", me.GetEntityId()),
+					zap.Int64("user_id", me.GetUserId()),
+					zap.String("hash", t.Hash),
+					zap.Error(dErr),
+				)
+				_ = sp.Rollback(ctx)
+				return false
+			}
+		} else {
+			e.logger.Debug("tx indexed",
+				zap.String("type", "manage_entity"),
+				zap.String("hash", t.Hash),
+				zap.Duration("elapsed", time.Since(txStart)),
+			)
+		}
+
+	case *corev1.SignedTransaction_ValidatorRegistration:
+		insertTxParams.TxType = TxTypeValidatorRegistrationLegacy
+		// Legacy validator registration - no specific table insert needed
+
+	case *corev1.SignedTransaction_ValidatorDeregistration:
+		insertTxParams.TxType = TxTypeValidatorMisbehaviorDereg
+		vd := signedTx.ValidatorDeregistration
+		insertTxParams.Address = pgtype.Text{String: vd.CometAddress, Valid: true}
+		if err := q.InsertValidatorMisbehaviorDeregistration(ctx, db.InsertValidatorMisbehaviorDeregistrationParams{
+			CometAddress: vd.CometAddress,
+			PubKey:       vd.PubKey,
+			BlockHeight:  block.Height,
+			TxHash:       t.Hash,
+			CreatedAt:    pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+		}); err != nil {
+			e.logger.Error("error inserting validator misbehavior deregistration",
+				zap.String("hash", t.Hash), zap.Error(err))
+			_ = sp.Rollback(ctx)
+			return false
+		}
+
+	case *corev1.SignedTransaction_SlaRollup:
+		insertTxParams.TxType = TxTypeSlaRollup
+		sr := signedTx.SlaRollup
+
+		validatorCount := int32(len(sr.Reports))
+		var blockQuota int32
+		if sr.BlockEnd > sr.BlockStart && validatorCount > 0 {
+			blockQuota = int32(sr.BlockEnd-sr.BlockStart) / validatorCount
+		}
+
+		blockRange := sr.BlockEnd - sr.BlockStart
+		var bps, tps float64
+		if blockRange > 0 {
+			txCount := int64(0)
+			for blockHeight := sr.BlockStart; blockHeight <= sr.BlockEnd; blockHeight++ {
+				blockTxCount, err := q.GetBlockTransactionCount(ctx, blockHeight)
+				if err != nil {
+					e.logger.Debug("failed to get transaction count for block",
+						zap.Int64("height", blockHeight), zap.Error(err))
+					continue
+				}
+				txCount += blockTxCount
+			}
+
+			rollupTime := sr.Timestamp.AsTime()
+			var duration float64
+			if latestRollup, err := q.GetLatestSlaRollup(ctx); err == nil {
+				if latestRollup.CreatedAt.Valid {
+					duration = rollupTime.Sub(latestRollup.CreatedAt.Time).Seconds()
+				}
+			}
+			if duration <= 0 {
+				duration = float64(blockRange) * 2.0
+			}
+			if duration > 0 {
+				bps = float64(blockRange) / duration
+				tps = float64(txCount) / duration
+			}
+		}
+
+		rollupId, err := q.InsertSlaRollupReturningId(ctx, db.InsertSlaRollupReturningIdParams{
+			BlockStart:     sr.BlockStart,
+			BlockEnd:       sr.BlockEnd,
+			BlockHeight:    block.Height,
+			ValidatorCount: validatorCount,
+			BlockQuota:     blockQuota,
+			Bps:            bps,
+			Tps:            tps,
+			TxHash:         t.Hash,
+			CreatedAt:      pgtype.Timestamp{Time: sr.Timestamp.AsTime(), Valid: true},
+		})
+		if err != nil {
+			e.logger.Error("error inserting SLA rollup",
+				zap.String("hash", t.Hash), zap.Error(err))
+			_ = sp.Rollback(ctx)
+			return false
+		}
+
+		challengeStats, err := e.calculateChallengeStatistics(ctx, q, sr.BlockStart, sr.BlockEnd)
+		if err != nil {
+			e.logger.Error("error calculating challenge statistics",
+				zap.String("hash", t.Hash), zap.Error(err))
+			challengeStats = make(map[string]ChallengeStats)
+		}
+
+		for _, report := range sr.Reports {
+			stats := challengeStats[report.Address]
+			if err := q.InsertSlaNodeReport(ctx, db.InsertSlaNodeReportParams{
+				SlaRollupID:        rollupId,
+				Address:            report.Address,
+				NumBlocksProposed:  report.NumBlocksProposed,
+				ChallengesReceived: stats.ChallengesReceived,
+				ChallengesFailed:   stats.ChallengesFailed,
+				BlockHeight:        block.Height,
+				TxHash:             t.Hash,
+				CreatedAt:          pgtype.Timestamp{Time: sr.Timestamp.AsTime(), Valid: true},
+			}); err != nil {
+				e.logger.Error("error inserting SLA node report",
+					zap.String("hash", t.Hash),
+					zap.String("address", report.Address),
+					zap.Error(err))
+				_ = sp.Rollback(ctx)
+				return false
+			}
+		}
+
+	case *corev1.SignedTransaction_StorageProof:
+		insertTxParams.TxType = TxTypeStorageProof
+		spx := signedTx.StorageProof
+		insertTxParams.Address = pgtype.Text{String: spx.Address, Valid: true}
+		if err := q.InsertStorageProof(ctx, db.InsertStorageProofParams{
+			Height:          spx.Height,
+			Address:         spx.Address,
+			ProverAddresses: spx.ProverAddresses,
+			Cid:             spx.Cid,
+			ProofSignature:  spx.ProofSignature,
+			Proof:           nil, // Will be set during verification
+			Status:          "unresolved",
+			BlockHeight:     block.Height,
+			TxHash:          t.Hash,
+			CreatedAt:       pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+		}); err != nil {
+			e.logger.Error("error inserting storage proof",
+				zap.String("hash", t.Hash), zap.Error(err))
+			_ = sp.Rollback(ctx)
+			return false
+		}
+
+	case *corev1.SignedTransaction_StorageProofVerification:
+		insertTxParams.TxType = TxTypeStorageProofVerification
+		spv := signedTx.StorageProofVerification
+		if err := q.InsertStorageProofVerification(ctx, db.InsertStorageProofVerificationParams{
+			Height:      spv.Height,
+			Proof:       spv.Proof,
+			BlockHeight: block.Height,
+			TxHash:      t.Hash,
+			CreatedAt:   pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+		}); err != nil {
+			e.logger.Error("error inserting storage proof verification",
+				zap.String("hash", t.Hash), zap.Error(err))
+			_ = sp.Rollback(ctx)
+			return false
+		}
+		if err := e.processStorageProofConsensus(ctx, q, spv.Height, spv.Proof,
+			block.Height, t.Hash, block.Timestamp.AsTime()); err != nil {
+			e.logger.Error("error processing storage proof consensus",
+				zap.String("hash", t.Hash), zap.Error(err))
+			_ = sp.Rollback(ctx)
+			return false
+		}
+
+	case *corev1.SignedTransaction_Attestation:
+		at := signedTx.Attestation
+		if vr := at.GetValidatorRegistration(); vr != nil {
+			insertTxParams.TxType = TxTypeValidatorRegistration
+			insertTxParams.Address = pgtype.Text{String: vr.DelegateWallet, Valid: true}
+			if err := q.InsertValidatorRegistration(ctx, db.InsertValidatorRegistrationParams{
+				Address:      vr.DelegateWallet,
+				Endpoint:     vr.Endpoint,
+				CometAddress: vr.CometAddress,
+				EthBlock:     fmt.Sprintf("%d", vr.EthBlock),
+				NodeType:     vr.NodeType,
+				Spid:         vr.SpId,
+				CometPubkey:  vr.PubKey,
+				VotingPower:  vr.Power,
+				BlockHeight:  block.Height,
+				TxHash:       t.Hash,
+			}); err != nil {
+				e.logger.Error("error inserting validator registration",
+					zap.String("hash", t.Hash), zap.Error(err))
+				_ = sp.Rollback(ctx)
+				return false
+			}
+			if err := q.RegisterValidator(ctx, db.RegisterValidatorParams{
+				Address:        vr.DelegateWallet,
+				Endpoint:       vr.Endpoint,
+				CometAddress:   vr.CometAddress,
+				NodeType:       vr.NodeType,
+				Spid:           vr.SpId,
+				VotingPower:    vr.Power,
+				Status:         "active",
+				RegisteredAt:   block.Height,
+				DeregisteredAt: pgtype.Int8{Valid: false},
+				CreatedAt:      pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+				UpdatedAt:      pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+			}); err != nil {
+				e.logger.Error("error registering validator",
+					zap.String("hash", t.Hash), zap.Error(err))
+				_ = sp.Rollback(ctx)
+				return false
+			}
+		}
+		if vd := at.GetValidatorDeregistration(); vd != nil {
+			insertTxParams.TxType = TxTypeValidatorDeregistration
+			insertTxParams.Address = pgtype.Text{String: vd.CometAddress, Valid: true}
+			if err := q.InsertValidatorDeregistration(ctx, db.InsertValidatorDeregistrationParams{
+				CometAddress: vd.CometAddress,
+				CometPubkey:  vd.PubKey,
+				BlockHeight:  block.Height,
+				TxHash:       t.Hash,
+			}); err != nil {
+				e.logger.Error("error inserting validator deregistration",
+					zap.String("hash", t.Hash), zap.Error(err))
+				_ = sp.Rollback(ctx)
+				return false
+			}
+			if err := q.DeregisterValidator(ctx, db.DeregisterValidatorParams{
+				DeregisteredAt: pgtype.Int8{Int64: block.Height, Valid: true},
+				UpdatedAt:      pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
+				Status:         "deregistered",
+				CometAddress:   vd.CometAddress,
+			}); err != nil {
+				e.logger.Error("error deregistering validator",
+					zap.String("hash", t.Hash), zap.Error(err))
+				_ = sp.Rollback(ctx)
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
 // resolveBlockNumber returns the blocks.number for blockHash and ensures
-// the row for blockHash is the unique tip (is_current = true).
+// the row for blockHash is the unique tip (is_current = true), all within
+// the caller-supplied transaction.
 //
 // Idempotent and tolerant of co-existing writers (e.g. the legacy Python
 // indexer during a cutover): if a row for blockHash already exists, its
@@ -720,22 +827,17 @@ func (e *Indexer) indexBlocks() error {
 //
 // On a number-collision race with another writer (our INSERT no-op'd
 // because some other hash claimed MAX+1 first), the final SELECT returns
-// pgx.ErrNoRows. The caller retries — the next attempt sees a higher MAX
-// and proceeds.
-func (e *Indexer) resolveBlockNumber(blockHash string) (int64, error) {
-	ctx := context.Background()
-
-	tx, err := e.pool.Begin(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("begin: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
+// pgx.ErrNoRows wrapped in the returned error. The caller retries — the
+// next attempt sees a higher MAX and proceeds.
+//
+// Operates on the caller's tx (or savepoint) so the block-row work
+// commits atomically with the rest of the block's entity writes.
+func (e *Indexer) resolveBlockNumber(ctx context.Context, tx pgx.Tx, blockHash string) (int64, error) {
 	// Snapshot the prior tip's hash for our parenthash. nil when the table
 	// is empty or has no current row (e.g. mid-recovery after an interrupted
 	// writer left no is_current=true).
 	var parentHash *string
-	err = tx.QueryRow(ctx,
+	err := tx.QueryRow(ctx,
 		"SELECT blockhash FROM blocks WHERE is_current IS TRUE").Scan(&parentHash)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, fmt.Errorf("read prev tip: %w", err)
@@ -782,9 +884,6 @@ func (e *Indexer) resolveBlockNumber(blockHash string) (int64, error) {
 			blockHash, err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit: %w", err)
-	}
 	return num, nil
 }
 
@@ -841,12 +940,14 @@ func (e *Indexer) startPgNotifyListener(ctx context.Context) error {
 // NOTE: This function may be called before all storage proof data for the block range is available,
 // leading to potentially inaccurate pre-calculated statistics. Consider calculating these dynamically
 // in the UI instead of storing them in the database.
-func (e *Indexer) calculateChallengeStatistics(blockStart, blockEnd int64) (map[string]ChallengeStats, error) {
-	ctx := context.Background()
+// calculateChallengeStatistics reads challenge stats over a block range
+// using the caller's tx-scoped queries handle, so its reads see the
+// in-progress block's writes.
+func (e *Indexer) calculateChallengeStatistics(ctx context.Context, q *db.Queries, blockStart, blockEnd int64) (map[string]ChallengeStats, error) {
 	stats := make(map[string]ChallengeStats)
 
 	// Use the ETL database method to get challenge statistics with proper status tracking
-	results, err := e.db.GetChallengeStatisticsForBlockRange(ctx, db.GetChallengeStatisticsForBlockRangeParams{
+	results, err := q.GetChallengeStatisticsForBlockRange(ctx, db.GetChallengeStatisticsForBlockRangeParams{
 		Height:   blockStart,
 		Height_2: blockEnd,
 	})
@@ -865,11 +966,11 @@ func (e *Indexer) calculateChallengeStatistics(blockStart, blockEnd int64) (map[
 	return stats, nil
 }
 
-func (e *Indexer) processStorageProofConsensus(height int64, proof []byte, blockHeight int64, txHash string, blockTime time.Time) error {
-	ctx := context.Background()
-
+// processStorageProofConsensus reads and writes storage proof state using
+// the caller's tx-scoped queries handle.
+func (e *Indexer) processStorageProofConsensus(ctx context.Context, q *db.Queries, height int64, proof []byte, blockHeight int64, txHash string, blockTime time.Time) error {
 	// Get all storage proofs for this height
-	storageProofs, err := e.db.GetStorageProofsForHeight(ctx, height)
+	storageProofs, err := q.GetStorageProofsForHeight(ctx, height)
 	if err != nil {
 		return fmt.Errorf("error getting storage proofs for height %d: %v", height, err)
 	}
@@ -898,7 +999,7 @@ func (e *Indexer) processStorageProofConsensus(height int64, proof []byte, block
 	for _, sp := range storageProofs {
 		if sp.Address != "" && sp.ProofSignature != nil {
 			// This prover submitted a proof - mark as passed
-			err = e.db.UpdateStorageProofStatus(ctx, db.UpdateStorageProofStatusParams{
+			err = q.UpdateStorageProofStatus(ctx, db.UpdateStorageProofStatusParams{
 				Status:  "pass",
 				Proof:   proof,
 				Height:  height,
@@ -916,7 +1017,7 @@ func (e *Indexer) processStorageProofConsensus(height int64, proof []byte, block
 	for expectedProver, voteCount := range expectedProvers {
 		if voteCount > majorityThreshold && !passedProvers[expectedProver] {
 			// This validator was expected by majority consensus but didn't submit a proof
-			err = e.db.InsertFailedStorageProof(ctx, db.InsertFailedStorageProofParams{
+			err = q.InsertFailedStorageProof(ctx, db.InsertFailedStorageProofParams{
 				Height:      height,
 				Address:     expectedProver,
 				BlockHeight: blockHeight,
