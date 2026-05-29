@@ -307,15 +307,15 @@ func (e *Indexer) indexBlocks() error {
 
 		res, err := e.processBlock(ctx, pb)
 		if err != nil {
-			// Block-level failure rolled back the entire block's tx — no
-			// partial state landed. Skip; the outer loop will reprocess
-			// when the prefetcher hands us this block on a future pass
-			// (or it stays unindexed if the failure is persistent and we
-			// crash-restart from MAX(core_indexed_blocks.height)).
+			// Block-level failure rolled back the entire block's tx. Stop
+			// indexing instead of advancing past this height; skipping here can
+			// leave a hidden core_indexed_blocks gap because health checks use
+			// MAX(height). Let the supervisor restart us so we retry from the
+			// last committed height, and crashloop on persistent corruption.
 			e.logger.Error("processBlock failed",
 				zap.Int64("height", block.Height),
 				zap.Error(err))
-			continue
+			return fmt.Errorf("process block %d: %w", block.Height, err)
 		}
 
 		blocksProcessed++
