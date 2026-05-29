@@ -260,17 +260,22 @@ func metadataPlaylistContentsJSON(p *Params) []byte {
 }
 
 // normalizePlaylistContentsJSON returns the JSONB payload to persist to
-// playlists.playlist_contents — always `{"track_ids": [...]}` regardless
-// of input shape.
+// playlists.playlist_contents — always `{"track_ids": [{"track":..,"time":..}]}`
+// regardless of input shape.
 //
 // Accepts:
 //   - bare array form (new SDK):  [{"track":..,"time":..}, ...]  or  []
 //   - dict form (legacy):         {"track_ids": [...]}
 //   - explicit null / missing key: empty list
 //
-// Inner entries pass through as-is; only the outer wrapper is normalized.
-// The hashid-decode + dedupe + index-time logic lives at the junction-table
-// layer (updatePlaylistTracks).
+// Each inner entry is canonicalized to the `{track, time, metadata_time}`
+// schema that downstream readers (api/'s v1_playlist_tracks query, the
+// handle_playlist notification trigger, etc.) expect. The SDK historically
+// sent entries keyed by `track_id`/`timestamp`/`metadata_timestamp`; those
+// alias keys are mapped onto the canonical names here so we persist one shape.
+// Track IDs that arrive as hashid strings are decoded to integers.
+// The dedupe + junction-table logic lives at the junction-table layer
+// (updatePlaylistTracks).
 func normalizePlaylistContentsJSON(metadata map[string]any) []byte {
 	raw, ok := metadata["playlist_contents"]
 	if !ok || raw == nil {
@@ -287,12 +292,61 @@ func normalizePlaylistContentsJSON(metadata map[string]any) []byte {
 			}
 		}
 	}
-	if entries == nil {
-		entries = []any{}
+	canonical := make([]any, 0, len(entries))
+	for _, e := range entries {
+		obj, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		if entry, ok := canonicalizePlaylistEntry(obj); ok {
+			canonical = append(canonical, entry)
+		}
 	}
-	out, err := json.Marshal(map[string]any{"track_ids": entries})
+	out, err := json.Marshal(map[string]any{"track_ids": canonical})
 	if err != nil {
 		return []byte(`{"track_ids":[]}`)
 	}
 	return out
+}
+
+// canonicalizePlaylistEntry maps a single playlist_contents entry onto the
+// canonical `{track, time, metadata_time}` schema. Returns false when no
+// usable track id can be extracted. `track` is always an integer (hashid
+// strings are decoded via pickPlaylistTrackID). `time` / `metadata_time` are
+// only emitted when present, accepting the legacy `timestamp` /
+// `metadata_timestamp` aliases.
+func canonicalizePlaylistEntry(entry map[string]any) (map[string]any, bool) {
+	id, ok := pickPlaylistTrackID(entry)
+	if !ok {
+		return nil, false
+	}
+	out := map[string]any{"track": id}
+	if t, ok := pickJSONInt(entry, "time", "timestamp"); ok {
+		out["time"] = t
+	}
+	if mt, ok := pickJSONInt(entry, "metadata_time", "metadata_timestamp"); ok {
+		out["metadata_time"] = mt
+	}
+	return out, true
+}
+
+// pickJSONInt returns the first of keys that holds a JSON number, coerced to
+// int64. JSON unmarshals numbers as float64; we also accept int/int64 for
+// callers that build maps directly.
+func pickJSONInt(entry map[string]any, keys ...string) (int64, bool) {
+	for _, k := range keys {
+		raw, ok := entry[k]
+		if !ok {
+			continue
+		}
+		switch v := raw.(type) {
+		case float64:
+			return int64(v), true
+		case int:
+			return int64(v), true
+		case int64:
+			return v, true
+		}
+	}
+	return 0, false
 }

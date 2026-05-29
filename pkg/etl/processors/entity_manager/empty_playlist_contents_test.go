@@ -119,6 +119,15 @@ func TestNormalizePlaylistContentsJSON(t *testing.T) {
 		{name: "legacy empty dict", raw: `{"playlist_contents":{"track_ids":[]}}`, want: `{"track_ids":[]}`},
 		{name: "bare array with entries", raw: `{"playlist_contents":[{"track":1,"time":2}]}`, want: `{"track_ids":[{"time":2,"track":1}]}`},
 		{name: "legacy dict with entries", raw: `{"playlist_contents":{"track_ids":[{"track":3,"time":4}]}}`, want: `{"track_ids":[{"time":4,"track":3}]}`},
+		// SDK alias shape: track_id / timestamp / metadata_timestamp are
+		// canonicalized onto track / time / metadata_time. This is the shape
+		// that broke Dabow's playlist — the api reader only understands `track`.
+		{name: "track_id alias", raw: `{"playlist_contents":[{"track_id":5,"timestamp":6}]}`, want: `{"track_ids":[{"time":6,"track":5}]}`},
+		{name: "track_id alias with metadata_timestamp", raw: `{"playlist_contents":[{"track_id":7,"timestamp":8,"metadata_timestamp":9}]}`, want: `{"track_ids":[{"metadata_time":9,"time":8,"track":7}]}`},
+		{name: "hashid string track", raw: `{"playlist_contents":[{"track":"LjjBL","time":10}]}`, want: `{"track_ids":[{"time":10,"track":777}]}`},
+		{name: "mixed alias and canonical", raw: `{"playlist_contents":[{"track":1,"time":2},{"track_id":3,"timestamp":4}]}`, want: `{"track_ids":[{"time":2,"track":1},{"time":4,"track":3}]}`},
+		// Entries with no resolvable track id are dropped.
+		{name: "entry without track id dropped", raw: `{"playlist_contents":[{"time":1},{"track":2,"time":3}]}`, want: `{"track_ids":[{"time":3,"track":2}]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
