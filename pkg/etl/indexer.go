@@ -535,6 +535,7 @@ func (e *Indexer) processOneTx(
 			return false
 		}
 		*insertTxParams = pr.InsertTx
+		e.firePlaysHooks(ctx, sp, signedTx.Plays.GetPlays(), block, t.Hash)
 
 	case *corev1.SignedTransaction_ManageEntity:
 		me := signedTx.ManageEntity
@@ -812,6 +813,35 @@ func (e *Indexer) processOneTx(
 	}
 
 	return true
+}
+
+// firePlaysHooks invokes every registered PlaysHook for a Plays transaction
+// that the play processor just wrote. Hooks share sp (the tx's savepoint),
+// so a hook's writes land atomically with the etl_plays rows.
+//
+// Errors are logged but not propagated: a hook failure must not roll back
+// the savepoint or fail the block. This mirrors the em.PostHook contract —
+// a buggy consumer-side hook (or a deterministic bad-data error) should not
+// be able to halt the indexer. No-ops when no hooks are registered.
+func (e *Indexer) firePlaysHooks(ctx context.Context, sp pgx.Tx, plays []*corev1.TrackPlay, block *corev1.Block, txHash string) {
+	if len(e.playsHooks) == 0 {
+		return
+	}
+	params := &PlaysParams{
+		Plays:       plays,
+		BlockHeight: block.Height,
+		BlockTime:   block.Timestamp.AsTime(),
+		BlockHash:   block.Hash,
+		TxHash:      txHash,
+		DBTX:        sp,
+		Logger:      e.logger,
+	}
+	for _, hook := range e.playsHooks {
+		if err := hook(ctx, params); err != nil {
+			e.logger.Error("plays hook error",
+				zap.String("hash", txHash), zap.Error(err))
+		}
+	}
 }
 
 // resolveBlockNumber returns the blocks.number for blockHash and ensures
