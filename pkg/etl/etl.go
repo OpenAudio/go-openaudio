@@ -38,6 +38,12 @@ type Indexer struct {
 	// Pending post-hooks staged before Run(). Applied to the dispatcher
 	// once it's constructed.
 	pendingPostHooks []pendingPostHook
+
+	// playsHooks fire after the play processor writes etl_plays for a Plays
+	// transaction. Unlike entity-manager post-hooks these don't need a
+	// dispatcher, so they're held directly on the Indexer and invoked from
+	// the play branch of processOneTx. Registered before Run().
+	playsHooks []PlaysHook
 }
 
 // pendingPostHook stages a hook registration until the dispatcher exists.
@@ -114,6 +120,20 @@ func (e *Indexer) RegisterPostHook(entityType, action string, fn em.PostHook) {
 		action:     action,
 		fn:         fn,
 	})
+}
+
+// RegisterPlaysHook registers fn to fire after every successful Plays
+// transaction (after the play processor writes etl_plays). Multiple hooks
+// run in registration order. Hook errors are logged but do not fail the
+// surrounding block — see PlaysHook for full semantics.
+//
+// Must be called before Run().
+//
+// Unlike RegisterPostHook (which is keyed by entity type/action and routes
+// through the entity-manager dispatcher), plays have no ManageEntity
+// envelope, so this is a separate extension point.
+func (e *Indexer) RegisterPlaysHook(fn PlaysHook) {
+	e.playsHooks = append(e.playsHooks, fn)
 }
 
 // SetUserCreatedHook is convenience sugar for
