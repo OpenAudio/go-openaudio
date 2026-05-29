@@ -1,9 +1,13 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFilterErrorLines(t *testing.T) {
@@ -24,4 +28,136 @@ func TestFilterErrorLines(t *testing.T) {
 	expectedFilteredError := `random non error line\nrandom non error line\nrandom non error line\nrandom non error line\n319.7kbits/s\ntotal_size=64749568\nout_time_us=1620048979\nout_time_ms=1620048979\nout_time=00:27:00.048979\ndup_frames=0\ndrop_frames=0\nspeed=  39x\nprogress=continue\nsize=   63744kB time=00:27:17.30 bitrate= 318.9kbits/s speed=  39x    \rbitrate= 318.9kbits/s\ntotal_size=65273856\nout_time_us=1637304979\nout_time_ms=1637304979\nout_time=00:27:17.304979\ndup_frames=0\ndrop_frames=0\nspeed=  39x\nprogress=continue\nsize=   64512kB time=00:27:35.32 bitrate= 319.3kbits/s speed=38.9x    \rbitrate= 319.3kbits/s\ntotal_size=66060288\nout_time=00:27:35.328979\ndup_frames=0\ndrop_frames=0\nspeed=38.9x\ntotal_size=66846720\nout_time=00:27:52.536979\ndup_frames=0\ndrop_frames=0\nspeed=38.9x\ntotal_size=67633152\nout_time=00:28:10.848979\ndup_frames=0\ndrop_frames=0\nspeed=38.8x\ntotal_size=68419584\nout_time=00:28:30.816979\ndup_frames=0\ndrop_frames=0\nspeed=38.9x\ntotal_size=69206016\nout_time=00:28:51.120979\ndup_frames=0\ndrop_frames=0\nspeed=38.9x\ntotal_size=69730304\nout_time=00:29:07.440979\ndup_frames=0\ndrop_frames=0\nspeed=38.8x\ntotal_size=70516736\nout_time=00:29:26.496979\ndup_frames=0\ndrop_frames=0\nspeed=38.8x\ntotal_size=71303168\nout_time=00:29:44.520979\ndup_frames=0\ndrop_frames=0\nspeed=38.8x\ntotal_size=72089600\nout_time=00:30:04.056979\ndup_frames=0\ndrop_frames=0\nspeed=38.8x\ntotal_size=72876032\nout_time=00:30:24.720979\ndup_frames=0\ndrop_frames=0\nspeed=38.8x\ntotal_size=73662464\nout_time=00:30:45.672979\ndup_frames=0\ndrop_frames=0\nspeed=38.8x\ntotal_size=74448896\nout_time=00:31:05.904979\ndup_frames=0\ndrop_frames=0\nspeed=38.8x\ntotal_size=75497472\nout_time=00:31:27.456979\ndup_frames=0\ndrop_frames=0\nspeed=38.9x\ntotal_size=76021760\nout_time=00:31:46.968979\ndup_frames=0\ndrop_frames=0\nspeed=38.9x\ntotal_size=76808192\nout_time=00:32:05.640979\ndup_frames=0\ndrop_frames=0\nspeed=38.9x\ntotal_size=77594624\nout_time=00:32:22.992979\ndup_frames=0\ndrop_frames=0\nspeed=38.8x\ntotal_size=78118912\nout_time=00:32:38.352979\ndup_frames=0\ndrop_frames=0\nspeed=38.7x\ntotal_size=78905344\nout_time=00:32:57.864979\ndup_frames=0\ndrop_frames=0\nspeed=38.8x\ntotal_size=79691776\nout_time=00:33:13.272979\ndup_frames=0\ndrop_frames=0\nspeed=38.7x\ntotal_size=80216064\nout_time=00:33:29.880979\ndup_frames=0\ndrop_frames=0\nspeed=38.6x\ntotal_size=81002496\nout_time=00:33:47.832979\ndup_frames=0\ndrop_frames=0\nspeed=38.6x\ntotal_size=81788928\nout_time=00:34:07.128979\ndup_frames=0\ndrop_frames=0\nspeed=38.6x\ntotal_size=82575360\nout_time=00:34:25.296979\ndup_frames=0\ndrop_frames=0\nspeed=38.6x\ntotal_size=83099648\nout_time=00:34:43.032979\ndup_frames=0\ndrop_frames=0\nspeed=38.5x\ntotal_size=83886080\nout_time=00:35:00.816979\ndup_frames=0\ndrop_frames=0\nspeed=38.5x\ntotal_size=84672512\nout_time=00:35:18.072979\ndup_frames=0\ndrop_frames=0\nspeed=38.5x\ntotal_size=85196800\nout_time=00:35:35.352979\ndup_frames=0\ndrop_frames=0\nspeed=38.4x\ntotal_size=85983232\nout_time=00:35:54.336979\ndup_frames=0\ndrop_frames=0\nspeed=38.4x\ntotal_size=86769664\nout_time=00:36:12.888979\ndup_frames=0\ndrop_frames=0\nspeed=38.4x\n[mp3float @ 0x7f574418a880] Header missing\nError while decoding stream #0:0: Invalid data found when processing input\n[mp3float @ 0x7f574418a880] Header missing\nError while decoding stream #0:0: Invalid data found when processing input\n[libmp3lame @ 0x7f5744050880] Queue input is backward in time\n[mp3 @ 0x7f5747694640] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 208784452 \u003e= 104392928\n[mp3 @ 0x7f5747694640] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 208784452 \u003e= 104394080\ntotal_size=87031808\nout_time=01:12:29.700083\ndup_frames=0\ndrop_frames=0\nspeed=74.2x\ntotal_size=87031808\nout_time=01:12:29.700083\ndup_frames=0\ndrop_frames=0\nspeed=38.7x\nrandom non error line\n`
 
 	assert.Equal(t, expectedFilteredError, filteredError)
+}
+
+func TestFindMissedJobCandidatesBoundsRetriesAndBackoff(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	now := time.Now().UTC().Truncate(time.Second)
+	prefix := fmt.Sprintf("!!!!transcode-candidates-%d-", now.UnixNano())
+
+	cleanup := func() {
+		require.NoError(t, ss.crud.DB.Where("id LIKE ?", prefix+"%").Delete(&Upload{}).Error)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	uploads := []Upload{
+		{
+			ID:           prefix + "001-done",
+			Template:     JobTemplateAudio,
+			OrigFileCID:  "cid-done",
+			Status:       JobStatusDone,
+			TranscodedAt: now.Add(-48 * time.Hour),
+		},
+		{
+			ID:           prefix + "002-too-many-errors",
+			Template:     JobTemplateAudio,
+			OrigFileCID:  "cid-too-many-errors",
+			Status:       JobStatusError,
+			ErrorCount:   6,
+			TranscodedAt: now.Add(-48 * time.Hour),
+		},
+		{
+			ID:           prefix + "003-recent-error",
+			Template:     JobTemplateAudio,
+			OrigFileCID:  "cid-recent-error",
+			Status:       JobStatusError,
+			ErrorCount:   1,
+			TranscodedAt: now.Add(-30 * time.Second),
+		},
+		{
+			ID:           prefix + "004-image",
+			Template:     JobTemplateImgSquare,
+			OrigFileCID:  "cid-image",
+			Status:       JobStatusError,
+			ErrorCount:   1,
+			TranscodedAt: now.Add(-48 * time.Hour),
+		},
+		{
+			ID:           prefix + "005-no-cid",
+			Template:     JobTemplateAudio,
+			Status:       JobStatusError,
+			ErrorCount:   1,
+			TranscodedAt: now.Add(-48 * time.Hour),
+		},
+		{
+			ID:           prefix + "006-new",
+			Template:     JobTemplateAudio,
+			OrigFileCID:  "cid-new",
+			Status:       JobStatusNew,
+			TranscodedAt: time.Time{},
+		},
+		{
+			ID:           prefix + "007-old-error",
+			Template:     JobTemplateAudio,
+			OrigFileCID:  "cid-old-error",
+			Status:       JobStatusError,
+			ErrorCount:   5,
+			TranscodedAt: now.Add(-48 * time.Hour),
+		},
+		{
+			ID:           prefix + "008-old-error",
+			Template:     JobTemplateAudio,
+			OrigFileCID:  "cid-old-error-2",
+			Status:       JobStatusError,
+			ErrorCount:   1,
+			TranscodedAt: now.Add(-48 * time.Hour),
+		},
+	}
+	for i := range uploads {
+		require.NoError(t, ss.crud.DB.Create(&uploads[i]).Error)
+	}
+
+	candidates, err := ss.findMissedJobCandidates(ctx, now, 2)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		prefix + "006-new",
+		prefix + "007-old-error",
+	}, uploadIDs(candidates))
+}
+
+func TestFindMissedJobsMarksUploadsBusyBeforeEnqueue(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	now := time.Now().UTC().Truncate(time.Second)
+	prefix := fmt.Sprintf("!!!!transcode-queue-%d-", now.UnixNano())
+
+	cleanup := func() {
+		require.NoError(t, ss.crud.DB.Where("id LIKE ?", prefix+"%").Delete(&Upload{}).Error)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	for _, id := range []string{"001", "002", "003"} {
+		require.NoError(t, ss.crud.DB.Create(&Upload{
+			ID:           prefix + id,
+			Template:     JobTemplateAudio,
+			OrigFileCID:  "cid-" + id,
+			Status:       JobStatusNew,
+			TranscodedAt: time.Time{},
+		}).Error)
+	}
+
+	work := make(chan *Upload, 10)
+	require.NoError(t, ss.findMissedJobs(ctx, work, now))
+	require.Len(t, work, 3)
+
+	for _, id := range []string{"001", "002", "003"} {
+		require.Equal(t, prefix+id, (<-work).ID)
+
+		var upload Upload
+		require.NoError(t, ss.crud.DB.First(&upload, "id = ?", prefix+id).Error)
+		require.Equal(t, JobStatusBusy, upload.Status)
+		require.Equal(t, ss.Config.Self.Host, upload.TranscodedBy)
+		require.WithinDuration(t, now, upload.TranscodedAt, time.Second)
+	}
+}
+
+func uploadIDs(uploads []*Upload) []string {
+	ids := []string{}
+	for _, upload := range uploads {
+		ids = append(ids, upload.ID)
+	}
+	return ids
 }
