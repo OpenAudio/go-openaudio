@@ -7,9 +7,64 @@ import (
 	"time"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+type fakePlaysHookTx struct {
+	beginCount    int
+	commitCount   int
+	rollbackCount int
+}
+
+func (f *fakePlaysHookTx) Begin(context.Context) (pgx.Tx, error) {
+	f.beginCount++
+	return &fakePlaysHookTx{}, nil
+}
+
+func (f *fakePlaysHookTx) Commit(context.Context) error {
+	f.commitCount++
+	return nil
+}
+
+func (f *fakePlaysHookTx) Rollback(context.Context) error {
+	f.rollbackCount++
+	return nil
+}
+
+func (*fakePlaysHookTx) CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
+	return 0, nil
+}
+
+func (*fakePlaysHookTx) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
+	return nil
+}
+
+func (*fakePlaysHookTx) LargeObjects() pgx.LargeObjects {
+	return pgx.LargeObjects{}
+}
+
+func (*fakePlaysHookTx) Prepare(context.Context, string, string) (*pgconn.StatementDescription, error) {
+	return nil, nil
+}
+
+func (*fakePlaysHookTx) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+
+func (*fakePlaysHookTx) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return nil, nil
+}
+
+func (*fakePlaysHookTx) QueryRow(context.Context, string, ...any) pgx.Row {
+	return nil
+}
+
+func (*fakePlaysHookTx) Conn() *pgx.Conn {
+	return nil
+}
 
 // TestRegisterPlaysHook_FiresInOrder verifies that hooks registered via
 // RegisterPlaysHook run in registration order and receive the decoded plays
@@ -41,7 +96,7 @@ func TestRegisterPlaysHook_FiresInOrder(t *testing.T) {
 		Timestamp: timestamppb.New(time.Unix(1000, 0)),
 	}
 
-	e.firePlaysHooks(context.Background(), nil, plays, block, "txhash")
+	e.firePlaysHooks(context.Background(), &fakePlaysHookTx{}, plays, block, "txhash")
 
 	if len(order) != 2 || order[0] != 1 || order[1] != 2 {
 		t.Fatalf("expected hooks to fire in order [1 2], got %v", order)
@@ -73,7 +128,7 @@ func TestRegisterPlaysHook_ErrorIsNonFatal(t *testing.T) {
 	})
 
 	block := &corev1.Block{Height: 1, Timestamp: timestamppb.New(time.Unix(0, 0))}
-	e.firePlaysHooks(context.Background(), nil, nil, block, "tx")
+	e.firePlaysHooks(context.Background(), &fakePlaysHookTx{}, nil, block, "tx")
 
 	if !secondFired {
 		t.Error("second hook did not fire after first returned an error")
@@ -85,5 +140,5 @@ func TestRegisterPlaysHook_ErrorIsNonFatal(t *testing.T) {
 func TestFirePlaysHooks_NoHooks(t *testing.T) {
 	e := &Indexer{logger: zap.NewNop()}
 	block := &corev1.Block{Height: 1, Timestamp: timestamppb.New(time.Unix(0, 0))}
-	e.firePlaysHooks(context.Background(), nil, nil, block, "tx")
+	e.firePlaysHooks(context.Background(), &fakePlaysHookTx{}, nil, block, "tx")
 }

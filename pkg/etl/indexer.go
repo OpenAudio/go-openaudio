@@ -816,8 +816,9 @@ func (e *Indexer) processOneTx(
 }
 
 // firePlaysHooks invokes every registered PlaysHook for a Plays transaction
-// that the play processor just wrote. Hooks share sp (the tx's savepoint),
-// so a hook's writes land atomically with the etl_plays rows.
+// that the play processor just wrote. Each hook runs in a nested savepoint
+// under sp, so a hook's writes land atomically with the etl_plays rows when
+// successful, but a hook DB error can be rolled back without poisoning sp.
 //
 // Errors are logged but not propagated: a hook failure must not roll back
 // the savepoint or fail the block. This mirrors the em.PostHook contract —
@@ -833,12 +834,28 @@ func (e *Indexer) firePlaysHooks(ctx context.Context, sp pgx.Tx, plays []*corev1
 		BlockTime:   block.Timestamp.AsTime(),
 		BlockHash:   block.Hash,
 		TxHash:      txHash,
-		DBTX:        sp,
 		Logger:      e.logger,
 	}
 	for _, hook := range e.playsHooks {
-		if err := hook(ctx, params); err != nil {
+		hookTx, err := sp.Begin(ctx)
+		if err != nil {
+			e.logger.Error("begin plays hook savepoint",
+				zap.String("hash", txHash), zap.Error(err))
+			continue
+		}
+
+		hookParams := *params
+		hookParams.DBTX = hookTx
+
+		if err := hook(ctx, &hookParams); err != nil {
+			_ = hookTx.Rollback(ctx)
 			e.logger.Error("plays hook error",
+				zap.String("hash", txHash), zap.Error(err))
+			continue
+		}
+		if err := hookTx.Commit(ctx); err != nil {
+			_ = hookTx.Rollback(ctx)
+			e.logger.Error("commit plays hook savepoint",
 				zap.String("hash", txHash), zap.Error(err))
 		}
 	}
