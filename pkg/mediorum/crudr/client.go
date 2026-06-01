@@ -164,6 +164,9 @@ func (p *PeerClient) doSweep(ctx context.Context) error {
 		return fmt.Errorf("bad status: %d", resp.StatusCode)
 	}
 
+	limited := resp.Header.Get(SweepLimitedHeader) == "true"
+	lastScannedULID := resp.Header.Get(SweepLastScannedULIDHeader)
+
 	var ops []*Op
 	dec := json.NewDecoder(resp.Body)
 	err = dec.Decode(&ops)
@@ -171,6 +174,7 @@ func (p *PeerClient) doSweep(ctx context.Context) error {
 		return err
 	}
 
+	hadApplyError := false
 	for _, op := range ops {
 		// ignore old blobs ops
 		if op.Table == "blobs" {
@@ -185,14 +189,19 @@ func (p *PeerClient) doSweep(ctx context.Context) error {
 
 		err := p.crudr.ApplyOp(op)
 		if err != nil {
+			hadApplyError = true
 			p.logger.Error("failed to apply op", "op", op, "err", err)
 		} else {
 			lastUlid = op.ULID
 		}
 	}
 
+	if !hadApplyError && lastScannedULID > lastUlid {
+		lastUlid = lastScannedULID
+	}
+
 	// seeding is complete once there are no more ulids to sweep (or very few left)
-	if !p.Seeded && len(ops) < 10 {
+	if !p.Seeded && !limited && len(ops) < 10 {
 		p.logger.Info("seeding complete (no more ulids to sweep)")
 		p.Seeded = true
 	}
@@ -206,10 +215,10 @@ func (p *PeerClient) doSweep(ctx context.Context) error {
 		}
 	}
 
-	p.logger.Debug("backfill done", "host", host, "count", len(ops), "last_ulid", lastUlid)
+	p.logger.Debug("backfill done", "host", host, "count", len(ops), "last_ulid", lastUlid, "limited", limited, "last_scanned_ulid", lastScannedULID)
 
 	// seeding is complete if the last ulid is within the last hour
-	if !p.Seeded {
+	if !p.Seeded && !limited {
 		parsedULID, err := ulid.Parse(lastUlid)
 		if err == nil {
 			t := ulid.Time(parsedULID.Time())
