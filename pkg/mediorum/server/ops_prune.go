@@ -21,8 +21,8 @@ const (
 // node's serving and indexing are unaffected.
 func (ss *MediorumServer) startOpsPruner(ctx context.Context) error {
 	logger := ss.logger.With(zap.String("task", "ops_prune"))
-	if !ss.Config.OpsPruneEnabled {
-		logger.Info("ops pruning disabled")
+	if ss.Config.Archive {
+		logger.Info("archive mode: ops pruning disabled")
 		<-ctx.Done()
 		return ctx.Err()
 	}

@@ -82,8 +82,9 @@ type MediorumConfig struct {
 	RepairInterval             time.Duration `default:"1h"`
 	RepairConcurrency          int           `default:"1"`
 
-	// Pruning for the append-only crudr "ops" table.
-	OpsPruneEnabled  bool          `default:"true"`
+	// Archive mode (OPENAUDIO_ARCHIVE) keeps all history: no core block pruning
+	// and no crudr "ops" pruning. Otherwise ops older than OpsRetention are pruned.
+	Archive          bool
 	OpsRetention     time.Duration `default:"8760h"` // 1 year
 	OpsPruneInterval time.Duration `default:"6h"`
 

@@ -141,9 +141,9 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	repairInterval := env.GetDuration(time.Hour, "OPENAUDIO_REPAIR_INTERVAL")
 	repairConcurrency := env.GetInt(1, "OPENAUDIO_REPAIR_CONCURRENCY")
 
-	// Op-log pruning configuration. Default retains 1 year of the append-only
-	// crudr "ops" table.
-	opsPruneEnabled := env.Get("true", "OPENAUDIO_OPS_PRUNE_ENABLED") == "true"
+	// Archive mode keeps all history (no ops pruning). Otherwise the append-only
+	// crudr "ops" table is pruned, retaining 1 year by default.
+	archive := env.Get("false", "OPENAUDIO_ARCHIVE", "archive") == "true"
 	opsRetention := env.GetDuration(365*24*time.Hour, "OPENAUDIO_OPS_RETENTION")
 	opsPruneInterval := env.GetDuration(6*time.Hour, "OPENAUDIO_OPS_PRUNE_INTERVAL")
 
@@ -176,7 +176,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		RepairEnabled:             repairEnabled,
 		RepairInterval:            repairInterval,
 		RepairConcurrency:         repairConcurrency,
-		OpsPruneEnabled:           opsPruneEnabled,
+		Archive:                   archive,
 		OpsRetention:              opsRetention,
 		OpsPruneInterval:          opsPruneInterval,
 		BlobStorageStreaming:      env.Bool("OPENAUDIO_BLOB_STORAGE_STREAMING"),
