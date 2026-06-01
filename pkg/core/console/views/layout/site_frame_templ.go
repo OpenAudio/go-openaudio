@@ -108,7 +108,7 @@ func (l *Layout) JailedStatusBanner(jailed bool) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<span>Jailed</span></div><div class=\"text-sm font-semibold uppercase tracking-normal sm:text-right\">This node is currently jailed and will not participate as an active validator.</div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<span>Jailed</span></div><div class=\"text-sm font-semibold uppercase tracking-normal sm:text-right\">THIS NODE IS NOT ACTIVELY PARTICIPATING IN CONSENSUS</div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
