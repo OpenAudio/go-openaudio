@@ -84,7 +84,7 @@ type MediorumConfig struct {
 
 	// Pruning for the append-only crudr "ops" table.
 	OpsPruneEnabled  bool          `default:"true"`
-	OpsRetention     time.Duration `default:"2160h"` // ~3 months (one quarter)
+	OpsRetention     time.Duration `default:"8760h"` // 1 year
 	OpsPruneInterval time.Duration `default:"6h"`
 
 	ProgrammableDistributionEnabled bool

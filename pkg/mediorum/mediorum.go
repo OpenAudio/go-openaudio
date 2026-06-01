@@ -141,10 +141,10 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	repairInterval := env.GetDuration(time.Hour, "OPENAUDIO_REPAIR_INTERVAL")
 	repairConcurrency := env.GetInt(1, "OPENAUDIO_REPAIR_CONCURRENCY")
 
-	// Op-log pruning configuration. Default retains ~3 months (one quarter) of
-	// the append-only crudr "ops" table.
+	// Op-log pruning configuration. Default retains 1 year of the append-only
+	// crudr "ops" table.
 	opsPruneEnabled := env.Get("true", "OPENAUDIO_OPS_PRUNE_ENABLED") == "true"
-	opsRetention := env.GetDuration(90*24*time.Hour, "OPENAUDIO_OPS_RETENTION")
+	opsRetention := env.GetDuration(365*24*time.Hour, "OPENAUDIO_OPS_RETENTION")
 	opsPruneInterval := env.GetDuration(6*time.Hour, "OPENAUDIO_OPS_PRUNE_INTERVAL")
 
 	config := server.MediorumConfig{
