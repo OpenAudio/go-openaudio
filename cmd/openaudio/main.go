@@ -31,14 +31,14 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/core"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
-	oaenv "github.com/OpenAudio/go-openaudio/pkg/env"
-	"github.com/OpenAudio/go-openaudio/pkg/explorer"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
+	oaenv "github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/OpenAudio/go-openaudio/pkg/eth"
 	"github.com/OpenAudio/go-openaudio/pkg/etl"
 	"github.com/OpenAudio/go-openaudio/pkg/etlserver"
-	"github.com/OpenAudio/go-openaudio/pkg/location"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
+	"github.com/OpenAudio/go-openaudio/pkg/location"
 	aLogger "github.com/OpenAudio/go-openaudio/pkg/logger"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server"
@@ -662,7 +662,7 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 	// Base route collides with console dashboard when explorer is enabled
 	if !consoleEnabled {
 		baseRoutes.GET("/", func(c echo.Context) error {
-			return c.JSON(http.StatusOK, map[string]int{"a": 440})
+			return c.Redirect(http.StatusMovedPermanently, "/console")
 		})
 	}
 	baseRoutes.GET("/console", func(c echo.Context) error {
@@ -946,7 +946,6 @@ func keyGen() (string, string) {
 	return hex.EncodeToString(privateKeyBytes), crypto.PubkeyToAddress(privateKey.PublicKey).Hex()
 }
 
-
 func hasSuffix(domain string, suffixes []string) bool {
 	for _, suffix := range suffixes {
 		if strings.HasSuffix(domain, suffix) {
@@ -1034,4 +1033,3 @@ func getHealthCheckResponse(hostUrl *url.URL, coreService *coreServer.CoreServic
 
 	return response
 }
-

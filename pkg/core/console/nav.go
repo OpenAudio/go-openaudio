@@ -14,8 +14,16 @@ func (con *Console) navChainData(c echo.Context) error {
 		return err
 	}
 
-	totalBlocks := fmt.Sprint(res.Msg.CurrentHeight)
+	totalBlocks := fmt.Sprint(con.latestKnownHeight(c.Request().Context(), res.Msg.CurrentHeight))
 	isSyncing := !res.Msg.Synced
 
 	return con.views.RenderNavChainData(c, totalBlocks, isSyncing)
+}
+
+func (con *Console) navJailedStatus(c echo.Context) error {
+	jailed, err := con.currentNodeJailed(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	return con.views.RenderNavJailedStatus(c, jailed)
 }
