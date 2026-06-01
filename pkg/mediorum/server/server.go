@@ -82,6 +82,11 @@ type MediorumConfig struct {
 	RepairInterval             time.Duration `default:"1h"`
 	RepairConcurrency          int           `default:"1"`
 
+	// Pruning for the append-only crudr "ops" table.
+	OpsPruneEnabled  bool          `default:"true"`
+	OpsRetention     time.Duration `default:"2160h"` // ~3 months (one quarter)
+	OpsPruneInterval time.Duration `default:"6h"`
+
 	ProgrammableDistributionEnabled bool
 	BlobStorageStreaming             bool
 
@@ -649,6 +654,7 @@ func (ss *MediorumServer) MustStart() error {
 		})
 	}
 
+	ss.lc.AddManagedRoutine("ops pruner", ss.startOpsPruner)
 	ss.lc.AddManagedRoutine("metrics monitor", ss.monitorMetrics)
 	ss.lc.AddManagedRoutine("peer reachability monitor", ss.monitorPeerReachability)
 	ss.lc.AddManagedRoutine("proof of storage handler", ss.startPoSHandler)
