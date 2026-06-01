@@ -584,8 +584,16 @@ func (e *Indexer) processOneTx(
 				return false
 			}
 		} else {
-			e.logger.Debug("tx indexed",
-				zap.String("type", "manage_entity"),
+			// One info line per successfully indexed entity-manager row,
+			// mirroring the field set of the "validation rejected" / "dispatch
+			// error" logs so a single grep on hash/entity_id shows the full
+			// lifecycle (indexed vs rejected vs errored) of every EM tx.
+			e.logger.Info("entity manager indexed",
+				zap.String("entity_type", me.GetEntityType()),
+				zap.String("action", me.GetAction()),
+				zap.Int64("entity_id", me.GetEntityId()),
+				zap.Int64("user_id", me.GetUserId()),
+				zap.Int64("block", block.Height),
 				zap.String("hash", t.Hash),
 				zap.Duration("elapsed", time.Since(txStart)),
 			)
