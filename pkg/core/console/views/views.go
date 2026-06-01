@@ -25,6 +25,10 @@ func (v *Views) RenderNavChainData(c echo.Context, totalBlocks string, syncing b
 	return v.layouts.NavBlockData(totalBlocks, syncing).Render(c.Request().Context(), c.Response().Writer)
 }
 
+func (v *Views) RenderNavJailedStatus(c echo.Context, jailed bool) error {
+	return v.layouts.JailedStatusBanner(jailed).Render(c.Request().Context(), c.Response().Writer)
+}
+
 func (v *Views) RenderNodesView(c echo.Context, view *pages.NodesView) error {
 	return v.pages.NodesPageHTML(view).Render(c.Request().Context(), c.Response().Writer)
 }

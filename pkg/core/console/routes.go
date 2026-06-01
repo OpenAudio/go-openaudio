@@ -50,6 +50,7 @@ func (c *Console) registerRoutes() {
 	g.GET("/health_check", c.getHealth)
 
 	g.GET("/fragments/nav/chain_data", c.navChainData)
+	g.GET("/fragments/nav/jailed_status", c.navJailedStatus)
 	g.GET("/fragments/overview/critical", c.overviewCriticalFragment)
 	g.GET("/fragments/overview/processes", c.overviewProcessesFragment)
 	g.GET("/fragments/overview/resources", c.overviewResourcesFragment)
