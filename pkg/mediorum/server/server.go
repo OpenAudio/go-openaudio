@@ -82,6 +82,12 @@ type MediorumConfig struct {
 	RepairInterval             time.Duration `default:"1h"`
 	RepairConcurrency          int           `default:"1"`
 
+	// Archive mode (OPENAUDIO_ARCHIVE) keeps all history: no core block pruning
+	// and no crudr "ops" pruning. Otherwise ops older than OpsRetention are pruned.
+	Archive          bool
+	OpsRetention     time.Duration `default:"8760h"` // 1 year
+	OpsPruneInterval time.Duration `default:"6h"`
+
 	ProgrammableDistributionEnabled bool
 	BlobStorageStreaming             bool
 
@@ -649,6 +655,7 @@ func (ss *MediorumServer) MustStart() error {
 		})
 	}
 
+	ss.lc.AddManagedRoutine("ops pruner", ss.startOpsPruner)
 	ss.lc.AddManagedRoutine("metrics monitor", ss.monitorMetrics)
 	ss.lc.AddManagedRoutine("peer reachability monitor", ss.monitorPeerReachability)
 	ss.lc.AddManagedRoutine("proof of storage handler", ss.startPoSHandler)
