@@ -206,6 +206,27 @@ func (p *Params) MetadataInt64(key string) (int64, bool) {
 	return 0, false
 }
 
+// MetadataFloat64 returns a float64 from parsed metadata (supports number and
+// integer JSON values). Returns ok=false when the key is absent or not numeric.
+func (p *Params) MetadataFloat64(key string) (float64, bool) {
+	if p.Metadata == nil {
+		return 0, false
+	}
+	v, ok := p.Metadata[key]
+	if !ok {
+		return 0, false
+	}
+	switch val := v.(type) {
+	case float64:
+		return val, true
+	case int:
+		return float64(val), true
+	case int64:
+		return float64(val), true
+	}
+	return 0, false
+}
+
 // MetadataBool returns a bool from parsed metadata.
 func (p *Params) MetadataBool(key string) (bool, bool) {
 	if p.Metadata == nil {

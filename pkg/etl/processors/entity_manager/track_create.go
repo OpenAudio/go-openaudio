@@ -91,6 +91,23 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 	isPlaylistUpload := params.MetadataBoolOr("is_playlist_upload", false)
 	ddexApp := params.MetadataString("ddex_app")
 	isAvailable := params.MetadataBoolOr("is_available", true)
+	isCustomBpm := params.MetadataBoolOr("is_custom_bpm", false)
+	isCustomMusicalKey := params.MetadataBoolOr("is_custom_musical_key", false)
+	audioUploadID := params.MetadataString("audio_upload_id")
+
+	// musical_key: only persist recognized keys (mirrors apps' is_valid_musical_key).
+	// An invalid/empty key leaves the column NULL on create.
+	musicalKey := params.MetadataString("musical_key")
+	if !isValidMusicalKey(musicalKey) {
+		musicalKey = ""
+	}
+
+	// bpm: any nonzero number persists; 0/absent/non-numeric leaves it NULL
+	// (mirrors apps' track.py `bpm_float != 0` check).
+	var bpm *float64
+	if v, ok := params.MetadataFloat64("bpm"); ok && v != 0 {
+		bpm = &v
+	}
 
 	fieldVisibility := metadataJSONRaw(params, "field_visibility")
 	remixOf := metadataJSONRaw(params, "remix_of")
@@ -125,6 +142,7 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 			track_cid, preview_cid, orig_file_cid, duration,
 			is_downloadable, is_download_gated, download_conditions, is_stream_gated, stream_conditions,
 			release_date, is_scheduled_release, ai_attribution_user_id, is_playlist_upload, ddex_app, ddex_release_ids,
+			bpm, musical_key, is_custom_bpm, is_custom_musical_key, audio_upload_id,
 			is_available, route_id, track_segments, created_at, updated_at, txhash, blocknumber
 		) VALUES (
 			$1, $2, true, false, $3, $4, $5, $6, $7,
@@ -132,7 +150,8 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22,
 			$23, $24, $25, $26, $27, $28,
-			$29, $30, '[]'::jsonb, $31, $31, $32, $33
+			$29, $30, $31, $32, $33,
+			$34, $35, '[]'::jsonb, $36, $36, $37, $38
 		)
 	`,
 		params.EntityID,
@@ -163,6 +182,11 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		isPlaylistUpload,
 		nullString(ddexApp),
 		ddexReleaseIDs,
+		bpm,
+		nullString(musicalKey),
+		isCustomBpm,
+		isCustomMusicalKey,
+		nullString(audioUploadID),
 		isAvailable,
 		routeID,
 		params.BlockTime,
