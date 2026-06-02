@@ -69,18 +69,23 @@ func validateUnsubscribe(ctx context.Context, params *Params) error {
 }
 
 func insertSubscription(ctx context.Context, params *Params, isDelete bool) error {
-	_, err := params.DBTX.Exec(ctx,
-		"UPDATE subscriptions SET is_current = false WHERE subscriber_id = $1 AND user_id = $2 AND is_current = true",
-		params.UserID, params.EntityID)
-	if err != nil {
-		return err
-	}
-
-	_, err = params.DBTX.Exec(ctx, `
+	// Upsert the single current row in place (arbiter: subscriptions_current_uniq_idx),
+	// matching the Follow auto-subscribe path in social_follow.go. The prior
+	// demote-then-insert was a two-statement write: between the demote and the
+	// insert another subscription writer could land a second current row, which
+	// is how duplicate is_current rows accumulated here but not in the
+	// single-writer reposts/saves/follows tables.
+	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO subscriptions (
 			subscriber_id, user_id, is_current, is_delete,
 			created_at, txhash, blocknumber
 		) VALUES ($1, $2, true, $3, $4, $5, $6)
+		ON CONFLICT (subscriber_id, user_id) WHERE is_current = true
+		DO UPDATE SET
+			is_delete = EXCLUDED.is_delete,
+			created_at = EXCLUDED.created_at,
+			txhash = EXCLUDED.txhash,
+			blocknumber = EXCLUDED.blocknumber
 	`, params.UserID, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }
