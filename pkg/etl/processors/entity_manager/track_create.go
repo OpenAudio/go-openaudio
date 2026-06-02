@@ -3,8 +3,6 @@ package entity_manager
 import (
 	"context"
 	"encoding/json"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type trackCreateHandler struct{}
@@ -113,10 +111,7 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		aiAttr = &v
 	}
 
-	var releaseDate pgtype.Timestamp
-	if rd, ok := parseReleaseDate(params.MetadataString("release_date")); ok {
-		releaseDate = rd
-	}
+	releaseDate := releaseDateOrDefault(params.MetadataString("release_date"), params.BlockTime)
 
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO tracks (
