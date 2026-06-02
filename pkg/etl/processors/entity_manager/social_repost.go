@@ -82,24 +82,21 @@ func insertRepost(ctx context.Context, params *Params, isDelete bool) error {
 	repostType := resolveRepostType(ctx, params)
 	isRepostOfRepost := params.MetadataBoolOr("is_repost_of_repost", false)
 
-	// Mark existing repost rows as not current
-	_, err := params.DBTX.Exec(ctx,
-		"UPDATE reposts SET is_current = false WHERE user_id = $1 AND repost_item_id = $2 AND repost_type = $3::reposttype AND is_current = true",
-		params.UserID, params.EntityID, repostType)
-	if err != nil {
-		return err
-	}
-
-	// PK is (user_id, repost_item_id, repost_type, txhash); re-delivery of
-	// the same chain tx would otherwise 23505 on the PK. Same txhash means
-	// identical row content by construction, so DO NOTHING is the correct
-	// dedup.
-	_, err = params.DBTX.Exec(ctx, `
+	// Upsert the single current row in place (arbiter: reposts_current_uniq_idx).
+	// Replaces demote-then-insert: avoids unbounded is_current=false history and
+	// gives the aggregate triggers an O(1) is_delete transition to track.
+	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO reposts (
 			user_id, repost_item_id, repost_type, is_current, is_delete, is_repost_of_repost,
 			created_at, txhash, blocknumber
 		) VALUES ($1, $2, $3::reposttype, true, $4, $5, $6, $7, $8)
-		ON CONFLICT (user_id, repost_item_id, repost_type, txhash) DO NOTHING
+		ON CONFLICT (user_id, repost_item_id, repost_type) WHERE is_current = true
+		DO UPDATE SET
+			is_delete = EXCLUDED.is_delete,
+			is_repost_of_repost = EXCLUDED.is_repost_of_repost,
+			created_at = EXCLUDED.created_at,
+			txhash = EXCLUDED.txhash,
+			blocknumber = EXCLUDED.blocknumber
 	`, params.UserID, params.EntityID, repostType, isDelete, isRepostOfRepost, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }

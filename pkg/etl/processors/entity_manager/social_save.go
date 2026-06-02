@@ -88,24 +88,21 @@ func insertSave(ctx context.Context, params *Params, isDelete bool) error {
 	saveType := resolveSaveType(ctx, params)
 	isSaveOfRepost := params.MetadataBoolOr("is_save_of_repost", false)
 
-	// Mark existing save rows as not current
-	_, err := params.DBTX.Exec(ctx,
-		"UPDATE saves SET is_current = false WHERE user_id = $1 AND save_item_id = $2 AND save_type = $3::savetype AND is_current = true",
-		params.UserID, params.EntityID, saveType)
-	if err != nil {
-		return err
-	}
-
-	// PK is (user_id, save_item_id, save_type, txhash); re-delivery of the
-	// same chain tx (prefetcher anomaly) would otherwise 23505 on the PK.
-	// Same txhash means identical row content by construction, so DO NOTHING
-	// is the correct dedup.
-	_, err = params.DBTX.Exec(ctx, `
+	// Upsert the single current row in place (arbiter: saves_current_uniq_idx).
+	// Replaces demote-then-insert: avoids unbounded is_current=false history and
+	// gives the aggregate triggers an O(1) is_delete transition to track.
+	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO saves (
 			user_id, save_item_id, save_type, is_current, is_delete, is_save_of_repost,
 			created_at, txhash, blocknumber
 		) VALUES ($1, $2, $3::savetype, true, $4, $5, $6, $7, $8)
-		ON CONFLICT (user_id, save_item_id, save_type, txhash) DO NOTHING
+		ON CONFLICT (user_id, save_item_id, save_type) WHERE is_current = true
+		DO UPDATE SET
+			is_delete = EXCLUDED.is_delete,
+			is_save_of_repost = EXCLUDED.is_save_of_repost,
+			created_at = EXCLUDED.created_at,
+			txhash = EXCLUDED.txhash,
+			blocknumber = EXCLUDED.blocknumber
 	`, params.UserID, params.EntityID, saveType, isDelete, isSaveOfRepost, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }
