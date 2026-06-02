@@ -364,8 +364,8 @@ type blockResult struct {
 
 // processBlock indexes one CometBFT block atomically.
 //
-// All writes for the block — etl_blocks, blocks (chain head row + tip
-// promotion), core_indexed_blocks, and every entity-table write performed
+// All writes for the block — etl_blocks, blocks (chain head row),
+// core_indexed_blocks, and every entity-table write performed
 // by the per-tx handlers — share a single pgx.Tx and commit together or
 // roll back together. On any block-level error (e.g. failure to insert
 // etl_blocks, failure to resolve blocks.number even after a retry),
@@ -869,16 +869,14 @@ func (e *Indexer) firePlaysHooks(ctx context.Context, sp pgx.Tx, plays []*corev1
 	}
 }
 
-// resolveBlockNumber returns the blocks.number for blockHash and ensures
-// the row for blockHash is the unique tip (is_current = true), all within
-// the caller-supplied transaction.
+// resolveBlockNumber returns the blocks.number for blockHash, inserting a
+// blocks row if needed, all within the caller-supplied transaction.
 //
 // Idempotent and tolerant of co-existing writers (e.g. the legacy Python
 // indexer during a cutover): if a row for blockHash already exists, its
-// number is adopted and is_current is re-asserted. If not, a new row is
-// inserted at MAX(number)+1 computed in-statement. The DB is the source
-// of truth; no in-memory counter to drift from concurrent writers or
-// stale snapshots.
+// number is adopted. If not, a new row is inserted at MAX(number)+1
+// computed in-statement. The DB is the source of truth; no in-memory
+// counter to drift from concurrent writers or stale snapshots.
 //
 // On a number-collision race with another writer (our INSERT no-op'd
 // because some other hash claimed MAX+1 first), the final SELECT returns
@@ -888,48 +886,28 @@ func (e *Indexer) firePlaysHooks(ctx context.Context, sp pgx.Tx, plays []*corev1
 // Operates on the caller's tx (or savepoint) so the block-row work
 // commits atomically with the rest of the block's entity writes.
 func (e *Indexer) resolveBlockNumber(ctx context.Context, tx pgx.Tx, blockHash string) (int64, error) {
-	// Snapshot the prior tip's hash for our parenthash. nil when the table
-	// is empty or has no current row (e.g. mid-recovery after an interrupted
-	// writer left no is_current=true).
-	var parentHash *string
-	err := tx.QueryRow(ctx,
-		"SELECT blockhash FROM blocks WHERE is_current IS TRUE").Scan(&parentHash)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return 0, fmt.Errorf("read prev tip: %w", err)
-	}
-
-	// Demote the prior tip — but not ourselves, so idempotent re-processing
-	// of the same block doesn't briefly flip its row to is_current=false.
-	if _, err := tx.Exec(ctx,
-		"UPDATE blocks SET is_current = false WHERE is_current IS TRUE AND blockhash != $1",
-		blockHash); err != nil {
-		return 0, fmt.Errorf("demote prev tip: %w", err)
-	}
-
-	// Insert with MAX(number)+1 computed atomically. If a row for blockHash
-	// already exists (we're re-processing, or another writer beat us), or
-	// if another writer claimed MAX+1 with a different hash, ON CONFLICT
-	// silently no-ops. The subsequent UPDATE + SELECT then decide what
+	// Insert after the highest-numbered block. If a row for blockHash
+	// already exists (we're re-processing, or another writer beat us), or if
+	// another writer claimed the next number with a different hash,
+	// ON CONFLICT silently no-ops. The subsequent SELECT then decides what
 	// happened.
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO blocks (blockhash, parenthash, number, is_current)
-		SELECT $1, $2, COALESCE((SELECT MAX(number) FROM blocks), 0) + 1, true
+		INSERT INTO blocks (blockhash, parenthash, number)
+		SELECT $1, prev.blockhash, COALESCE(prev.number, 0) + 1
+		FROM (SELECT 1) seed
+		LEFT JOIN LATERAL (
+			SELECT blockhash, number
+			FROM blocks
+			ORDER BY number DESC
+			LIMIT 1
+		) prev ON true
 		ON CONFLICT DO NOTHING`,
-		blockHash, parentHash); err != nil {
+		blockHash); err != nil {
 		return 0, fmt.Errorf("insert block: %w", err)
 	}
 
-	// Re-assert is_current on the row for blockHash. If we just inserted
-	// it, the INSERT already set is_current=true and this is a no-op. If
-	// the row pre-existed with is_current=false, this promotes it to tip.
-	if _, err := tx.Exec(ctx,
-		"UPDATE blocks SET is_current = true WHERE blockhash = $1 AND is_current IS FALSE",
-		blockHash); err != nil {
-		return 0, fmt.Errorf("re-assert is_current: %w", err)
-	}
-
 	var num int64
-	err = tx.QueryRow(ctx,
+	err := tx.QueryRow(ctx,
 		"SELECT number FROM blocks WHERE blockhash = $1", blockHash).Scan(&num)
 	if err != nil {
 		// No row for our hash: we lost a (number) race with a different

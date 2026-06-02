@@ -2,8 +2,8 @@ package etl
 
 import (
 	"context"
+	"fmt"
 	"os"
-	"strconv"
 	"testing"
 
 	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
@@ -61,31 +61,6 @@ func callResolveBlockNumber(t *testing.T, pool *pgxpool.Pool, ix *Indexer, block
 	return num, nil
 }
 
-// countCurrentTips counts how many blocks have is_current = true. The
-// partial unique index guarantees this is at most 1 in steady state;
-// we use it to assert the tip invariant after every resolveBlockNumber call.
-func countCurrentTips(t *testing.T, pool *pgxpool.Pool) int {
-	t.Helper()
-	var n int
-	if err := pool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM blocks WHERE is_current IS TRUE`).Scan(&n); err != nil {
-		t.Fatalf("count tips: %v", err)
-	}
-	return n
-}
-
-// currentTipHash returns the blockhash of the unique is_current=true row.
-// Fails the test if zero or more than one row matches.
-func currentTipHash(t *testing.T, pool *pgxpool.Pool) string {
-	t.Helper()
-	var h string
-	if err := pool.QueryRow(context.Background(),
-		`SELECT blockhash FROM blocks WHERE is_current IS TRUE`).Scan(&h); err != nil {
-		t.Fatalf("read current tip hash: %v", err)
-	}
-	return h
-}
-
 // blockNumber returns the number stored for a given blockhash, failing the
 // test if no row exists.
 func blockNumber(t *testing.T, pool *pgxpool.Pool, hash string) int64 {
@@ -111,7 +86,7 @@ func blockRowCount(t *testing.T, pool *pgxpool.Pool) int {
 }
 
 // TestResolveBlockNumber_EmptyTable: on a fresh table, the first call
-// inserts the block at number=1 and marks it the unique tip.
+// inserts the block at number=1.
 func TestResolveBlockNumber_EmptyTable(t *testing.T) {
 	pool := setupBlocksTestDB(t)
 	ix := newTestIndexer(pool)
@@ -123,17 +98,13 @@ func TestResolveBlockNumber_EmptyTable(t *testing.T) {
 	if got != 1 {
 		t.Errorf("returned number = %d, want 1", got)
 	}
-	if tips := countCurrentTips(t, pool); tips != 1 {
-		t.Errorf("is_current=true count = %d, want 1 (tip invariant)", tips)
-	}
-	if tip := currentTipHash(t, pool); tip != "blk-genesis" {
-		t.Errorf("tip hash = %s, want blk-genesis", tip)
+	if rows := blockRowCount(t, pool); rows != 1 {
+		t.Errorf("row count = %d, want 1", rows)
 	}
 }
 
 // TestResolveBlockNumber_AppendsToChain: with an existing chain, the
-// next call increments the number, demotes the prior tip, and promotes
-// the new block. Tip invariant holds throughout.
+// next call increments the number without inserting duplicates.
 func TestResolveBlockNumber_AppendsToChain(t *testing.T) {
 	pool := setupBlocksTestDB(t)
 	ix := newTestIndexer(pool)
@@ -147,30 +118,25 @@ func TestResolveBlockNumber_AppendsToChain(t *testing.T) {
 		if want := int64(i + 1); n != want {
 			t.Errorf("step %d returned %d, want %d", i, n, want)
 		}
-		if tips := countCurrentTips(t, pool); tips != 1 {
-			t.Errorf("step %d tip count = %d, want 1", i, tips)
-		}
-		if tip := currentTipHash(t, pool); tip != hash {
-			t.Errorf("step %d tip = %s, want %s", i, tip, hash)
-		}
+	}
+	if rows := blockRowCount(t, pool); rows != 3 {
+		t.Errorf("row count = %d, want 3", rows)
 	}
 }
 
 // TestResolveBlockNumber_AdoptsExistingByHash: when a row already
 // exists for this hash (e.g. another writer wrote it during a cutover),
-// the function adopts its number without inserting a new row and
-// promotes it to the tip.
+// the function adopts its number without inserting a new row.
 func TestResolveBlockNumber_AdoptsExistingByHash(t *testing.T) {
 	pool := setupBlocksTestDB(t)
 	ctx := context.Background()
 
-	// Simulate a co-existing writer's row at number=42, is_current=false.
-	// Plus a separate "stale tip" at number=43 with is_current=true,
-	// which our call should demote.
+	// Simulate a co-existing writer's row at number=42, plus a newer row
+	// at number=43.
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO blocks (blockhash, parenthash, number, is_current) VALUES
-		  ('blk-prewritten', NULL, 42, false),
-		  ('blk-stale-tip', NULL, 43, true)
+		INSERT INTO blocks (blockhash, parenthash, number) VALUES
+		  ('blk-prewritten', NULL, 42),
+		  ('blk-newer', NULL, 43)
 	`); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -186,38 +152,28 @@ func TestResolveBlockNumber_AdoptsExistingByHash(t *testing.T) {
 	if rows := blockRowCount(t, pool); rows != 2 {
 		t.Errorf("row count = %d, want 2 (no new row inserted)", rows)
 	}
-	if tips := countCurrentTips(t, pool); tips != 1 {
-		t.Errorf("tip count = %d, want 1", tips)
-	}
-	if tip := currentTipHash(t, pool); tip != "blk-prewritten" {
-		t.Errorf("tip = %s, want blk-prewritten (promoted from is_current=false)", tip)
-	}
 }
 
-// TestResolveBlockNumber_TipInvariantAfterFossils: a co-running writer
-// left "fossil" rows ahead of where we last knew MAX(number) to be —
-// possibly with one of them still flagged is_current=true — then died.
-// We must skip past all fossils, insert at the true MAX+1, and end up
-// as the unique tip. This is the production failure mode that dropped
-// ray52726.
-func TestResolveBlockNumber_TipInvariantAfterFossils(t *testing.T) {
+// TestResolveBlockNumber_AppendsAfterFossils: a co-running writer left
+// "fossil" rows ahead of where we last knew MAX(number) to be, then died.
+// We must skip past all fossils and insert at the true MAX+1.
+func TestResolveBlockNumber_AppendsAfterFossils(t *testing.T) {
 	pool := setupBlocksTestDB(t)
 	ctx := context.Background()
 
-	// Fossils 100..109, with the last one still flagged as the tip — as
-	// if the prior writer was killed mid-stream after marking 109 current.
+	// Fossils 100..109, as if the prior writer was killed mid-stream.
 	for i := 100; i <= 108; i++ {
 		if _, err := pool.Exec(ctx,
-			`INSERT INTO blocks (blockhash, parenthash, number, is_current)
-			 VALUES ($1, NULL, $2, false)`,
-			"fossil-"+strconv.Itoa(i), i); err != nil {
+			`INSERT INTO blocks (blockhash, parenthash, number)
+			 VALUES ($1, NULL, $2)`,
+			fmt.Sprintf("fossil-%d", i), i); err != nil {
 			t.Fatalf("seed fossil %d: %v", i, err)
 		}
 	}
 	if _, err := pool.Exec(ctx,
-		`INSERT INTO blocks (blockhash, parenthash, number, is_current)
-		 VALUES ('fossil-109-tip', NULL, 109, true)`); err != nil {
-		t.Fatalf("seed tip fossil: %v", err)
+		`INSERT INTO blocks (blockhash, parenthash, number)
+		 VALUES ('fossil-109', NULL, 109)`); err != nil {
+		t.Fatalf("seed fossil 109: %v", err)
 	}
 
 	ix := newTestIndexer(pool)
@@ -228,17 +184,13 @@ func TestResolveBlockNumber_TipInvariantAfterFossils(t *testing.T) {
 	if got != 110 {
 		t.Errorf("returned %d, want 110 (MAX(109)+1)", got)
 	}
-	if tips := countCurrentTips(t, pool); tips != 1 {
-		t.Errorf("tip count = %d, want 1", tips)
-	}
-	if tip := currentTipHash(t, pool); tip != "blk-new" {
-		t.Errorf("tip = %s, want blk-new", tip)
+	if rows := blockRowCount(t, pool); rows != 11 {
+		t.Errorf("row count = %d, want 11", rows)
 	}
 }
 
 // TestResolveBlockNumber_IdempotentSameHash: calling twice for the
-// same hash returns the same number both times, doesn't double-insert,
-// and the tip invariant holds.
+// same hash returns the same number both times and doesn't double-insert.
 func TestResolveBlockNumber_IdempotentSameHash(t *testing.T) {
 	pool := setupBlocksTestDB(t)
 	ix := newTestIndexer(pool)
@@ -257,15 +209,12 @@ func TestResolveBlockNumber_IdempotentSameHash(t *testing.T) {
 	if rows := blockRowCount(t, pool); rows != 1 {
 		t.Errorf("row count = %d, want 1", rows)
 	}
-	if tips := countCurrentTips(t, pool); tips != 1 {
-		t.Errorf("tip count = %d, want 1", tips)
-	}
 }
 
-// TestResolveBlockNumber_ParentHashIsPriorTip: the parenthash field on
-// the newly-inserted block is set to the previous tip's blockhash.
-// (Cheap correctness check that we capture parenthash before demoting.)
-func TestResolveBlockNumber_ParentHashIsPriorTip(t *testing.T) {
+// TestResolveBlockNumber_ParentHashIsHighestNumberedBlock: the parenthash
+// field on the newly-inserted block is set to the previous highest-numbered
+// block's hash.
+func TestResolveBlockNumber_ParentHashIsHighestNumberedBlock(t *testing.T) {
 	pool := setupBlocksTestDB(t)
 	ctx := context.Background()
 	ix := newTestIndexer(pool)
@@ -306,4 +255,3 @@ func TestResolveBlockNumber_NumberValueIsStoredCorrectly(t *testing.T) {
 		t.Errorf("returned %d, stored %d", got, stored)
 	}
 }
-

@@ -33,7 +33,6 @@ type AssociatedWallet struct {
 type Block struct {
 	Blockhash  string      `json:"blockhash"`
 	Parenthash pgtype.Text `json:"parenthash"`
-	IsCurrent  pgtype.Bool `json:"is_current"`
 	Number     pgtype.Int4 `json:"number"`
 }
 

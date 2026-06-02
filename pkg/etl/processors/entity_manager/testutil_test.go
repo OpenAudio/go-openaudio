@@ -23,8 +23,8 @@ import (
 func seedBlock(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	if _, err := pool.Exec(context.Background(), `
-		INSERT INTO blocks (blockhash, parenthash, is_current, number)
-		VALUES ($1, $2, true, 100)
+		INSERT INTO blocks (blockhash, parenthash, number)
+		VALUES ($1, $2, 100)
 		ON CONFLICT (blockhash) DO NOTHING
 	`, "test-block-100", ""); err != nil {
 		t.Fatalf("seedBlock: %v", err)

@@ -22,13 +22,10 @@ END $$;
 CREATE TABLE IF NOT EXISTS blocks (
   blockhash character varying NOT NULL,
   parenthash character varying,
-  is_current boolean,
   number integer,
   CONSTRAINT blocks_pkey PRIMARY KEY (blockhash),
   CONSTRAINT blocks_number_key UNIQUE (number)
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS blocks_is_current_idx ON blocks (is_current) WHERE is_current IS TRUE;
 
 -- users
 
