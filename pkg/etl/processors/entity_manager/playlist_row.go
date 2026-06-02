@@ -153,10 +153,8 @@ func mergePlaylistFromMetadata(p *Params, base *playlistRow) *playlistRow {
 		out.ProducerCopyrightLine = marshalJSONOrNil(v)
 	}
 
-	if rd := p.MetadataString("release_date"); rd != "" {
-		if t, err := time.Parse(time.RFC3339, rd); err == nil {
-			out.ReleaseDate = pgtype.Timestamp{Time: t, Valid: true}
-		}
+	if rd, ok := parseReleaseDate(p.MetadataString("release_date")); ok {
+		out.ReleaseDate = rd
 	}
 
 	return &out
