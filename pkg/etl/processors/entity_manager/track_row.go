@@ -199,10 +199,8 @@ func mergeTrackFromMetadata(p *Params, base *trackRow) *trackRow {
 	if v, ok := p.MetadataJSON("ddex_release_ids"); ok {
 		out.DdexReleaseIDs = marshalJSONOrNil(v)
 	}
-	if rd := p.MetadataString("release_date"); rd != "" {
-		if t, err := time.Parse(time.RFC3339, rd); err == nil {
-			out.ReleaseDate = pgtype.Timestamp{Time: t, Valid: true}
-		}
+	if rd, ok := parseReleaseDate(p.MetadataString("release_date")); ok {
+		out.ReleaseDate = rd
 	}
 	return &out
 }
