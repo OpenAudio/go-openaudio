@@ -2,6 +2,7 @@ package entity_manager
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -157,6 +158,66 @@ func TestTrackCreate_Success(t *testing.T) {
 	}
 	if slug == "" {
 		t.Error("expected non-empty slug")
+	}
+}
+
+func TestTrackCreate_PersistsBpmAndKey(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 43)
+	seedUser(t, pool, uid, "0xbpmowner", "bpmowner")
+	meta := `{"owner_id":3000001,"title":"Keyed","genre":"Electronic","bpm":128.5,"musical_key":"D flat minor","is_custom_bpm":true,"is_custom_musical_key":true,"audio_upload_id":"upload-abc"}`
+	params := buildParams(t, pool, EntityTypeTrack, ActionCreate, uid, tid, "0xBpmOwner", meta)
+	mustHandle(t, TrackCreate(), params)
+
+	var bpm float64
+	var key, uploadID string
+	var customBpm, customKey bool
+	err := pool.QueryRow(context.Background(),
+		"SELECT bpm, musical_key, is_custom_bpm, is_custom_musical_key, audio_upload_id FROM tracks WHERE track_id = $1 AND is_current = true", tid).
+		Scan(&bpm, &key, &customBpm, &customKey, &uploadID)
+	if err != nil {
+		t.Fatalf("query track: %v", err)
+	}
+	if bpm != 128.5 {
+		t.Errorf("bpm = %v, want 128.5", bpm)
+	}
+	if key != "D flat minor" {
+		t.Errorf("musical_key = %q, want %q", key, "D flat minor")
+	}
+	if !customBpm || !customKey {
+		t.Errorf("is_custom_bpm = %v, is_custom_musical_key = %v, want both true", customBpm, customKey)
+	}
+	if uploadID != "upload-abc" {
+		t.Errorf("audio_upload_id = %q, want %q", uploadID, "upload-abc")
+	}
+}
+
+// TestTrackCreate_RejectsInvalidMusicalKey mirrors apps' is_valid_musical_key:
+// an unrecognized key (here a sharp, which the enum does not use) is dropped,
+// leaving musical_key NULL rather than persisting the bad value.
+func TestTrackCreate_RejectsInvalidMusicalKey(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 44)
+	seedUser(t, pool, uid, "0xbadkey", "badkey")
+	meta := `{"owner_id":3000001,"title":"BadKey","genre":"Electronic","bpm":0,"musical_key":"C# minor"}`
+	params := buildParams(t, pool, EntityTypeTrack, ActionCreate, uid, tid, "0xBadKey", meta)
+	mustHandle(t, TrackCreate(), params)
+
+	var bpm sql.NullFloat64
+	var key sql.NullString
+	err := pool.QueryRow(context.Background(),
+		"SELECT bpm, musical_key FROM tracks WHERE track_id = $1 AND is_current = true", tid).
+		Scan(&bpm, &key)
+	if err != nil {
+		t.Fatalf("query track: %v", err)
+	}
+	if key.Valid {
+		t.Errorf("musical_key = %q, want NULL for invalid key", key.String)
+	}
+	if bpm.Valid {
+		t.Errorf("bpm = %v, want NULL for zero bpm", bpm.Float64)
 	}
 }
 

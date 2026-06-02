@@ -29,6 +29,73 @@ func TestTrackUpdate_Success(t *testing.T) {
 	}
 }
 
+func TestTrackUpdate_PersistsBpmAndKey(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 62)
+	seedUser(t, pool, uid, "0xowner", "ou")
+	seedTrackFull(t, pool, tid, uid, "Old Title")
+	meta := `{"title":"Old Title","bpm":90.0,"musical_key":"A major","is_custom_bpm":true,"is_custom_musical_key":false,"audio_upload_id":"up-xyz"}`
+	params := buildParams(t, pool, EntityTypeTrack, ActionUpdate, uid, tid, "0xOwner", meta)
+	mustHandle(t, TrackUpdate(), params)
+
+	var bpm float64
+	var key, uploadID string
+	var customBpm, customKey bool
+	err := pool.QueryRow(context.Background(),
+		"SELECT bpm, musical_key, is_custom_bpm, is_custom_musical_key, audio_upload_id FROM tracks WHERE track_id = $1 AND is_current = true", tid).
+		Scan(&bpm, &key, &customBpm, &customKey, &uploadID)
+	if err != nil {
+		t.Fatalf("query track: %v", err)
+	}
+	if bpm != 90.0 {
+		t.Errorf("bpm = %v, want 90.0", bpm)
+	}
+	if key != "A major" {
+		t.Errorf("musical_key = %q, want %q", key, "A major")
+	}
+	if !customBpm || customKey {
+		t.Errorf("is_custom_bpm = %v (want true), is_custom_musical_key = %v (want false)", customBpm, customKey)
+	}
+	if uploadID != "up-xyz" {
+		t.Errorf("audio_upload_id = %q, want %q", uploadID, "up-xyz")
+	}
+}
+
+// TestTrackUpdate_KeepsBpmKeyOnZeroOrInvalid verifies the apps-parity "keep"
+// behavior: an update carrying bpm=0 or an invalid musical_key must NOT
+// overwrite previously-set values (only an explicit null clears them).
+func TestTrackUpdate_KeepsBpmKeyOnZeroOrInvalid(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 63)
+	seedUser(t, pool, uid, "0xowner", "ou")
+	seedTrackFull(t, pool, tid, uid, "Old Title")
+
+	// First, set valid values.
+	set := `{"title":"Old Title","bpm":120.0,"musical_key":"C minor"}`
+	mustHandle(t, TrackUpdate(), buildParams(t, pool, EntityTypeTrack, ActionUpdate, uid, tid, "0xOwner", set))
+
+	// Then an update with bpm=0 and an invalid key must leave them unchanged.
+	noop := `{"title":"Old Title","bpm":0,"musical_key":"H sharp"}`
+	mustHandle(t, TrackUpdate(), buildParams(t, pool, EntityTypeTrack, ActionUpdate, uid, tid, "0xOwner", noop))
+
+	var bpm float64
+	var key string
+	err := pool.QueryRow(context.Background(),
+		"SELECT bpm, musical_key FROM tracks WHERE track_id = $1 AND is_current = true", tid).
+		Scan(&bpm, &key)
+	if err != nil {
+		t.Fatalf("query track: %v", err)
+	}
+	if bpm != 120.0 {
+		t.Errorf("bpm = %v, want 120.0 (unchanged)", bpm)
+	}
+	if key != "C minor" {
+		t.Errorf("musical_key = %q, want %q (unchanged)", key, "C minor")
+	}
+}
+
 func TestTrackUpdate_NotFound(t *testing.T) {
 	pool := setupTestDB(t)
 	uid := int64(UserIDOffset + 1)
