@@ -32,7 +32,7 @@ func TestScheduledReleasePublisher_PublishesPastDueTrack(t *testing.T) {
 	pool := setupPublisherDB(t)
 	ctx := context.Background()
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO blocks (blockhash, parenthash, is_current, number) VALUES ('blk-pub', '', true, 100)
+		INSERT INTO blocks (blockhash, parenthash, number) VALUES ('blk-pub', '', 100)
 		ON CONFLICT (blockhash) DO NOTHING
 	`); err != nil {
 		t.Fatalf("seed block: %v", err)
@@ -83,7 +83,7 @@ func TestScheduledReleasePublisher_PublishesPastDueAlbum(t *testing.T) {
 	pool := setupPublisherDB(t)
 	ctx := context.Background()
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO blocks (blockhash, parenthash, is_current, number) VALUES ('blk-alb', '', true, 100)
+		INSERT INTO blocks (blockhash, parenthash, number) VALUES ('blk-alb', '', 100)
 		ON CONFLICT (blockhash) DO NOTHING
 	`); err != nil {
 		t.Fatalf("seed block: %v", err)
