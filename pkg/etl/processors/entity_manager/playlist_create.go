@@ -2,8 +2,6 @@ package entity_manager
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type playlistCreateHandler struct{}
@@ -71,10 +69,7 @@ func insertPlaylistAndRoute(ctx context.Context, params *Params) error {
 	copyrightLine := metadataJSONRaw(params, "copyright_line")
 	producerCopyrightLine := metadataJSONRaw(params, "producer_copyright_line")
 
-	var releaseDate pgtype.Timestamp
-	if rd, ok := parseReleaseDate(params.MetadataString("release_date")); ok {
-		releaseDate = rd
-	}
+	releaseDate := releaseDateOrDefault(params.MetadataString("release_date"), params.BlockTime)
 
 	row := &playlistRow{
 		PlaylistID:                  params.EntityID,
