@@ -72,6 +72,36 @@ func TestFindMissedAudioAnalysisCandidatesBoundsRetriesAndBackoff(t *testing.T) 
 			AudioAnalysisStatus: "",
 			AudioAnalyzedAt:     time.Time{},
 		},
+		{
+			ID:                      prefix + "transcode-terminal-no-result",
+			Template:                JobTemplateAudio,
+			Status:                  JobStatusError,
+			ErrorCount:              missedTranscodeMaxErrorCount + 1,
+			TranscodeResults:        map[string]string{},
+			AudioAnalysisStatus:     "",
+			AudioAnalysisErrorCount: 0,
+			AudioAnalyzedAt:         time.Time{},
+		},
+		{
+			ID:                      prefix + "transcode-terminal-empty-result",
+			Template:                JobTemplateAudio,
+			Status:                  JobStatusError,
+			ErrorCount:              missedTranscodeMaxErrorCount + 1,
+			TranscodeResults:        map[string]string{"320": ""},
+			AudioAnalysisStatus:     "",
+			AudioAnalysisErrorCount: 0,
+			AudioAnalyzedAt:         time.Time{},
+		},
+		{
+			ID:                      prefix + "transcode-terminal-with-result",
+			Template:                JobTemplateAudio,
+			Status:                  JobStatusError,
+			ErrorCount:              missedTranscodeMaxErrorCount + 1,
+			TranscodeResults:        map[string]string{"320": "cid-320"},
+			AudioAnalysisStatus:     "",
+			AudioAnalysisErrorCount: 0,
+			AudioAnalyzedAt:         time.Time{},
+		},
 	}
 	for i := range uploads {
 		require.NoError(t, ss.crud.DB.Create(&uploads[i]).Error)
@@ -88,8 +118,9 @@ func TestFindMissedAudioAnalysisCandidatesBoundsRetriesAndBackoff(t *testing.T) 
 	}
 
 	require.Equal(t, map[string]bool{
-		prefix + "never-tried":   true,
-		prefix + "old-error":     true,
-		prefix + "max-minus-one": true,
+		prefix + "never-tried":                    true,
+		prefix + "old-error":                      true,
+		prefix + "max-minus-one":                  true,
+		prefix + "transcode-terminal-with-result": true,
 	}, got)
 }
