@@ -271,7 +271,7 @@ func (c *Crudr) ApplyOp(op *Op) error {
 
 	// create op + records in a db transaction
 	err = c.DB.Transaction(func(tx *gorm.DB) error {
-		if !op.Transient {
+		if c.shouldPersistOp(op) {
 			res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(op)
 			if res.Error != nil {
 				return res.Error
@@ -322,6 +322,45 @@ func (c *Crudr) ApplyOp(op *Op) error {
 	c.callOpCallbacks(op, records)
 
 	return nil
+}
+
+func (c *Crudr) shouldPersistOp(op *Op) bool {
+	if op.Transient {
+		return false
+	}
+	if op.Host == c.host {
+		return true
+	}
+	return !isLegacyTransientUploadRetryOp(op)
+}
+
+func isLegacyTransientUploadRetryOp(op *Op) bool {
+	if op.Table != "uploads" || op.Action != ActionUpdate {
+		return false
+	}
+
+	var rows []struct {
+		Status     string            `json:"status"`
+		ErrorCount int               `json:"error_count"`
+		Results    map[string]string `json:"results"`
+	}
+	if err := json.Unmarshal(op.Data, &rows); err != nil || len(rows) == 0 {
+		return false
+	}
+
+	for _, row := range rows {
+		if row.Status != "busy" && row.Status != "error" {
+			return false
+		}
+		if row.ErrorCount <= 5 {
+			return false
+		}
+		if row.Results["320"] != "" {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (c *Crudr) GetOutboxSizes() map[string]int {
