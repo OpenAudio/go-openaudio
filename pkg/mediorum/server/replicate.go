@@ -177,22 +177,32 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 
 	r, w := io.Pipe()
 	m := multipart.NewWriter(w)
-	errChan := make(chan error)
+	errChan := make(chan error, 1)
 
 	go func() {
-		defer w.Close()
-		defer m.Close()
 		part, err := m.CreateFormFile(filesFormFieldName, fileName)
 		if err != nil {
+			_ = w.CloseWithError(err)
 			errChan <- err
 			return
 		}
 		if _, err = io.Copy(part, file); err != nil {
+			_ = w.CloseWithError(err)
 			errChan <- err
 			return
 		}
-		close(errChan)
+		if err := m.Close(); err != nil {
+			_ = w.CloseWithError(err)
+			errChan <- err
+			return
+		}
+		errChan <- w.Close()
 	}()
+
+	closeBodyWithError := func(err error) error {
+		_ = r.CloseWithError(err)
+		return err
+	}
 
 	req, err := signature.SignedPost(
 		ctx,
@@ -203,7 +213,7 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 		ss.Config.Self.Host,
 	)
 	if err != nil {
-		return err
+		return closeBodyWithError(err)
 	}
 	if len(placementHosts) > 0 {
 		req.Header.Set(placementHostsHeader, encodePlacementHosts(placementHosts))
@@ -212,12 +222,12 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 	// send it
 	resp, err := ss.peerHTTPClient.Do(req)
 	if err != nil {
-		return err
+		return closeBodyWithError(err)
 	}
 
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return errors.New(resp.Status)
+		return closeBodyWithError(errors.New(resp.Status))
 	}
 
 	return <-errChan
