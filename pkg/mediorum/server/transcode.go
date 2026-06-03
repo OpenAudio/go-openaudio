@@ -154,7 +154,7 @@ func (ss *MediorumServer) findMissedJobCandidates(ctx context.Context, now time.
 			template = ?
 			AND status in ?
 			AND orig_file_cid != ''
-			AND COALESCE(error_count, 0) <= ?
+			AND COALESCE(error_count, 0) < ?
 			AND (transcoded_at IS NULL OR transcoded_at <= ?)
 		`, JobTemplateAudio, []string{JobStatusNew, JobStatusError}, missedTranscodeMaxErrorCount, cutoff).
 		Order("transcoded_at ASC NULLS FIRST").
@@ -497,7 +497,7 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 }
 
 func transcodeRetryLimitExceeded(upload Upload) bool {
-	return upload.ErrorCount > missedTranscodeMaxErrorCount && !hasTranscodeResult(upload)
+	return upload.ErrorCount >= missedTranscodeMaxErrorCount && !hasTranscodeResult(upload)
 }
 
 func hasTranscodeResult(upload Upload) bool {
