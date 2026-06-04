@@ -76,7 +76,7 @@ func TestFindMissedAudioAnalysisCandidatesBoundsRetriesAndBackoff(t *testing.T) 
 			ID:                      prefix + "transcode-terminal-no-result",
 			Template:                JobTemplateAudio,
 			Status:                  JobStatusError,
-			ErrorCount:              missedTranscodeMaxErrorCount + 1,
+			ErrorCount:              missedTranscodeMaxErrorCount,
 			TranscodeResults:        map[string]string{},
 			AudioAnalysisStatus:     "",
 			AudioAnalysisErrorCount: 0,
