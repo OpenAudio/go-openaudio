@@ -110,6 +110,23 @@ func TestRemoteLegacyTransientUploadRetryOpsApplyWithoutPersisting(t *testing.T)
 	require.NoError(t, db.First(&upload, "id = ?", "upload-1").Error)
 	require.Equal(t, "busy", upload.Status)
 	require.Equal(t, 6, upload.ErrorCount)
+
+	op = &Op{
+		ULID:   "01KTC3Y9SW2GND1R4QZW2SAS02",
+		Host:   "https://peer.example",
+		Action: ActionUpdate,
+		Table:  "uploads",
+		Data:   []byte(`[{"id":"upload-2","status":"error","error_count":6}]`),
+	}
+
+	require.NoError(t, c.ApplyOp(op))
+	require.NoError(t, db.Model(&Op{}).Count(&opsCount).Error)
+	require.Zero(t, opsCount)
+
+	upload = Upload{}
+	require.NoError(t, db.First(&upload, "id = ?", "upload-2").Error)
+	require.Equal(t, "error", upload.Status)
+	require.Equal(t, 6, upload.ErrorCount)
 }
 
 func TestLegacyTransientUploadRetryOpsPersistForLocalHost(t *testing.T) {
@@ -123,7 +140,7 @@ func TestLegacyTransientUploadRetryOpsPersistForLocalHost(t *testing.T) {
 		RegisterModels(&Upload{})
 
 	op := &Op{
-		ULID:   "01KTC3Y9SW2GND1R4QZW2SAS02",
+		ULID:   "01KTC3Y9SW2GND1R4QZW2SAS03",
 		Host:   "https://self.example",
 		Action: ActionUpdate,
 		Table:  "uploads",
@@ -153,6 +170,10 @@ func TestRemoteUploadRetryOpsPersistWhenNotLegacyTransient(t *testing.T) {
 		{
 			name: "final done",
 			data: `[{"id":"upload-1","status":"done","error_count":6,"results":{}}]`,
+		},
+		{
+			name: "mixed batch has durable row",
+			data: `[{"id":"upload-1","status":"error","error_count":6,"results":{}},{"id":"upload-2","status":"done","error_count":6,"results":{}}]`,
 		},
 	}
 
