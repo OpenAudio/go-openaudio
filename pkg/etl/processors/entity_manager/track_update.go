@@ -78,6 +78,13 @@ func updateTrack(ctx context.Context, params *Params) error {
 			return err
 		}
 	}
+	// Only reconcile collaborators when the owner explicitly sends the list,
+	// so unrelated metadata edits never clear existing collaborators.
+	if _, ok := params.Metadata["collaborators"]; ok {
+		if err := updateTrackCollaboratorsTable(ctx, params.DBTX, params.EntityID, merged.OwnerID, params.Metadata, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
+			return err
+		}
+	}
 	if err := updateTrackPriceHistory(ctx, params.DBTX, params.EntityID, params.BlockNumber, params.BlockTime, params.Metadata); err != nil {
 		return err
 	}
