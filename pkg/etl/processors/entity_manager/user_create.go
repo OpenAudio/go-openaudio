@@ -104,13 +104,15 @@ func insertUser(ctx context.Context, params *Params) error {
 		INSERT INTO users (
 			user_id, handle, handle_lc, wallet, name, bio, location,
 			profile_picture, profile_picture_sizes, cover_photo, cover_photo_sizes,
+			twitter_handle, instagram_handle, tiktok_handle, website, donation,
 			is_current, is_verified, is_deactivated, is_available, is_storage_v2,
 			created_at, updated_at, txhash, blockhash, blocknumber
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11,
+			$12, $13, $14, $15, $16,
 			true, false, false, true, true,
-			$12, $12, $13, $14, $15
+			$17, $17, $18, $19, $20
 		)
 	`,
 		params.UserID,
@@ -124,6 +126,11 @@ func insertUser(ctx context.Context, params *Params) error {
 		nullString(params.MetadataString("profile_picture_sizes")),
 		nullString(params.MetadataString("cover_photo")),
 		nullString(params.MetadataString("cover_photo_sizes")),
+		nullString(params.MetadataString("twitter_handle")),
+		nullString(params.MetadataString("instagram_handle")),
+		nullString(params.MetadataString("tiktok_handle")),
+		nullString(params.MetadataString("website")),
+		nullString(params.MetadataString("donation")),
 		params.BlockTime,
 		params.TxHash,
 		params.BlockHash,
