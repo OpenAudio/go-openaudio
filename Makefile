@@ -191,6 +191,28 @@ up: down docker-dev
 		--profile=openaudio-dev \
 		up -d
 
+# ---- Local ETL harness (see examples/etl/README.md) ----
+# Reads node1 (devnet) blocks into a throwaway Postgres so you can exercise the
+# indexer: stream vs poll, feed entity-manager txs, kill/restart for resume.
+ETL_DB_URL ?= postgres://etl:etl@localhost:5454/etl?sslmode=disable
+ETL_RPC ?= http://localhost:50051
+
+.PHONY: etl-db-up etl-db-down etl-poll etl-stream etl-load
+etl-db-up:
+	@docker compose --file='dev/etl-harness.docker-compose.yml' --project-name='etl-harness' up -d
+
+etl-db-down:
+	@docker compose --file='dev/etl-harness.docker-compose.yml' --project-name='etl-harness' down -v
+
+etl-poll:
+	go run ./examples/etl --rpc '$(ETL_RPC)' --db '$(ETL_DB_URL)'
+
+etl-stream:
+	go run ./examples/etl --rpc '$(ETL_RPC)' --db '$(ETL_DB_URL)' --stream
+
+etl-load:
+	go run ./examples/loadgen --rpc https://node1.oap.devnet --insecure
+
 .PHONY: run-prod
 run-prod: docker-dev
 	@docker rm -f openaudio-prod-ss 2>/dev/null || true
