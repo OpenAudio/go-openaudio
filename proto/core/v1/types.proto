@@ -817,6 +817,11 @@ message GetDeleteRewardSenderAttestationResponse {
 
 message StreamBlocksRequest {
   bool canon = 1;
+  // When > 0, the server first replays committed blocks from this height up to
+  // the chain head (historical catch-up), then continues with the live feed,
+  // gap-filling any blocks dropped by the in-process pubsub. When 0 (default),
+  // the server streams only blocks committed after subscription (live-tail).
+  int64 start_height = 2;
 }
 
 message StreamBlocksResponse {

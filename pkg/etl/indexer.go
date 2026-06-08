@@ -297,12 +297,17 @@ func (e *Indexer) indexBlocks() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pf := newPrefetcher(e.core, e.logger)
-	go pf.run(ctx, startHeight)
+	var src blockSource
+	if e.config.BlockStreamEnabled && e.streamClient != nil {
+		src = newStreamSource(e.streamClient, e.logger)
+		e.logger.Info("block source: gRPC stream", zap.Int64("start_height", startHeight))
+	} else {
+		src = newPrefetcher(e.core, e.logger)
+		e.logger.Info("block source: polling prefetcher", zap.Int64("start_height", startHeight), zap.Int("buffer_size", defaultPrefetchBuffer))
+	}
+	go src.run(ctx, startHeight)
 
-	e.logger.Info("prefetcher started", zap.Int64("start_height", startHeight), zap.Int("buffer_size", pf.bufSz))
-
-	for pb := range pf.C() {
+	for pb := range src.C() {
 		block := pb.Block
 
 		res, err := e.processBlock(ctx, pb)
@@ -338,7 +343,7 @@ func (e *Indexer) indexBlocks() error {
 				zap.Float64("txs_per_sec", txsPerSec),
 				zap.Int64("total_blocks", blocksProcessed),
 				zap.Int64("total_txs", txsProcessed),
-				zap.Int("prefetch_buffered", len(pf.C())),
+				zap.Int("prefetch_buffered", len(src.C())),
 			)
 			lastLog = time.Now()
 		}
