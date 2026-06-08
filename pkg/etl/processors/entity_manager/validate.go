@@ -6,6 +6,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"github.com/jackc/pgx/v5"
@@ -38,7 +39,7 @@ func ValidateHandle(handle string) error {
 	if !handleRegexp.MatchString(handle) {
 		return NewValidationError("handle %q contains illegal characters", handle)
 	}
-	if len(handle) > CharacterLimitHandle {
+	if utf8.RuneCountInString(handle) > CharacterLimitHandle {
 		return NewValidationError("handle %q exceeds %d character limit", handle, CharacterLimitHandle)
 	}
 	if reservedHandles[handle] {
@@ -52,7 +53,7 @@ func ValidateUserName(name string) error {
 	if name == "" {
 		return nil
 	}
-	if len(name) > CharacterLimitUserName {
+	if utf8.RuneCountInString(name) > CharacterLimitUserName {
 		return NewValidationError("name exceeds %d character limit", CharacterLimitUserName)
 	}
 	return nil
@@ -63,7 +64,7 @@ func ValidateBio(bio string) error {
 	if bio == "" {
 		return nil
 	}
-	if len(bio) > CharacterLimitUserBio {
+	if utf8.RuneCountInString(bio) > CharacterLimitUserBio {
 		return NewValidationError("bio exceeds %d character limit", CharacterLimitUserBio)
 	}
 	return nil
@@ -74,7 +75,7 @@ func ValidateDescription(desc string) error {
 	if desc == "" {
 		return nil
 	}
-	if len(desc) > CharacterLimitDescription {
+	if utf8.RuneCountInString(desc) > CharacterLimitDescription {
 		return NewValidationError("description exceeds %d character limit", CharacterLimitDescription)
 	}
 	return nil

@@ -3,6 +3,7 @@ package entity_manager
 import (
 	"context"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
@@ -28,11 +29,11 @@ func validateDeveloperAppUpdate(ctx context.Context, params *Params) error {
 	if name == "" {
 		return NewValidationError("name is required for developer app")
 	}
-	if len(name) > CharacterLimitAppName {
+	if utf8.RuneCountInString(name) > CharacterLimitAppName {
 		return NewValidationError("name exceeds %d character limit", CharacterLimitAppName)
 	}
 	if desc := params.MetadataString("description"); desc != "" {
-		if len(desc) > CharacterLimitAppDescription {
+		if utf8.RuneCountInString(desc) > CharacterLimitAppDescription {
 			return NewValidationError("description exceeds %d character limit", CharacterLimitAppDescription)
 		}
 	}
