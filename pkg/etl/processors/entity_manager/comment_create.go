@@ -2,6 +2,7 @@ package entity_manager
 
 import (
 	"context"
+	"unicode/utf8"
 )
 
 type commentCreateHandler struct{}
@@ -147,7 +148,7 @@ func validateCommentWrite(ctx context.Context, params *Params, isCreate bool) er
 	if body == "" {
 		return NewValidationError("comment body is empty")
 	}
-	if len(body) > CharacterLimitCommentBody {
+	if utf8.RuneCountInString(body) > CharacterLimitCommentBody {
 		return NewValidationError("comment body exceeds %d character limit", CharacterLimitCommentBody)
 	}
 
