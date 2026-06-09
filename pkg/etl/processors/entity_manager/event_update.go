@@ -24,9 +24,21 @@ func (h *eventUpdateHandler) Handle(ctx context.Context, params *Params) error {
 	}
 
 	var eventDataJSON []byte
+	var newTitle string
 	if ed, ok := params.MetadataJSON("event_data"); ok {
 		eventDataJSON, _ = json.Marshal(ed)
+		if m, ok := ed.(map[string]interface{}); ok {
+			if t, ok := m["title"].(string); ok {
+				newTitle = t
+			}
+		}
 	}
+
+	// Fetch the current title from the DB before applying the update.
+	var oldTitle string
+	_ = params.DBTX.QueryRow(ctx,
+		"SELECT COALESCE(event_data->>'title', '') FROM events WHERE event_id = $1",
+		params.EntityID).Scan(&oldTitle)
 
 	_, err := params.DBTX.Exec(ctx, `
 		UPDATE events SET
@@ -35,14 +47,47 @@ func (h *eventUpdateHandler) Handle(ctx context.Context, params *Params) error {
 			updated_at = $3, txhash = $4, blocknumber = $5
 		WHERE event_id = $6
 	`, endDate, eventDataJSON, params.BlockTime, params.TxHash, params.BlockNumber, params.EntityID)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Update event_routes if the title changed.
+	if eventDataJSON != nil && newTitle != "" && newTitle != oldTitle {
+		// Mark all current routes as non-current.
+		_, err = params.DBTX.Exec(ctx,
+			"UPDATE event_routes SET is_current = false WHERE event_id = $1 AND is_current = true",
+			params.EntityID)
+		if err != nil {
+			return err
+		}
+
+		slug, titleSlug, collisionID, err := GenerateEventSlugAndCollisionID(ctx, params.DBTX, params.UserID, params.EntityID, newTitle)
+		if err != nil {
+			return err
+		}
+
+		_, err = params.DBTX.Exec(ctx, `
+			INSERT INTO event_routes (
+				slug, title_slug, collision_id, owner_id, event_id, is_current,
+				blockhash, blocknumber, txhash
+			) VALUES (
+				$1, $2, $3, $4, $5, true,
+				$6, $7, $8
+			) ON CONFLICT (owner_id, slug) DO UPDATE SET is_current = true
+		`, slug, titleSlug, collisionID, params.UserID, params.EntityID,
+			params.BlockHash, params.BlockNumber, params.TxHash)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func validateUpdateEvent(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-
 	exists, err := eventExists(ctx, params.DBTX, params.EntityID)
 	if err != nil {
 		return err
@@ -50,7 +95,6 @@ func validateUpdateEvent(ctx context.Context, params *Params) error {
 	if !exists {
 		return NewValidationError("cannot update event %d that does not exist", params.EntityID)
 	}
-
 	ownerID, err := eventOwner(ctx, params.DBTX, params.EntityID)
 	if err != nil {
 		return err
@@ -58,7 +102,6 @@ func validateUpdateEvent(ctx context.Context, params *Params) error {
 	if ownerID != params.UserID {
 		return NewValidationError("only event owner can update event %d", params.EntityID)
 	}
-
 	endDateStr := params.MetadataString("end_date")
 	if endDateStr != "" {
 		endDate, err := time.Parse(time.RFC3339, endDateStr)
@@ -68,7 +111,6 @@ func validateUpdateEvent(ctx context.Context, params *Params) error {
 				return NewValidationError("end_date is not a valid iso format")
 			}
 		}
-
 		// For remix contests, new end_date must be >= current end_date
 		evtType, curEndDate, err := eventTypeAndEndDate(ctx, params.DBTX, params.EntityID)
 		if err != nil {
@@ -82,7 +124,6 @@ func validateUpdateEvent(ctx context.Context, params *Params) error {
 			return NewValidationError("end_date cannot be in the past")
 		}
 	}
-
 	return nil
 }
 
