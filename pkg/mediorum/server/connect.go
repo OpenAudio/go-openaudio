@@ -304,6 +304,7 @@ func (s *StorageService) GetStorageDiagnostics(ctx context.Context, _ *connect.R
 		ArchiveDiskTotalBytes:   int64(ss.archivePathSize),
 		ArchiveBlobStorePrefix:  archiveBlobStorePrefix,
 		ArchiveDiskHasSpace:     archiveConfigured && ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree),
+		StoreAll:                ss.Config.StoreAll,
 		LastSuccessfulRepair:    repairRunToProto(ss.lastSuccessfulRepair),
 		LastSuccessfulCleanup:   repairRunToProto(ss.lastSuccessfulCleanup),
 	}
@@ -336,7 +337,7 @@ func (s *StorageService) GetStorageDiagnostics(ctx context.Context, _ *connect.R
 	ss.peerHealthsMutex.RUnlock()
 
 	// served counts: last 30 days
-	thirty := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -30)
+	thirty := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -30)
 	var metrics []DailyMetrics
 	if err := ss.crud.DB.Where("timestamp >= ?", thirty).Order("timestamp asc").Find(&metrics).Error; err == nil {
 		for _, m := range metrics {

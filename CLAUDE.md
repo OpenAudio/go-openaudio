@@ -102,6 +102,12 @@ make lint
 make lint-fix
 ```
 
+### Pull Requests
+
+PR titles must use Conventional Commits because this repo squash-merges PRs and lints the PR title. Use the form `<type>(optional-scope): <short description>`.
+
+Allowed types are `feat`, `fix`, `perf`, `revert`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`, and `deps`. Good examples: `feat(console): show store-all node status`, `fix(storage): respect archive disk headroom`, `docs: clarify release workflow`. Do not use sentence-style PR titles like `Show store-all node status in console`.
+
 ## Architecture
 
 ### High-Level Components

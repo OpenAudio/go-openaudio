@@ -89,6 +89,36 @@ func formatBlockDiff(blockSync *v1.GetStatusResponse_SyncInfo_BlockSyncInfo) str
 	return fmt.Sprintf("%d blocks behind", blockSync.BlockDiff)
 }
 
+func getNodeRetentionType(status *v1.GetStatusResponse) string {
+	if status != nil && status.StorageInfo != nil && status.StorageInfo.StoreAll {
+		return "Store All"
+	}
+	if status != nil && status.PruningInfo != nil && !status.PruningInfo.Enabled {
+		return "Archive"
+	}
+	return "Full node"
+}
+
+func getNodeRetentionDescription(status *v1.GetStatusResponse) string {
+	switch getNodeRetentionType(status) {
+	case "Store All":
+		return "Store All node - stores all media for this node"
+	case "Archive":
+		return "Archive node - keeps all historical blocks forever"
+	default:
+		return "Full node - prunes old blocks to save space"
+	}
+}
+
+func getNodeRetentionIcon(status *v1.GetStatusResponse) templ.Component {
+	switch getNodeRetentionType(status) {
+	case "Store All", "Archive":
+		return components.StatusGreenLg(getNodeRetentionType(status))
+	default:
+		return components.StatusCompleteLg("Full node")
+	}
+}
+
 templ (p *Pages) OverviewCriticalFragment(status *v1.GetStatusResponse) {
 	<!-- Critical Status Overview -->
 	<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -728,25 +758,14 @@ templ (p *Pages) OverviewPage(status *v1.GetStatusResponse) {
 						<div>
 							<h3 class="text-lg font-medium mb-1">Node Type</h3>
 							<div class="text-sm text-secondary">
-								if status.ProcessInfo != nil && status.ProcessInfo.DataCompanion != nil && status.ProcessInfo.DataCompanion.GetState() == v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED {
-									Archive node - keeps all historical blocks forever
-								} else {
-									Full node - prunes old blocks to save space
-								}
+								{ getNodeRetentionDescription(status) }
 							</div>
 						</div>
 						<div class="text-right">
-							if status.ProcessInfo != nil && status.ProcessInfo.DataCompanion != nil && status.ProcessInfo.DataCompanion.GetState() == v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED {
-								<div class="text-2xl font-bold">
-									@components.StatusGreenLg("Archive")
-									<span>&nbsp;Archive</span>
-								</div>
-							} else {
-								<div class="text-2xl font-bold">
-									@components.StatusGreenLg("Validator")
-									<span>&nbsp;Validator</span>
-								</div>
-							}
+							<div class="text-2xl font-bold">
+								@getNodeRetentionIcon(status)
+								<span>&nbsp;{ getNodeRetentionType(status) }</span>
+							</div>
 						</div>
 					</div>
 				</div>

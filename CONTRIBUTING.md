@@ -16,6 +16,7 @@ Before merging a pull request:
 
 * Ensure your branch is up-to-date with `main` (GitHub won't let you merge without this)
 * Run `make test` to ensure that all tests pass
+* Confirm the PR title follows Conventional Commits, e.g. `feat(console): add storage status`
 
 ## Branching Model
 
@@ -42,6 +43,22 @@ Releases on `main` are automated with [release-please](https://github.com/google
 ### Commit conventions
 
 All commits on `main` must follow the [Conventional Commits](https://www.conventionalcommits.org/) format. Because PRs are squash-merged, the **PR title** is what lands on `main` — it is what release-please reads and what `.github/workflows/pr-title-lint.yml` checks.
+
+Before opening or updating a PR, set the title to:
+
+```text
+<type>(optional-scope): <short description>
+```
+
+Allowed types are `feat`, `fix`, `perf`, `revert`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`, and `deps`. Use lowercase for the type and keep the description imperative and concise.
+
+Examples:
+
+- `feat(console): show store-all node status`
+- `fix(storage): respect archive disk headroom`
+- `docs: clarify release workflow`
+
+Avoid sentence-style titles such as `Show store-all node status in console`; they fail the PR title lint check and block merging.
 
 Bump rules:
 
@@ -96,4 +113,3 @@ Use `make test-unit` to run unit tests.
 Use `make test-mediorum` to run tests for the storage service (located under `pkg/mediorum`).
 
 Use `make test-integration` to run integration tests.
-
