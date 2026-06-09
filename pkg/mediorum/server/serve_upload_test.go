@@ -93,6 +93,7 @@ func TestUploadPlacement(t *testing.T) {
 
 	assert.Equal(t, resp.StatusCode, 200)
 	assert.Equal(t, examplePlacement, uploads[0].PlacementHosts)
+	assert.Equal(t, []string{s3.Config.Self.Host}, uploads[0].Mirrors)
 	uploadId := uploads[0].ID
 
 	// force sweep (since blob changes SkipBroadcast)

@@ -279,30 +279,60 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 			// ffprobe: restore orig filename
 			upload.FFProbe.Format.Filename = formFile.Filename
 
-			// replicate to my bucket + others
+			// Replicate locally first and let the background worker fan out to peers.
 			if err := ss.replicateToMyBucket(ctx, formFileCID, tmpFile, placementHosts); err != nil {
 				ss.logger.Error("local replicateToMyBucket failed", zap.String("uploadID", upload.ID), zap.String("cid", formFileCID), zap.Error(err))
 				upload.Error = err.Error()
 				return err
 			}
-			upload.Mirrors, err = ss.replicateFileParallel(ctx, formFileCID, tmpFile.Name(), placementHosts)
-			if err != nil {
-				upload.Error = err.Error()
-				return err
+
+			// Only record self as an existing mirror if placement/rendezvous says this
+			// node should keep the blob. The replication worker fills the rest in.
+			shouldAddSelf := false
+			if len(placementHosts) > 0 {
+				shouldAddSelf = slices.Contains(placementHosts, ss.Config.Self.Host)
+			} else {
+				_, shouldAddSelf = ss.rendezvousAllHosts(formFileCID)
 			}
 
-			ss.logger.Info("mirrored", zap.String("name", formFile.Filename), zap.String("uploadID", upload.ID), zap.String("cid", formFileCID), zap.Strings("mirrors", upload.Mirrors))
+			if shouldAddSelf {
+				upload.Mirrors = []string{ss.Config.Self.Host}
+			} else {
+				upload.Mirrors = []string{}
+			}
 
 			if template == JobTemplateImgSquare || template == JobTemplateImgBackdrop {
 				upload.TranscodeResults["original.jpg"] = formFileCID
 				upload.TranscodeProgress = 1
 				upload.TranscodedAt = time.Now().UTC()
 				upload.Status = JobStatusDone
-				return ss.crud.Create(upload)
 			}
 
-			ss.crud.Create(upload)
-			ss.transcodeWork <- upload
+			if err := ss.crud.Create(upload); err != nil {
+				return err
+			}
+
+			ss.logger.Info("upload saved, queuing for async replication",
+				zap.String("name", formFile.Filename),
+				zap.String("uploadID", upload.ID),
+				zap.String("cid", formFileCID),
+				zap.String("template", string(template)),
+				zap.Strings("mirrors", upload.Mirrors),
+			)
+
+			select {
+			case ss.replicationWork <- upload:
+			default:
+				ss.logger.Warn("replication queue full, will be picked up by periodic job", zap.String("uploadID", upload.ID))
+			}
+
+			if template == JobTemplateAudio {
+				select {
+				case ss.transcodeWork <- upload:
+				default:
+					ss.logger.Warn("transcode queue full, will be picked up by periodic job", zap.String("uploadID", upload.ID))
+				}
+			}
 			return nil
 		})
 	}
