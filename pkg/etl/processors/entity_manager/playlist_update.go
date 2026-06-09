@@ -62,6 +62,14 @@ func updatePlaylist(ctx context.Context, params *Params) error {
 	}
 	merged := mergePlaylistFromMetadata(params, base)
 
+	// Bump last_added_to to the block time only when this update introduces a
+	// new track (vs the stored contents). Reorders, removals, and metadata-only
+	// edits preserve the existing value. Matches the legacy indexer's "last add"
+	// timestamp, used for "recently added to" sort and playlist-update notifs.
+	if _, ok := params.Metadata["playlist_contents"]; ok && playlistAddedTrack(base.PlaylistContents, params.Metadata) {
+		merged.LastAddedTo = pgTimestamp(params.BlockTime)
+	}
+
 	if err := updatePlaylistRow(ctx, params.DBTX, merged, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
 		return err
 	}
