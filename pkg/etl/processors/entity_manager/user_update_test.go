@@ -176,3 +176,31 @@ func TestUserUpdate_RejectsArtistPickTrackNotOwned(t *testing.T) {
 	params := buildParams(t, pool, EntityTypeUser, ActionUpdate, UserIDOffset+1, UserIDOffset+1, "0xAliceWallet", `{"artist_pick_track_id":2000001}`)
 	mustReject(t, UserUpdate(), params, "does not exist")
 }
+
+// Regression: a profile edit (User Update) must persist social links
+// (instagram/twitter/tiktok/website/donation). These were silently dropped by
+// the writer, so users could not add or change their IG/links on profile.
+func TestUserUpdate_SocialLinks(t *testing.T) {
+	pool := setupTestDB(t)
+	seedUser(t, pool, UserIDOffset+1, "0xalicewallet", "alice")
+	h := UserUpdate()
+	meta := `{"instagram_handle":"alice_ig","twitter_handle":"alice_tw","tiktok_handle":"alice_tt","website":"https://alice.example","donation":"tips welcome"}`
+	params := buildParams(t, pool, EntityTypeUser, ActionUpdate, UserIDOffset+1, UserIDOffset+1, "0xAliceWallet", meta)
+	mustHandle(t, h, params)
+
+	var ig, tw, tk, web, don string
+	var verifiedIG bool
+	err := pool.QueryRow(context.Background(),
+		"SELECT instagram_handle, twitter_handle, tiktok_handle, website, donation, verified_with_instagram FROM users WHERE user_id = $1 AND is_current = true",
+		UserIDOffset+1).Scan(&ig, &tw, &tk, &web, &don, &verifiedIG)
+	if err != nil {
+		t.Fatalf("failed to query: %v", err)
+	}
+	if ig != "alice_ig" || tw != "alice_tw" || tk != "alice_tt" || web != "https://alice.example" || don != "tips welcome" {
+		t.Errorf("social links = ig:%q tw:%q tk:%q web:%q don:%q; want all persisted", ig, tw, tk, web, don)
+	}
+	// A profile edit must not grant verification.
+	if verifiedIG {
+		t.Error("verified_with_instagram = true; profile edit must not touch verification flags")
+	}
+}

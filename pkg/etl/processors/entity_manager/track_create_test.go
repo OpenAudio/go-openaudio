@@ -93,13 +93,13 @@ func TestTrackCreate_StatelessValidation(t *testing.T) {
 			wantErr:    "description exceeds",
 		},
 		{
-			name:       "invalid genre",
+			name:       "genre too long",
 			entityType: EntityTypeTrack,
 			action:     ActionCreate,
 			entityID:   TrackIDOffset + 1,
 			userID:     UserIDOffset + 1,
-			metadata:   `{"owner_id":3000001,"title":"T","genre":"Not A Real Genre"}`,
-			wantErr:    "allow list",
+			metadata:   `{"owner_id":3000001,"title":"T","genre":"` + strings.Repeat("x", 101) + `"}`,
+			wantErr:    "genre exceeds",
 		},
 	}
 

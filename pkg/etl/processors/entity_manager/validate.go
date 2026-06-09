@@ -163,13 +163,16 @@ func isValidMusicalKey(s string) bool {
 	return validMusicalKeys[s]
 }
 
-// ValidateGenre checks genre is in the allowlist.
+// ValidateGenre checks that a genre string is within the 100-character limit.
+// Any non-empty string is accepted; the Open Audio Protocol treats genre as a
+// free-form field at the protocol layer. GenreAllowlist provides canonical
+// autocomplete suggestions for UIs only.
 func ValidateGenre(genre string) error {
 	if genre == "" {
 		return nil
 	}
-	if _, ok := GenreAllowlist[genre]; !ok {
-		return NewValidationError("genre %q is not in the allow list", genre)
+	if utf8.RuneCountInString(genre) > 100 {
+		return NewValidationError("genre exceeds 100 character limit")
 	}
 	return nil
 }

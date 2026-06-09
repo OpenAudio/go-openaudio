@@ -84,6 +84,8 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.TrackDownload())
 		e.dispatcher.Register(em.TrackMute())
 		e.dispatcher.Register(em.TrackUnmute())
+		e.dispatcher.Register(em.TrackCollaboratorApprove())
+		e.dispatcher.Register(em.TrackCollaboratorReject())
 	}
 	if e.config.IsDataTypeEnabled(em.EntityTypePlaylist) {
 		e.dispatcher.Register(em.PlaylistCreate())

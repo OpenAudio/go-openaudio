@@ -93,3 +93,53 @@ func utf8LastRuneIsDigit(s string) bool {
 	r, _ := utf8.DecodeLastRuneInString(s)
 	return unicode.IsDigit(r)
 }
+
+// eventRouteSlugExists checks whether (owner_id, slug) already exists in event_routes.
+func eventRouteSlugExists(ctx context.Context, dbtx db.DBTX, ownerID int64, slug string) (bool, error) {
+	var one int
+	err := dbtx.QueryRow(ctx, "SELECT 1 FROM event_routes WHERE owner_id = $1 AND slug = $2 LIMIT 1", ownerID, slug).Scan(&one)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// GenerateEventSlugAndCollisionID resolves slug collisions for event_routes.
+// Mirrors GenerateSlugAndCollisionID for tracks.
+func GenerateEventSlugAndCollisionID(ctx context.Context, dbtx db.DBTX, ownerID, eventID int64, title string) (slug, titleSlug string, collisionID int, err error) {
+	titleSlug = SanitizeSlug(title, eventID, 0)
+	newSlug := titleSlug
+	var maxCollisionID *int
+	err = dbtx.QueryRow(ctx, `
+		SELECT MAX(collision_id) FROM event_routes WHERE owner_id = $1 AND title_slug = $2
+	`, ownerID, titleSlug).Scan(&maxCollisionID)
+	if err != nil {
+		return "", "", 0, err
+	}
+	var existingRoute bool
+	if utf8LastRuneIsDigit(newSlug) {
+		existingRoute, err = eventRouteSlugExists(ctx, dbtx, ownerID, newSlug)
+		if err != nil {
+			return "", "", 0, err
+		}
+	}
+	newCollisionID := 0
+	hasCollisions := existingRoute
+	if maxCollisionID != nil {
+		hasCollisions = true
+		newCollisionID = *maxCollisionID
+	}
+	for hasCollisions {
+		newCollisionID++
+		newSlug = SanitizeSlug(title, eventID, newCollisionID)
+		existingRoute, err = eventRouteSlugExists(ctx, dbtx, ownerID, newSlug)
+		if err != nil {
+			return "", "", 0, err
+		}
+		hasCollisions = existingRoute
+	}
+	return newSlug, titleSlug, newCollisionID, nil
+}

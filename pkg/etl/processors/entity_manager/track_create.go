@@ -92,6 +92,18 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 	isCustomBpm := params.MetadataBoolOr("is_custom_bpm", false)
 	isCustomMusicalKey := params.MetadataBoolOr("is_custom_musical_key", false)
 	audioUploadID := params.MetadataString("audio_upload_id")
+	license := params.MetadataString("license")
+	isrc := params.MetadataString("isrc")
+	iswc := params.MetadataString("iswc")
+	coverOriginalSongTitle := params.MetadataString("cover_original_song_title")
+	coverOriginalArtist := params.MetadataString("cover_original_artist")
+	commentsDisabled := params.MetadataBoolOr("comments_disabled", false)
+	noAIUse := params.MetadataBoolOr("no_ai_use", false)
+
+	var previewStartSeconds *float64
+	if v, ok := params.MetadataFloat64("preview_start_seconds"); ok {
+		previewStartSeconds = &v
+	}
 
 	// musical_key: only persist recognized keys (mirrors apps' is_valid_musical_key).
 	// An invalid/empty key leaves the column NULL on create.
@@ -138,7 +150,9 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 			is_downloadable, is_download_gated, download_conditions, is_stream_gated, stream_conditions,
 			release_date, is_scheduled_release, ai_attribution_user_id, is_playlist_upload, ddex_app, ddex_release_ids,
 			bpm, musical_key, is_custom_bpm, is_custom_musical_key, audio_upload_id,
-			is_available, route_id, track_segments, created_at, updated_at, txhash, blocknumber
+			is_available, license, isrc, iswc, preview_start_seconds, comments_disabled,
+			cover_original_song_title, cover_original_artist, no_ai_use,
+			route_id, track_segments, created_at, updated_at, txhash, blocknumber
 		) VALUES (
 			$1, $2, true, false, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
@@ -146,7 +160,9 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 			$18, $19, $20, $21, $22,
 			$23, $24, $25, $26, $27, $28,
 			$29, $30, $31, $32, $33,
-			$34, $35, '[]'::jsonb, $36, $36, $37, $38
+			$34, $35, $36, $37, $38, $39,
+			$40, $41, $42,
+			$43, '[]'::jsonb, $44, $44, $45, $46
 		)
 	`,
 		params.EntityID,
@@ -183,6 +199,14 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		isCustomMusicalKey,
 		nullString(audioUploadID),
 		isAvailable,
+		nullString(license),
+		nullString(isrc),
+		nullString(iswc),
+		previewStartSeconds,
+		commentsDisabled,
+		nullString(coverOriginalSongTitle),
+		nullString(coverOriginalArtist),
+		noAIUse,
 		routeID,
 		params.BlockTime,
 		params.TxHash,
@@ -196,6 +220,9 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		return err
 	}
 	if err := updateRemixesTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+		return err
+	}
+	if err := updateTrackCollaboratorsTable(ctx, params.DBTX, params.EntityID, params.UserID, params.Metadata, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
 		return err
 	}
 	if err := autoSubscribeToContestOnSubmission(ctx, params); err != nil {

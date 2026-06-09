@@ -14,50 +14,59 @@ import (
 
 // trackRow holds columns we read/write for track create/update parity.
 type trackRow struct {
-	TrackID              int64
-	OwnerID              int64
-	Title                string
-	Genre                *string
-	Mood                 *string
-	Tags                 *string
-	Description          *string
-	CoverArt             *string
-	CoverArtSizes        *string
-	IsUnlisted           bool
-	FieldVisibility      []byte
-	RemixOf              []byte
-	StemOf               []byte
-	TrackCID             *string
-	PreviewCID           *string
-	OrigFileCID          *string
-	Duration             int
-	IsDownloadable       bool
-	IsDownloadGated      bool
-	DownloadConditions   []byte
-	IsStreamGated        bool
-	StreamConditions     []byte
-	ReleaseDate          pgtype.Timestamp
-	IsScheduledRelease   bool
-	AiAttributionUserID  *int64
-	IsPlaylistUpload     bool
-	DdexApp              *string
-	DdexReleaseIDs       []byte
-	Bpm                  *float64
-	MusicalKey           *string
-	IsCustomBpm          bool
-	IsCustomMusicalKey   bool
-	AudioUploadID        *string
-	IsAvailable          bool
-	TrackSegments        []byte
-	CreatedAt            time.Time
+	TrackID                int64
+	OwnerID                int64
+	Title                  string
+	Genre                  *string
+	Mood                   *string
+	Tags                   *string
+	Description            *string
+	CoverArt               *string
+	CoverArtSizes          *string
+	IsUnlisted             bool
+	FieldVisibility        []byte
+	RemixOf                []byte
+	StemOf                 []byte
+	TrackCID               *string
+	PreviewCID             *string
+	OrigFileCID            *string
+	Duration               int
+	IsDownloadable         bool
+	IsDownloadGated        bool
+	DownloadConditions     []byte
+	IsStreamGated          bool
+	StreamConditions       []byte
+	ReleaseDate            pgtype.Timestamp
+	IsScheduledRelease     bool
+	AiAttributionUserID    *int64
+	IsPlaylistUpload       bool
+	DdexApp                *string
+	DdexReleaseIDs         []byte
+	Bpm                    *float64
+	MusicalKey             *string
+	IsCustomBpm            bool
+	IsCustomMusicalKey     bool
+	AudioUploadID          *string
+	IsAvailable            bool
+	License                *string
+	ISRC                   *string
+	ISWC                   *string
+	PreviewStartSeconds    *float64
+	CommentsDisabled       bool
+	CoverOriginalSongTitle *string
+	CoverOriginalArtist    *string
+	NoAIUse                bool
+	TrackSegments          []byte
+	CreatedAt              time.Time
 }
 
 func loadCurrentTrackRow(ctx context.Context, dbtx db.DBTX, trackID int64) (*trackRow, error) {
 	var r trackRow
 	var title, genre, mood, tags, desc, cover, coverSz, tcid, pcid, ofcid, ddex, musicalKey, audioUploadID sql.NullString
+	var license, isrc, iswc, coverOrigSong, coverOrigArtist sql.NullString
 	var fieldVis, remix, stem, dlCond, streamCond, ddexRel, segments []byte
 	var aiAttr sql.NullInt64
-	var bpm sql.NullFloat64
+	var bpm, previewStart sql.NullFloat64
 	var releaseDate pgtype.Timestamp
 
 	err := dbtx.QueryRow(ctx, `
@@ -67,7 +76,8 @@ func loadCurrentTrackRow(ctx context.Context, dbtx db.DBTX, trackID int64) (*tra
 			is_downloadable, is_download_gated, download_conditions, is_stream_gated, stream_conditions,
 			release_date, is_scheduled_release, ai_attribution_user_id, is_playlist_upload, ddex_app, ddex_release_ids,
 			bpm, musical_key, is_custom_bpm, is_custom_musical_key, audio_upload_id,
-			is_available, track_segments, created_at
+			is_available, license, isrc, iswc, preview_start_seconds, comments_disabled,
+			cover_original_song_title, cover_original_artist, no_ai_use, track_segments, created_at
 		FROM tracks WHERE track_id = $1 AND is_current = true AND is_delete = false LIMIT 1
 	`, trackID).Scan(
 		&r.TrackID, &r.OwnerID, &title, &genre, &mood, &tags, &desc,
@@ -76,7 +86,8 @@ func loadCurrentTrackRow(ctx context.Context, dbtx db.DBTX, trackID int64) (*tra
 		&r.IsDownloadable, &r.IsDownloadGated, &dlCond, &r.IsStreamGated, &streamCond,
 		&releaseDate, &r.IsScheduledRelease, &aiAttr, &r.IsPlaylistUpload, &ddex, &ddexRel,
 		&bpm, &musicalKey, &r.IsCustomBpm, &r.IsCustomMusicalKey, &audioUploadID,
-		&r.IsAvailable, &segments, &r.CreatedAt,
+		&r.IsAvailable, &license, &isrc, &iswc, &previewStart, &r.CommentsDisabled,
+		&coverOrigSong, &coverOrigArtist, &r.NoAIUse, &segments, &r.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Track was soft-deleted between validation and now (validateTrackUpdate
@@ -112,6 +123,12 @@ func loadCurrentTrackRow(ctx context.Context, dbtx db.DBTX, trackID int64) (*tra
 	r.Bpm = nullFloat64Ptr(bpm)
 	r.MusicalKey = nullStrPtr(musicalKey)
 	r.AudioUploadID = nullStrPtr(audioUploadID)
+	r.License = nullStrPtr(license)
+	r.ISRC = nullStrPtr(isrc)
+	r.ISWC = nullStrPtr(iswc)
+	r.PreviewStartSeconds = nullFloat64Ptr(previewStart)
+	r.CoverOriginalSongTitle = nullStrPtr(coverOrigSong)
+	r.CoverOriginalArtist = nullStrPtr(coverOrigArtist)
 	r.TrackSegments = segments
 	if len(r.TrackSegments) == 0 {
 		r.TrackSegments = []byte("[]")
@@ -174,6 +191,26 @@ func mergeTrackFromMetadata(p *Params, base *trackRow) *trackRow {
 	// audio_upload_id is a generic passthrough field in apps' indexer (set via
 	// the catch-all setattr branch), needed by the audio-analysis repair job.
 	mergeStrPtr("audio_upload_id", &out.AudioUploadID)
+	mergeStrPtr("license", &out.License)
+	mergeStrPtr("isrc", &out.ISRC)
+	mergeStrPtr("iswc", &out.ISWC)
+	mergeStrPtr("cover_original_song_title", &out.CoverOriginalSongTitle)
+	mergeStrPtr("cover_original_artist", &out.CoverOriginalArtist)
+
+	if raw, ok := p.Metadata["preview_start_seconds"]; ok {
+		if raw == nil {
+			out.PreviewStartSeconds = nil
+		} else if v, ok2 := p.MetadataFloat64("preview_start_seconds"); ok2 {
+			cp := v
+			out.PreviewStartSeconds = &cp
+		}
+	}
+	if v, ok := p.MetadataBool("comments_disabled"); ok {
+		out.CommentsDisabled = v
+	}
+	if v, ok := p.MetadataBool("no_ai_use"); ok {
+		out.NoAIUse = v
+	}
 
 	// bpm semantics mirror apps' track.py: explicit null clears; a nonzero
 	// number sets; zero or a non-numeric value is ignored (existing kept).
@@ -292,7 +329,9 @@ func updateTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 			ai_attribution_user_id = $24, is_playlist_upload = $25, ddex_app = $26, ddex_release_ids = $27,
 			bpm = $28, musical_key = $29, is_custom_bpm = $30, is_custom_musical_key = $31, audio_upload_id = $32,
 			is_available = $33,
-			updated_at = $34, txhash = $35, blocknumber = $36
+			license = $34, isrc = $35, iswc = $36, preview_start_seconds = $37, comments_disabled = $38,
+			cover_original_song_title = $39, cover_original_artist = $40, no_ai_use = $41,
+			updated_at = $42, txhash = $43, blocknumber = $44
 		WHERE track_id = $1 AND is_current = true
 	`,
 		r.TrackID,
@@ -328,6 +367,14 @@ func updateTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 		r.IsCustomMusicalKey,
 		strPtrVal(r.AudioUploadID),
 		r.IsAvailable,
+		strPtrVal(r.License),
+		strPtrVal(r.ISRC),
+		strPtrVal(r.ISWC),
+		floatPtrVal(r.PreviewStartSeconds),
+		r.CommentsDisabled,
+		strPtrVal(r.CoverOriginalSongTitle),
+		strPtrVal(r.CoverOriginalArtist),
+		r.NoAIUse,
 		blockTime,
 		txHash,
 		blockNumber,
@@ -344,7 +391,9 @@ func insertTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 			is_downloadable, is_download_gated, download_conditions, is_stream_gated, stream_conditions,
 			release_date, is_scheduled_release, ai_attribution_user_id, is_playlist_upload, ddex_app, ddex_release_ids,
 			bpm, musical_key, is_custom_bpm, is_custom_musical_key, audio_upload_id,
-			is_available, track_segments, created_at, updated_at, txhash, blocknumber
+			is_available, license, isrc, iswc, preview_start_seconds, comments_disabled,
+			cover_original_song_title, cover_original_artist, no_ai_use,
+			track_segments, created_at, updated_at, txhash, blocknumber
 		) VALUES (
 			$1, $2, true, false, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
@@ -352,7 +401,9 @@ func insertTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 			$18, $19, $20, $21, $22,
 			$23, $24, $25, $26, $27, $28,
 			$29, $30, $31, $32, $33,
-			$34, $35, $36, $37, $38, $39
+			$34, $35, $36, $37, $38, $39,
+			$40, $41, $42,
+			$43, $44, $45, $46, $47
 		)
 	`,
 		r.TrackID,
@@ -389,6 +440,14 @@ func insertTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 		r.IsCustomMusicalKey,
 		strPtrVal(r.AudioUploadID),
 		r.IsAvailable,
+		strPtrVal(r.License),
+		strPtrVal(r.ISRC),
+		strPtrVal(r.ISWC),
+		floatPtrVal(r.PreviewStartSeconds),
+		r.CommentsDisabled,
+		strPtrVal(r.CoverOriginalSongTitle),
+		strPtrVal(r.CoverOriginalArtist),
+		r.NoAIUse,
 		r.TrackSegments,
 		r.CreatedAt,
 		blockTime,

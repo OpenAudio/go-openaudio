@@ -140,6 +140,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	repairEnabled := env.Get("true", "OPENAUDIO_REPAIR_ENABLED") == "true"
 	repairInterval := env.GetDuration(time.Hour, "OPENAUDIO_REPAIR_INTERVAL")
 	repairConcurrency := env.GetInt(1, "OPENAUDIO_REPAIR_CONCURRENCY")
+	storeRecentTTL := parseStoreRecentTTL(env.String("OPENAUDIO_STORE_RECENT_TTL"))
 
 	// Archive mode keeps all history (no ops pruning). Otherwise the append-only
 	// crudr "ops" table is pruned, retaining 1 year by default.
@@ -169,6 +170,8 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		AudiusDockerCompose:       env.String("OPENAUDIO_DOCKER_COMPOSE_GIT_SHA", "AUDIUS_DOCKER_COMPOSE_GIT_SHA"),
 		AutoUpgradeEnabled:        env.Bool("OPENAUDIO_AUTO_UPGRADE_ENABLED", "autoUpgradeEnabled"),
 		StoreAll:                  env.Bool("OPENAUDIO_STORE_ALL", "STORE_ALL"),
+		StoreRecent:               env.Bool("OPENAUDIO_STORE_RECENT"),
+		StoreRecentTTL:            storeRecentTTL,
 		VersionJson:               version.Version,
 		DiscoveryListensEndpoints: discoveryListensEndpoints(),
 		LogLevel:                  env.Get("info", "OPENAUDIO_LOG_LEVEL"),
@@ -197,4 +200,27 @@ func discoveryListensEndpoints() []string {
 		return []string{}
 	}
 	return strings.Split(endpoints, ",")
+}
+
+func parseStoreRecentTTL(raw string) time.Duration {
+	if strings.TrimSpace(raw) == "" {
+		return server.DefaultStoreRecentTTL
+	}
+	d, err := parseStoreRecentDuration(raw)
+	if err != nil {
+		return server.DefaultStoreRecentTTL
+	}
+	return d
+}
+
+func parseStoreRecentDuration(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if strings.HasSuffix(raw, "d") || strings.HasSuffix(raw, "D") {
+		days, err := strconv.ParseFloat(strings.TrimSpace(raw[:len(raw)-1]), 64)
+		if err != nil {
+			return 0, err
+		}
+		return time.Duration(days * float64(24*time.Hour)), nil
+	}
+	return time.ParseDuration(raw)
 }

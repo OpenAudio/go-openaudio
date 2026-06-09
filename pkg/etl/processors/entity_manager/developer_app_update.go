@@ -72,6 +72,7 @@ func updateDeveloperApp(ctx context.Context, params *Params) error {
 	address := strings.ToLower(params.MetadataString("address"))
 	name := params.MetadataString("name")
 	description := params.MetadataString("description")
+	imageURL := validatedAppImageURL(params)
 
 	// Mark current row as not current
 	_, err := params.DBTX.Exec(ctx,
@@ -89,14 +90,15 @@ func updateDeveloperApp(ctx context.Context, params *Params) error {
 
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO developer_apps (
-			address, user_id, name, description, is_personal_access,
+			address, user_id, name, description, image_url, is_personal_access,
 			is_current, is_delete, created_at, updated_at, txhash, blocknumber
-		) VALUES ($1, $2, $3, $4, $5, true, false, $6, $7, $8, $9)
+		) VALUES ($1, $2, $3, $4, $5, $6, true, false, $7, $8, $9, $10)
 	`,
 		address,
 		params.UserID,
 		name,
 		nullString(description),
+		nullString(imageURL),
 		isPersonalAccess,
 		createdAt,
 		params.BlockTime,
