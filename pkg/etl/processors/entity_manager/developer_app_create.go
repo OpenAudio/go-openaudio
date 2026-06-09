@@ -2,6 +2,7 @@ package entity_manager
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -10,6 +11,22 @@ const (
 	CharacterLimitAppName        = 50
 	CharacterLimitAppDescription = 160
 )
+
+// devAppImageURLRegexp mirrors the legacy indexer's is_fqdn check
+// (discovery-provider src/utils/helpers.py): a developer app image_url is only
+// persisted when it is a valid fully-qualified URL/host.
+var devAppImageURLRegexp = regexp.MustCompile(`^(?:^|[ \t])((https?://)?(?:localhost|(cn[0-9]_creator-node_1:[0-9]+)|(audius-protocol-creator-node-[0-9])|(audius-protocol-discovery-provider-[0-9])|[\w-]+(?:\.[\w-]+)+)(:\d+)?(/\S*)?)$`)
+
+// validatedAppImageURL returns the metadata image_url when it passes the FQDN
+// check, else "" (persisted as NULL). Matches the legacy indexer, which sets
+// image_url from metadata on both create and update (None when absent/invalid).
+func validatedAppImageURL(params *Params) string {
+	img := params.MetadataString("image_url")
+	if img != "" && devAppImageURLRegexp.MatchString(img) {
+		return img
+	}
+	return ""
+}
 
 type developerAppCreateHandler struct{}
 
@@ -76,18 +93,20 @@ func insertDeveloperApp(ctx context.Context, params *Params) error {
 	address := strings.ToLower(params.MetadataString("address"))
 	name := params.MetadataString("name")
 	description := params.MetadataString("description")
+	imageURL := validatedAppImageURL(params)
 	isPersonalAccess := params.MetadataBoolOr("is_personal_access", false)
 
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO developer_apps (
-			address, user_id, name, description, is_personal_access,
+			address, user_id, name, description, image_url, is_personal_access,
 			is_current, is_delete, created_at, updated_at, txhash, blocknumber
-		) VALUES ($1, $2, $3, $4, $5, true, false, $6, $6, $7, $8)
+		) VALUES ($1, $2, $3, $4, $5, $6, true, false, $7, $7, $8, $9)
 	`,
 		address,
 		params.UserID,
 		name,
 		nullString(description),
+		nullString(imageURL),
 		isPersonalAccess,
 		params.BlockTime,
 		params.TxHash,
