@@ -3,7 +3,7 @@ WRAPPER_TAG ?= default
 # One of patch, minor, or major
 UPGRADE_TYPE ?= patch
 
-PROD_STATE_SYNC_RPCS ?= https://creatornode.audius.co,https://v.monophonic.digital
+PROD_STATE_SYNC_RPCS ?= https://creatornode.audius.co,https://rpc.audius.co,https://v.monophonic.digital
 
 GIT_SHA := $(shell git rev-parse HEAD)
 VERSION_LDFLAG := -X github.com/OpenAudio/go-openaudio/pkg/core/config.Version=$(GIT_SHA)
