@@ -96,6 +96,12 @@ func insertPlaylistAndRoute(ctx context.Context, params *Params) error {
 		CreatedAt:                   params.BlockTime,
 	}
 
+	// last_added_to is the block time of the most recent track add; set it when
+	// the playlist is created with tracks (matches the legacy indexer), else NULL.
+	if len(extractPlaylistTrackIDs(params.Metadata)) > 0 {
+		row.LastAddedTo = pgTimestamp(params.BlockTime)
+	}
+
 	if err := insertPlaylistRow(ctx, params.DBTX, row, false, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
 		return err
 	}
