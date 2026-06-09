@@ -58,7 +58,13 @@ func increaseBackoff(current time.Duration) time.Duration {
 // It blocks until ctx is cancelled. Callers read from C().
 func (p *prefetcher) run(ctx context.Context, startHeight int64) {
 	defer close(p.ch)
+	p.runInto(ctx, startHeight, p.ch)
+}
 
+// runInto is run's body parameterized on the output channel, so the stream
+// source can reuse the polling loop as a fallback without owning the channel
+// (it does not close out; the caller does).
+func (p *prefetcher) runInto(ctx context.Context, startHeight int64, out chan<- prefetchedBlock) {
 	height := startHeight
 	backoff := time.Duration(0)
 
@@ -114,7 +120,7 @@ func (p *prefetcher) run(ctx context.Context, startHeight int64) {
 					select {
 					case <-ctx.Done():
 						return
-					case p.ch <- prefetchedBlock{
+					case out <- prefetchedBlock{
 						Block:         b,
 						CurrentHeight: resp.Msg.CurrentHeight,
 					}:
@@ -148,7 +154,7 @@ func (p *prefetcher) run(ctx context.Context, startHeight int64) {
 		select {
 		case <-ctx.Done():
 			return
-		case p.ch <- prefetchedBlock{
+		case out <- prefetchedBlock{
 			Block:         resp.Msg.Block,
 			CurrentHeight: resp.Msg.CurrentHeight,
 		}:

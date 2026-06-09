@@ -12,6 +12,11 @@ type Config struct {
 	EnablePgNotifyListener        bool
 	EnableScheduledReleases       bool
 
+	// BlockStreamEnabled consumes blocks via the CoreService.StreamBlocks gRPC
+	// stream instead of polling GetBlocks. Requires a stream client set with
+	// SetBlockStreamClient; falls back to polling if unset or unsupported.
+	BlockStreamEnabled bool
+
 	// DataTypes controls which entity types the entity manager will index.
 	// If nil (default), all entity types are enabled.
 	// If non-nil (even if empty), only listed types are enabled.
