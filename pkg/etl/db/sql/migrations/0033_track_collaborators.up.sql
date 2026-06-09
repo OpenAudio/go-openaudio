@@ -22,11 +22,8 @@ CREATE TABLE IF NOT EXISTS track_collaborators (
   CONSTRAINT track_collaborators_status_check CHECK (status IN ('pending', 'accepted', 'rejected'))
 );
 
--- Profile / dashboard merge (hot path): fetch a user's accepted collaborations
--- fast. Covering (track_id included) so the lookup is index-only.
+-- Fetch a user's accepted collaborations fast. Covering (track_id included) so
+-- the lookup is index-only. Per-track reads (WHERE track_id = ?) are already
+-- served by the primary key, whose leading column is track_id.
 CREATE INDEX IF NOT EXISTS idx_track_collaborators_collaborator
   ON track_collaborators (collaborator_user_id, status, track_id);
-
--- Track render: list a track's collaborators.
-CREATE INDEX IF NOT EXISTS idx_track_collaborators_track
-  ON track_collaborators (track_id);

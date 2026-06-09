@@ -63,6 +63,18 @@ func TestGetCollaboratorUserIDs(t *testing.T) {
 	}
 }
 
+func TestGetCollaboratorUserIDs_Capped(t *testing.T) {
+	owner := int64(UserIDOffset + 1)
+	var raw []any
+	for i := 0; i < MaxTrackCollaborators+10; i++ {
+		raw = append(raw, float64(UserIDOffset+100+i))
+	}
+	got := getCollaboratorUserIDs(map[string]any{"collaborators": raw}, owner)
+	if len(got) != MaxTrackCollaborators {
+		t.Errorf("len(got) = %d, want capped at %d", len(got), MaxTrackCollaborators)
+	}
+}
+
 // statusOf returns the stored status, or "" if absent.
 func statusOf(t *testing.T, pool *pgxpool.Pool, trackID, collaboratorUserID int64) string {
 	t.Helper()

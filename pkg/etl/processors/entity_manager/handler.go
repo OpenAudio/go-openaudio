@@ -96,6 +96,11 @@ const (
 	CharacterLimitCommentBody = 400
 )
 
+// MaxTrackCollaborators bounds how many collaborators a single track may invite,
+// so a malformed or hostile metadata blob can't enqueue an unbounded number of
+// rows. Excess entries beyond the cap are ignored.
+const MaxTrackCollaborators = 50
+
 // ValidationError indicates a transaction should be skipped (not a fatal indexing error).
 type ValidationError struct {
 	msg string
