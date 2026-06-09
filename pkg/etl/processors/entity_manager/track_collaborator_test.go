@@ -176,6 +176,37 @@ func TestTrackCollaborator_AlreadyAcceptedNotPending(t *testing.T) {
 		"not pending")
 }
 
+// A collaborator can leave a track after accepting: Reject works from accepted.
+func TestTrackCollaborator_LeaveAfterAccept(t *testing.T) {
+	pool := setupTestDB(t)
+	owner := int64(UserIDOffset + 1)
+	c1 := int64(UserIDOffset + 2)
+	seedUser(t, pool, owner, "0xowner", "owner")
+	seedUser(t, pool, c1, "0xc1", "collab1")
+
+	tid := int64(TrackIDOffset + 1)
+	meta := fmt.Sprintf(`{"owner_id":%d,"title":"Song","collaborators":[%d]}`, owner, c1)
+	mustHandle(t, TrackCreate(), buildParams(t, pool, EntityTypeTrack, ActionCreate, owner, tid, "0xowner", meta))
+
+	mustHandle(t, TrackCollaboratorApprove(),
+		buildParams(t, pool, EntityTypeTrackCollaborator, ActionApprove, c1, tid, "0xc1", ""))
+	if got := statusOf(t, pool, tid, c1); got != "accepted" {
+		t.Fatalf("setup: c1 status = %q, want accepted", got)
+	}
+
+	// The collaborator removes themselves.
+	mustHandle(t, TrackCollaboratorReject(),
+		buildParams(t, pool, EntityTypeTrackCollaborator, ActionReject, c1, tid, "0xc1", ""))
+	if got := statusOf(t, pool, tid, c1); got != "rejected" {
+		t.Errorf("after leave: c1 status = %q, want rejected", got)
+	}
+
+	// Leaving again fails — no longer active.
+	mustReject(t, TrackCollaboratorReject(),
+		buildParams(t, pool, EntityTypeTrackCollaborator, ActionReject, c1, tid, "0xc1", ""),
+		"not active")
+}
+
 func TestTrackCollaborators_UpdateReconciles(t *testing.T) {
 	pool := setupTestDB(t)
 	owner := int64(UserIDOffset + 1)
