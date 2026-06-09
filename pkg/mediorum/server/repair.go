@@ -33,20 +33,20 @@ type seenKeyResult struct {
 }
 
 type RepairTracker struct {
-	StartedAt      time.Time `gorm:"primaryKey;not null"`
-	UpdatedAt      time.Time `gorm:"not null"`
-	FinishedAt     time.Time
-	CleanupMode    bool           `gorm:"not null"`
-	CursorI        int            `gorm:"not null"`
-	CursorUploadID string         `gorm:"not null"`
-	CursorPreviewCID string       ``
-	CursorQmCID    string         `gorm:"not null"`
-	Counters       map[string]int `gorm:"not null;serializer:json"`
-	ContentSize    int64          `gorm:"not null"`
-	Duration       time.Duration  `gorm:"not null"`
-	AbortedReason  string         `gorm:"not null"`
-	SeenKeys       map[string]seenKeyResult `gorm:"-" json:"-"`
-	mu             *sync.Mutex    `gorm:"-" json:"-"`
+	StartedAt        time.Time `gorm:"primaryKey;not null"`
+	UpdatedAt        time.Time `gorm:"not null"`
+	FinishedAt       time.Time
+	CleanupMode      bool                     `gorm:"not null"`
+	CursorI          int                      `gorm:"not null"`
+	CursorUploadID   string                   `gorm:"not null"`
+	CursorPreviewCID string                   ``
+	CursorQmCID      string                   `gorm:"not null"`
+	Counters         map[string]int           `gorm:"not null;serializer:json"`
+	ContentSize      int64                    `gorm:"not null"`
+	Duration         time.Duration            `gorm:"not null"`
+	AbortedReason    string                   `gorm:"not null"`
+	SeenKeys         map[string]seenKeyResult `gorm:"-" json:"-"`
+	mu               *sync.Mutex              `gorm:"-" json:"-"`
 }
 
 func (ss *MediorumServer) startRepairer(ctx context.Context) error {
@@ -169,6 +169,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 		repairConcurrency = 1
 	}
 	tracker.mu = &sync.Mutex{}
+	retentionPolicy := newRepairRetentionPolicy(ss.Config, time.Now())
 
 	// Build a presence index from bucket listing to avoid per-key HeadObject.
 	// Replaces hundreds of thousands of HeadObject calls with one ListObjects pagination.
@@ -225,7 +226,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 			go func() {
 				defer wg.Done()
 				defer func() { <-sem }()
-				ss.repairCid(ctx, u.OrigFileCID, u.PlacementHosts, tracker, presenceIndex)
+				ss.repairCidWithPolicy(ctx, u.OrigFileCID, u.PlacementHosts, tracker, presenceIndex, retentionPolicy, u.CreatedAt)
 				if u.Template != JobTemplateAudio {
 					return
 				}
@@ -233,7 +234,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 					if ctx.Err() != nil {
 						return
 					}
-					ss.repairCid(ctx, cid, u.PlacementHosts, tracker, presenceIndex)
+					ss.repairCidWithPolicy(ctx, cid, u.PlacementHosts, tracker, presenceIndex, retentionPolicy, u.CreatedAt)
 				}
 			}()
 		}
@@ -285,7 +286,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 			go func() {
 				defer wg.Done()
 				defer func() { <-sem }()
-				ss.repairCid(ctx, u.CID, nil, tracker, presenceIndex)
+				ss.repairCidWithPolicy(ctx, u.CID, nil, tracker, presenceIndex, retentionPolicy, u.CreatedAt)
 			}()
 		}
 		wg.Wait()
@@ -343,7 +344,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 			go func() {
 				defer wg.Done()
 				defer func() { <-sem }()
-				ss.repairCid(ctx, cid, nil, tracker, presenceIndex)
+				ss.repairCidWithPolicy(ctx, cid, nil, tracker, presenceIndex, retentionPolicy, time.Time{})
 			}()
 		}
 		wg.Wait()
@@ -361,6 +362,10 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 }
 
 func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHosts []string, tracker *RepairTracker, presenceIndex *repairPresenceIndex) error {
+	return ss.repairCidWithPolicy(ctx, cid, placementHosts, tracker, presenceIndex, newRepairRetentionPolicy(ss.Config, time.Now()), time.Time{})
+}
+
+func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, placementHosts []string, tracker *RepairTracker, presenceIndex *repairPresenceIndex, retentionPolicy repairRetentionPolicy, createdAt time.Time) error {
 	if cid == "" {
 		return nil
 	}
@@ -374,6 +379,10 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	logger := ss.logger.With(zap.String("task", "repair"), zap.String("cid", cid), zap.Bool("cleanup", tracker.CleanupMode))
 
 	preferredHosts, isMine := ss.rendezvousAllHosts(cid)
+	storeRecent := retentionPolicy.shouldStoreRecent(createdAt)
+	if storeRecent {
+		isMine = true
+	}
 
 	// if placementHosts is specified
 	isPlaced := len(placementHosts) > 0
@@ -411,7 +420,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 	if tracker.SeenKeys == nil {
 		tracker.SeenKeys = map[string]seenKeyResult{}
 	}
-	if prev, seen := tracker.SeenKeys[key]; seen {
+	if prev, seen := tracker.SeenKeys[key]; seen && !storeRecent {
 		tracker.Counters["repair_deduped"]++
 		if prev.alreadyHave {
 			tracker.Counters["already_have"]++
@@ -630,7 +639,7 @@ func (ss *MediorumServer) repairCid(ctx context.Context, cid string, placementHo
 		rankThreshold = ss.Config.ReplicationFactor * 2
 	}
 
-	if !isPlaced && !ss.Config.StoreAll && tracker.CleanupMode && alreadyHave && myRank > rankThreshold && !wasReplicatedThisWeek {
+	if !isPlaced && !ss.Config.StoreAll && !storeRecent && tracker.CleanupMode && alreadyHave && myRank > rankThreshold && !wasReplicatedThisWeek {
 		// if i'm the first node that over-replicated, keep the file for a week as a buffer since a node ahead of me in the preferred order will likely be down temporarily at some point
 		tracker.mu.Lock()
 		tracker.Counters["delete_over_replicated_needed"]++
