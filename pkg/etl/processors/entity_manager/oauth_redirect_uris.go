@@ -2,6 +2,7 @@ package entity_manager
 
 import (
 	"context"
+	"unicode/utf8"
 
 	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
@@ -34,7 +35,7 @@ func extractRedirectURIs(metadata map[string]any) (uris []string, present bool, 
 		if !ok {
 			return nil, false, false
 		}
-		if len(s) > MaxRedirectURILength {
+		if utf8.RuneCountInString(s) > MaxRedirectURILength {
 			return nil, false, false
 		}
 		out = append(out, s)

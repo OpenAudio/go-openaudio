@@ -166,7 +166,7 @@ func validateCommentWrite(ctx context.Context, params *Params, isCreate bool) er
 			return NewValidationError("is_members_only requires entity_type=FanClub (got %q)", etCheck)
 		}
 	}
-	if v := params.MetadataString("video_url"); len(v) > 2000 {
+	if v := params.MetadataString("video_url"); utf8.RuneCountInString(v) > 2000 {
 		return NewValidationError("video_url exceeds 2000 character limit")
 	}
 
