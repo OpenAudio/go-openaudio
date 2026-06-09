@@ -89,20 +89,15 @@ func formatBlockDiff(blockSync *v1.GetStatusResponse_SyncInfo_BlockSyncInfo) str
 	return fmt.Sprintf("%d blocks behind", blockSync.BlockDiff)
 }
 
-func getNodeRetentionType(status *v1.GetStatusResponse) string {
-	if status != nil && status.StorageInfo != nil && status.StorageInfo.StoreAll {
-		return "Store All"
-	}
+func getArchiveRetentionType(status *v1.GetStatusResponse) string {
 	if status != nil && status.PruningInfo != nil && !status.PruningInfo.Enabled {
 		return "Archive"
 	}
 	return "Full node"
 }
 
-func getNodeRetentionDescription(status *v1.GetStatusResponse) string {
-	switch getNodeRetentionType(status) {
-	case "Store All":
-		return "Store All node - stores all media for this node"
+func getArchiveRetentionDescription(status *v1.GetStatusResponse) string {
+	switch getArchiveRetentionType(status) {
 	case "Archive":
 		return "Archive node - keeps all historical blocks forever"
 	default:
@@ -110,13 +105,17 @@ func getNodeRetentionDescription(status *v1.GetStatusResponse) string {
 	}
 }
 
-func getNodeRetentionIcon(status *v1.GetStatusResponse) templ.Component {
-	switch getNodeRetentionType(status) {
-	case "Store All", "Archive":
-		return components.StatusGreenLg(getNodeRetentionType(status))
+func getArchiveRetentionIcon(status *v1.GetStatusResponse) templ.Component {
+	switch getArchiveRetentionType(status) {
+	case "Archive":
+		return components.StatusGreenLg("Archive")
 	default:
 		return components.StatusCompleteLg("Full node")
 	}
+}
+
+func getStoreAllEnabled(status *v1.GetStatusResponse) bool {
+	return status != nil && status.StorageInfo != nil && status.StorageInfo.StoreAll
 }
 
 templ (p *Pages) OverviewCriticalFragment(status *v1.GetStatusResponse) {
@@ -752,22 +751,42 @@ templ (p *Pages) OverviewPage(status *v1.GetStatusResponse) {
 			<!-- Data Management & Retention -->
 			<div class="bg-tertiary rounded-lg p-6">
 				<h2 class="text-xl font-semibold mb-4">Data Management & Retention</h2>
-				<!-- Node Type & Status -->
-				<div class="bg-secondary rounded-lg p-4 mb-6">
-					<div class="flex items-center justify-between">
-						<div>
-							<h3 class="text-lg font-medium mb-1">Node Type</h3>
-							<div class="text-sm text-secondary">
-								{ getNodeRetentionDescription(status) }
+				<!-- Data Mode Status -->
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+					<div class="bg-secondary rounded-lg p-4">
+						<div class="flex items-center justify-between">
+							<div>
+								<h3 class="text-lg font-medium mb-1">Block Retention</h3>
+								<div class="text-sm text-secondary">
+									{ getArchiveRetentionDescription(status) }
+								</div>
 							</div>
-						</div>
-						<div class="text-right">
-							<div class="text-2xl font-bold">
-								@getNodeRetentionIcon(status)
-								<span>&nbsp;{ getNodeRetentionType(status) }</span>
+							<div class="text-right">
+								<div class="text-2xl font-bold">
+									@getArchiveRetentionIcon(status)
+									<span>&nbsp;{ getArchiveRetentionType(status) }</span>
+								</div>
 							</div>
 						</div>
 					</div>
+					if getStoreAllEnabled(status) {
+						<div class="bg-secondary rounded-lg p-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<h3 class="text-lg font-medium mb-1">STORE_ALL</h3>
+									<div class="text-sm text-secondary">
+										Store All node - stores all media for this node
+									</div>
+								</div>
+								<div class="text-right">
+									<div class="text-2xl font-bold">
+										@components.StatusGreenLg("STORE_ALL enabled")
+										<span>&nbsp;Enabled</span>
+									</div>
+								</div>
+							</div>
+						</div>
+					}
 				</div>
 				<!-- Block Storage & Pruning -->
 				if status.PruningInfo != nil && status.PruningInfo.Enabled {
