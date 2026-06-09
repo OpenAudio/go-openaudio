@@ -46,6 +46,7 @@ const (
 	EntityTypeEmailAccess               = "EmailAccess"
 	EntityTypeEvent                     = "Event"
 	EntityTypeShare                     = "Share"
+	EntityTypeTrackCollaborator         = "TrackCollaborator"
 )
 
 // Action constants.
