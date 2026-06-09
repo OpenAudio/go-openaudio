@@ -183,6 +183,9 @@ message GetStatusResponse {
     // archive_disk_has_space is false when archive isn't configured.
     bool primary_disk_has_space = 13;
     bool archive_disk_has_space = 14;
+
+    // Whether this storage node is running with OPENAUDIO_STORE_ALL/STORE_ALL enabled.
+    bool store_all = 15;
   }
 
   bool live = 1;

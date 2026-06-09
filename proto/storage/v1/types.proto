@@ -189,6 +189,9 @@ message GetStorageDiagnosticsResponse {
   // Per-bucket headroom; disk_has_space (#5) stays as the AND aggregate.
   bool primary_disk_has_space = 24;
   bool archive_disk_has_space = 25;
+
+  // Whether this storage node is running with OPENAUDIO_STORE_ALL/STORE_ALL enabled.
+  bool store_all = 26;
 }
 
 message ReadRepairStats {

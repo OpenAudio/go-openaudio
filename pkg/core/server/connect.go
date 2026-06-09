@@ -1022,6 +1022,7 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 						archiveStoragePrefix := ""
 						primaryDiskHasSpace := false
 						archiveDiskHasSpace := false
+						storeAll := false
 						if field := val.FieldByName("ArchiveStorageConfigured"); field.IsValid() && field.Kind() == reflect.Bool {
 							archiveConfigured = field.Bool()
 						}
@@ -1039,6 +1040,9 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 						}
 						if field := val.FieldByName("ArchiveDiskHasSpace"); field.IsValid() && field.Kind() == reflect.Bool {
 							archiveDiskHasSpace = field.Bool()
+						}
+						if field := val.FieldByName("StoreAll"); field.IsValid() && field.Kind() == reflect.Bool {
+							storeAll = field.Bool()
 						}
 						archiveStorageType := ""
 						archiveIsDisk := archiveStoragePrefix == "file" || archiveStoragePrefix == ""
@@ -1065,6 +1069,7 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 							ArchiveStoragePrefix: archiveStoragePrefix,
 							PrimaryDiskHasSpace:  primaryDiskHasSpace,
 							ArchiveDiskHasSpace:  archiveDiskHasSpace,
+							StoreAll:             storeAll,
 						}
 					}
 				}
