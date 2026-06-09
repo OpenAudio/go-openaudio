@@ -74,13 +74,15 @@ type MediorumConfig struct {
 	AutoUpgradeEnabled        bool
 	WalletIsRegistered        bool
 	StoreAll                  bool
+	StoreRecent               bool
+	StoreRecentTTL            time.Duration `default:"8760h"`
 	VersionJson               version.VersionJson
 	DiscoveryListensEndpoints []string
 	LogLevel                  string
 	DeadHosts                 []string
-	RepairEnabled              bool          `default:"true"`
-	RepairInterval             time.Duration `default:"1h"`
-	RepairConcurrency          int           `default:"1"`
+	RepairEnabled             bool          `default:"true"`
+	RepairInterval            time.Duration `default:"1h"`
+	RepairConcurrency         int           `default:"1"`
 
 	// Archive mode (OPENAUDIO_ARCHIVE) keeps all history: no core block pruning
 	// and no crudr "ops" pruning. Otherwise ops older than OpsRetention are pruned.
@@ -89,14 +91,13 @@ type MediorumConfig struct {
 	OpsPruneInterval time.Duration `default:"6h"`
 
 	ProgrammableDistributionEnabled bool
-	BlobStorageStreaming             bool
+	BlobStorageStreaming            bool
 
 	// should have a basedir type of thing
 	// by default will put db + blobs there
 
 	privateKey *ecdsa.PrivateKey
 }
-
 
 type MediorumServer struct {
 	lc               *lifecycle.Lifecycle
@@ -190,6 +191,9 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		config.Env = v
 	}
 	config.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(config.Env)
+	if config.StoreRecentTTL <= 0 {
+		config.StoreRecentTTL = DefaultStoreRecentTTL
+	}
 
 	isAudiusdManaged := env.IsSet("OPENAUDIO_AUDIUS_D_GENERATED", "AUDIUS_D_GENERATED")
 
@@ -408,8 +412,8 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		bgPullBackoff:        imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
 		replicationAttempts:  imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
 
-		StartedAt: time.Now().UTC(),
-		Config:    config,
+		StartedAt:    time.Now().UTC(),
+		Config:       config,
 		geoIPdbReady: make(chan struct{}),
 
 		core: core,
