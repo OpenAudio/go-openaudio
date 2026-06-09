@@ -6,10 +6,13 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
-// A collaborator accepts or declines a track invite via a TrackCollaborator
-// Approve/Reject ManageEntity tx: entity_id = track_id, and the signing
-// user_id is the collaborator. Mirrors the Grant Approve/Reject flow — only a
-// 'pending' invite can transition, and only by the invited collaborator.
+// A collaborator manages a track credit via a TrackCollaborator Approve/Reject
+// ManageEntity tx: entity_id = track_id, and the signing user_id is the
+// collaborator. Approve accepts a pending invite (pending -> accepted). Reject
+// covers both declining a pending invite and leaving an already-accepted track
+// (pending|accepted -> rejected) — so a collaborator can always remove
+// themselves. The owner removes a collaborator separately, by dropping them
+// from the track metadata (reconciled in updateTrackCollaboratorsTable).
 
 type trackCollaboratorApproveHandler struct{}
 
@@ -29,12 +32,14 @@ func (h *trackCollaboratorRejectHandler) EntityType() string { return EntityType
 func (h *trackCollaboratorRejectHandler) Action() string     { return ActionReject }
 
 func (h *trackCollaboratorRejectHandler) Handle(ctx context.Context, params *Params) error {
-	if err := validateTrackCollaboratorPending(ctx, params); err != nil {
+	if err := validateTrackCollaboratorActive(ctx, params); err != nil {
 		return err
 	}
 	return setTrackCollaboratorStatus(ctx, params, "rejected")
 }
 
+// validateTrackCollaboratorPending permits a transition only from a pending
+// invite (used by Approve).
 func validateTrackCollaboratorPending(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
@@ -45,6 +50,22 @@ func validateTrackCollaboratorPending(ctx context.Context, params *Params) error
 	}
 	if status != "pending" {
 		return NewValidationError("collaborator invite for track %d and user %d is not pending (status=%s)", params.EntityID, params.UserID, status)
+	}
+	return nil
+}
+
+// validateTrackCollaboratorActive permits a Reject from either a pending invite
+// (decline) or an accepted credit (the collaborator leaving the track).
+func validateTrackCollaboratorActive(ctx context.Context, params *Params) error {
+	if err := ValidateSigner(ctx, params); err != nil {
+		return err
+	}
+	status, err := getTrackCollaboratorStatus(ctx, params.DBTX, params.EntityID, params.UserID)
+	if err != nil {
+		return NewValidationError("no collaborator invite for track %d and user %d", params.EntityID, params.UserID)
+	}
+	if status != "pending" && status != "accepted" {
+		return NewValidationError("collaborator credit for track %d and user %d is not active (status=%s)", params.EntityID, params.UserID, status)
 	}
 	return nil
 }
