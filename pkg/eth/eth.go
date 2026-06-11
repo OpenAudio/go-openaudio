@@ -12,6 +12,7 @@ import (
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/dbpool"
 	"github.com/OpenAudio/go-openaudio/pkg/eth/contracts"
 	"github.com/OpenAudio/go-openaudio/pkg/eth/contracts/gen"
 	"github.com/OpenAudio/go-openaudio/pkg/eth/db"
@@ -79,6 +80,8 @@ func (eth *EthService) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error parsing database config: %v", err)
 	}
+	dbpool.ConfigurePGX(pgConfig, eth.dbURL)
+	eth.logger.Info("eth postgres pool configured", zap.Int32("maxConns", pgConfig.MaxConns), zap.Duration("maxConnIdleTime", pgConfig.MaxConnIdleTime))
 
 	pool, err := pgxpool.NewWithConfig(ctx, pgConfig)
 	if err != nil {

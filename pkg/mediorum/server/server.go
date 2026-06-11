@@ -24,6 +24,7 @@ import (
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
+	"github.com/OpenAudio/go-openaudio/pkg/dbpool"
 	"github.com/OpenAudio/go-openaudio/pkg/env"
 	audiusHttputil "github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
@@ -309,7 +310,12 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 
 	// pg pool
 	// config.PostgresDSN
-	pgConfig, _ := pgxpool.ParseConfig(config.PostgresDSN)
+	pgConfig, err := pgxpool.ParseConfig(config.PostgresDSN)
+	if err != nil {
+		return nil, fmt.Errorf("parse postgres config: %w", err)
+	}
+	dbpool.ConfigurePGX(pgConfig, config.PostgresDSN)
+	logger.Info("mediorum postgres pool configured", zap.Int32("maxConns", pgConfig.MaxConns), zap.Duration("maxConnIdleTime", pgConfig.MaxConnIdleTime))
 	pgPool, err := pgxpool.NewWithConfig(context.Background(), pgConfig)
 	if err != nil {
 		logger.Error("dial postgres failed", zap.Error(err))
