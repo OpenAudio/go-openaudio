@@ -167,6 +167,20 @@ func (p *PeerClient) doSweep(ctx context.Context) error {
 	limited := resp.Header.Get(SweepLimitedHeader) == "true"
 	lastScannedULID := resp.Header.Get(SweepLastScannedULIDHeader)
 
+	// Retention-gap signal: the peer is telling us our cursor is below its
+	// oldest available op (older ops were pruned). Advance across the gap
+	// explicitly so we don't re-request the pruned range forever. The
+	// first-contact guard (lastUlid != "") prevents a peer from setting our
+	// initial cursor to an arbitrary position; we also reject implausible
+	// advertised ULIDs.
+	gapMinULID := resp.Header.Get(HeaderAvailableMin)
+	if resp.Header.Get(HeaderRetentionGap) == "true" && gapMinULID != "" &&
+		lastUlid != "" && isValidPeerSuppliedULID(gapMinULID) && gapMinULID > lastUlid {
+		p.logger.Warn("retention gap: cursor below peer's available history; advancing across gap",
+			"peer", host, "local_cursor", lastUlid, "peer_available_min_ulid", gapMinULID)
+		lastUlid = gapMinULID
+	}
+
 	var ops []*Op
 	dec := json.NewDecoder(resp.Body)
 	err = dec.Decode(&ops)

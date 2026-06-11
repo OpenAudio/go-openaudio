@@ -55,6 +55,16 @@ func (ss *MediorumServer) pruneOps(ctx context.Context, retention time.Duration)
 	}
 	cutoffStr := cutoff.String()
 
+	// Never prune ops a still-active peer has not yet swept: cap the cutoff at
+	// the slowest active peer's cursor. Caught-up peers sweep ~every 10min, so
+	// their cursor sits far newer than the retention cutoff and this is a no-op;
+	// it only restricts pruning when an active peer is legitimately behind the
+	// window. A peer below the floor is told to advance via the retention-gap
+	// signal on the sweep endpoint.
+	if floor := ss.crud.SlowestActivePeerCursor(ctx); floor != "" && floor < cutoffStr {
+		cutoffStr = floor
+	}
+
 	var total int64
 	for {
 		res := ss.crud.DB.WithContext(ctx).Exec(

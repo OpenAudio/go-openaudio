@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -54,6 +55,7 @@ type crudSweepResponse struct {
 	limited         bool
 	scannedRows     int
 	responseRows    int
+	gapMinULID      string
 }
 
 func (ss *MediorumServer) serveCrudSweep(c echo.Context) error {
@@ -75,12 +77,31 @@ func (ss *MediorumServer) serveCrudSweep(c echo.Context) error {
 	if sweep.limited {
 		c.Response().Header().Set(crudr.SweepLimitedHeader, "true")
 	}
+	if sweep.gapMinULID != "" {
+		c.Response().Header().Set(crudr.HeaderRetentionGap, "true")
+		c.Response().Header().Set(crudr.HeaderAvailableMin, sweep.gapMinULID)
+	}
 	return c.Blob(200, echo.MIMEApplicationJSONCharsetUTF8, sweep.body)
 }
 
 func (ss *MediorumServer) buildCrudSweepResponse(ctx context.Context, after string, maxResponseBytes int) (crudSweepResponse, error) {
 	if maxResponseBytes <= 0 {
 		maxResponseBytes = crudSweepMaxResponseBytes
+	}
+
+	var sweep crudSweepResponse
+
+	// Retention-gap detection: if the caller's cursor is below our oldest
+	// available op (older ops were pruned), advertise our lowest ULID so the
+	// peer advances across the gap explicitly instead of silently skipping it.
+	if after != "" {
+		var minOut sql.NullString
+		if err := ss.crud.DB.WithContext(ctx).Raw(`SELECT MIN(ulid) FROM ops`).Scan(&minOut).Error; err != nil {
+			return crudSweepResponse{}, err
+		}
+		if minOut.Valid && after < minOut.String {
+			sweep.gapMinULID = minOut.String
+		}
 	}
 
 	rows, err := ss.crud.DB.
@@ -96,7 +117,6 @@ func (ss *MediorumServer) buildCrudSweepResponse(ctx context.Context, after stri
 	}
 	defer rows.Close()
 
-	var sweep crudSweepResponse
 	var body bytes.Buffer
 	body.WriteByte('[')
 
