@@ -23,10 +23,6 @@ func (h *grantDeleteHandler) Handle(ctx context.Context, params *Params) error {
 }
 
 func validateGrantDelete(ctx context.Context, params *Params) error {
-	if err := ValidateSigner(ctx, params); err != nil {
-		return err
-	}
-
 	granteeAddress := strings.ToLower(params.MetadataString("grantee_address"))
 	if granteeAddress == "" {
 		return NewValidationError("grantee_address is required for grant revoke")
@@ -40,7 +36,22 @@ func validateGrantDelete(ctx context.Context, params *Params) error {
 		return NewValidationError("no active grant for grantee %s from user %d", granteeAddress, params.UserID)
 	}
 
-	return nil
+	// The signer may be the grantor (the user in the grant) or, for a
+	// user-to-user manager grant, the grantee revoking their own management
+	// relationship. Mirrors the legacy indexer's grant DELETE signer check.
+	if err := ValidateSigner(ctx, params); err == nil {
+		return nil
+	}
+	granteeUserID, isUserGrant, err := activeUserIDByWallet(ctx, params.DBTX, granteeAddress)
+	if err != nil {
+		return err
+	}
+	if isUserGrant {
+		if err := validateSignerForUser(ctx, params, granteeUserID); err == nil {
+			return nil
+		}
+	}
+	return NewValidationError("signer %s is not authorized to revoke the grant for grantee %s from user %d", params.Signer, granteeAddress, params.UserID)
 }
 
 func revokeGrant(ctx context.Context, params *Params) error {

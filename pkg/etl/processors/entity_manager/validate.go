@@ -81,32 +81,39 @@ func ValidateDescription(desc string) error {
 	return nil
 }
 
-// ValidateSigner checks that the signer is the user's wallet or holds a valid
-// grant from the user. Grants come from either a developer app (auto-approved
-// at creation) or another user wallet acting in manager mode (must be approved
-// by the grantor).
+// ValidateSigner checks that the signer is params.UserID's wallet or holds a
+// valid grant from that user. Grants come from either a developer app
+// (auto-approved at creation) or another user wallet acting in manager mode
+// (must be approved by the grantor).
 func ValidateSigner(ctx context.Context, params *Params) error {
-	wallet, err := getUserWallet(ctx, params.DBTX, params.UserID)
+	return validateSignerForUser(ctx, params, params.UserID)
+}
+
+// validateSignerForUser is ValidateSigner against an explicit user id. Grant
+// revocation uses this with the grantee's user id so the grantee (manager) can
+// revoke their own user-to-user grant, matching the legacy indexer.
+func validateSignerForUser(ctx context.Context, params *Params, userID int64) error {
+	wallet, err := getUserWallet(ctx, params.DBTX, userID)
 	if err != nil {
 		return err
 	}
 	if wallet == "" {
-		return NewValidationError("user %d does not exist", params.UserID)
+		return NewValidationError("user %d does not exist", userID)
 	}
 	if strings.EqualFold(wallet, params.Signer) {
 		return nil
 	}
 
 	signer := strings.ToLower(params.Signer)
-	grant, err := getActiveGrant(ctx, params.DBTX, signer, params.UserID)
+	grant, err := getActiveGrant(ctx, params.DBTX, signer, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return NewValidationError("signer %s is not authorized for user %d", params.Signer, params.UserID)
+			return NewValidationError("signer %s is not authorized for user %d", params.Signer, userID)
 		}
 		return err
 	}
 	if grant.isRevoked {
-		return NewValidationError("signer %s grant for user %d is revoked", params.Signer, params.UserID)
+		return NewValidationError("signer %s grant for user %d is revoked", params.Signer, userID)
 	}
 
 	isApp, err := developerAppExists(ctx, params.DBTX, signer)
@@ -123,9 +130,25 @@ func ValidateSigner(ctx context.Context, params *Params) error {
 
 	approved := isApp || (grant.isApproved != nil && *grant.isApproved)
 	if !approved {
-		return NewValidationError("signer %s grant for user %d is not approved", params.Signer, params.UserID)
+		return NewValidationError("signer %s grant for user %d is not approved", params.Signer, userID)
 	}
 	return nil
+}
+
+// activeUserIDByWallet returns the user_id of an active user with the given
+// wallet, and whether one exists.
+func activeUserIDByWallet(ctx context.Context, dbtx db.DBTX, wallet string) (int64, bool, error) {
+	var userID int64
+	err := dbtx.QueryRow(ctx,
+		"SELECT user_id FROM users WHERE wallet = $1 AND is_current = true AND is_deactivated = false LIMIT 1",
+		strings.ToLower(wallet)).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return userID, true, nil
 }
 
 func getUserWallet(ctx context.Context, dbtx db.DBTX, userID int64) (string, error) {
