@@ -239,8 +239,11 @@ func (s *Server) Query(ctx context.Context, req *abcitypes.QueryRequest) (*abcit
 }
 
 func (s *Server) CheckTx(_ context.Context, check *abcitypes.CheckTxRequest) (*abcitypes.CheckTxResponse, error) {
-	_, err := s.isValidSignedTransaction(check.Tx)
+	msg, err := s.isValidSignedTransaction(check.Tx)
 	if err != nil {
+		return &abcitypes.CheckTxResponse{Code: 1}, nil
+	}
+	if err := validateSignedTransactionForCheckTx(msg); err != nil {
 		return &abcitypes.CheckTxResponse{Code: 1}, nil
 	}
 
@@ -913,39 +916,45 @@ func (s *Server) isValidSignedTransaction(tx []byte) (*v1.SignedTransaction, err
 	if err := proto.Unmarshal(tx, &msg); err != nil {
 		return nil, err
 	}
+	return &msg, nil
+}
 
+func validateSignedTransactionForCheckTx(msg *v1.SignedTransaction) error {
+	if msg == nil {
+		return fmt.Errorf("transaction is nil")
+	}
 	if msg.Transaction == nil {
-		return nil, fmt.Errorf("transaction has no body")
+		return fmt.Errorf("transaction has no body")
 	}
 
 	switch msg.Transaction.(type) {
 	case *v1.SignedTransaction_StorageProof:
 		sp := msg.GetStorageProof()
 		if len(sp.ProverAddresses) == 0 {
-			return nil, fmt.Errorf("storage proof has no prover addresses")
+			return fmt.Errorf("storage proof has no prover addresses")
 		}
 		if sp.Address == "" {
-			return nil, fmt.Errorf("storage proof has no prover address")
+			return fmt.Errorf("storage proof has no prover address")
 		}
 		if sp.Height == 0 {
-			return nil, fmt.Errorf("storage proof has no height")
+			return fmt.Errorf("storage proof has no height")
 		}
 	case *v1.SignedTransaction_StorageProofVerification:
 		spv := msg.GetStorageProofVerification()
 		if spv.Height == 0 {
-			return nil, fmt.Errorf("storage proof verification has no height")
+			return fmt.Errorf("storage proof verification has no height")
 		}
 		if len(spv.Proof) == 0 {
-			return nil, fmt.Errorf("storage proof verification has no proof")
+			return fmt.Errorf("storage proof verification has no proof")
 		}
 	case *v1.SignedTransaction_Attestation:
 		att := msg.GetAttestation()
 		if att.GetValidatorRegistration() == nil && att.GetValidatorDeregistration() == nil {
-			return nil, fmt.Errorf("attestation has no body")
+			return fmt.Errorf("attestation has no body")
 		}
 	}
 
-	return &msg, nil
+	return nil
 }
 
 func (s *Server) isValidV2Transaction(tx []byte) (*v1beta1.Transaction, error) {

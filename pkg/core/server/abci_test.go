@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"testing"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	abcitypes "github.com/cometbft/cometbft/abci/types"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )
@@ -15,13 +17,22 @@ func marshalSignedTx(t *testing.T, tx *v1.SignedTransaction) []byte {
 	return b
 }
 
-func TestIsValidSignedTransaction_EmptyBody(t *testing.T) {
+func checkTxCode(t *testing.T, tx []byte) uint32 {
+	t.Helper()
+	res, err := (&Server{}).CheckTx(context.Background(), &abcitypes.CheckTxRequest{Tx: tx})
+	require.NoError(t, err)
+	return res.Code
+}
+
+func TestIsValidSignedTransaction_ParseOnly(t *testing.T) {
 	s := &Server{}
 
 	t.Run("nil transaction body", func(t *testing.T) {
 		tx := marshalSignedTx(t, &v1.SignedTransaction{})
-		_, err := s.isValidSignedTransaction(tx)
-		require.ErrorContains(t, err, "no body")
+		msg, err := s.isValidSignedTransaction(tx)
+		require.NoError(t, err)
+		require.Nil(t, msg.Transaction)
+		require.Equal(t, uint32(1), checkTxCode(t, tx))
 	})
 
 	t.Run("invalid protobuf", func(t *testing.T) {
@@ -55,32 +66,40 @@ func TestIsValidSignedTransaction_StorageProof(t *testing.T) {
 
 	t.Run("empty prover addresses", func(t *testing.T) {
 		tx := marshal(t, &v1.StorageProof{Height: 100, Address: "ABCD1234"})
-		_, err := s.isValidSignedTransaction(tx)
-		require.ErrorContains(t, err, "no prover addresses")
+		msg, err := s.isValidSignedTransaction(tx)
+		require.NoError(t, err)
+		require.Empty(t, msg.GetStorageProof().ProverAddresses)
+		require.Equal(t, uint32(1), checkTxCode(t, tx))
 	})
 
 	t.Run("nil prover addresses after proto roundtrip", func(t *testing.T) {
 		tx := marshal(t, &v1.StorageProof{Height: 100, Address: "ABCD1234", ProverAddresses: nil})
-		_, err := s.isValidSignedTransaction(tx)
-		require.ErrorContains(t, err, "no prover addresses")
+		msg, err := s.isValidSignedTransaction(tx)
+		require.NoError(t, err)
+		require.Empty(t, msg.GetStorageProof().ProverAddresses)
+		require.Equal(t, uint32(1), checkTxCode(t, tx))
 	})
 
 	t.Run("empty slice prover addresses after proto roundtrip", func(t *testing.T) {
 		tx := marshal(t, &v1.StorageProof{Height: 100, Address: "ABCD1234", ProverAddresses: []string{}})
-		_, err := s.isValidSignedTransaction(tx)
-		require.ErrorContains(t, err, "no prover addresses")
+		msg, err := s.isValidSignedTransaction(tx)
+		require.NoError(t, err)
+		require.Empty(t, msg.GetStorageProof().ProverAddresses)
+		require.Equal(t, uint32(1), checkTxCode(t, tx))
 	})
 
 	t.Run("missing address", func(t *testing.T) {
 		tx := marshal(t, &v1.StorageProof{Height: 100, ProverAddresses: []string{"ADDR1"}})
 		_, err := s.isValidSignedTransaction(tx)
-		require.ErrorContains(t, err, "no prover address")
+		require.NoError(t, err)
+		require.Equal(t, uint32(1), checkTxCode(t, tx))
 	})
 
 	t.Run("zero height", func(t *testing.T) {
 		tx := marshal(t, &v1.StorageProof{Address: "ABCD1234", ProverAddresses: []string{"ADDR1"}})
 		_, err := s.isValidSignedTransaction(tx)
-		require.ErrorContains(t, err, "no height")
+		require.NoError(t, err)
+		require.Equal(t, uint32(1), checkTxCode(t, tx))
 	})
 }
 
@@ -104,13 +123,15 @@ func TestIsValidSignedTransaction_StorageProofVerification(t *testing.T) {
 	t.Run("zero height", func(t *testing.T) {
 		tx := marshal(t, &v1.StorageProofVerification{Proof: []byte("proof-data")})
 		_, err := s.isValidSignedTransaction(tx)
-		require.ErrorContains(t, err, "no height")
+		require.NoError(t, err)
+		require.Equal(t, uint32(1), checkTxCode(t, tx))
 	})
 
 	t.Run("empty proof", func(t *testing.T) {
 		tx := marshal(t, &v1.StorageProofVerification{Height: 100})
 		_, err := s.isValidSignedTransaction(tx)
-		require.ErrorContains(t, err, "no proof")
+		require.NoError(t, err)
+		require.Equal(t, uint32(1), checkTxCode(t, tx))
 	})
 }
 
@@ -161,7 +182,8 @@ func TestIsValidSignedTransaction_Attestation(t *testing.T) {
 			Signatures: []string{"sig1"},
 		})
 		_, err := s.isValidSignedTransaction(tx)
-		require.ErrorContains(t, err, "no body")
+		require.NoError(t, err)
+		require.Equal(t, uint32(1), checkTxCode(t, tx))
 	})
 }
 
