@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/cometbft/cometbft/crypto/ed25519"
+	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
@@ -21,12 +22,38 @@ func TestModuloPersistentPeers(t *testing.T) {
 	}
 
 	nodes2 := moduloPersistentPeers("0xE019F1Ad9803cfC83e11D37Da442c9Dc8D8d82a6", ProdPersistentPeers, 3)
-	selectedPersistentPeers2 := strings.Split(nodes, ",")
+	selectedPersistentPeers2 := strings.Split(nodes2, ",")
 	if len(selectedPersistentPeers2) != 3 {
 		t.Fatalf("expected 3 persistent peers, got %d", len(selectedPersistentPeers))
 	}
 
 	require.NotEqual(t, nodes, nodes2)
+}
+
+func TestProdPersistentPeersBroadAndParseable(t *testing.T) {
+	peers := strings.Split(ProdPersistentPeers, ",")
+	require.GreaterOrEqual(t, len(peers), 20, "prod should not bootstrap from a tiny hub-only peer set")
+
+	seen := map[string]bool{}
+	for _, peer := range peers {
+		require.NotEmpty(t, peer)
+		addr, err := p2p.NewNetAddressString(peer)
+		require.NoError(t, err, "peer %q should be a valid CometBFT net address", peer)
+		id := string(addr.ID)
+		require.False(t, seen[id], "duplicate peer id %s", addr.ID)
+		seen[id] = true
+	}
+
+	for _, staleIP := range []string{
+		"34.173.190.5:26656",
+		"34.121.217.14:26656",
+		"34.67.133.214:26656",
+		"34.46.116.59:26656",
+		"35.222.113.66:26656",
+		"34.28.164.31:26656",
+	} {
+		require.NotContains(t, ProdPersistentPeers, staleIP)
+	}
 }
 
 func TestEnsurePrivValidator(t *testing.T) {
