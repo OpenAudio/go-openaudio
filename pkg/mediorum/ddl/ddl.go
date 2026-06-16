@@ -53,7 +53,7 @@ func Migrate(db *sql.DB, myHost string) {
 
 	runMigration(db, cleanUploadsAudioAnalysesDDL)
 
-	// cleanup crudr spam from blob not found errors
+	// cleanup historical operation-log spam from blob not found errors
 	runMigration(db, `
 	delete from ops where
 	data->0->>'error' like 'blob (key%NotFound%'

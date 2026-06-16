@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -14,7 +13,7 @@ func TestStatusReportsHistoryBoundsAndCursorSafety(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(TestBlobThing{}))
 
 	z := zap.NewNop()
-	c := New("host1", nil, nil, db, lifecycle.NewLifecycle(context.Background(), "crudr status test", z), z, nil).
+	c := New("host1", db, z).
 		RegisterModels(&TestBlobThing{})
 	require.NoError(t, db.Exec("TRUNCATE ops, cursors, test_blob_things").Error)
 
@@ -46,7 +45,7 @@ func TestStatusReportsEmptyAvailableHistory(t *testing.T) {
 	db := SetupTestDB()
 
 	z := zap.NewNop()
-	c := New("host1", nil, nil, db, lifecycle.NewLifecycle(context.Background(), "crudr empty status test", z), z, nil)
+	c := New("host1", db, z)
 	require.NoError(t, db.Exec("TRUNCATE ops, cursors").Error)
 
 	status, err := c.Status(context.Background(), []string{"ops", "cursors"})
@@ -66,7 +65,7 @@ func TestStatusClampsNegativeReltuples(t *testing.T) {
 	db := SetupTestDB()
 
 	z := zap.NewNop()
-	c := New("host1", nil, nil, db, lifecycle.NewLifecycle(context.Background(), "crudr reltuples test", z), z, nil)
+	c := New("host1", db, z)
 
 	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS status_reltuples_probe (id bigint)`).Error)
 	t.Cleanup(func() {

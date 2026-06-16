@@ -13,8 +13,7 @@ type Op struct {
 	Table  string          `json:"table"`
 	Data   json.RawMessage `json:"data"`
 
-	Transient     bool `json:"transient" gorm:"-"`
-	SkipBroadcast bool `json:"-" gorm:"-"`
+	Transient bool `json:"transient" gorm:"-"`
 
 	CoreTxHash      string     `json:"-" gorm:"column:core_tx_hash"`
 	CoreTxStatus    string     `json:"-" gorm:"column:core_tx_status"`
@@ -36,12 +35,6 @@ const (
 func WithTransient() withOption {
 	return func(op *Op) {
 		op.Transient = true
-	}
-}
-
-func WithSkipBroadcast() withOption {
-	return func(op *Op) {
-		op.SkipBroadcast = true
 	}
 }
 

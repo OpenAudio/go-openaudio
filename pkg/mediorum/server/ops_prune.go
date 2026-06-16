@@ -13,12 +13,11 @@ const (
 	opsPruneBatchPause = 200 * time.Millisecond
 )
 
-// The crudr op-log ("ops" table) is append-only and dominates DB size on long-lived
-// nodes, where almost all rows are superseded update snapshots. Pruning old rows only
-// affects a peer sweeping with a cursor older than the retention window (offline that
-// long, or bootstrapping from genesis); caught-up peers sweep every ~10min and never
-// read that far back. It never touches the underlying replicated tables, so this
-// node's serving and indexing are unaffected.
+// The local mediorum op-log ("ops" table) is append-only and dominates DB size
+// on long-lived nodes, where almost all rows are superseded update snapshots.
+// Core now carries new operations, so pruning old rows only removes local
+// relay/idempotency history. It never touches the underlying replicated tables,
+// so this node's serving and indexing are unaffected.
 func (ss *MediorumServer) startOpsPruner(ctx context.Context) error {
 	logger := ss.logger.With(zap.String("task", "ops_prune"))
 	if ss.Config.Archive {

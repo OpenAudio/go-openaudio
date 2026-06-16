@@ -143,7 +143,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	storeRecentTTL := parseStoreRecentTTL(env.String("OPENAUDIO_STORE_RECENT_TTL"))
 
 	// Archive mode keeps all history (no ops pruning). Otherwise the append-only
-	// crudr "ops" table is pruned, retaining 1 year by default.
+	// Mediorum's local operation log is pruned, retaining 1 year by default.
 	archive := env.Get("false", "OPENAUDIO_ARCHIVE", "archive") == "true"
 	opsRetention := env.GetDuration(365*24*time.Hour, "OPENAUDIO_OPS_RETENTION")
 	opsPruneInterval := env.GetDuration(6*time.Hour, "OPENAUDIO_OPS_PRUNE_INTERVAL")
@@ -169,7 +169,6 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		GitSHA:                    env.String("OPENAUDIO_GIT_SHA", "GIT_SHA"),
 		AudiusDockerCompose:       env.String("OPENAUDIO_DOCKER_COMPOSE_GIT_SHA", "AUDIUS_DOCKER_COMPOSE_GIT_SHA"),
 		AutoUpgradeEnabled:        env.Bool("OPENAUDIO_AUTO_UPGRADE_ENABLED", "autoUpgradeEnabled"),
-		CoreWritesEnabled:         env.Get("true", "OPENAUDIO_MEDIORUM_CORE_WRITES_ENABLED") == "true",
 		StoreAll:                  env.Bool("OPENAUDIO_STORE_ALL", "STORE_ALL"),
 		StoreRecent:               env.Bool("OPENAUDIO_STORE_RECENT"),
 		StoreRecentTTL:            storeRecentTTL,

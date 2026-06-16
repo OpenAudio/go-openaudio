@@ -7,14 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
-// example of a "user type" that is hooked up with crudr
+// example of a "user type" that is hooked up with the operation log
 type TestBlobThing struct {
 	Key       string         `gorm:"primaryKey;not null;default:null"`
 	Host      string         `gorm:"primaryKey;not null;default:null"`
@@ -30,7 +29,7 @@ func TestCrudr(t *testing.T) {
 	assert.NoError(t, err)
 
 	z := zap.NewNop()
-	c := New("host1", nil, nil, db, lifecycle.NewLifecycle(context.Background(), "crudr test", z), z, nil).RegisterModels(&TestBlobThing{})
+	c := New("host1", db, z).RegisterModels(&TestBlobThing{})
 
 	// table name
 	{
@@ -67,7 +66,7 @@ func TestCrudr(t *testing.T) {
 		var ops []Op
 		c.DB.Find(&ops)
 		assert.Len(t, ops, 1)
-		assert.Equal(t, CoreTxStatusLocal, ops[0].CoreTxStatus)
+		assert.Equal(t, CoreTxStatusPending, ops[0].CoreTxStatus)
 	}
 
 	{
@@ -82,9 +81,7 @@ func TestCoreRelayState(t *testing.T) {
 	db := SetupTestDB()
 	require.NoError(t, db.AutoMigrate(TestBlobThing{}))
 
-	z := zap.NewNop()
-	c := New("host1", nil, nil, db, lifecycle.NewLifecycle(ctx, "crudr test", z), z, nil).RegisterModels(&TestBlobThing{})
-	c.SetCoreWritesEnabled(true)
+	c := New("host1", db, zap.NewNop()).RegisterModels(&TestBlobThing{})
 
 	require.NoError(t, c.Create(TestBlobThing{Host: "server1", Key: "dd1"}))
 

@@ -75,10 +75,7 @@ func TestRepair(t *testing.T) {
 		assert.NotEmpty(t, resp.GetHeader("x-took"))
 	}
 
-	// force sweep (since blob changes SkipBroadcast)
-	for _, s := range testNetwork {
-		s.crud.ForceSweep()
-	}
+	applyCoreOpsFrom(t, ss)
 
 	// assert it only exists on 1 host
 	{
