@@ -1016,6 +1016,10 @@ func validateSignedTransactionForCheckTx(msg *v1.SignedTransaction) error {
 		if att.GetValidatorRegistration() == nil && att.GetValidatorDeregistration() == nil {
 			return fmt.Errorf("attestation has no body")
 		}
+	case *v1.SignedTransaction_MediorumOperation:
+		if err := validateMediorumOperationShape(msg.GetMediorumOperation()); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -1115,6 +1119,11 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 			s.logger.Error("Invalid block: invalid reward pool tx", zap.Error(err))
 			return false, nil
 		}
+	case *v1.SignedTransaction_MediorumOperation:
+		if err := s.isValidMediorumOperationTx(ctx, signedTx); err != nil {
+			s.logger.Error("Invalid block: invalid mediorum operation tx", zap.Error(err))
+			return false, nil
+		}
 	}
 	return true, nil
 }
@@ -1125,6 +1134,8 @@ func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64,
 		return s.isValidRewardTransaction(ctx, signedTx, currentHeight)
 	case *v1.SignedTransaction_RewardPool:
 		return s.isValidRewardPoolTransaction(ctx, signedTx, currentHeight)
+	case *v1.SignedTransaction_MediorumOperation:
+		return s.isValidMediorumOperationTx(ctx, signedTx)
 	default:
 		// For other transaction types, no validation needed during SendTransaction
 		return nil
@@ -1162,6 +1173,8 @@ func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.Finaliz
 		return s.finalizeRewardPoolTransaction(ctx, req, msg.GetRewardPool(), txHash, 0)
 	case *v1.SignedTransaction_FileUpload:
 		return s.finalizeFileUpload(ctx, msg, txHash, req.Height)
+	case *v1.SignedTransaction_MediorumOperation:
+		return s.finalizeMediorumOperation(ctx, msg, txHash)
 	default:
 		return nil, fmt.Errorf("unhandled proto event: %v %T", msg, t)
 	}
