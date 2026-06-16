@@ -85,7 +85,7 @@ type MediorumConfig struct {
 	RepairConcurrency         int           `default:"1"`
 
 	// Archive mode (OPENAUDIO_ARCHIVE) keeps all history: no core block pruning
-	// and no crudr "ops" pruning. Otherwise ops older than OpsRetention are pruned.
+	// and no mediorum op-log pruning. Otherwise ops older than OpsRetention are pruned.
 	Archive          bool
 	OpsRetention     time.Duration `default:"8760h"` // 1 year
 	OpsPruneInterval time.Duration `default:"6h"`
@@ -158,8 +158,6 @@ type MediorumServer struct {
 	StartedAt time.Time
 	Config    MediorumConfig
 
-	crudSweepMutex sync.Mutex
-
 	// handle communication between core and mediorum for Proof of Storage
 	posChannel chan pos.PoSRequest
 
@@ -183,8 +181,6 @@ type PeerHealth struct {
 var (
 	apiBasePath = ""
 )
-
-const PercentSeededThreshold = 50
 
 func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer.CoreService, ethService ethv1connect.EthServiceHandler) (*MediorumServer, error) {
 	if v := env.String("OPENAUDIO_ENV"); v != "" {
@@ -332,17 +328,13 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		Timeout:   3 * time.Minute, // covers blob replication and pull
 	}
 
-	// crud
-	peerHosts := []string{}
+	// mediorum operation log
 	allHosts := []string{}
 	for _, peer := range config.Peers {
 		allHosts = append(allHosts, peer.Host)
-		if peer.Host != config.Self.Host {
-			peerHosts = append(peerHosts, peer.Host)
-		}
 	}
 
-	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db, mediorumLifecycle, logger, peerHTTPClient)
+	crud := crudr.New(config.Self.Host, db, logger)
 	dbMigrate(crud, config.Self.Host)
 
 	deadHosts := config.DeadHosts
@@ -395,7 +387,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		quit:             make(chan error, 1),
 		ethService:       ethService,
 		trustedNotifier:  &trustedNotifier,
-		isSeeding:        config.Env == "stage" || config.Env == "prod",
+		isSeeding:        false,
 		isAudiusdManaged: isAudiusdManaged,
 		rendezvousHasher: rendezvousHasher,
 		transcodeWork:    make(chan *Upload, 100),
@@ -508,10 +500,8 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	// internal
 	internalApi := routes.Group("/internal")
 
-	// internal: crud
+	// internal: mediorum operation log/status
 	internalApi.GET("/crud/status", ss.serveCrudStatus, middleware.BasicAuth(ss.checkBasicAuth))
-	internalApi.GET("/crud/sweep", ss.serveCrudSweep)
-	internalApi.POST("/crud/push", ss.serveCrudPush, middleware.BasicAuth(ss.checkBasicAuth))
 
 	internalApi.GET("/blobs/location/:cid", ss.serveBlobLocation, cidutil.UnescapeCidParam)
 	internalApi.GET("/blobs/info/:cid", ss.serveBlobInfo, cidutil.UnescapeCidParam)
@@ -624,14 +614,12 @@ func (ss *MediorumServer) MustStart() error {
 	// for any background task that make authenticated peer requests
 	// only start if we have a valid registered wallet
 	if ss.Config.WalletIsRegistered {
-		ss.crud.StartClients()
-
 		ss.lc.AddManagedRoutine("health poller", ss.startHealthPoller)
 		ss.lc.AddManagedRoutine("repairer", ss.startRepairer)
 		ss.lc.AddManagedRoutine("qm syncer", ss.startQmSyncer)
 		ss.lc.AddManagedRoutine("delist status poller", ss.startPollingDelistStatuses)
-		ss.lc.AddManagedRoutine("seeding completion poller", ss.pollForSeedingCompletion)
-		ss.lc.AddManagedRoutine("upload scroller", ss.startUploadScroller)
+		ss.lc.AddManagedRoutine("core mediorum op submitter", ss.startCoreOpSubmitter)
+		ss.lc.AddManagedRoutine("core mediorum op syncer", ss.startCoreOpSyncer)
 		ss.lc.AddManagedRoutine("play event queue", ss.startPlayEventQueue)
 		ss.lc.AddManagedRoutine("zap syncer", func(ctx context.Context) error {
 			ticker := time.NewTicker(10 * time.Second)
@@ -681,21 +669,6 @@ func (ss *MediorumServer) Stop() {
 	}
 	ss.logger.Info("bye")
 	ss.quit <- errors.New("mediorum stopped")
-}
-
-func (ss *MediorumServer) pollForSeedingCompletion(ctx context.Context) error {
-	ticker := time.NewTicker(10 * time.Second)
-	for {
-		select {
-		case <-ticker.C:
-			if ss.crud.GetPercentNodesSeeded() > PercentSeededThreshold {
-				ss.isSeeding = false
-				return nil
-			}
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
 }
 
 // discovery listens are enabled if endpoints are provided
@@ -831,8 +804,6 @@ func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
 					zap.Int("total_peers", len(peers)),
 					zap.Strings("peer_hosts", peerHosts))
 			}
-
-			ss.crud.UpdatePeers(allHosts)
 
 			ss.logger.Info("updated peers and signers dynamically", zap.Int("peers", len(peers)), zap.Int("signers", len(signers)), zap.Bool("wallet_is_registered", ss.Config.WalletIsRegistered))
 		case <-ctx.Done():

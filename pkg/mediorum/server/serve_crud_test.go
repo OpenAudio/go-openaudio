@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -13,95 +12,6 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/stretchr/testify/require"
 )
-
-func TestBuildCrudSweepResponseCapsBytesAndReportsCursor(t *testing.T) {
-	ss := testNetwork[0]
-	ctx := context.Background()
-	prefix := fmt.Sprintf("zz-crud-sweep-cap-%d-", time.Now().UnixNano())
-	cleanup := func() {
-		require.NoError(t, ss.crud.DB.Where("ulid LIKE ?", prefix+"%").Delete(&crudr.Op{}).Error)
-	}
-	cleanup()
-	t.Cleanup(cleanup)
-
-	ops := []crudr.Op{
-		{
-			ULID:   prefix + "01",
-			Host:   ss.Config.Self.Host,
-			Action: crudr.ActionCreate,
-			Table:  "uploads",
-			Data:   json.RawMessage(`[{"mirrors":["https://not-this-host.example"]}]`),
-		},
-		{
-			ULID:   prefix + "02",
-			Host:   ss.Config.Self.Host,
-			Action: crudr.ActionCreate,
-			Table:  "storage_and_db_sizes",
-			Data:   json.RawMessage(`[{"host":"small","size":1}]`),
-		},
-		{
-			ULID:   prefix + "03",
-			Host:   ss.Config.Self.Host,
-			Action: crudr.ActionCreate,
-			Table:  "storage_and_db_sizes",
-			Data:   json.RawMessage(fmt.Sprintf(`[{"host":"%s","size":2}]`, strings.Repeat("x", 512))),
-		},
-	}
-	require.NoError(t, ss.crud.DB.Create(&ops).Error)
-
-	firstPayload, err := json.Marshal(&ops[1])
-	require.NoError(t, err)
-	sweep, err := ss.buildCrudSweepResponse(ctx, prefix+"00", len(firstPayload)+2)
-	require.NoError(t, err)
-
-	require.True(t, sweep.limited)
-	require.Equal(t, prefix+"02", sweep.lastScannedULID)
-	require.Equal(t, 3, sweep.scannedRows)
-	require.Equal(t, 1, sweep.responseRows)
-
-	var returned []crudr.Op
-	require.NoError(t, json.Unmarshal(sweep.body, &returned))
-	require.Len(t, returned, 1)
-	require.Equal(t, prefix+"02", returned[0].ULID)
-}
-
-func TestBuildCrudSweepResponseAdvancesPastFilteredUploads(t *testing.T) {
-	ss := testNetwork[0]
-	ctx := context.Background()
-	prefix := fmt.Sprintf("zz-crud-sweep-filter-%d-", time.Now().UnixNano())
-	cleanup := func() {
-		require.NoError(t, ss.crud.DB.Where("ulid LIKE ?", prefix+"%").Delete(&crudr.Op{}).Error)
-	}
-	cleanup()
-	t.Cleanup(cleanup)
-
-	ops := []crudr.Op{
-		{
-			ULID:   prefix + "01",
-			Host:   ss.Config.Self.Host,
-			Action: crudr.ActionCreate,
-			Table:  "uploads",
-			Data:   json.RawMessage(`[{"mirrors":["https://not-this-host.example"]}]`),
-		},
-		{
-			ULID:   prefix + "02",
-			Host:   ss.Config.Self.Host,
-			Action: crudr.ActionCreate,
-			Table:  "uploads",
-			Data:   json.RawMessage(`[{"mirrors":["https://also-not-this-host.example"]}]`),
-		},
-	}
-	require.NoError(t, ss.crud.DB.Create(&ops).Error)
-
-	sweep, err := ss.buildCrudSweepResponse(ctx, prefix+"00", 1024)
-	require.NoError(t, err)
-
-	require.False(t, sweep.limited)
-	require.Equal(t, prefix+"02", sweep.lastScannedULID)
-	require.Equal(t, 2, sweep.scannedRows)
-	require.Equal(t, 0, sweep.responseRows)
-	require.JSONEq(t, `[]`, string(sweep.body))
-}
 
 func TestServeCrudStatus(t *testing.T) {
 	statusServer := testNetwork[0]
@@ -123,13 +33,9 @@ func TestServeCrudStatus(t *testing.T) {
 
 	var payload struct {
 		crudr.Status
-		PullLimit        int `json:"pull_limit"`
-		MaxResponseBytes int `json:"max_response_bytes"`
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
 
-	require.Equal(t, PullLimit, payload.PullLimit)
-	require.Equal(t, crudSweepMaxResponseBytes, payload.MaxResponseBytes)
 	require.Contains(t, payload.Tables, "ops")
 	require.Contains(t, payload.Tables, "uploads")
 	require.Contains(t, payload.Tables, "qm_audio_analyses")

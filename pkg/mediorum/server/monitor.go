@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OpenAudio/go-openaudio/pkg/mediorum/crudr"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/exp/slices"
@@ -63,7 +62,7 @@ func (ss *MediorumServer) recordStorageAndDbSize(ctx context.Context) error {
 			LastCleanupSize:    ss.lastSuccessfulCleanup.ContentSize,
 		}
 
-		err = ss.crud.Create(&status, crudr.WithSkipBroadcast())
+		err = ss.crud.Create(&status)
 		if err != nil {
 			slog.Error("Error recording storage and db sizes", "err", err)
 		}
@@ -96,7 +95,7 @@ func (ss *MediorumServer) monitorMetrics(ctx context.Context) error {
 		}
 	}
 
-	// persist the sizes in the db and let crudr share them with other nodes
+	// persist the sizes in the db and let Core relay them to other nodes
 	ss.lc.AddManagedRoutine("storage and db size recorder", ss.recordStorageAndDbSize)
 
 	ticker.Reset(10 * time.Minute)

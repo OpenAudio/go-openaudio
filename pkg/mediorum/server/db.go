@@ -121,11 +121,6 @@ type MonthlyMetrics struct {
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`
 }
 
-type UploadCursor struct {
-	Host  string `gorm:"primaryKey"`
-	After time.Time
-}
-
 func dbMustDial(dbPath string) *gorm.DB {
 	gormLogger := slogGorm.New()
 
@@ -147,12 +142,12 @@ func dbMustDial(dbPath string) *gorm.DB {
 func dbMigrate(crud *crudr.Crudr, myHost string) {
 	// Migrate the schema
 	slog.Info("db: gorm automigrate")
-	err := crud.DB.AutoMigrate(&Upload{}, &RepairTracker{}, &UploadCursor{}, &StorageAndDbSize{}, &DailyMetrics{}, &MonthlyMetrics{}, &QmAudioAnalysis{}, &AudioPreview{})
+	err := crud.DB.AutoMigrate(&Upload{}, &RepairTracker{}, &StorageAndDbSize{}, &DailyMetrics{}, &MonthlyMetrics{}, &QmAudioAnalysis{}, &AudioPreview{})
 	if err != nil {
 		panic(err)
 	}
 
-	// register any models to be managed by crudr
+	// register any models to be managed by the mediorum operation log
 	crud.RegisterModels(&Upload{}, &StorageAndDbSize{}, &QmAudioAnalysis{}, &AudioPreview{})
 
 	sqlDb, _ := crud.DB.DB()
