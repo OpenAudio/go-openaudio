@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.4.0...pkg/etl/v1.5.0) (2026-06-18)
+
+
+### Features
+
+* **etl:** normalize genre on entity_manager track writes ([#367](https://github.com/OpenAudio/go-openaudio/issues/367)) ([5aa118b](https://github.com/OpenAudio/go-openaudio/commit/5aa118b67bc19474a56f81a6665f2f47854d72e4))
+
 ## [1.4.0](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.3.0...pkg/etl/v1.4.0) (2026-06-15)
 
 
