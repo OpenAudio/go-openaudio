@@ -216,6 +216,9 @@ func ReadConfig() (*Config, error) {
 	cfg.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(cfg.Environment)
 
 	cfg.SkipEthRegistration = env.Get("false", "OPENAUDIO_SKIP_ETH_REGISTRATION", "skipEthRegistration") == "true"
+	// Defaults to false for nodes that opt out of indexing, but the Go ETL is
+	// the production indexer and OPENAUDIO_ETL_ENABLED is set to true in
+	// production deployments.
 	cfg.EnableETL = env.Get("false", "OPENAUDIO_ETL_ENABLED") == "true"
 	cfg.EnableExplorer = env.Get("false", "OPENAUDIO_EXPLORER_ENABLED") == "true"
 	cfg.EnableGRPCReflection = env.Get("false", "OPENAUDIO_GRPC_REFLECTION_ENABLED") == "true"

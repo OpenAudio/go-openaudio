@@ -30,8 +30,8 @@ todos:
     content: "PR9: Comment Create/Update/Delete/React/Unreact/Pin/Unpin/Report/Mute/Unmute handlers"
     status: completed
   - id: remaining-entities
-    content: "Future: AssociatedWallet, DashboardWalletUser, Tip (require crypto sig verification)"
-    status: pending
+    content: "AssociatedWallet, DashboardWalletUser, Tip, EncryptedEmail, EmailAccess, Event (incl. crypto sig verification)"
+    status: completed
 isProject: false
 ---
 
@@ -39,7 +39,9 @@ isProject: false
 
 ## Current State
 
-35 entity manager handlers implemented with full validation parity against the discovery-provider celery indexer. The ETL indexer processes ManageEntity transactions through a dispatcher that routes to per-entity-action handlers, each performing stateless validation, stateful validation, and domain table writes.
+Parity work is complete: the Go ETL is the production indexer, having replaced the legacy discovery-provider celery indexer (no longer active). All entity manager handlers are implemented with full validation parity against the behavior of the former celery indexer. The ETL indexer processes ManageEntity transactions through a dispatcher that routes to per-entity-action handlers, each performing stateless validation, stateful validation, and domain table writes.
+
+The sections below are retained as a historical record of how the parity effort was staged.
 
 ## Graphite Stack
 
@@ -71,9 +73,9 @@ main
 | PlaylistSeen | View | `notification.go` |
 | Comment | Create, Update, Delete, React, Unreact, Pin, Unpin, Report, Mute, Unmute | `comment_*.go` |
 
-## Remaining Entities (lower priority)
+## Remaining Entities (now implemented)
 
-These require Ethereum/Solana signature verification and will be added when crypto primitives are available:
+These required Ethereum/Solana signature verification and have since been implemented:
 
 - **AssociatedWallet**: Create, Delete — ETH/SOL signature recovery
 - **DashboardWalletUser**: Create, Delete — ETH signature recovery + timestamp validation
