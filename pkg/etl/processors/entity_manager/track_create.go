@@ -46,6 +46,8 @@ func validateTrackCreate(ctx context.Context, params *Params) error {
 		if err := ValidateGenre(genre); err != nil {
 			return err
 		}
+		// Normalize in place so the canonical form is what gets inserted.
+		params.Metadata["genre"] = NormalizeGenre(genre)
 	}
 	if err := ValidateAccessConditions(params); err != nil {
 		return err

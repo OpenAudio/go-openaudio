@@ -190,6 +190,9 @@ func (ex *Explorer) Initialize() {
 	// API endpoints
 	e.GET("/api/validator-locations", ex.ValidatorLocations)
 	e.POST("/api/debug/play", ex.DebugPlay)
+	e.GET("/api/v1/events", ex.ListEvents)
+	e.GET("/api/v1/events/:id", ex.GetEvent)
+	e.GET("/api/v1/events/:handle/:slug", ex.GetEventBySlug)
 
 	// SSE endpoints
 	e.GET("/sse/events", ex.LiveEventsSSE)
