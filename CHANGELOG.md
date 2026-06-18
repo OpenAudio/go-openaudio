@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0](https://github.com/OpenAudio/go-openaudio/compare/v1.4.0...v1.5.0) (2026-06-18)
+
+
+### Features
+
+* **etl:** normalize genre on entity_manager track writes ([#367](https://github.com/OpenAudio/go-openaudio/issues/367)) ([5aa118b](https://github.com/OpenAudio/go-openaudio/commit/5aa118b67bc19474a56f81a6665f2f47854d72e4))
+
+
+### Bug Fixes
+
+* skip comet removal for jailed deregistrations ([#370](https://github.com/OpenAudio/go-openaudio/issues/370)) ([3c178ed](https://github.com/OpenAudio/go-openaudio/commit/3c178edc3dea729f85980b0deeba7dcecdb19a5a))
+
 ## [1.4.0](https://github.com/OpenAudio/go-openaudio/compare/v1.3.0...v1.4.0) (2026-06-15)
 
 
