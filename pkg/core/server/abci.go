@@ -346,6 +346,8 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 			// set tx to ok and set to not okay later if error occurs
 			txs[i] = &abcitypes.ExecTxResult{Code: abcitypes.CodeTypeOK}
 
+			emitDeregistrationValidatorUpdate := s.deregistrationNeedsValidatorUpdate(ctx, signedTx)
+
 			// Use raw transaction bytes for consistent hashing during block sync
 			txhash := common.ToTxHashFromBytes(tx)
 			finalizedTx, err := s.finalizeTransaction(ctx, req, signedTx, txhash, req.Height)
@@ -381,11 +383,13 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				vr := att.GetValidatorDeregistration()
 				vrPubKey := ed25519.PubKey(vr.GetPubKey())
 				vrAddr := vrPubKey.Address().String()
-				// intentionally override any existing updates
-				validatorUpdatesMap[vrAddr] = abcitypes.ValidatorUpdate{
-					Power:       int64(0),
-					PubKeyBytes: vr.PubKey,
-					PubKeyType:  "ed25519",
+				if emitDeregistrationValidatorUpdate {
+					// intentionally override any existing updates
+					validatorUpdatesMap[vrAddr] = abcitypes.ValidatorUpdate{
+						Power:       int64(0),
+						PubKeyBytes: vr.PubKey,
+						PubKeyType:  "ed25519",
+					}
 				}
 				if err := s.appendDeregistrationToValidatorHistory(ctx, vr, req.Time, req.Height); err != nil {
 					// do not halt on validator history
@@ -394,11 +398,13 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 			} else if vd := signedTx.GetValidatorDeregistration(); vd != nil { // TODO: delete legacy deregistration after chain rollover
 				vdPubKey := ed25519.PubKey(vd.GetPubKey())
 				vdAddr := vdPubKey.Address().String()
-				// intentionally override any existing updates
-				validatorUpdatesMap[vdAddr] = abcitypes.ValidatorUpdate{
-					Power:       int64(0),
-					PubKeyBytes: vd.PubKey,
-					PubKeyType:  "ed25519",
+				if emitDeregistrationValidatorUpdate {
+					// intentionally override any existing updates
+					validatorUpdatesMap[vdAddr] = abcitypes.ValidatorUpdate{
+						Power:       int64(0),
+						PubKeyBytes: vd.PubKey,
+						PubKeyType:  "ed25519",
+					}
 				}
 			}
 
@@ -873,6 +879,35 @@ func (s *Server) ExtendVote(_ context.Context, extend *abcitypes.ExtendVoteReque
 
 func (s *Server) VerifyVoteExtension(_ context.Context, verify *abcitypes.VerifyVoteExtensionRequest) (*abcitypes.VerifyVoteExtensionResponse, error) {
 	return &abcitypes.VerifyVoteExtensionResponse{}, nil
+}
+
+func (s *Server) deregistrationNeedsValidatorUpdate(ctx context.Context, tx *v1.SignedTransaction) bool {
+	var cometAddress string
+
+	if att := tx.GetAttestation(); att != nil {
+		if dereg := att.GetValidatorDeregistration(); dereg != nil {
+			cometAddress = dereg.GetCometAddress()
+		}
+	} else if dereg := tx.GetValidatorDeregistration(); dereg != nil {
+		cometAddress = dereg.GetCometAddress()
+	}
+
+	if cometAddress == "" {
+		return false
+	}
+
+	node, err := s.getDb().GetRegisteredNodeByCometAddress(ctx, cometAddress)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false
+	}
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("failed to check validator state before deregistration", zap.String("comet_address", cometAddress), zap.Error(err))
+		}
+		return false
+	}
+
+	return !node.Jailed
 }
 
 //////////////////////////////////
