@@ -427,7 +427,9 @@ func (e *Indexer) processBlock(ctx context.Context, pb prefetchedBlock) (*blockR
 			// our MAX+1 with a different hash. Within our tx, both calls
 			// see the same snapshot semantics (READ COMMITTED), so the
 			// retry only helps if the conflict was with a *committed*
-			// outside writer — which is exactly the cutover scenario.
+			// outside writer — which is what could happen while a second
+			// writer (e.g. the legacy Python indexer) was still running
+			// during the production cutover to the Go ETL.
 			n, err = e.resolveBlockNumber(ctx, tx, block.Hash)
 		}
 		if err != nil {
@@ -880,8 +882,9 @@ func (e *Indexer) firePlaysHooks(ctx context.Context, sp pgx.Tx, plays []*corev1
 // blocks row if needed, all within the caller-supplied transaction.
 //
 // Idempotent and tolerant of co-existing writers (e.g. the legacy Python
-// indexer during a cutover): if a row for blockHash already exists, its
-// number is adopted. If not, a new row is inserted at MAX(number)+1
+// indexer, which ran alongside the Go ETL during the production cutover):
+// if a row for blockHash already exists, its number is adopted. If not,
+// a new row is inserted at MAX(number)+1
 // computed in-statement. The DB is the source of truth; no in-memory
 // counter to drift from concurrent writers or stale snapshots.
 //
