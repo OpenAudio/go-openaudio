@@ -123,6 +123,7 @@ type ValidatorModelOptions struct {
 	NodeCount     int
 	InitialActive int
 	Behavior      ValidatorSetBehavior
+	NodePowers    map[NodeID]int64
 }
 
 type ValidatorLifecycleModel struct {
@@ -174,11 +175,15 @@ func NewValidatorLifecycleModel(opts ValidatorModelOptions) *ValidatorLifecycleM
 	}
 	for i := 0; i < nodeCount; i++ {
 		id := NodeID(fmt.Sprintf("%s%d", modelDefaultNodePrefix, i+1))
+		power := opts.NodePowers[id]
+		if power <= 0 {
+			power = defaultModelNodePower
+		}
 		node := &ModelNode{
 			ID:             id,
 			State:          ModelValidatorAbsent,
 			EndpointHonest: true,
-			Power:          defaultModelNodePower,
+			Power:          power,
 		}
 		if i < initialActive {
 			node.State = ModelValidatorActive

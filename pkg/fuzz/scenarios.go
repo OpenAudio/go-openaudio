@@ -308,6 +308,104 @@ func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaos
 	return scenario
 }
 
+func PowerSkewOutcomeScenario(spec NetworkSpec, controller ValidatorChaosController, highPowerID NodeID, lowPowerIDs []NodeID, within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+	quorumOutcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+
+	ids := spec.NodeIDs()
+	lowPowerIDs = nodeSetDifference(validNodeIDs(spec, lowPowerIDs), []NodeID{highPowerID})
+	scenario := Scenario{
+		Name: "power-skew-outcome-edge-cases",
+		Steps: []Step{
+			{
+				Name:       "initial height advances",
+				Assertions: quorumOutcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+	if _, ok := spec.Node(highPowerID); !ok || len(lowPowerIDs) == 0 {
+		return scenario
+	}
+
+	stopLow, startLow := stopStartActions(lowPowerIDs)
+	scenario.Steps = append(scenario.Steps,
+		outcomeActionStep(fmt.Sprintf("stop %d low-power validators; chain follows validator power", len(lowPowerIDs)), stepTimeout, stopLow, quorumOutcomeAssertions),
+	)
+
+	if controller.EndpointMutator != nil {
+		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", highPowerID)
+		scenario.Steps = append(scenario.Steps,
+			outcomeActionStep("advertise bad endpoint for high-power validator; chain follows validator power", stepTimeout, []Action{AdvertiseEndpointWith(controller.EndpointMutator, highPowerID, badEndpoint)}, quorumOutcomeAssertions),
+		)
+	}
+
+	scenario.Steps = append(scenario.Steps,
+		Step{
+			Name:       "stop high-power validator while low-power validators are down; chain stalls",
+			Actions:    []Action{StopNode(highPowerID)},
+			Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+			Timeout:    stepTimeout,
+		},
+		outcomeActionStep("restart high-power validator; chain recovers by voting power", stepTimeout, []Action{StartNode(highPowerID)}, quorumOutcomeAssertions),
+	)
+
+	if controller.EndpointMutator != nil {
+		scenario.Steps = append(scenario.Steps,
+			outcomeActionStep("repair high-power validator endpoint", stepTimeout, []Action{AdvertiseEndpointWith(controller.EndpointMutator, highPowerID, "")}, quorumOutcomeAssertions),
+		)
+	}
+	scenario.Steps = append(scenario.Steps,
+		outcomeActionStep(fmt.Sprintf("restart %d low-power validators; chain remains live", len(lowPowerIDs)), stepTimeout, startLow, quorumOutcomeAssertions),
+		Step{
+			Name:       "stop high-power validator alone; chain stalls despite most nodes being live",
+			Actions:    []Action{StopNode(highPowerID)},
+			Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+			Timeout:    stepTimeout,
+		},
+		outcomeActionStep("restart high-power validator; chain recovers", stepTimeout, []Action{StartNode(highPowerID)}, quorumOutcomeAssertions),
+	)
+
+	if controller.Jailer != nil {
+		scenario.Steps = append(scenario.Steps,
+			outcomeActionStep("jail high-power validator; chain follows updated validator set", stepTimeout, []Action{JailNodeWith(controller.Jailer, highPowerID)}, quorumOutcomeAssertions),
+		)
+		if controller.Registrar != nil {
+			scenario.Steps = append(scenario.Steps,
+				outcomeActionStep("deregister jailed high-power validator; chain follows updated validator set", stepTimeout, []Action{DeregisterNodeWith(controller.Registrar, highPowerID)}, quorumOutcomeAssertions),
+				outcomeActionStep("register high-power validator; chain follows restored validator set", stepTimeout, []Action{RegisterNodeWith(controller.Registrar, highPowerID)}, quorumOutcomeAssertions),
+			)
+		} else {
+			scenario.Steps = append(scenario.Steps,
+				outcomeActionStep("unjail high-power validator; chain follows restored validator set", stepTimeout, []Action{UnjailNodeWith(controller.Jailer, highPowerID)}, quorumOutcomeAssertions),
+			)
+		}
+	}
+
+	if controller.Registrar != nil && len(ids) > len(lowPowerIDs)+1 {
+		otherIDs := nodeSetDifference(ids, append([]NodeID{highPowerID}, lowPowerIDs...))
+		scenario.Steps = append(scenario.Steps,
+			outcomeActionStep(fmt.Sprintf("deregister %d remaining low-power validators; chain follows updated validator set", len(otherIDs)), stepTimeout, deregisterActions(controller.Registrar, otherIDs), quorumOutcomeAssertions),
+			outcomeActionStep(fmt.Sprintf("register %d remaining low-power validators; chain follows restored validator set", len(otherIDs)), stepTimeout, registerActions(controller.Registrar, otherIDs), quorumOutcomeAssertions),
+		)
+	}
+
+	return scenario
+}
+
 func quorumLossCohort(ids []NodeID) []NodeID {
 	if len(ids) == 0 {
 		return nil
@@ -320,6 +418,22 @@ func quorumLossCohort(ids []NodeID) []NodeID {
 		size = len(ids)
 	}
 	return append([]NodeID{}, ids[:size]...)
+}
+
+func validNodeIDs(spec NetworkSpec, ids []NodeID) []NodeID {
+	out := make([]NodeID, 0, len(ids))
+	seen := make(map[NodeID]struct{}, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		if _, ok := spec.Node(id); !ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 func nodeSetDifference(ids, excluded []NodeID) []NodeID {

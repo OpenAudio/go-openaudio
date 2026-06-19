@@ -137,6 +137,9 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	if err := runSimulatedCompoundOutcomeEdgeCases(cfg); err != nil {
 		return err
 	}
+	if err := runSimulatedPowerSkewOutcomeEdgeCases(cfg); err != nil {
+		return err
+	}
 	if err := runSimulatedQuorumLossRecovery(cfg); err != nil {
 		return err
 	}
@@ -264,6 +267,43 @@ func runSimulatedCompoundOutcomeEdgeCases(cfg simulatedLoopConfig) error {
 		return fmt.Errorf("sim compound outcome edge cases failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
 	}
 	fmt.Printf("sim compound outcome edge cases ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
+	return nil
+}
+
+func runSimulatedPowerSkewOutcomeEdgeCases(cfg simulatedLoopConfig) error {
+	const nodeCount = 5
+	nodePowers := map[fuzz.NodeID]int64{
+		"node1": 40,
+		"node2": 15,
+		"node3": 15,
+		"node4": 15,
+		"node5": 15,
+	}
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      nodeCount,
+		InitialActive:  nodeCount,
+		NodePowers:     nodePowers,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 2))
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.PowerSkewOutcomeScenario(network.Spec(), fuzz.ValidatorChaosController{
+		Registrar:       network,
+		EndpointMutator: network,
+		Jailer:          network,
+	}, "node1", []fuzz.NodeID{"node4", "node5"}, cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim power-skew outcome edge cases failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim power-skew outcome edge cases ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
 	return nil
 }
 

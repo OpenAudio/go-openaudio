@@ -78,6 +78,43 @@ func TestSimulatedEndpointLiePreservesConsensusLiveness(t *testing.T) {
 	}
 }
 
+func TestSimulatedWeightedPowerAffectsConsensusQuorum(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:     5,
+		InitialActive: 5,
+		NodePowers: map[NodeID]int64{
+			"node1": 40,
+			"node2": 15,
+			"node3": 15,
+			"node4": 15,
+			"node5": 15,
+		},
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	if err := network.StopNode(ctx, "node1"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := network.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := snapshot.ReachableCount(); got != 4 {
+		t.Fatalf("reachable count after high-power stop = %d, want 4", got)
+	}
+	totalPower, livePower := snapshot.ValidatorPower()
+	if totalPower != 100 || livePower != 60 {
+		t.Fatalf("validator power after high-power stop = %d/%d, want 60/100", livePower, totalPower)
+	}
+	if snapshot.HasValidatorQuorum() {
+		t.Fatalf("expected high-power stop to lose quorum despite most nodes being live: %s", snapshot.Summary())
+	}
+}
+
 func TestSimulatedChaosScenarioRunsWith300Nodes(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      DefaultModelNodeLimit,
@@ -201,6 +238,67 @@ func TestSimulatedCompoundOutcomeEdgeCasesRunWith300Nodes(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("compound outcome edge cases failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestSimulatedPowerSkewOutcomeEdgeCasesRun(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:     5,
+		InitialActive: 5,
+		NodePowers: map[NodeID]int64{
+			"node1": 40,
+			"node2": 15,
+			"node3": 15,
+			"node4": 15,
+			"node5": 15,
+		},
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		PowerSkewOutcomeScenario(network.Spec(), ValidatorChaosController{
+			Registrar:       network,
+			EndpointMutator: network,
+			Jailer:          network,
+		}, "node1", []NodeID{"node4", "node5"}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("power-skew outcome edge cases failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestSimulatedPowerSkewOutcomeEdgeCasesCatchTickWithoutQuorum(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:     5,
+		InitialActive: 5,
+		Behavior:      ValidatorSetBehaviorBuggyTickWithoutQuorum,
+		NodePowers: map[NodeID]int64{
+			"node1": 40,
+			"node2": 15,
+			"node3": 15,
+			"node4": 15,
+			"node5": 15,
+		},
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		PowerSkewOutcomeScenario(network.Spec(), ValidatorChaosController{
+			Registrar:       network,
+			EndpointMutator: network,
+			Jailer:          network,
+		}, "node1", []NodeID{"node4", "node5"}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected power-skew outcome edge cases to catch tick-without-quorum bug after %d events", len(result.Events))
 	}
 }
 

@@ -18,6 +18,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - An in-memory `SimulatedNetwork` that runs the same chaos scenarios through the real runner/controller interfaces at up to 300 nodes without Docker.
 - Outcome edge-case scenarios that leave faults in place and assert the net result: the chain advances when quorum should survive, stalls when quorum is intentionally lost, and recovers after repair.
 - Compound outcome scenarios that mix endpoint lies, stopped validators, deregistered cohorts, jailed cohorts, duplicate removals, and quorum-boundary transitions while asserting only the expected chain outcome.
+- Power-skew outcome scenarios where node-count quorum and voting-power quorum disagree, such as one high-power validator being enough to halt progress even when most nodes are still live.
 - A validator-quorum outcome oracle that inspects the resulting validator power after a chaos action and asserts height advances or stalls accordingly.
 - Persistent-fault simulated chaos that can accumulate stops, deregistrations, jails, and endpoint lies across many generated steps instead of always repairing inside the same action.
 - A quorum-loss recovery scenario that intentionally drops equal-power validator sets below quorum, asserts height stalls, restarts the cohort, and asserts height resumes.
@@ -145,7 +146,7 @@ To exercise the full runner/controller chaos path without Docker or contract cre
 go run ./pkg/fuzz/cmd/fuzzrun -mode sim -nodes 300 -steps 1000 -iterations 100 -seed 1
 ```
 
-`sim` mode first runs outcome edge-case scenarios, compound outcome edge cases, and quorum-loss recovery once, then runs the seeded chaos loop with persistent faults and a validator-quorum outcome assertion after every generated step. Because this mode is fully in-memory, long live-style assertion windows are capped to short simulated windows.
+`sim` mode first runs outcome edge-case scenarios, compound outcome edge cases, power-skew outcome edge cases, and quorum-loss recovery once, then runs the seeded chaos loop with persistent faults and a validator-quorum outcome assertion after every generated step. Because this mode is fully in-memory, long live-style assertion windows are capped to short simulated windows.
 
 For repeated read-only live liveness checks:
 

@@ -64,6 +64,51 @@ func TestValidatorLifecycleModelDuplicateDeregisterDoesNotEmitTwice(t *testing.T
 	}
 }
 
+func TestValidatorLifecycleModelUsesWeightedPowerForQuorum(t *testing.T) {
+	model := NewValidatorLifecycleModel(ValidatorModelOptions{
+		NodeCount:     5,
+		InitialActive: 5,
+		NodePowers: map[NodeID]int64{
+			"node1": 40,
+			"node2": 15,
+			"node3": 15,
+			"node4": 15,
+			"node5": 15,
+		},
+	})
+
+	if err := model.Apply(0, ModelAction{Kind: ModelStop, Node: "node4"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := model.Apply(1, ModelAction{Kind: ModelStop, Node: "node5"}); err != nil {
+		t.Fatal(err)
+	}
+	totalPower, onlinePower := model.Power()
+	if totalPower != 100 || onlinePower != 70 {
+		t.Fatalf("power after stopping low-power validators = %d/%d, want 70/100", onlinePower, totalPower)
+	}
+	if !model.HasOnlineQuorum() {
+		t.Fatal("expected low-power validator outage to preserve quorum")
+	}
+
+	if err := model.Apply(2, ModelAction{Kind: ModelStart, Node: "node4"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := model.Apply(3, ModelAction{Kind: ModelStart, Node: "node5"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := model.Apply(4, ModelAction{Kind: ModelStop, Node: "node1"}); err != nil {
+		t.Fatal(err)
+	}
+	totalPower, onlinePower = model.Power()
+	if totalPower != 100 || onlinePower != 60 {
+		t.Fatalf("power after stopping high-power validator = %d/%d, want 60/100", onlinePower, totalPower)
+	}
+	if model.HasOnlineQuorum() {
+		t.Fatal("expected high-power validator outage to lose quorum despite four live nodes")
+	}
+}
+
 func TestValidatorLifecycleModelStress300Nodes(t *testing.T) {
 	for seed := int64(1); seed <= 100; seed++ {
 		result, err := RunValidatorLifecycleModel(seed, DefaultModelNodeLimit, 10_000, ValidatorSetBehaviorCurrent)

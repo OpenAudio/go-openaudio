@@ -25,6 +25,7 @@ type SimulatedNetworkOptions struct {
 	NodeCount      int
 	InitialActive  int
 	Behavior       ValidatorSetBehavior
+	NodePowers     map[NodeID]int64
 	TickOnSnapshot bool
 }
 
@@ -54,6 +55,7 @@ func NewSimulatedNetwork(opts SimulatedNetworkOptions) (*SimulatedNetwork, error
 		NodeCount:     nodeCount,
 		InitialActive: opts.InitialActive,
 		Behavior:      behavior,
+		NodePowers:    opts.NodePowers,
 	})
 	return &SimulatedNetwork{
 		spec:              spec,
