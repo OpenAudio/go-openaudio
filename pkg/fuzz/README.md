@@ -27,6 +27,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - Opt-in recovery sweeps for generated simulated chaos that repair all controllable faults, then assert the chain advances again and validator power returns to its pre-chaos baseline.
 - A jailed-then-deregistered compatibility scenario that captures post-jail validator power, then asserts the formal deregistration does not create a new halt, validator-set change, or live-validator fork.
 - A duplicate-deregister idempotency scenario that captures post-deregister validator power, then asserts repeating the deregistration does not create a new halt, validator-set change, or live-validator fork.
+- An endpoint-lie consensus-isolation scenario that captures validator power, then asserts a bad advertised endpoint does not change consensus power, halt progress, or fork live validators.
 - Seeded skewed validator-power profiles for simulated fuzzing so generated programs exercise power quorum, not only node-count quorum.
 - A quorum-loss recovery scenario that intentionally drops equal-power validator sets below quorum, asserts height stalls, restarts the cohort, and asserts height resumes.
 - An opt-in live liveness test guarded by `OPENAUDIO_FUZZ_RUN=1`.

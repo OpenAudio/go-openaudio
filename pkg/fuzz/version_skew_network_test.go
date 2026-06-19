@@ -147,3 +147,72 @@ func TestDuplicateDeregisterIdempotencyScenarioCatchesLegacyFork(t *testing.T) {
 		t.Fatalf("expected live-validator fork failure, got %v", err)
 	}
 }
+
+func TestEndpointLieConsensusIsolationScenarioPassesCurrentNetwork(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      4,
+		InitialActive:  4,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		EndpointLieConsensusIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("endpoint-lie consensus isolation failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestEndpointLieConsensusIsolationScenarioCatchesLegacyHalt(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1", "node2"},
+		Mode:          VersionSkewModeHaltLegacyOnEndpointLie,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		EndpointLieConsensusIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected legacy halt to fail endpoint-lie consensus isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestEndpointLieConsensusIsolationScenarioCatchesLegacyFork(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeForkLegacyOnEndpointLie,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		EndpointLieConsensusIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected legacy fork to fail endpoint-lie consensus isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "live validators reported conflicting block hashes") {
+		t.Fatalf("expected live-validator fork failure, got %v", err)
+	}
+}
