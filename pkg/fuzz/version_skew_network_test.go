@@ -355,6 +355,30 @@ func TestEndpointRepairIdempotencyScenarioCatchesRepairFork(t *testing.T) {
 	}
 }
 
+func TestEndpointRepairIdempotencyScenarioCatchesStaleRepair(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeKeepBadEndpointOnRepair,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		EndpointRepairIdempotencyScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected stale endpoint repair to fail idempotency after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
 func TestEndpointRepairIdempotencyScenarioCatchesNoopRepairHalt(t *testing.T) {
 	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
 		NodeCount:     4,

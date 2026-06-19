@@ -456,15 +456,24 @@ func EndpointRepairIdempotencyScenario(spec NetworkSpec, controller ValidatorCha
 	if target == "" && len(ids) > 0 {
 		target = ids[len(ids)-1]
 	}
-	baseline := &ValidatorPowerBaseline{}
+	powerBaseline := &ValidatorPowerBaseline{}
+	reachabilityBaseline := &ReachabilityBaseline{}
 	outcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
 		NoLiveValidatorFork(),
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
-	idempotencyAssertions := []Assertion{
-		ValidatorPowerRestored(baseline, within, pollInterval),
+	consensusAssertions := []Assertion{
+		ValidatorPowerRestored(powerBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	restorationAssertions := []Assertion{
+		ValidatorPowerRestored(powerBaseline, within, pollInterval),
+		ReachabilityRestored(reachabilityBaseline, within, pollInterval),
 		HeightAdvances(1, within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
 		NoLiveValidatorFork(),
@@ -487,29 +496,30 @@ func EndpointRepairIdempotencyScenario(spec NetworkSpec, controller ValidatorCha
 
 	badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", target)
 	scenario.Steps = append(scenario.Steps,
-		ActionStep("capture validator power baseline", CaptureValidatorPowerBaseline(baseline)),
+		ActionStep("capture validator power baseline", CaptureValidatorPowerBaseline(powerBaseline)),
+		ActionStep("capture reachability baseline", CaptureReachabilityBaseline(reachabilityBaseline)),
 		Step{
 			Name:       "repair already-honest endpoint; consensus outcome is unchanged",
 			Actions:    []Action{AdvertiseEndpointWith(controller.EndpointMutator, target, "")},
-			Assertions: idempotencyAssertions,
+			Assertions: restorationAssertions,
 			Timeout:    stepTimeout,
 		},
 		Step{
 			Name:       "advertise bad endpoint; consensus outcome is unchanged",
 			Actions:    []Action{AdvertiseEndpointWith(controller.EndpointMutator, target, badEndpoint)},
-			Assertions: idempotencyAssertions,
+			Assertions: consensusAssertions,
 			Timeout:    stepTimeout,
 		},
 		Step{
-			Name:       "repair bad endpoint; consensus outcome is unchanged",
+			Name:       "repair bad endpoint; endpoint outcome is restored",
 			Actions:    []Action{AdvertiseEndpointWith(controller.EndpointMutator, target, "")},
-			Assertions: idempotencyAssertions,
+			Assertions: restorationAssertions,
 			Timeout:    stepTimeout,
 		},
 		Step{
-			Name:       "duplicate endpoint repair; consensus outcome is unchanged",
+			Name:       "duplicate endpoint repair; endpoint outcome remains restored",
 			Actions:    []Action{AdvertiseEndpointWith(controller.EndpointMutator, target, "")},
-			Assertions: idempotencyAssertions,
+			Assertions: restorationAssertions,
 			Timeout:    stepTimeout,
 		},
 	)

@@ -562,6 +562,40 @@ func TestSimulatedProgramRecoveryCatchesPartialValidatorSetRestore(t *testing.T)
 	}
 }
 
+func TestSimulatedProgramRecoveryCatchesStaleEndpointRepair(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeKeepBadEndpointOnRepair,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	program := []byte{1, 0, 0, 6}
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		SimulatedChaosScenarioFromProgram(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, program, SimulatedProgramOptions{
+			MaxSteps:                1,
+			LivenessEvery:           len(program),
+			LivenessWithin:          25 * time.Millisecond,
+			PollInterval:            time.Millisecond,
+			AssertAfterEachStep:     true,
+			AssertConvergence:       true,
+			IncludePersistentFaults: true,
+			RecoverAtEnd:            true,
+		}),
+	)
+	if err == nil {
+		t.Fatalf("expected recovery to catch stale endpoint repair after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
 func TestSimulatedOutcomeEdgeCasesHandleOneNode(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      1,

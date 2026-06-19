@@ -20,6 +20,7 @@ const (
 	VersionSkewModeForkLegacyOnEndpointLie
 	VersionSkewModeHaltLegacyOnEndpointRepair
 	VersionSkewModeForkLegacyOnEndpointRepair
+	VersionSkewModeKeepBadEndpointOnRepair
 	VersionSkewModeHaltLegacyOnEndpointNoopRepair
 	VersionSkewModeForkLegacyOnEndpointNoopRepair
 	VersionSkewModeReactivateJailedOnInactiveEndpoint
@@ -254,6 +255,11 @@ func (n *VersionSkewNetwork) SetNodeEndpoint(ctx context.Context, node NodeSpec,
 		}
 		if !honest {
 			n.triggerEndpointLieIncompatibilityLocked()
+			modelNode.endpointHonest = false
+			return
+		}
+		if n.mode == VersionSkewModeKeepBadEndpointOnRepair && n.currentEndpoints[node.ID] != original {
+			keepCurrentEndpoint = true
 			modelNode.endpointHonest = false
 			return
 		}

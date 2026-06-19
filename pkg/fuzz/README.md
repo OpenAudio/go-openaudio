@@ -24,12 +24,12 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - Live-validator height convergence assertions, so one progressing validator cannot mask other reachable live validators being stuck behind.
 - Live-validator block-hash agreement checks, so same-height forks cannot hide behind successful height progression.
 - Persistent-fault simulated chaos that can accumulate stops, deregistrations, jails, and endpoint lies across many generated steps instead of always repairing inside the same action.
-- Opt-in recovery sweeps for generated simulated chaos that repair all controllable faults, then assert the chain advances again and validator power returns to its pre-chaos baseline.
+- Opt-in recovery sweeps for generated simulated chaos that repair all controllable faults, then assert the chain advances again and validator power plus endpoint reachability return to their pre-chaos baselines.
 - A jailed-then-deregistered compatibility scenario that captures post-jail validator power, then asserts the formal deregistration does not create a new halt, validator-set change, or live-validator fork.
 - A duplicate-deregister idempotency scenario that captures post-deregister validator power, then asserts repeating the deregistration does not create a new halt, validator-set change, or live-validator fork.
 - A duplicate-jail idempotency scenario that captures post-jail validator power, then asserts repeating the jail action does not create a new halt, validator-set change, or live-validator fork.
 - An endpoint-lie consensus-isolation scenario that captures validator power, then asserts a bad advertised endpoint does not change consensus power, halt progress, or fork live validators.
-- An endpoint-repair idempotency scenario that asserts repairing an already-honest endpoint, repairing a bad endpoint, and duplicate repair do not alter validator power, halt progress, or fork live validators.
+- An endpoint-repair idempotency scenario that asserts repairing an already-honest endpoint, repairing a bad endpoint, and duplicate repair do not alter validator power, halt progress, fork live validators, or leave repaired endpoints unhealthy.
 - An endpoint-register round-trip scenario that advertises a bad endpoint, deregisters the validator, then asserts registration restores both validator power and externally observable endpoint health.
 - A cohort-endpoint consensus-isolation scenario that advertises and repairs bad endpoints for a quorum-impacting validator cohort, then asserts validator power and consensus outcome remain unchanged.
 - An inactive-endpoint isolation scenario that asserts endpoint updates and repairs for jailed or absent validators do not resurrect validator power, halt progress, or fork live validators.
@@ -169,7 +169,7 @@ To exercise the full runner/controller chaos path without Docker or contract cre
 go run ./pkg/fuzz/cmd/fuzzrun -mode sim -nodes 300 -steps 1000 -iterations 100 -seed 1
 ```
 
-`sim` mode first runs outcome edge-case scenarios, compound outcome edge cases, power-skew outcome edge cases, dynamic power-boundary edge cases, quorum-loss recovery, and targeted lifecycle compatibility/round-trip scenarios, including endpoint-register recovery, jailed-endpoint repair recovery, jailed-register recovery, cohort endpoint-isolation, lifecycle round trips, and mixed lifecycle quorum recovery, once. It then runs the seeded chaos loop with persistent faults plus validator-quorum, live-validator convergence, and same-height block-hash agreement assertions after every generated step. The generated simulated chaos loop also repairs all controllable faults at the end and asserts the chain advances again. Because this mode is fully in-memory, long live-style assertion windows are capped to short simulated windows.
+`sim` mode first runs outcome edge-case scenarios, compound outcome edge cases, power-skew outcome edge cases, dynamic power-boundary edge cases, quorum-loss recovery, and targeted lifecycle compatibility/round-trip scenarios, including endpoint-register recovery, jailed-endpoint repair recovery, jailed-register recovery, cohort endpoint-isolation, lifecycle round trips, and mixed lifecycle quorum recovery, once. It then runs the seeded chaos loop with persistent faults plus validator-quorum, live-validator convergence, and same-height block-hash agreement assertions after every generated step. The generated simulated chaos loop also repairs all controllable faults at the end and asserts the chain advances, validator power returns, and endpoint reachability returns. Because this mode is fully in-memory, long live-style assertion windows are capped to short simulated windows.
 
 For repeated read-only live liveness checks:
 
