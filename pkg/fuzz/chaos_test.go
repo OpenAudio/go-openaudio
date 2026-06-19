@@ -154,6 +154,32 @@ func TestQuorumLossCohortBreaksQuorumAt300Nodes(t *testing.T) {
 	}
 }
 
+func TestQuorumPreservingCohortKeepsQuorumAt300Nodes(t *testing.T) {
+	ids := make([]NodeID, 300)
+	for i := range ids {
+		ids[i] = NodeID("node" + itoa(i+1))
+	}
+	cohort := quorumPreservingCohort(ids)
+	if len(cohort) != 99 {
+		t.Fatalf("expected 99 nodes to preserve quorum out of 300, got %d", len(cohort))
+	}
+}
+
+func TestMinimumQuorumNodes(t *testing.T) {
+	tests := map[int]int{
+		0:   0,
+		1:   1,
+		3:   3,
+		4:   3,
+		300: 201,
+	}
+	for nodes, want := range tests {
+		if got := minimumQuorumNodes(nodes); got != want {
+			t.Fatalf("minimumQuorumNodes(%d) = %d, want %d", nodes, got, want)
+		}
+	}
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

@@ -25,10 +25,11 @@ func FuzzSimulatedChaosProgram(f *testing.F) {
 			EndpointMutator: network,
 			Jailer:          network,
 		}, program, SimulatedProgramOptions{
-			MaxSteps:       200,
-			LivenessEvery:  25,
-			LivenessWithin: time.Second,
-			PollInterval:   time.Millisecond,
+			MaxSteps:            200,
+			LivenessEvery:       25,
+			LivenessWithin:      time.Second,
+			PollInterval:        time.Millisecond,
+			AssertAfterEachStep: true,
 		})
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

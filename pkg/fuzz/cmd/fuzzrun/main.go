@@ -130,6 +130,9 @@ type simulatedLoopConfig struct {
 
 func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	started := time.Now()
+	if err := runSimulatedOutcomeEdgeCases(cfg); err != nil {
+		return err
+	}
 	if err := runSimulatedQuorumLossRecovery(cfg); err != nil {
 		return err
 	}
@@ -160,6 +163,7 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 			PollInterval:         cfg.pollInterval,
 			IncludeProcessFaults: true,
 			NoProcessFaultDelay:  true,
+			AssertAfterEachStep:  true,
 		}))
 		cancel()
 		if err != nil {
@@ -187,6 +191,34 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	return nil
 }
 
+func runSimulatedOutcomeEdgeCases(cfg simulatedLoopConfig) error {
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      cfg.nodes,
+		InitialActive:  cfg.nodes,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 1))
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.OutcomeEdgeCaseScenario(network.Spec(), fuzz.ValidatorChaosController{
+		Registrar:       network,
+		EndpointMutator: network,
+		Jailer:          network,
+	}, cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim outcome edge cases failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim outcome edge cases ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
+	return nil
+}
+
 func runSimulatedQuorumLossRecovery(cfg simulatedLoopConfig) error {
 	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
 		NodeCount:      cfg.nodes,
@@ -196,12 +228,7 @@ func runSimulatedQuorumLossRecovery(cfg simulatedLoopConfig) error {
 	if err != nil {
 		return err
 	}
-	timeout := cfg.timeout
-	minimumTimeout := 3*cfg.window + 5*cfg.pollInterval + 2*time.Second
-	if timeout < minimumTimeout {
-		timeout = minimumTimeout
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 1))
 	defer cancel()
 
 	result, err := fuzz.Runner{
@@ -214,6 +241,15 @@ func runSimulatedQuorumLossRecovery(cfg simulatedLoopConfig) error {
 	}
 	fmt.Printf("sim quorum-loss recovery ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
 	return nil
+}
+
+func simulatedScenarioTimeout(cfg simulatedLoopConfig, stallWindows int) time.Duration {
+	timeout := cfg.timeout
+	minimumTimeout := time.Duration(stallWindows+2)*cfg.window + 10*cfg.pollInterval + 2*time.Second
+	if timeout < minimumTimeout {
+		timeout = minimumTimeout
+	}
+	return timeout
 }
 
 func runModelLoop(baseSeed int64, iterations, nodes, steps int) error {

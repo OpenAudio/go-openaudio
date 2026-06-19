@@ -23,6 +23,7 @@ type ValidatorChaosOptions struct {
 	StartNodes           bool
 	IncludeProcessFaults bool
 	NoProcessFaultDelay  bool
+	AssertAfterEachStep  bool
 }
 
 func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosController, opts ValidatorChaosOptions) Scenario {
@@ -71,8 +72,10 @@ func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosControlle
 			id := actionIDs[rng.Intn(len(actionIDs))]
 			step.Actions = append(step.Actions, randomChaosAction(rng, controller, opts, id, actionIDs))
 		}
-		if (i+1)%livenessEvery == 0 {
+		if opts.AssertAfterEachStep || (i+1)%livenessEvery == 0 {
 			step.Assertions = append(step.Assertions, HeightAdvances(1, livenessWithin, pollInterval))
+		}
+		if (i+1)%livenessEvery == 0 {
 			step.Assertions = append(step.Assertions, NoHeightRegression(pollInterval, pollInterval))
 		}
 		scenario.Steps = append(scenario.Steps, step)

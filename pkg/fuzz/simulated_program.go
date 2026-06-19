@@ -8,10 +8,11 @@ import (
 const defaultSimulatedProgramMaxSteps = 1_000
 
 type SimulatedProgramOptions struct {
-	MaxSteps       int
-	LivenessEvery  int
-	LivenessWithin time.Duration
-	PollInterval   time.Duration
+	MaxSteps            int
+	LivenessEvery       int
+	LivenessWithin      time.Duration
+	PollInterval        time.Duration
+	AssertAfterEachStep bool
 }
 
 func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorChaosController, program []byte, opts SimulatedProgramOptions) Scenario {
@@ -52,8 +53,10 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 			Actions: []Action{programAction(program, i, ids, controller)},
 			Timeout: livenessWithin,
 		}
-		if (i+1)%livenessEvery == 0 {
+		if opts.AssertAfterEachStep || (i+1)%livenessEvery == 0 {
 			step.Assertions = append(step.Assertions, HeightAdvances(1, livenessWithin, pollInterval))
+		}
+		if (i+1)%livenessEvery == 0 {
 			step.Assertions = append(step.Assertions, NoHeightRegression(pollInterval, pollInterval))
 		}
 		scenario.Steps = append(scenario.Steps, step)
