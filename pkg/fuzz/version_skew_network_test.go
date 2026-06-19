@@ -1133,3 +1133,145 @@ func TestUnjailRoundTripScenarioCatchesLegacyFork(t *testing.T) {
 		t.Fatalf("expected live-validator fork failure, got %v", err)
 	}
 }
+
+func TestCohortLifecycleRoundTripScenarioPassesCurrentNetwork(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      4,
+		InitialActive:  4,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortLifecycleRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("cohort lifecycle round-trip failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestCohortLifecycleRoundTripScenarioCatchesRegisterHalt(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node3", "node4"},
+		Mode:          VersionSkewModeHaltLegacyOnRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortLifecycleRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected legacy halt to fail cohort lifecycle round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestCohortLifecycleRoundTripScenarioCatchesRegisterFork(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeForkLegacyOnRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortLifecycleRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected legacy fork to fail cohort lifecycle round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "live validators reported conflicting block hashes") {
+		t.Fatalf("expected live-validator fork failure, got %v", err)
+	}
+}
+
+func TestCohortLifecycleRoundTripScenarioCatchesNoopUnjail(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeNoopOnUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortLifecycleRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected noop unjail to fail cohort lifecycle round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestCohortLifecycleRoundTripScenarioCatchesUnjailHalt(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node3", "node4"},
+		Mode:          VersionSkewModeHaltLegacyOnUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortLifecycleRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected legacy halt to fail cohort lifecycle round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestCohortLifecycleRoundTripScenarioCatchesUnjailFork(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeForkLegacyOnUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortLifecycleRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected legacy fork to fail cohort lifecycle round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "live validators reported conflicting block hashes") {
+		t.Fatalf("expected live-validator fork failure, got %v", err)
+	}
+}

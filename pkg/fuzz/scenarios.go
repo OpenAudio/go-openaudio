@@ -1001,6 +1001,78 @@ func UnjailRoundTripScenario(spec NetworkSpec, controller ValidatorChaosControll
 	return scenario
 }
 
+func CohortLifecycleRoundTripScenario(spec NetworkSpec, controller ValidatorChaosController, within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+
+	ids := spec.NodeIDs()
+	cohort := quorumLossCohort(ids)
+	initialBaseline := &ValidatorPowerBaseline{}
+	outcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	restoreAssertions := []Assertion{
+		ValidatorPowerRestored(initialBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+
+	scenario := Scenario{
+		Name: "cohort-lifecycle-round-trip",
+		Steps: []Step{
+			{
+				Name:       "initial validator outcome",
+				Assertions: outcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+	if len(cohort) == 0 || (controller.Registrar == nil && controller.Jailer == nil) {
+		return scenario
+	}
+
+	scenario.Steps = append(scenario.Steps,
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialBaseline)),
+	)
+	if controller.Registrar != nil {
+		scenario.Steps = append(scenario.Steps,
+			outcomeActionStep(fmt.Sprintf("deregister %d validators; chain follows updated set", len(cohort)), stepTimeout, deregisterActions(controller.Registrar, cohort), outcomeAssertions),
+			Step{
+				Name:       fmt.Sprintf("register %d validators; chain restores original validator outcome", len(cohort)),
+				Actions:    registerActions(controller.Registrar, cohort),
+				Assertions: restoreAssertions,
+				Timeout:    stepTimeout,
+			},
+		)
+	}
+	if controller.Jailer != nil {
+		scenario.Steps = append(scenario.Steps,
+			outcomeActionStep(fmt.Sprintf("jail %d validators; chain follows updated set", len(cohort)), stepTimeout, jailActions(controller.Jailer, cohort), outcomeAssertions),
+			Step{
+				Name:       fmt.Sprintf("unjail %d validators; chain restores original validator outcome", len(cohort)),
+				Actions:    unjailActions(controller.Jailer, cohort),
+				Assertions: restoreAssertions,
+				Timeout:    stepTimeout,
+			},
+		)
+	}
+	return scenario
+}
+
 func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosController, within, pollInterval time.Duration) Scenario {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval

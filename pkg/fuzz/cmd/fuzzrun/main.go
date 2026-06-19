@@ -182,6 +182,9 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	if err := runSimulatedUnjailRoundTrip(cfg); err != nil {
 		return err
 	}
+	if err := runSimulatedCohortLifecycleRoundTrip(cfg); err != nil {
+		return err
+	}
 	for i := 0; i < cfg.iterations; i++ {
 		network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
 			NodeCount:      cfg.nodes,
@@ -722,6 +725,34 @@ func runSimulatedUnjailRoundTrip(cfg simulatedLoopConfig) error {
 		return fmt.Errorf("sim unjail round-trip failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
 	}
 	fmt.Printf("sim unjail round-trip ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
+	return nil
+}
+
+func runSimulatedCohortLifecycleRoundTrip(cfg simulatedLoopConfig) error {
+	nodeCount := clampSimNodeCount(cfg.nodes, 4)
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      nodeCount,
+		InitialActive:  nodeCount,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 1))
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.CohortLifecycleRoundTripScenario(network.Spec(), fuzz.ValidatorChaosController{
+		Registrar: network,
+		Jailer:    network,
+	}, cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim cohort lifecycle round-trip failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim cohort lifecycle round-trip ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
 	return nil
 }
 
