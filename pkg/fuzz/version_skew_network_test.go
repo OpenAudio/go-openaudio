@@ -1089,6 +1089,103 @@ func TestRegisterRoundTripScenarioCatchesLegacyFork(t *testing.T) {
 	}
 }
 
+func TestJailedRegisterRoundTripScenarioPassesCurrentNetwork(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      4,
+		InitialActive:  4,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		JailedRegisterRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("jailed register round-trip failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestJailedRegisterRoundTripScenarioCatchesNoopRegister(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeNoopOnJailedRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		JailedRegisterRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected noop jailed register to fail jailed register round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestJailedRegisterRoundTripScenarioCatchesLegacyHalt(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1", "node2"},
+		Mode:          VersionSkewModeHaltLegacyOnJailedRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		JailedRegisterRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected jailed register halt to fail jailed register round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestJailedRegisterRoundTripScenarioCatchesLegacyFork(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeForkLegacyOnJailedRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		JailedRegisterRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected jailed register fork to fail jailed register round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "live validators reported conflicting block hashes") {
+		t.Fatalf("expected live-validator fork failure, got %v", err)
+	}
+}
+
 func TestRegisterIdempotencyScenarioPassesCurrentNetwork(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      4,

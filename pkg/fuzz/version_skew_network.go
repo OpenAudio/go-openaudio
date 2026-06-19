@@ -30,6 +30,9 @@ const (
 	VersionSkewModeForkLegacyOnRegister
 	VersionSkewModeHaltLegacyOnActiveRegister
 	VersionSkewModeForkLegacyOnActiveRegister
+	VersionSkewModeNoopOnJailedRegister
+	VersionSkewModeHaltLegacyOnJailedRegister
+	VersionSkewModeForkLegacyOnJailedRegister
 	VersionSkewModeNoopOnUnjail
 	VersionSkewModeHaltLegacyOnUnjail
 	VersionSkewModeForkLegacyOnUnjail
@@ -180,6 +183,11 @@ func (n *VersionSkewNetwork) RegisterNode(ctx context.Context, node NodeSpec) er
 			n.triggerRegisterIncompatibilityLocked()
 		case ModelValidatorActive:
 			n.triggerActiveRegisterIncompatibilityLocked()
+		case ModelValidatorJailed:
+			if n.mode == VersionSkewModeNoopOnJailedRegister {
+				return
+			}
+			n.triggerJailedRegisterIncompatibilityLocked()
 		}
 		modelNode.state = ModelValidatorActive
 		modelNode.online = true
@@ -452,6 +460,19 @@ func (n *VersionSkewNetwork) triggerActiveRegisterIncompatibilityLocked() {
 	case VersionSkewModeForkLegacyOnActiveRegister:
 		n.diverged = true
 	case VersionSkewModeHaltLegacyOnActiveRegister:
+		for id := range n.legacy {
+			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
+				node.online = false
+			}
+		}
+	}
+}
+
+func (n *VersionSkewNetwork) triggerJailedRegisterIncompatibilityLocked() {
+	switch n.mode {
+	case VersionSkewModeForkLegacyOnJailedRegister:
+		n.diverged = true
+	case VersionSkewModeHaltLegacyOnJailedRegister:
 		for id := range n.legacy {
 			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
 				node.online = false

@@ -156,6 +156,7 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 		}
 		if controller.Registrar != nil {
 			actions = append(actions,
+				Sequence(fmt.Sprintf("jail register %s", id), JailNodeWith(controller.Jailer, id), RegisterNodeWith(controller.Registrar, id)),
 				Sequence(fmt.Sprintf("jail deregister register %s", id), JailNodeWith(controller.Jailer, id), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id)),
 			)
 		}

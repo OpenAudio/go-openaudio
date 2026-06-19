@@ -36,6 +36,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - An inactive-start isolation scenario that jails and deregisters a validator, then asserts starting that inactive process does not resurrect validator power, halt progress, or fork live validators.
 - A non-jailed unjail isolation scenario that asserts unjailing an already-active or absent validator does not alter validator power, halt progress, or fork live validators.
 - A register round-trip scenario that captures initial validator power, deregisters a validator, then asserts registering it restores the original validator set and consensus outcome.
+- A jailed-register round-trip scenario that captures initial validator power, jails a validator, then asserts registration restores the original validator set and consensus outcome.
 - A register idempotency scenario that asserts registering an already-active validator, and registering again after restore, does not alter validator power, halt progress, or fork live validators.
 - An unjail round-trip scenario that captures initial validator power, jails a validator, then asserts unjailing it restores the original validator set and consensus outcome.
 - A cohort lifecycle round-trip scenario that deregisters/registers and jails/unjails a quorum-impacting validator cohort, then asserts the original validator set and consensus outcome are restored each time.
@@ -166,7 +167,7 @@ To exercise the full runner/controller chaos path without Docker or contract cre
 go run ./pkg/fuzz/cmd/fuzzrun -mode sim -nodes 300 -steps 1000 -iterations 100 -seed 1
 ```
 
-`sim` mode first runs outcome edge-case scenarios, compound outcome edge cases, power-skew outcome edge cases, dynamic power-boundary edge cases, quorum-loss recovery, and targeted lifecycle compatibility/round-trip scenarios, including cohort endpoint-isolation, lifecycle round trips, and mixed lifecycle quorum recovery, once. It then runs the seeded chaos loop with persistent faults plus validator-quorum, live-validator convergence, and same-height block-hash agreement assertions after every generated step. The generated simulated chaos loop also repairs all controllable faults at the end and asserts the chain advances again. Because this mode is fully in-memory, long live-style assertion windows are capped to short simulated windows.
+`sim` mode first runs outcome edge-case scenarios, compound outcome edge cases, power-skew outcome edge cases, dynamic power-boundary edge cases, quorum-loss recovery, and targeted lifecycle compatibility/round-trip scenarios, including jailed-register recovery, cohort endpoint-isolation, lifecycle round trips, and mixed lifecycle quorum recovery, once. It then runs the seeded chaos loop with persistent faults plus validator-quorum, live-validator convergence, and same-height block-hash agreement assertions after every generated step. The generated simulated chaos loop also repairs all controllable faults at the end and asserts the chain advances again. Because this mode is fully in-memory, long live-style assertion windows are capped to short simulated windows.
 
 For repeated read-only live liveness checks:
 

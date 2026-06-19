@@ -179,6 +179,9 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	if err := runSimulatedRegisterRoundTrip(cfg); err != nil {
 		return err
 	}
+	if err := runSimulatedJailedRegisterRoundTrip(cfg); err != nil {
+		return err
+	}
 	if err := runSimulatedRegisterIdempotency(cfg); err != nil {
 		return err
 	}
@@ -704,6 +707,34 @@ func runSimulatedRegisterRoundTrip(cfg simulatedLoopConfig) error {
 		return fmt.Errorf("sim register round-trip failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
 	}
 	fmt.Printf("sim register round-trip ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
+	return nil
+}
+
+func runSimulatedJailedRegisterRoundTrip(cfg simulatedLoopConfig) error {
+	nodeCount := clampSimNodeCount(cfg.nodes, 4)
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      nodeCount,
+		InitialActive:  nodeCount,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 1))
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.JailedRegisterRoundTripScenario(network.Spec(), fuzz.ValidatorChaosController{
+		Registrar: network,
+		Jailer:    network,
+	}, "", cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim jailed register round-trip failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim jailed register round-trip ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
 	return nil
 }
 

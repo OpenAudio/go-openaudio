@@ -933,6 +933,65 @@ func RegisterRoundTripScenario(spec NetworkSpec, controller ValidatorChaosContro
 	return scenario
 }
 
+func JailedRegisterRoundTripScenario(spec NetworkSpec, controller ValidatorChaosController, target NodeID, within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+
+	ids := spec.NodeIDs()
+	if target == "" && len(ids) > 0 {
+		target = ids[len(ids)-1]
+	}
+	initialBaseline := &ValidatorPowerBaseline{}
+	outcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	restoreAssertions := []Assertion{
+		ValidatorPowerRestored(initialBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+
+	scenario := Scenario{
+		Name: "jailed-register-round-trip",
+		Steps: []Step{
+			{
+				Name:       "initial validator outcome",
+				Assertions: outcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+	if len(ids) == 0 || target == "" || controller.Jailer == nil || controller.Registrar == nil {
+		return scenario
+	}
+
+	scenario.Steps = append(scenario.Steps,
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialBaseline)),
+		outcomeActionStep("jail validator; chain follows updated set", stepTimeout, []Action{JailNodeWith(controller.Jailer, target)}, outcomeAssertions),
+		Step{
+			Name:       "register jailed validator; chain restores original validator outcome",
+			Actions:    []Action{RegisterNodeWith(controller.Registrar, target)},
+			Assertions: restoreAssertions,
+			Timeout:    stepTimeout,
+		},
+	)
+	return scenario
+}
+
 func RegisterIdempotencyScenario(spec NetworkSpec, controller ValidatorChaosController, target NodeID, within, pollInterval time.Duration) Scenario {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval
