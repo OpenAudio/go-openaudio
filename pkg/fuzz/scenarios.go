@@ -193,6 +193,121 @@ func QuorumLossRecoveryScenario(spec NetworkSpec, within, pollInterval time.Dura
 	}
 }
 
+func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosController, within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+	quorumOutcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+
+	ids := spec.NodeIDs()
+	scenario := Scenario{
+		Name: "compound-outcome-edge-cases",
+		Steps: []Step{
+			{
+				Name:       "initial height advances",
+				Assertions: quorumOutcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+	if len(ids) == 0 {
+		return scenario
+	}
+
+	if controller.EndpointMutator != nil {
+		lieIDs := quorumLossCohort(ids)
+		scenario.Steps = append(scenario.Steps,
+			outcomeActionStep(fmt.Sprintf("advertise bad endpoints for %d validators; chain still progresses", len(lieIDs)), stepTimeout, endpointLieActions(controller.EndpointMutator, lieIDs), quorumOutcomeAssertions),
+			outcomeActionStep(fmt.Sprintf("repair bad endpoints for %d validators", len(lieIDs)), stepTimeout, endpointRepairActions(controller.EndpointMutator, lieIDs), quorumOutcomeAssertions),
+		)
+	}
+
+	if preserve := quorumPreservingCohort(ids); len(preserve) > 0 {
+		stop, start := stopStartActions(preserve)
+		scenario.Steps = append(scenario.Steps,
+			outcomeActionStep(fmt.Sprintf("stop %d validators leaving minimum quorum; chain still progresses", len(preserve)), stepTimeout, stop, quorumOutcomeAssertions),
+		)
+
+		liveIDs := nodeSetDifference(ids, preserve)
+		if controller.EndpointMutator != nil {
+			lieIDs := quorumLossCohort(liveIDs)
+			scenario.Steps = append(scenario.Steps,
+				outcomeActionStep(fmt.Sprintf("advertise bad endpoints for %d live validators at quorum boundary; chain still progresses", len(lieIDs)), stepTimeout, endpointLieActions(controller.EndpointMutator, lieIDs), quorumOutcomeAssertions),
+			)
+		}
+
+		breaker := liveIDs[0]
+		scenario.Steps = append(scenario.Steps,
+			Step{
+				Name:       "stop one more validator across quorum boundary; chain stalls",
+				Actions:    []Action{StopNode(breaker)},
+				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+				Timeout:    stepTimeout,
+			},
+			outcomeActionStep("restart boundary validator; chain recovers", stepTimeout, []Action{StartNode(breaker)}, quorumOutcomeAssertions),
+		)
+		if controller.EndpointMutator != nil {
+			lieIDs := quorumLossCohort(liveIDs)
+			scenario.Steps = append(scenario.Steps,
+				outcomeActionStep(fmt.Sprintf("repair bad endpoints for %d boundary validators", len(lieIDs)), stepTimeout, endpointRepairActions(controller.EndpointMutator, lieIDs), quorumOutcomeAssertions),
+			)
+		}
+		scenario.Steps = append(scenario.Steps,
+			outcomeActionStep(fmt.Sprintf("restart %d stopped validators; chain remains live", len(preserve)), stepTimeout, start, quorumOutcomeAssertions),
+		)
+	} else {
+		first := ids[0]
+		scenario.Steps = append(scenario.Steps,
+			Step{
+				Name:       "stop sole validator; chain stalls",
+				Actions:    []Action{StopNode(first)},
+				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+				Timeout:    stepTimeout,
+			},
+			outcomeActionStep("restart sole validator; chain recovers", stepTimeout, []Action{StartNode(first)}, quorumOutcomeAssertions),
+		)
+	}
+
+	if controller.Registrar != nil {
+		cohort := quorumLossCohort(ids)
+		scenario.Steps = append(scenario.Steps,
+			outcomeActionStep(fmt.Sprintf("deregister %d validators; chain follows updated validator set", len(cohort)), stepTimeout, deregisterActions(controller.Registrar, cohort), quorumOutcomeAssertions),
+			outcomeActionStep(fmt.Sprintf("duplicate deregister %d validators; chain follows updated validator set", len(cohort)), stepTimeout, deregisterActions(controller.Registrar, cohort), quorumOutcomeAssertions),
+			outcomeActionStep(fmt.Sprintf("register %d validators; chain remains live", len(cohort)), stepTimeout, registerActions(controller.Registrar, cohort), quorumOutcomeAssertions),
+		)
+	}
+
+	if controller.Jailer != nil {
+		cohort := quorumLossCohort(ids)
+		scenario.Steps = append(scenario.Steps,
+			outcomeActionStep(fmt.Sprintf("jail %d validators; chain follows updated validator set", len(cohort)), stepTimeout, jailActions(controller.Jailer, cohort), quorumOutcomeAssertions),
+		)
+		if controller.Registrar != nil {
+			scenario.Steps = append(scenario.Steps,
+				outcomeActionStep(fmt.Sprintf("deregister %d jailed validators; chain follows updated validator set", len(cohort)), stepTimeout, deregisterActions(controller.Registrar, cohort), quorumOutcomeAssertions),
+				outcomeActionStep(fmt.Sprintf("register %d jailed-then-deregistered validators; chain remains live", len(cohort)), stepTimeout, registerActions(controller.Registrar, cohort), quorumOutcomeAssertions),
+			)
+		} else {
+			scenario.Steps = append(scenario.Steps,
+				outcomeActionStep(fmt.Sprintf("unjail %d validators; chain remains live", len(cohort)), stepTimeout, unjailActions(controller.Jailer, cohort), quorumOutcomeAssertions),
+			)
+		}
+	}
+
+	return scenario
+}
+
 func quorumLossCohort(ids []NodeID) []NodeID {
 	if len(ids) == 0 {
 		return nil
@@ -205,6 +320,20 @@ func quorumLossCohort(ids []NodeID) []NodeID {
 		size = len(ids)
 	}
 	return append([]NodeID{}, ids[:size]...)
+}
+
+func nodeSetDifference(ids, excluded []NodeID) []NodeID {
+	excludedSet := make(map[NodeID]struct{}, len(excluded))
+	for _, id := range excluded {
+		excludedSet[id] = struct{}{}
+	}
+	out := make([]NodeID, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := excludedSet[id]; !ok {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func outcomeActionStep(name string, timeout time.Duration, actions []Action, assertions []Assertion) Step {
@@ -232,6 +361,55 @@ func quorumPreservingCohort(ids []NodeID) []NodeID {
 		return nil
 	}
 	return append([]NodeID{}, ids[:size]...)
+}
+
+func endpointLieActions(controller EndpointMutator, ids []NodeID) []Action {
+	actions := make([]Action, 0, len(ids))
+	for _, id := range ids {
+		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", id)
+		actions = append(actions, AdvertiseEndpointWith(controller, id, badEndpoint))
+	}
+	return actions
+}
+
+func endpointRepairActions(controller EndpointMutator, ids []NodeID) []Action {
+	actions := make([]Action, 0, len(ids))
+	for _, id := range ids {
+		actions = append(actions, AdvertiseEndpointWith(controller, id, ""))
+	}
+	return actions
+}
+
+func registerActions(registrar Registrar, ids []NodeID) []Action {
+	actions := make([]Action, 0, len(ids))
+	for _, id := range ids {
+		actions = append(actions, RegisterNodeWith(registrar, id))
+	}
+	return actions
+}
+
+func deregisterActions(registrar Registrar, ids []NodeID) []Action {
+	actions := make([]Action, 0, len(ids))
+	for _, id := range ids {
+		actions = append(actions, DeregisterNodeWith(registrar, id))
+	}
+	return actions
+}
+
+func jailActions(jailer Jailer, ids []NodeID) []Action {
+	actions := make([]Action, 0, len(ids))
+	for _, id := range ids {
+		actions = append(actions, JailNodeWith(jailer, id))
+	}
+	return actions
+}
+
+func unjailActions(jailer Jailer, ids []NodeID) []Action {
+	actions := make([]Action, 0, len(ids))
+	for _, id := range ids {
+		actions = append(actions, UnjailNodeWith(jailer, id))
+	}
+	return actions
 }
 
 func minimumQuorumNodes(nodes int) int {

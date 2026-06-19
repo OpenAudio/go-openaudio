@@ -134,6 +134,9 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	if err := runSimulatedOutcomeEdgeCases(cfg); err != nil {
 		return err
 	}
+	if err := runSimulatedCompoundOutcomeEdgeCases(cfg); err != nil {
+		return err
+	}
 	if err := runSimulatedQuorumLossRecovery(cfg); err != nil {
 		return err
 	}
@@ -233,6 +236,34 @@ func runSimulatedOutcomeEdgeCases(cfg simulatedLoopConfig) error {
 		return fmt.Errorf("sim outcome edge cases failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
 	}
 	fmt.Printf("sim outcome edge cases ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
+	return nil
+}
+
+func runSimulatedCompoundOutcomeEdgeCases(cfg simulatedLoopConfig) error {
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      cfg.nodes,
+		InitialActive:  cfg.nodes,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 2))
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.CompoundOutcomeEdgeCaseScenario(network.Spec(), fuzz.ValidatorChaosController{
+		Registrar:       network,
+		EndpointMutator: network,
+		Jailer:          network,
+	}, cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim compound outcome edge cases failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim compound outcome edge cases ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
 	return nil
 }
 

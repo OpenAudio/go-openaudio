@@ -181,6 +181,29 @@ func TestSimulatedOutcomeEdgeCasesRunWith300Nodes(t *testing.T) {
 	}
 }
 
+func TestSimulatedCompoundOutcomeEdgeCasesRunWith300Nodes(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      DefaultModelNodeLimit,
+		InitialActive:  DefaultModelNodeLimit,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CompoundOutcomeEdgeCaseScenario(network.Spec(), ValidatorChaosController{
+			Registrar:       network,
+			EndpointMutator: network,
+			Jailer:          network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("compound outcome edge cases failed after %d events: %v", len(result.Events), err)
+	}
+}
+
 func TestSimulatedOutcomeEdgeCasesHandleOneNode(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      1,
@@ -201,6 +224,29 @@ func TestSimulatedOutcomeEdgeCasesHandleOneNode(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("one-node outcome edge cases failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestSimulatedCompoundOutcomeEdgeCasesHandleOneNode(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      1,
+		InitialActive:  1,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CompoundOutcomeEdgeCaseScenario(network.Spec(), ValidatorChaosController{
+			Registrar:       network,
+			EndpointMutator: network,
+			Jailer:          network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("one-node compound outcome edge cases failed after %d events: %v", len(result.Events), err)
 	}
 }
 
@@ -225,6 +271,54 @@ func TestSimulatedOutcomeEdgeCasesCatchStallWithQuorum(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatalf("expected outcome edge cases to catch stall-with-quorum bug after %d events", len(result.Events))
+	}
+}
+
+func TestSimulatedCompoundOutcomeEdgeCasesCatchTickWithoutQuorum(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      DefaultModelNodeLimit,
+		InitialActive:  DefaultModelNodeLimit,
+		Behavior:       ValidatorSetBehaviorBuggyTickWithoutQuorum,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CompoundOutcomeEdgeCaseScenario(network.Spec(), ValidatorChaosController{
+			Registrar:       network,
+			EndpointMutator: network,
+			Jailer:          network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected compound outcome edge cases to catch tick-without-quorum bug after %d events", len(result.Events))
+	}
+}
+
+func TestSimulatedCompoundOutcomeEdgeCasesCatchJailedDeregistrationRegression(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      DefaultModelNodeLimit,
+		InitialActive:  DefaultModelNodeLimit,
+		Behavior:       ValidatorSetBehaviorBuggyJailedDeregistration,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CompoundOutcomeEdgeCaseScenario(network.Spec(), ValidatorChaosController{
+			Registrar:       network,
+			EndpointMutator: network,
+			Jailer:          network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected compound outcome edge cases to catch jailed-deregistration bug after %d events", len(result.Events))
 	}
 }
 
