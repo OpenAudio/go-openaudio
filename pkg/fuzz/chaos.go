@@ -215,16 +215,40 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 	if controller.EndpointMutator != nil {
 		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", id)
 		actions = append(actions,
-			Sequence(fmt.Sprintf("lie and repair endpoint %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), AdvertiseEndpointWith(controller.EndpointMutator, id, "")),
+			generatedEndpointRoundTripAction(
+				fmt.Sprintf("lie and repair endpoint %s", id),
+				id,
+				AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint),
+				AdvertiseEndpointWith(controller.EndpointMutator, id, ""),
+				livenessWithin,
+				pollInterval,
+			),
 		)
 		if controller.Registrar != nil {
 			actions = append(actions,
-				Sequence(fmt.Sprintf("lie deregister register %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id)),
+				generatedEndpointRegisterRoundTripAction(
+					fmt.Sprintf("lie deregister register %s", id),
+					id,
+					AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint),
+					[]Action{DeregisterNodeWith(controller.Registrar, id)},
+					[]Action{RegisterNodeWith(controller.Registrar, id)},
+					livenessWithin,
+					pollInterval,
+				),
 			)
 		}
 		if controller.Jailer != nil {
 			actions = append(actions,
-				Sequence(fmt.Sprintf("jail lie repair unjail %s", id), JailNodeWith(controller.Jailer, id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), AdvertiseEndpointWith(controller.EndpointMutator, id, ""), UnjailNodeWith(controller.Jailer, id)),
+				generatedJailedEndpointRoundTripAction(
+					fmt.Sprintf("jail lie repair unjail %s", id),
+					id,
+					JailNodeWith(controller.Jailer, id),
+					AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint),
+					AdvertiseEndpointWith(controller.EndpointMutator, id, ""),
+					UnjailNodeWith(controller.Jailer, id),
+					livenessWithin,
+					pollInterval,
+				),
 			)
 		}
 		if opts.IncludePersistentFaults {
@@ -238,6 +262,176 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 		return Wait(time.Duration(10+rng.Intn(50)) * time.Millisecond)
 	}
 	return actions[rng.Intn(len(actions))]
+}
+
+func generatedEndpointRoundTripAction(name string, id NodeID, lieAction, repairAction Action, within, pollInterval time.Duration) Action {
+	return ActionFunc{
+		Label: name,
+		Fn: func(ctx context.Context, run *RunContext) error {
+			activeIDs, err := activeValidatorNodeIDs(ctx, run, []NodeID{id})
+			if err != nil {
+				return err
+			}
+			availableIDs, err := availableNodeIDs(ctx, run, []NodeID{id})
+			if err != nil {
+				return err
+			}
+			powerBaseline := &ValidatorPowerBaseline{}
+			if len(activeIDs) > 0 {
+				if err := CaptureValidatorPowerBaseline(powerBaseline).Run(ctx, run); err != nil {
+					return err
+				}
+			}
+			if err := Sequence(name+" lie", lieAction).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(availableIDs) > 0 {
+				if err := checkGeneratedAssertion(ctx, run, NodesUnavailable(availableIDs, within, pollInterval)); err != nil {
+					return err
+				}
+			}
+			if len(activeIDs) > 0 {
+				if err := checkGeneratedAssertions(ctx, run, append([]Assertion{ValidatorPowerRestored(powerBaseline, within, pollInterval)}, ValidatorOutcomeAssertions(within, pollInterval, true)...)); err != nil {
+					return err
+				}
+			}
+			if err := Sequence(name+" repair", repairAction).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(availableIDs) > 0 {
+				if err := checkGeneratedAssertion(ctx, run, NodesAvailable(availableIDs, within, pollInterval)); err != nil {
+					return err
+				}
+			}
+			if len(activeIDs) > 0 {
+				if err := checkGeneratedAssertions(ctx, run, append([]Assertion{ValidatorPowerRestored(powerBaseline, within, pollInterval)}, ValidatorOutcomeAssertions(within, pollInterval, true)...)); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+}
+
+func generatedEndpointRegisterRoundTripAction(name string, id NodeID, lieAction Action, removeActions, restoreActions []Action, within, pollInterval time.Duration) Action {
+	return ActionFunc{
+		Label: name,
+		Fn: func(ctx context.Context, run *RunContext) error {
+			activeIDs, err := activeValidatorNodeIDs(ctx, run, []NodeID{id})
+			if err != nil {
+				return err
+			}
+			availableIDs, err := availableNodeIDs(ctx, run, []NodeID{id})
+			if err != nil {
+				return err
+			}
+			powerBaseline := &ValidatorPowerBaseline{}
+			if len(activeIDs) > 0 {
+				if err := CaptureValidatorPowerBaseline(powerBaseline).Run(ctx, run); err != nil {
+					return err
+				}
+			}
+			if err := Sequence(name+" lie", lieAction).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(availableIDs) > 0 {
+				if err := checkGeneratedAssertion(ctx, run, NodesUnavailable(availableIDs, within, pollInterval)); err != nil {
+					return err
+				}
+			}
+			if len(activeIDs) > 0 {
+				if err := checkGeneratedAssertions(ctx, run, append([]Assertion{ValidatorPowerRestored(powerBaseline, within, pollInterval)}, ValidatorOutcomeAssertions(within, pollInterval, true)...)); err != nil {
+					return err
+				}
+			}
+			if err := Sequence(name+" remove", removeActions...).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(activeIDs) > 0 {
+				if err := checkGeneratedAssertion(ctx, run, NodesWithoutValidatorPower(activeIDs, within, pollInterval)); err != nil {
+					return err
+				}
+				if err := checkGeneratedAssertions(ctx, run, ValidatorOutcomeAssertions(within, pollInterval, true)); err != nil {
+					return err
+				}
+			}
+			if err := Sequence(name+" restore", restoreActions...).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(activeIDs) > 0 {
+				restoreAssertions := []Assertion{ValidatorPowerRestored(powerBaseline, within, pollInterval)}
+				if len(availableIDs) > 0 {
+					restoreAssertions = append(restoreAssertions, NodesAvailable(availableIDs, within, pollInterval))
+				}
+				restoreAssertions = append(restoreAssertions, ValidatorOutcomeAssertions(within, pollInterval, true)...)
+				if err := checkGeneratedAssertions(ctx, run, restoreAssertions); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+}
+
+func generatedJailedEndpointRoundTripAction(name string, id NodeID, jailAction, lieAction, repairAction, unjailAction Action, within, pollInterval time.Duration) Action {
+	return ActionFunc{
+		Label: name,
+		Fn: func(ctx context.Context, run *RunContext) error {
+			activeIDs, err := activeValidatorNodeIDs(ctx, run, []NodeID{id})
+			if err != nil {
+				return err
+			}
+			availableIDs, err := availableNodeIDs(ctx, run, []NodeID{id})
+			if err != nil {
+				return err
+			}
+			powerBaseline := &ValidatorPowerBaseline{}
+			if len(activeIDs) > 0 {
+				if err := CaptureValidatorPowerBaseline(powerBaseline).Run(ctx, run); err != nil {
+					return err
+				}
+			}
+			if err := Sequence(name+" jail", jailAction).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(activeIDs) > 0 {
+				if err := checkGeneratedAssertion(ctx, run, NodesWithoutValidatorPower(activeIDs, within, pollInterval)); err != nil {
+					return err
+				}
+				if err := checkGeneratedAssertions(ctx, run, ValidatorOutcomeAssertions(within, pollInterval, true)); err != nil {
+					return err
+				}
+			}
+			if err := Sequence(name+" lie", lieAction).Run(ctx, run); err != nil {
+				return err
+			}
+			if err := Sequence(name+" repair", repairAction).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(activeIDs) > 0 {
+				if err := checkGeneratedAssertion(ctx, run, NodesWithoutValidatorPower(activeIDs, within, pollInterval)); err != nil {
+					return err
+				}
+				if err := checkGeneratedAssertions(ctx, run, ValidatorOutcomeAssertions(within, pollInterval, true)); err != nil {
+					return err
+				}
+			}
+			if err := Sequence(name+" unjail", unjailAction).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(activeIDs) > 0 {
+				restoreAssertions := []Assertion{ValidatorPowerRestored(powerBaseline, within, pollInterval)}
+				if len(availableIDs) > 0 {
+					restoreAssertions = append(restoreAssertions, NodesAvailable(availableIDs, within, pollInterval))
+				}
+				restoreAssertions = append(restoreAssertions, ValidatorOutcomeAssertions(within, pollInterval, true)...)
+				if err := checkGeneratedAssertions(ctx, run, restoreAssertions); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
 }
 
 func generatedValidatorSetRoundTripAction(name string, id NodeID, removeActions, restoreActions []Action, within, pollInterval time.Duration) Action {

@@ -145,13 +145,37 @@ func programAction(program []byte, offset int, ids []NodeID, controller Validato
 		)
 	case 7:
 		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", id)
-		return Sequence(fmt.Sprintf("program lie/repair %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), AdvertiseEndpointWith(controller.EndpointMutator, id, ""))
+		return generatedEndpointRoundTripAction(
+			fmt.Sprintf("program lie/repair %s", id),
+			id,
+			AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint),
+			AdvertiseEndpointWith(controller.EndpointMutator, id, ""),
+			livenessWithin,
+			pollInterval,
+		)
 	case 8:
 		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", id)
-		return Sequence(fmt.Sprintf("program lie/deregister/register %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id))
+		return generatedEndpointRegisterRoundTripAction(
+			fmt.Sprintf("program lie/deregister/register %s", id),
+			id,
+			AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint),
+			[]Action{DeregisterNodeWith(controller.Registrar, id)},
+			[]Action{RegisterNodeWith(controller.Registrar, id)},
+			livenessWithin,
+			pollInterval,
+		)
 	case 9:
 		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", id)
-		return Sequence(fmt.Sprintf("program jail/lie/repair/unjail %s", id), JailNodeWith(controller.Jailer, id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), AdvertiseEndpointWith(controller.EndpointMutator, id, ""), UnjailNodeWith(controller.Jailer, id))
+		return generatedJailedEndpointRoundTripAction(
+			fmt.Sprintf("program jail/lie/repair/unjail %s", id),
+			id,
+			JailNodeWith(controller.Jailer, id),
+			AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint),
+			AdvertiseEndpointWith(controller.EndpointMutator, id, ""),
+			UnjailNodeWith(controller.Jailer, id),
+			livenessWithin,
+			pollInterval,
+		)
 	default:
 		return programMinorityOutage(program, offset, ids, livenessWithin, pollInterval)
 	}

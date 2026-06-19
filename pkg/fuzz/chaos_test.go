@@ -51,6 +51,7 @@ func (n *recordingNetwork) RegisterNode(_ context.Context, node NodeSpec) error 
 	defer n.mu.Unlock()
 	n.setActiveLocked(node.ID, true)
 	n.setOnlineLocked(node.ID, true)
+	n.setHonestLocked(node.ID, true)
 	return nil
 }
 
