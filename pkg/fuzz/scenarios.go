@@ -8,12 +8,18 @@ import (
 )
 
 func BasicLivenessScenario(minHeightDelta int64, within, pollInterval time.Duration) Scenario {
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
 	return Scenario{
 		Name: "basic-liveness",
 		Steps: []Step{
 			AssertionStep("all nodes reachable", AllReachable()),
 			AssertionStep("height advances", HeightAdvances(minHeightDelta, within, pollInterval)),
-			AssertionStep("height does not regress", NoHeightRegression(within, pollInterval)),
+			AssertionStep("live validator heights converge", LiveValidatorHeightsConverge(0, within, pollInterval)),
+			AssertionStep("no live validator fork", NoLiveValidatorFork()),
+			AssertionStep("height does not regress", NoHeightRegression(regressionWindow, pollInterval)),
 		},
 	}
 }
@@ -28,6 +34,8 @@ func LiveLivenessScenario(requiredReachable int, minHeightDelta int64, within, p
 		Steps: []Step{
 			AssertionStep("reachable quorum", ReachableAtLeast(requiredReachable, within, pollInterval)),
 			AssertionStep("height advances", HeightAdvances(minHeightDelta, within, pollInterval)),
+			AssertionStep("live validator heights converge", LiveValidatorHeightsConverge(0, within, pollInterval)),
+			AssertionStep("no live validator fork", NoLiveValidatorFork()),
 			AssertionStep("height does not regress", NoHeightRegression(regressionWindow, pollInterval)),
 		},
 	}

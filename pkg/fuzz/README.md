@@ -13,6 +13,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - Reusable actions for wait/start/stop/restart/hook/parallel/sequence.
 - Interface-backed register, deregister, and advertised-endpoint mutation actions.
 - Reusable assertions for reachability, quorum readiness, height advancement, height regression, and validator voting power.
+- Basic and live liveness scenarios that assert height progress, no height regression, live-validator height convergence, and no same-height live-validator fork.
 - A restart scenario that restarts a target node, then asserts quorum readiness, height progress, live-validator agreement, and restoration of the initial validator power plus endpoint health.
 - A pure validator-lifecycle model that can stress up to 300 nodes and catches invalid Comet validator-update emissions before running real processes.
 - A seedable validator-chaos scenario generator that composes stop/restart, register/deregister, jail/unjail, endpoint mutation, and periodic liveness assertions.
