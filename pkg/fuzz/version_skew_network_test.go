@@ -2047,3 +2047,96 @@ func TestCompoundOutcomeEdgeCaseScenarioCatchesUnjailReachability(t *testing.T) 
 		t.Fatalf("expected reachability baseline failure, got %v", err)
 	}
 }
+
+func TestPowerSkewOutcomeScenarioCatchesUnreachableStart(t *testing.T) {
+	network, err := newPowerSkewVersionSkewNetwork(VersionSkewModeBadEndpointOnStart)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		PowerSkewOutcomeScenario(network.Spec(), ValidatorChaosController{}, "node1", []NodeID{"node4", "node5"}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unreachable start to fail power-skew outcome after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
+func TestPowerSkewOutcomeScenarioCatchesStaleEndpointRepair(t *testing.T) {
+	network, err := newPowerSkewVersionSkewNetwork(VersionSkewModeKeepBadEndpointOnRepair)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		PowerSkewOutcomeScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, "node1", []NodeID{"node4", "node5"}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected stale endpoint repair to fail power-skew outcome after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
+func TestPowerSkewOutcomeScenarioCatchesRegisterReachability(t *testing.T) {
+	network, err := newPowerSkewVersionSkewNetwork(VersionSkewModeBadEndpointOnRegister)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		PowerSkewOutcomeScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node1", []NodeID{"node4", "node5"}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected register reachability failure in power-skew outcome after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
+func TestPowerSkewOutcomeScenarioCatchesUnjailReachability(t *testing.T) {
+	network, err := newPowerSkewVersionSkewNetwork(VersionSkewModeBadEndpointOnUnjail)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		PowerSkewOutcomeScenario(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, "node1", []NodeID{"node4", "node5"}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unjail reachability failure in power-skew outcome after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
+func newPowerSkewVersionSkewNetwork(mode VersionSkewMode) (*VersionSkewNetwork, error) {
+	return NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 5,
+		Mode:      mode,
+		NodePowers: map[NodeID]int64{
+			"node1": 40,
+			"node2": 15,
+			"node3": 15,
+			"node4": 15,
+			"node5": 15,
+		},
+	})
+}

@@ -62,7 +62,6 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 		NoLiveValidatorFork(),
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
-
 	ids := spec.NodeIDs()
 	scenario := Scenario{
 		Name: "outcome-edge-cases",
@@ -1655,6 +1654,16 @@ func PowerSkewOutcomeScenario(spec NetworkSpec, controller ValidatorChaosControl
 		NoLiveValidatorFork(),
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
+	powerBaseline := &ValidatorPowerBaseline{}
+	reachabilityBaseline := &ReachabilityBaseline{}
+	restoreAssertions := []Assertion{
+		ValidatorPowerRestored(powerBaseline, within, pollInterval),
+		ReachabilityRestored(reachabilityBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
 
 	ids := spec.NodeIDs()
 	lowPowerIDs = nodeSetDifference(validNodeIDs(spec, lowPowerIDs), []NodeID{highPowerID})
@@ -1671,6 +1680,11 @@ func PowerSkewOutcomeScenario(spec NetworkSpec, controller ValidatorChaosControl
 	if _, ok := spec.Node(highPowerID); !ok || len(lowPowerIDs) == 0 {
 		return scenario
 	}
+
+	scenario.Steps = append(scenario.Steps,
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(powerBaseline)),
+		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(reachabilityBaseline)),
+	)
 
 	stopLow, startLow := stopStartActions(lowPowerIDs)
 	scenario.Steps = append(scenario.Steps,
@@ -1734,6 +1748,11 @@ func PowerSkewOutcomeScenario(spec NetworkSpec, controller ValidatorChaosControl
 		)
 	}
 
+	scenario.Steps = append(scenario.Steps, Step{
+		Name:       "power-skew final validator and endpoint outcome is restored",
+		Assertions: restoreAssertions,
+		Timeout:    stepTimeout,
+	})
 	return scenario
 }
 
