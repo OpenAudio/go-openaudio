@@ -16,6 +16,8 @@ const (
 	VersionSkewModeForkLegacyOnDuplicateDeregister
 	VersionSkewModeHaltLegacyOnEndpointLie
 	VersionSkewModeForkLegacyOnEndpointLie
+	VersionSkewModeHaltLegacyOnRegister
+	VersionSkewModeForkLegacyOnRegister
 )
 
 type VersionSkewNetworkOptions struct {
@@ -127,6 +129,9 @@ func (n *VersionSkewNetwork) RestartNode(ctx context.Context, id NodeID) error {
 
 func (n *VersionSkewNetwork) RegisterNode(ctx context.Context, node NodeSpec) error {
 	if err := n.withNode(ctx, node.ID, func(modelNode *versionSkewNode) {
+		if modelNode.state == ModelValidatorAbsent {
+			n.triggerRegisterIncompatibilityLocked()
+		}
 		modelNode.state = ModelValidatorActive
 		modelNode.online = true
 		modelNode.endpointHonest = true
@@ -279,6 +284,19 @@ func (n *VersionSkewNetwork) triggerEndpointLieIncompatibilityLocked() {
 	case VersionSkewModeForkLegacyOnEndpointLie:
 		n.diverged = true
 	case VersionSkewModeHaltLegacyOnEndpointLie:
+		for id := range n.legacy {
+			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
+				node.online = false
+			}
+		}
+	}
+}
+
+func (n *VersionSkewNetwork) triggerRegisterIncompatibilityLocked() {
+	switch n.mode {
+	case VersionSkewModeForkLegacyOnRegister:
+		n.diverged = true
+	case VersionSkewModeHaltLegacyOnRegister:
 		for id := range n.legacy {
 			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
 				node.online = false
