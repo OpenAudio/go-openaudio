@@ -524,7 +524,7 @@ func programNodeIndex(program []byte, offset int) int {
 	if len(program) == 0 {
 		return 0
 	}
-	hi := int(program[offset])
+	hi := int(program[offset%len(program)])
 	lo := int(program[(offset+1)%len(program)])
 	return hi<<8 | lo
 }

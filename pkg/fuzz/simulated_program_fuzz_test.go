@@ -1,0 +1,43 @@
+package fuzz
+
+import (
+	"context"
+	"testing"
+	"time"
+)
+
+func FuzzSimulatedChaosProgram(f *testing.F) {
+	f.Add([]byte{0, 1, 2, 3, 4, 5, 6, 7}, 4)
+	f.Add([]byte{byte(ModelJail), byte(ModelDeregister), byte(ModelRegister)}, 1)
+	f.Add([]byte{7, 0, 255, 1, 44, 2, 88}, 300)
+
+	f.Fuzz(func(t *testing.T, program []byte, nodeCount int) {
+		network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+			NodeCount:      nodeCount,
+			InitialActive:  nodeCount,
+			TickOnSnapshot: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		scenario := SimulatedChaosScenarioFromProgram(network.Spec(), ValidatorChaosController{
+			Registrar:       network,
+			EndpointMutator: network,
+			Jailer:          network,
+		}, program, SimulatedProgramOptions{
+			MaxSteps:       200,
+			LivenessEvery:  25,
+			LivenessWithin: time.Second,
+			PollInterval:   time.Millisecond,
+		})
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		result, err := Runner{
+			Network:     network,
+			StepTimeout: time.Second,
+		}.Run(ctx, scenario)
+		if err != nil {
+			t.Fatalf("simulated chaos program failed after %d events: %v", len(result.Events), err)
+		}
+	})
+}

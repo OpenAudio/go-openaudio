@@ -122,6 +122,12 @@ go test ./pkg/fuzz -run '^$' -fuzz FuzzValidatorLifecycleModel -fuzztime=30s
 
 The seed corpus includes the incident class where a validator is first jailed, then formally deregistered. The current behavior must delete app state without emitting a second zero-power Comet update.
 
+The simulated chaos fuzz target drives the real runner/controller path against the in-memory network:
+
+```sh
+go test ./pkg/fuzz -run '^$' -fuzz FuzzSimulatedChaosProgram -fuzztime=30s
+```
+
 For a replayable long-running loop:
 
 ```sh

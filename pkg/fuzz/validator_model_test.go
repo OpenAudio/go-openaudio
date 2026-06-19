@@ -90,6 +90,13 @@ func TestValidatorLifecycleProgramCanAddressNode300(t *testing.T) {
 	}
 }
 
+func TestProgramNodeIndexWrapsOffset(t *testing.T) {
+	index := programNodeIndex([]byte{7, 0, 255}, 7)
+	if index != 255 {
+		t.Fatalf("expected wrapped node index 255, got %d", index)
+	}
+}
+
 func TestValidatorLifecycleProgramBuggyBehaviorFindsSeed(t *testing.T) {
 	_, err := RunValidatorLifecycleProgram([]byte{
 		byte(ModelJail),
