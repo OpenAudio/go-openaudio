@@ -30,9 +30,9 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 		maxSteps = len(program)
 	}
 	livenessEvery := opts.LivenessEvery
-	if livenessEvery <= 0 {
-		livenessEvery = 25
-	}
+	assertAfterEachStep := opts.AssertAfterEachStep
+	assertConvergence := opts.AssertConvergence
+	livenessEvery, assertAfterEachStep, assertConvergence = generatedChaosAssertionOptions(livenessEvery, assertAfterEachStep, assertConvergence)
 	livenessWithin := opts.LivenessWithin
 	if livenessWithin <= 0 {
 		livenessWithin = time.Second
@@ -46,8 +46,10 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 	scenario := Scenario{
 		Name: "simulated-program-chaos",
 		Steps: []Step{
-			AssertionStep("initial reachability", AllReachable()),
-			AssertionStep("initial liveness", HeightAdvances(1, livenessWithin, pollInterval)),
+			{
+				Name:       "initial validator outcome",
+				Assertions: append([]Assertion{AllReachable()}, ValidatorOutcomeAssertions(livenessWithin, pollInterval, assertConvergence)...),
+			},
 		},
 	}
 	var recoveryPowerBaseline *ValidatorPowerBaseline
@@ -65,12 +67,12 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 			Name:    fmt.Sprintf("program chaos %04d", i+1),
 			Actions: []Action{programAction(program, i, ids, controller, opts.IncludePersistentFaults)},
 		}
-		if opts.AssertAfterEachStep || (i+1)%livenessEvery == 0 {
-			step.Assertions = append(step.Assertions, ValidatorOutcomeAssertions(livenessWithin, pollInterval, opts.AssertConvergence)...)
+		if shouldAssertGeneratedChaosStep(i, livenessEvery, assertAfterEachStep) {
+			step.Assertions = append(step.Assertions, ValidatorOutcomeAssertions(livenessWithin, pollInterval, assertConvergence)...)
 		}
 		scenario.Steps = append(scenario.Steps, step)
 	}
-	scenario.Steps = append(scenario.Steps, AssertionStep("final quorum outcome", ValidatorOutcomeAssertions(livenessWithin, pollInterval, opts.AssertConvergence)...))
+	scenario.Steps = append(scenario.Steps, AssertionStep("final quorum outcome", ValidatorOutcomeAssertions(livenessWithin, pollInterval, assertConvergence)...))
 	if opts.RecoverAtEnd {
 		scenario.Steps = append(scenario.Steps, Step{
 			Name:       "recover all controllable faults",

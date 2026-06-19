@@ -32,9 +32,9 @@ type ValidatorChaosOptions struct {
 func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosController, opts ValidatorChaosOptions) Scenario {
 	steps := clamp(opts.Steps, 1, defaultModelStepLimit)
 	livenessEvery := opts.LivenessEvery
-	if livenessEvery <= 0 {
-		livenessEvery = 25
-	}
+	assertAfterEachStep := opts.AssertAfterEachStep
+	assertConvergence := opts.AssertConvergence
+	livenessEvery, assertAfterEachStep, assertConvergence = generatedChaosAssertionOptions(livenessEvery, assertAfterEachStep, assertConvergence)
 	livenessWithin := opts.LivenessWithin
 	if livenessWithin <= 0 {
 		livenessWithin = 30 * time.Second
@@ -62,8 +62,10 @@ func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosControlle
 		scenario.Steps = append(scenario.Steps, ActionStep("start nodes", Parallel("start all nodes", startActions...)))
 	}
 	scenario.Steps = append(scenario.Steps,
-		AssertionStep("initial reachability", AllReachable()),
-		AssertionStep("initial liveness", HeightAdvances(1, livenessWithin, pollInterval)),
+		Step{
+			Name:       "initial validator outcome",
+			Assertions: append([]Assertion{AllReachable()}, ValidatorOutcomeAssertions(livenessWithin, pollInterval, assertConvergence)...),
+		},
 	)
 	var recoveryPowerBaseline *ValidatorPowerBaseline
 	var recoveryReachabilityBaseline *ReachabilityBaseline
@@ -85,13 +87,13 @@ func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosControlle
 			id := actionIDs[rng.Intn(len(actionIDs))]
 			step.Actions = append(step.Actions, randomChaosAction(rng, controller, opts, id, actionIDs))
 		}
-		if opts.AssertAfterEachStep || (i+1)%livenessEvery == 0 {
-			step.Assertions = append(step.Assertions, ValidatorOutcomeAssertions(livenessWithin, pollInterval, opts.AssertConvergence)...)
+		if shouldAssertGeneratedChaosStep(i, livenessEvery, assertAfterEachStep) {
+			step.Assertions = append(step.Assertions, ValidatorOutcomeAssertions(livenessWithin, pollInterval, assertConvergence)...)
 		}
 		scenario.Steps = append(scenario.Steps, step)
 	}
 
-	scenario.Steps = append(scenario.Steps, AssertionStep("final quorum outcome", ValidatorOutcomeAssertions(livenessWithin, pollInterval, opts.AssertConvergence)...))
+	scenario.Steps = append(scenario.Steps, AssertionStep("final quorum outcome", ValidatorOutcomeAssertions(livenessWithin, pollInterval, assertConvergence)...))
 	if opts.RecoverAtEnd {
 		scenario.Steps = append(scenario.Steps, Step{
 			Name:       "recover all controllable faults",
@@ -101,6 +103,22 @@ func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosControlle
 		})
 	}
 	return scenario
+}
+
+func generatedChaosAssertionOptions(livenessEvery int, assertAfterEachStep, assertConvergence bool) (int, bool, bool) {
+	if livenessEvery <= 0 {
+		livenessEvery = 1
+		assertAfterEachStep = true
+	}
+	if assertAfterEachStep {
+		livenessEvery = 1
+		assertConvergence = true
+	}
+	return livenessEvery, assertAfterEachStep, assertConvergence
+}
+
+func shouldAssertGeneratedChaosStep(stepIndex int, livenessEvery int, assertAfterEachStep bool) bool {
+	return assertAfterEachStep || livenessEvery > 0 && (stepIndex+1)%livenessEvery == 0
 }
 
 func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts ValidatorChaosOptions, id NodeID, actionIDs []NodeID) Action {

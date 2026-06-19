@@ -1024,13 +1024,15 @@ func runChaosLoop(ctx context.Context, cfg chaosLoopConfig) error {
 			Registrar:       controller,
 			EndpointMutator: controller,
 		}, fuzz.ValidatorChaosOptions{
-			Seed:           cfg.seed + int64(i),
-			Steps:          cfg.chaosSteps,
-			StepTimeout:    cfg.timeout,
-			LivenessEvery:  cfg.livenessEvery,
-			LivenessWithin: cfg.window,
-			PollInterval:   cfg.pollInterval,
-			ActionNodeIDs:  cfg.actionNodeIDs,
+			Seed:                cfg.seed + int64(i),
+			Steps:               cfg.chaosSteps,
+			StepTimeout:         cfg.timeout,
+			LivenessEvery:       cfg.livenessEvery,
+			LivenessWithin:      cfg.window,
+			PollInterval:        cfg.pollInterval,
+			ActionNodeIDs:       cfg.actionNodeIDs,
+			AssertAfterEachStep: true,
+			AssertConvergence:   true,
 		}))
 		cancel()
 		if err != nil {
