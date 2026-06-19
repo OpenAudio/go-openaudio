@@ -197,6 +197,65 @@ func QuorumLossRecoveryScenario(spec NetworkSpec, within, pollInterval time.Dura
 	}
 }
 
+func JailedDeregisterCompatibilityScenario(spec NetworkSpec, controller ValidatorChaosController, target NodeID, within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+
+	ids := spec.NodeIDs()
+	if target == "" && len(ids) > 0 {
+		target = ids[len(ids)-1]
+	}
+	postJailBaseline := &ValidatorPowerBaseline{}
+	outcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	compatibilityAssertions := []Assertion{
+		ValidatorPowerRestored(postJailBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+
+	scenario := Scenario{
+		Name: "jailed-deregister-compatibility",
+		Steps: []Step{
+			{
+				Name:       "initial validator outcome",
+				Assertions: outcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+	if len(ids) == 0 || target == "" || controller.Jailer == nil || controller.Registrar == nil {
+		return scenario
+	}
+
+	scenario.Steps = append(scenario.Steps,
+		outcomeActionStep("jail validator; chain follows updated set", stepTimeout, []Action{JailNodeWith(controller.Jailer, target)}, outcomeAssertions),
+		ActionStep("capture post-jail validator power baseline", CaptureValidatorPowerBaseline(postJailBaseline)),
+		Step{
+			Name:       "deregister already-jailed validator; chain keeps same validator outcome",
+			Actions:    []Action{DeregisterNodeWith(controller.Registrar, target)},
+			Assertions: compatibilityAssertions,
+			Timeout:    stepTimeout,
+		},
+	)
+	return scenario
+}
+
 func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosController, within, pollInterval time.Duration) Scenario {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval
