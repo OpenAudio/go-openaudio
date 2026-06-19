@@ -364,3 +364,22 @@ func TestNoHeightRegressionFails(t *testing.T) {
 		t.Fatal("expected regression assertion to fail")
 	}
 }
+
+func TestValidatorOutcomeAssertionsIncludeRegression(t *testing.T) {
+	assertions := ValidatorOutcomeAssertions(time.Second, time.Millisecond, true)
+	names := make(map[string]bool, len(assertions))
+	for _, assertion := range assertions {
+		names[assertion.Name()] = true
+	}
+
+	for _, name := range []string{
+		"height follows validator quorum",
+		"live validator heights converge",
+		"no live validator fork",
+		"no height regression",
+	} {
+		if !names[name] {
+			t.Fatalf("expected validator outcome assertions to include %q; got %v", name, names)
+		}
+	}
+}

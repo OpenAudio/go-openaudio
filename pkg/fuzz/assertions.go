@@ -242,11 +242,16 @@ func HeightFollowsValidatorQuorum(within, pollInterval time.Duration) Assertion 
 }
 
 func ValidatorOutcomeAssertions(within, pollInterval time.Duration, requireConvergence bool) []Assertion {
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
 	assertions := []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)}
 	if requireConvergence {
 		assertions = append(assertions, LiveValidatorHeightsConverge(0, within, pollInterval))
 	}
 	assertions = append(assertions, NoLiveValidatorFork())
+	assertions = append(assertions, NoHeightRegression(regressionWindow, pollInterval))
 	return assertions
 }
 
