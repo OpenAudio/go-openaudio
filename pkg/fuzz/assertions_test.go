@@ -238,6 +238,60 @@ func TestHeightFollowsValidatorQuorumStallsWithNoValidatorPower(t *testing.T) {
 	}
 }
 
+func TestLiveValidatorHeightsConverge(t *testing.T) {
+	reader := newScriptedReader(map[NodeID][]int64{
+		"node1": {10, 11, 12},
+		"node2": {8, 10, 12},
+		"node3": {9, 11, 12},
+	})
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name: "scripted",
+		Nodes: []NodeSpec{
+			{ID: "node1", Endpoint: "http://node1"},
+			{ID: "node2", Endpoint: "http://node2"},
+			{ID: "node3", Endpoint: "http://node3"},
+		},
+	}, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := LiveValidatorHeightsConverge(0, time.Second, time.Millisecond).Check(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLiveValidatorHeightsConvergeFails(t *testing.T) {
+	reader := newScriptedReader(map[NodeID][]int64{
+		"node1": {10, 11, 12, 13},
+		"node2": {8, 8, 8, 8},
+		"node3": {9, 10, 11, 12},
+	})
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name: "scripted",
+		Nodes: []NodeSpec{
+			{ID: "node1", Endpoint: "http://node1"},
+			{ID: "node2", Endpoint: "http://node2"},
+			{ID: "node3", Endpoint: "http://node3"},
+		},
+	}, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := LiveValidatorHeightsConverge(0, 10*time.Millisecond, time.Millisecond).Check(ctx, run); err == nil {
+		t.Fatal("expected convergence assertion to fail")
+	}
+}
+
 func TestNoHeightRegressionFails(t *testing.T) {
 	reader := newScriptedReader(map[NodeID][]int64{
 		"node1": {10, 9},

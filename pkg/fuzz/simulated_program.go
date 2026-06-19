@@ -13,6 +13,7 @@ type SimulatedProgramOptions struct {
 	LivenessWithin          time.Duration
 	PollInterval            time.Duration
 	AssertAfterEachStep     bool
+	AssertConvergence       bool
 	IncludePersistentFaults bool
 	RecoverAtEnd            bool
 }
@@ -55,19 +56,19 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 			Actions: []Action{programAction(program, i, ids, controller, opts.IncludePersistentFaults)},
 		}
 		if opts.AssertAfterEachStep || (i+1)%livenessEvery == 0 {
-			step.Assertions = append(step.Assertions, HeightFollowsValidatorQuorum(livenessWithin, pollInterval))
+			step.Assertions = append(step.Assertions, ValidatorOutcomeAssertions(livenessWithin, pollInterval, opts.AssertConvergence)...)
 		}
 		if (i+1)%livenessEvery == 0 {
 			step.Assertions = append(step.Assertions, NoHeightRegression(pollInterval, pollInterval))
 		}
 		scenario.Steps = append(scenario.Steps, step)
 	}
-	scenario.Steps = append(scenario.Steps, AssertionStep("final quorum outcome", HeightFollowsValidatorQuorum(livenessWithin, pollInterval)))
+	scenario.Steps = append(scenario.Steps, AssertionStep("final quorum outcome", ValidatorOutcomeAssertions(livenessWithin, pollInterval, opts.AssertConvergence)...))
 	if opts.RecoverAtEnd {
 		scenario.Steps = append(scenario.Steps, Step{
 			Name:       "recover all controllable faults",
 			Actions:    validatorRecoveryActions(ids, controller, true),
-			Assertions: []Assertion{HeightAdvances(1, livenessWithin, pollInterval), NoHeightRegression(pollInterval, pollInterval)},
+			Assertions: []Assertion{HeightAdvances(1, livenessWithin, pollInterval), LiveValidatorHeightsConverge(0, livenessWithin, pollInterval), NoHeightRegression(pollInterval, pollInterval)},
 		})
 	}
 	return scenario

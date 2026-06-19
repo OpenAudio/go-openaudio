@@ -168,6 +168,7 @@ func TestSimulatedPersistentChaosScenarioRunsWith300Nodes(t *testing.T) {
 		IncludeProcessFaults:    true,
 		NoProcessFaultDelay:     true,
 		AssertAfterEachStep:     true,
+		AssertConvergence:       true,
 		IncludePersistentFaults: true,
 		RecoverAtEnd:            true,
 	})
@@ -403,6 +404,7 @@ func TestSimulatedProgramRecoveryRepairsPersistentFaults(t *testing.T) {
 			LivenessWithin:          25 * time.Millisecond,
 			PollInterval:            time.Millisecond,
 			AssertAfterEachStep:     true,
+			AssertConvergence:       true,
 			IncludePersistentFaults: true,
 			RecoverAtEnd:            true,
 		}),
@@ -449,6 +451,7 @@ func TestSimulatedProgramRecoveryCatchesBrokenRegistrationRecovery(t *testing.T)
 			LivenessWithin:          25 * time.Millisecond,
 			PollInterval:            time.Millisecond,
 			AssertAfterEachStep:     true,
+			AssertConvergence:       true,
 			IncludePersistentFaults: true,
 			RecoverAtEnd:            true,
 		}),

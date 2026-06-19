@@ -174,6 +174,7 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 			IncludeProcessFaults:    true,
 			NoProcessFaultDelay:     true,
 			AssertAfterEachStep:     true,
+			AssertConvergence:       true,
 			IncludePersistentFaults: true,
 			RecoverAtEnd:            true,
 		}))

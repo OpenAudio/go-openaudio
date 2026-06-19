@@ -31,6 +31,7 @@ func FuzzSimulatedChaosProgram(f *testing.F) {
 			LivenessWithin:          25 * time.Millisecond,
 			PollInterval:            time.Millisecond,
 			AssertAfterEachStep:     true,
+			AssertConvergence:       true,
 			IncludePersistentFaults: true,
 			RecoverAtEnd:            true,
 		})

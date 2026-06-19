@@ -241,6 +241,78 @@ func HeightFollowsValidatorQuorum(within, pollInterval time.Duration) Assertion 
 	}
 }
 
+func ValidatorOutcomeAssertions(within, pollInterval time.Duration, requireConvergence bool) []Assertion {
+	assertions := []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)}
+	if requireConvergence {
+		assertions = append(assertions, LiveValidatorHeightsConverge(0, within, pollInterval))
+	}
+	return assertions
+}
+
+func LiveValidatorHeightsConverge(maxSpread int64, within, pollInterval time.Duration) Assertion {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 2 * pollInterval
+	}
+	if maxSpread < 0 {
+		maxSpread = 0
+	}
+	return AssertionFunc{
+		Label: "live validator heights converge",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			deadline := time.NewTimer(within)
+			defer deadline.Stop()
+			ticker := time.NewTicker(pollInterval)
+			defer ticker.Stop()
+
+			var last Snapshot
+			var lastSpread int64
+			var lastCount int
+			for {
+				snapshot, err := run.Network.Snapshot(ctx)
+				if err != nil {
+					return err
+				}
+				last = snapshot
+				lastSpread, lastCount = liveValidatorHeightSpread(snapshot)
+				if lastCount <= 1 || lastSpread <= maxSpread {
+					return nil
+				}
+
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-deadline.C:
+					return fmt.Errorf("live validator heights did not converge within %s: spread=%d max=%d validators=%d: %s", within, lastSpread, maxSpread, lastCount, last.Summary())
+				case <-ticker.C:
+				}
+			}
+		},
+	}
+}
+
+func liveValidatorHeightSpread(snapshot Snapshot) (spread int64, count int) {
+	var minHeight, maxHeight int64
+	for _, node := range snapshot.Nodes {
+		if !node.Reachable || !node.Live || node.ValidatorPower <= 0 || node.Height <= 0 {
+			continue
+		}
+		if count == 0 || node.Height < minHeight {
+			minHeight = node.Height
+		}
+		if count == 0 || node.Height > maxHeight {
+			maxHeight = node.Height
+		}
+		count++
+	}
+	if count <= 1 {
+		return 0, count
+	}
+	return maxHeight - minHeight, count
+}
+
 func observedHeightAdvances(ctx context.Context, run *RunContext, initial Snapshot, minDelta int64, within, pollInterval time.Duration) error {
 	if minDelta <= 0 {
 		minDelta = 1
