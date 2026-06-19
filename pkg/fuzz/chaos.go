@@ -171,6 +171,11 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 				Sequence(fmt.Sprintf("lie deregister register %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id)),
 			)
 		}
+		if controller.Jailer != nil {
+			actions = append(actions,
+				Sequence(fmt.Sprintf("jail lie repair unjail %s", id), JailNodeWith(controller.Jailer, id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), AdvertiseEndpointWith(controller.EndpointMutator, id, ""), UnjailNodeWith(controller.Jailer, id)),
+			)
+		}
 		if opts.IncludePersistentFaults {
 			actions = append(actions,
 				AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint),

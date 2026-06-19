@@ -7,10 +7,11 @@ import (
 )
 
 func FuzzSimulatedChaosProgram(f *testing.F) {
-	f.Add([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, 4)
+	f.Add([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, 4)
 	f.Add([]byte{5}, 1)
 	f.Add([]byte{6}, 1)
 	f.Add([]byte{8}, 1)
+	f.Add([]byte{9}, 1)
 	f.Add([]byte{7, 0, 255, 1, 44, 2, 88}, 300)
 
 	f.Fuzz(func(t *testing.T, program []byte, nodeCount int) {

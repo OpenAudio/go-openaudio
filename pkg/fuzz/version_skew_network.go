@@ -26,6 +26,7 @@ const (
 	VersionSkewModeReactivateAbsentOnInactiveEndpoint
 	VersionSkewModeHaltLegacyOnInactiveEndpoint
 	VersionSkewModeForkLegacyOnInactiveEndpoint
+	VersionSkewModeKeepBadEndpointOnJailedRepair
 	VersionSkewModeHaltLegacyOnRegister
 	VersionSkewModeForkLegacyOnRegister
 	VersionSkewModeKeepBadEndpointOnRegister
@@ -222,10 +223,19 @@ func (n *VersionSkewNetwork) DeregisterNode(ctx context.Context, node NodeSpec) 
 }
 
 func (n *VersionSkewNetwork) SetNodeEndpoint(ctx context.Context, node NodeSpec, endpoint string) error {
+	keepCurrentEndpoint := false
 	if err := n.withNode(ctx, node.ID, func(modelNode *versionSkewNode) {
 		original := n.originalEndpoints[node.ID]
 		honest := endpoint == "" || endpoint == original
 		if modelNode.state != ModelValidatorActive {
+			if modelNode.state == ModelValidatorJailed &&
+				honest &&
+				n.mode == VersionSkewModeKeepBadEndpointOnJailedRepair &&
+				n.currentEndpoints[node.ID] != original {
+				keepCurrentEndpoint = true
+				modelNode.endpointHonest = false
+				return
+			}
 			switch modelNode.state {
 			case ModelValidatorJailed:
 				if n.mode == VersionSkewModeReactivateJailedOnInactiveEndpoint {
@@ -259,6 +269,9 @@ func (n *VersionSkewNetwork) SetNodeEndpoint(ctx context.Context, node NodeSpec,
 
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if keepCurrentEndpoint {
+		return nil
+	}
 	if endpoint == "" {
 		n.currentEndpoints[node.ID] = n.originalEndpoints[node.ID]
 	} else {

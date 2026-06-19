@@ -170,6 +170,9 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	if err := runSimulatedInactiveEndpointIsolation(cfg); err != nil {
 		return err
 	}
+	if err := runSimulatedJailedEndpointRepairRoundTrip(cfg); err != nil {
+		return err
+	}
 	if err := runSimulatedStopStartRoundTrip(cfg); err != nil {
 		return err
 	}
@@ -630,6 +633,34 @@ func runSimulatedInactiveEndpointIsolation(cfg simulatedLoopConfig) error {
 		return fmt.Errorf("sim inactive-endpoint isolation failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
 	}
 	fmt.Printf("sim inactive-endpoint isolation ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
+	return nil
+}
+
+func runSimulatedJailedEndpointRepairRoundTrip(cfg simulatedLoopConfig) error {
+	nodeCount := clampSimNodeCount(cfg.nodes, 4)
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      nodeCount,
+		InitialActive:  nodeCount,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 1))
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.JailedEndpointRepairRoundTripScenario(network.Spec(), fuzz.ValidatorChaosController{
+		EndpointMutator: network,
+		Jailer:          network,
+	}, "", cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim jailed endpoint repair round-trip failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim jailed endpoint repair round-trip ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
 	return nil
 }
 

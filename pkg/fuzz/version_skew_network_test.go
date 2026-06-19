@@ -692,6 +692,53 @@ func TestInactiveEndpointIsolationScenarioCatchesLegacyFork(t *testing.T) {
 	}
 }
 
+func TestJailedEndpointRepairRoundTripScenarioPassesCurrentNetwork(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      4,
+		InitialActive:  4,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		JailedEndpointRepairRoundTripScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+			Jailer:          network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("jailed endpoint repair round-trip failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestJailedEndpointRepairRoundTripScenarioCatchesStaleRepair(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeKeepBadEndpointOnJailedRepair,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		JailedEndpointRepairRoundTripScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+			Jailer:          network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected stale jailed endpoint repair to fail round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
 func TestStopStartRoundTripScenarioPassesCurrentNetwork(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      4,

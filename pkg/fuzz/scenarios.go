@@ -730,6 +730,90 @@ func InactiveEndpointIsolationScenario(spec NetworkSpec, controller ValidatorCha
 	return scenario
 }
 
+func JailedEndpointRepairRoundTripScenario(spec NetworkSpec, controller ValidatorChaosController, target NodeID, within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+
+	ids := spec.NodeIDs()
+	if target == "" && len(ids) > 0 {
+		target = ids[len(ids)-1]
+	}
+	initialPowerBaseline := &ValidatorPowerBaseline{}
+	initialReachabilityBaseline := &ReachabilityBaseline{}
+	postJailPowerBaseline := &ValidatorPowerBaseline{}
+	outcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	postJailAssertions := []Assertion{
+		ValidatorPowerRestored(postJailPowerBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	restoreAssertions := []Assertion{
+		ValidatorPowerRestored(initialPowerBaseline, within, pollInterval),
+		ReachabilityRestored(initialReachabilityBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+
+	scenario := Scenario{
+		Name: "jailed-endpoint-repair-round-trip",
+		Steps: []Step{
+			{
+				Name:       "initial validator outcome",
+				Assertions: outcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+	if len(ids) == 0 || target == "" || controller.EndpointMutator == nil || controller.Jailer == nil {
+		return scenario
+	}
+
+	badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", target)
+	scenario.Steps = append(scenario.Steps,
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialPowerBaseline)),
+		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(initialReachabilityBaseline)),
+		outcomeActionStep("jail validator; chain follows updated set", stepTimeout, []Action{JailNodeWith(controller.Jailer, target)}, outcomeAssertions),
+		ActionStep("capture post-jail validator power baseline", CaptureValidatorPowerBaseline(postJailPowerBaseline)),
+		Step{
+			Name:       "advertise bad endpoint for jailed validator; chain keeps updated validator outcome",
+			Actions:    []Action{AdvertiseEndpointWith(controller.EndpointMutator, target, badEndpoint)},
+			Assertions: postJailAssertions,
+			Timeout:    stepTimeout,
+		},
+		Step{
+			Name:       "repair endpoint for jailed validator; chain keeps updated validator outcome",
+			Actions:    []Action{AdvertiseEndpointWith(controller.EndpointMutator, target, "")},
+			Assertions: postJailAssertions,
+			Timeout:    stepTimeout,
+		},
+		Step{
+			Name:       "unjail validator; chain restores original validator and endpoint outcome",
+			Actions:    []Action{UnjailNodeWith(controller.Jailer, target)},
+			Assertions: restoreAssertions,
+			Timeout:    stepTimeout,
+		},
+	)
+	return scenario
+}
+
 func StopStartRoundTripScenario(spec NetworkSpec, target NodeID, within, pollInterval time.Duration) Scenario {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval
