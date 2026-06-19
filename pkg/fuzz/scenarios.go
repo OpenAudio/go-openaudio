@@ -62,6 +62,22 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 		NoLiveValidatorFork(),
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
+	recoveryAssertions := []Assertion{
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	powerBaseline := &ValidatorPowerBaseline{}
+	reachabilityBaseline := &ReachabilityBaseline{}
+	restoreAssertions := []Assertion{
+		ValidatorPowerRestored(powerBaseline, within, pollInterval),
+		ReachabilityRestored(reachabilityBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
 	ids := spec.NodeIDs()
 	scenario := Scenario{
 		Name: "outcome-edge-cases",
@@ -76,6 +92,10 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 	if len(ids) == 0 {
 		return scenario
 	}
+	scenario.Steps = append(scenario.Steps,
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(powerBaseline)),
+		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(reachabilityBaseline)),
+	)
 
 	first := ids[0]
 	if minimumQuorumNodes(len(ids)) < len(ids) {
@@ -136,10 +156,15 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
 				Timeout:    stepTimeout,
 			},
-			outcomeActionStep(fmt.Sprintf("restart quorum-loss cohort %d nodes; chain recovers", len(loss)), stepTimeout, start, quorumOutcomeAssertions),
+			outcomeActionStep(fmt.Sprintf("restart quorum-loss cohort %d nodes; chain recovers", len(loss)), stepTimeout, start, recoveryAssertions),
 		)
 	}
 
+	scenario.Steps = append(scenario.Steps, Step{
+		Name:       "final validator and endpoint outcome is restored",
+		Assertions: restoreAssertions,
+		Timeout:    stepTimeout,
+	})
 	return scenario
 }
 

@@ -2048,6 +2048,48 @@ func TestCompoundOutcomeEdgeCaseScenarioCatchesUnjailReachability(t *testing.T) 
 	}
 }
 
+func TestOutcomeEdgeCaseScenarioCatchesNoopRestart(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeNoopOnStart,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		OutcomeEdgeCaseScenario(network.Spec(), ValidatorChaosController{}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected no-op restart to fail outcome edge cases after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "height did not advance") {
+		t.Fatalf("expected height recovery failure, got %v", err)
+	}
+}
+
+func TestOutcomeEdgeCaseScenarioCatchesUnreachableRestart(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnStart,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		OutcomeEdgeCaseScenario(network.Spec(), ValidatorChaosController{}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unreachable restart to fail outcome edge cases after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
 func TestPowerSkewOutcomeScenarioCatchesUnreachableStart(t *testing.T) {
 	network, err := newPowerSkewVersionSkewNetwork(VersionSkewModeBadEndpointOnStart)
 	if err != nil {
