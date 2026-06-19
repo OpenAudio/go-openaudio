@@ -31,7 +31,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - An endpoint-lie consensus-isolation scenario that captures validator power, then asserts a bad advertised endpoint does not change consensus power, halt progress, or fork live validators.
 - An endpoint-repair idempotency scenario that asserts repairing an already-honest endpoint, repairing a bad endpoint, and duplicate repair do not alter validator power, halt progress, fork live validators, or leave repaired endpoints unhealthy.
 - An endpoint-register round-trip scenario that advertises a bad endpoint, deregisters the validator, then asserts registration restores both validator power and externally observable endpoint health.
-- A cohort-endpoint consensus-isolation scenario that advertises and repairs bad endpoints for a quorum-impacting validator cohort, then asserts validator power and consensus outcome remain unchanged.
+- A cohort-endpoint consensus-isolation scenario that advertises and repairs bad endpoints for a quorum-impacting validator cohort, then asserts validator power and consensus outcome remain unchanged and repaired endpoints become healthy again.
 - An inactive-endpoint isolation scenario that asserts endpoint updates and repairs for jailed or absent validators do not resurrect validator power, halt progress, or fork live validators.
 - A jailed-endpoint repair round-trip scenario that repairs a bad endpoint while the validator is jailed, then asserts unjailing restores both validator power and externally observable endpoint health.
 - A stop/start round-trip scenario that captures initial live validator power and endpoint reachability, stops a validator, then asserts starting it restores the original live validator and endpoint outcome.

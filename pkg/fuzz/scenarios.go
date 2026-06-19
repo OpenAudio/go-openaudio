@@ -605,7 +605,8 @@ func CohortEndpointConsensusIsolationScenario(spec NetworkSpec, controller Valid
 
 	ids := spec.NodeIDs()
 	cohort := quorumLossCohort(ids)
-	baseline := &ValidatorPowerBaseline{}
+	powerBaseline := &ValidatorPowerBaseline{}
+	reachabilityBaseline := &ReachabilityBaseline{}
 	outcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
@@ -613,7 +614,15 @@ func CohortEndpointConsensusIsolationScenario(spec NetworkSpec, controller Valid
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 	isolationAssertions := []Assertion{
-		ValidatorPowerRestored(baseline, within, pollInterval),
+		ValidatorPowerRestored(powerBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	repairAssertions := []Assertion{
+		ValidatorPowerRestored(powerBaseline, within, pollInterval),
+		ReachabilityRestored(reachabilityBaseline, within, pollInterval),
 		HeightAdvances(1, within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
 		NoLiveValidatorFork(),
@@ -635,7 +644,8 @@ func CohortEndpointConsensusIsolationScenario(spec NetworkSpec, controller Valid
 	}
 
 	scenario.Steps = append(scenario.Steps,
-		ActionStep("capture validator power baseline", CaptureValidatorPowerBaseline(baseline)),
+		ActionStep("capture validator power baseline", CaptureValidatorPowerBaseline(powerBaseline)),
+		ActionStep("capture reachability baseline", CaptureReachabilityBaseline(reachabilityBaseline)),
 		Step{
 			Name:       fmt.Sprintf("advertise bad endpoints for %d validators; consensus outcome is unchanged", len(cohort)),
 			Actions:    endpointLieActions(controller.EndpointMutator, cohort),
@@ -643,9 +653,9 @@ func CohortEndpointConsensusIsolationScenario(spec NetworkSpec, controller Valid
 			Timeout:    stepTimeout,
 		},
 		Step{
-			Name:       fmt.Sprintf("repair bad endpoints for %d validators; consensus outcome remains unchanged", len(cohort)),
+			Name:       fmt.Sprintf("repair bad endpoints for %d validators; consensus and endpoint outcome are restored", len(cohort)),
 			Actions:    endpointRepairActions(controller.EndpointMutator, cohort),
-			Assertions: isolationAssertions,
+			Assertions: repairAssertions,
 			Timeout:    stepTimeout,
 		},
 	)
