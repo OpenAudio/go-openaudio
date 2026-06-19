@@ -34,12 +34,30 @@ func LiveLivenessScenario(requiredReachable int, minHeightDelta int64, within, p
 }
 
 func RestartNodeScenario(id NodeID, readyCount int, within, pollInterval time.Duration) Scenario {
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+	powerBaseline := &ValidatorPowerBaseline{}
+	reachabilityBaseline := &ReachabilityBaseline{}
 	return Scenario{
 		Name: "restart-node",
 		Steps: []Step{
+			ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(powerBaseline)),
+			ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(reachabilityBaseline)),
 			ActionStep("restart node", RestartNode(id)),
-			AssertionStep("quorum ready", QuorumReady(readyCount, within, pollInterval)),
-			AssertionStep("height advances", HeightAdvances(1, within, pollInterval)),
+			{
+				Name: "restart restores validator and endpoint outcome",
+				Assertions: []Assertion{
+					QuorumReady(readyCount, within, pollInterval),
+					ValidatorPowerRestored(powerBaseline, within, pollInterval),
+					ReachabilityRestored(reachabilityBaseline, within, pollInterval),
+					HeightAdvances(1, within, pollInterval),
+					LiveValidatorHeightsConverge(0, within, pollInterval),
+					NoLiveValidatorFork(),
+					NoHeightRegression(regressionWindow, pollInterval),
+				},
+			},
 		},
 	}
 }
