@@ -1978,3 +1978,72 @@ func TestMixedLifecycleQuorumRecoveryScenarioCatchesUnjailFork(t *testing.T) {
 		t.Fatalf("expected live-validator fork failure, got %v", err)
 	}
 }
+
+func TestCompoundOutcomeEdgeCaseScenarioCatchesStaleEndpointRepair(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeKeepBadEndpointOnRepair,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CompoundOutcomeEdgeCaseScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected stale endpoint repair to fail compound outcome after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
+func TestCompoundOutcomeEdgeCaseScenarioCatchesRegisterReachability(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CompoundOutcomeEdgeCaseScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected register reachability failure in compound outcome after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
+func TestCompoundOutcomeEdgeCaseScenarioCatchesUnjailReachability(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CompoundOutcomeEdgeCaseScenario(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unjail reachability failure in compound outcome after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
