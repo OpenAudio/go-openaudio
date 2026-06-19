@@ -26,6 +26,10 @@ const (
 	VersionSkewModeNoopOnStart
 	VersionSkewModeHaltLegacyOnStart
 	VersionSkewModeForkLegacyOnStart
+	VersionSkewModeReactivateJailedOnStart
+	VersionSkewModeReactivateAbsentOnStart
+	VersionSkewModeHaltLegacyOnInactiveStart
+	VersionSkewModeForkLegacyOnInactiveStart
 )
 
 type VersionSkewNetworkOptions struct {
@@ -116,12 +120,27 @@ func (n *VersionSkewNetwork) Spec() NetworkSpec {
 
 func (n *VersionSkewNetwork) StartNode(ctx context.Context, id NodeID) error {
 	return n.withNode(ctx, id, func(node *versionSkewNode) {
-		if node.state == ModelValidatorActive {
+		switch node.state {
+		case ModelValidatorActive:
 			if n.mode == VersionSkewModeNoopOnStart {
 				return
 			}
 			n.triggerStartIncompatibilityLocked()
 			node.online = true
+		case ModelValidatorJailed:
+			if n.mode == VersionSkewModeReactivateJailedOnStart {
+				node.state = ModelValidatorActive
+				node.online = true
+				return
+			}
+			n.triggerInactiveStartIncompatibilityLocked()
+		case ModelValidatorAbsent:
+			if n.mode == VersionSkewModeReactivateAbsentOnStart {
+				node.state = ModelValidatorActive
+				node.online = true
+				return
+			}
+			n.triggerInactiveStartIncompatibilityLocked()
 		}
 	})
 }
@@ -355,6 +374,19 @@ func (n *VersionSkewNetwork) triggerStartIncompatibilityLocked() {
 	case VersionSkewModeForkLegacyOnStart:
 		n.diverged = true
 	case VersionSkewModeHaltLegacyOnStart:
+		for id := range n.legacy {
+			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
+				node.online = false
+			}
+		}
+	}
+}
+
+func (n *VersionSkewNetwork) triggerInactiveStartIncompatibilityLocked() {
+	switch n.mode {
+	case VersionSkewModeForkLegacyOnInactiveStart:
+		n.diverged = true
+	case VersionSkewModeHaltLegacyOnInactiveStart:
 		for id := range n.legacy {
 			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
 				node.online = false

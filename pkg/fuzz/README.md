@@ -30,6 +30,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - A duplicate-jail idempotency scenario that captures post-jail validator power, then asserts repeating the jail action does not create a new halt, validator-set change, or live-validator fork.
 - An endpoint-lie consensus-isolation scenario that captures validator power, then asserts a bad advertised endpoint does not change consensus power, halt progress, or fork live validators.
 - A stop/start round-trip scenario that captures initial live validator power, stops a validator, then asserts starting it restores the original live validator outcome.
+- An inactive-start isolation scenario that jails and deregisters a validator, then asserts starting that inactive process does not resurrect validator power, halt progress, or fork live validators.
 - A register round-trip scenario that captures initial validator power, deregisters a validator, then asserts registering it restores the original validator set and consensus outcome.
 - An unjail round-trip scenario that captures initial validator power, jails a validator, then asserts unjailing it restores the original validator set and consensus outcome.
 - Seeded skewed validator-power profiles for simulated fuzzing so generated programs exercise power quorum, not only node-count quorum.
