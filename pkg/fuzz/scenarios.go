@@ -155,6 +155,22 @@ func QuorumLossRecoveryScenario(spec NetworkSpec, within, pollInterval time.Dura
 	if regressionWindow <= 0 {
 		regressionWindow = 2 * defaultPollInterval
 	}
+	initialAssertions := []Assertion{
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	powerBaseline := &ValidatorPowerBaseline{}
+	reachabilityBaseline := &ReachabilityBaseline{}
+	restoreAssertions := []Assertion{
+		HeightAdvances(1, within, pollInterval),
+		ValidatorPowerRestored(powerBaseline, within, pollInterval),
+		ReachabilityRestored(reachabilityBaseline, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
 
 	cohort := quorumLossCohort(spec.NodeIDs())
 	stop := make([]Action, 0, len(cohort))
@@ -169,9 +185,11 @@ func QuorumLossRecoveryScenario(spec NetworkSpec, within, pollInterval time.Dura
 		Steps: []Step{
 			{
 				Name:       "initial height advances",
-				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+				Assertions: initialAssertions,
 				Timeout:    stepTimeout,
 			},
+			ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(powerBaseline)),
+			ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(reachabilityBaseline)),
 			{
 				Name:    fmt.Sprintf("stop quorum-loss cohort %d nodes", len(cohort)),
 				Actions: []Action{Parallel("stop quorum-loss cohort", stop...)},
@@ -189,7 +207,7 @@ func QuorumLossRecoveryScenario(spec NetworkSpec, within, pollInterval time.Dura
 			},
 			{
 				Name:       "height recovers",
-				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval), LiveValidatorHeightsConverge(0, within, pollInterval), NoLiveValidatorFork(), NoHeightRegression(regressionWindow, pollInterval)},
+				Assertions: restoreAssertions,
 				Timeout:    stepTimeout,
 			},
 		},

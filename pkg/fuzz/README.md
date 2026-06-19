@@ -44,7 +44,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - A cohort lifecycle round-trip scenario that deregisters/registers and jails/unjails a quorum-impacting validator cohort, then asserts the original validator set, endpoint health, and consensus outcome are restored each time.
 - A mixed lifecycle quorum-recovery scenario that combines validator-set removal with process outages, asserts the chain stalls below quorum, then asserts register/unjail restores progress before the stopped processes return and the final restart restores validator power plus endpoint health.
 - Seeded skewed validator-power profiles for simulated fuzzing so generated programs exercise power quorum, not only node-count quorum.
-- A quorum-loss recovery scenario that intentionally drops equal-power validator sets below quorum, asserts height stalls, restarts the cohort, and asserts height resumes.
+- A quorum-loss recovery scenario that intentionally drops equal-power validator sets below quorum, asserts height stalls, restarts the cohort, and asserts height resumes with validator power and endpoint health restored.
 - An opt-in live liveness test guarded by `OPENAUDIO_FUZZ_RUN=1`.
 
 ## Running against an existing devnet
