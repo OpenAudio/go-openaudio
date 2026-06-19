@@ -28,6 +28,7 @@ const (
 	VersionSkewModeForkLegacyOnInactiveEndpoint
 	VersionSkewModeHaltLegacyOnRegister
 	VersionSkewModeForkLegacyOnRegister
+	VersionSkewModeKeepBadEndpointOnRegister
 	VersionSkewModeHaltLegacyOnActiveRegister
 	VersionSkewModeForkLegacyOnActiveRegister
 	VersionSkewModeNoopOnJailedRegister
@@ -177,7 +178,9 @@ func (n *VersionSkewNetwork) RestartNode(ctx context.Context, id NodeID) error {
 }
 
 func (n *VersionSkewNetwork) RegisterNode(ctx context.Context, node NodeSpec) error {
+	keepCurrentEndpoint := false
 	if err := n.withNode(ctx, node.ID, func(modelNode *versionSkewNode) {
+		keepCurrentEndpoint = n.mode == VersionSkewModeKeepBadEndpointOnRegister && n.currentEndpoints[node.ID] != n.originalEndpoints[node.ID]
 		switch modelNode.state {
 		case ModelValidatorAbsent:
 			n.triggerRegisterIncompatibilityLocked()
@@ -191,13 +194,15 @@ func (n *VersionSkewNetwork) RegisterNode(ctx context.Context, node NodeSpec) er
 		}
 		modelNode.state = ModelValidatorActive
 		modelNode.online = true
-		modelNode.endpointHonest = true
+		modelNode.endpointHonest = !keepCurrentEndpoint
 	}); err != nil {
 		return err
 	}
 
 	n.mu.Lock()
-	n.currentEndpoints[node.ID] = n.originalEndpoints[node.ID]
+	if !keepCurrentEndpoint {
+		n.currentEndpoints[node.ID] = n.originalEndpoints[node.ID]
+	}
 	n.mu.Unlock()
 	return nil
 }

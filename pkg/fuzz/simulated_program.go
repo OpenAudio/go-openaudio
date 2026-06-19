@@ -86,7 +86,7 @@ func programAction(program []byte, offset int, ids []NodeID, controller Validato
 			return controllerAction
 		}
 	}
-	switch program[offset] % 9 {
+	switch program[offset] % 10 {
 	case 0:
 		return Sequence(fmt.Sprintf("program bounce %s", id), StopNode(id), StartNode(id))
 	case 1:
@@ -104,6 +104,9 @@ func programAction(program []byte, offset int, ids []NodeID, controller Validato
 	case 7:
 		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", id)
 		return Sequence(fmt.Sprintf("program lie/repair %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), AdvertiseEndpointWith(controller.EndpointMutator, id, ""))
+	case 8:
+		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", id)
+		return Sequence(fmt.Sprintf("program lie/deregister/register %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id))
 	default:
 		return programMinorityOutage(program, offset, ids)
 	}

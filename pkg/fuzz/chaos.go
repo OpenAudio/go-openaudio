@@ -166,6 +166,11 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 		actions = append(actions,
 			Sequence(fmt.Sprintf("lie and repair endpoint %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), AdvertiseEndpointWith(controller.EndpointMutator, id, "")),
 		)
+		if controller.Registrar != nil {
+			actions = append(actions,
+				Sequence(fmt.Sprintf("lie deregister register %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id)),
+			)
+		}
 		if opts.IncludePersistentFaults {
 			actions = append(actions,
 				AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint),

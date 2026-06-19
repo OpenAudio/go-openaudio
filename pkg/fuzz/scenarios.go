@@ -516,6 +516,70 @@ func EndpointRepairIdempotencyScenario(spec NetworkSpec, controller ValidatorCha
 	return scenario
 }
 
+func EndpointRegisterRoundTripScenario(spec NetworkSpec, controller ValidatorChaosController, target NodeID, within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+
+	ids := spec.NodeIDs()
+	if target == "" && len(ids) > 0 {
+		target = ids[len(ids)-1]
+	}
+	powerBaseline := &ValidatorPowerBaseline{}
+	reachabilityBaseline := &ReachabilityBaseline{}
+	outcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	restoreAssertions := []Assertion{
+		ValidatorPowerRestored(powerBaseline, within, pollInterval),
+		ReachabilityRestored(reachabilityBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+
+	scenario := Scenario{
+		Name: "endpoint-register-round-trip",
+		Steps: []Step{
+			{
+				Name:       "initial validator outcome",
+				Assertions: outcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+	if len(ids) == 0 || target == "" || controller.EndpointMutator == nil || controller.Registrar == nil {
+		return scenario
+	}
+
+	badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", target)
+	scenario.Steps = append(scenario.Steps,
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(powerBaseline)),
+		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(reachabilityBaseline)),
+		outcomeActionStep("advertise bad endpoint; chain keeps validator outcome", stepTimeout, []Action{AdvertiseEndpointWith(controller.EndpointMutator, target, badEndpoint)}, outcomeAssertions),
+		outcomeActionStep("deregister validator with bad endpoint; chain follows updated set", stepTimeout, []Action{DeregisterNodeWith(controller.Registrar, target)}, outcomeAssertions),
+		Step{
+			Name:       "register validator; chain restores original validator and endpoint outcome",
+			Actions:    []Action{RegisterNodeWith(controller.Registrar, target)},
+			Assertions: restoreAssertions,
+			Timeout:    stepTimeout,
+		},
+	)
+	return scenario
+}
+
 func CohortEndpointConsensusIsolationScenario(spec NetworkSpec, controller ValidatorChaosController, within, pollInterval time.Duration) Scenario {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval

@@ -161,6 +161,9 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	if err := runSimulatedEndpointRepairIdempotency(cfg); err != nil {
 		return err
 	}
+	if err := runSimulatedEndpointRegisterRoundTrip(cfg); err != nil {
+		return err
+	}
 	if err := runSimulatedCohortEndpointConsensusIsolation(cfg); err != nil {
 		return err
 	}
@@ -543,6 +546,34 @@ func runSimulatedEndpointRepairIdempotency(cfg simulatedLoopConfig) error {
 		return fmt.Errorf("sim endpoint-repair idempotency failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
 	}
 	fmt.Printf("sim endpoint-repair idempotency ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
+	return nil
+}
+
+func runSimulatedEndpointRegisterRoundTrip(cfg simulatedLoopConfig) error {
+	nodeCount := clampSimNodeCount(cfg.nodes, 4)
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      nodeCount,
+		InitialActive:  nodeCount,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 1))
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.EndpointRegisterRoundTripScenario(network.Spec(), fuzz.ValidatorChaosController{
+		Registrar:       network,
+		EndpointMutator: network,
+	}, "", cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim endpoint register round-trip failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim endpoint register round-trip ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
 	return nil
 }
 
