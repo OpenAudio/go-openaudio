@@ -1393,7 +1393,8 @@ func MixedLifecycleQuorumRecoveryScenario(spec NetworkSpec, controller Validator
 		regressionWindow = 2 * defaultPollInterval
 	}
 
-	baseline := &ValidatorPowerBaseline{}
+	powerBaseline := &ValidatorPowerBaseline{}
+	reachabilityBaseline := &ReachabilityBaseline{}
 	state := &mixedLifecycleQuorumState{}
 	outcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
@@ -1413,7 +1414,8 @@ func MixedLifecycleQuorumRecoveryScenario(spec NetworkSpec, controller Validator
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 	restoreAssertions := []Assertion{
-		ValidatorPowerRestored(baseline, within, pollInterval),
+		ValidatorPowerRestored(powerBaseline, within, pollInterval),
+		ReachabilityRestored(reachabilityBaseline, within, pollInterval),
 		HeightAdvances(1, within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
 		NoLiveValidatorFork(),
@@ -1435,7 +1437,8 @@ func MixedLifecycleQuorumRecoveryScenario(spec NetworkSpec, controller Validator
 	}
 
 	scenario.Steps = append(scenario.Steps,
-		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(baseline)),
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(powerBaseline)),
+		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(reachabilityBaseline)),
 		ActionStep("plan mixed lifecycle quorum boundary", planMixedLifecycleQuorum(state)),
 	)
 	if controller.Registrar != nil {
@@ -1459,7 +1462,7 @@ func MixedLifecycleQuorumRecoveryScenario(spec NetworkSpec, controller Validator
 				Timeout:    stepTimeout,
 			},
 			Step{
-				Name:       "restart stopped validators; original validator outcome is restored",
+				Name:       "restart stopped validators; original validator and endpoint outcome is restored",
 				Actions:    []Action{startMixedLifecycleStopped(state)},
 				Assertions: restoreAssertions,
 				Timeout:    stepTimeout,
@@ -1487,7 +1490,7 @@ func MixedLifecycleQuorumRecoveryScenario(spec NetworkSpec, controller Validator
 				Timeout:    stepTimeout,
 			},
 			Step{
-				Name:       "restart stopped validators; original validator outcome is restored",
+				Name:       "restart stopped validators; original validator and endpoint outcome is restored",
 				Actions:    []Action{startMixedLifecycleStopped(state)},
 				Assertions: restoreAssertions,
 				Timeout:    stepTimeout,

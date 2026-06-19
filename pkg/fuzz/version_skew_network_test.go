@@ -1861,6 +1861,29 @@ func TestMixedLifecycleQuorumRecoveryScenarioCatchesRegisterFork(t *testing.T) {
 	}
 }
 
+func TestMixedLifecycleQuorumRecoveryScenarioCatchesRegisterReachability(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		MixedLifecycleQuorumRecoveryScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected register reachability failure in mixed lifecycle recovery after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
 func TestMixedLifecycleQuorumRecoveryScenarioCatchesNoopUnjail(t *testing.T) {
 	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
 		NodeCount:     4,
@@ -1882,6 +1905,29 @@ func TestMixedLifecycleQuorumRecoveryScenarioCatchesNoopUnjail(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "height did not advance") {
 		t.Fatalf("expected height-advance failure, got %v", err)
+	}
+}
+
+func TestMixedLifecycleQuorumRecoveryScenarioCatchesUnjailReachability(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		MixedLifecycleQuorumRecoveryScenario(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unjail reachability failure in mixed lifecycle recovery after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
 	}
 }
 
