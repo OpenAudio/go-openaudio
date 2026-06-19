@@ -1180,6 +1180,29 @@ func TestRegisterRoundTripScenarioCatchesNoopRegister(t *testing.T) {
 	}
 }
 
+func TestRegisterRoundTripScenarioCatchesUnreachableRegister(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		RegisterRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unreachable register to fail register round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
 func TestRegisterRoundTripScenarioCatchesLegacyHalt(t *testing.T) {
 	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
 		NodeCount:     4,
@@ -1272,6 +1295,30 @@ func TestJailedRegisterRoundTripScenarioCatchesNoopRegister(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
 		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestJailedRegisterRoundTripScenarioCatchesUnreachableRegister(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		JailedRegisterRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unreachable jailed register to fail jailed register round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
 	}
 }
 
@@ -1394,6 +1441,29 @@ func TestRegisterIdempotencyScenarioCatchesActiveFork(t *testing.T) {
 	}
 }
 
+func TestRegisterIdempotencyScenarioCatchesUnreachableRegister(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		RegisterIdempotencyScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unreachable register to fail register idempotency after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
 func TestUnjailRoundTripScenarioPassesCurrentNetwork(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      4,
@@ -1436,6 +1506,29 @@ func TestUnjailRoundTripScenarioCatchesNoopUnjail(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
 		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestUnjailRoundTripScenarioCatchesUnreachableUnjail(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		UnjailRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unreachable unjail to fail unjail round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
 	}
 }
 
@@ -1509,6 +1602,29 @@ func TestCohortLifecycleRoundTripScenarioPassesCurrentNetwork(t *testing.T) {
 	}
 }
 
+func TestCohortLifecycleRoundTripScenarioCatchesRegisterReachability(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortLifecycleRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unreachable cohort register to fail cohort lifecycle round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
 func TestCohortLifecycleRoundTripScenarioCatchesRegisterHalt(t *testing.T) {
 	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
 		NodeCount:     4,
@@ -1578,6 +1694,29 @@ func TestCohortLifecycleRoundTripScenarioCatchesNoopUnjail(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
 		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestCohortLifecycleRoundTripScenarioCatchesUnjailReachability(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortLifecycleRoundTripScenario(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unreachable cohort unjail to fail cohort lifecycle round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
 	}
 }
 

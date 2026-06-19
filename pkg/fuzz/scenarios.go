@@ -1052,7 +1052,8 @@ func RegisterRoundTripScenario(spec NetworkSpec, controller ValidatorChaosContro
 	if target == "" && len(ids) > 0 {
 		target = ids[len(ids)-1]
 	}
-	initialBaseline := &ValidatorPowerBaseline{}
+	initialPowerBaseline := &ValidatorPowerBaseline{}
+	initialReachabilityBaseline := &ReachabilityBaseline{}
 	outcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
@@ -1060,7 +1061,8 @@ func RegisterRoundTripScenario(spec NetworkSpec, controller ValidatorChaosContro
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 	restoreAssertions := []Assertion{
-		ValidatorPowerRestored(initialBaseline, within, pollInterval),
+		ValidatorPowerRestored(initialPowerBaseline, within, pollInterval),
+		ReachabilityRestored(initialReachabilityBaseline, within, pollInterval),
 		HeightAdvances(1, within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
 		NoLiveValidatorFork(),
@@ -1082,10 +1084,11 @@ func RegisterRoundTripScenario(spec NetworkSpec, controller ValidatorChaosContro
 	}
 
 	scenario.Steps = append(scenario.Steps,
-		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialBaseline)),
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialPowerBaseline)),
+		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(initialReachabilityBaseline)),
 		outcomeActionStep("deregister validator; chain follows updated set", stepTimeout, []Action{DeregisterNodeWith(controller.Registrar, target)}, outcomeAssertions),
 		Step{
-			Name:       "register validator; chain restores original validator outcome",
+			Name:       "register validator; chain restores original validator and endpoint outcome",
 			Actions:    []Action{RegisterNodeWith(controller.Registrar, target)},
 			Assertions: restoreAssertions,
 			Timeout:    stepTimeout,
@@ -1111,7 +1114,8 @@ func JailedRegisterRoundTripScenario(spec NetworkSpec, controller ValidatorChaos
 	if target == "" && len(ids) > 0 {
 		target = ids[len(ids)-1]
 	}
-	initialBaseline := &ValidatorPowerBaseline{}
+	initialPowerBaseline := &ValidatorPowerBaseline{}
+	initialReachabilityBaseline := &ReachabilityBaseline{}
 	outcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
@@ -1119,7 +1123,8 @@ func JailedRegisterRoundTripScenario(spec NetworkSpec, controller ValidatorChaos
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 	restoreAssertions := []Assertion{
-		ValidatorPowerRestored(initialBaseline, within, pollInterval),
+		ValidatorPowerRestored(initialPowerBaseline, within, pollInterval),
+		ReachabilityRestored(initialReachabilityBaseline, within, pollInterval),
 		HeightAdvances(1, within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
 		NoLiveValidatorFork(),
@@ -1141,10 +1146,11 @@ func JailedRegisterRoundTripScenario(spec NetworkSpec, controller ValidatorChaos
 	}
 
 	scenario.Steps = append(scenario.Steps,
-		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialBaseline)),
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialPowerBaseline)),
+		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(initialReachabilityBaseline)),
 		outcomeActionStep("jail validator; chain follows updated set", stepTimeout, []Action{JailNodeWith(controller.Jailer, target)}, outcomeAssertions),
 		Step{
-			Name:       "register jailed validator; chain restores original validator outcome",
+			Name:       "register jailed validator; chain restores original validator and endpoint outcome",
 			Actions:    []Action{RegisterNodeWith(controller.Registrar, target)},
 			Assertions: restoreAssertions,
 			Timeout:    stepTimeout,
@@ -1170,7 +1176,8 @@ func RegisterIdempotencyScenario(spec NetworkSpec, controller ValidatorChaosCont
 	if target == "" && len(ids) > 0 {
 		target = ids[len(ids)-1]
 	}
-	initialBaseline := &ValidatorPowerBaseline{}
+	initialPowerBaseline := &ValidatorPowerBaseline{}
+	initialReachabilityBaseline := &ReachabilityBaseline{}
 	outcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
@@ -1178,7 +1185,8 @@ func RegisterIdempotencyScenario(spec NetworkSpec, controller ValidatorChaosCont
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 	idempotencyAssertions := []Assertion{
-		ValidatorPowerRestored(initialBaseline, within, pollInterval),
+		ValidatorPowerRestored(initialPowerBaseline, within, pollInterval),
+		ReachabilityRestored(initialReachabilityBaseline, within, pollInterval),
 		HeightAdvances(1, within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
 		NoLiveValidatorFork(),
@@ -1200,22 +1208,23 @@ func RegisterIdempotencyScenario(spec NetworkSpec, controller ValidatorChaosCont
 	}
 
 	scenario.Steps = append(scenario.Steps,
-		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialBaseline)),
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialPowerBaseline)),
+		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(initialReachabilityBaseline)),
 		Step{
-			Name:       "register active validator; chain keeps same validator outcome",
+			Name:       "register active validator; chain keeps same validator and endpoint outcome",
 			Actions:    []Action{RegisterNodeWith(controller.Registrar, target)},
 			Assertions: idempotencyAssertions,
 			Timeout:    stepTimeout,
 		},
 		outcomeActionStep("deregister validator; chain follows updated set", stepTimeout, []Action{DeregisterNodeWith(controller.Registrar, target)}, outcomeAssertions),
 		Step{
-			Name:       "register validator; chain restores original validator outcome",
+			Name:       "register validator; chain restores original validator and endpoint outcome",
 			Actions:    []Action{RegisterNodeWith(controller.Registrar, target)},
 			Assertions: idempotencyAssertions,
 			Timeout:    stepTimeout,
 		},
 		Step{
-			Name:       "duplicate register; chain keeps restored validator outcome",
+			Name:       "duplicate register; chain keeps restored validator and endpoint outcome",
 			Actions:    []Action{RegisterNodeWith(controller.Registrar, target)},
 			Assertions: idempotencyAssertions,
 			Timeout:    stepTimeout,
@@ -1241,7 +1250,8 @@ func UnjailRoundTripScenario(spec NetworkSpec, controller ValidatorChaosControll
 	if target == "" && len(ids) > 0 {
 		target = ids[len(ids)-1]
 	}
-	initialBaseline := &ValidatorPowerBaseline{}
+	initialPowerBaseline := &ValidatorPowerBaseline{}
+	initialReachabilityBaseline := &ReachabilityBaseline{}
 	outcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
@@ -1249,7 +1259,8 @@ func UnjailRoundTripScenario(spec NetworkSpec, controller ValidatorChaosControll
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 	restoreAssertions := []Assertion{
-		ValidatorPowerRestored(initialBaseline, within, pollInterval),
+		ValidatorPowerRestored(initialPowerBaseline, within, pollInterval),
+		ReachabilityRestored(initialReachabilityBaseline, within, pollInterval),
 		HeightAdvances(1, within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
 		NoLiveValidatorFork(),
@@ -1271,10 +1282,11 @@ func UnjailRoundTripScenario(spec NetworkSpec, controller ValidatorChaosControll
 	}
 
 	scenario.Steps = append(scenario.Steps,
-		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialBaseline)),
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialPowerBaseline)),
+		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(initialReachabilityBaseline)),
 		outcomeActionStep("jail validator; chain follows updated set", stepTimeout, []Action{JailNodeWith(controller.Jailer, target)}, outcomeAssertions),
 		Step{
-			Name:       "unjail validator; chain restores original validator outcome",
+			Name:       "unjail validator; chain restores original validator and endpoint outcome",
 			Actions:    []Action{UnjailNodeWith(controller.Jailer, target)},
 			Assertions: restoreAssertions,
 			Timeout:    stepTimeout,
@@ -1298,7 +1310,8 @@ func CohortLifecycleRoundTripScenario(spec NetworkSpec, controller ValidatorChao
 
 	ids := spec.NodeIDs()
 	cohort := quorumLossCohort(ids)
-	initialBaseline := &ValidatorPowerBaseline{}
+	initialPowerBaseline := &ValidatorPowerBaseline{}
+	initialReachabilityBaseline := &ReachabilityBaseline{}
 	outcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
@@ -1306,7 +1319,8 @@ func CohortLifecycleRoundTripScenario(spec NetworkSpec, controller ValidatorChao
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 	restoreAssertions := []Assertion{
-		ValidatorPowerRestored(initialBaseline, within, pollInterval),
+		ValidatorPowerRestored(initialPowerBaseline, within, pollInterval),
+		ReachabilityRestored(initialReachabilityBaseline, within, pollInterval),
 		HeightAdvances(1, within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
 		NoLiveValidatorFork(),
@@ -1328,13 +1342,14 @@ func CohortLifecycleRoundTripScenario(spec NetworkSpec, controller ValidatorChao
 	}
 
 	scenario.Steps = append(scenario.Steps,
-		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialBaseline)),
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialPowerBaseline)),
+		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(initialReachabilityBaseline)),
 	)
 	if controller.Registrar != nil {
 		scenario.Steps = append(scenario.Steps,
 			outcomeActionStep(fmt.Sprintf("deregister %d validators; chain follows updated set", len(cohort)), stepTimeout, deregisterActions(controller.Registrar, cohort), outcomeAssertions),
 			Step{
-				Name:       fmt.Sprintf("register %d validators; chain restores original validator outcome", len(cohort)),
+				Name:       fmt.Sprintf("register %d validators; chain restores original validator and endpoint outcome", len(cohort)),
 				Actions:    registerActions(controller.Registrar, cohort),
 				Assertions: restoreAssertions,
 				Timeout:    stepTimeout,
@@ -1345,7 +1360,7 @@ func CohortLifecycleRoundTripScenario(spec NetworkSpec, controller ValidatorChao
 		scenario.Steps = append(scenario.Steps,
 			outcomeActionStep(fmt.Sprintf("jail %d validators; chain follows updated set", len(cohort)), stepTimeout, jailActions(controller.Jailer, cohort), outcomeAssertions),
 			Step{
-				Name:       fmt.Sprintf("unjail %d validators; chain restores original validator outcome", len(cohort)),
+				Name:       fmt.Sprintf("unjail %d validators; chain restores original validator and endpoint outcome", len(cohort)),
 				Actions:    unjailActions(controller.Jailer, cohort),
 				Assertions: restoreAssertions,
 				Timeout:    stepTimeout,

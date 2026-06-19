@@ -31,12 +31,14 @@ const (
 	VersionSkewModeHaltLegacyOnRegister
 	VersionSkewModeForkLegacyOnRegister
 	VersionSkewModeKeepBadEndpointOnRegister
+	VersionSkewModeBadEndpointOnRegister
 	VersionSkewModeHaltLegacyOnActiveRegister
 	VersionSkewModeForkLegacyOnActiveRegister
 	VersionSkewModeNoopOnJailedRegister
 	VersionSkewModeHaltLegacyOnJailedRegister
 	VersionSkewModeForkLegacyOnJailedRegister
 	VersionSkewModeNoopOnUnjail
+	VersionSkewModeBadEndpointOnUnjail
 	VersionSkewModeHaltLegacyOnUnjail
 	VersionSkewModeForkLegacyOnUnjail
 	VersionSkewModeHaltLegacyOnActiveUnjail
@@ -150,8 +152,7 @@ func (n *VersionSkewNetwork) StartNode(ctx context.Context, id NodeID) error {
 			n.triggerStartIncompatibilityLocked()
 			node.online = true
 			if n.mode == VersionSkewModeBadEndpointOnStart {
-				node.endpointHonest = false
-				n.currentEndpoints[id] = fmt.Sprintf("https://wrong-%s.oap.version-skew", id)
+				n.poisonEndpointLocked(id)
 			}
 		case ModelValidatorJailed:
 			if n.mode == VersionSkewModeReactivateJailedOnStart {
@@ -202,6 +203,10 @@ func (n *VersionSkewNetwork) RegisterNode(ctx context.Context, node NodeSpec) er
 		modelNode.state = ModelValidatorActive
 		modelNode.online = true
 		modelNode.endpointHonest = !keepCurrentEndpoint
+		if n.mode == VersionSkewModeBadEndpointOnRegister {
+			keepCurrentEndpoint = true
+			n.poisonEndpointLocked(node.ID)
+		}
 	}); err != nil {
 		return err
 	}
@@ -313,6 +318,9 @@ func (n *VersionSkewNetwork) UnjailNode(ctx context.Context, node NodeSpec) erro
 			n.triggerUnjailIncompatibilityLocked()
 			modelNode.state = ModelValidatorActive
 			modelNode.online = true
+			if n.mode == VersionSkewModeBadEndpointOnUnjail {
+				n.poisonEndpointLocked(node.ID)
+			}
 		case ModelValidatorActive:
 			n.triggerActiveUnjailIncompatibilityLocked()
 		case ModelValidatorAbsent:
@@ -324,6 +332,13 @@ func (n *VersionSkewNetwork) UnjailNode(ctx context.Context, node NodeSpec) erro
 			n.triggerAbsentUnjailIncompatibilityLocked()
 		}
 	})
+}
+
+func (n *VersionSkewNetwork) poisonEndpointLocked(id NodeID) {
+	if node := n.nodes[id]; node != nil {
+		node.endpointHonest = false
+	}
+	n.currentEndpoints[id] = fmt.Sprintf("https://wrong-%s.oap.version-skew", id)
 }
 
 func (n *VersionSkewNetwork) Snapshot(ctx context.Context) (Snapshot, error) {
