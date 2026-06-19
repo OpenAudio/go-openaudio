@@ -1,7 +1,9 @@
 package fuzz
 
 import (
+	"context"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -406,6 +408,192 @@ func PowerSkewOutcomeScenario(spec NetworkSpec, controller ValidatorChaosControl
 	return scenario
 }
 
+func PowerBoundaryOutcomeScenario(within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+	quorumOutcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	state := &powerBoundaryState{}
+
+	return Scenario{
+		Name: "power-boundary-outcome-edge-cases",
+		Steps: []Step{
+			{
+				Name:       "initial height advances",
+				Assertions: quorumOutcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+			{
+				Name:       "stop largest observed power partition that preserves quorum",
+				Actions:    []Action{planAndStopPowerBoundary(state)},
+				Assertions: quorumOutcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+			{
+				Name:       "stop next validator across observed power quorum boundary",
+				Actions:    []Action{stopPowerBoundaryBreaker(state)},
+				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+				Timeout:    stepTimeout,
+			},
+			{
+				Name:       "restart boundary validator; chain recovers",
+				Actions:    []Action{restartPowerBoundaryBreaker(state)},
+				Assertions: quorumOutcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+			{
+				Name:       "restart power partition; chain remains live",
+				Actions:    []Action{restartPowerBoundaryPartition(state)},
+				Assertions: quorumOutcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+}
+
+type powerBoundaryState struct {
+	plan powerBoundaryPlan
+}
+
+type powerBoundaryPlan struct {
+	preserve          []NodeID
+	breaker           NodeID
+	totalPower        int64
+	livePowerBefore   int64
+	livePowerAfter    int64
+	livePowerBreakage int64
+}
+
+type validatorPowerSample struct {
+	id    NodeID
+	power int64
+}
+
+func planAndStopPowerBoundary(state *powerBoundaryState) Action {
+	return ActionFunc{
+		Label: "plan and stop power-boundary partition",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			snapshot, err := run.Network.Snapshot(ctx)
+			if err != nil {
+				return err
+			}
+			plan, err := quorumBoundaryPlan(snapshot)
+			if err != nil {
+				return err
+			}
+			state.plan = plan
+			return Parallel("stop power-boundary partition", stopActions(plan.preserve)...).Run(ctx, run)
+		},
+	}
+}
+
+func stopPowerBoundaryBreaker(state *powerBoundaryState) Action {
+	return ActionFunc{
+		Label: "stop power-boundary breaker",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			if state.plan.breaker == "" {
+				return fmt.Errorf("%w: power boundary breaker was not planned", ErrInvalidScenario)
+			}
+			return StopNode(state.plan.breaker).Run(ctx, run)
+		},
+	}
+}
+
+func restartPowerBoundaryBreaker(state *powerBoundaryState) Action {
+	return ActionFunc{
+		Label: "restart power-boundary breaker",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			if state.plan.breaker == "" {
+				return fmt.Errorf("%w: power boundary breaker was not planned", ErrInvalidScenario)
+			}
+			return StartNode(state.plan.breaker).Run(ctx, run)
+		},
+	}
+}
+
+func restartPowerBoundaryPartition(state *powerBoundaryState) Action {
+	return ActionFunc{
+		Label: "restart power-boundary partition",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			return Parallel("restart power-boundary partition", startActions(state.plan.preserve)...).Run(ctx, run)
+		},
+	}
+}
+
+func quorumBoundaryPlan(snapshot Snapshot) (powerBoundaryPlan, error) {
+	totalPower, livePower := snapshot.ValidatorPower()
+	if totalPower <= 0 {
+		return powerBoundaryPlan{}, fmt.Errorf("%w: snapshot has no validator power: %s", ErrInvalidScenario, snapshot.Summary())
+	}
+	if livePower*3 <= totalPower*2 {
+		return powerBoundaryPlan{}, fmt.Errorf("%w: snapshot already lacks validator quorum power=%d/%d: %s", ErrInvalidScenario, livePower, totalPower, snapshot.Summary())
+	}
+
+	live := liveValidatorPowers(snapshot)
+	if len(live) == 0 {
+		return powerBoundaryPlan{}, fmt.Errorf("%w: snapshot has no live validators: %s", ErrInvalidScenario, snapshot.Summary())
+	}
+
+	plan := powerBoundaryPlan{
+		totalPower:      totalPower,
+		livePowerBefore: livePower,
+		livePowerAfter:  livePower,
+	}
+	for _, validator := range live {
+		nextLivePower := plan.livePowerAfter - validator.power
+		if nextLivePower*3 > totalPower*2 {
+			plan.preserve = append(plan.preserve, validator.id)
+			plan.livePowerAfter = nextLivePower
+		}
+	}
+
+	preserved := make(map[NodeID]struct{}, len(plan.preserve))
+	for _, id := range plan.preserve {
+		preserved[id] = struct{}{}
+	}
+	for _, validator := range live {
+		if _, ok := preserved[validator.id]; ok {
+			continue
+		}
+		nextLivePower := plan.livePowerAfter - validator.power
+		if nextLivePower*3 <= totalPower*2 {
+			plan.breaker = validator.id
+			plan.livePowerBreakage = nextLivePower
+			return plan, nil
+		}
+	}
+
+	return powerBoundaryPlan{}, fmt.Errorf("%w: could not find validator that crosses power quorum boundary from power=%d/%d: %s", ErrInvalidScenario, plan.livePowerAfter, totalPower, snapshot.Summary())
+}
+
+func liveValidatorPowers(snapshot Snapshot) []validatorPowerSample {
+	out := make([]validatorPowerSample, 0, len(snapshot.Nodes))
+	for _, node := range snapshot.Nodes {
+		if !node.Live || node.ValidatorPower <= 0 {
+			continue
+		}
+		out = append(out, validatorPowerSample{id: node.ID, power: node.ValidatorPower})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].power == out[j].power {
+			return out[i].id < out[j].id
+		}
+		return out[i].power < out[j].power
+	})
+	return out
+}
+
 func quorumLossCohort(ids []NodeID) []NodeID {
 	if len(ids) == 0 {
 		return nil
@@ -467,6 +655,22 @@ func stopStartActions(ids []NodeID) ([]Action, []Action) {
 		start = append(start, StartNode(id))
 	}
 	return stop, start
+}
+
+func stopActions(ids []NodeID) []Action {
+	actions := make([]Action, 0, len(ids))
+	for _, id := range ids {
+		actions = append(actions, StopNode(id))
+	}
+	return actions
+}
+
+func startActions(ids []NodeID) []Action {
+	actions := make([]Action, 0, len(ids))
+	for _, id := range ids {
+		actions = append(actions, StartNode(id))
+	}
+	return actions
 }
 
 func quorumPreservingCohort(ids []NodeID) []NodeID {

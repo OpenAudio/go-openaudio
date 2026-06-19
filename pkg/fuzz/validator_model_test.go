@@ -109,6 +109,25 @@ func TestValidatorLifecycleModelUsesWeightedPowerForQuorum(t *testing.T) {
 	}
 }
 
+func TestSeededValidatorPowersAreDeterministicAndSkewed(t *testing.T) {
+	first := SeededValidatorPowers(10, 123)
+	second := SeededValidatorPowers(10, 123)
+	if len(first) != 10 || len(second) != 10 {
+		t.Fatalf("expected 10 powers, got %d and %d", len(first), len(second))
+	}
+	for id, power := range first {
+		if second[id] != power {
+			t.Fatalf("power profile was not deterministic for %s: %d != %d", id, power, second[id])
+		}
+		if power <= 0 {
+			t.Fatalf("power for %s = %d, want positive", id, power)
+		}
+	}
+	if first["node1"] <= first["node2"] {
+		t.Fatalf("expected node1 to be deliberately skewed high, got node1=%d node2=%d", first["node1"], first["node2"])
+	}
+}
+
 func TestValidatorLifecycleModelStress300Nodes(t *testing.T) {
 	for seed := int64(1); seed <= 100; seed++ {
 		result, err := RunValidatorLifecycleModel(seed, DefaultModelNodeLimit, 10_000, ValidatorSetBehaviorCurrent)

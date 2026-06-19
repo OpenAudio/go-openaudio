@@ -15,6 +15,7 @@ func FuzzSimulatedChaosProgram(f *testing.F) {
 		network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 			NodeCount:      nodeCount,
 			InitialActive:  nodeCount,
+			NodePowers:     SeededValidatorPowers(nodeCount, int64(programNodeIndex(program, 0))),
 			TickOnSnapshot: true,
 		})
 		if err != nil {

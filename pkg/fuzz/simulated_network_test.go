@@ -302,6 +302,78 @@ func TestSimulatedPowerSkewOutcomeEdgeCasesCatchTickWithoutQuorum(t *testing.T) 
 	}
 }
 
+func TestQuorumBoundaryPlanUsesObservedValidatorPower(t *testing.T) {
+	snapshot := Snapshot{
+		Nodes: []NodeStatus{
+			{ID: "node1", Live: true, ValidatorPower: 40},
+			{ID: "node2", Live: true, ValidatorPower: 15},
+			{ID: "node3", Live: true, ValidatorPower: 15},
+			{ID: "node4", Live: true, ValidatorPower: 15},
+			{ID: "node5", Live: true, ValidatorPower: 15},
+		},
+	}
+	plan, err := quorumBoundaryPlan(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.totalPower != 100 || plan.livePowerBefore != 100 {
+		t.Fatalf("planned from power %d/%d, want 100/100", plan.livePowerBefore, plan.totalPower)
+	}
+	if plan.livePowerAfter != 70 {
+		t.Fatalf("preserving partition leaves power %d, want 70", plan.livePowerAfter)
+	}
+	if plan.livePowerBreakage != 55 {
+		t.Fatalf("boundary break leaves power %d, want 55", plan.livePowerBreakage)
+	}
+	if len(plan.preserve) != 2 {
+		t.Fatalf("preserving partition size = %d, want 2", len(plan.preserve))
+	}
+	if plan.breaker == "" {
+		t.Fatal("expected a boundary breaker")
+	}
+}
+
+func TestSimulatedPowerBoundaryOutcomeEdgeCasesRunWith300Nodes(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      DefaultModelNodeLimit,
+		InitialActive:  DefaultModelNodeLimit,
+		NodePowers:     SeededValidatorPowers(DefaultModelNodeLimit, 501),
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		PowerBoundaryOutcomeScenario(25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("power-boundary outcome edge cases failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestSimulatedPowerBoundaryOutcomeEdgeCasesCatchTickWithoutQuorum(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      5,
+		InitialActive:  5,
+		Behavior:       ValidatorSetBehaviorBuggyTickWithoutQuorum,
+		NodePowers:     SeededValidatorPowers(5, 501),
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		PowerBoundaryOutcomeScenario(25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected power-boundary outcome edge cases to catch tick-without-quorum bug after %d events", len(result.Events))
+	}
+}
+
 func TestSimulatedOutcomeEdgeCasesHandleOneNode(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      1,

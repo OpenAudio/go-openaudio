@@ -140,6 +140,9 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	if err := runSimulatedPowerSkewOutcomeEdgeCases(cfg); err != nil {
 		return err
 	}
+	if err := runSimulatedPowerBoundaryOutcomeEdgeCases(cfg); err != nil {
+		return err
+	}
 	if err := runSimulatedQuorumLossRecovery(cfg); err != nil {
 		return err
 	}
@@ -307,6 +310,32 @@ func runSimulatedPowerSkewOutcomeEdgeCases(cfg simulatedLoopConfig) error {
 	return nil
 }
 
+func runSimulatedPowerBoundaryOutcomeEdgeCases(cfg simulatedLoopConfig) error {
+	nodeCount := clampSimNodeCount(cfg.nodes, 5)
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      nodeCount,
+		InitialActive:  nodeCount,
+		NodePowers:     fuzz.SeededValidatorPowers(nodeCount, cfg.seed+0x5eed),
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 2))
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.PowerBoundaryOutcomeScenario(cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim power-boundary outcome edge cases failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim power-boundary outcome edge cases ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
+	return nil
+}
+
 func runSimulatedQuorumLossRecovery(cfg simulatedLoopConfig) error {
 	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
 		NodeCount:      cfg.nodes,
@@ -338,6 +367,16 @@ func simulatedScenarioTimeout(cfg simulatedLoopConfig, stallWindows int) time.Du
 		timeout = minimumTimeout
 	}
 	return timeout
+}
+
+func clampSimNodeCount(nodes, minimum int) int {
+	if nodes < minimum {
+		return minimum
+	}
+	if nodes > fuzz.DefaultModelNodeLimit {
+		return fuzz.DefaultModelNodeLimit
+	}
+	return nodes
 }
 
 func runModelLoop(baseSeed int64, iterations, nodes, steps int) error {
