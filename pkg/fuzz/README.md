@@ -29,6 +29,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - A duplicate-deregister idempotency scenario that captures post-deregister validator power, then asserts repeating the deregistration does not create a new halt, validator-set change, or live-validator fork.
 - A duplicate-jail idempotency scenario that captures post-jail validator power, then asserts repeating the jail action does not create a new halt, validator-set change, or live-validator fork.
 - An endpoint-lie consensus-isolation scenario that captures validator power, then asserts a bad advertised endpoint does not change consensus power, halt progress, or fork live validators.
+- An endpoint-repair idempotency scenario that asserts repairing an already-honest endpoint, repairing a bad endpoint, and duplicate repair do not alter validator power, halt progress, or fork live validators.
 - A stop/start round-trip scenario that captures initial live validator power, stops a validator, then asserts starting it restores the original live validator outcome.
 - An inactive-start isolation scenario that jails and deregisters a validator, then asserts starting that inactive process does not resurrect validator power, halt progress, or fork live validators.
 - A non-jailed unjail isolation scenario that asserts unjailing an already-active or absent validator does not alter validator power, halt progress, or fork live validators.

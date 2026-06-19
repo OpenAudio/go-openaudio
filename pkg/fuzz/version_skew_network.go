@@ -18,6 +18,10 @@ const (
 	VersionSkewModeForkLegacyOnDuplicateJail
 	VersionSkewModeHaltLegacyOnEndpointLie
 	VersionSkewModeForkLegacyOnEndpointLie
+	VersionSkewModeHaltLegacyOnEndpointRepair
+	VersionSkewModeForkLegacyOnEndpointRepair
+	VersionSkewModeHaltLegacyOnEndpointNoopRepair
+	VersionSkewModeForkLegacyOnEndpointNoopRepair
 	VersionSkewModeHaltLegacyOnRegister
 	VersionSkewModeForkLegacyOnRegister
 	VersionSkewModeHaltLegacyOnActiveRegister
@@ -206,6 +210,13 @@ func (n *VersionSkewNetwork) SetNodeEndpoint(ctx context.Context, node NodeSpec,
 		honest := endpoint == "" || endpoint == original
 		if !honest {
 			n.triggerEndpointLieIncompatibilityLocked()
+			modelNode.endpointHonest = false
+			return
+		}
+		if n.currentEndpoints[node.ID] == original {
+			n.triggerEndpointNoopRepairIncompatibilityLocked()
+		} else {
+			n.triggerEndpointRepairIncompatibilityLocked()
 		}
 		modelNode.endpointHonest = honest
 	}); err != nil {
@@ -355,6 +366,32 @@ func (n *VersionSkewNetwork) triggerEndpointLieIncompatibilityLocked() {
 	case VersionSkewModeForkLegacyOnEndpointLie:
 		n.diverged = true
 	case VersionSkewModeHaltLegacyOnEndpointLie:
+		for id := range n.legacy {
+			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
+				node.online = false
+			}
+		}
+	}
+}
+
+func (n *VersionSkewNetwork) triggerEndpointRepairIncompatibilityLocked() {
+	switch n.mode {
+	case VersionSkewModeForkLegacyOnEndpointRepair:
+		n.diverged = true
+	case VersionSkewModeHaltLegacyOnEndpointRepair:
+		for id := range n.legacy {
+			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
+				node.online = false
+			}
+		}
+	}
+}
+
+func (n *VersionSkewNetwork) triggerEndpointNoopRepairIncompatibilityLocked() {
+	switch n.mode {
+	case VersionSkewModeForkLegacyOnEndpointNoopRepair:
+		n.diverged = true
+	case VersionSkewModeHaltLegacyOnEndpointNoopRepair:
 		for id := range n.legacy {
 			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
 				node.online = false
