@@ -12,6 +12,8 @@ type VersionSkewMode int
 const (
 	VersionSkewModeHaltLegacyOnJailedDeregister VersionSkewMode = iota
 	VersionSkewModeForkLegacyOnJailedDeregister
+	VersionSkewModeHaltLegacyOnDuplicateDeregister
+	VersionSkewModeForkLegacyOnDuplicateDeregister
 )
 
 type VersionSkewNetworkOptions struct {
@@ -138,8 +140,11 @@ func (n *VersionSkewNetwork) RegisterNode(ctx context.Context, node NodeSpec) er
 
 func (n *VersionSkewNetwork) DeregisterNode(ctx context.Context, node NodeSpec) error {
 	return n.withNode(ctx, node.ID, func(modelNode *versionSkewNode) {
-		if modelNode.state == ModelValidatorJailed {
+		switch modelNode.state {
+		case ModelValidatorJailed:
 			n.triggerJailedDeregisterIncompatibilityLocked()
+		case ModelValidatorAbsent:
+			n.triggerDuplicateDeregisterIncompatibilityLocked()
 		}
 		modelNode.state = ModelValidatorAbsent
 		modelNode.online = false
@@ -241,7 +246,20 @@ func (n *VersionSkewNetwork) triggerJailedDeregisterIncompatibilityLocked() {
 	switch n.mode {
 	case VersionSkewModeForkLegacyOnJailedDeregister:
 		n.diverged = true
-	default:
+	case VersionSkewModeHaltLegacyOnJailedDeregister:
+		for id := range n.legacy {
+			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
+				node.online = false
+			}
+		}
+	}
+}
+
+func (n *VersionSkewNetwork) triggerDuplicateDeregisterIncompatibilityLocked() {
+	switch n.mode {
+	case VersionSkewModeForkLegacyOnDuplicateDeregister:
+		n.diverged = true
+	case VersionSkewModeHaltLegacyOnDuplicateDeregister:
 		for id := range n.legacy {
 			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
 				node.online = false
