@@ -18,6 +18,9 @@ const (
 	VersionSkewModeForkLegacyOnEndpointLie
 	VersionSkewModeHaltLegacyOnRegister
 	VersionSkewModeForkLegacyOnRegister
+	VersionSkewModeNoopOnUnjail
+	VersionSkewModeHaltLegacyOnUnjail
+	VersionSkewModeForkLegacyOnUnjail
 )
 
 type VersionSkewNetworkOptions struct {
@@ -193,6 +196,10 @@ func (n *VersionSkewNetwork) JailNode(ctx context.Context, node NodeSpec) error 
 func (n *VersionSkewNetwork) UnjailNode(ctx context.Context, node NodeSpec) error {
 	return n.withNode(ctx, node.ID, func(modelNode *versionSkewNode) {
 		if modelNode.state == ModelValidatorJailed {
+			if n.mode == VersionSkewModeNoopOnUnjail {
+				return
+			}
+			n.triggerUnjailIncompatibilityLocked()
 			modelNode.state = ModelValidatorActive
 			modelNode.online = true
 		}
@@ -297,6 +304,19 @@ func (n *VersionSkewNetwork) triggerRegisterIncompatibilityLocked() {
 	case VersionSkewModeForkLegacyOnRegister:
 		n.diverged = true
 	case VersionSkewModeHaltLegacyOnRegister:
+		for id := range n.legacy {
+			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
+				node.online = false
+			}
+		}
+	}
+}
+
+func (n *VersionSkewNetwork) triggerUnjailIncompatibilityLocked() {
+	switch n.mode {
+	case VersionSkewModeForkLegacyOnUnjail:
+		n.diverged = true
+	case VersionSkewModeHaltLegacyOnUnjail:
 		for id := range n.legacy {
 			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
 				node.online = false
