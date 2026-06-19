@@ -292,6 +292,58 @@ func TestLiveValidatorHeightsConvergeFails(t *testing.T) {
 	}
 }
 
+func TestNoLiveValidatorFork(t *testing.T) {
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name: "scripted",
+		Nodes: []NodeSpec{
+			{ID: "node1", Endpoint: "http://node1"},
+			{ID: "node2", Endpoint: "http://node2"},
+			{ID: "node3", Endpoint: "http://node3"},
+		},
+	}, staticStatusReader{
+		"node1": {Reachable: true, Live: true, Height: 12, BlockHash: "abc", ValidatorPower: 10},
+		"node2": {Reachable: true, Live: true, Height: 12, BlockHash: "abc", ValidatorPower: 10},
+		"node3": {Reachable: true, Live: true, Height: 11, BlockHash: "older", ValidatorPower: 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := NoLiveValidatorFork().Check(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNoLiveValidatorForkFails(t *testing.T) {
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name: "scripted",
+		Nodes: []NodeSpec{
+			{ID: "node1", Endpoint: "http://node1"},
+			{ID: "node2", Endpoint: "http://node2"},
+			{ID: "node3", Endpoint: "http://node3"},
+		},
+	}, staticStatusReader{
+		"node1": {Reachable: true, Live: true, Height: 12, BlockHash: "abc", ValidatorPower: 10},
+		"node2": {Reachable: true, Live: true, Height: 12, BlockHash: "def", ValidatorPower: 10},
+		"node3": {Reachable: true, Live: false, Height: 12, BlockHash: "ghi", ValidatorPower: 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := NoLiveValidatorFork().Check(ctx, run); err == nil {
+		t.Fatal("expected fork assertion to fail")
+	}
+}
+
 func TestNoHeightRegressionFails(t *testing.T) {
 	reader := newScriptedReader(map[NodeID][]int64{
 		"node1": {10, 9},

@@ -158,6 +158,7 @@ func (n *SimulatedNetwork) Snapshot(ctx context.Context) (Snapshot, error) {
 			Live:           consensusLive,
 			Synced:         consensusLive,
 			Height:         n.model.Height,
+			BlockHash:      simulatedBlockHash(n.model.Height),
 			ValidatorPower: validatorPower(node),
 			ObservedAt:     now,
 		})
@@ -188,4 +189,11 @@ func validatorPower(node *ModelNode) int64 {
 		return node.Power
 	}
 	return 0
+}
+
+func simulatedBlockHash(height int64) string {
+	if height <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("simulated-block-%012d", height)
 }

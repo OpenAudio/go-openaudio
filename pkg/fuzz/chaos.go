@@ -89,7 +89,7 @@ func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosControlle
 		scenario.Steps = append(scenario.Steps, Step{
 			Name:       "recover all controllable faults",
 			Actions:    validatorRecoveryActions(actionIDs, controller, opts.IncludeProcessFaults),
-			Assertions: []Assertion{HeightAdvances(1, livenessWithin, pollInterval), LiveValidatorHeightsConverge(0, livenessWithin, pollInterval), NoHeightRegression(pollInterval, pollInterval)},
+			Assertions: []Assertion{HeightAdvances(1, livenessWithin, pollInterval), LiveValidatorHeightsConverge(0, livenessWithin, pollInterval), NoLiveValidatorFork(), NoHeightRegression(pollInterval, pollInterval)},
 			Timeout:    opts.StepTimeout,
 		})
 	}

@@ -246,7 +246,47 @@ func ValidatorOutcomeAssertions(within, pollInterval time.Duration, requireConve
 	if requireConvergence {
 		assertions = append(assertions, LiveValidatorHeightsConverge(0, within, pollInterval))
 	}
+	assertions = append(assertions, NoLiveValidatorFork())
 	return assertions
+}
+
+func NoLiveValidatorFork() Assertion {
+	return AssertionFunc{
+		Label: "no live validator fork",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			snapshot, err := run.Network.Snapshot(ctx)
+			if err != nil {
+				return err
+			}
+			if conflicts := liveValidatorBlockHashConflicts(snapshot); len(conflicts) > 0 {
+				return fmt.Errorf("live validators reported conflicting block hashes: %s", strings.Join(conflicts, "; "))
+			}
+			return nil
+		},
+	}
+}
+
+func liveValidatorBlockHashConflicts(snapshot Snapshot) []string {
+	type blockSeen struct {
+		node NodeID
+		hash string
+	}
+	seen := map[int64]blockSeen{}
+	var conflicts []string
+	for _, node := range snapshot.Nodes {
+		if !node.Reachable || !node.Live || node.ValidatorPower <= 0 || node.Height <= 0 || strings.TrimSpace(node.BlockHash) == "" {
+			continue
+		}
+		previous, ok := seen[node.Height]
+		if !ok {
+			seen[node.Height] = blockSeen{node: node.ID, hash: node.BlockHash}
+			continue
+		}
+		if previous.hash != node.BlockHash {
+			conflicts = append(conflicts, fmt.Sprintf("height=%d %s=%s %s=%s", node.Height, previous.node, previous.hash, node.ID, node.BlockHash))
+		}
+	}
+	return conflicts
 }
 
 func LiveValidatorHeightsConverge(maxSpread int64, within, pollInterval time.Duration) Assertion {

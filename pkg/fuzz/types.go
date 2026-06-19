@@ -178,6 +178,9 @@ func (s Snapshot) Summary() string {
 		state := fmt.Sprintf("unreachable live=%t power=%d", node.Live, node.ValidatorPower)
 		if node.Reachable {
 			state = fmt.Sprintf("h=%d ready=%t live=%t power=%d", node.Height, node.Ready, node.Live, node.ValidatorPower)
+			if node.BlockHash != "" {
+				state = fmt.Sprintf("%s hash=%s", state, node.BlockHash)
+			}
 		}
 		parts = append(parts, fmt.Sprintf("%s(%s)", node.ID, state))
 	}

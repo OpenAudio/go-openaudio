@@ -59,6 +59,7 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 	quorumOutcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 
@@ -189,7 +190,7 @@ func QuorumLossRecoveryScenario(spec NetworkSpec, within, pollInterval time.Dura
 			},
 			{
 				Name:       "height recovers",
-				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval), LiveValidatorHeightsConverge(0, within, pollInterval), NoHeightRegression(regressionWindow, pollInterval)},
+				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval), LiveValidatorHeightsConverge(0, within, pollInterval), NoLiveValidatorFork(), NoHeightRegression(regressionWindow, pollInterval)},
 				Timeout:    stepTimeout,
 			},
 		},
@@ -211,6 +212,7 @@ func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaos
 	quorumOutcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 
@@ -327,6 +329,7 @@ func PowerSkewOutcomeScenario(spec NetworkSpec, controller ValidatorChaosControl
 	quorumOutcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 
@@ -426,6 +429,7 @@ func PowerBoundaryOutcomeScenario(within, pollInterval time.Duration) Scenario {
 	quorumOutcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 	state := &powerBoundaryState{}

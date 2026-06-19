@@ -115,6 +115,36 @@ func TestSimulatedWeightedPowerAffectsConsensusQuorum(t *testing.T) {
 	}
 }
 
+func TestSimulatedSnapshotsIncludeConsistentBlockHash(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      4,
+		InitialActive:  4,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := network.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hash string
+	for _, node := range snapshot.Nodes {
+		if !node.Live {
+			continue
+		}
+		if node.BlockHash == "" {
+			t.Fatalf("live simulated node missing block hash: %+v", node)
+		}
+		if hash == "" {
+			hash = node.BlockHash
+		} else if node.BlockHash != hash {
+			t.Fatalf("simulated live validators disagree on block hash: %s", snapshot.Summary())
+		}
+	}
+}
+
 func TestSimulatedChaosScenarioRunsWith300Nodes(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      DefaultModelNodeLimit,
