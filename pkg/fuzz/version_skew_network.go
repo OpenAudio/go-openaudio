@@ -23,6 +23,11 @@ const (
 	VersionSkewModeNoopOnUnjail
 	VersionSkewModeHaltLegacyOnUnjail
 	VersionSkewModeForkLegacyOnUnjail
+	VersionSkewModeHaltLegacyOnActiveUnjail
+	VersionSkewModeForkLegacyOnActiveUnjail
+	VersionSkewModeReactivateAbsentOnUnjail
+	VersionSkewModeHaltLegacyOnAbsentUnjail
+	VersionSkewModeForkLegacyOnAbsentUnjail
 	VersionSkewModeNoopOnStart
 	VersionSkewModeHaltLegacyOnStart
 	VersionSkewModeForkLegacyOnStart
@@ -226,13 +231,23 @@ func (n *VersionSkewNetwork) JailNode(ctx context.Context, node NodeSpec) error 
 
 func (n *VersionSkewNetwork) UnjailNode(ctx context.Context, node NodeSpec) error {
 	return n.withNode(ctx, node.ID, func(modelNode *versionSkewNode) {
-		if modelNode.state == ModelValidatorJailed {
+		switch modelNode.state {
+		case ModelValidatorJailed:
 			if n.mode == VersionSkewModeNoopOnUnjail {
 				return
 			}
 			n.triggerUnjailIncompatibilityLocked()
 			modelNode.state = ModelValidatorActive
 			modelNode.online = true
+		case ModelValidatorActive:
+			n.triggerActiveUnjailIncompatibilityLocked()
+		case ModelValidatorAbsent:
+			if n.mode == VersionSkewModeReactivateAbsentOnUnjail {
+				modelNode.state = ModelValidatorActive
+				modelNode.online = true
+				return
+			}
+			n.triggerAbsentUnjailIncompatibilityLocked()
 		}
 	})
 }
@@ -361,6 +376,32 @@ func (n *VersionSkewNetwork) triggerUnjailIncompatibilityLocked() {
 	case VersionSkewModeForkLegacyOnUnjail:
 		n.diverged = true
 	case VersionSkewModeHaltLegacyOnUnjail:
+		for id := range n.legacy {
+			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
+				node.online = false
+			}
+		}
+	}
+}
+
+func (n *VersionSkewNetwork) triggerActiveUnjailIncompatibilityLocked() {
+	switch n.mode {
+	case VersionSkewModeForkLegacyOnActiveUnjail:
+		n.diverged = true
+	case VersionSkewModeHaltLegacyOnActiveUnjail:
+		for id := range n.legacy {
+			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
+				node.online = false
+			}
+		}
+	}
+}
+
+func (n *VersionSkewNetwork) triggerAbsentUnjailIncompatibilityLocked() {
+	switch n.mode {
+	case VersionSkewModeForkLegacyOnAbsentUnjail:
+		n.diverged = true
+	case VersionSkewModeHaltLegacyOnAbsentUnjail:
 		for id := range n.legacy {
 			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
 				node.online = false

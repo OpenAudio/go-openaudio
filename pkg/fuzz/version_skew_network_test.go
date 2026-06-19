@@ -490,6 +490,152 @@ func TestInactiveStartIsolationScenarioCatchesLegacyFork(t *testing.T) {
 	}
 }
 
+func TestNonJailedUnjailIsolationScenarioPassesCurrentNetwork(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      4,
+		InitialActive:  4,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		NonJailedUnjailIsolationScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("non-jailed unjail isolation failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestNonJailedUnjailIsolationScenarioCatchesActiveHalt(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1", "node2"},
+		Mode:          VersionSkewModeHaltLegacyOnActiveUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		NonJailedUnjailIsolationScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected active unjail halt to fail non-jailed unjail isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestNonJailedUnjailIsolationScenarioCatchesActiveFork(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeForkLegacyOnActiveUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		NonJailedUnjailIsolationScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected active unjail fork to fail non-jailed unjail isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "live validators reported conflicting block hashes") {
+		t.Fatalf("expected live-validator fork failure, got %v", err)
+	}
+}
+
+func TestNonJailedUnjailIsolationScenarioCatchesAbsentReactivation(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeReactivateAbsentOnUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		NonJailedUnjailIsolationScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected absent reactivation to fail non-jailed unjail isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestNonJailedUnjailIsolationScenarioCatchesAbsentHalt(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1", "node2"},
+		Mode:          VersionSkewModeHaltLegacyOnAbsentUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		NonJailedUnjailIsolationScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected absent unjail halt to fail non-jailed unjail isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestNonJailedUnjailIsolationScenarioCatchesAbsentFork(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeForkLegacyOnAbsentUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		NonJailedUnjailIsolationScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected absent unjail fork to fail non-jailed unjail isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "live validators reported conflicting block hashes") {
+		t.Fatalf("expected live-validator fork failure, got %v", err)
+	}
+}
+
 func TestRegisterRoundTripScenarioPassesCurrentNetwork(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      4,
