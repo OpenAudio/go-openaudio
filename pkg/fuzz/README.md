@@ -17,6 +17,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - A seedable validator-chaos scenario generator that composes stop/restart, register/deregister, jail/unjail, endpoint mutation, and periodic liveness assertions.
 - An in-memory `SimulatedNetwork` that runs the same chaos scenarios through the real runner/controller interfaces at up to 300 nodes without Docker.
 - Outcome edge-case scenarios that leave faults in place and assert the net result: the chain advances when quorum should survive, stalls when quorum is intentionally lost, and recovers after repair.
+- A validator-quorum outcome oracle that inspects the resulting validator power after a chaos action and asserts height advances or stalls accordingly.
 - A quorum-loss recovery scenario that intentionally drops equal-power validator sets below quorum, asserts height stalls, restarts the cohort, and asserts height resumes.
 - An opt-in live liveness test guarded by `OPENAUDIO_FUZZ_RUN=1`.
 
@@ -142,7 +143,7 @@ To exercise the full runner/controller chaos path without Docker or contract cre
 go run ./pkg/fuzz/cmd/fuzzrun -mode sim -nodes 300 -steps 1000 -iterations 100 -seed 1
 ```
 
-`sim` mode first runs outcome edge-case scenarios and quorum-loss recovery once, then runs the seeded chaos loop with a progress assertion after every generated step.
+`sim` mode first runs outcome edge-case scenarios and quorum-loss recovery once, then runs the seeded chaos loop with a validator-quorum outcome assertion after every generated step.
 
 For repeated read-only live liveness checks:
 

@@ -37,13 +37,14 @@ func (r *scriptedReader) GetNodeStatus(_ context.Context, node NodeSpec) (NodeSt
 		call = len(values) - 1
 	}
 	return NodeStatus{
-		ID:         node.ID,
-		Endpoint:   node.Endpoint,
-		Reachable:  true,
-		Ready:      r.ready,
-		Live:       true,
-		Height:     values[call],
-		ObservedAt: time.Now().UTC(),
+		ID:             node.ID,
+		Endpoint:       node.Endpoint,
+		Reachable:      true,
+		Ready:          r.ready,
+		Live:           true,
+		Height:         values[call],
+		ValidatorPower: 10,
+		ObservedAt:     time.Now().UTC(),
 	}, nil
 }
 
@@ -161,6 +162,59 @@ func TestReachableAtLeast(t *testing.T) {
 	}
 	if err := ReachableAtLeast(3, 5*time.Millisecond, time.Millisecond).Check(ctx, run); err == nil {
 		t.Fatal("expected reachable quorum assertion to fail")
+	}
+}
+
+func TestHeightFollowsValidatorQuorumAdvances(t *testing.T) {
+	reader := newScriptedReader(map[NodeID][]int64{
+		"node1": {10, 10, 11},
+		"node2": {10, 11, 12},
+		"node3": {10, 11, 12},
+	})
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name: "scripted",
+		Nodes: []NodeSpec{
+			{ID: "node1", Endpoint: "http://node1"},
+			{ID: "node2", Endpoint: "http://node2"},
+			{ID: "node3", Endpoint: "http://node3"},
+		},
+	}, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := HeightFollowsValidatorQuorum(time.Second, time.Millisecond).Check(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHeightFollowsValidatorQuorumStalls(t *testing.T) {
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name: "scripted",
+		Nodes: []NodeSpec{
+			{ID: "node1", Endpoint: "http://node1"},
+			{ID: "node2", Endpoint: "http://node2"},
+			{ID: "node3", Endpoint: "http://node3"},
+		},
+	}, staticStatusReader{
+		"node1": {Reachable: true, Live: true, Height: 10, ValidatorPower: 10},
+		"node2": {Reachable: true, Live: false, Height: 10, ValidatorPower: 10},
+		"node3": {Reachable: true, Live: false, Height: 10, ValidatorPower: 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := HeightFollowsValidatorQuorum(10*time.Millisecond, time.Millisecond).Check(ctx, run); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -138,6 +138,24 @@ func (s Snapshot) ReadyCount() int {
 	return count
 }
 
+func (s Snapshot) ValidatorPower() (totalPower, livePower int64) {
+	for _, node := range s.Nodes {
+		if node.ValidatorPower <= 0 {
+			continue
+		}
+		totalPower += node.ValidatorPower
+		if node.Live {
+			livePower += node.ValidatorPower
+		}
+	}
+	return totalPower, livePower
+}
+
+func (s Snapshot) HasValidatorQuorum() bool {
+	totalPower, livePower := s.ValidatorPower()
+	return totalPower > 0 && livePower*3 > totalPower*2
+}
+
 func (s Snapshot) Summary() string {
 	const maxSummaryNodes = 20
 
@@ -147,9 +165,9 @@ func (s Snapshot) Summary() string {
 	}
 	parts := make([]string, 0, count+1)
 	for _, node := range s.Nodes[:count] {
-		state := "unreachable"
+		state := fmt.Sprintf("unreachable live=%t power=%d", node.Live, node.ValidatorPower)
 		if node.Reachable {
-			state = fmt.Sprintf("h=%d ready=%t live=%t", node.Height, node.Ready, node.Live)
+			state = fmt.Sprintf("h=%d ready=%t live=%t power=%d", node.Height, node.Ready, node.Live, node.ValidatorPower)
 		}
 		parts = append(parts, fmt.Sprintf("%s(%s)", node.ID, state))
 	}

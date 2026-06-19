@@ -65,13 +65,14 @@ func (r *advancingReader) GetNodeStatus(_ context.Context, node NodeSpec) (NodeS
 
 	r.heights[node.ID]++
 	return NodeStatus{
-		ID:         node.ID,
-		Endpoint:   node.Endpoint,
-		Reachable:  true,
-		Ready:      true,
-		Live:       true,
-		Height:     r.heights[node.ID],
-		ObservedAt: time.Now().UTC(),
+		ID:             node.ID,
+		Endpoint:       node.Endpoint,
+		Reachable:      true,
+		Ready:          true,
+		Live:           true,
+		Height:         r.heights[node.ID],
+		ValidatorPower: 10,
+		ObservedAt:     time.Now().UTC(),
 	}, nil
 }
 

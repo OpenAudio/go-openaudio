@@ -212,6 +212,38 @@ func HeightStalls(observeFor, pollInterval time.Duration) Assertion {
 	}
 }
 
+func HeightFollowsValidatorQuorum(within, pollInterval time.Duration) Assertion {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 2 * pollInterval
+	}
+	return AssertionFunc{
+		Label: "height follows validator quorum",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			snapshot, err := run.Network.Snapshot(ctx)
+			if err != nil {
+				return err
+			}
+			totalPower, livePower := snapshot.ValidatorPower()
+			if totalPower <= 0 {
+				return fmt.Errorf("cannot infer validator quorum with no observed validator power: %s", snapshot.Summary())
+			}
+			if livePower*3 > totalPower*2 {
+				if err := HeightAdvances(1, within, pollInterval).Check(ctx, run); err != nil {
+					return fmt.Errorf("expected height to advance with live validator power %d/%d: %w", livePower, totalPower, err)
+				}
+				return nil
+			}
+			if err := HeightStalls(within, pollInterval).Check(ctx, run); err != nil {
+				return fmt.Errorf("expected height to stall without validator quorum %d/%d: %w", livePower, totalPower, err)
+			}
+			return nil
+		},
+	}
+}
+
 func NoHeightRegression(observeFor, pollInterval time.Duration) Assertion {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval

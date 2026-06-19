@@ -54,8 +54,8 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 	if regressionWindow <= 0 {
 		regressionWindow = 2 * defaultPollInterval
 	}
-	progressAssertions := []Assertion{
-		HeightAdvances(1, within, pollInterval),
+	quorumOutcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 
@@ -65,7 +65,7 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 		Steps: []Step{
 			{
 				Name:       "initial height advances",
-				Assertions: progressAssertions,
+				Assertions: quorumOutcomeAssertions,
 				Timeout:    stepTimeout,
 			},
 		},
@@ -77,39 +77,39 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 	first := ids[0]
 	if minimumQuorumNodes(len(ids)) < len(ids) {
 		scenario.Steps = append(scenario.Steps,
-			outcomeActionStep("stop one node; chain still progresses", stepTimeout, []Action{StopNode(first)}, progressAssertions),
-			outcomeActionStep("restart one node; chain still progresses", stepTimeout, []Action{StartNode(first)}, progressAssertions),
+			outcomeActionStep("stop one node; chain still progresses", stepTimeout, []Action{StopNode(first)}, quorumOutcomeAssertions),
+			outcomeActionStep("restart one node; chain still progresses", stepTimeout, []Action{StartNode(first)}, quorumOutcomeAssertions),
 		)
 	}
 
 	if cohort := quorumPreservingCohort(ids); len(cohort) > 1 {
 		stop, start := stopStartActions(cohort)
 		scenario.Steps = append(scenario.Steps,
-			outcomeActionStep(fmt.Sprintf("stop quorum-preserving cohort %d nodes; chain still progresses", len(cohort)), stepTimeout, stop, progressAssertions),
-			outcomeActionStep(fmt.Sprintf("restart quorum-preserving cohort %d nodes; chain still progresses", len(cohort)), stepTimeout, start, progressAssertions),
+			outcomeActionStep(fmt.Sprintf("stop quorum-preserving cohort %d nodes; chain still progresses", len(cohort)), stepTimeout, stop, quorumOutcomeAssertions),
+			outcomeActionStep(fmt.Sprintf("restart quorum-preserving cohort %d nodes; chain still progresses", len(cohort)), stepTimeout, start, quorumOutcomeAssertions),
 		)
 	}
 
 	if controller.EndpointMutator != nil && len(ids) > 1 {
 		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", first)
 		scenario.Steps = append(scenario.Steps,
-			outcomeActionStep("advertise bad endpoint; chain still progresses", stepTimeout, []Action{AdvertiseEndpointWith(controller.EndpointMutator, first, badEndpoint)}, progressAssertions),
-			outcomeActionStep("repair endpoint; chain still progresses", stepTimeout, []Action{AdvertiseEndpointWith(controller.EndpointMutator, first, "")}, progressAssertions),
+			outcomeActionStep("advertise bad endpoint; chain still progresses", stepTimeout, []Action{AdvertiseEndpointWith(controller.EndpointMutator, first, badEndpoint)}, quorumOutcomeAssertions),
+			outcomeActionStep("repair endpoint; chain still progresses", stepTimeout, []Action{AdvertiseEndpointWith(controller.EndpointMutator, first, "")}, quorumOutcomeAssertions),
 		)
 	}
 
 	if controller.Jailer != nil && len(ids) > 1 {
 		scenario.Steps = append(scenario.Steps,
-			outcomeActionStep("jail one validator; chain still progresses", stepTimeout, []Action{JailNodeWith(controller.Jailer, first)}, progressAssertions),
-			outcomeActionStep("unjail one validator; chain still progresses", stepTimeout, []Action{UnjailNodeWith(controller.Jailer, first)}, progressAssertions),
+			outcomeActionStep("jail one validator; chain still progresses", stepTimeout, []Action{JailNodeWith(controller.Jailer, first)}, quorumOutcomeAssertions),
+			outcomeActionStep("unjail one validator; chain still progresses", stepTimeout, []Action{UnjailNodeWith(controller.Jailer, first)}, quorumOutcomeAssertions),
 		)
 	}
 
 	if controller.Registrar != nil && len(ids) > 1 {
 		scenario.Steps = append(scenario.Steps,
-			outcomeActionStep("deregister one validator; chain still progresses", stepTimeout, []Action{DeregisterNodeWith(controller.Registrar, first)}, progressAssertions),
-			outcomeActionStep("duplicate deregister; chain still progresses", stepTimeout, []Action{DeregisterNodeWith(controller.Registrar, first)}, progressAssertions),
-			outcomeActionStep("register one validator; chain still progresses", stepTimeout, []Action{RegisterNodeWith(controller.Registrar, first)}, progressAssertions),
+			outcomeActionStep("deregister one validator; chain still progresses", stepTimeout, []Action{DeregisterNodeWith(controller.Registrar, first)}, quorumOutcomeAssertions),
+			outcomeActionStep("duplicate deregister; chain still progresses", stepTimeout, []Action{DeregisterNodeWith(controller.Registrar, first)}, quorumOutcomeAssertions),
+			outcomeActionStep("register one validator; chain still progresses", stepTimeout, []Action{RegisterNodeWith(controller.Registrar, first)}, quorumOutcomeAssertions),
 		)
 	}
 
@@ -119,8 +119,8 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 			outcomeActionStep("jail then deregister validator; chain still progresses", stepTimeout, []Action{
 				JailNodeWith(controller.Jailer, last),
 				DeregisterNodeWith(controller.Registrar, last),
-			}, progressAssertions),
-			outcomeActionStep("register jailed-then-deregistered validator; chain still progresses", stepTimeout, []Action{RegisterNodeWith(controller.Registrar, last)}, progressAssertions),
+			}, quorumOutcomeAssertions),
+			outcomeActionStep("register jailed-then-deregistered validator; chain still progresses", stepTimeout, []Action{RegisterNodeWith(controller.Registrar, last)}, quorumOutcomeAssertions),
 		)
 	}
 
@@ -130,10 +130,10 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 			Step{
 				Name:       fmt.Sprintf("stop quorum-loss cohort %d nodes; chain stalls", len(loss)),
 				Actions:    []Action{Parallel("stop quorum-loss cohort", stop...)},
-				Assertions: []Assertion{HeightStalls(within, pollInterval)},
+				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
 				Timeout:    stepTimeout,
 			},
-			outcomeActionStep(fmt.Sprintf("restart quorum-loss cohort %d nodes; chain recovers", len(loss)), stepTimeout, start, progressAssertions),
+			outcomeActionStep(fmt.Sprintf("restart quorum-loss cohort %d nodes; chain recovers", len(loss)), stepTimeout, start, quorumOutcomeAssertions),
 		)
 	}
 
@@ -166,7 +166,7 @@ func QuorumLossRecoveryScenario(spec NetworkSpec, within, pollInterval time.Dura
 		Steps: []Step{
 			{
 				Name:       "initial height advances",
-				Assertions: []Assertion{HeightAdvances(1, within, pollInterval)},
+				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
 				Timeout:    stepTimeout,
 			},
 			{
@@ -176,7 +176,7 @@ func QuorumLossRecoveryScenario(spec NetworkSpec, within, pollInterval time.Dura
 			},
 			{
 				Name:       "height stalls without quorum",
-				Assertions: []Assertion{HeightStalls(within, pollInterval)},
+				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
 				Timeout:    stepTimeout,
 			},
 			{
@@ -186,7 +186,7 @@ func QuorumLossRecoveryScenario(spec NetworkSpec, within, pollInterval time.Dura
 			},
 			{
 				Name:       "height recovers",
-				Assertions: []Assertion{HeightAdvances(1, within, pollInterval), NoHeightRegression(regressionWindow, pollInterval)},
+				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval), NoHeightRegression(regressionWindow, pollInterval)},
 				Timeout:    stepTimeout,
 			},
 		},

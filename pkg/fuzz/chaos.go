@@ -73,7 +73,7 @@ func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosControlle
 			step.Actions = append(step.Actions, randomChaosAction(rng, controller, opts, id, actionIDs))
 		}
 		if opts.AssertAfterEachStep || (i+1)%livenessEvery == 0 {
-			step.Assertions = append(step.Assertions, HeightAdvances(1, livenessWithin, pollInterval))
+			step.Assertions = append(step.Assertions, HeightFollowsValidatorQuorum(livenessWithin, pollInterval))
 		}
 		if (i+1)%livenessEvery == 0 {
 			step.Assertions = append(step.Assertions, NoHeightRegression(pollInterval, pollInterval))
@@ -81,7 +81,7 @@ func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosControlle
 		scenario.Steps = append(scenario.Steps, step)
 	}
 
-	scenario.Steps = append(scenario.Steps, AssertionStep("final liveness", HeightAdvances(1, livenessWithin, pollInterval)))
+	scenario.Steps = append(scenario.Steps, AssertionStep("final quorum outcome", HeightFollowsValidatorQuorum(livenessWithin, pollInterval)))
 	return scenario
 }
 

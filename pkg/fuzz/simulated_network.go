@@ -146,14 +146,15 @@ func (n *SimulatedNetwork) Snapshot(ctx context.Context) (Snapshot, error) {
 		if node == nil {
 			return Snapshot{}, fmt.Errorf("%w: %s", ErrNodeNotFound, spec.ID)
 		}
-		reachable := node.State == ModelValidatorActive && node.Online && node.EndpointHonest
+		consensusLive := node.State == ModelValidatorActive && node.Online
+		reachable := consensusLive && node.EndpointHonest
 		statuses = append(statuses, NodeStatus{
 			ID:             spec.ID,
 			Endpoint:       n.currentEndpoints[spec.ID],
 			Reachable:      reachable,
 			Ready:          reachable,
-			Live:           reachable,
-			Synced:         reachable,
+			Live:           consensusLive,
+			Synced:         consensusLive,
 			Height:         n.model.Height,
 			ValidatorPower: validatorPower(node),
 			ObservedAt:     now,

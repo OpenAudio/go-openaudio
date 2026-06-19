@@ -45,6 +45,39 @@ func TestSimulatedNetworkLifecycleAffectsSnapshots(t *testing.T) {
 	}
 }
 
+func TestSimulatedEndpointLiePreservesConsensusLiveness(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      3,
+		InitialActive:  3,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	node, _ := network.Spec().Node("node1")
+	if err := network.SetNodeEndpoint(context.Background(), node, "https://wrong-node1.oap.invalid"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := network.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, ok := snapshot.ByNode("node1")
+	if !ok {
+		t.Fatal("node1 missing from snapshot")
+	}
+	if status.Reachable {
+		t.Fatalf("node1 should not be reachable through a bad advertised endpoint: %+v", status)
+	}
+	if !status.Live || status.ValidatorPower == 0 {
+		t.Fatalf("bad endpoint should not remove consensus liveness or validator power: %+v", status)
+	}
+	if !snapshot.HasValidatorQuorum() {
+		t.Fatalf("bad endpoint should not break consensus quorum: %s", snapshot.Summary())
+	}
+}
+
 func TestSimulatedChaosScenarioRunsWith300Nodes(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      DefaultModelNodeLimit,
