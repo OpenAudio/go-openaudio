@@ -315,6 +315,65 @@ func DuplicateDeregisterIdempotencyScenario(spec NetworkSpec, controller Validat
 	return scenario
 }
 
+func DuplicateJailIdempotencyScenario(spec NetworkSpec, controller ValidatorChaosController, target NodeID, within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+
+	ids := spec.NodeIDs()
+	if target == "" && len(ids) > 0 {
+		target = ids[len(ids)-1]
+	}
+	postJailBaseline := &ValidatorPowerBaseline{}
+	outcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	idempotencyAssertions := []Assertion{
+		ValidatorPowerRestored(postJailBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+
+	scenario := Scenario{
+		Name: "duplicate-jail-idempotency",
+		Steps: []Step{
+			{
+				Name:       "initial validator outcome",
+				Assertions: outcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+	if len(ids) == 0 || target == "" || controller.Jailer == nil {
+		return scenario
+	}
+
+	scenario.Steps = append(scenario.Steps,
+		outcomeActionStep("jail validator; chain follows updated set", stepTimeout, []Action{JailNodeWith(controller.Jailer, target)}, outcomeAssertions),
+		ActionStep("capture post-jail validator power baseline", CaptureValidatorPowerBaseline(postJailBaseline)),
+		Step{
+			Name:       "duplicate jail; chain keeps same validator outcome",
+			Actions:    []Action{JailNodeWith(controller.Jailer, target)},
+			Assertions: idempotencyAssertions,
+			Timeout:    stepTimeout,
+		},
+	)
+	return scenario
+}
+
 func EndpointLieConsensusIsolationScenario(spec NetworkSpec, controller ValidatorChaosController, target NodeID, within, pollInterval time.Duration) Scenario {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval
@@ -374,6 +433,65 @@ func EndpointLieConsensusIsolationScenario(spec NetworkSpec, controller Validato
 			Name:       "repair endpoint; consensus outcome remains unchanged",
 			Actions:    []Action{AdvertiseEndpointWith(controller.EndpointMutator, target, "")},
 			Assertions: isolationAssertions,
+			Timeout:    stepTimeout,
+		},
+	)
+	return scenario
+}
+
+func StopStartRoundTripScenario(spec NetworkSpec, target NodeID, within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+
+	ids := spec.NodeIDs()
+	if target == "" && len(ids) > 0 {
+		target = ids[len(ids)-1]
+	}
+	initialBaseline := &ValidatorPowerBaseline{}
+	outcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	restoreAssertions := []Assertion{
+		ValidatorPowerRestored(initialBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+
+	scenario := Scenario{
+		Name: "stop-start-round-trip",
+		Steps: []Step{
+			{
+				Name:       "initial validator outcome",
+				Assertions: outcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+	if len(ids) == 0 || target == "" {
+		return scenario
+	}
+
+	scenario.Steps = append(scenario.Steps,
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialBaseline)),
+		outcomeActionStep("stop validator; chain follows live validator power", stepTimeout, []Action{StopNode(target)}, outcomeAssertions),
+		Step{
+			Name:       "start validator; chain restores original live validator outcome",
+			Actions:    []Action{StartNode(target)},
+			Assertions: restoreAssertions,
 			Timeout:    stepTimeout,
 		},
 	)

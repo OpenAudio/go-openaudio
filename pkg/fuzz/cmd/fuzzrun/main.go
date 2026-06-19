@@ -152,7 +152,13 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	if err := runSimulatedDuplicateDeregisterIdempotency(cfg); err != nil {
 		return err
 	}
+	if err := runSimulatedDuplicateJailIdempotency(cfg); err != nil {
+		return err
+	}
 	if err := runSimulatedEndpointLieConsensusIsolation(cfg); err != nil {
+		return err
+	}
+	if err := runSimulatedStopStartRoundTrip(cfg); err != nil {
 		return err
 	}
 	if err := runSimulatedRegisterRoundTrip(cfg); err != nil {
@@ -432,6 +438,33 @@ func runSimulatedDuplicateDeregisterIdempotency(cfg simulatedLoopConfig) error {
 	return nil
 }
 
+func runSimulatedDuplicateJailIdempotency(cfg simulatedLoopConfig) error {
+	nodeCount := clampSimNodeCount(cfg.nodes, 4)
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      nodeCount,
+		InitialActive:  nodeCount,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 1))
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.DuplicateJailIdempotencyScenario(network.Spec(), fuzz.ValidatorChaosController{
+		Jailer: network,
+	}, "", cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim duplicate-jail idempotency failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim duplicate-jail idempotency ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
+	return nil
+}
+
 func runSimulatedEndpointLieConsensusIsolation(cfg simulatedLoopConfig) error {
 	nodeCount := clampSimNodeCount(cfg.nodes, 4)
 	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
@@ -456,6 +489,31 @@ func runSimulatedEndpointLieConsensusIsolation(cfg simulatedLoopConfig) error {
 		return fmt.Errorf("sim endpoint-lie consensus isolation failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
 	}
 	fmt.Printf("sim endpoint-lie consensus isolation ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
+	return nil
+}
+
+func runSimulatedStopStartRoundTrip(cfg simulatedLoopConfig) error {
+	nodeCount := clampSimNodeCount(cfg.nodes, 4)
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      nodeCount,
+		InitialActive:  nodeCount,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 1))
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.StopStartRoundTripScenario(network.Spec(), "", cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim stop-start round-trip failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim stop-start round-trip ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
 	return nil
 }
 
