@@ -33,6 +33,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - An inactive-start isolation scenario that jails and deregisters a validator, then asserts starting that inactive process does not resurrect validator power, halt progress, or fork live validators.
 - A non-jailed unjail isolation scenario that asserts unjailing an already-active or absent validator does not alter validator power, halt progress, or fork live validators.
 - A register round-trip scenario that captures initial validator power, deregisters a validator, then asserts registering it restores the original validator set and consensus outcome.
+- A register idempotency scenario that asserts registering an already-active validator, and registering again after restore, does not alter validator power, halt progress, or fork live validators.
 - An unjail round-trip scenario that captures initial validator power, jails a validator, then asserts unjailing it restores the original validator set and consensus outcome.
 - Seeded skewed validator-power profiles for simulated fuzzing so generated programs exercise power quorum, not only node-count quorum.
 - A quorum-loss recovery scenario that intentionally drops equal-power validator sets below quorum, asserts height stalls, restarts the cohort, and asserts height resumes.
