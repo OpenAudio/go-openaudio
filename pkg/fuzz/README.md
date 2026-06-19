@@ -24,7 +24,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - Live-validator height convergence assertions, so one progressing validator cannot mask other reachable live validators being stuck behind.
 - Live-validator block-hash agreement checks, so same-height forks cannot hide behind successful height progression.
 - Persistent-fault simulated chaos that can accumulate stops, deregistrations, jails, and endpoint lies across many generated steps instead of always repairing inside the same action.
-- Opt-in recovery sweeps for generated simulated chaos that repair all controllable faults, then assert the chain advances again.
+- Opt-in recovery sweeps for generated simulated chaos that repair all controllable faults, then assert the chain advances again and validator power returns to its pre-chaos baseline.
 - Seeded skewed validator-power profiles for simulated fuzzing so generated programs exercise power quorum, not only node-count quorum.
 - A quorum-loss recovery scenario that intentionally drops equal-power validator sets below quorum, asserts height stalls, restarts the cohort, and asserts height resumes.
 - An opt-in live liveness test guarded by `OPENAUDIO_FUZZ_RUN=1`.

@@ -50,6 +50,11 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 			AssertionStep("initial liveness", HeightAdvances(1, livenessWithin, pollInterval)),
 		},
 	}
+	var recoveryBaseline *ValidatorPowerBaseline
+	if opts.RecoverAtEnd {
+		recoveryBaseline = &ValidatorPowerBaseline{}
+		scenario.Steps = append(scenario.Steps, ActionStep("capture validator power baseline", CaptureValidatorPowerBaseline(recoveryBaseline)))
+	}
 	for i := 0; i < maxSteps; i++ {
 		step := Step{
 			Name:    fmt.Sprintf("program chaos %04d", i+1),
@@ -68,7 +73,7 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 		scenario.Steps = append(scenario.Steps, Step{
 			Name:       "recover all controllable faults",
 			Actions:    validatorRecoveryActions(ids, controller, true),
-			Assertions: []Assertion{HeightAdvances(1, livenessWithin, pollInterval), LiveValidatorHeightsConverge(0, livenessWithin, pollInterval), NoLiveValidatorFork(), NoHeightRegression(pollInterval, pollInterval)},
+			Assertions: []Assertion{HeightAdvances(1, livenessWithin, pollInterval), ValidatorPowerRestored(recoveryBaseline, livenessWithin, pollInterval), LiveValidatorHeightsConverge(0, livenessWithin, pollInterval), NoLiveValidatorFork(), NoHeightRegression(pollInterval, pollInterval)},
 		})
 	}
 	return scenario

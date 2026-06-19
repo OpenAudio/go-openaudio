@@ -2,6 +2,7 @@ package fuzz
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -488,6 +489,43 @@ func TestSimulatedProgramRecoveryCatchesBrokenRegistrationRecovery(t *testing.T)
 	)
 	if err == nil {
 		t.Fatalf("expected recovery to catch broken registration after %d events", len(result.Events))
+	}
+}
+
+func TestSimulatedProgramRecoveryCatchesPartialValidatorSetRestore(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      4,
+		InitialActive:  4,
+		Behavior:       ValidatorSetBehaviorBuggyRegisterNoop,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	program := []byte{1, 0, 0, 2}
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		SimulatedChaosScenarioFromProgram(network.Spec(), ValidatorChaosController{
+			Registrar:       network,
+			EndpointMutator: network,
+			Jailer:          network,
+		}, program, SimulatedProgramOptions{
+			MaxSteps:                1,
+			LivenessEvery:           1,
+			LivenessWithin:          25 * time.Millisecond,
+			PollInterval:            time.Millisecond,
+			AssertAfterEachStep:     true,
+			AssertConvergence:       true,
+			IncludePersistentFaults: true,
+			RecoverAtEnd:            true,
+		}),
+	)
+	if err == nil {
+		t.Fatalf("expected recovery to catch partial validator-set restore after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator-power baseline failure, got %v", err)
 	}
 }
 

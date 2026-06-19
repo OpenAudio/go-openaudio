@@ -30,6 +30,9 @@ const (
 	// ValidatorSetBehaviorBuggyRegisterWithoutCometUpdate models app state
 	// becoming active while the Comet validator set is not updated.
 	ValidatorSetBehaviorBuggyRegisterWithoutCometUpdate
+	// ValidatorSetBehaviorBuggyRegisterNoop models recovery code that accepts a
+	// register action but leaves a removed validator out of the validator set.
+	ValidatorSetBehaviorBuggyRegisterNoop
 	// ValidatorSetBehaviorBuggyStartAbsentOnline models lifecycle code marking
 	// an absent or jailed validator online.
 	ValidatorSetBehaviorBuggyStartAbsentOnline
@@ -220,6 +223,10 @@ func (m *ValidatorLifecycleModel) Apply(step int, action ModelAction) error {
 
 	switch action.Kind {
 	case ModelRegister:
+		if m.Behavior == ValidatorSetBehaviorBuggyRegisterNoop {
+			event.EmittedUpdate = false
+			break
+		}
 		node.State = ModelValidatorActive
 		node.Online = true
 		node.EndpointHonest = true
@@ -302,6 +309,7 @@ func (m *ValidatorLifecycleModel) deregister(node *ModelNode, event *ModelEvent)
 	case ValidatorSetBehaviorBuggyAnyDeregistrationUpdate:
 		emitUpdate = true
 	case ValidatorSetBehaviorBuggyRegisterWithoutCometUpdate,
+		ValidatorSetBehaviorBuggyRegisterNoop,
 		ValidatorSetBehaviorBuggyStartAbsentOnline,
 		ValidatorSetBehaviorBuggyTickWithoutQuorum,
 		ValidatorSetBehaviorBuggyStallWithQuorum:
