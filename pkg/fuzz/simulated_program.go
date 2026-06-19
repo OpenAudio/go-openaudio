@@ -65,7 +65,7 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 	for i := 0; i < maxSteps; i++ {
 		step := Step{
 			Name:    fmt.Sprintf("program chaos %04d", i+1),
-			Actions: []Action{programAction(program, i, ids, controller, opts.IncludePersistentFaults)},
+			Actions: []Action{programAction(program, i, ids, controller, opts.IncludePersistentFaults, livenessWithin, pollInterval)},
 		}
 		if shouldAssertGeneratedChaosStep(i, livenessEvery, assertAfterEachStep) {
 			step.Assertions = append(step.Assertions, ValidatorOutcomeAssertions(livenessWithin, pollInterval, assertConvergence)...)
@@ -83,7 +83,7 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 	return scenario
 }
 
-func programAction(program []byte, offset int, ids []NodeID, controller ValidatorChaosController, includePersistentFaults bool) Action {
+func programAction(program []byte, offset int, ids []NodeID, controller ValidatorChaosController, includePersistentFaults bool, livenessWithin, pollInterval time.Duration) Action {
 	if len(ids) == 0 {
 		return Wait(0)
 	}
@@ -95,9 +95,9 @@ func programAction(program []byte, offset int, ids []NodeID, controller Validato
 	}
 	switch program[offset] % 11 {
 	case 0:
-		return Sequence(fmt.Sprintf("program bounce %s", id), StopNode(id), StartNode(id))
+		return generatedProcessOutageAction(fmt.Sprintf("program bounce %s", id), []NodeID{id}, 0, livenessWithin, pollInterval)
 	case 1:
-		return RestartNode(id)
+		return generatedProcessOutageAction(fmt.Sprintf("program restart %s", id), []NodeID{id}, 0, livenessWithin, pollInterval)
 	case 2:
 		return Sequence(fmt.Sprintf("program deregister/register %s", id), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id))
 	case 3:
@@ -118,7 +118,7 @@ func programAction(program []byte, offset int, ids []NodeID, controller Validato
 		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", id)
 		return Sequence(fmt.Sprintf("program jail/lie/repair/unjail %s", id), JailNodeWith(controller.Jailer, id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), AdvertiseEndpointWith(controller.EndpointMutator, id, ""), UnjailNodeWith(controller.Jailer, id))
 	default:
-		return programMinorityOutage(program, offset, ids)
+		return programMinorityOutage(program, offset, ids, livenessWithin, pollInterval)
 	}
 }
 
@@ -172,23 +172,21 @@ func persistentProgramAction(program []byte, offset int, id NodeID, controller V
 	}
 }
 
-func programMinorityOutage(program []byte, offset int, ids []NodeID) Action {
+func programMinorityOutage(program []byte, offset int, ids []NodeID, livenessWithin, pollInterval time.Duration) Action {
 	limit := len(ids) / 3
 	if limit <= 0 {
 		limit = 1
 	}
 	size := 1 + int(program[(offset+2)%len(program)])%limit
-	stop := make([]Action, 0, size)
-	start := make([]Action, 0, size)
+	cohort := make([]NodeID, 0, size)
 	seen := map[NodeID]struct{}{}
-	for i := 0; len(stop) < size && i < len(ids)*2; i++ {
+	for i := 0; len(cohort) < size && i < len(ids)*2; i++ {
 		id := ids[(programNodeIndex(program, offset+i)+i)%len(ids)]
 		if _, ok := seen[id]; ok {
 			continue
 		}
 		seen[id] = struct{}{}
-		stop = append(stop, StopNode(id))
-		start = append(start, StartNode(id))
+		cohort = append(cohort, id)
 	}
-	return Sequence(fmt.Sprintf("program minority outage %d nodes", len(stop)), Parallel("program stop minority", stop...), Parallel("program start minority", start...))
+	return generatedProcessOutageAction(fmt.Sprintf("program minority outage %d nodes", len(cohort)), cohort, 0, livenessWithin, pollInterval)
 }

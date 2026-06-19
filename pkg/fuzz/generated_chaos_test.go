@@ -62,6 +62,25 @@ func TestSimulatedChaosProgramDefaultsCatchOutcomeBeforeLaterRepair(t *testing.T
 	}
 }
 
+func TestSimulatedChaosProgramCatchesNoopGeneratedBounce(t *testing.T) {
+	network := newTransientGeneratedOutcomeNetwork(4)
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		SimulatedChaosScenarioFromProgram(network.Spec(), ValidatorChaosController{}, []byte{0}, SimulatedProgramOptions{
+			MaxSteps:       1,
+			LivenessWithin: 25 * time.Millisecond,
+			PollInterval:   time.Millisecond,
+		}),
+	)
+	if err == nil {
+		t.Fatalf("expected generated bounce to catch no-op stop after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "nodes did not become unavailable") {
+		t.Fatalf("expected node unavailable failure, got %v", err)
+	}
+}
+
 func TestOutcomeEdgeCaseScenarioCatchesNoopStop(t *testing.T) {
 	network := newTransientGeneratedOutcomeNetwork(4)
 

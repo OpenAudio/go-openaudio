@@ -1,6 +1,7 @@
 package fuzz
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"time"
@@ -85,7 +86,7 @@ func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosControlle
 		}
 		if len(actionIDs) > 0 {
 			id := actionIDs[rng.Intn(len(actionIDs))]
-			step.Actions = append(step.Actions, randomChaosAction(rng, controller, opts, id, actionIDs))
+			step.Actions = append(step.Actions, randomChaosAction(rng, controller, opts, id, actionIDs, livenessWithin, pollInterval))
 		}
 		if shouldAssertGeneratedChaosStep(i, livenessEvery, assertAfterEachStep) {
 			step.Assertions = append(step.Assertions, ValidatorOutcomeAssertions(livenessWithin, pollInterval, assertConvergence)...)
@@ -121,32 +122,24 @@ func shouldAssertGeneratedChaosStep(stepIndex int, livenessEvery int, assertAfte
 	return assertAfterEachStep || livenessEvery > 0 && (stepIndex+1)%livenessEvery == 0
 }
 
-func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts ValidatorChaosOptions, id NodeID, actionIDs []NodeID) Action {
+func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts ValidatorChaosOptions, id NodeID, actionIDs []NodeID, livenessWithin, pollInterval time.Duration) Action {
 	var actions []Action
 	if opts.IncludeProcessFaults {
-		bounceActions := []Action{StopNode(id)}
+		bounceWait := time.Duration(0)
 		if !opts.NoProcessFaultDelay {
-			bounceActions = append(bounceActions, Wait(time.Duration(50+rng.Intn(250))*time.Millisecond))
+			bounceWait = time.Duration(50+rng.Intn(250)) * time.Millisecond
 		}
-		bounceActions = append(bounceActions, StartNode(id))
 		actions = append(actions,
-			Sequence(fmt.Sprintf("bounce %s", id), bounceActions...),
-			RestartNode(id),
+			generatedProcessOutageAction(fmt.Sprintf("bounce %s", id), []NodeID{id}, bounceWait, livenessWithin, pollInterval),
+			generatedProcessOutageAction(fmt.Sprintf("restart %s", id), []NodeID{id}, 0, livenessWithin, pollInterval),
 		)
 		if len(actionIDs) >= 4 {
 			cohort := randomMinorityCohort(rng, actionIDs)
-			stop := make([]Action, 0, len(cohort))
-			start := make([]Action, 0, len(cohort))
-			for _, cohortID := range cohort {
-				stop = append(stop, StopNode(cohortID))
-				start = append(start, StartNode(cohortID))
-			}
-			partitionActions := []Action{Parallel("stop minority cohort", stop...)}
+			cohortWait := time.Duration(0)
 			if !opts.NoProcessFaultDelay {
-				partitionActions = append(partitionActions, Wait(time.Duration(100+rng.Intn(400))*time.Millisecond))
+				cohortWait = time.Duration(100+rng.Intn(400)) * time.Millisecond
 			}
-			partitionActions = append(partitionActions, Parallel("start minority cohort", start...))
-			actions = append(actions, Sequence(fmt.Sprintf("minority outage %d nodes", len(cohort)), partitionActions...))
+			actions = append(actions, generatedProcessOutageAction(fmt.Sprintf("minority outage %d nodes", len(cohort)), cohort, cohortWait, livenessWithin, pollInterval))
 		}
 		if opts.IncludePersistentFaults {
 			actions = append(actions,
@@ -210,6 +203,72 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 		return Wait(time.Duration(10+rng.Intn(50)) * time.Millisecond)
 	}
 	return actions[rng.Intn(len(actions))]
+}
+
+func generatedProcessOutageAction(name string, ids []NodeID, wait, within, pollInterval time.Duration) Action {
+	ids = normalizedNodeIDs(ids)
+	return ActionFunc{
+		Label: name,
+		Fn: func(ctx context.Context, run *RunContext) error {
+			targetIDs, err := availableNodeIDs(ctx, run, ids)
+			if err != nil {
+				return err
+			}
+			if err := Parallel(name+" stop", stopActions(ids)...).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(targetIDs) > 0 {
+				if err := checkGeneratedAssertion(ctx, run, NodesUnavailable(targetIDs, within, pollInterval)); err != nil {
+					return err
+				}
+			}
+			if wait > 0 {
+				if err := Wait(wait).Run(ctx, run); err != nil {
+					return err
+				}
+			}
+			if err := Parallel(name+" start", startActions(ids)...).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(targetIDs) > 0 {
+				if err := checkGeneratedAssertion(ctx, run, NodesAvailable(targetIDs, within, pollInterval)); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+}
+
+func availableNodeIDs(ctx context.Context, run *RunContext, ids []NodeID) ([]NodeID, error) {
+	snapshot, err := run.Network.Snapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	available := make([]NodeID, 0, len(ids))
+	for _, id := range normalizedNodeIDs(ids) {
+		node, ok := snapshot.ByNode(id)
+		if !ok {
+			continue
+		}
+		if node.Reachable && node.Ready && node.Live {
+			available = append(available, id)
+		}
+	}
+	return available, nil
+}
+
+func checkGeneratedAssertion(ctx context.Context, run *RunContext, assertion Assertion) error {
+	if assertion == nil {
+		return nil
+	}
+	run.record("assertion_start", assertion.Name(), "")
+	if err := assertion.Check(ctx, run); err != nil {
+		run.record("assertion_fail", assertion.Name(), err.Error())
+		return fmt.Errorf("%s: %w", assertion.Name(), err)
+	}
+	run.record("assertion_pass", assertion.Name(), "")
+	return nil
 }
 
 func randomMinorityCohort(rng *rand.Rand, ids []NodeID) []NodeID {

@@ -12,6 +12,7 @@ type recordingNetwork struct {
 	mu       sync.Mutex
 	spec     NetworkSpec
 	reader   StatusReader
+	online   map[NodeID]bool
 	started  []NodeID
 	stopped  []NodeID
 	restarts []NodeID
@@ -22,6 +23,7 @@ func (n *recordingNetwork) Spec() NetworkSpec { return n.spec }
 func (n *recordingNetwork) StartNode(_ context.Context, id NodeID) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.setOnlineLocked(id, true)
 	n.started = append(n.started, id)
 	return nil
 }
@@ -29,6 +31,7 @@ func (n *recordingNetwork) StartNode(_ context.Context, id NodeID) error {
 func (n *recordingNetwork) StopNode(_ context.Context, id NodeID) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.setOnlineLocked(id, false)
 	n.stopped = append(n.stopped, id)
 	return nil
 }
@@ -36,15 +39,42 @@ func (n *recordingNetwork) StopNode(_ context.Context, id NodeID) error {
 func (n *recordingNetwork) RestartNode(_ context.Context, id NodeID) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.setOnlineLocked(id, true)
 	n.restarts = append(n.restarts, id)
 	return nil
 }
 
 func (n *recordingNetwork) Snapshot(ctx context.Context) (Snapshot, error) {
-	return snapshot(ctx, n.spec, n.reader)
+	snapshot, err := snapshot(ctx, n.spec, n.reader)
+	if err != nil {
+		return Snapshot{}, err
+	}
+
+	n.mu.Lock()
+	online := make(map[NodeID]bool, len(n.online))
+	for id, isOnline := range n.online {
+		online[id] = isOnline
+	}
+	n.mu.Unlock()
+
+	for i, node := range snapshot.Nodes {
+		if isOnline, ok := online[node.ID]; ok && !isOnline {
+			snapshot.Nodes[i].Reachable = false
+			snapshot.Nodes[i].Ready = false
+			snapshot.Nodes[i].Live = false
+		}
+	}
+	return snapshot, nil
 }
 
 func (n *recordingNetwork) Close(context.Context) error { return nil }
+
+func (n *recordingNetwork) setOnlineLocked(id NodeID, online bool) {
+	if n.online == nil {
+		n.online = make(map[NodeID]bool)
+	}
+	n.online[id] = online
+}
 
 type advancingReader struct {
 	mu      sync.Mutex
@@ -104,7 +134,7 @@ func TestValidatorChaosScenarioRunsWith300Nodes(t *testing.T) {
 	}, ValidatorChaosOptions{
 		Seed:                 42,
 		Steps:                100,
-		StepTimeout:          time.Second,
+		StepTimeout:          2 * time.Second,
 		LivenessEvery:        20,
 		LivenessWithin:       time.Second,
 		PollInterval:         time.Millisecond,
@@ -112,7 +142,7 @@ func TestValidatorChaosScenarioRunsWith300Nodes(t *testing.T) {
 		IncludeProcessFaults: true,
 	})
 
-	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(context.Background(), scenario)
+	result, err := Runner{Network: network, StepTimeout: 2 * time.Second}.Run(context.Background(), scenario)
 	if err != nil {
 		t.Fatalf("scenario failed after %d events: %v", len(result.Events), err)
 	}
