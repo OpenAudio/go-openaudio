@@ -241,6 +241,32 @@ func HeightFollowsValidatorQuorum(within, pollInterval time.Duration) Assertion 
 	}
 }
 
+func HeightStallsWithoutValidatorQuorum(within, pollInterval time.Duration) Assertion {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 2 * pollInterval
+	}
+	return AssertionFunc{
+		Label: "height stalls without validator quorum",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			snapshot, err := run.Network.Snapshot(ctx)
+			if err != nil {
+				return err
+			}
+			totalPower, livePower := snapshot.ValidatorPower()
+			if livePower*3 > totalPower*2 {
+				return fmt.Errorf("expected no validator quorum after action, got live validator power %d/%d: %s", livePower, totalPower, snapshot.Summary())
+			}
+			if err := observedHeightStalls(ctx, run, snapshot, within, pollInterval); err != nil {
+				return fmt.Errorf("expected height to stall without validator quorum %d/%d: %w", livePower, totalPower, err)
+			}
+			return nil
+		},
+	}
+}
+
 func ValidatorOutcomeAssertions(within, pollInterval time.Duration, requireConvergence bool) []Assertion {
 	regressionWindow := 2 * pollInterval
 	if regressionWindow <= 0 {
@@ -253,6 +279,18 @@ func ValidatorOutcomeAssertions(within, pollInterval time.Duration, requireConve
 	assertions = append(assertions, NoLiveValidatorFork())
 	assertions = append(assertions, NoHeightRegression(regressionWindow, pollInterval))
 	return assertions
+}
+
+func ValidatorStallOutcomeAssertions(within, pollInterval time.Duration) []Assertion {
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+	return []Assertion{
+		HeightStallsWithoutValidatorQuorum(within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
 }
 
 func NoLiveValidatorFork() Assertion {

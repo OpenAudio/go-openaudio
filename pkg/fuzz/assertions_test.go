@@ -3,6 +3,7 @@ package fuzz
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -238,6 +239,62 @@ func TestHeightFollowsValidatorQuorumStallsWithNoValidatorPower(t *testing.T) {
 	}
 }
 
+func TestHeightStallsWithoutValidatorQuorum(t *testing.T) {
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name: "scripted",
+		Nodes: []NodeSpec{
+			{ID: "node1", Endpoint: "http://node1"},
+			{ID: "node2", Endpoint: "http://node2"},
+			{ID: "node3", Endpoint: "http://node3"},
+		},
+	}, staticStatusReader{
+		"node1": {Reachable: true, Live: true, Height: 10, ValidatorPower: 10},
+		"node2": {Reachable: true, Live: false, Height: 10, ValidatorPower: 10},
+		"node3": {Reachable: true, Live: false, Height: 10, ValidatorPower: 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := HeightStallsWithoutValidatorQuorum(10*time.Millisecond, time.Millisecond).Check(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHeightStallsWithoutValidatorQuorumRejectsLiveQuorum(t *testing.T) {
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name: "scripted",
+		Nodes: []NodeSpec{
+			{ID: "node1", Endpoint: "http://node1"},
+			{ID: "node2", Endpoint: "http://node2"},
+			{ID: "node3", Endpoint: "http://node3"},
+		},
+	}, staticStatusReader{
+		"node1": {Reachable: true, Live: true, Height: 10, ValidatorPower: 10},
+		"node2": {Reachable: true, Live: true, Height: 10, ValidatorPower: 10},
+		"node3": {Reachable: true, Live: true, Height: 10, ValidatorPower: 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err = HeightStallsWithoutValidatorQuorum(10*time.Millisecond, time.Millisecond).Check(ctx, run)
+	if err == nil {
+		t.Fatal("expected validator quorum to fail planned stall assertion")
+	}
+	if !strings.Contains(err.Error(), "expected no validator quorum after action") {
+		t.Fatalf("expected no-quorum failure, got %v", err)
+	}
+}
+
 func TestLiveValidatorHeightsConverge(t *testing.T) {
 	reader := newScriptedReader(map[NodeID][]int64{
 		"node1": {10, 11, 12},
@@ -380,6 +437,24 @@ func TestValidatorOutcomeAssertionsIncludeRegression(t *testing.T) {
 	} {
 		if !names[name] {
 			t.Fatalf("expected validator outcome assertions to include %q; got %v", name, names)
+		}
+	}
+}
+
+func TestValidatorStallOutcomeAssertionsRequireNoQuorumAndSafety(t *testing.T) {
+	assertions := ValidatorStallOutcomeAssertions(time.Second, time.Millisecond)
+	names := make(map[string]bool, len(assertions))
+	for _, assertion := range assertions {
+		names[assertion.Name()] = true
+	}
+
+	for _, name := range []string{
+		"height stalls without validator quorum",
+		"no live validator fork",
+		"no height regression",
+	} {
+		if !names[name] {
+			t.Fatalf("expected validator stall outcome assertions to include %q; got %v", name, names)
 		}
 	}
 }

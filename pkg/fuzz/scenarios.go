@@ -179,7 +179,7 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 			Step{
 				Name:       fmt.Sprintf("stop quorum-loss cohort %d nodes; chain stalls", len(loss)),
 				Actions:    []Action{Parallel("stop quorum-loss cohort", stop...)},
-				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+				Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
 				Timeout:    stepTimeout,
 			},
 			outcomeActionStep(fmt.Sprintf("restart quorum-loss cohort %d nodes; chain recovers", len(loss)), stepTimeout, start, recoveryAssertions),
@@ -248,7 +248,7 @@ func QuorumLossRecoveryScenario(spec NetworkSpec, within, pollInterval time.Dura
 			},
 			{
 				Name:       "height stalls without quorum",
-				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+				Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
 				Timeout:    stepTimeout,
 			},
 			{
@@ -1470,11 +1470,7 @@ func MixedLifecycleQuorumRecoveryScenario(spec NetworkSpec, controller Validator
 		NoLiveValidatorFork(),
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
-	stallAssertions := []Assertion{
-		HeightFollowsValidatorQuorum(within, pollInterval),
-		NoLiveValidatorFork(),
-		NoHeightRegression(regressionWindow, pollInterval),
-	}
+	stallAssertions := ValidatorStallOutcomeAssertions(within, pollInterval)
 	recoveryAssertions := []Assertion{
 		HeightAdvances(1, within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
@@ -1644,7 +1640,7 @@ func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaos
 			Step{
 				Name:       "stop one more validator across quorum boundary; chain stalls",
 				Actions:    []Action{StopNode(breaker)},
-				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+				Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
 				Timeout:    stepTimeout,
 			},
 			outcomeActionStep("restart boundary validator; chain recovers", stepTimeout, []Action{StartNode(breaker)}, quorumOutcomeAssertions),
@@ -1664,7 +1660,7 @@ func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaos
 			Step{
 				Name:       "stop sole validator; chain stalls",
 				Actions:    []Action{StopNode(first)},
-				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+				Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
 				Timeout:    stepTimeout,
 			},
 			outcomeActionStep("restart sole validator; chain recovers", stepTimeout, []Action{StartNode(first)}, quorumOutcomeAssertions),
@@ -1771,7 +1767,7 @@ func PowerSkewOutcomeScenario(spec NetworkSpec, controller ValidatorChaosControl
 		Step{
 			Name:       "stop high-power validator while low-power validators are down; chain stalls",
 			Actions:    []Action{StopNode(highPowerID)},
-			Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+			Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
 			Timeout:    stepTimeout,
 		},
 		outcomeActionStep("restart high-power validator; chain recovers by voting power", stepTimeout, []Action{StartNode(highPowerID)}, quorumOutcomeAssertions),
@@ -1787,7 +1783,7 @@ func PowerSkewOutcomeScenario(spec NetworkSpec, controller ValidatorChaosControl
 		Step{
 			Name:       "stop high-power validator alone; chain stalls despite most nodes being live",
 			Actions:    []Action{StopNode(highPowerID)},
-			Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+			Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
 			Timeout:    stepTimeout,
 		},
 		outcomeActionStep("restart high-power validator; chain recovers", stepTimeout, []Action{StartNode(highPowerID)}, quorumOutcomeAssertions),
@@ -1880,7 +1876,7 @@ func PowerBoundaryOutcomeScenario(within, pollInterval time.Duration) Scenario {
 			{
 				Name:       "stop next validator across observed power quorum boundary",
 				Actions:    []Action{stopPowerBoundaryBreaker(state)},
-				Assertions: []Assertion{HeightFollowsValidatorQuorum(within, pollInterval)},
+				Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
 				Timeout:    stepTimeout,
 			},
 			{

@@ -24,6 +24,7 @@ This package is intentionally separate from the core runtime. It observes nodes 
 - Power-skew outcome scenarios where node-count quorum and voting-power quorum disagree, such as one high-power validator being enough to halt progress even when most nodes are still live, then assert final validator power and endpoint health restoration.
 - Power-boundary outcome scenarios that inspect observed validator power at runtime, stop the largest partition that should still allow progress, stop one more validator and assert the chain stalls, then restart both sides and assert height recovery plus final validator power and endpoint health restoration.
 - A validator-quorum outcome oracle that inspects the resulting validator power after a chaos action and asserts height advances or stalls accordingly, with fork and height-regression checks bundled into generated chaos outcomes.
+- Planned quorum-loss assertions that require the observed validator set to be below quorum before accepting a stall, then still check for no live-validator fork and no height regression.
 - Live-validator height convergence assertions, so one progressing validator cannot mask other reachable live validators being stuck behind.
 - Live-validator block-hash agreement checks, so same-height forks cannot hide behind successful height progression.
 - Persistent-fault simulated chaos that can accumulate stops, deregistrations, jails, and endpoint lies across many generated steps instead of always repairing inside the same action.
