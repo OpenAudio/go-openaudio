@@ -99,15 +99,50 @@ func programAction(program []byte, offset int, ids []NodeID, controller Validato
 	case 1:
 		return generatedProcessOutageAction(fmt.Sprintf("program restart %s", id), []NodeID{id}, 0, livenessWithin, pollInterval)
 	case 2:
-		return Sequence(fmt.Sprintf("program deregister/register %s", id), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id))
+		return generatedValidatorSetRoundTripAction(
+			fmt.Sprintf("program deregister/register %s", id),
+			id,
+			[]Action{DeregisterNodeWith(controller.Registrar, id)},
+			[]Action{RegisterNodeWith(controller.Registrar, id)},
+			livenessWithin,
+			pollInterval,
+		)
 	case 3:
-		return Sequence(fmt.Sprintf("program duplicate deregister/register %s", id), DeregisterNodeWith(controller.Registrar, id), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id))
+		return generatedValidatorSetRoundTripAction(
+			fmt.Sprintf("program duplicate deregister/register %s", id),
+			id,
+			[]Action{DeregisterNodeWith(controller.Registrar, id), DeregisterNodeWith(controller.Registrar, id)},
+			[]Action{RegisterNodeWith(controller.Registrar, id)},
+			livenessWithin,
+			pollInterval,
+		)
 	case 4:
-		return Sequence(fmt.Sprintf("program jail/unjail %s", id), JailNodeWith(controller.Jailer, id), UnjailNodeWith(controller.Jailer, id))
+		return generatedValidatorSetRoundTripAction(
+			fmt.Sprintf("program jail/unjail %s", id),
+			id,
+			[]Action{JailNodeWith(controller.Jailer, id)},
+			[]Action{UnjailNodeWith(controller.Jailer, id)},
+			livenessWithin,
+			pollInterval,
+		)
 	case 5:
-		return Sequence(fmt.Sprintf("program jail/register %s", id), JailNodeWith(controller.Jailer, id), RegisterNodeWith(controller.Registrar, id))
+		return generatedValidatorSetRoundTripAction(
+			fmt.Sprintf("program jail/register %s", id),
+			id,
+			[]Action{JailNodeWith(controller.Jailer, id)},
+			[]Action{RegisterNodeWith(controller.Registrar, id)},
+			livenessWithin,
+			pollInterval,
+		)
 	case 6:
-		return Sequence(fmt.Sprintf("program jail/deregister/register %s", id), JailNodeWith(controller.Jailer, id), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id))
+		return generatedValidatorSetRoundTripAction(
+			fmt.Sprintf("program jail/deregister/register %s", id),
+			id,
+			[]Action{JailNodeWith(controller.Jailer, id), DeregisterNodeWith(controller.Registrar, id)},
+			[]Action{RegisterNodeWith(controller.Registrar, id)},
+			livenessWithin,
+			pollInterval,
+		)
 	case 7:
 		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", id)
 		return Sequence(fmt.Sprintf("program lie/repair %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), AdvertiseEndpointWith(controller.EndpointMutator, id, ""))

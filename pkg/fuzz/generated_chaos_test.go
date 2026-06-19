@@ -81,6 +81,48 @@ func TestSimulatedChaosProgramCatchesNoopGeneratedBounce(t *testing.T) {
 	}
 }
 
+func TestSimulatedChaosProgramCatchesNoopGeneratedDeregister(t *testing.T) {
+	network := newTransientGeneratedOutcomeNetwork(4)
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		SimulatedChaosScenarioFromProgram(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+		}, []byte{2}, SimulatedProgramOptions{
+			MaxSteps:       1,
+			LivenessWithin: 25 * time.Millisecond,
+			PollInterval:   time.Millisecond,
+		}),
+	)
+	if err == nil {
+		t.Fatalf("expected generated deregister to catch unchanged validator power after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "nodes still had validator power") {
+		t.Fatalf("expected validator power removal failure, got %v", err)
+	}
+}
+
+func TestSimulatedChaosProgramCatchesNoopGeneratedJail(t *testing.T) {
+	network := newTransientGeneratedOutcomeNetwork(4)
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		SimulatedChaosScenarioFromProgram(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, []byte{4}, SimulatedProgramOptions{
+			MaxSteps:       1,
+			LivenessWithin: 25 * time.Millisecond,
+			PollInterval:   time.Millisecond,
+		}),
+	)
+	if err == nil {
+		t.Fatalf("expected generated jail to catch unchanged validator power after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "nodes still had validator power") {
+		t.Fatalf("expected validator power removal failure, got %v", err)
+	}
+}
+
 func TestOutcomeEdgeCaseScenarioCatchesNoopStop(t *testing.T) {
 	network := newTransientGeneratedOutcomeNetwork(4)
 
@@ -164,6 +206,14 @@ func (n *transientGeneratedOutcomeNetwork) RegisterNode(context.Context, NodeSpe
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.stalled = false
+	return nil
+}
+
+func (n *transientGeneratedOutcomeNetwork) JailNode(context.Context, NodeSpec) error {
+	return nil
+}
+
+func (n *transientGeneratedOutcomeNetwork) UnjailNode(context.Context, NodeSpec) error {
 	return nil
 }
 

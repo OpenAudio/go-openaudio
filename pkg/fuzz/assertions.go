@@ -134,6 +134,50 @@ func NodesAvailable(ids []NodeID, within, pollInterval time.Duration) Assertion 
 	return nodeAvailabilityAssertion("nodes available", ids, within, pollInterval, true)
 }
 
+func NodesWithoutValidatorPower(ids []NodeID, within, pollInterval time.Duration) Assertion {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 2 * pollInterval
+	}
+	ids = normalizedNodeIDs(ids)
+	return AssertionFunc{
+		Label: "nodes without validator power",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			if len(ids) == 0 {
+				return fmt.Errorf("%w: validator power removal assertion requires at least one node", ErrInvalidScenario)
+			}
+			deadline := time.NewTimer(within)
+			defer deadline.Stop()
+			ticker := time.NewTicker(pollInterval)
+			defer ticker.Stop()
+
+			var last Snapshot
+			var mismatches []string
+			for {
+				snapshot, err := run.Network.Snapshot(ctx)
+				if err != nil {
+					return err
+				}
+				last = snapshot
+				mismatches = validatorPowerRemovalMismatches(snapshot, ids)
+				if len(mismatches) == 0 {
+					return nil
+				}
+
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-deadline.C:
+					return fmt.Errorf("nodes still had validator power within %s: mismatches=%s last=%s", within, formatMismatches(mismatches), last.Summary())
+				case <-ticker.C:
+				}
+			}
+		},
+	}
+}
+
 func nodeAvailabilityAssertion(label string, ids []NodeID, within, pollInterval time.Duration, wantAvailable bool) Assertion {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval
@@ -260,6 +304,20 @@ func nodeAvailabilityMismatches(snapshot Snapshot, ids []NodeID, wantAvailable b
 			want = "available"
 		}
 		mismatches = append(mismatches, fmt.Sprintf("%s reachable=%t ready=%t live=%t want %s", id, node.Reachable, node.Ready, node.Live, want))
+	}
+	return mismatches
+}
+
+func validatorPowerRemovalMismatches(snapshot Snapshot, ids []NodeID) []string {
+	var mismatches []string
+	for _, id := range ids {
+		node, ok := snapshot.ByNode(id)
+		if !ok {
+			continue
+		}
+		if node.ValidatorPower > 0 || node.Live {
+			mismatches = append(mismatches, fmt.Sprintf("%s live=%t power=%d want live=false power=0", id, node.Live, node.ValidatorPower))
+		}
 	}
 	return mismatches
 }

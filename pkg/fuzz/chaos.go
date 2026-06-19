@@ -150,8 +150,22 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 	}
 	if controller.Registrar != nil {
 		actions = append(actions,
-			Sequence(fmt.Sprintf("deregister and register %s", id), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id)),
-			Sequence(fmt.Sprintf("duplicate deregister and register %s", id), DeregisterNodeWith(controller.Registrar, id), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id)),
+			generatedValidatorSetRoundTripAction(
+				fmt.Sprintf("deregister and register %s", id),
+				id,
+				[]Action{DeregisterNodeWith(controller.Registrar, id)},
+				[]Action{RegisterNodeWith(controller.Registrar, id)},
+				livenessWithin,
+				pollInterval,
+			),
+			generatedValidatorSetRoundTripAction(
+				fmt.Sprintf("duplicate deregister and register %s", id),
+				id,
+				[]Action{DeregisterNodeWith(controller.Registrar, id), DeregisterNodeWith(controller.Registrar, id)},
+				[]Action{RegisterNodeWith(controller.Registrar, id)},
+				livenessWithin,
+				pollInterval,
+			),
 		)
 		if opts.IncludePersistentFaults {
 			actions = append(actions,
@@ -162,7 +176,14 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 	}
 	if controller.Jailer != nil {
 		actions = append(actions,
-			Sequence(fmt.Sprintf("jail and unjail %s", id), JailNodeWith(controller.Jailer, id), UnjailNodeWith(controller.Jailer, id)),
+			generatedValidatorSetRoundTripAction(
+				fmt.Sprintf("jail and unjail %s", id),
+				id,
+				[]Action{JailNodeWith(controller.Jailer, id)},
+				[]Action{UnjailNodeWith(controller.Jailer, id)},
+				livenessWithin,
+				pollInterval,
+			),
 		)
 		if opts.IncludePersistentFaults {
 			actions = append(actions,
@@ -172,8 +193,22 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 		}
 		if controller.Registrar != nil {
 			actions = append(actions,
-				Sequence(fmt.Sprintf("jail register %s", id), JailNodeWith(controller.Jailer, id), RegisterNodeWith(controller.Registrar, id)),
-				Sequence(fmt.Sprintf("jail deregister register %s", id), JailNodeWith(controller.Jailer, id), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id)),
+				generatedValidatorSetRoundTripAction(
+					fmt.Sprintf("jail register %s", id),
+					id,
+					[]Action{JailNodeWith(controller.Jailer, id)},
+					[]Action{RegisterNodeWith(controller.Registrar, id)},
+					livenessWithin,
+					pollInterval,
+				),
+				generatedValidatorSetRoundTripAction(
+					fmt.Sprintf("jail deregister register %s", id),
+					id,
+					[]Action{JailNodeWith(controller.Jailer, id), DeregisterNodeWith(controller.Registrar, id)},
+					[]Action{RegisterNodeWith(controller.Registrar, id)},
+					livenessWithin,
+					pollInterval,
+				),
 			)
 		}
 	}
@@ -203,6 +238,53 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 		return Wait(time.Duration(10+rng.Intn(50)) * time.Millisecond)
 	}
 	return actions[rng.Intn(len(actions))]
+}
+
+func generatedValidatorSetRoundTripAction(name string, id NodeID, removeActions, restoreActions []Action, within, pollInterval time.Duration) Action {
+	return ActionFunc{
+		Label: name,
+		Fn: func(ctx context.Context, run *RunContext) error {
+			activeIDs, err := activeValidatorNodeIDs(ctx, run, []NodeID{id})
+			if err != nil {
+				return err
+			}
+			availableIDs, err := availableNodeIDs(ctx, run, activeIDs)
+			if err != nil {
+				return err
+			}
+			powerBaseline := &ValidatorPowerBaseline{}
+			if len(activeIDs) > 0 {
+				if err := CaptureValidatorPowerBaseline(powerBaseline).Run(ctx, run); err != nil {
+					return err
+				}
+			}
+			if err := Sequence(name+" remove", removeActions...).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(activeIDs) > 0 {
+				if err := checkGeneratedAssertion(ctx, run, NodesWithoutValidatorPower(activeIDs, within, pollInterval)); err != nil {
+					return err
+				}
+				if err := checkGeneratedAssertions(ctx, run, ValidatorOutcomeAssertions(within, pollInterval, true)); err != nil {
+					return err
+				}
+			}
+			if err := Sequence(name+" restore", restoreActions...).Run(ctx, run); err != nil {
+				return err
+			}
+			if len(activeIDs) > 0 {
+				restoreAssertions := []Assertion{ValidatorPowerRestored(powerBaseline, within, pollInterval)}
+				if len(availableIDs) > 0 {
+					restoreAssertions = append(restoreAssertions, NodesAvailable(availableIDs, within, pollInterval))
+				}
+				restoreAssertions = append(restoreAssertions, ValidatorOutcomeAssertions(within, pollInterval, true)...)
+				if err := checkGeneratedAssertions(ctx, run, restoreAssertions); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
 }
 
 func generatedProcessOutageAction(name string, ids []NodeID, wait, within, pollInterval time.Duration) Action {
@@ -258,6 +340,24 @@ func availableNodeIDs(ctx context.Context, run *RunContext, ids []NodeID) ([]Nod
 	return available, nil
 }
 
+func activeValidatorNodeIDs(ctx context.Context, run *RunContext, ids []NodeID) ([]NodeID, error) {
+	snapshot, err := run.Network.Snapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	active := make([]NodeID, 0, len(ids))
+	for _, id := range normalizedNodeIDs(ids) {
+		node, ok := snapshot.ByNode(id)
+		if !ok {
+			continue
+		}
+		if node.Live && node.ValidatorPower > 0 {
+			active = append(active, id)
+		}
+	}
+	return active, nil
+}
+
 func checkGeneratedAssertion(ctx context.Context, run *RunContext, assertion Assertion) error {
 	if assertion == nil {
 		return nil
@@ -268,6 +368,15 @@ func checkGeneratedAssertion(ctx context.Context, run *RunContext, assertion Ass
 		return fmt.Errorf("%s: %w", assertion.Name(), err)
 	}
 	run.record("assertion_pass", assertion.Name(), "")
+	return nil
+}
+
+func checkGeneratedAssertions(ctx context.Context, run *RunContext, assertions []Assertion) error {
+	for _, assertion := range assertions {
+		if err := checkGeneratedAssertion(ctx, run, assertion); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -13,6 +13,8 @@ type recordingNetwork struct {
 	spec     NetworkSpec
 	reader   StatusReader
 	online   map[NodeID]bool
+	active   map[NodeID]bool
+	honest   map[NodeID]bool
 	started  []NodeID
 	stopped  []NodeID
 	restarts []NodeID
@@ -44,6 +46,44 @@ func (n *recordingNetwork) RestartNode(_ context.Context, id NodeID) error {
 	return nil
 }
 
+func (n *recordingNetwork) RegisterNode(_ context.Context, node NodeSpec) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setActiveLocked(node.ID, true)
+	n.setOnlineLocked(node.ID, true)
+	return nil
+}
+
+func (n *recordingNetwork) DeregisterNode(_ context.Context, node NodeSpec) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setActiveLocked(node.ID, false)
+	n.setOnlineLocked(node.ID, false)
+	return nil
+}
+
+func (n *recordingNetwork) SetNodeEndpoint(_ context.Context, node NodeSpec, endpoint string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setHonestLocked(node.ID, endpoint == "" || endpoint == node.Endpoint)
+	return nil
+}
+
+func (n *recordingNetwork) JailNode(_ context.Context, node NodeSpec) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setActiveLocked(node.ID, false)
+	return nil
+}
+
+func (n *recordingNetwork) UnjailNode(_ context.Context, node NodeSpec) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setActiveLocked(node.ID, true)
+	n.setOnlineLocked(node.ID, true)
+	return nil
+}
+
 func (n *recordingNetwork) Snapshot(ctx context.Context) (Snapshot, error) {
 	snapshot, err := snapshot(ctx, n.spec, n.reader)
 	if err != nil {
@@ -55,6 +95,14 @@ func (n *recordingNetwork) Snapshot(ctx context.Context) (Snapshot, error) {
 	for id, isOnline := range n.online {
 		online[id] = isOnline
 	}
+	active := make(map[NodeID]bool, len(n.active))
+	for id, isActive := range n.active {
+		active[id] = isActive
+	}
+	honest := make(map[NodeID]bool, len(n.honest))
+	for id, isHonest := range n.honest {
+		honest[id] = isHonest
+	}
 	n.mu.Unlock()
 
 	for i, node := range snapshot.Nodes {
@@ -62,6 +110,16 @@ func (n *recordingNetwork) Snapshot(ctx context.Context) (Snapshot, error) {
 			snapshot.Nodes[i].Reachable = false
 			snapshot.Nodes[i].Ready = false
 			snapshot.Nodes[i].Live = false
+		}
+		if isActive, ok := active[node.ID]; ok && !isActive {
+			snapshot.Nodes[i].Reachable = false
+			snapshot.Nodes[i].Ready = false
+			snapshot.Nodes[i].Live = false
+			snapshot.Nodes[i].ValidatorPower = 0
+		}
+		if isHonest, ok := honest[node.ID]; ok && !isHonest {
+			snapshot.Nodes[i].Reachable = false
+			snapshot.Nodes[i].Ready = false
 		}
 	}
 	return snapshot, nil
@@ -74,6 +132,20 @@ func (n *recordingNetwork) setOnlineLocked(id NodeID, online bool) {
 		n.online = make(map[NodeID]bool)
 	}
 	n.online[id] = online
+}
+
+func (n *recordingNetwork) setActiveLocked(id NodeID, active bool) {
+	if n.active == nil {
+		n.active = make(map[NodeID]bool)
+	}
+	n.active[id] = active
+}
+
+func (n *recordingNetwork) setHonestLocked(id NodeID, honest bool) {
+	if n.honest == nil {
+		n.honest = make(map[NodeID]bool)
+	}
+	n.honest[id] = honest
 }
 
 type advancingReader struct {
@@ -126,11 +198,10 @@ func TestValidatorChaosScenarioRunsWith300Nodes(t *testing.T) {
 
 	reader := newAdvancingReader(spec)
 	network := &recordingNetwork{spec: spec, reader: reader}
-	controller := &fakeLifecycleController{}
 	scenario := ValidatorChaosScenario(spec, ValidatorChaosController{
-		Registrar:       controller,
-		EndpointMutator: controller,
-		Jailer:          controller,
+		Registrar:       network,
+		EndpointMutator: network,
+		Jailer:          network,
 	}, ValidatorChaosOptions{
 		Seed:                 42,
 		Steps:                100,
