@@ -841,7 +841,8 @@ func StopStartRoundTripScenario(spec NetworkSpec, target NodeID, within, pollInt
 	if target == "" && len(ids) > 0 {
 		target = ids[len(ids)-1]
 	}
-	initialBaseline := &ValidatorPowerBaseline{}
+	initialPowerBaseline := &ValidatorPowerBaseline{}
+	initialReachabilityBaseline := &ReachabilityBaseline{}
 	outcomeAssertions := []Assertion{
 		HeightFollowsValidatorQuorum(within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
@@ -849,7 +850,8 @@ func StopStartRoundTripScenario(spec NetworkSpec, target NodeID, within, pollInt
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
 	restoreAssertions := []Assertion{
-		ValidatorPowerRestored(initialBaseline, within, pollInterval),
+		ValidatorPowerRestored(initialPowerBaseline, within, pollInterval),
+		ReachabilityRestored(initialReachabilityBaseline, within, pollInterval),
 		HeightAdvances(1, within, pollInterval),
 		LiveValidatorHeightsConverge(0, within, pollInterval),
 		NoLiveValidatorFork(),
@@ -871,10 +873,11 @@ func StopStartRoundTripScenario(spec NetworkSpec, target NodeID, within, pollInt
 	}
 
 	scenario.Steps = append(scenario.Steps,
-		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialBaseline)),
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialPowerBaseline)),
+		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(initialReachabilityBaseline)),
 		outcomeActionStep("stop validator; chain follows live validator power", stepTimeout, []Action{StopNode(target)}, outcomeAssertions),
 		Step{
-			Name:       "start validator; chain restores original live validator outcome",
+			Name:       "start validator; chain restores original live validator and endpoint outcome",
 			Actions:    []Action{StartNode(target)},
 			Assertions: restoreAssertions,
 			Timeout:    stepTimeout,

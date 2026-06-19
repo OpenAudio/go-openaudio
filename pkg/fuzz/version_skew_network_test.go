@@ -803,6 +803,27 @@ func TestStopStartRoundTripScenarioCatchesNoopStart(t *testing.T) {
 	}
 }
 
+func TestStopStartRoundTripScenarioCatchesUnreachableStart(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeBadEndpointOnStart,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		StopStartRoundTripScenario(network.Spec(), "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unreachable start to fail stop-start round-trip after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
+		t.Fatalf("expected reachability baseline failure, got %v", err)
+	}
+}
+
 func TestStopStartRoundTripScenarioCatchesLegacyHalt(t *testing.T) {
 	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
 		NodeCount:     4,

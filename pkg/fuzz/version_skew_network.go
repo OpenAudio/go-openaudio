@@ -45,6 +45,7 @@ const (
 	VersionSkewModeHaltLegacyOnAbsentUnjail
 	VersionSkewModeForkLegacyOnAbsentUnjail
 	VersionSkewModeNoopOnStart
+	VersionSkewModeBadEndpointOnStart
 	VersionSkewModeHaltLegacyOnStart
 	VersionSkewModeForkLegacyOnStart
 	VersionSkewModeReactivateJailedOnStart
@@ -148,6 +149,10 @@ func (n *VersionSkewNetwork) StartNode(ctx context.Context, id NodeID) error {
 			}
 			n.triggerStartIncompatibilityLocked()
 			node.online = true
+			if n.mode == VersionSkewModeBadEndpointOnStart {
+				node.endpointHonest = false
+				n.currentEndpoints[id] = fmt.Sprintf("https://wrong-%s.oap.version-skew", id)
+			}
 		case ModelValidatorJailed:
 			if n.mode == VersionSkewModeReactivateJailedOnStart {
 				node.state = ModelValidatorActive
