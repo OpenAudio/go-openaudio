@@ -3,6 +3,7 @@ package fuzz
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -125,6 +126,62 @@ func QuorumReady(required int, within, pollInterval time.Duration) Assertion {
 	}
 }
 
+func NodesUnavailable(ids []NodeID, within, pollInterval time.Duration) Assertion {
+	return nodeAvailabilityAssertion("nodes unavailable", ids, within, pollInterval, false)
+}
+
+func NodesAvailable(ids []NodeID, within, pollInterval time.Duration) Assertion {
+	return nodeAvailabilityAssertion("nodes available", ids, within, pollInterval, true)
+}
+
+func nodeAvailabilityAssertion(label string, ids []NodeID, within, pollInterval time.Duration, wantAvailable bool) Assertion {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 2 * pollInterval
+	}
+	ids = normalizedNodeIDs(ids)
+	return AssertionFunc{
+		Label: label,
+		Fn: func(ctx context.Context, run *RunContext) error {
+			if len(ids) == 0 {
+				return fmt.Errorf("%w: node availability assertion requires at least one node", ErrInvalidScenario)
+			}
+			deadline := time.NewTimer(within)
+			defer deadline.Stop()
+			ticker := time.NewTicker(pollInterval)
+			defer ticker.Stop()
+
+			var last Snapshot
+			var mismatches []string
+			for {
+				snapshot, err := run.Network.Snapshot(ctx)
+				if err != nil {
+					return err
+				}
+				last = snapshot
+				mismatches = nodeAvailabilityMismatches(snapshot, ids, wantAvailable)
+				if len(mismatches) == 0 {
+					return nil
+				}
+
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-deadline.C:
+					want := "unavailable"
+					if wantAvailable {
+						want = "available"
+					}
+					return fmt.Errorf("nodes did not become %s within %s: mismatches=%s last=%s", want, within, formatMismatches(mismatches), last.Summary())
+				case <-ticker.C:
+				}
+			}
+		},
+	}
+}
+
 func HeightAdvances(minDelta int64, within, pollInterval time.Duration) Assertion {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval
@@ -167,6 +224,44 @@ func HeightAdvances(minDelta int64, within, pollInterval time.Duration) Assertio
 			}
 		},
 	}
+}
+
+func normalizedNodeIDs(ids []NodeID) []NodeID {
+	seen := map[NodeID]struct{}{}
+	out := make([]NodeID, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+func nodeAvailabilityMismatches(snapshot Snapshot, ids []NodeID, wantAvailable bool) []string {
+	var mismatches []string
+	for _, id := range ids {
+		node, ok := snapshot.ByNode(id)
+		if !ok {
+			mismatches = append(mismatches, fmt.Sprintf("%s missing", id))
+			continue
+		}
+		available := node.Reachable && node.Ready && node.Live
+		if available == wantAvailable {
+			continue
+		}
+		want := "unavailable"
+		if wantAvailable {
+			want = "available"
+		}
+		mismatches = append(mismatches, fmt.Sprintf("%s reachable=%t ready=%t live=%t want %s", id, node.Reachable, node.Ready, node.Live, want))
+	}
+	return mismatches
 }
 
 func HeightStalls(observeFor, pollInterval time.Duration) Assertion {

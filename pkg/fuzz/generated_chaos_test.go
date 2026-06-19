@@ -62,6 +62,21 @@ func TestSimulatedChaosProgramDefaultsCatchOutcomeBeforeLaterRepair(t *testing.T
 	}
 }
 
+func TestOutcomeEdgeCaseScenarioCatchesNoopStop(t *testing.T) {
+	network := newTransientGeneratedOutcomeNetwork(4)
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		OutcomeEdgeCaseScenario(network.Spec(), ValidatorChaosController{}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected outcome edge case scenario to catch no-op stop after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "nodes did not become unavailable") {
+		t.Fatalf("expected node unavailable failure, got %v", err)
+	}
+}
+
 func generatedChaosTestSpec(nodes int) NetworkSpec {
 	spec := NetworkSpec{Name: "generated-chaos-test"}
 	for i := 0; i < nodes; i++ {

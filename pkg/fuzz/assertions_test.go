@@ -166,6 +166,74 @@ func TestReachableAtLeast(t *testing.T) {
 	}
 }
 
+func TestNodesUnavailable(t *testing.T) {
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name: "availability",
+		Nodes: []NodeSpec{
+			{ID: "node1", Endpoint: "http://node1"},
+			{ID: "node2", Endpoint: "http://node2"},
+		},
+	}, staticStatusReader{
+		"node1": {Reachable: false, Ready: false, Live: false},
+		"node2": {Reachable: false, Ready: false, Live: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := NodesUnavailable([]NodeID{"node2", "node1"}, 5*time.Millisecond, time.Millisecond).Check(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNodesUnavailableFailsWhenActionDidNotTakeEffect(t *testing.T) {
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name:  "availability",
+		Nodes: []NodeSpec{{ID: "node1", Endpoint: "http://node1"}},
+	}, staticStatusReader{
+		"node1": {Reachable: true, Ready: true, Live: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err = NodesUnavailable([]NodeID{"node1"}, 5*time.Millisecond, time.Millisecond).Check(ctx, run)
+	if err == nil {
+		t.Fatal("expected available node to fail unavailable assertion")
+	}
+	if !strings.Contains(err.Error(), "nodes did not become unavailable") {
+		t.Fatalf("expected unavailable failure, got %v", err)
+	}
+}
+
+func TestNodesAvailable(t *testing.T) {
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name:  "availability",
+		Nodes: []NodeSpec{{ID: "node1", Endpoint: "http://node1"}},
+	}, staticStatusReader{
+		"node1": {Reachable: true, Ready: true, Live: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := NodesAvailable([]NodeID{"node1"}, 5*time.Millisecond, time.Millisecond).Check(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestHeightFollowsValidatorQuorumAdvances(t *testing.T) {
 	reader := newScriptedReader(map[NodeID][]int64{
 		"node1": {10, 10, 11},

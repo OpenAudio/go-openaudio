@@ -126,16 +126,16 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 	first := ids[0]
 	if minimumQuorumNodes(len(ids)) < len(ids) {
 		scenario.Steps = append(scenario.Steps,
-			outcomeActionStep("stop one node; chain still progresses", stepTimeout, []Action{StopNode(first)}, quorumOutcomeAssertions),
-			outcomeActionStep("restart one node; chain still progresses", stepTimeout, []Action{StartNode(first)}, quorumOutcomeAssertions),
+			outcomeActionStep("stop one node; chain still progresses", stepTimeout, []Action{StopNode(first)}, outageOutcomeAssertions([]NodeID{first}, within, pollInterval, quorumOutcomeAssertions)),
+			outcomeActionStep("restart one node; chain still progresses", stepTimeout, []Action{StartNode(first)}, availableOutcomeAssertions([]NodeID{first}, within, pollInterval, quorumOutcomeAssertions)),
 		)
 	}
 
 	if cohort := quorumPreservingCohort(ids); len(cohort) > 1 {
 		stop, start := stopStartActions(cohort)
 		scenario.Steps = append(scenario.Steps,
-			outcomeActionStep(fmt.Sprintf("stop quorum-preserving cohort %d nodes; chain still progresses", len(cohort)), stepTimeout, stop, quorumOutcomeAssertions),
-			outcomeActionStep(fmt.Sprintf("restart quorum-preserving cohort %d nodes; chain still progresses", len(cohort)), stepTimeout, start, quorumOutcomeAssertions),
+			outcomeActionStep(fmt.Sprintf("stop quorum-preserving cohort %d nodes; chain still progresses", len(cohort)), stepTimeout, stop, outageOutcomeAssertions(cohort, within, pollInterval, quorumOutcomeAssertions)),
+			outcomeActionStep(fmt.Sprintf("restart quorum-preserving cohort %d nodes; chain still progresses", len(cohort)), stepTimeout, start, availableOutcomeAssertions(cohort, within, pollInterval, quorumOutcomeAssertions)),
 		)
 	}
 
@@ -179,10 +179,10 @@ func OutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosControll
 			Step{
 				Name:       fmt.Sprintf("stop quorum-loss cohort %d nodes; chain stalls", len(loss)),
 				Actions:    []Action{Parallel("stop quorum-loss cohort", stop...)},
-				Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
+				Assertions: outageOutcomeAssertions(loss, within, pollInterval, ValidatorStallOutcomeAssertions(within, pollInterval)),
 				Timeout:    stepTimeout,
 			},
-			outcomeActionStep(fmt.Sprintf("restart quorum-loss cohort %d nodes; chain recovers", len(loss)), stepTimeout, start, recoveryAssertions),
+			outcomeActionStep(fmt.Sprintf("restart quorum-loss cohort %d nodes; chain recovers", len(loss)), stepTimeout, start, availableOutcomeAssertions(loss, within, pollInterval, recoveryAssertions)),
 		)
 	}
 
@@ -248,7 +248,7 @@ func QuorumLossRecoveryScenario(spec NetworkSpec, within, pollInterval time.Dura
 			},
 			{
 				Name:       "height stalls without quorum",
-				Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
+				Assertions: outageOutcomeAssertions(cohort, within, pollInterval, ValidatorStallOutcomeAssertions(within, pollInterval)),
 				Timeout:    stepTimeout,
 			},
 			{
@@ -953,7 +953,7 @@ func StopStartRoundTripScenario(spec NetworkSpec, target NodeID, within, pollInt
 	scenario.Steps = append(scenario.Steps,
 		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(initialPowerBaseline)),
 		ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(initialReachabilityBaseline)),
-		outcomeActionStep("stop validator; chain follows live validator power", stepTimeout, []Action{StopNode(target)}, outcomeAssertions),
+		outcomeActionStep("stop validator; chain follows live validator power", stepTimeout, []Action{StopNode(target)}, outageOutcomeAssertions([]NodeID{target}, within, pollInterval, outcomeAssertions)),
 		Step{
 			Name:       "start validator; chain restores original live validator and endpoint outcome",
 			Actions:    []Action{StartNode(target)},
@@ -1624,15 +1624,19 @@ func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaos
 	if preserve := quorumPreservingCohort(ids); len(preserve) > 0 {
 		stop, start := stopStartActions(preserve)
 		scenario.Steps = append(scenario.Steps,
-			outcomeActionStep(fmt.Sprintf("stop %d validators leaving minimum quorum; chain still progresses", len(preserve)), stepTimeout, stop, quorumOutcomeAssertions),
+			outcomeActionStep(fmt.Sprintf("stop %d validators leaving minimum quorum; chain still progresses", len(preserve)), stepTimeout, stop, outageOutcomeAssertions(preserve, within, pollInterval, quorumOutcomeAssertions)),
 		)
 
 		liveIDs := nodeSetDifference(ids, preserve)
+		restartBoundaryAssertions := availableOutcomeAssertions([]NodeID{liveIDs[0]}, within, pollInterval, quorumOutcomeAssertions)
+		restartPreserveAssertions := availableOutcomeAssertions(preserve, within, pollInterval, quorumOutcomeAssertions)
 		if controller.EndpointMutator != nil {
 			lieIDs := quorumLossCohort(liveIDs)
 			scenario.Steps = append(scenario.Steps,
 				outcomeActionStep(fmt.Sprintf("advertise bad endpoints for %d live validators at quorum boundary; chain still progresses", len(lieIDs)), stepTimeout, endpointLieActions(controller.EndpointMutator, lieIDs), quorumOutcomeAssertions),
 			)
+			restartBoundaryAssertions = quorumOutcomeAssertions
+			restartPreserveAssertions = quorumOutcomeAssertions
 		}
 
 		breaker := liveIDs[0]
@@ -1640,10 +1644,10 @@ func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaos
 			Step{
 				Name:       "stop one more validator across quorum boundary; chain stalls",
 				Actions:    []Action{StopNode(breaker)},
-				Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
+				Assertions: outageOutcomeAssertions([]NodeID{breaker}, within, pollInterval, ValidatorStallOutcomeAssertions(within, pollInterval)),
 				Timeout:    stepTimeout,
 			},
-			outcomeActionStep("restart boundary validator; chain recovers", stepTimeout, []Action{StartNode(breaker)}, quorumOutcomeAssertions),
+			outcomeActionStep("restart boundary validator; chain recovers", stepTimeout, []Action{StartNode(breaker)}, restartBoundaryAssertions),
 		)
 		if controller.EndpointMutator != nil {
 			lieIDs := quorumLossCohort(liveIDs)
@@ -1652,7 +1656,7 @@ func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaos
 			)
 		}
 		scenario.Steps = append(scenario.Steps,
-			outcomeActionStep(fmt.Sprintf("restart %d stopped validators; chain remains live", len(preserve)), stepTimeout, start, quorumOutcomeAssertions),
+			outcomeActionStep(fmt.Sprintf("restart %d stopped validators; chain remains live", len(preserve)), stepTimeout, start, restartPreserveAssertions),
 		)
 	} else {
 		first := ids[0]
@@ -1660,10 +1664,10 @@ func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaos
 			Step{
 				Name:       "stop sole validator; chain stalls",
 				Actions:    []Action{StopNode(first)},
-				Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
+				Assertions: outageOutcomeAssertions([]NodeID{first}, within, pollInterval, ValidatorStallOutcomeAssertions(within, pollInterval)),
 				Timeout:    stepTimeout,
 			},
-			outcomeActionStep("restart sole validator; chain recovers", stepTimeout, []Action{StartNode(first)}, quorumOutcomeAssertions),
+			outcomeActionStep("restart sole validator; chain recovers", stepTimeout, []Action{StartNode(first)}, availableOutcomeAssertions([]NodeID{first}, within, pollInterval, quorumOutcomeAssertions)),
 		)
 	}
 
@@ -1753,7 +1757,7 @@ func PowerSkewOutcomeScenario(spec NetworkSpec, controller ValidatorChaosControl
 
 	stopLow, startLow := stopStartActions(lowPowerIDs)
 	scenario.Steps = append(scenario.Steps,
-		outcomeActionStep(fmt.Sprintf("stop %d low-power validators; chain follows validator power", len(lowPowerIDs)), stepTimeout, stopLow, quorumOutcomeAssertions),
+		outcomeActionStep(fmt.Sprintf("stop %d low-power validators; chain follows validator power", len(lowPowerIDs)), stepTimeout, stopLow, outageOutcomeAssertions(lowPowerIDs, within, pollInterval, quorumOutcomeAssertions)),
 	)
 
 	if controller.EndpointMutator != nil {
@@ -1763,30 +1767,34 @@ func PowerSkewOutcomeScenario(spec NetworkSpec, controller ValidatorChaosControl
 		)
 	}
 
+	restartHighPowerAssertions := availableOutcomeAssertions([]NodeID{highPowerID}, within, pollInterval, quorumOutcomeAssertions)
+	if controller.EndpointMutator != nil {
+		restartHighPowerAssertions = quorumOutcomeAssertions
+	}
 	scenario.Steps = append(scenario.Steps,
 		Step{
 			Name:       "stop high-power validator while low-power validators are down; chain stalls",
 			Actions:    []Action{StopNode(highPowerID)},
-			Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
+			Assertions: outageOutcomeAssertions([]NodeID{highPowerID}, within, pollInterval, ValidatorStallOutcomeAssertions(within, pollInterval)),
 			Timeout:    stepTimeout,
 		},
-		outcomeActionStep("restart high-power validator; chain recovers by voting power", stepTimeout, []Action{StartNode(highPowerID)}, quorumOutcomeAssertions),
+		outcomeActionStep("restart high-power validator; chain recovers by voting power", stepTimeout, []Action{StartNode(highPowerID)}, restartHighPowerAssertions),
 	)
 
 	if controller.EndpointMutator != nil {
 		scenario.Steps = append(scenario.Steps,
-			outcomeActionStep("repair high-power validator endpoint", stepTimeout, []Action{AdvertiseEndpointWith(controller.EndpointMutator, highPowerID, "")}, quorumOutcomeAssertions),
+			outcomeActionStep("repair high-power validator endpoint", stepTimeout, []Action{AdvertiseEndpointWith(controller.EndpointMutator, highPowerID, "")}, availableOutcomeAssertions([]NodeID{highPowerID}, within, pollInterval, quorumOutcomeAssertions)),
 		)
 	}
 	scenario.Steps = append(scenario.Steps,
-		outcomeActionStep(fmt.Sprintf("restart %d low-power validators; chain remains live", len(lowPowerIDs)), stepTimeout, startLow, quorumOutcomeAssertions),
+		outcomeActionStep(fmt.Sprintf("restart %d low-power validators; chain remains live", len(lowPowerIDs)), stepTimeout, startLow, availableOutcomeAssertions(lowPowerIDs, within, pollInterval, quorumOutcomeAssertions)),
 		Step{
 			Name:       "stop high-power validator alone; chain stalls despite most nodes being live",
 			Actions:    []Action{StopNode(highPowerID)},
-			Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
+			Assertions: outageOutcomeAssertions([]NodeID{highPowerID}, within, pollInterval, ValidatorStallOutcomeAssertions(within, pollInterval)),
 			Timeout:    stepTimeout,
 		},
-		outcomeActionStep("restart high-power validator; chain recovers", stepTimeout, []Action{StartNode(highPowerID)}, quorumOutcomeAssertions),
+		outcomeActionStep("restart high-power validator; chain recovers", stepTimeout, []Action{StartNode(highPowerID)}, availableOutcomeAssertions([]NodeID{highPowerID}, within, pollInterval, quorumOutcomeAssertions)),
 	)
 
 	if controller.Jailer != nil {
@@ -1870,19 +1878,19 @@ func PowerBoundaryOutcomeScenario(within, pollInterval time.Duration) Scenario {
 			{
 				Name:       "stop largest observed power partition that preserves quorum",
 				Actions:    []Action{planAndStopPowerBoundary(state)},
-				Assertions: quorumOutcomeAssertions,
+				Assertions: append([]Assertion{powerBoundaryPartitionUnavailable(state, within, pollInterval)}, quorumOutcomeAssertions...),
 				Timeout:    stepTimeout,
 			},
 			{
 				Name:       "stop next validator across observed power quorum boundary",
 				Actions:    []Action{stopPowerBoundaryBreaker(state)},
-				Assertions: ValidatorStallOutcomeAssertions(within, pollInterval),
+				Assertions: append([]Assertion{powerBoundaryBreakerUnavailable(state, within, pollInterval)}, ValidatorStallOutcomeAssertions(within, pollInterval)...),
 				Timeout:    stepTimeout,
 			},
 			{
 				Name:       "restart boundary validator; chain recovers",
 				Actions:    []Action{restartPowerBoundaryBreaker(state)},
-				Assertions: recoveryAssertions,
+				Assertions: append([]Assertion{powerBoundaryBreakerAvailable(state, within, pollInterval)}, recoveryAssertions...),
 				Timeout:    stepTimeout,
 			},
 			{
@@ -1960,6 +1968,49 @@ func restartPowerBoundaryPartition(state *powerBoundaryState) Action {
 		Label: "restart power-boundary partition",
 		Fn: func(ctx context.Context, run *RunContext) error {
 			return Parallel("restart power-boundary partition", startActions(state.plan.preserve)...).Run(ctx, run)
+		},
+	}
+}
+
+func powerBoundaryPartitionUnavailable(state *powerBoundaryState, within, pollInterval time.Duration) Assertion {
+	return powerBoundaryAvailabilityAssertion("power-boundary partition unavailable", state, within, pollInterval, false, func(plan powerBoundaryPlan) []NodeID {
+		return plan.preserve
+	})
+}
+
+func powerBoundaryBreakerUnavailable(state *powerBoundaryState, within, pollInterval time.Duration) Assertion {
+	return powerBoundaryAvailabilityAssertion("power-boundary breaker unavailable", state, within, pollInterval, false, func(plan powerBoundaryPlan) []NodeID {
+		if plan.breaker == "" {
+			return nil
+		}
+		return []NodeID{plan.breaker}
+	})
+}
+
+func powerBoundaryBreakerAvailable(state *powerBoundaryState, within, pollInterval time.Duration) Assertion {
+	return powerBoundaryAvailabilityAssertion("power-boundary breaker available", state, within, pollInterval, true, func(plan powerBoundaryPlan) []NodeID {
+		if plan.breaker == "" {
+			return nil
+		}
+		return []NodeID{plan.breaker}
+	})
+}
+
+func powerBoundaryAvailabilityAssertion(label string, state *powerBoundaryState, within, pollInterval time.Duration, wantAvailable bool, ids func(powerBoundaryPlan) []NodeID) Assertion {
+	return AssertionFunc{
+		Label: label,
+		Fn: func(ctx context.Context, run *RunContext) error {
+			if state == nil {
+				return fmt.Errorf("%w: power boundary plan was not captured", ErrInvalidScenario)
+			}
+			nodeIDs := ids(state.plan)
+			if len(nodeIDs) == 0 {
+				return fmt.Errorf("%w: power boundary plan has no nodes for %s", ErrInvalidScenario, label)
+			}
+			if wantAvailable {
+				return NodesAvailable(nodeIDs, within, pollInterval).Check(ctx, run)
+			}
+			return NodesUnavailable(nodeIDs, within, pollInterval).Check(ctx, run)
 		},
 	}
 }
@@ -2258,6 +2309,16 @@ func outcomeActionStep(name string, timeout time.Duration, actions []Action, ass
 		Assertions: assertions,
 		Timeout:    timeout,
 	}
+}
+
+func outageOutcomeAssertions(ids []NodeID, within, pollInterval time.Duration, assertions []Assertion) []Assertion {
+	out := []Assertion{NodesUnavailable(ids, within, pollInterval)}
+	return append(out, assertions...)
+}
+
+func availableOutcomeAssertions(ids []NodeID, within, pollInterval time.Duration, assertions []Assertion) []Assertion {
+	out := []Assertion{NodesAvailable(ids, within, pollInterval)}
+	return append(out, assertions...)
 }
 
 func stopStartActions(ids []NodeID) ([]Action, []Action) {

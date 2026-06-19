@@ -2064,8 +2064,8 @@ func TestOutcomeEdgeCaseScenarioCatchesNoopRestart(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected no-op restart to fail outcome edge cases after %d events", len(result.Events))
 	}
-	if !strings.Contains(err.Error(), "height did not advance") {
-		t.Fatalf("expected height recovery failure, got %v", err)
+	if !strings.Contains(err.Error(), "nodes did not become available") {
+		t.Fatalf("expected node availability failure, got %v", err)
 	}
 }
 
@@ -2085,8 +2085,8 @@ func TestOutcomeEdgeCaseScenarioCatchesUnreachableRestart(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected unreachable restart to fail outcome edge cases after %d events", len(result.Events))
 	}
-	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
-		t.Fatalf("expected reachability baseline failure, got %v", err)
+	if !strings.Contains(err.Error(), "nodes did not become available") {
+		t.Fatalf("expected node availability failure, got %v", err)
 	}
 }
 
@@ -2103,8 +2103,8 @@ func TestPowerSkewOutcomeScenarioCatchesUnreachableStart(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected unreachable start to fail power-skew outcome after %d events", len(result.Events))
 	}
-	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
-		t.Fatalf("expected reachability baseline failure, got %v", err)
+	if !strings.Contains(err.Error(), "nodes did not become available") {
+		t.Fatalf("expected node availability failure, got %v", err)
 	}
 }
 
@@ -2123,8 +2123,8 @@ func TestPowerSkewOutcomeScenarioCatchesStaleEndpointRepair(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected stale endpoint repair to fail power-skew outcome after %d events", len(result.Events))
 	}
-	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
-		t.Fatalf("expected reachability baseline failure, got %v", err)
+	if !strings.Contains(err.Error(), "nodes did not become available") {
+		t.Fatalf("expected node availability failure, got %v", err)
 	}
 }
 
@@ -2182,8 +2182,8 @@ func TestPowerBoundaryOutcomeScenarioCatchesNoopBoundaryRestart(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected no-op boundary restart to fail power-boundary outcome after %d events", len(result.Events))
 	}
-	if !strings.Contains(err.Error(), "height did not advance") {
-		t.Fatalf("expected height recovery failure, got %v", err)
+	if !strings.Contains(err.Error(), "nodes did not become available") {
+		t.Fatalf("expected node availability failure, got %v", err)
 	}
 }
 
@@ -2200,8 +2200,8 @@ func TestPowerBoundaryOutcomeScenarioCatchesUnreachableRestart(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected unreachable restart to fail power-boundary outcome after %d events", len(result.Events))
 	}
-	if !strings.Contains(err.Error(), "reachability did not return to baseline") {
-		t.Fatalf("expected reachability baseline failure, got %v", err)
+	if !strings.Contains(err.Error(), "nodes did not become available") {
+		t.Fatalf("expected node availability failure, got %v", err)
 	}
 }
 
