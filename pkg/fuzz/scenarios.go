@@ -1774,6 +1774,22 @@ func PowerBoundaryOutcomeScenario(within, pollInterval time.Duration) Scenario {
 		NoLiveValidatorFork(),
 		NoHeightRegression(regressionWindow, pollInterval),
 	}
+	recoveryAssertions := []Assertion{
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	powerBaseline := &ValidatorPowerBaseline{}
+	reachabilityBaseline := &ReachabilityBaseline{}
+	restoreAssertions := []Assertion{
+		ValidatorPowerRestored(powerBaseline, within, pollInterval),
+		ReachabilityRestored(reachabilityBaseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
 	state := &powerBoundaryState{}
 
 	return Scenario{
@@ -1784,6 +1800,8 @@ func PowerBoundaryOutcomeScenario(within, pollInterval time.Duration) Scenario {
 				Assertions: quorumOutcomeAssertions,
 				Timeout:    stepTimeout,
 			},
+			ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(powerBaseline)),
+			ActionStep("capture initial reachability baseline", CaptureReachabilityBaseline(reachabilityBaseline)),
 			{
 				Name:       "stop largest observed power partition that preserves quorum",
 				Actions:    []Action{planAndStopPowerBoundary(state)},
@@ -1799,13 +1817,13 @@ func PowerBoundaryOutcomeScenario(within, pollInterval time.Duration) Scenario {
 			{
 				Name:       "restart boundary validator; chain recovers",
 				Actions:    []Action{restartPowerBoundaryBreaker(state)},
-				Assertions: quorumOutcomeAssertions,
+				Assertions: recoveryAssertions,
 				Timeout:    stepTimeout,
 			},
 			{
-				Name:       "restart power partition; chain remains live",
+				Name:       "restart power partition; initial validator and endpoint outcome is restored",
 				Actions:    []Action{restartPowerBoundaryPartition(state)},
-				Assertions: quorumOutcomeAssertions,
+				Assertions: restoreAssertions,
 				Timeout:    stepTimeout,
 			},
 		},
