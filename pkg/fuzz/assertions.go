@@ -169,6 +169,49 @@ func HeightAdvances(minDelta int64, within, pollInterval time.Duration) Assertio
 	}
 }
 
+func HeightStalls(observeFor, pollInterval time.Duration) Assertion {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if observeFor <= 0 {
+		observeFor = 2 * pollInterval
+	}
+	return AssertionFunc{
+		Label: "height does not advance",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			initial, err := run.Network.Snapshot(ctx)
+			if err != nil {
+				return err
+			}
+			startHeight := initial.MaxHeight()
+
+			deadline := time.NewTimer(observeFor)
+			defer deadline.Stop()
+			ticker := time.NewTicker(pollInterval)
+			defer ticker.Stop()
+
+			last := initial
+			for {
+				if last.MaxHeight() > startHeight {
+					return fmt.Errorf("height advanced from %d to %d during %s stall observation: %s", startHeight, last.MaxHeight(), observeFor, last.Summary())
+				}
+
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-deadline.C:
+					return nil
+				case <-ticker.C:
+					last, err = run.Network.Snapshot(ctx)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		},
+	}
+}
+
 func NoHeightRegression(observeFor, pollInterval time.Duration) Assertion {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval

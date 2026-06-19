@@ -130,6 +130,9 @@ type simulatedLoopConfig struct {
 
 func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	started := time.Now()
+	if err := runSimulatedQuorumLossRecovery(cfg); err != nil {
+		return err
+	}
 	for i := 0; i < cfg.iterations; i++ {
 		network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
 			NodeCount:      cfg.nodes,
@@ -181,6 +184,35 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 		cfg.seed,
 		time.Since(started).Round(time.Millisecond),
 	)
+	return nil
+}
+
+func runSimulatedQuorumLossRecovery(cfg simulatedLoopConfig) error {
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      cfg.nodes,
+		InitialActive:  cfg.nodes,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	timeout := cfg.timeout
+	minimumTimeout := 3*cfg.window + 5*cfg.pollInterval + 2*time.Second
+	if timeout < minimumTimeout {
+		timeout = minimumTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.QuorumLossRecoveryScenario(network.Spec(), cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim quorum-loss recovery failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim quorum-loss recovery ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
 	return nil
 }
 

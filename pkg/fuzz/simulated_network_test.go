@@ -74,6 +74,45 @@ func TestSimulatedChaosScenarioRunsWith300Nodes(t *testing.T) {
 	}
 }
 
+func TestSimulatedQuorumLossRecoveryRunsWith300Nodes(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      DefaultModelNodeLimit,
+		InitialActive:  DefaultModelNodeLimit,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		QuorumLossRecoveryScenario(network.Spec(), 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("quorum-loss recovery failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestSimulatedQuorumLossRecoveryCatchesTickWithoutQuorum(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      DefaultModelNodeLimit,
+		InitialActive:  DefaultModelNodeLimit,
+		Behavior:       ValidatorSetBehaviorBuggyTickWithoutQuorum,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		QuorumLossRecoveryScenario(network.Spec(), 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected quorum-loss recovery to catch tick-without-quorum bug after %d events", len(result.Events))
+	}
+}
+
 func TestSimulatedChaosCatchesIncidentRegression(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount: 1,

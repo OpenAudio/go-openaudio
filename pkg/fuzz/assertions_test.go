@@ -85,6 +85,56 @@ func TestHeightAdvances(t *testing.T) {
 	}
 }
 
+func TestHeightStalls(t *testing.T) {
+	reader := newScriptedReader(map[NodeID][]int64{
+		"node1": {10, 10, 10},
+		"node2": {10, 10, 10},
+	})
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name: "scripted",
+		Nodes: []NodeSpec{
+			{ID: "node1", Endpoint: "http://node1"},
+			{ID: "node2", Endpoint: "http://node2"},
+		},
+	}, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := HeightStalls(10*time.Millisecond, time.Millisecond).Check(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHeightStallsFails(t *testing.T) {
+	reader := newScriptedReader(map[NodeID][]int64{
+		"node1": {10, 11},
+		"node2": {10, 10},
+	})
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name: "scripted",
+		Nodes: []NodeSpec{
+			{ID: "node1", Endpoint: "http://node1"},
+			{ID: "node2", Endpoint: "http://node2"},
+		},
+	}, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := HeightStalls(10*time.Millisecond, time.Millisecond).Check(ctx, run); err == nil {
+		t.Fatal("expected height stall assertion to fail")
+	}
+}
+
 func TestReachableAtLeast(t *testing.T) {
 	network, err := NewStaticNetwork(NetworkSpec{
 		Name: "reachable",

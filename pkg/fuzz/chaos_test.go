@@ -143,6 +143,17 @@ func TestRandomMinorityCohortNeverSelectsMajority(t *testing.T) {
 	}
 }
 
+func TestQuorumLossCohortBreaksQuorumAt300Nodes(t *testing.T) {
+	ids := make([]NodeID, 300)
+	for i := range ids {
+		ids[i] = NodeID("node" + itoa(i+1))
+	}
+	cohort := quorumLossCohort(ids)
+	if len(cohort) != 100 {
+		t.Fatalf("expected 100 nodes to break quorum out of 300, got %d", len(cohort))
+	}
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
