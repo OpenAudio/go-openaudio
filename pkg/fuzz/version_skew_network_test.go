@@ -403,6 +403,131 @@ func TestEndpointRepairIdempotencyScenarioCatchesNoopRepairFork(t *testing.T) {
 	}
 }
 
+func TestInactiveEndpointIsolationScenarioPassesCurrentNetwork(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      4,
+		InitialActive:  4,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		InactiveEndpointIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+			Registrar:       network,
+			Jailer:          network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("inactive-endpoint isolation failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestInactiveEndpointIsolationScenarioCatchesJailedReactivation(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeReactivateJailedOnInactiveEndpoint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		InactiveEndpointIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+			Registrar:       network,
+			Jailer:          network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected jailed endpoint reactivation to fail inactive-endpoint isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestInactiveEndpointIsolationScenarioCatchesAbsentReactivation(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount: 4,
+		Mode:      VersionSkewModeReactivateAbsentOnInactiveEndpoint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		InactiveEndpointIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+			Registrar:       network,
+			Jailer:          network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected absent endpoint reactivation to fail inactive-endpoint isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestInactiveEndpointIsolationScenarioCatchesLegacyHalt(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1", "node2"},
+		Mode:          VersionSkewModeHaltLegacyOnInactiveEndpoint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		InactiveEndpointIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+			Registrar:       network,
+			Jailer:          network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected inactive endpoint halt to fail isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestInactiveEndpointIsolationScenarioCatchesLegacyFork(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeForkLegacyOnInactiveEndpoint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		InactiveEndpointIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+			Registrar:       network,
+			Jailer:          network,
+		}, "node4", 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected inactive endpoint fork to fail isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "live validators reported conflicting block hashes") {
+		t.Fatalf("expected live-validator fork failure, got %v", err)
+	}
+}
+
 func TestStopStartRoundTripScenarioPassesCurrentNetwork(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      4,

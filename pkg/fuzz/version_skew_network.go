@@ -22,6 +22,10 @@ const (
 	VersionSkewModeForkLegacyOnEndpointRepair
 	VersionSkewModeHaltLegacyOnEndpointNoopRepair
 	VersionSkewModeForkLegacyOnEndpointNoopRepair
+	VersionSkewModeReactivateJailedOnInactiveEndpoint
+	VersionSkewModeReactivateAbsentOnInactiveEndpoint
+	VersionSkewModeHaltLegacyOnInactiveEndpoint
+	VersionSkewModeForkLegacyOnInactiveEndpoint
 	VersionSkewModeHaltLegacyOnRegister
 	VersionSkewModeForkLegacyOnRegister
 	VersionSkewModeHaltLegacyOnActiveRegister
@@ -208,6 +212,23 @@ func (n *VersionSkewNetwork) SetNodeEndpoint(ctx context.Context, node NodeSpec,
 	if err := n.withNode(ctx, node.ID, func(modelNode *versionSkewNode) {
 		original := n.originalEndpoints[node.ID]
 		honest := endpoint == "" || endpoint == original
+		if modelNode.state != ModelValidatorActive {
+			switch modelNode.state {
+			case ModelValidatorJailed:
+				if n.mode == VersionSkewModeReactivateJailedOnInactiveEndpoint {
+					modelNode.state = ModelValidatorActive
+					modelNode.online = true
+				}
+			case ModelValidatorAbsent:
+				if n.mode == VersionSkewModeReactivateAbsentOnInactiveEndpoint {
+					modelNode.state = ModelValidatorActive
+					modelNode.online = true
+				}
+			}
+			n.triggerInactiveEndpointIncompatibilityLocked()
+			modelNode.endpointHonest = honest
+			return
+		}
 		if !honest {
 			n.triggerEndpointLieIncompatibilityLocked()
 			modelNode.endpointHonest = false
@@ -392,6 +413,19 @@ func (n *VersionSkewNetwork) triggerEndpointNoopRepairIncompatibilityLocked() {
 	case VersionSkewModeForkLegacyOnEndpointNoopRepair:
 		n.diverged = true
 	case VersionSkewModeHaltLegacyOnEndpointNoopRepair:
+		for id := range n.legacy {
+			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
+				node.online = false
+			}
+		}
+	}
+}
+
+func (n *VersionSkewNetwork) triggerInactiveEndpointIncompatibilityLocked() {
+	switch n.mode {
+	case VersionSkewModeForkLegacyOnInactiveEndpoint:
+		n.diverged = true
+	case VersionSkewModeHaltLegacyOnInactiveEndpoint:
 		for id := range n.legacy {
 			if node := n.nodes[id]; node != nil && node.state == ModelValidatorActive {
 				node.online = false
