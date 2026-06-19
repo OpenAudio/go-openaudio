@@ -403,6 +403,123 @@ func TestEndpointRepairIdempotencyScenarioCatchesNoopRepairFork(t *testing.T) {
 	}
 }
 
+func TestCohortEndpointConsensusIsolationScenarioPassesCurrentNetwork(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      4,
+		InitialActive:  4,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortEndpointConsensusIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("cohort endpoint consensus isolation failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestCohortEndpointConsensusIsolationScenarioCatchesEndpointLieHalt(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node3", "node4"},
+		Mode:          VersionSkewModeHaltLegacyOnEndpointLie,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortEndpointConsensusIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected endpoint lie halt to fail cohort isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestCohortEndpointConsensusIsolationScenarioCatchesEndpointLieFork(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node3"},
+		Mode:          VersionSkewModeForkLegacyOnEndpointLie,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortEndpointConsensusIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected endpoint lie fork to fail cohort isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "live validators reported conflicting block hashes") {
+		t.Fatalf("expected live-validator fork failure, got %v", err)
+	}
+}
+
+func TestCohortEndpointConsensusIsolationScenarioCatchesEndpointRepairHalt(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node3", "node4"},
+		Mode:          VersionSkewModeHaltLegacyOnEndpointRepair,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortEndpointConsensusIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected endpoint repair halt to fail cohort isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "validator power did not return to baseline") {
+		t.Fatalf("expected validator power baseline failure, got %v", err)
+	}
+}
+
+func TestCohortEndpointConsensusIsolationScenarioCatchesEndpointRepairFork(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node3"},
+		Mode:          VersionSkewModeForkLegacyOnEndpointRepair,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		CohortEndpointConsensusIsolationScenario(network.Spec(), ValidatorChaosController{
+			EndpointMutator: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected endpoint repair fork to fail cohort isolation after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "live validators reported conflicting block hashes") {
+		t.Fatalf("expected live-validator fork failure, got %v", err)
+	}
+}
+
 func TestInactiveEndpointIsolationScenarioPassesCurrentNetwork(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      4,

@@ -516,6 +516,68 @@ func EndpointRepairIdempotencyScenario(spec NetworkSpec, controller ValidatorCha
 	return scenario
 }
 
+func CohortEndpointConsensusIsolationScenario(spec NetworkSpec, controller ValidatorChaosController, within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+
+	ids := spec.NodeIDs()
+	cohort := quorumLossCohort(ids)
+	baseline := &ValidatorPowerBaseline{}
+	outcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	isolationAssertions := []Assertion{
+		ValidatorPowerRestored(baseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+
+	scenario := Scenario{
+		Name: "cohort-endpoint-consensus-isolation",
+		Steps: []Step{
+			{
+				Name:       "initial validator outcome",
+				Assertions: outcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+	if len(ids) <= 1 || len(cohort) == 0 || controller.EndpointMutator == nil {
+		return scenario
+	}
+
+	scenario.Steps = append(scenario.Steps,
+		ActionStep("capture validator power baseline", CaptureValidatorPowerBaseline(baseline)),
+		Step{
+			Name:       fmt.Sprintf("advertise bad endpoints for %d validators; consensus outcome is unchanged", len(cohort)),
+			Actions:    endpointLieActions(controller.EndpointMutator, cohort),
+			Assertions: isolationAssertions,
+			Timeout:    stepTimeout,
+		},
+		Step{
+			Name:       fmt.Sprintf("repair bad endpoints for %d validators; consensus outcome remains unchanged", len(cohort)),
+			Actions:    endpointRepairActions(controller.EndpointMutator, cohort),
+			Assertions: isolationAssertions,
+			Timeout:    stepTimeout,
+		},
+	)
+	return scenario
+}
+
 func InactiveEndpointIsolationScenario(spec NetworkSpec, controller ValidatorChaosController, target NodeID, within, pollInterval time.Duration) Scenario {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval
