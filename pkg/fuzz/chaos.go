@@ -25,6 +25,7 @@ type ValidatorChaosOptions struct {
 	NoProcessFaultDelay     bool
 	AssertAfterEachStep     bool
 	IncludePersistentFaults bool
+	RecoverAtEnd            bool
 }
 
 func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosController, opts ValidatorChaosOptions) Scenario {
@@ -83,6 +84,14 @@ func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosControlle
 	}
 
 	scenario.Steps = append(scenario.Steps, AssertionStep("final quorum outcome", HeightFollowsValidatorQuorum(livenessWithin, pollInterval)))
+	if opts.RecoverAtEnd {
+		scenario.Steps = append(scenario.Steps, Step{
+			Name:       "recover all controllable faults",
+			Actions:    validatorRecoveryActions(actionIDs, controller, opts.IncludeProcessFaults),
+			Assertions: []Assertion{HeightAdvances(1, livenessWithin, pollInterval), NoHeightRegression(pollInterval, pollInterval)},
+			Timeout:    opts.StepTimeout,
+		})
+	}
 	return scenario
 }
 
@@ -178,4 +187,24 @@ func randomMinorityCohort(rng *rand.Rand, ids []NodeID) []NodeID {
 		cohort = append(cohort, ids[index])
 	}
 	return cohort
+}
+
+func validatorRecoveryActions(ids []NodeID, controller ValidatorChaosController, includeProcesses bool) []Action {
+	var stages []Action
+	if controller.EndpointMutator != nil {
+		stages = append(stages, Sequence("repair all endpoints", endpointRepairActions(controller.EndpointMutator, ids)...))
+	}
+	if controller.Jailer != nil {
+		stages = append(stages, Sequence("unjail all validators", unjailActions(controller.Jailer, ids)...))
+	}
+	if controller.Registrar != nil {
+		stages = append(stages, Sequence("register all validators", registerActions(controller.Registrar, ids)...))
+	}
+	if includeProcesses {
+		stages = append(stages, Sequence("start all nodes", startActions(ids)...))
+	}
+	if len(stages) == 0 {
+		return nil
+	}
+	return []Action{Sequence("recover all controllable validator faults", stages...)}
 }

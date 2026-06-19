@@ -169,6 +169,7 @@ func TestSimulatedPersistentChaosScenarioRunsWith300Nodes(t *testing.T) {
 		NoProcessFaultDelay:     true,
 		AssertAfterEachStep:     true,
 		IncludePersistentFaults: true,
+		RecoverAtEnd:            true,
 	})
 	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(context.Background(), scenario)
 	if err != nil {
@@ -371,6 +372,89 @@ func TestSimulatedPowerBoundaryOutcomeEdgeCasesCatchTickWithoutQuorum(t *testing
 	)
 	if err == nil {
 		t.Fatalf("expected power-boundary outcome edge cases to catch tick-without-quorum bug after %d events", len(result.Events))
+	}
+}
+
+func TestSimulatedProgramRecoveryRepairsPersistentFaults(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      5,
+		InitialActive:  5,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	program := []byte{
+		1, 0, 0, 0, // stop node1
+		1, 0, 0, 2, // deregister node1
+		1, 0, 0, 4, // jail node1
+		1, 0, 0, 6, // advertise bad endpoint for node1
+	}
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		SimulatedChaosScenarioFromProgram(network.Spec(), ValidatorChaosController{
+			Registrar:       network,
+			EndpointMutator: network,
+			Jailer:          network,
+		}, program, SimulatedProgramOptions{
+			MaxSteps:                len(program),
+			LivenessEvery:           len(program),
+			LivenessWithin:          25 * time.Millisecond,
+			PollInterval:            time.Millisecond,
+			AssertAfterEachStep:     true,
+			IncludePersistentFaults: true,
+			RecoverAtEnd:            true,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("simulated program recovery failed after %d events: %v", len(result.Events), err)
+	}
+
+	snapshot, err := network.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.HasValidatorQuorum() {
+		t.Fatalf("recovery did not restore validator quorum: %s", snapshot.Summary())
+	}
+	for _, node := range snapshot.Nodes {
+		if !node.Reachable || !node.Live || node.ValidatorPower <= 0 {
+			t.Fatalf("recovery left node unhealthy: %s", snapshot.Summary())
+		}
+	}
+}
+
+func TestSimulatedProgramRecoveryCatchesBrokenRegistrationRecovery(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      1,
+		InitialActive:  1,
+		Behavior:       ValidatorSetBehaviorBuggyRegisterWithoutCometUpdate,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	program := []byte{1, 0, 0, 2}
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		SimulatedChaosScenarioFromProgram(network.Spec(), ValidatorChaosController{
+			Registrar:       network,
+			EndpointMutator: network,
+			Jailer:          network,
+		}, program, SimulatedProgramOptions{
+			MaxSteps:                len(program),
+			LivenessEvery:           len(program),
+			LivenessWithin:          25 * time.Millisecond,
+			PollInterval:            time.Millisecond,
+			AssertAfterEachStep:     true,
+			IncludePersistentFaults: true,
+			RecoverAtEnd:            true,
+		}),
+	)
+	if err == nil {
+		t.Fatalf("expected recovery to catch broken registration after %d events", len(result.Events))
 	}
 }
 

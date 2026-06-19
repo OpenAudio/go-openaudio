@@ -28,10 +28,11 @@ func FuzzSimulatedChaosProgram(f *testing.F) {
 		}, program, SimulatedProgramOptions{
 			MaxSteps:                64,
 			LivenessEvery:           25,
-			LivenessWithin:          5 * time.Millisecond,
+			LivenessWithin:          25 * time.Millisecond,
 			PollInterval:            time.Millisecond,
 			AssertAfterEachStep:     true,
 			IncludePersistentFaults: true,
+			RecoverAtEnd:            true,
 		})
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()

@@ -14,6 +14,7 @@ type SimulatedProgramOptions struct {
 	PollInterval            time.Duration
 	AssertAfterEachStep     bool
 	IncludePersistentFaults bool
+	RecoverAtEnd            bool
 }
 
 func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorChaosController, program []byte, opts SimulatedProgramOptions) Scenario {
@@ -62,6 +63,13 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 		scenario.Steps = append(scenario.Steps, step)
 	}
 	scenario.Steps = append(scenario.Steps, AssertionStep("final quorum outcome", HeightFollowsValidatorQuorum(livenessWithin, pollInterval)))
+	if opts.RecoverAtEnd {
+		scenario.Steps = append(scenario.Steps, Step{
+			Name:       "recover all controllable faults",
+			Actions:    validatorRecoveryActions(ids, controller, true),
+			Assertions: []Assertion{HeightAdvances(1, livenessWithin, pollInterval), NoHeightRegression(pollInterval, pollInterval)},
+		})
+	}
 	return scenario
 }
 
