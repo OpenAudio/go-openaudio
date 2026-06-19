@@ -188,6 +188,9 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 	if err := runSimulatedCohortLifecycleRoundTrip(cfg); err != nil {
 		return err
 	}
+	if err := runSimulatedMixedLifecycleQuorumRecovery(cfg); err != nil {
+		return err
+	}
 	for i := 0; i < cfg.iterations; i++ {
 		network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
 			NodeCount:      cfg.nodes,
@@ -783,6 +786,34 @@ func runSimulatedCohortLifecycleRoundTrip(cfg simulatedLoopConfig) error {
 		return fmt.Errorf("sim cohort lifecycle round-trip failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
 	}
 	fmt.Printf("sim cohort lifecycle round-trip ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
+	return nil
+}
+
+func runSimulatedMixedLifecycleQuorumRecovery(cfg simulatedLoopConfig) error {
+	nodeCount := clampSimNodeCount(cfg.nodes, 4)
+	network, err := fuzz.NewSimulatedNetwork(fuzz.SimulatedNetworkOptions{
+		NodeCount:      nodeCount,
+		InitialActive:  nodeCount,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), simulatedScenarioTimeout(cfg, 2))
+	defer cancel()
+
+	result, err := fuzz.Runner{
+		Network:     network,
+		Seed:        cfg.seed,
+		StepTimeout: cfg.stepTimeout,
+	}.Run(ctx, fuzz.MixedLifecycleQuorumRecoveryScenario(network.Spec(), fuzz.ValidatorChaosController{
+		Registrar: network,
+		Jailer:    network,
+	}, cfg.window, cfg.pollInterval))
+	if err != nil {
+		return fmt.Errorf("sim mixed lifecycle quorum recovery failed seed=%d events=%d: %w", result.Seed, len(result.Events), err)
+	}
+	fmt.Printf("sim mixed lifecycle quorum recovery ok seed=%d nodes=%d events=%d\n", result.Seed, len(network.Spec().Nodes), len(result.Events))
 	return nil
 }
 

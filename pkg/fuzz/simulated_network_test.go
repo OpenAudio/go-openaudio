@@ -2,6 +2,7 @@ package fuzz
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -363,6 +364,38 @@ func TestQuorumBoundaryPlanUsesObservedValidatorPower(t *testing.T) {
 	}
 	if plan.breaker == "" {
 		t.Fatal("expected a boundary breaker")
+	}
+}
+
+func TestMixedLifecycleQuorumPlanUsesObservedValidatorPower(t *testing.T) {
+	snapshot := Snapshot{
+		Nodes: []NodeStatus{
+			{ID: "node1", Live: true, ValidatorPower: 40},
+			{ID: "node2", Live: true, ValidatorPower: 15},
+			{ID: "node3", Live: true, ValidatorPower: 15},
+			{ID: "node4", Live: true, ValidatorPower: 15},
+			{ID: "node5", Live: true, ValidatorPower: 10},
+			{ID: "node6", Live: true, ValidatorPower: 5},
+		},
+	}
+	plan, err := mixedLifecycleQuorumPlanFromSnapshot(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.totalPower != 100 {
+		t.Fatalf("planned from total power %d, want 100", plan.totalPower)
+	}
+	if plan.removedPower != 15 {
+		t.Fatalf("removed power = %d, want 15", plan.removedPower)
+	}
+	if plan.stoppedPower != 30 {
+		t.Fatalf("stopped power = %d, want 30", plan.stoppedPower)
+	}
+	if got, want := fmt.Sprint(plan.remove), "[node6 node5]"; got != want {
+		t.Fatalf("remove plan = %s, want %s", got, want)
+	}
+	if got, want := fmt.Sprint(plan.stop), "[node2 node3]"; got != want {
+		t.Fatalf("stop plan = %s, want %s", got, want)
 	}
 }
 

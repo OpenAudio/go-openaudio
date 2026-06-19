@@ -1392,3 +1392,145 @@ func TestCohortLifecycleRoundTripScenarioCatchesUnjailFork(t *testing.T) {
 		t.Fatalf("expected live-validator fork failure, got %v", err)
 	}
 }
+
+func TestMixedLifecycleQuorumRecoveryScenarioPassesCurrentNetwork(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      4,
+		InitialActive:  4,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		MixedLifecycleQuorumRecoveryScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+			Jailer:    network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("mixed lifecycle quorum recovery failed after %d events: %v", len(result.Events), err)
+	}
+}
+
+func TestMixedLifecycleQuorumRecoveryScenarioCatchesRegisterHalt(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node3", "node4"},
+		Mode:          VersionSkewModeHaltLegacyOnRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		MixedLifecycleQuorumRecoveryScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected register halt to fail mixed lifecycle recovery after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "height did not advance") {
+		t.Fatalf("expected height-advance failure, got %v", err)
+	}
+}
+
+func TestMixedLifecycleQuorumRecoveryScenarioCatchesRegisterFork(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node3"},
+		Mode:          VersionSkewModeForkLegacyOnRegister,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		MixedLifecycleQuorumRecoveryScenario(network.Spec(), ValidatorChaosController{
+			Registrar: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected register fork to fail mixed lifecycle recovery after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "live validators reported conflicting block hashes") {
+		t.Fatalf("expected live-validator fork failure, got %v", err)
+	}
+}
+
+func TestMixedLifecycleQuorumRecoveryScenarioCatchesNoopUnjail(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node1"},
+		Mode:          VersionSkewModeNoopOnUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		MixedLifecycleQuorumRecoveryScenario(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected noop unjail to fail mixed lifecycle recovery after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "height did not advance") {
+		t.Fatalf("expected height-advance failure, got %v", err)
+	}
+}
+
+func TestMixedLifecycleQuorumRecoveryScenarioCatchesUnjailHalt(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node3", "node4"},
+		Mode:          VersionSkewModeHaltLegacyOnUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		MixedLifecycleQuorumRecoveryScenario(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unjail halt to fail mixed lifecycle recovery after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "height did not advance") {
+		t.Fatalf("expected height-advance failure, got %v", err)
+	}
+}
+
+func TestMixedLifecycleQuorumRecoveryScenarioCatchesUnjailFork(t *testing.T) {
+	network, err := NewVersionSkewNetwork(VersionSkewNetworkOptions{
+		NodeCount:     4,
+		LegacyNodeIDs: []NodeID{"node3"},
+		Mode:          VersionSkewModeForkLegacyOnUnjail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(
+		context.Background(),
+		MixedLifecycleQuorumRecoveryScenario(network.Spec(), ValidatorChaosController{
+			Jailer: network,
+		}, 25*time.Millisecond, time.Millisecond),
+	)
+	if err == nil {
+		t.Fatalf("expected unjail fork to fail mixed lifecycle recovery after %d events", len(result.Events))
+	}
+	if !strings.Contains(err.Error(), "live validators reported conflicting block hashes") {
+		t.Fatalf("expected live-validator fork failure, got %v", err)
+	}
+}

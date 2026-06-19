@@ -1135,6 +1135,123 @@ func CohortLifecycleRoundTripScenario(spec NetworkSpec, controller ValidatorChao
 	return scenario
 }
 
+func MixedLifecycleQuorumRecoveryScenario(spec NetworkSpec, controller ValidatorChaosController, within, pollInterval time.Duration) Scenario {
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
+	}
+	if within <= 0 {
+		within = 30 * time.Second
+	}
+	stepTimeout := within + pollInterval + time.Second
+	regressionWindow := 2 * pollInterval
+	if regressionWindow <= 0 {
+		regressionWindow = 2 * defaultPollInterval
+	}
+
+	baseline := &ValidatorPowerBaseline{}
+	state := &mixedLifecycleQuorumState{}
+	outcomeAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	stallAssertions := []Assertion{
+		HeightFollowsValidatorQuorum(within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	recoveryAssertions := []Assertion{
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+	restoreAssertions := []Assertion{
+		ValidatorPowerRestored(baseline, within, pollInterval),
+		HeightAdvances(1, within, pollInterval),
+		LiveValidatorHeightsConverge(0, within, pollInterval),
+		NoLiveValidatorFork(),
+		NoHeightRegression(regressionWindow, pollInterval),
+	}
+
+	scenario := Scenario{
+		Name: "mixed-lifecycle-quorum-recovery",
+		Steps: []Step{
+			{
+				Name:       "initial validator outcome",
+				Assertions: outcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+		},
+	}
+	if len(spec.NodeIDs()) < 4 || (controller.Registrar == nil && controller.Jailer == nil) {
+		return scenario
+	}
+
+	scenario.Steps = append(scenario.Steps,
+		ActionStep("capture initial validator power baseline", CaptureValidatorPowerBaseline(baseline)),
+		ActionStep("plan mixed lifecycle quorum boundary", planMixedLifecycleQuorum(state)),
+	)
+	if controller.Registrar != nil {
+		scenario.Steps = append(scenario.Steps,
+			Step{
+				Name:       "deregister planned validators; chain follows updated set",
+				Actions:    []Action{deregisterMixedLifecycleRemoved(state, controller.Registrar)},
+				Assertions: outcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+			Step{
+				Name:       "stop planned remaining validators; chain stalls without quorum",
+				Actions:    []Action{stopMixedLifecycleStopped(state)},
+				Assertions: stallAssertions,
+				Timeout:    stepTimeout,
+			},
+			Step{
+				Name:       "register removed validators; chain recovers before stopped validators restart",
+				Actions:    []Action{registerMixedLifecycleRemoved(state, controller.Registrar)},
+				Assertions: recoveryAssertions,
+				Timeout:    stepTimeout,
+			},
+			Step{
+				Name:       "restart stopped validators; original validator outcome is restored",
+				Actions:    []Action{startMixedLifecycleStopped(state)},
+				Assertions: restoreAssertions,
+				Timeout:    stepTimeout,
+			},
+		)
+	}
+	if controller.Jailer != nil {
+		scenario.Steps = append(scenario.Steps,
+			Step{
+				Name:       "jail planned validators; chain follows updated set",
+				Actions:    []Action{jailMixedLifecycleRemoved(state, controller.Jailer)},
+				Assertions: outcomeAssertions,
+				Timeout:    stepTimeout,
+			},
+			Step{
+				Name:       "stop planned remaining validators; chain stalls without quorum",
+				Actions:    []Action{stopMixedLifecycleStopped(state)},
+				Assertions: stallAssertions,
+				Timeout:    stepTimeout,
+			},
+			Step{
+				Name:       "unjail removed validators; chain recovers before stopped validators restart",
+				Actions:    []Action{unjailMixedLifecycleRemoved(state, controller.Jailer)},
+				Assertions: recoveryAssertions,
+				Timeout:    stepTimeout,
+			},
+			Step{
+				Name:       "restart stopped validators; original validator outcome is restored",
+				Actions:    []Action{startMixedLifecycleStopped(state)},
+				Assertions: restoreAssertions,
+				Timeout:    stepTimeout,
+			},
+		)
+	}
+	return scenario
+}
+
 func CompoundOutcomeEdgeCaseScenario(spec NetworkSpec, controller ValidatorChaosController, within, pollInterval time.Duration) Scenario {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval
@@ -1538,6 +1655,186 @@ func liveValidatorPowers(snapshot Snapshot) []validatorPowerSample {
 		return out[i].power < out[j].power
 	})
 	return out
+}
+
+type mixedLifecycleQuorumState struct {
+	plan mixedLifecycleQuorumPlan
+}
+
+type mixedLifecycleQuorumPlan struct {
+	remove       []NodeID
+	stop         []NodeID
+	totalPower   int64
+	removedPower int64
+	stoppedPower int64
+}
+
+func planMixedLifecycleQuorum(state *mixedLifecycleQuorumState) Action {
+	return ActionFunc{
+		Label: "plan mixed lifecycle quorum boundary",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			snapshot, err := run.Network.Snapshot(ctx)
+			if err != nil {
+				return err
+			}
+			plan, err := mixedLifecycleQuorumPlanFromSnapshot(snapshot)
+			if err != nil {
+				return err
+			}
+			state.plan = plan
+			run.record(
+				"mixed_lifecycle_quorum_plan",
+				fmt.Sprintf("remove=%d stop=%d", len(plan.remove), len(plan.stop)),
+				fmt.Sprintf("total_power=%d removed_power=%d stopped_power=%d", plan.totalPower, plan.removedPower, plan.stoppedPower),
+			)
+			return nil
+		},
+	}
+}
+
+func mixedLifecycleQuorumPlanFromSnapshot(snapshot Snapshot) (mixedLifecycleQuorumPlan, error) {
+	totalPower, livePower := snapshot.ValidatorPower()
+	if totalPower <= 0 {
+		return mixedLifecycleQuorumPlan{}, fmt.Errorf("%w: snapshot has no validator power: %s", ErrInvalidScenario, snapshot.Summary())
+	}
+	if livePower*3 <= totalPower*2 {
+		return mixedLifecycleQuorumPlan{}, fmt.Errorf("%w: snapshot already lacks validator quorum power=%d/%d: %s", ErrInvalidScenario, livePower, totalPower, snapshot.Summary())
+	}
+
+	live := liveValidatorPowers(snapshot)
+	if len(live) < 4 {
+		return mixedLifecycleQuorumPlan{}, fmt.Errorf("%w: mixed lifecycle quorum recovery requires at least 4 live validators: %s", ErrInvalidScenario, snapshot.Summary())
+	}
+
+	for removeCount := 1; removeCount < len(live); removeCount++ {
+		removed := live[:removeCount]
+		remaining := live[removeCount:]
+		removedPower := validatorSamplePower(removed)
+		totalAfterRemoval := totalPower - removedPower
+		liveAfterRemoval := livePower - removedPower
+		if totalAfterRemoval <= 0 || liveAfterRemoval*3 <= totalAfterRemoval*2 {
+			continue
+		}
+
+		var stopped []validatorPowerSample
+		var stoppedPower int64
+		for _, validator := range remaining {
+			stopped = append(stopped, validator)
+			stoppedPower += validator.power
+			liveAfterStop := liveAfterRemoval - stoppedPower
+			if liveAfterStop*3 > totalAfterRemoval*2 {
+				continue
+			}
+			liveAfterRecovery := livePower - stoppedPower
+			if liveAfterRecovery*3 <= totalPower*2 {
+				continue
+			}
+			return mixedLifecycleQuorumPlan{
+				remove:       validatorSampleIDs(removed),
+				stop:         validatorSampleIDs(stopped),
+				totalPower:   totalPower,
+				removedPower: removedPower,
+				stoppedPower: stoppedPower,
+			}, nil
+		}
+	}
+
+	return mixedLifecycleQuorumPlan{}, fmt.Errorf("%w: could not find mixed lifecycle quorum boundary from power=%d/%d: %s", ErrInvalidScenario, livePower, totalPower, snapshot.Summary())
+}
+
+func validatorSamplePower(samples []validatorPowerSample) int64 {
+	var power int64
+	for _, sample := range samples {
+		power += sample.power
+	}
+	return power
+}
+
+func validatorSampleIDs(samples []validatorPowerSample) []NodeID {
+	ids := make([]NodeID, 0, len(samples))
+	for _, sample := range samples {
+		ids = append(ids, sample.id)
+	}
+	return ids
+}
+
+func deregisterMixedLifecycleRemoved(state *mixedLifecycleQuorumState, registrar Registrar) Action {
+	return ActionFunc{
+		Label: "deregister mixed lifecycle removed validators",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			if err := ensureMixedLifecyclePlan(state); err != nil {
+				return err
+			}
+			return Sequence("deregister planned validators", deregisterActions(registrar, state.plan.remove)...).Run(ctx, run)
+		},
+	}
+}
+
+func registerMixedLifecycleRemoved(state *mixedLifecycleQuorumState, registrar Registrar) Action {
+	return ActionFunc{
+		Label: "register mixed lifecycle removed validators",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			if err := ensureMixedLifecyclePlan(state); err != nil {
+				return err
+			}
+			return Sequence("register planned validators", registerActions(registrar, state.plan.remove)...).Run(ctx, run)
+		},
+	}
+}
+
+func jailMixedLifecycleRemoved(state *mixedLifecycleQuorumState, jailer Jailer) Action {
+	return ActionFunc{
+		Label: "jail mixed lifecycle removed validators",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			if err := ensureMixedLifecyclePlan(state); err != nil {
+				return err
+			}
+			return Sequence("jail planned validators", jailActions(jailer, state.plan.remove)...).Run(ctx, run)
+		},
+	}
+}
+
+func unjailMixedLifecycleRemoved(state *mixedLifecycleQuorumState, jailer Jailer) Action {
+	return ActionFunc{
+		Label: "unjail mixed lifecycle removed validators",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			if err := ensureMixedLifecyclePlan(state); err != nil {
+				return err
+			}
+			return Sequence("unjail planned validators", unjailActions(jailer, state.plan.remove)...).Run(ctx, run)
+		},
+	}
+}
+
+func stopMixedLifecycleStopped(state *mixedLifecycleQuorumState) Action {
+	return ActionFunc{
+		Label: "stop mixed lifecycle remaining validators",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			if err := ensureMixedLifecyclePlan(state); err != nil {
+				return err
+			}
+			return Parallel("stop planned remaining validators", stopActions(state.plan.stop)...).Run(ctx, run)
+		},
+	}
+}
+
+func startMixedLifecycleStopped(state *mixedLifecycleQuorumState) Action {
+	return ActionFunc{
+		Label: "start mixed lifecycle remaining validators",
+		Fn: func(ctx context.Context, run *RunContext) error {
+			if err := ensureMixedLifecyclePlan(state); err != nil {
+				return err
+			}
+			return Parallel("start planned remaining validators", startActions(state.plan.stop)...).Run(ctx, run)
+		},
+	}
+}
+
+func ensureMixedLifecyclePlan(state *mixedLifecycleQuorumState) error {
+	if state == nil || len(state.plan.remove) == 0 || len(state.plan.stop) == 0 {
+		return fmt.Errorf("%w: mixed lifecycle quorum boundary was not planned", ErrInvalidScenario)
+	}
+	return nil
 }
 
 func quorumLossCohort(ids []NodeID) []NodeID {
