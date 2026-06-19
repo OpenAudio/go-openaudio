@@ -13,17 +13,18 @@ type ValidatorChaosController struct {
 }
 
 type ValidatorChaosOptions struct {
-	Seed                 int64
-	Steps                int
-	StepTimeout          time.Duration
-	LivenessEvery        int
-	LivenessWithin       time.Duration
-	PollInterval         time.Duration
-	ActionNodeIDs        []NodeID
-	StartNodes           bool
-	IncludeProcessFaults bool
-	NoProcessFaultDelay  bool
-	AssertAfterEachStep  bool
+	Seed                    int64
+	Steps                   int
+	StepTimeout             time.Duration
+	LivenessEvery           int
+	LivenessWithin          time.Duration
+	PollInterval            time.Duration
+	ActionNodeIDs           []NodeID
+	StartNodes              bool
+	IncludeProcessFaults    bool
+	NoProcessFaultDelay     bool
+	AssertAfterEachStep     bool
+	IncludePersistentFaults bool
 }
 
 func ValidatorChaosScenario(spec NetworkSpec, controller ValidatorChaosController, opts ValidatorChaosOptions) Scenario {
@@ -112,17 +113,35 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 			partitionActions = append(partitionActions, Parallel("start minority cohort", start...))
 			actions = append(actions, Sequence(fmt.Sprintf("minority outage %d nodes", len(cohort)), partitionActions...))
 		}
+		if opts.IncludePersistentFaults {
+			actions = append(actions,
+				StopNode(id),
+				StartNode(id),
+			)
+		}
 	}
 	if controller.Registrar != nil {
 		actions = append(actions,
 			Sequence(fmt.Sprintf("deregister and register %s", id), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id)),
 			Sequence(fmt.Sprintf("duplicate deregister and register %s", id), DeregisterNodeWith(controller.Registrar, id), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id)),
 		)
+		if opts.IncludePersistentFaults {
+			actions = append(actions,
+				DeregisterNodeWith(controller.Registrar, id),
+				RegisterNodeWith(controller.Registrar, id),
+			)
+		}
 	}
 	if controller.Jailer != nil {
 		actions = append(actions,
 			Sequence(fmt.Sprintf("jail and unjail %s", id), JailNodeWith(controller.Jailer, id), UnjailNodeWith(controller.Jailer, id)),
 		)
+		if opts.IncludePersistentFaults {
+			actions = append(actions,
+				JailNodeWith(controller.Jailer, id),
+				UnjailNodeWith(controller.Jailer, id),
+			)
+		}
 		if controller.Registrar != nil {
 			actions = append(actions,
 				Sequence(fmt.Sprintf("jail deregister register %s", id), JailNodeWith(controller.Jailer, id), DeregisterNodeWith(controller.Registrar, id), RegisterNodeWith(controller.Registrar, id)),
@@ -134,6 +153,12 @@ func randomChaosAction(rng *rand.Rand, controller ValidatorChaosController, opts
 		actions = append(actions,
 			Sequence(fmt.Sprintf("lie and repair endpoint %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), AdvertiseEndpointWith(controller.EndpointMutator, id, "")),
 		)
+		if opts.IncludePersistentFaults {
+			actions = append(actions,
+				AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint),
+				AdvertiseEndpointWith(controller.EndpointMutator, id, ""),
+			)
+		}
 	}
 	if len(actions) == 0 {
 		return Wait(time.Duration(10+rng.Intn(50)) * time.Millisecond)

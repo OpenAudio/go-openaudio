@@ -107,6 +107,38 @@ func TestSimulatedChaosScenarioRunsWith300Nodes(t *testing.T) {
 	}
 }
 
+func TestSimulatedPersistentChaosScenarioRunsWith300Nodes(t *testing.T) {
+	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
+		NodeCount:      DefaultModelNodeLimit,
+		InitialActive:  DefaultModelNodeLimit,
+		TickOnSnapshot: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scenario := ValidatorChaosScenario(network.Spec(), ValidatorChaosController{
+		Registrar:       network,
+		EndpointMutator: network,
+		Jailer:          network,
+	}, ValidatorChaosOptions{
+		Seed:                    199,
+		Steps:                   100,
+		StepTimeout:             time.Second,
+		LivenessEvery:           10,
+		LivenessWithin:          25 * time.Millisecond,
+		PollInterval:            time.Millisecond,
+		IncludeProcessFaults:    true,
+		NoProcessFaultDelay:     true,
+		AssertAfterEachStep:     true,
+		IncludePersistentFaults: true,
+	})
+	result, err := Runner{Network: network, StepTimeout: time.Second}.Run(context.Background(), scenario)
+	if err != nil {
+		t.Fatalf("simulated persistent chaos failed after %d events: %v", len(result.Events), err)
+	}
+}
+
 func TestSimulatedQuorumLossRecoveryRunsWith300Nodes(t *testing.T) {
 	network, err := NewSimulatedNetwork(SimulatedNetworkOptions{
 		NodeCount:      DefaultModelNodeLimit,

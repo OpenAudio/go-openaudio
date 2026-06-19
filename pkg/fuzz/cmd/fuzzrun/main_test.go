@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/fuzz"
 )
@@ -47,6 +48,19 @@ func TestSimModeRuns(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNormalizeSimulatedLoopConfigCapsLiveWindows(t *testing.T) {
+	cfg := normalizeSimulatedLoopConfig(simulatedLoopConfig{
+		window:       60 * time.Second,
+		pollInterval: 2 * time.Second,
+	})
+	if cfg.window > 100*time.Millisecond {
+		t.Fatalf("simulated window was not capped: %s", cfg.window)
+	}
+	if cfg.pollInterval > cfg.window/10 {
+		t.Fatalf("simulated poll interval too slow: window=%s poll=%s", cfg.window, cfg.pollInterval)
 	}
 }
 

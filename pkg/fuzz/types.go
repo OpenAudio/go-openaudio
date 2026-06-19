@@ -118,6 +118,16 @@ func (s Snapshot) MaxHeight() int64 {
 	return max
 }
 
+func (s Snapshot) MaxObservedHeight() int64 {
+	var max int64
+	for _, node := range s.Nodes {
+		if node.Height > max {
+			max = node.Height
+		}
+	}
+	return max
+}
+
 func (s Snapshot) ReachableCount() int {
 	var count int
 	for _, node := range s.Nodes {

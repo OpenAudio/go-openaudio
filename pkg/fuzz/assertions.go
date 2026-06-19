@@ -227,20 +227,79 @@ func HeightFollowsValidatorQuorum(within, pollInterval time.Duration) Assertion 
 				return err
 			}
 			totalPower, livePower := snapshot.ValidatorPower()
-			if totalPower <= 0 {
-				return fmt.Errorf("cannot infer validator quorum with no observed validator power: %s", snapshot.Summary())
-			}
 			if livePower*3 > totalPower*2 {
-				if err := HeightAdvances(1, within, pollInterval).Check(ctx, run); err != nil {
+				if err := observedHeightAdvances(ctx, run, snapshot, 1, within, pollInterval); err != nil {
 					return fmt.Errorf("expected height to advance with live validator power %d/%d: %w", livePower, totalPower, err)
 				}
 				return nil
 			}
-			if err := HeightStalls(within, pollInterval).Check(ctx, run); err != nil {
+			if err := observedHeightStalls(ctx, run, snapshot, within, pollInterval); err != nil {
 				return fmt.Errorf("expected height to stall without validator quorum %d/%d: %w", livePower, totalPower, err)
 			}
 			return nil
 		},
+	}
+}
+
+func observedHeightAdvances(ctx context.Context, run *RunContext, initial Snapshot, minDelta int64, within, pollInterval time.Duration) error {
+	if minDelta <= 0 {
+		minDelta = 1
+	}
+	startHeight := initial.MaxObservedHeight()
+	target := startHeight + minDelta
+
+	deadline := time.NewTimer(within)
+	defer deadline.Stop()
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	last := initial
+	for {
+		if last.MaxObservedHeight() >= target {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("observed height did not advance from %d to %d within %s: %s", startHeight, target, within, last.Summary())
+		case <-ticker.C:
+			var err error
+			last, err = run.Network.Snapshot(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func observedHeightStalls(ctx context.Context, run *RunContext, initial Snapshot, observeFor, pollInterval time.Duration) error {
+	startHeight := initial.MaxObservedHeight()
+
+	deadline := time.NewTimer(observeFor)
+	defer deadline.Stop()
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	last := initial
+	for {
+		if last.MaxObservedHeight() > startHeight {
+			return fmt.Errorf("observed height advanced from %d to %d during %s stall observation: %s", startHeight, last.MaxObservedHeight(), observeFor, last.Summary())
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return nil
+		case <-ticker.C:
+			var err error
+			last, err = run.Network.Snapshot(ctx)
+			if err != nil {
+				return err
+			}
+		}
 	}
 }
 

@@ -218,6 +218,26 @@ func TestHeightFollowsValidatorQuorumStalls(t *testing.T) {
 	}
 }
 
+func TestHeightFollowsValidatorQuorumStallsWithNoValidatorPower(t *testing.T) {
+	network, err := NewStaticNetwork(NetworkSpec{
+		Name:  "scripted",
+		Nodes: []NodeSpec{{ID: "node1", Endpoint: "http://node1"}},
+	}, staticStatusReader{
+		"node1": {Reachable: false, Live: false, Height: 10, ValidatorPower: 0},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := &RunContext{Network: network}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := HeightFollowsValidatorQuorum(10*time.Millisecond, time.Millisecond).Check(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNoHeightRegressionFails(t *testing.T) {
 	reader := newScriptedReader(map[NodeID][]int64{
 		"node1": {10, 9},

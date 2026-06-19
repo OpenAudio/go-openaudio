@@ -129,6 +129,7 @@ type simulatedLoopConfig struct {
 }
 
 func runSimulatedLoop(cfg simulatedLoopConfig) error {
+	cfg = normalizeSimulatedLoopConfig(cfg)
 	started := time.Now()
 	if err := runSimulatedOutcomeEdgeCases(cfg); err != nil {
 		return err
@@ -155,15 +156,16 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 			EndpointMutator: network,
 			Jailer:          network,
 		}, fuzz.ValidatorChaosOptions{
-			Seed:                 cfg.seed + int64(i),
-			Steps:                cfg.steps,
-			StepTimeout:          cfg.stepTimeout,
-			LivenessEvery:        cfg.livenessEvery,
-			LivenessWithin:       cfg.window,
-			PollInterval:         cfg.pollInterval,
-			IncludeProcessFaults: true,
-			NoProcessFaultDelay:  true,
-			AssertAfterEachStep:  true,
+			Seed:                    cfg.seed + int64(i),
+			Steps:                   cfg.steps,
+			StepTimeout:             cfg.stepTimeout,
+			LivenessEvery:           cfg.livenessEvery,
+			LivenessWithin:          cfg.window,
+			PollInterval:            cfg.pollInterval,
+			IncludeProcessFaults:    true,
+			NoProcessFaultDelay:     true,
+			AssertAfterEachStep:     true,
+			IncludePersistentFaults: true,
 		}))
 		cancel()
 		if err != nil {
@@ -189,6 +191,21 @@ func runSimulatedLoop(cfg simulatedLoopConfig) error {
 		time.Since(started).Round(time.Millisecond),
 	)
 	return nil
+}
+
+func normalizeSimulatedLoopConfig(cfg simulatedLoopConfig) simulatedLoopConfig {
+	const maxSimulatedWindow = 100 * time.Millisecond
+	if cfg.window <= 0 || cfg.window > maxSimulatedWindow {
+		cfg.window = maxSimulatedWindow
+	}
+	maxPollInterval := cfg.window / 10
+	if maxPollInterval < time.Millisecond {
+		maxPollInterval = time.Millisecond
+	}
+	if cfg.pollInterval <= 0 || cfg.pollInterval > maxPollInterval {
+		cfg.pollInterval = maxPollInterval
+	}
+	return cfg
 }
 
 func runSimulatedOutcomeEdgeCases(cfg simulatedLoopConfig) error {

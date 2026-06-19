@@ -8,11 +8,12 @@ import (
 const defaultSimulatedProgramMaxSteps = 1_000
 
 type SimulatedProgramOptions struct {
-	MaxSteps            int
-	LivenessEvery       int
-	LivenessWithin      time.Duration
-	PollInterval        time.Duration
-	AssertAfterEachStep bool
+	MaxSteps                int
+	LivenessEvery           int
+	LivenessWithin          time.Duration
+	PollInterval            time.Duration
+	AssertAfterEachStep     bool
+	IncludePersistentFaults bool
 }
 
 func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorChaosController, program []byte, opts SimulatedProgramOptions) Scenario {
@@ -50,8 +51,7 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 	for i := 0; i < maxSteps; i++ {
 		step := Step{
 			Name:    fmt.Sprintf("program chaos %04d", i+1),
-			Actions: []Action{programAction(program, i, ids, controller)},
-			Timeout: livenessWithin,
+			Actions: []Action{programAction(program, i, ids, controller, opts.IncludePersistentFaults)},
 		}
 		if opts.AssertAfterEachStep || (i+1)%livenessEvery == 0 {
 			step.Assertions = append(step.Assertions, HeightFollowsValidatorQuorum(livenessWithin, pollInterval))
@@ -65,11 +65,16 @@ func SimulatedChaosScenarioFromProgram(spec NetworkSpec, controller ValidatorCha
 	return scenario
 }
 
-func programAction(program []byte, offset int, ids []NodeID, controller ValidatorChaosController) Action {
+func programAction(program []byte, offset int, ids []NodeID, controller ValidatorChaosController, includePersistentFaults bool) Action {
 	if len(ids) == 0 {
 		return Wait(0)
 	}
 	id := ids[programNodeIndex(program, offset)%len(ids)]
+	if includePersistentFaults {
+		if controllerAction := persistentProgramAction(program, offset, id, controller); controllerAction != nil {
+			return controllerAction
+		}
+	}
 	switch program[offset] % 8 {
 	case 0:
 		return Sequence(fmt.Sprintf("program bounce %s", id), StopNode(id), StartNode(id))
@@ -88,6 +93,56 @@ func programAction(program []byte, offset int, ids []NodeID, controller Validato
 		return Sequence(fmt.Sprintf("program lie/repair %s", id), AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint), AdvertiseEndpointWith(controller.EndpointMutator, id, ""))
 	default:
 		return programMinorityOutage(program, offset, ids)
+	}
+}
+
+func persistentProgramAction(program []byte, offset int, id NodeID, controller ValidatorChaosController) Action {
+	if program[offset]%2 == 0 {
+		return nil
+	}
+	switch program[(offset+3)%len(program)] % 10 {
+	case 0:
+		return StopNode(id)
+	case 1:
+		return StartNode(id)
+	case 2:
+		if controller.Registrar == nil {
+			return nil
+		}
+		return DeregisterNodeWith(controller.Registrar, id)
+	case 3:
+		if controller.Registrar == nil {
+			return nil
+		}
+		return RegisterNodeWith(controller.Registrar, id)
+	case 4:
+		if controller.Jailer == nil {
+			return nil
+		}
+		return JailNodeWith(controller.Jailer, id)
+	case 5:
+		if controller.Jailer == nil {
+			return nil
+		}
+		return UnjailNodeWith(controller.Jailer, id)
+	case 6:
+		if controller.EndpointMutator == nil {
+			return nil
+		}
+		badEndpoint := fmt.Sprintf("https://wrong-%s.oap.invalid", id)
+		return AdvertiseEndpointWith(controller.EndpointMutator, id, badEndpoint)
+	case 7:
+		if controller.EndpointMutator == nil {
+			return nil
+		}
+		return AdvertiseEndpointWith(controller.EndpointMutator, id, "")
+	case 8:
+		if controller.Registrar == nil {
+			return nil
+		}
+		return Sequence(fmt.Sprintf("program persistent duplicate deregister %s", id), DeregisterNodeWith(controller.Registrar, id), DeregisterNodeWith(controller.Registrar, id))
+	default:
+		return nil
 	}
 }
 
