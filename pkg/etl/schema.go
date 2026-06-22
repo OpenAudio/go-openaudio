@@ -13,4 +13,5 @@ var (
 	TxTypeStorageProof                = processors.TxTypeStorageProof
 	TxTypeStorageProofVerification    = processors.TxTypeStorageProofVerification
 	TxTypeRelease                     = processors.TxTypeRelease
+	TxTypeManageEntityMigration       = processors.TxTypeManageEntityMigration
 )

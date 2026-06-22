@@ -47,6 +47,7 @@ const (
 	EntityTypeEvent                     = "Event"
 	EntityTypeShare                     = "Share"
 	EntityTypeTrackCollaborator         = "TrackCollaborator"
+	EntityTypePlayCount                 = "PlayCount"
 )
 
 // Action constants.
@@ -77,6 +78,7 @@ const (
 	ActionAddEmail    = "AddEmail"
 	ActionReport      = "Report"
 	ActionShare       = "Share"
+	ActionReconcile   = "Reconcile"
 )
 
 // ID offsets.
