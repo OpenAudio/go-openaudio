@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/OpenAudio/go-openaudio/etl/db"
-	em "github.com/OpenAudio/go-openaudio/etl/processors/entity_manager"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	em "github.com/OpenAudio/go-openaudio/pkg/etl/processors/entity_manager"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,14 +16,18 @@ import (
 type Indexer struct {
 	dbURL               string
 	runDownMigrations   bool
+	skipMigrations      bool
 	startingBlockHeight int64
 	endingBlockHeight   int64
 	checkReadiness      bool
-	ChainID             string
-	config      Config
-	lastEmBlock int64 // last assigned blocks.number; incremented only for blocks with EM txs
+	ChainID string
+	config  Config
 
 	core       corev1connect.CoreServiceClient
+	// streamClient, when set and config.BlockStreamEnabled, sources blocks via
+	// CoreService.StreamBlocks. Must be built with connect.WithGRPC(). The unary
+	// core client above is still used for catch-up fallback and status calls.
+	streamClient corev1connect.CoreServiceClient
 	pool       *pgxpool.Pool
 	db         *db.Queries
 	logger     *zap.Logger
@@ -32,7 +36,25 @@ type Indexer struct {
 	blockPubsub *BlockPubsub
 	playPubsub  *PlayPubsub
 
-	mvRefresher *MaterializedViewRefresher
+	mvRefresher       *MaterializedViewRefresher
+	scheduledReleases *ScheduledReleasePublisher
+
+	// Pending post-hooks staged before Run(). Applied to the dispatcher
+	// once it's constructed.
+	pendingPostHooks []pendingPostHook
+
+	// playsHooks fire after the play processor writes etl_plays for a Plays
+	// transaction. Unlike entity-manager post-hooks these don't need a
+	// dispatcher, so they're held directly on the Indexer and invoked from
+	// the play branch of processOneTx. Registered before Run().
+	playsHooks []PlaysHook
+}
+
+// pendingPostHook stages a hook registration until the dispatcher exists.
+type pendingPostHook struct {
+	entityType string
+	action     string
+	fn         em.PostHook
 }
 
 // New creates a new ETL indexer.
@@ -47,6 +69,13 @@ func New(core corev1connect.CoreServiceClient, logger *zap.Logger) *Indexer {
 // SetConfig sets optional component flags.
 func (e *Indexer) SetConfig(c Config) {
 	e.config = c
+}
+
+// SetBlockStreamClient sets the gRPC client used for CoreService.StreamBlocks
+// when Config.BlockStreamEnabled is true. It must be built with
+// connect.WithGRPC(). If unset, the indexer polls regardless of the flag.
+func (e *Indexer) SetBlockStreamClient(c corev1connect.CoreServiceClient) {
+	e.streamClient = c
 }
 
 func (e *Indexer) SetDBURL(dbURL string) {
@@ -65,6 +94,10 @@ func (e *Indexer) SetRunDownMigrations(runDownMigrations bool) {
 	e.runDownMigrations = runDownMigrations
 }
 
+func (e *Indexer) SetSkipMigrations(skip bool) {
+	e.skipMigrations = skip
+}
+
 func (e *Indexer) SetCheckReadiness(checkReadiness bool) {
 	e.checkReadiness = checkReadiness
 }
@@ -81,6 +114,70 @@ func (e *Indexer) GetBlockPubsub() *BlockPubsub {
 // GetPlayPubsub returns the play pubsub instance.
 func (e *Indexer) GetPlayPubsub() *PlayPubsub {
 	return e.playPubsub
+}
+
+// RegisterPostHook registers fn to fire after every successful Handle for
+// the given (entityType, action) pair. Multiple hooks for the same key run
+// in registration order. Hook errors are logged but do not fail the parent
+// ManageEntity dispatch — see em.PostHook for full semantics.
+//
+// Must be called before Run() (hooks staged here are applied to the
+// internal dispatcher during Run() once it's constructed).
+//
+// Use the typed Set*CreatedHook helpers for the common create-time cases.
+func (e *Indexer) RegisterPostHook(entityType, action string, fn em.PostHook) {
+	e.pendingPostHooks = append(e.pendingPostHooks, pendingPostHook{
+		entityType: entityType,
+		action:     action,
+		fn:         fn,
+	})
+}
+
+// RegisterPlaysHook registers fn to fire after every successful Plays
+// transaction (after the play processor writes etl_plays). Multiple hooks
+// run in registration order. Hook errors are logged but do not fail the
+// surrounding block — see PlaysHook for full semantics.
+//
+// Must be called before Run().
+//
+// Unlike RegisterPostHook (which is keyed by entity type/action and routes
+// through the entity-manager dispatcher), plays have no ManageEntity
+// envelope, so this is a separate extension point.
+func (e *Indexer) RegisterPlaysHook(fn PlaysHook) {
+	e.playsHooks = append(e.playsHooks, fn)
+}
+
+// SetUserCreatedHook is convenience sugar for
+// RegisterPostHook(em.EntityTypeUser, em.ActionCreate, fn). Fires after
+// the User Create handler successfully writes the new user row.
+//
+// Typical use: api/ consumer recovers the EIP-712 pubkey from the proto
+// (Params.TX) and writes a derived row (e.g. user_pubkeys) in the same
+// transaction (Params.DBTX).
+func (e *Indexer) SetUserCreatedHook(fn em.PostHook) {
+	e.RegisterPostHook(em.EntityTypeUser, em.ActionCreate, fn)
+}
+
+// SetTrackCreatedHook is convenience sugar for
+// RegisterPostHook(em.EntityTypeTrack, em.ActionCreate, fn). Fires after
+// the Track Create handler succeeds.
+func (e *Indexer) SetTrackCreatedHook(fn em.PostHook) {
+	e.RegisterPostHook(em.EntityTypeTrack, em.ActionCreate, fn)
+}
+
+// SetPlaylistCreatedHook is convenience sugar for
+// RegisterPostHook(em.EntityTypePlaylist, em.ActionCreate, fn). Fires
+// after the Playlist Create handler succeeds.
+func (e *Indexer) SetPlaylistCreatedHook(fn em.PostHook) {
+	e.RegisterPostHook(em.EntityTypePlaylist, em.ActionCreate, fn)
+}
+
+// applyPendingPostHooks transfers any hooks registered before Run() onto
+// the freshly-constructed dispatcher.
+func (e *Indexer) applyPendingPostHooks() {
+	for _, h := range e.pendingPostHooks {
+		e.dispatcher.RegisterPostHook(h.entityType, h.action, h.fn)
+	}
 }
 
 // InitializeChainID fetches and caches the chain ID from the core service.

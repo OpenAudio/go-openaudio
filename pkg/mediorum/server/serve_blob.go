@@ -8,8 +8,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +17,7 @@ import (
 	"go.uber.org/zap"
 	gcblob "gocloud.dev/blob"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 
@@ -29,7 +28,7 @@ import (
 )
 
 const (
-	presignedURLDefaultExpiry = 2 * time.Hour  // fallback when duration unknown
+	presignedURLDefaultExpiry = 2 * time.Hour   // fallback when duration unknown
 	presignedURLMinExpiry     = 5 * time.Minute // floor for very short tracks
 	presignedURLBufferRatio   = 1.1             // 10% buffer over track duration
 )
@@ -98,11 +97,21 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 		return c.String(500, "database connection issue")
 	}
 
-	if attr, ok := ss.attrCache.Get(key); ok {
+	// Reads use hot-first-then-archive: the bucket the blob lives in falls out
+	// of where we find it, not where bucketForCID would route a fresh write.
+	// The attrCache is keyed per bucket so a primary hit doesn't satisfy an
+	// archive request (and vice versa); we check both keys before going to
+	// the bucket.
+	if attr, ok := ss.attrCache.Get(ss.presenceCacheKey(key, ss.bucket)); ok {
 		return c.JSON(200, attr)
 	}
+	if ss.archiveBucket != nil {
+		if attr, ok := ss.attrCache.Get(ss.presenceCacheKey(key, ss.archiveBucket)); ok {
+			return c.JSON(200, attr)
+		}
+	}
 
-	attr, err := ss.bucket.Attributes(ctx, key)
+	attr, foundIn, err := ss.blobAttrs(ctx, key)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return c.String(404, "blob not found")
@@ -111,7 +120,7 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 		return err
 	}
 
-	ss.attrCache.Set(key, attr, imcache.WithExpiration(60*time.Second))
+	ss.attrCache.Set(ss.presenceCacheKey(key, foundIn), attr, imcache.WithExpiration(60*time.Second))
 	return c.JSON(200, attr)
 }
 
@@ -162,58 +171,37 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 		c.Response().Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, contentDisposition))
 	}
 
-	blob, err := ss.bucket.NewReader(ctx, key, nil)
+	blob, foundIn, err := ss.readBlob(ctx, key)
 
-	// If our bucket doesn't have the file, try to pull it first
+	// Cache miss: redirect the client to a peer that has the blob and
+	// fire a backgrounded pull (with backoff) so we eventually hold blobs
+	// that are rendezvous-ours. Avoids the doubled-egress cost of
+	// pulling-then-serving inline with the user request.
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
+			ss.metrics.readMisses.Add(1)
 			// don't redirect if the client only wants to know if we have it (ie localOnly query param is true)
 			if localOnly, _ := strconv.ParseBool(c.QueryParam("localOnly")); localOnly {
 				return c.String(404, "blob not found")
 			}
 
-			// Try to pull the file first
-			_, pullErr := ss.findAndPullBlob(ctx, cid)
-			if pullErr == nil {
-				// Successfully pulled, try reading again
-				blob, err = ss.bucket.NewReader(ctx, key, nil)
-				if err == nil {
-					// Successfully read after pull, continue with normal serving
-				} else {
-					// Still can't read after pull, fall through to proxy/redirect
-					ss.logger.Warn("failed to read blob after pull", zap.String("cid", cid), zap.Error(err))
-				}
-			} else {
-				// Pull failed - check if it's due to disk space
-				if !ss.diskHasSpace() {
-					// Disk is full, proxy the request instead of erroring
-					ss.logger.Info("disk full, proxying blob request", zap.String("cid", cid), zap.Error(pullErr))
-					host := ss.findNodeToServeBlob(ctx, cid)
-					if host == "" {
-						return c.String(404, "blob not found")
-					}
-					return ss.proxyBlobRequest(c, host, cid)
-				}
-				// Pull failed for other reasons, fall through to redirect
-				ss.logger.Debug("failed to pull blob, will redirect", zap.String("cid", cid), zap.Error(pullErr))
+			host := ss.findNodeToServeBlob(ctx, cid)
+			if host == "" {
+				return c.String(404, "blob not found")
 			}
+			ss.maybeBackgroundPull(cid)
 
-			// If we still don't have the blob, redirect to a node that has it
-			if blob == nil {
-				host := ss.findNodeToServeBlob(ctx, cid)
-				if host == "" {
-					return c.String(404, "blob not found")
-				}
-
-				dest := ss.replaceHost(c, host)
-				query := dest.Query()
-				query.Add("allow_unhealthy", "true") // we confirmed the node has it, so allow it to serve it even if unhealthy
-				dest.RawQuery = query.Encode()
-				return c.Redirect(302, dest.String())
-			}
+			dest := ss.replaceHost(c, host)
+			query := dest.Query()
+			query.Add("allow_unhealthy", "true") // we confirmed the node has it
+			dest.RawQuery = query.Encode()
+			ss.metrics.readRedirected.Add(1)
+			return c.Redirect(302, dest.String())
 		} else {
 			return err
 		}
+	} else {
+		ss.metrics.readLocalHits.Add(1)
 	}
 
 	defer func() {
@@ -235,6 +223,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 		}
 		// track metrics in separate threads
 		go ss.recordMetric(StreamTrack)
+		ss.metrics.recordServed(ServedItem{At: time.Now().UTC(), CID: cid, Action: StreamTrack})
 		// synchronously write track listen to event queue
 		ss.logTrackListen(c)
 		setTimingHeader(c)
@@ -248,7 +237,11 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 				durationSeconds, _ := c.Get("trackDurationSeconds").(float64)
 				expiry := presignedURLExpiry(durationSeconds)
 
-				signedURL, err := ss.bucket.SignedURL(ctx, key, &gcblob.SignedURLOptions{
+				// Use the bucket the blob was actually found in for the
+				// presigned URL — readBlob's fallback may have located it
+				// in archive even when rank-based routing would have looked
+				// in primary.
+				signedURL, err := foundIn.SignedURL(ctx, key, &gcblob.SignedURLOptions{
 					Expiry: expiry,
 					Method: http.MethodGet,
 				})
@@ -301,6 +294,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 			return err
 		}
 		go ss.recordMetric(ServeImage)
+		ss.metrics.recordServed(ServedItem{At: time.Now().UTC(), CID: cid, Action: ServeImage})
 		return c.Blob(200, blob.ContentType(), blobData)
 	}
 
@@ -311,44 +305,30 @@ func (ss *MediorumServer) recordMetric(action string) {
 	firstOfMonth := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
 
 	// Increment daily metric
-	err := ss.crud.DB.Transaction(func(tx *gorm.DB) error {
-		var metric DailyMetrics
-		if err := tx.FirstOrCreate(&metric, DailyMetrics{
-			Timestamp: today,
-			Action:    action,
-		}).Error; err != nil {
-			return err
-		}
-		metric.Count += 1
-		if err := tx.Save(&metric).Error; err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
+	if err := ss.crud.DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "timestamp"}, {Name: "action"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"count": gorm.Expr("daily_metrics.count + EXCLUDED.count"),
+		}),
+	}).Create(&DailyMetrics{
+		Timestamp: today,
+		Action:    action,
+		Count:     1,
+	}).Error; err != nil {
 		ss.logger.Error("unable to increment daily metric", zap.Error(err), zap.String("action", action))
 	}
 
 	// Increment monthly metric
-	err = ss.crud.DB.Transaction(func(tx *gorm.DB) error {
-		var metric MonthlyMetrics
-		if err := tx.FirstOrCreate(&metric, MonthlyMetrics{
-			Timestamp: firstOfMonth,
-			Action:    action,
-		}).Error; err != nil {
-			return err
-		}
-		metric.Count += 1
-		if err := tx.Save(&metric).Error; err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
+	if err := ss.crud.DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "timestamp"}, {Name: "action"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"count": gorm.Expr("monthly_metrics.count + EXCLUDED.count"),
+		}),
+	}).Create(&MonthlyMetrics{
+		Timestamp: firstOfMonth,
+		Action:    action,
+		Count:     1,
+	}).Error; err != nil {
 		ss.logger.Error("unable to increment monthly metric", zap.Error(err), zap.String("action", action))
 	}
 }
@@ -377,12 +357,47 @@ func (ss *MediorumServer) findNodeToServeBlob(_ context.Context, key string) str
 	return ""
 }
 
-func (ss *MediorumServer) findAndPullBlob(ctx context.Context, key string) (string, error) {
+// maybeBackgroundPull starts an async pull of cid into our local bucket so
+// we eventually hold blobs we're rendezvous-supposed-to-hold, without doing
+// the pull inline with the user request. Skips if the CID isn't ours (no
+// reason to acquire it), if disk is full, or if we already attempted a pull
+// for this CID within the backoff window.
+func (ss *MediorumServer) maybeBackgroundPull(cid string) {
+	_, isMine := ss.rendezvousAllHosts(cid)
+	if !isMine {
+		return
+	}
+	if _, found := ss.bgPullBackoff.Get(cid); found {
+		return
+	}
+	if !ss.diskHasSpaceForCID(cid, nil) {
+		return
+	}
+	ss.bgPullBackoff.Set(cid, struct{}{}, imcache.WithDefaultExpiration())
+
+	ss.metrics.readPullAttempts.Add(1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if _, err := ss.findAndPullBlob(ctx, cid, nil); err != nil {
+			ss.logger.Debug("background pull failed", zap.String("cid", cid), zap.Error(err))
+			return
+		}
+		ss.metrics.readPullSuccesses.Add(1)
+	}()
+}
+
+// findAndPullBlob locates a CID on the network and pulls it into the local
+// bucket selected by bucketForCID(key, placementHosts). Pass placementHosts
+// when the caller has placement context (transcode and similar) so the local
+// write lands in the same bucket subsequent reads will check; pass nil for
+// opportunistic pulls (serveBlob fallback, image originals).
+func (ss *MediorumServer) findAndPullBlob(ctx context.Context, key string, placementHosts []string) (string, error) {
 	// start := time.Now()
 
 	hosts, _ := ss.rendezvousAllHosts(key)
 	for _, host := range hosts {
-		err := ss.pullFileFromHost(ctx, host, key)
+		err := ss.pullFileFromHost(ctx, host, key, placementHosts)
 		if err == nil {
 			return host, nil
 		}
@@ -447,39 +462,6 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 	})
 
 	ss.logger.Info("play logged", zap.String("user_id", userId), zap.String("track_id", trackID))
-}
-
-// proxyBlobRequest proxies a blob request to another node when we don't have disk space to pull it
-func (ss *MediorumServer) proxyBlobRequest(c echo.Context, targetHost, cid string) error {
-	// Build the target URL
-	targetURL, err := url.Parse(targetHost)
-	if err != nil {
-		return c.String(500, "invalid target host")
-	}
-	targetURL.Scheme = ss.getScheme()
-	targetURL.Path = c.Request().URL.Path
-	targetURL.RawQuery = c.Request().URL.RawQuery
-
-	// Add allow_unhealthy query param
-	query := targetURL.Query()
-	query.Add("allow_unhealthy", "true")
-	targetURL.RawQuery = query.Encode()
-
-	// Create reverse proxy
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
-
-	// Modify the request for proxying
-	originalURL := c.Request().URL
-	c.Request().URL = targetURL
-	c.Request().Host = targetURL.Host
-
-	// Proxy the request
-	proxy.ServeHTTP(c.Response(), c.Request())
-
-	// Restore original URL (though response is already sent)
-	c.Request().URL = originalURL
-
-	return nil
 }
 
 // checks signature from discovery node
@@ -596,7 +578,7 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 	cid := c.Param("cid")
 	key := cidutil.ShardCID(cid)
 
-	blob, err := ss.bucket.NewReader(ctx, key, nil)
+	blob, _, err := ss.readBlob(ctx, key)
 	if err != nil {
 		return err
 	}
@@ -606,8 +588,17 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 }
 
 func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
-	if !ss.diskHasSpace() {
-		return c.String(http.StatusServiceUnavailable, "disk is too full to accept new blobs")
+	// Peer-driven push. Placement context, when known to the sender, rides
+	// along in the X-Placement-Hosts header. Validate it (must include self,
+	// all hosts must be registered peers) — the header is unsigned, so an
+	// unvalidated value would let any authenticated peer force primary
+	// routing and bypass archive. On invalid input, fall back to nil
+	// (rank-based routing).
+	placementHosts := decodePlacementHosts(c.Request().Header)
+	if err := ss.validatePlacementHosts(placementHosts); err != nil {
+		ss.logger.Warn("ignoring invalid X-Placement-Hosts header; routing by rank",
+			zap.Strings("placementHosts", placementHosts), zap.Error(err))
+		placementHosts = nil
 	}
 
 	form, err := c.MultipartForm()
@@ -620,6 +611,11 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 	for _, upload := range files {
 		cid := upload.Filename
 		logger := ss.logger.With(zap.String("cid", cid))
+
+		// Per-CID disk check: only the bucket this CID will write to matters.
+		if !ss.diskHasSpaceForCID(cid, placementHosts) {
+			return c.String(http.StatusServiceUnavailable, "disk is too full to accept new blobs")
+		}
 
 		inp, err := upload.Open()
 		if err != nil {
@@ -635,7 +631,7 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 			})
 		}
 
-		err = ss.replicateToMyBucket(c.Request().Context(), cid, inp)
+		err = ss.replicateToMyBucket(c.Request().Context(), cid, inp, placementHosts)
 		if err != nil {
 			ss.logger.Error("accept ERR", zap.Error(err))
 			return err
@@ -703,7 +699,7 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 		c.Response().Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, contentDisposition))
 	}
 
-	blob, err := ss.bucket.NewReader(ctx, key, nil)
+	blob, _, err := ss.readBlob(ctx, key)
 	// If our bucket doesn't have the file, find a different node
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
@@ -730,6 +726,7 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 	go ss.logTrackListen(c)
 	setTimingHeader(c)
 	go ss.recordMetric(StreamTrack)
+	ss.metrics.recordServed(ServedItem{At: time.Now().UTC(), CID: cid, Action: StreamTrack})
 
 	// stream audio
 	http.ServeContent(c.Response(), c.Request(), cid, blob.ModTime(), blob)

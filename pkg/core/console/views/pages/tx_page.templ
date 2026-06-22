@@ -67,7 +67,7 @@ templ (p *Pages) TxPageHTML(view *TxView) {
 				</h1>
 			</div>
 			<div class="uk-card-body space-y-2">
-				<div>
+				<div class="break-all">
 					@p.components.Link("/tx/%s", view.Hash) {
 						<div>Hash: { view.Hash }</div>
 					}
@@ -80,8 +80,8 @@ templ (p *Pages) TxPageHTML(view *TxView) {
 				<div>
 					Age: { humanize.Time(view.Timestamp) }
 				</div>
-				<div class="text-small p-4 rounded-lg">
-					<pre class="bg-secondary p-4 rounded-lg overflow-x-scroll">{ p.renderJSON(p.toJSON(view.Tx)) }</pre>
+				<div class="text-small p-2 md:p-4 rounded-lg">
+					<pre class="bg-secondary p-3 md:p-4 rounded-lg overflow-x-auto text-xs md:text-sm">{ p.renderJSON(p.toJSON(view.Tx)) }</pre>
 				</div>
 			</div>
 		</div>

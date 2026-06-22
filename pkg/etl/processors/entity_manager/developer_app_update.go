@@ -3,8 +3,9 @@ package entity_manager
 import (
 	"context"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 type developerAppUpdateHandler struct{}
@@ -28,11 +29,11 @@ func validateDeveloperAppUpdate(ctx context.Context, params *Params) error {
 	if name == "" {
 		return NewValidationError("name is required for developer app")
 	}
-	if len(name) > CharacterLimitAppName {
+	if utf8.RuneCountInString(name) > CharacterLimitAppName {
 		return NewValidationError("name exceeds %d character limit", CharacterLimitAppName)
 	}
 	if desc := params.MetadataString("description"); desc != "" {
-		if len(desc) > CharacterLimitAppDescription {
+		if utf8.RuneCountInString(desc) > CharacterLimitAppDescription {
 			return NewValidationError("description exceeds %d character limit", CharacterLimitAppDescription)
 		}
 	}
@@ -71,6 +72,7 @@ func updateDeveloperApp(ctx context.Context, params *Params) error {
 	address := strings.ToLower(params.MetadataString("address"))
 	name := params.MetadataString("name")
 	description := params.MetadataString("description")
+	imageURL := validatedAppImageURL(params)
 
 	// Mark current row as not current
 	_, err := params.DBTX.Exec(ctx,
@@ -88,21 +90,33 @@ func updateDeveloperApp(ctx context.Context, params *Params) error {
 
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO developer_apps (
-			address, user_id, name, description, is_personal_access,
+			address, user_id, name, description, image_url, is_personal_access,
 			is_current, is_delete, created_at, updated_at, txhash, blocknumber
-		) VALUES ($1, $2, $3, $4, $5, true, false, $6, $7, $8, $9)
+		) VALUES ($1, $2, $3, $4, $5, $6, true, false, $7, $8, $9, $10)
 	`,
 		address,
 		params.UserID,
 		name,
 		nullString(description),
+		nullString(imageURL),
 		isPersonalAccess,
 		createdAt,
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Re-index redirect_uris when present in metadata: delete all existing
+	// for client_id, then insert the new set.
+	if uris, present, _ := extractRedirectURIs(params.Metadata); present {
+		if err := replaceRedirectURIs(ctx, params.DBTX, address, uris); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func getDeveloperAppOwner(ctx context.Context, dbtx db.DBTX, address string) (int64, error) {

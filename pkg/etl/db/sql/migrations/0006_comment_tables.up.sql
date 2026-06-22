@@ -1,4 +1,4 @@
--- Comment tables matching discovery-provider schema.
+-- Comment tables.
 
 CREATE TABLE IF NOT EXISTS comments (
   comment_id integer NOT NULL,

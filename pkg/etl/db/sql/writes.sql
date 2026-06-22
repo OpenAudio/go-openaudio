@@ -4,8 +4,14 @@ values ($1, $2, $3, $4)
 on conflict do nothing;
 
 -- name: InsertTransaction :exec
+-- tx_hash is the content-addressable hash of the chain transaction, which the
+-- migration declares UNIQUE. The indexer can occasionally re-deliver the same
+-- chain tx (see the prefetcher re-delivery issue tracked separately) — when
+-- that happens the payload is identical by construction, so DO NOTHING is the
+-- correct dedup. DO UPDATE would have nothing to update.
 insert into etl_transactions (tx_hash, block_height, tx_index, tx_type, address, created_at)
-values ($1, $2, $3, $4, $5, $6);
+values ($1, $2, $3, $4, $5, $6)
+on conflict (tx_hash) do nothing;
 
 -- name: InsertBlock :exec
 insert into etl_blocks (proposer_address, block_height, block_time)

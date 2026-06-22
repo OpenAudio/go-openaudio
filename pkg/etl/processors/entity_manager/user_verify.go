@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"strings"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 // VerifiedAddress is the wallet address authorized to sign User Verify transactions.

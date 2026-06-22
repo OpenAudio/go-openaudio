@@ -10,7 +10,7 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"fmt"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates"
 	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates/layouts"
 )
@@ -58,14 +58,14 @@ func Rollups(props RollupsProps) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6\"><div class=\"flex justify-between items-center mb-6\"><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">SLA Rollups</h2><div class=\"text-sm text-gray-500 dark:text-[#b3b3b3]\">Page ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6\"><div class=\"flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-6\"><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">SLA Rollups</h2><div class=\"text-sm text-gray-500 dark:text-[#b3b3b3]\">Page ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(props.CurrentPage))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/rollups.templ`, Line: 26, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/rollups.templ`, Line: 26, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -78,7 +78,7 @@ func Rollups(props RollupsProps) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(props.PageSize))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/rollups.templ`, Line: 26, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/rollups.templ`, Line: 26, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -91,7 +91,7 @@ func Rollups(props RollupsProps) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(props.TotalCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/rollups.templ`, Line: 26, Col: 130}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/rollups.templ`, Line: 26, Col: 130}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -107,14 +107,14 @@ func Rollups(props RollupsProps) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				for _, rollup := range props.Rollups {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors\"><div class=\"flex items-center gap-6 flex-1\"><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Rollup ID</div><a href=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"flex flex-col gap-3 md:flex-row md:items-center md:justify-between py-4 px-4 md:px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors\"><div class=\"grid grid-cols-2 gap-3 md:gap-6 md:flex md:items-center md:flex-1\"><div class=\"md:flex-1\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Rollup ID</div><a href=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var6 templ.SafeURL
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/validators/uptime/%d", rollup.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/rollups.templ`, Line: 36, Col: 81}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/rollups.templ`, Line: 36, Col: 81}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
@@ -127,46 +127,46 @@ func Rollups(props RollupsProps) templ.Component {
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#%d", rollup.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/rollups.templ`, Line: 37, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/rollups.templ`, Line: 37, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</a></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Block Range</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</a></div><div class=\"md:flex-1\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Block Range</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d - %d", rollup.BlockStart, rollup.BlockEnd))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/rollups.templ`, Line: 43, Col: 70}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/rollups.templ`, Line: 43, Col: 70}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Validators</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></div><div class=\"md:flex-1\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Validators</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var9 string
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", rollup.ValidatorCount))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/rollups.templ`, Line: 49, Col: 52}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/rollups.templ`, Line: 49, Col: 52}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Transaction</div><a href=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div><div class=\"md:flex-1\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Transaction</div><a href=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var10 templ.SafeURL
 					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/transaction/%s", rollup.TxHash)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/rollups.templ`, Line: 54, Col: 79}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/rollups.templ`, Line: 54, Col: 79}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 					if templ_7745c5c3_Err != nil {
@@ -180,7 +180,7 @@ func Rollups(props RollupsProps) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</a></div></div><div class=\"text-right flex-shrink-0\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Time</div><div class=\"text-sm text-gray-700 dark:text-white\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</a></div></div><div class=\"md:text-right md:flex-shrink-0\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Time</div><div class=\"text-sm text-gray-700 dark:text-white\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -212,7 +212,7 @@ func Rollups(props RollupsProps) templ.Component {
 					var templ_7745c5c3_Var11 templ.SafeURL
 					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/rollups?page=%d&count=%d", props.CurrentPage-1, props.PageSize)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/rollups.templ`, Line: 75, Col: 109}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/rollups.templ`, Line: 75, Col: 109}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 					if templ_7745c5c3_Err != nil {
@@ -236,7 +236,7 @@ func Rollups(props RollupsProps) templ.Component {
 					var templ_7745c5c3_Var12 templ.SafeURL
 					templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/rollups?page=%d&count=%d", props.CurrentPage+1, props.PageSize)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/rollups.templ`, Line: 84, Col: 109}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/rollups.templ`, Line: 84, Col: 109}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 					if templ_7745c5c3_Err != nil {

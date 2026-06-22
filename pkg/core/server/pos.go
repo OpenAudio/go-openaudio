@@ -76,10 +76,15 @@ func (s *Server) sendPoSChallengeToStorage(blockHash []byte, blockHeight int64) 
 		nodes, err := s.db.GetNodesByEndpoints(ctx, response.Replicas)
 		if err != nil {
 			s.logger.Error("Failed to get all registered comet nodes for endpoints", zap.Strings("endpoints", response.Replicas), zap.Error(err))
+			return
 		}
 		proverAddresses := make([]string, 0, len(nodes))
 		for _, n := range nodes {
 			proverAddresses = append(proverAddresses, n.CometAddress)
+		}
+		if len(proverAddresses) == 0 {
+			s.logger.Error("No prover addresses resolved for PoS challenge, skipping submission", zap.Int64("height", blockHeight), zap.Strings("replicas", response.Replicas))
+			return
 		}
 
 		// Add provers
@@ -298,6 +303,14 @@ func (s *Server) finalizeStorageProof(ctx context.Context, tx *v1.SignedTransact
 
 	proofSigStr := base64.StdEncoding.EncodeToString(sp.ProofSignature)
 
+	// pgx serializes a nil slice as SQL NULL, which violates the NOT NULL
+	// constraint on storage_proofs.prover_addresses and aborts the
+	// FinalizeBlock transaction — halting the chain.
+	proverAddresses := sp.ProverAddresses
+	if proverAddresses == nil {
+		proverAddresses = []string{}
+	}
+
 	if err := qtx.InsertStorageProof(
 		ctx,
 		db.InsertStorageProofParams{
@@ -305,7 +318,7 @@ func (s *Server) finalizeStorageProof(ctx context.Context, tx *v1.SignedTransact
 			Address:         sp.Address,
 			Cid:             pgtype.Text{String: sp.Cid, Valid: true},
 			ProofSignature:  pgtype.Text{String: proofSigStr, Valid: true},
-			ProverAddresses: sp.ProverAddresses,
+			ProverAddresses: proverAddresses,
 		},
 	); err != nil {
 		return nil, fmt.Errorf("could not persist storage proof in db: %v", err)

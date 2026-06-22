@@ -24,6 +24,7 @@ import (
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	audiusHttputil "github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
@@ -60,6 +61,7 @@ type MediorumConfig struct {
 	ReplicationFactor         int
 	Dir                       string `default:"/tmp/mediorum"`
 	BlobStoreDSN              string `json:"-"`
+	ArchiveBlobStoreDSN       string `json:"-"`
 	MoveFromBlobStoreDSN      string `json:"-"`
 	PostgresDSN               string `json:"-"`
 	PrivateKey                string `json:"-"`
@@ -72,16 +74,24 @@ type MediorumConfig struct {
 	AutoUpgradeEnabled        bool
 	WalletIsRegistered        bool
 	StoreAll                  bool
+	StoreRecent               bool
+	StoreRecentTTL            time.Duration `default:"8760h"`
 	VersionJson               version.VersionJson
 	DiscoveryListensEndpoints []string
 	LogLevel                  string
 	DeadHosts                 []string
-	RepairEnabled              bool          `default:"true"`
-	RepairInterval             time.Duration `default:"1h"`
-	RepairQmCidsUseListIndex   bool
+	RepairEnabled             bool          `default:"true"`
+	RepairInterval            time.Duration `default:"1h"`
+	RepairConcurrency         int           `default:"1"`
+
+	// Archive mode (OPENAUDIO_ARCHIVE) keeps all history: no core block pruning
+	// and no crudr "ops" pruning. Otherwise ops older than OpsRetention are pruned.
+	Archive          bool
+	OpsRetention     time.Duration `default:"8760h"` // 1 year
+	OpsPruneInterval time.Duration `default:"6h"`
 
 	ProgrammableDistributionEnabled bool
-	BlobStorageStreaming             bool
+	BlobStorageStreaming            bool
 
 	// should have a basedir type of thing
 	// by default will put db + blobs there
@@ -89,11 +99,11 @@ type MediorumConfig struct {
 	privateKey *ecdsa.PrivateKey
 }
 
-
 type MediorumServer struct {
 	lc               *lifecycle.Lifecycle
 	echo             *echo.Echo
 	bucket           *blob.Bucket
+	archiveBucket    *blob.Bucket
 	logger           *zap.Logger
 	crud             *crudr.Crudr
 	pgPool           *pgxpool.Pool
@@ -114,6 +124,11 @@ type MediorumServer struct {
 	mediorumPathFree   uint64
 	storageExpectation uint64
 
+	// archive bucket stats (only populated when ArchiveBlobStoreDSN is set)
+	archivePathUsed uint64
+	archivePathSize uint64
+	archivePathFree uint64
+
 	databaseSize          uint64
 	dbSizeErr             string
 	lastSuccessfulRepair  RepairTracker
@@ -121,6 +136,8 @@ type MediorumServer struct {
 
 	uploadsCount    int64
 	uploadsCountErr string
+
+	bucketWriteErr string
 
 	isSeeding        bool
 	isAudiusdManaged bool
@@ -134,6 +151,8 @@ type MediorumServer struct {
 	trackAccessInfoCache  *imcache.Cache[string, trackAccessInfo]
 	attrCache             *imcache.Cache[string, *blob.Attributes]
 	knownPresent          *imcache.Cache[string, int64]
+	bgPullBackoff         *imcache.Cache[string, struct{}]
+	replicationAttempts   *imcache.Cache[string, struct{}]
 	failsPeerReachability bool
 
 	StartedAt time.Time
@@ -150,6 +169,8 @@ type MediorumServer struct {
 	geoIPdbReady chan struct{}
 
 	playEventQueue *PlayEventQueue
+
+	metrics *storageMetrics
 }
 
 type PeerHealth struct {
@@ -166,15 +187,15 @@ var (
 const PercentSeededThreshold = 50
 
 func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, posChannel chan pos.PoSRequest, core *coreServer.CoreService, ethService ethv1connect.EthServiceHandler) (*MediorumServer, error) {
-	if env := os.Getenv("OPENAUDIO_ENV"); env != "" {
-		config.Env = env
+	if v := env.String("OPENAUDIO_ENV"); v != "" {
+		config.Env = v
 	}
 	config.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(config.Env)
-
-	var isAudiusdManaged bool
-	if audiusdGenerated := os.Getenv("AUDIUS_D_GENERATED"); audiusdGenerated != "" {
-		isAudiusdManaged = true
+	if config.StoreRecentTTL <= 0 {
+		config.StoreRecentTTL = DefaultStoreRecentTTL
 	}
+
+	isAudiusdManaged := env.IsSet("OPENAUDIO_AUDIUS_D_GENERATED", "AUDIUS_D_GENERATED")
 
 	if config.VersionJson == (version.VersionJson{}) {
 		return nil, errors.New(".version.json is required to be bundled with the mediorum binary")
@@ -195,17 +216,11 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 
 	if config.BlobStoreDSN == "" {
 		config.BlobStoreDSN = "file://" + config.Dir + "/blobs?no_tmp_dir=true"
-	} else if strings.HasPrefix(config.BlobStoreDSN, "file://") {
-		// If using file storage, ensure no_tmp_dir=true is set to avoid cross-device link errors
-		// when /tmp and the blob storage path are on different mount points
-		if !strings.Contains(config.BlobStoreDSN, "no_tmp_dir") {
-			// Add the parameter, handling existing query params
-			if strings.Contains(config.BlobStoreDSN, "?") {
-				config.BlobStoreDSN += "&no_tmp_dir=true"
-			} else {
-				config.BlobStoreDSN += "?no_tmp_dir=true"
-			}
-		}
+	} else {
+		config.BlobStoreDSN = ensureNoTmpDir(config.BlobStoreDSN)
+	}
+	if config.ArchiveBlobStoreDSN != "" {
+		config.ArchiveBlobStoreDSN = ensureNoTmpDir(config.ArchiveBlobStoreDSN)
 	}
 
 	if pk, err := ethcontracts.ParsePrivateKeyHex(config.PrivateKey); err != nil {
@@ -238,6 +253,23 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	if err != nil {
 		logger.Error("failed to open persistent storage bucket", zap.Error(err))
 		return nil, err
+	}
+
+	// archive bucket: only opened if configured. Routes CIDs that this node
+	// only stores due to StoreAll (rendezvous rank >= ReplicationFactor).
+	var archiveBucket *blob.Bucket
+	if config.ArchiveBlobStoreDSN != "" {
+		if config.ArchiveBlobStoreDSN == config.BlobStoreDSN {
+			return nil, errors.New("OPENAUDIO_ARCHIVE_STORAGE_DRIVER_URL must differ from OPENAUDIO_STORAGE_DRIVER_URL")
+		}
+		if !config.StoreAll {
+			logger.Warn("OPENAUDIO_ARCHIVE_STORAGE_DRIVER_URL is set but STORE_ALL is false; archive bucket will be unused")
+		}
+		archiveBucket, err = persistence.Open(config.ArchiveBlobStoreDSN)
+		if err != nil {
+			logger.Error("failed to open archive storage bucket", zap.Error(err))
+			return nil, err
+		}
 	}
 
 	// bucket to move all files from
@@ -288,7 +320,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 
 	// HTTP transport for peer requests - skip TLS verify in dev with self-signed certs for replication/upload-scroll to work
 	var peerTransport http.RoundTripper = http.DefaultTransport
-	if config.Env == "dev" && os.Getenv("OPENAUDIO_TLS_SELF_SIGNED") == "true" {
+	if config.Env == "dev" && env.Bool("OPENAUDIO_TLS_SELF_SIGNED") {
 		peerTransport = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
@@ -323,7 +355,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	reqClient := req.C().
 		SetUserAgent("mediorum " + config.Self.Host).
 		SetTimeout(5 * time.Second)
-	if config.Env == "dev" && os.Getenv("OPENAUDIO_TLS_SELF_SIGNED") == "true" {
+	if config.Env == "dev" && env.Bool("OPENAUDIO_TLS_SELF_SIGNED") {
 		reqClient = reqClient.EnableInsecureSkipVerify()
 	}
 
@@ -354,6 +386,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		lc:               mediorumLifecycle,
 		echo:             echoServer,
 		bucket:           bucket,
+		archiveBucket:    archiveBucket,
 		crud:             crud,
 		pgPool:           pgPool,
 		reqClient:        reqClient,
@@ -376,15 +409,21 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		trackAccessInfoCache: imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
 		attrCache:            imcache.New(imcache.WithMaxEntriesLimitOption[string, *blob.Attributes](10_000, imcache.EvictionPolicyLRU)),
 		knownPresent:         imcache.New(imcache.WithMaxEntriesLimitOption[string, int64](500_000, imcache.EvictionPolicyLRU)),
+		bgPullBackoff:        imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
+		replicationAttempts:  imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
 
-		StartedAt: time.Now().UTC(),
-		Config:    config,
+		StartedAt:    time.Now().UTC(),
+		Config:       config,
 		geoIPdbReady: make(chan struct{}),
 
 		core: core,
 
 		playEventQueue: NewPlayEventQueue(),
+
+		metrics: newStorageMetrics(),
 	}
+
+	echoServer.Use(ss.bandwidthMiddleware)
 
 	routes := echoServer.Group(apiBasePath)
 
@@ -470,6 +509,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	internalApi := routes.Group("/internal")
 
 	// internal: crud
+	internalApi.GET("/crud/status", ss.serveCrudStatus, middleware.BasicAuth(ss.checkBasicAuth))
 	internalApi.GET("/crud/sweep", ss.serveCrudSweep)
 	internalApi.POST("/crud/push", ss.serveCrudPush, middleware.BasicAuth(ss.checkBasicAuth))
 
@@ -501,6 +541,22 @@ func setResponseACAOHeaderFromRequest(req http.Request, resp echo.Response) {
 		echo.HeaderAccessControlAllowOrigin,
 		req.Header.Get(echo.HeaderOrigin),
 	)
+}
+
+// ensureNoTmpDir ensures file:// DSNs carry no_tmp_dir=true to avoid cross-device
+// link errors when /tmp and the blob storage path are on different mount points.
+// Non-file DSNs are returned unchanged.
+func ensureNoTmpDir(dsn string) string {
+	if !strings.HasPrefix(dsn, "file://") {
+		return dsn
+	}
+	if strings.Contains(dsn, "no_tmp_dir") {
+		return dsn
+	}
+	if strings.Contains(dsn, "?") {
+		return dsn + "&no_tmp_dir=true"
+	}
+	return dsn + "?no_tmp_dir=true"
 }
 
 func ACAOHeaderOverwriteMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
@@ -603,6 +659,7 @@ func (ss *MediorumServer) MustStart() error {
 		})
 	}
 
+	ss.lc.AddManagedRoutine("ops pruner", ss.startOpsPruner)
 	ss.lc.AddManagedRoutine("metrics monitor", ss.monitorMetrics)
 	ss.lc.AddManagedRoutine("peer reachability monitor", ss.monitorPeerReachability)
 	ss.lc.AddManagedRoutine("proof of storage handler", ss.startPoSHandler)
@@ -704,7 +761,7 @@ func (ss *MediorumServer) startPprofServer(ctx context.Context) error {
 
 func (ss *MediorumServer) refreshPeersAndSigners(ctx context.Context) error {
 	interval := 10 * time.Minute
-	if os.Getenv("OPENAUDIO_ENV") == "dev" {
+	if env.String("OPENAUDIO_ENV") == "dev" {
 		interval = 10 * time.Second
 	}
 	ticker := time.NewTicker(interval)

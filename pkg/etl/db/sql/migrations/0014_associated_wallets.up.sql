@@ -1,4 +1,4 @@
--- Associated wallets table matching discovery-provider schema.
+-- Associated wallets table.
 
 CREATE TABLE IF NOT EXISTS associated_wallets (
   id serial NOT NULL,

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ import (
 	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/ethcontracts"
@@ -32,10 +32,10 @@ func Run(lc *lifecycle.Lifecycle, logger *zap.Logger, posChannel chan pos.PoSReq
 	if ethService == nil {
 		return errors.New("ethService is required")
 	}
-	env := os.Getenv("OPENAUDIO_ENV")
-	logger.Info("starting mediorum", zap.String("OPENAUDIO_ENV", env))
+	mediorumEnv := env.String("OPENAUDIO_ENV")
+	logger.Info("starting mediorum", zap.String("OPENAUDIO_ENV", mediorumEnv))
 
-	return runMediorum(lc, logger, env, posChannel, storageService, core, ethService)
+	return runMediorum(lc, logger, mediorumEnv, posChannel, storageService, core, ethService)
 }
 
 func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string, posChannel chan pos.PoSRequest, storageService *server.StorageService, core *coreServer.CoreService, ethService ethv1connect.EthServiceHandler) error {
@@ -100,12 +100,12 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	privateKey := cfg.EthereumKey
 	privateKeyHex := hex.EncodeToString(crypto.FromECDSA(privateKey))
 	walletAddress := cfg.WalletAddress
-	delegateOwnerWallet := os.Getenv("delegateOwnerWallet")
+	delegateOwnerWallet := env.String("OPENAUDIO_DELEGATE_WALLET", "delegateOwnerWallet")
 	if !strings.EqualFold(walletAddress, delegateOwnerWallet) {
 		slog.Warn("incorrect delegateOwnerWallet env config", "incorrect", delegateOwnerWallet, "computed", walletAddress)
 	}
 
-	trustedNotifierID, err := strconv.Atoi(getenvWithDefault("trustedNotifierID", "1"))
+	trustedNotifierID, err := strconv.Atoi(env.Get("1", "OPENAUDIO_TRUSTED_NOTIFIER_ID", "trustedNotifierID"))
 	if err != nil {
 		logger.Warn("failed to parse trustedNotifierID", zap.Error(err))
 	}
@@ -123,30 +123,30 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	spOwnerWallet := walletAddress
 	dir := fmt.Sprintf("/tmp/mediorum_dev_%d", spID)
 	blobStoreDSN := ""
+	archiveBlobStoreDSN := ""
 	moveFromBlobStoreDSN := ""
 
 	notDev := isProd || isStage
 	if notDev {
 		replicationFactor = 4
-		spOwnerWallet = os.Getenv("spOwnerWallet")
+		spOwnerWallet = env.String("OPENAUDIO_OWNER_WALLET", "spOwnerWallet")
 		dir = "/tmp/mediorum"
-		// Support OPENAUDIO_STORAGE_DRIVER_URL with fallback to AUDIUS_STORAGE_DRIVER_URL for backwards compatibility
-		blobStoreDSN = getenvWithDefault("OPENAUDIO_STORAGE_DRIVER_URL", os.Getenv("AUDIUS_STORAGE_DRIVER_URL"))
-		// Support OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM with fallback to AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM for backwards compatibility
-		moveFromBlobStoreDSN = getenvWithDefault("OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM", os.Getenv("AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM"))
+		blobStoreDSN = env.String("OPENAUDIO_STORAGE_DRIVER_URL", "AUDIUS_STORAGE_DRIVER_URL")
+		archiveBlobStoreDSN = env.String("OPENAUDIO_ARCHIVE_STORAGE_DRIVER_URL", "AUDIUS_ARCHIVE_STORAGE_DRIVER_URL")
+		moveFromBlobStoreDSN = env.String("OPENAUDIO_STORAGE_DRIVER_URL_MOVE_FROM", "AUDIUS_STORAGE_DRIVER_URL_MOVE_FROM")
 	}
 
 	// Repair configuration
-	repairEnabled := getenvWithDefault("OPENAUDIO_REPAIR_ENABLED", "true") == "true"
-	repairInterval := time.Hour
-	if ri := os.Getenv("OPENAUDIO_REPAIR_INTERVAL"); ri != "" {
-		if parsed, err := time.ParseDuration(ri); err == nil {
-			repairInterval = parsed
-		} else {
-			logger.Warn("failed to parse OPENAUDIO_REPAIR_INTERVAL, using default 1h", zap.String("value", ri), zap.Error(err))
-		}
-	}
-	repairQmCidsUseListIndex := os.Getenv("OPENAUDIO_REPAIR_QM_CIDS_USE_LIST_INDEX") == "true"
+	repairEnabled := env.Get("true", "OPENAUDIO_REPAIR_ENABLED") == "true"
+	repairInterval := env.GetDuration(time.Hour, "OPENAUDIO_REPAIR_INTERVAL")
+	repairConcurrency := env.GetInt(1, "OPENAUDIO_REPAIR_CONCURRENCY")
+	storeRecentTTL := parseStoreRecentTTL(env.String("OPENAUDIO_STORE_RECENT_TTL"))
+
+	// Archive mode keeps all history (no ops pruning). Otherwise the append-only
+	// crudr "ops" table is pruned, retaining 1 year by default.
+	archive := env.Get("false", "OPENAUDIO_ARCHIVE", "archive") == "true"
+	opsRetention := env.GetDuration(365*24*time.Hour, "OPENAUDIO_OPS_RETENTION")
+	opsPruneInterval := env.GetDuration(6*time.Hour, "OPENAUDIO_OPS_PRUNE_INTERVAL")
 
 	config := server.MediorumConfig{
 		Self: registrar.Peer{
@@ -159,24 +159,30 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		ReplicationFactor:         replicationFactor,
 		PrivateKey:                privateKeyHex,
 		Dir:                       dir,
-		PostgresDSN:               getenvWithDefault("dbUrl", "postgres://postgres:postgres@db:5432/audius_creator_node"),
+		PostgresDSN:               env.Get("postgres://postgres:postgres@db:5432/audius_creator_node", "OPENAUDIO_DB_URL", "dbUrl"),
 		BlobStoreDSN:              blobStoreDSN,
+		ArchiveBlobStoreDSN:       archiveBlobStoreDSN,
 		MoveFromBlobStoreDSN:      moveFromBlobStoreDSN,
 		TrustedNotifierID:         trustedNotifierID,
 		SPID:                      spID,
 		SPOwnerWallet:             spOwnerWallet,
-		GitSHA:                    os.Getenv("GIT_SHA"),
-		AudiusDockerCompose:       os.Getenv("AUDIUS_DOCKER_COMPOSE_GIT_SHA"),
-		AutoUpgradeEnabled:        os.Getenv("autoUpgradeEnabled") == "true",
-		StoreAll:                  os.Getenv("STORE_ALL") == "true",
+		GitSHA:                    env.String("OPENAUDIO_GIT_SHA", "GIT_SHA"),
+		AudiusDockerCompose:       env.String("OPENAUDIO_DOCKER_COMPOSE_GIT_SHA", "AUDIUS_DOCKER_COMPOSE_GIT_SHA"),
+		AutoUpgradeEnabled:        env.Bool("OPENAUDIO_AUTO_UPGRADE_ENABLED", "autoUpgradeEnabled"),
+		StoreAll:                  env.Bool("OPENAUDIO_STORE_ALL", "STORE_ALL"),
+		StoreRecent:               env.Bool("OPENAUDIO_STORE_RECENT"),
+		StoreRecentTTL:            storeRecentTTL,
 		VersionJson:               version.Version,
 		DiscoveryListensEndpoints: discoveryListensEndpoints(),
-		LogLevel:                  getenvWithDefault("OPENAUDIO_LOG_LEVEL", "info"),
+		LogLevel:                  env.Get("info", "OPENAUDIO_LOG_LEVEL"),
 		DeadHosts:                 []string{},
-		RepairEnabled:            repairEnabled,
-		RepairInterval:           repairInterval,
-		RepairQmCidsUseListIndex: repairQmCidsUseListIndex,
-		BlobStorageStreaming:      os.Getenv("OPENAUDIO_BLOB_STORAGE_STREAMING") == "true",
+		RepairEnabled:             repairEnabled,
+		RepairInterval:            repairInterval,
+		RepairConcurrency:         repairConcurrency,
+		Archive:                   archive,
+		OpsRetention:              opsRetention,
+		OpsPruneInterval:          opsPruneInterval,
+		BlobStorageStreaming:      env.Bool("OPENAUDIO_BLOB_STORAGE_STREAMING"),
 	}
 
 	ss, err := server.New(lc, logger, config, posChannel, core, ethService)
@@ -188,18 +194,33 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	return ss.MustStart()
 }
 
-func getenvWithDefault(key string, fallback string) string {
-	val := os.Getenv(key)
-	if val == "" {
-		return fallback
-	}
-	return val
-}
-
 func discoveryListensEndpoints() []string {
-	endpoints := os.Getenv("discoveryListensEndpoints")
+	endpoints := env.String("OPENAUDIO_DISCOVERY_LISTENS_ENDPOINTS", "discoveryListensEndpoints")
 	if endpoints == "" {
 		return []string{}
 	}
 	return strings.Split(endpoints, ",")
+}
+
+func parseStoreRecentTTL(raw string) time.Duration {
+	if strings.TrimSpace(raw) == "" {
+		return server.DefaultStoreRecentTTL
+	}
+	d, err := parseStoreRecentDuration(raw)
+	if err != nil {
+		return server.DefaultStoreRecentTTL
+	}
+	return d
+}
+
+func parseStoreRecentDuration(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if strings.HasSuffix(raw, "d") || strings.HasSuffix(raw, "D") {
+		days, err := strconv.ParseFloat(strings.TrimSpace(raw[:len(raw)-1]), 64)
+		if err != nil {
+			return 0, err
+		}
+		return time.Duration(days * float64(24*time.Hour)), nil
+	}
+	return time.ParseDuration(raw)
 }

@@ -1,10 +1,9 @@
 package console
 
 import (
-	"os"
-
 	"connectrpc.com/connect"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/labstack/echo/v4"
 )
 
@@ -46,7 +45,7 @@ func (con *Console) getHealth(c echo.Context) error {
 		res.ChainId = status.ChainInfo.ChainId
 		res.EthAddress = status.NodeInfo.EthAddress
 		res.CometAddress = status.NodeInfo.CometAddress
-		res.Git = os.Getenv("GIT_SHA")
+		res.Git = env.String("OPENAUDIO_GIT_SHA", "GIT_SHA")
 	}
 
 	res.Errors = errs

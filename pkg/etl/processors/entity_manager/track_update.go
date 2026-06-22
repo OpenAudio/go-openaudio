@@ -33,6 +33,8 @@ func validateTrackUpdate(ctx context.Context, params *Params) error {
 			if err := ValidateGenre(genre); err != nil {
 				return err
 			}
+			// Normalize in place so the merge picks up the canonical form.
+			params.Metadata["genre"] = NormalizeGenre(genre)
 		}
 	}
 	if err := ValidateAccessConditions(params); err != nil {
@@ -63,14 +65,47 @@ func updateTrack(ctx context.Context, params *Params) error {
 	if err != nil {
 		return err
 	}
+	stripImmutableFields(params.Metadata, immutableTrackFields)
 	oldTitle := base.Title
 	merged := mergeTrackFromMetadata(params, base)
+
+	titleChanged := params.MetadataString("title") != "" && merged.Title != oldTitle
 
 	if err := updateTrackRow(ctx, params.DBTX, merged, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
 		return err
 	}
 
-	if params.MetadataString("title") != "" && merged.Title != oldTitle {
+	if _, ok := params.Metadata["remix_of"]; ok {
+		if err := updateRemixesTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+			return err
+		}
+	}
+	// Only reconcile collaborators when the owner explicitly sends the list,
+	// so unrelated metadata edits never clear existing collaborators.
+	if _, ok := params.Metadata["collaborators"]; ok {
+		if err := updateTrackCollaboratorsTable(ctx, params.DBTX, params.EntityID, merged.OwnerID, params.Metadata, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
+			return err
+		}
+	}
+	if err := updateTrackPriceHistory(ctx, params.DBTX, params.EntityID, params.BlockNumber, params.BlockTime, params.Metadata); err != nil {
+		return err
+	}
+	if err := applyAccessNormalization(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+		return err
+	}
+
+	if titleChanged {
+		handle, err := getTrackOwnerHandle(ctx, params.DBTX, merged.OwnerID)
+		if err != nil {
+			return err
+		}
+		routeID := CreateTrackRouteID(merged.Title, handle)
+		if _, err := params.DBTX.Exec(ctx, `
+			UPDATE tracks SET route_id = $2 WHERE track_id = $1 AND is_current = true
+		`, params.EntityID, routeID); err != nil {
+			return err
+		}
+
 		_, err = params.DBTX.Exec(ctx, `
 			UPDATE track_routes SET is_current = false WHERE track_id = $1 AND is_current = true
 		`, params.EntityID)

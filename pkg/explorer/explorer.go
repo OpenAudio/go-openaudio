@@ -18,8 +18,8 @@ import (
 	"connectrpc.com/connect"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"go.uber.org/zap"
-	"github.com/OpenAudio/go-openaudio/etl"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates/pages"
 	"github.com/OpenAudio/go-openaudio/pkg/etlserver"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
@@ -190,6 +190,9 @@ func (ex *Explorer) Initialize() {
 	// API endpoints
 	e.GET("/api/validator-locations", ex.ValidatorLocations)
 	e.POST("/api/debug/play", ex.DebugPlay)
+	e.GET("/api/v1/events", ex.ListEvents)
+	e.GET("/api/v1/events/:id", ex.GetEvent)
+	e.GET("/api/v1/events/:handle/:slug", ex.GetEventBySlug)
 
 	// SSE endpoints
 	e.GET("/sse/events", ex.LiveEventsSSE)

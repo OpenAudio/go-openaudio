@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +12,7 @@ import (
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
+	"github.com/mr-tron/base58/base58"
 )
 
 func main() {
@@ -38,15 +41,25 @@ func main() {
 	currentHeight := resp.Msg.ChainInfo.CurrentHeight
 	deadline := currentHeight + 100
 
+	rmPubKey, rmPrivKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		log.Fatalf("Failed to generate RM keypair: %v", err)
+	}
+	rewardsManagerPubkey := base58.Encode(rmPubKey)
+
+	if _, err := oap.Rewards.CreateRewardPool(context.Background(), &v1.CreateRewardPool{
+		RewardsManagerPubkey: rewardsManagerPubkey,
+		Authorities:          []string{oap.Address()},
+	}, rmPrivKey, deadline); err != nil {
+		log.Fatalf("Failed to create reward pool: %v", err)
+	}
+
 	reward, err := oap.Rewards.CreateReward(context.Background(), &v1.CreateReward{
-		RewardId: "reward1",
-		Name:     "Test Reward 1",
-		Amount:   1000,
-		ClaimAuthorities: []*v1.ClaimAuthority{
-			{Address: oap.Address(), Name: "Alec"},
-		},
-		DeadlineBlockHeight: deadline,
-	})
+		RewardId:             "reward1",
+		Name:                 "Test Reward 1",
+		Amount:               1000,
+		RewardsManagerPubkey: rewardsManagerPubkey,
+	}, deadline)
 	if err != nil {
 		log.Fatalf("Failed to create reward: %v", err)
 	}

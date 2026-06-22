@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	"github.com/jackc/pgx/v5"
 )
 
 type userUpdateHandler struct{}
@@ -118,6 +120,13 @@ func updateUser(ctx context.Context, params *Params) error {
 	profilePictureSizes := mergeNullStr(params, "profile_picture_sizes", existing.profilePictureSizes)
 	coverPhoto := mergeNullStr(params, "cover_photo", existing.coverPhoto)
 	coverPhotoSizes := mergeNullStr(params, "cover_photo_sizes", existing.coverPhotoSizes)
+	// Social links set via profile edit (unverified). The verified_with_* flags
+	// and verification-sourced handles stay owned by the UserVerify handler.
+	twitterHandle := mergeNullStr(params, "twitter_handle", existing.twitterHandle)
+	instagramHandle := mergeNullStr(params, "instagram_handle", existing.instagramHandle)
+	tiktokHandle := mergeNullStr(params, "tiktok_handle", existing.tiktokHandle)
+	website := mergeNullStr(params, "website", existing.website)
+	donation := mergeNullStr(params, "donation", existing.donation)
 
 	artistPickTrackID := existing.artistPickTrackID
 	if trackID, ok := params.MetadataInt64("artist_pick_track_id"); ok {
@@ -141,8 +150,9 @@ func updateUser(ctx context.Context, params *Params) error {
 		UPDATE users SET
 			handle = $2, handle_lc = $3, name = $4, bio = $5, location = $6,
 			profile_picture = $7, profile_picture_sizes = $8, cover_photo = $9, cover_photo_sizes = $10,
-			playlist_library = $11, artist_pick_track_id = $12, allow_ai_attribution = $13,
-			updated_at = $14, txhash = $15, blocknumber = $16
+			twitter_handle = $11, instagram_handle = $12, tiktok_handle = $13, website = $14, donation = $15,
+			playlist_library = $16, artist_pick_track_id = $17, allow_ai_attribution = $18,
+			updated_at = $19, txhash = $20, blocknumber = $21
 		WHERE user_id = $1 AND is_current = true
 	`,
 		params.UserID,
@@ -155,6 +165,11 @@ func updateUser(ctx context.Context, params *Params) error {
 		strPtrVal(profilePictureSizes),
 		strPtrVal(coverPhoto),
 		strPtrVal(coverPhotoSizes),
+		strPtrVal(twitterHandle),
+		strPtrVal(instagramHandle),
+		strPtrVal(tiktokHandle),
+		strPtrVal(website),
+		strPtrVal(donation),
 		playlistLibrary,
 		artistPickTrackID,
 		allowAIAttribution,
@@ -165,15 +180,25 @@ func updateUser(ctx context.Context, params *Params) error {
 	return err
 }
 
-// mergeNullStr returns the metadata value if present, otherwise the existing value.
-// If metadata provides an empty string, it clears the field (returns nil).
+// mergeNullStr returns the metadata value if present and non-empty;
+// otherwise it preserves the existing value.
+//
+// The chain convention is "empty string = no change". Treating "" as "clear
+// the field" caused real data corruption against production data: User
+// Update txs with `"handle":""` (meaning the client didn't want to change
+// handle) were wiping `users.handle` to NULL while leaving `handle_lc`
+// populated, producing an inconsistent row. Matches the prod indexer's
+// behavior.
+//
+// Callers that genuinely need to clear a field on chain-supplied null
+// should check for that explicitly upstream of this helper.
 func mergeNullStr(p *Params, key string, existing *string) *string {
 	if _, ok := p.Metadata[key]; !ok {
 		return existing
 	}
 	s := p.MetadataString(key)
 	if s == "" {
-		return nil
+		return existing
 	}
 	return &s
 }
@@ -189,6 +214,11 @@ type currentUserRow struct {
 	profilePictureSizes *string
 	coverPhoto          *string
 	coverPhotoSizes     *string
+	twitterHandle       *string
+	instagramHandle     *string
+	tiktokHandle        *string
+	website             *string
+	donation            *string
 	playlistLibrary     []byte
 	artistPickTrackID   *int64
 	allowAIAttribution  bool
@@ -200,24 +230,27 @@ type currentUserRow struct {
 
 func getCurrentUser(ctx context.Context, dbtx db.DBTX, userID int64) (*currentUserRow, error) {
 	var (
-		handle, handleLC, wallet, name, bio, location                      sql.NullString
-		profilePicture, profilePictureSizes, coverPhoto, coverPhotoSizes   sql.NullString
-		playlistLibrary                                                    []byte
-		artistPickTrackID                                                  *int64
-		allowAIAttribution, isVerified, isDeactivated, isAvailable         bool
-		createdAt                                                          time.Time
+		handle, handleLC, wallet, name, bio, location                    sql.NullString
+		profilePicture, profilePictureSizes, coverPhoto, coverPhotoSizes sql.NullString
+		twitterHandle, instagramHandle, tiktokHandle, website, donation  sql.NullString
+		playlistLibrary                                                  []byte
+		artistPickTrackID                                                *int64
+		allowAIAttribution, isVerified, isDeactivated, isAvailable       bool
+		createdAt                                                        time.Time
 	)
 	err := dbtx.QueryRow(ctx, `
 		SELECT handle, handle_lc, wallet,
 			name, bio, location,
 			profile_picture, profile_picture_sizes,
 			cover_photo, cover_photo_sizes,
+			twitter_handle, instagram_handle, tiktok_handle, website, donation,
 			playlist_library, artist_pick_track_id, allow_ai_attribution,
 			is_verified, is_deactivated, is_available, created_at
 		FROM users WHERE user_id = $1 AND is_current = true LIMIT 1
 	`, userID).Scan(
 		&handle, &handleLC, &wallet, &name, &bio, &location,
 		&profilePicture, &profilePictureSizes, &coverPhoto, &coverPhotoSizes,
+		&twitterHandle, &instagramHandle, &tiktokHandle, &website, &donation,
 		&playlistLibrary, &artistPickTrackID, &allowAIAttribution,
 		&isVerified, &isDeactivated, &isAvailable, &createdAt,
 	)
@@ -235,6 +268,11 @@ func getCurrentUser(ctx context.Context, dbtx db.DBTX, userID int64) (*currentUs
 		profilePictureSizes: nullStrPtr(profilePictureSizes),
 		coverPhoto:          nullStrPtr(coverPhoto),
 		coverPhotoSizes:     nullStrPtr(coverPhotoSizes),
+		twitterHandle:       nullStrPtr(twitterHandle),
+		instagramHandle:     nullStrPtr(instagramHandle),
+		tiktokHandle:        nullStrPtr(tiktokHandle),
+		website:             nullStrPtr(website),
+		donation:            nullStrPtr(donation),
 		playlistLibrary:     playlistLibrary,
 		artistPickTrackID:   artistPickTrackID,
 		allowAIAttribution:  allowAIAttribution,
@@ -248,6 +286,13 @@ func getCurrentUser(ctx context.Context, dbtx db.DBTX, userID int64) (*currentUs
 func getUserHandle(ctx context.Context, dbtx db.DBTX, userID int64) (string, error) {
 	var handleLC sql.NullString
 	err := dbtx.QueryRow(ctx, "SELECT handle_lc FROM users WHERE user_id = $1 AND is_current = true LIMIT 1", userID).Scan(&handleLC)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// User has no current row (deleted between validation and now, or
+		// never existed under is_current=true). Treat as empty handle —
+		// callers compare against the new handle, so empty here means
+		// "different, run the uniqueness check".
+		return "", nil
+	}
 	if handleLC.Valid {
 		return handleLC.String, err
 	}

@@ -31,6 +31,9 @@ RUN ldconfig
 RUN mkdir -p /env
 COPY ./cmd/openaudio/env/* /env/
 
+RUN mkdir -p /etc/openaudio
+COPY ./cmd/openaudio/postgres-defaults.conf /etc/openaudio/postgres-defaults.conf
+
 COPY ./cmd/openaudio/entrypoint.sh /bin/entrypoint.sh
 RUN chmod +x /bin/entrypoint.sh
 

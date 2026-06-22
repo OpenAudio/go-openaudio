@@ -2,9 +2,9 @@ package pages
 
 import (
 	"fmt"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates/layouts"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates/layouts"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"strconv"
 	"strings"
 )
@@ -150,19 +150,19 @@ templ Dashboard(props DashboardProps) {
 	@layouts.Base("Dashboard") {
 		<div class="space-y-6" x-data="blockEvents()" x-init="init()">
 			<!-- Section 1: Current Stats -->
-			<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
+			<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6">
 				<div id="stats-header" x-data="blockEvents()" x-init="init()">
-					<div class="flex items-center justify-between">
+					<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-0 items-center">
 						<div class="flex-1 flex flex-col items-center">
 							<div class="flex items-center justify-center h-12 min-w-[3rem]" x-data="animatedNumber()" x-init="init(latestBlock.height)">
-								<span x-show="!isInitialized" class="text-4xl font-bold text-gray-900 dark:text-white tabular-nums">-</span>
+								<span x-show="!isInitialized" class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white tabular-nums">-</span>
 								<div x-show="isInitialized" class="flex items-center" style="display: none;">
 									<template x-for="(digit, index) in digits" :key="index">
 										<div class="relative h-10 w-6 overflow-hidden flex items-center justify-center">
 											<!-- Current digit (slides down when animating) -->
 											<div class="absolute inset-0 flex items-center justify-center">
 												<span
-													class="text-4xl font-bold text-gray-900 dark:text-white tabular-nums"
+													class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white tabular-nums"
 													:class="getCurrentDigitClass(digit)"
 													x-text="digit.current"
 												></span>
@@ -170,7 +170,7 @@ templ Dashboard(props DashboardProps) {
 											<!-- Next digit (slides in from above when animating) -->
 											<div class="absolute inset-0 flex items-center justify-center">
 												<span
-													class="text-4xl font-bold text-gray-900 dark:text-white tabular-nums"
+													class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white tabular-nums"
 													:class="getNextDigitClass(digit)"
 													x-text="digit.next"
 												></span>
@@ -181,19 +181,19 @@ templ Dashboard(props DashboardProps) {
 							</div>
 							<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">BLOCK HEIGHT</h4>
 						</div>
-						<div class="flex-1 w-32 border-l border-gray-300 dark:border-gray-800 pl-6 flex flex-col items-center">
+						<div class="flex-1 sm:border-l sm:border-gray-300 dark:sm:border-gray-800 sm:pl-6 flex flex-col items-center">
 							if props.Stats.AvgBlockTime > 0 {
-								<p class="text-3xl font-bold text-gray-900 dark:text-white">{ fmt.Sprintf("%.2fs", props.Stats.AvgBlockTime) }</p>
+								<p class="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">{ fmt.Sprintf("%.2fs", props.Stats.AvgBlockTime) }</p>
 							} else if props.Stats.BPS > 0 {
-								<p class="text-3xl font-bold text-gray-900 dark:text-white">{ fmt.Sprintf("%.2fs", 1.0/props.Stats.BPS) }</p>
+								<p class="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">{ fmt.Sprintf("%.2fs", 1.0/props.Stats.BPS) }</p>
 								<p class="text-xs text-gray-500 dark:text-gray-400">{ fmt.Sprintf("%.2f BPS", props.Stats.BPS) }</p>
 							} else {
-								<p class="text-3xl font-bold text-gray-900 dark:text-white">-</p>
+								<p class="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">-</p>
 								<p class="text-xs text-gray-500 dark:text-gray-400">No data</p>
 							}
 							<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">BLOCK TIME</h4>
 						</div>
-						<div class="flex-1 w-40 border-l border-gray-300 dark:border-gray-800 pl-6 flex flex-col items-center">
+						<div class="flex-1 sm:border-l sm:border-gray-300 dark:sm:border-gray-800 sm:pl-6 flex flex-col items-center">
 							if props.Stats.IsSyncing {
 								<div class="flex items-center">
 									<div class="w-2 h-2 bg-yellow-500 rounded-full mr-2 animate-pulse"></div>
@@ -237,12 +237,12 @@ templ Dashboard(props DashboardProps) {
 			<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
 				<!-- Left: Globe -->
 				<div
-					class="relative min-h-[500px] overflow-hidden bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl"
+					class="relative min-h-[360px] sm:min-h-[500px] overflow-hidden bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl"
 					x-data="globeView()"
 					x-init="initSSEEventSource(); init()"
 				>
 					<div class="absolute inset-0 flex items-center justify-center">
-						<div class="w-[460px] h-[460px] flex-shrink-0 relative">
+						<div class="w-full max-w-[460px] aspect-square flex-shrink-0 relative">
 							<canvas
 								x-ref="globeCanvas"
 								class="w-full h-full cursor-grab"
@@ -265,13 +265,13 @@ templ Dashboard(props DashboardProps) {
 					</div>
 				</div>
 				<!-- Right: Transaction Analytics (in a box) -->
-				<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
+				<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6">
 					<div class="flex items-center justify-between mb-6">
 						<h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">Transaction Analytics</h3>
 					</div>
 					<div class="space-y-6">
 						<!-- Top row: Total Transactions and TPS -->
-						<div class="grid grid-cols-2 gap-6">
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
 							<div id="total-transactions-fragment" hx-get="/fragments/total-transactions" hx-trigger="every 10s" hx-swap="outerHTML">
 								@TotalTransactionsFragment(props.Stats)
 							</div>
@@ -280,18 +280,18 @@ templ Dashboard(props DashboardProps) {
 							</div>
 						</div>
 						<!-- Volume metrics -->
-						<div class="grid grid-cols-3 border-t border-gray-300 dark:border-gray-800 pt-6">
-							<div class="border-r border-gray-300 dark:border-gray-800 pr-4 flex flex-col items-center">
+						<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-0 border-t border-gray-300 dark:border-gray-800 pt-6">
+							<div class="sm:border-r sm:border-gray-300 dark:sm:border-gray-800 sm:pr-4 flex flex-col items-center">
 								<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">24h Volume</div>
 								<div class="text-2xl font-light text-gray-900 dark:text-gray-100 mb-1">{ formatNumber(props.Stats.TotalTransactions24h) }</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400">Daily rate</div>
 							</div>
-							<div class="border-r border-gray-300 dark:border-gray-800 pr-4 pl-4 flex flex-col items-center">
+							<div class="sm:border-r sm:border-gray-300 dark:sm:border-gray-800 sm:pr-4 sm:pl-4 flex flex-col items-center">
 								<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">7d Volume</div>
 								<div class="text-2xl font-light text-gray-900 dark:text-gray-100 mb-1">{ formatNumber(props.Stats.TotalTransactions7d) }</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400">Avg: { formatNumber(props.Stats.TotalTransactions7d / 7) }/day</div>
 							</div>
-							<div class="pl-4 flex flex-col items-center">
+							<div class="sm:pl-4 flex flex-col items-center">
 								<div class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">30d Volume</div>
 								<div class="text-2xl font-light text-gray-900 dark:text-gray-100 mb-1">{ formatNumber(props.Stats.TotalTransactions30d) }</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400">Avg: { formatNumber(props.Stats.TotalTransactions30d / 30) }/day</div>
@@ -360,7 +360,7 @@ templ Dashboard(props DashboardProps) {
 			<!-- Section 5: Recent Blocks & Transactions -->
 			<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 				<!-- Latest Blocks -->
-				<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
+				<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6">
 					<div class="flex justify-between items-center mb-4">
 						<h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">Latest Blocks</h3>
 						<a href="/blocks" class="text-gray-400 dark:text-[#b3b3b3] hover:text-gray-600 dark:hover:text-white hover:underline text-sm">View all →</a>
@@ -368,12 +368,12 @@ templ Dashboard(props DashboardProps) {
 					if len(props.RecentBlocks) > 0 {
 						<div class="space-y-2">
 							for _, block := range props.RecentBlocks {
-								<div class="flex items-center justify-between py-3 px-4 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
-									<div class="flex items-center gap-4">
+								<div class="flex flex-wrap items-center justify-between gap-2 py-3 px-3 sm:px-4 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
+									<div class="flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0">
 										<a href={ templ.SafeURL(fmt.Sprintf("/block/%d", block.BlockHeight)) } class="font-semibold text-gray-600 dark:text-gray-200 hover:underline">
 											{ fmt.Sprintf("#%d", block.BlockHeight) }
 										</a>
-										<a href={ templ.SafeURL(fmt.Sprintf("/validator/%s", block.ProposerAddress)) } class="font-mono text-xs text-gray-600 dark:text-gray-200 hover:underline">
+										<a href={ templ.SafeURL(fmt.Sprintf("/validator/%s", block.ProposerAddress)) } class="font-mono text-xs text-gray-600 dark:text-gray-200 hover:underline truncate">
 											if len(block.ProposerAddress) > 8 {
 												{ block.ProposerAddress[:12] }...{ block.ProposerAddress[len(block.ProposerAddress)-4:] }
 											} else {
@@ -381,7 +381,7 @@ templ Dashboard(props DashboardProps) {
 											}
 										</a>
 									</div>
-									<div class="text-xs text-gray-500 dark:text-gray-400">
+									<div class="text-xs text-gray-500 dark:text-gray-400 ml-auto">
 										if block.BlockTime.Valid {
 											@templates.TimeWithTooltip(block.BlockTime.Time)
 										} else {
@@ -396,7 +396,7 @@ templ Dashboard(props DashboardProps) {
 					}
 				</div>
 				<!-- Latest Transactions -->
-				<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
+				<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6">
 					<div class="flex justify-between items-center mb-4">
 						<h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">Latest Transactions</h3>
 						<a href="/transactions" class="text-gray-400 dark:text-[#b3b3b3] hover:text-gray-600 dark:hover:text-white hover:underline text-sm">View all →</a>
@@ -404,9 +404,9 @@ templ Dashboard(props DashboardProps) {
 					if len(props.RecentTransactions) > 0 {
 						<div class="space-y-2">
 							for _, tx := range props.RecentTransactions {
-								<div class="flex items-center justify-between py-3 px-4 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
-									<div class="flex items-center gap-4">
-										<a href={ templ.SafeURL(fmt.Sprintf("/transaction/%s", tx.TxHash)) } class="font-mono text-sm text-gray-600 dark:text-gray-200 hover:underline">
+								<div class="flex flex-wrap items-center justify-between gap-2 py-3 px-3 sm:px-4 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
+									<div class="flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0">
+										<a href={ templ.SafeURL(fmt.Sprintf("/transaction/%s", tx.TxHash)) } class="font-mono text-sm text-gray-600 dark:text-gray-200 hover:underline truncate">
 											if len(tx.TxHash) > 8 {
 												{ tx.TxHash[:12] }...{ tx.TxHash[len(tx.TxHash)-4:] }
 											} else {
@@ -422,7 +422,7 @@ templ Dashboard(props DashboardProps) {
 											</a>
 										}
 									</div>
-									<div class="text-xs text-gray-500 dark:text-gray-400">
+									<div class="text-xs text-gray-500 dark:text-gray-400 ml-auto">
 										if tx.CreatedAt.Valid {
 											@templates.TimeWithTooltip(tx.CreatedAt.Time)
 										} else {
@@ -448,18 +448,18 @@ templ Dashboard(props DashboardProps) {
 // HTMX Fragment Templates
 templ StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64) {
 	<div id="stats-header" hx-get="/fragments/stats-header" hx-trigger="every 10s" hx-swap="outerHTML" x-data="blockEvents()" x-init="init()">
-		<div class="flex items-center justify-between">
+		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-0 items-center">
 			<div class="flex-1">
 				<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Block Height</h4>
 				<div class="flex items-center justify-center h-12 min-w-[3rem]" x-data="animatedNumber()" x-init="init(latestBlock.height)">
-					<span x-show="!isInitialized" class="text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">-</span>
+					<span x-show="!isInitialized" class="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">-</span>
 					<div x-show="isInitialized" class="flex items-center" style="display: none;">
 						<template x-for="(digit, index) in digits" :key="index">
 							<div class="relative h-10 w-6 overflow-hidden flex items-center justify-center">
 								<!-- Current digit (slides down when animating) -->
 								<div class="absolute inset-0 flex items-center justify-center">
 									<span
-										class="text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums"
+										class="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums"
 										:class="getCurrentDigitClass(digit)"
 										x-text="digit.current"
 									></span>
@@ -467,7 +467,7 @@ templ StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64)
 								<!-- Next digit (slides in from above when animating) -->
 								<div class="absolute inset-0 flex items-center justify-center">
 									<span
-										class="text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums"
+										class="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100 tabular-nums"
 										:class="getNextDigitClass(digit)"
 										x-text="digit.next"
 									></span>
@@ -477,19 +477,19 @@ templ StatsHeaderFragment(stats *DashboardStats, syncProgressPercentage float64)
 					</div>
 				</div>
 			</div>
-			<div class="flex-none w-32 border-l border-gray-300 dark:border-gray-800 pl-6">
+			<div class="flex-1 sm:border-l sm:border-gray-300 dark:sm:border-gray-800 sm:pl-6">
 				<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Block Time</h4>
 				if stats.AvgBlockTime > 0 {
-					<p class="text-3xl font-bold text-gray-900 dark:text-gray-100">{ fmt.Sprintf("%.2fs", stats.AvgBlockTime) }</p>
+					<p class="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">{ fmt.Sprintf("%.2fs", stats.AvgBlockTime) }</p>
 				} else if stats.BPS > 0 {
-					<p class="text-3xl font-bold text-gray-900 dark:text-gray-100">{ fmt.Sprintf("%.2fs", 1.0/stats.BPS) }</p>
+					<p class="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">{ fmt.Sprintf("%.2fs", 1.0/stats.BPS) }</p>
 					<p class="text-xs text-gray-500 dark:text-gray-400">{ fmt.Sprintf("%.2f BPS", stats.BPS) }</p>
 				} else {
-					<p class="text-3xl font-bold text-gray-900 dark:text-gray-100">-</p>
+					<p class="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">-</p>
 					<p class="text-xs text-gray-500 dark:text-gray-400">No data</p>
 				}
 			</div>
-			<div class="flex-none w-40 border-l border-gray-300 dark:border-gray-800 pl-6">
+			<div class="flex-1 sm:border-l sm:border-gray-300 dark:sm:border-gray-800 sm:pl-6">
 				<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Sync Status</h4>
 				if stats.IsSyncing {
 					<div class="flex items-center">

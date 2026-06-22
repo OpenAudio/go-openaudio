@@ -11,19 +11,31 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"go.uber.org/zap"
 	"gocloud.dev/gcerrors"
 	"golang.org/x/sync/errgroup"
 )
 
-const MAX_TRIES = 3
+const (
+	MAX_TRIES = 3
+
+	// audioAnalysisBacklogLimit caps the per-tick backlog scan so a node with
+	// a large failing set cannot stall on a single sweep.
+	audioAnalysisBacklogLimit = 100
+
+	// audioAnalysisRetryBackoff defers re-attempts of previously-failed
+	// uploads. Without it, failing rows are picked up every tick and burn
+	// worker time on the same hot set.
+	audioAnalysisRetryBackoff = 24 * time.Hour
+)
 
 func (ss *MediorumServer) startAudioAnalyzer(ctx context.Context) error {
 	work := make(chan *Upload)
 
 	numWorkers := 4
-	numWorkersOverride := os.Getenv("AUDIO_ANALYSIS_WORKERS")
+	numWorkersOverride := env.String("OPENAUDIO_AUDIO_ANALYSIS_WORKERS", "AUDIO_ANALYSIS_WORKERS")
 	if numWorkersOverride != "" {
 		num, err := strconv.ParseInt(numWorkersOverride, 10, 64)
 		if err != nil {
@@ -58,14 +70,10 @@ func (ss *MediorumServer) startAudioAnalyzer(ctx context.Context) error {
 }
 
 func (ss *MediorumServer) findMissedAudioAnalysisJobs(ctx context.Context, work chan<- *Upload) {
-	uploads := []*Upload{}
-	err := ss.crud.DB.Where("template = ? and (audio_analysis_status is null or audio_analysis_status != ?)", JobTemplateAudio, JobStatusDone).
-		Order("random()").
-		Find(&uploads).
-		Error
-
+	uploads, err := ss.findMissedAudioAnalysisCandidates(ctx, time.Now().UTC(), audioAnalysisBacklogLimit)
 	if err != nil {
 		ss.logger.Warn("failed to find backlog work", zap.Error(err))
+		return
 	}
 
 	for _, upload := range uploads {
@@ -78,17 +86,47 @@ func (ss *MediorumServer) findMissedAudioAnalysisJobs(ctx context.Context, work 
 
 		cid, ok := upload.TranscodeResults["320"]
 		if !ok {
-			if exists, _ := ss.bucket.Exists(ctx, upload.OrigFileCID); exists {
+			if ss.blobExists(ctx, cidutil.ShardCID(upload.OrigFileCID)) {
 				ss.transcode(ctx, upload)
 				cid, ok = upload.TranscodeResults["320"]
 			}
 		}
 		if ok {
-			if exists, _ := ss.bucket.Exists(ctx, cid); exists {
-				work <- upload
+			if ss.blobExists(ctx, cidutil.ShardCID(cid)) {
+				select {
+				case work <- upload:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}
+}
+
+func (ss *MediorumServer) findMissedAudioAnalysisCandidates(ctx context.Context, now time.Time, limit int) ([]*Upload, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	cutoff := now.Add(-audioAnalysisRetryBackoff)
+	uploads := []*Upload{}
+	// Keep these literals aligned with idx_uploads_audio_analysis_backlog so
+	// Postgres can use the partial index even with generic plans.
+	err := ss.crud.DB.WithContext(ctx).
+		Where(`
+			template = 'audio'
+			AND audio_analysis_status IS DISTINCT FROM 'done'
+			AND COALESCE(audio_analysis_error_count, 0) < ?
+			AND (audio_analyzed_at IS NULL OR audio_analyzed_at <= ?)
+		`, MAX_TRIES, cutoff).
+		Order("COALESCE(audio_analysis_error_count, 0) ASC").
+		Order("audio_analyzed_at ASC NULLS FIRST").
+		Order("id ASC").
+		Limit(limit).
+		Find(&uploads).
+		Error
+
+	return uploads, err
 }
 
 func (ss *MediorumServer) startAudioAnalysisWorker(workerId int, work chan *Upload) {
@@ -145,7 +183,7 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 	// pull transcoded file from bucket
 	cid, ok := upload.TranscodeResults["320"]
 	if !ok {
-		if exists, _ := ss.bucket.Exists(ctx, upload.OrigFileCID); exists {
+		if ss.blobExists(ctx, cidutil.ShardCID(upload.OrigFileCID)) {
 			ss.transcode(ctx, upload)
 			cid, ok = upload.TranscodeResults["320"]
 		}
@@ -159,7 +197,7 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 	// so that the next mirror may pick the job up
 	logger = logger.With(zap.String("cid", cid))
 	key := cidutil.ShardCID(cid)
-	attrs, err := ss.bucket.Attributes(ctx, key)
+	attrs, _, err := ss.blobAttrs(ctx, key)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return errors.New("failed to find audio file on node")
@@ -172,7 +210,7 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 		logger.Error("failed to create temp file", zap.Error(err))
 		return err
 	}
-	r, err := ss.bucket.NewReader(ctx, key, nil)
+	r, _, err := ss.readBlob(ctx, key)
 	if err != nil {
 		logger.Error("failed to read blob", zap.Error(err))
 		return err

@@ -90,6 +90,7 @@ func (ss *MediorumServer) monitorMetrics(ctx context.Context) error {
 			ticker.Reset(1 * time.Minute) // set longer interval after first attempt
 			ss.updateDiskAndDbStatus(ctx)
 			ss.updateTranscodeStats(ctx)
+			ss.runBucketWriteCanary(ctx)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -104,10 +105,25 @@ func (ss *MediorumServer) monitorMetrics(ctx context.Context) error {
 		case <-ticker.C:
 			ss.updateDiskAndDbStatus(ctx)
 			ss.updateTranscodeStats(ctx)
+			ss.runBucketWriteCanary(ctx)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+// Probes the bucket so health-check catches backends that accept connections
+// but reject writes (e.g. provider quota hit).
+func (ss *MediorumServer) runBucketWriteCanary(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	if err := ss.bucket.WriteAll(ctx, "__healthcheck__/canary", []byte("ok"), nil); err != nil {
+		ss.bucketWriteErr = err.Error()
+		slog.Error("bucket write canary failed", "err", err)
+		return
+	}
+	ss.bucketWriteErr = ""
 }
 
 func (ss *MediorumServer) monitorPeerReachability(ctx context.Context) error {
@@ -200,6 +216,23 @@ func (ss *MediorumServer) updateDiskAndDbStatus(ctx context.Context) {
 	} else {
 		slog.Error("Error getting mediorum disk status", "err", err, "path", diskPath)
 	}
+
+	// Archive bucket disk status (file:// only — mirrors primary's behavior).
+	if ss.archiveBucket != nil && strings.HasPrefix(ss.Config.ArchiveBlobStoreDSN, "file://") {
+		_, uri, found := strings.Cut(ss.Config.ArchiveBlobStoreDSN, "://")
+		if found {
+			archivePath := strings.Split(uri, "?")[0]
+			archiveTotal, archiveFree, archiveErr := getDiskStatus(archivePath)
+			if archiveErr == nil {
+				ss.archivePathFree = archiveFree
+				ss.archivePathUsed = archiveTotal - archiveFree
+				ss.archivePathSize = archiveTotal
+			} else {
+				slog.Error("Error getting archive disk status", "err", archiveErr, "path", archivePath)
+			}
+		}
+	}
+
 	ss.storageExpectation, err = getStorageExpectation(ctx, ss.pgPool, ss.Config.ReplicationFactor)
 	slog.Info("Storage expectation", "size", ss.storageExpectation)
 	slog.Info("Replication factor", "replicationFactor", ss.Config.ReplicationFactor)

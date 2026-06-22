@@ -10,7 +10,7 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"fmt"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates"
 	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates/layouts"
 )
@@ -57,14 +57,14 @@ func Blocks(props BlocksProps) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6\"><div class=\"flex justify-between items-center mb-6\"><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">Latest Blocks</h2><div class=\"text-sm text-gray-500 dark:text-[#b3b3b3]\">Page ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6\"><div class=\"flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-6\"><h2 class=\"text-2xl font-light text-gray-900 dark:text-white\">Latest Blocks</h2><div class=\"text-sm text-gray-500 dark:text-[#b3b3b3]\">Page ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(props.CurrentPage))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/blocks.templ`, Line: 25, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/blocks.templ`, Line: 25, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -77,7 +77,7 @@ func Blocks(props BlocksProps) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(props.PageSize))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/blocks.templ`, Line: 25, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/blocks.templ`, Line: 25, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -100,52 +100,52 @@ func Blocks(props BlocksProps) templ.Component {
 					var templ_7745c5c3_Var5 templ.SafeURL
 					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/block/%d", block.BlockHeight)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/blocks.templ`, Line: 31, Col: 74}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/blocks.templ`, Line: 31, Col: 74}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" class=\"block\"><div class=\"flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors cursor-pointer\"><div class=\"flex items-center gap-6 flex-1\"><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Height</div><div class=\"font-semibold text-gray-600 dark:text-white\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" class=\"block\"><div class=\"flex flex-col gap-3 md:flex-row md:items-center md:justify-between py-4 px-4 md:px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors cursor-pointer\"><div class=\"grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-6 md:flex md:items-center md:flex-1 min-w-0\"><div class=\"md:flex-1\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Height</div><div class=\"font-semibold text-gray-600 dark:text-white\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", block.BlockHeight))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/blocks.templ`, Line: 37, Col: 49}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/blocks.templ`, Line: 37, Col: 49}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Proposer</div><div class=\"font-mono text-xs text-gray-600 dark:text-white\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></div><div class=\"md:flex-1 col-span-2 sm:col-span-1 min-w-0\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Proposer</div><div class=\"font-mono text-xs text-gray-600 dark:text-white truncate\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(block.ProposerAddress)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/blocks.templ`, Line: 43, Col: 34}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/blocks.templ`, Line: 43, Col: 34}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div></div><div class=\"flex-1\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Transactions</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div></div><div class=\"md:flex-1\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Transactions</div><div class=\"text-xl font-light text-gray-900 dark:text-white tabular-nums\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", props.BlockTransactions[i]))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/blocks.templ`, Line: 49, Col: 58}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/blocks.templ`, Line: 49, Col: 58}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></div></div><div class=\"text-right flex-shrink-0\"><div class=\"text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Time</div><div class=\"text-sm text-gray-700 dark:text-white\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></div></div><div class=\"md:text-right md:flex-shrink-0\"><div class=\"text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1\">Time</div><div class=\"text-sm text-gray-700 dark:text-white\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -170,7 +170,7 @@ func Blocks(props BlocksProps) templ.Component {
 					var templ_7745c5c3_Var9 templ.SafeURL
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/blocks?page=%d&count=%d", props.CurrentPage-1, props.PageSize)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/blocks.templ`, Line: 66, Col: 108}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/blocks.templ`, Line: 66, Col: 108}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 					if templ_7745c5c3_Err != nil {
@@ -194,7 +194,7 @@ func Blocks(props BlocksProps) templ.Component {
 					var templ_7745c5c3_Var10 templ.SafeURL
 					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/blocks?page=%d&count=%d", props.CurrentPage+1, props.PageSize)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages/blocks.templ`, Line: 75, Col: 108}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/pages/blocks.templ`, Line: 75, Col: 108}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 					if templ_7745c5c3_Err != nil {

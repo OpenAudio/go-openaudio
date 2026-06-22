@@ -3,9 +3,6 @@ package entity_manager
 import (
 	"context"
 	"encoding/json"
-	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type trackCreateHandler struct{}
@@ -49,6 +46,8 @@ func validateTrackCreate(ctx context.Context, params *Params) error {
 		if err := ValidateGenre(genre); err != nil {
 			return err
 		}
+		// Normalize in place so the canonical form is what gets inserted.
+		params.Metadata["genre"] = NormalizeGenre(genre)
 	}
 	if err := ValidateAccessConditions(params); err != nil {
 		return err
@@ -72,6 +71,12 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		return NewValidationError("title is required for track creation")
 	}
 
+	handle, err := getTrackOwnerHandle(ctx, params.DBTX, params.UserID)
+	if err != nil {
+		return err
+	}
+	routeID := CreateTrackRouteID(title, handle)
+
 	genre := params.MetadataString("genre")
 	mood := params.MetadataString("mood")
 	tags := params.MetadataString("tags")
@@ -86,6 +91,35 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 	isPlaylistUpload := params.MetadataBoolOr("is_playlist_upload", false)
 	ddexApp := params.MetadataString("ddex_app")
 	isAvailable := params.MetadataBoolOr("is_available", true)
+	isCustomBpm := params.MetadataBoolOr("is_custom_bpm", false)
+	isCustomMusicalKey := params.MetadataBoolOr("is_custom_musical_key", false)
+	audioUploadID := params.MetadataString("audio_upload_id")
+	license := params.MetadataString("license")
+	isrc := params.MetadataString("isrc")
+	iswc := params.MetadataString("iswc")
+	coverOriginalSongTitle := params.MetadataString("cover_original_song_title")
+	coverOriginalArtist := params.MetadataString("cover_original_artist")
+	commentsDisabled := params.MetadataBoolOr("comments_disabled", false)
+	noAIUse := params.MetadataBoolOr("no_ai_use", false)
+
+	var previewStartSeconds *float64
+	if v, ok := params.MetadataFloat64("preview_start_seconds"); ok {
+		previewStartSeconds = &v
+	}
+
+	// musical_key: only persist recognized keys (mirrors apps' is_valid_musical_key).
+	// An invalid/empty key leaves the column NULL on create.
+	musicalKey := params.MetadataString("musical_key")
+	if !isValidMusicalKey(musicalKey) {
+		musicalKey = ""
+	}
+
+	// bpm: any nonzero number persists; 0/absent/non-numeric leaves it NULL
+	// (mirrors apps' track.py `bpm_float != 0` check).
+	var bpm *float64
+	if v, ok := params.MetadataFloat64("bpm"); ok && v != 0 {
+		bpm = &v
+	}
 
 	fieldVisibility := metadataJSONRaw(params, "field_visibility")
 	remixOf := metadataJSONRaw(params, "remix_of")
@@ -108,28 +142,29 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		aiAttr = &v
 	}
 
-	var releaseDate pgtype.Timestamp
-	if rd := params.MetadataString("release_date"); rd != "" {
-		if t, err := time.Parse(time.RFC3339, rd); err == nil {
-			releaseDate = pgtype.Timestamp{Time: t, Valid: true}
-		}
-	}
+	releaseDate := releaseDateOrDefault(params.MetadataString("release_date"), params.BlockTime)
 
-	_, err := params.DBTX.Exec(ctx, `
+	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO tracks (
 			track_id, owner_id, is_current, is_delete, title, genre, mood, tags, description,
 			cover_art, cover_art_sizes, is_unlisted, field_visibility, remix_of, stem_of,
 			track_cid, preview_cid, orig_file_cid, duration,
 			is_downloadable, is_download_gated, download_conditions, is_stream_gated, stream_conditions,
 			release_date, is_scheduled_release, ai_attribution_user_id, is_playlist_upload, ddex_app, ddex_release_ids,
-			is_available, track_segments, created_at, updated_at, txhash, blocknumber
+			bpm, musical_key, is_custom_bpm, is_custom_musical_key, audio_upload_id,
+			is_available, license, isrc, iswc, preview_start_seconds, comments_disabled,
+			cover_original_song_title, cover_original_artist, no_ai_use,
+			route_id, track_segments, created_at, updated_at, txhash, blocknumber
 		) VALUES (
 			$1, $2, true, false, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22,
 			$23, $24, $25, $26, $27, $28,
-			$29, '[]'::jsonb, $30, $30, $31, $32
+			$29, $30, $31, $32, $33,
+			$34, $35, $36, $37, $38, $39,
+			$40, $41, $42,
+			$43, '[]'::jsonb, $44, $44, $45, $46
 		)
 	`,
 		params.EntityID,
@@ -160,12 +195,45 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		isPlaylistUpload,
 		nullString(ddexApp),
 		ddexReleaseIDs,
+		bpm,
+		nullString(musicalKey),
+		isCustomBpm,
+		isCustomMusicalKey,
+		nullString(audioUploadID),
 		isAvailable,
+		nullString(license),
+		nullString(isrc),
+		nullString(iswc),
+		previewStartSeconds,
+		commentsDisabled,
+		nullString(coverOriginalSongTitle),
+		nullString(coverOriginalArtist),
+		noAIUse,
+		routeID,
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,
 	)
 	if err != nil {
+		return err
+	}
+
+	if err := updateStemsTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+		return err
+	}
+	if err := updateRemixesTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+		return err
+	}
+	if err := updateTrackCollaboratorsTable(ctx, params.DBTX, params.EntityID, params.UserID, params.Metadata, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
+		return err
+	}
+	if err := autoSubscribeToContestOnSubmission(ctx, params); err != nil {
+		return err
+	}
+	if err := updateTrackPriceHistory(ctx, params.DBTX, params.EntityID, params.BlockNumber, params.BlockTime, params.Metadata); err != nil {
+		return err
+	}
+	if err := applyAccessNormalization(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
 		return err
 	}
 

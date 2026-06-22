@@ -45,8 +45,19 @@ func (rs *RewardAttester) Validate(claim RewardClaim) error {
 		return fmt.Errorf("missing specifier")
 	}
 
-	if claim.Amount != reward.Amount {
-		return fmt.Errorf("amount does not match reward amount")
+	if claim.Amount == 0 {
+		return fmt.Errorf("missing amount")
+	}
+
+	// Allow any positive amount up to the static reward config amount. Some
+	// rewards (notably trending tracks/underground top 10) pay rank-dependent
+	// amounts that are <= the headline reward.Amount; the actual per-claim
+	// amount is determined by the discovery node from user_challenges.amount
+	// and the claim authority is trusted to request the correct amount. This
+	// bound just prevents catastrophic over-attestation if the authority is
+	// buggy or compromised.
+	if claim.Amount > reward.Amount {
+		return fmt.Errorf("amount %d exceeds reward amount %d", claim.Amount, reward.Amount)
 	}
 
 	// TODO: Check oracle is registered, maybe validate lengths of inputs?

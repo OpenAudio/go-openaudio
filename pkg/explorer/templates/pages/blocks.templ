@@ -2,9 +2,9 @@ package pages
 
 import (
 	"fmt"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates/layouts"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates/layouts"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 type BlocksProps struct {
@@ -18,8 +18,8 @@ type BlocksProps struct {
 
 templ Blocks(props BlocksProps) {
 	@layouts.Base("Blocks") {
-		<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
-			<div class="flex justify-between items-center mb-6">
+		<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6">
+			<div class="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-6">
 				<h2 class="text-2xl font-light text-gray-900 dark:text-white">Latest Blocks</h2>
 				<div class="text-sm text-gray-500 dark:text-[#b3b3b3]">
 					Page { fmt.Sprint(props.CurrentPage) } • { fmt.Sprint(props.PageSize) } blocks per page
@@ -29,29 +29,29 @@ templ Blocks(props BlocksProps) {
 				<div class="space-y-2">
 					for i, block := range props.Blocks {
 						<a href={ templ.SafeURL(fmt.Sprintf("/block/%d", block.BlockHeight)) } class="block">
-							<div class="flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors cursor-pointer">
-								<div class="flex items-center gap-6 flex-1">
-									<div class="flex-1">
-										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Height</div>
+							<div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between py-4 px-4 md:px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors cursor-pointer">
+								<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-6 md:flex md:items-center md:flex-1 min-w-0">
+									<div class="md:flex-1">
+										<div class="text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Height</div>
 										<div class="font-semibold text-gray-600 dark:text-white">
 											{ fmt.Sprintf("%d", block.BlockHeight) }
 										</div>
 									</div>
-									<div class="flex-1">
-										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Proposer</div>
-										<div class="font-mono text-xs text-gray-600 dark:text-white">
+									<div class="md:flex-1 col-span-2 sm:col-span-1 min-w-0">
+										<div class="text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Proposer</div>
+										<div class="font-mono text-xs text-gray-600 dark:text-white truncate">
 											{ block.ProposerAddress }
 										</div>
 									</div>
-									<div class="flex-1">
-										<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Transactions</div>
+									<div class="md:flex-1">
+										<div class="text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Transactions</div>
 										<div class="text-xl font-light text-gray-900 dark:text-white tabular-nums">
 											{ fmt.Sprintf("%d", props.BlockTransactions[i]) }
 										</div>
 									</div>
 								</div>
-								<div class="text-right flex-shrink-0">
-									<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Time</div>
+								<div class="md:text-right md:flex-shrink-0">
+									<div class="text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Time</div>
 									<div class="text-sm text-gray-700 dark:text-white">
 										@templates.TimeWithTooltip(block.BlockTime.Time)
 									</div>

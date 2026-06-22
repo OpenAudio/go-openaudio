@@ -361,6 +361,15 @@ func (eth *EthService) startEthDataManager(ctx context.Context) error {
 	}
 }
 
+// GetAntiAbuseOracleAddresses returns the eth addresses of registered
+// anti-abuse oracles, as last synced from the L1 EthRewardsManager contract.
+// These are eligible to be reward-manager senders (alongside validators)
+// and must therefore be allow-listed for add attestations and protected
+// from delete attestations.
+func (eth *EthService) GetAntiAbuseOracleAddresses(ctx context.Context) ([]string, error) {
+	return eth.db.GetAllAntiAbuseOracleAddresses(ctx)
+}
+
 func (eth *EthService) SubscribeToDeregistrationEvents() chan *v1.ServiceEndpoint {
 	return eth.deregPubsub.Subscribe(DeregistrationTopic, 10)
 }
@@ -659,6 +668,27 @@ func (eth *EthService) hydrateEthData(ctx context.Context) error {
 
 	eth.fundingRound.fundingAmountPerRound = contracts.WeiToAudio(fundingAmountPerRound).Int64()
 	eth.fundingRound.initialized = true
+
+	rewardsManager, err := eth.c.GetRewardsManagerContract()
+	if err != nil {
+		eth.logger.Error("eth failed to bind rewards manager contract", zap.Error(err))
+		return fmt.Errorf("failed to bind rewards manager contract: %v", err)
+	}
+	aaoAddrs, err := rewardsManager.GetAntiAbuseOracleAddresses(opts)
+	if err != nil {
+		eth.logger.Error("eth could not get anti-abuse oracle addresses", zap.Error(err))
+		return fmt.Errorf("could not get anti-abuse oracle addresses: %w", err)
+	}
+	if err := txq.ClearAntiAbuseOracles(ctx); err != nil {
+		eth.logger.Error("eth could not clear anti-abuse oracles", zap.Error(err))
+		return fmt.Errorf("could not clear anti-abuse oracles: %w", err)
+	}
+	for _, addr := range aaoAddrs {
+		if err := txq.InsertAntiAbuseOracle(ctx, addr.Hex()); err != nil {
+			eth.logger.Error("eth could not insert anti-abuse oracle", zap.String("address", addr.Hex()), zap.Error(err))
+			return fmt.Errorf("could not insert anti-abuse oracle %s: %w", addr.Hex(), err)
+		}
+	}
 
 	return tx.Commit(ctx)
 }

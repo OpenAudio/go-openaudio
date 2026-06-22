@@ -3,7 +3,7 @@ WRAPPER_TAG ?= default
 # One of patch, minor, or major
 UPGRADE_TYPE ?= patch
 
-PROD_STATE_SYNC_RPCS ?= https://creatornode.audius.co,https://creatornode2.audius.co
+PROD_STATE_SYNC_RPCS ?= https://creatornode.audius.co,https://rpc.audius.co,https://v.monophonic.digital
 
 GIT_SHA := $(shell git rev-parse HEAD)
 VERSION_LDFLAG := -X github.com/OpenAudio/go-openaudio/pkg/core/config.Version=$(GIT_SHA)
@@ -30,12 +30,14 @@ PROTO_ARTIFACTS := $(shell find pkg/api -type f -name '*.pb.go')
 TEMPL_SRCS := $(shell find pkg/core/console -type f -name "*.templ")
 TEMPL_ARTIFACTS := $(shell find pkg/core/console -type f -name "*_templ.go")
 
-EXPLORER_TEMPL_SRCS := $(shell find pkg/console/templates -type f -name "*.templ")
-EXPLORER_TEMPL_ARTIFACTS := $(shell find pkg/console/templates -type f -name "*_templ.go")
+# Explorer (ETL web UI) templ and CSS live under pkg/explorer.
+EXPLORER_TEMPL_DIR := pkg/explorer/templates
+EXPLORER_TEMPL_SRCS := $(shell find $(EXPLORER_TEMPL_DIR) -type f -name "*.templ")
+EXPLORER_TEMPL_ARTIFACTS := $(shell find $(EXPLORER_TEMPL_DIR) -type f -name "*_templ.go")
 
 ###### CSS
-EXPLORER_CSS_INPUT := pkg/console/assets/input.css
-EXPLORER_CSS_OUTPUT := pkg/console/assets/css/output.css
+EXPLORER_CSS_INPUT := pkg/explorer/assets/input.css
+EXPLORER_CSS_OUTPUT := pkg/explorer/assets/css/output.css
 
 ###### CODE
 JSON_SRCS := $(wildcard pkg/core/config/genesis/*.json)
@@ -106,7 +108,7 @@ regen-templ:
 	@echo Regenerating console templ code...
 	@cd pkg/core/console && templ generate -log-level error
 	@echo Regenerating explorer templ code...
-	@cd pkg/console/templates && templ generate -log-level error
+	@cd pkg/explorer && templ generate -log-level error
 	@$(MAKE) regen-css
 
 .PHONY: regen-css
@@ -114,12 +116,12 @@ regen-css: $(EXPLORER_CSS_OUTPUT)
 
 $(EXPLORER_CSS_OUTPUT): $(EXPLORER_CSS_INPUT) $(EXPLORER_TEMPL_SRCS)
 	@echo Regenerating explorer CSS
-	@cd pkg/console/assets && \
+	@cd pkg/explorer/assets && \
 		(npm list @tailwindcss/postcss > /dev/null 2>&1 || npm install --no-save @tailwindcss/postcss postcss-cli > /dev/null 2>&1) && \
 		npx postcss input.css -o css/output.css --minify || \
 		(echo "Error: Failed to regenerate CSS. You may need to run manually:" && \
-		 echo "  cd pkg/console/assets && npm install && npx postcss input.css -o css/output.css" && exit 1)
-	@touch pkg/console/templates/layouts/frame.templ 2>/dev/null || touch pkg/console/console.go 2>/dev/null || true
+		 echo "  cd pkg/explorer/assets && npm install && npx postcss input.css -o css/output.css" && exit 1)
+	@touch pkg/explorer/templates/layouts/frame.templ 2>/dev/null || true
 
 .PHONY: regen-proto
 regen-proto: $(PROTO_ARTIFACTS)
@@ -189,6 +191,28 @@ up: down docker-dev
 		--profile=openaudio-dev \
 		up -d
 
+# ---- Local ETL harness (see examples/etl/README.md) ----
+# Reads node1 (devnet) blocks into a throwaway Postgres so you can exercise the
+# indexer: stream vs poll, feed entity-manager txs, kill/restart for resume.
+ETL_DB_URL ?= postgres://etl:etl@localhost:5454/etl?sslmode=disable
+ETL_RPC ?= http://localhost:50051
+
+.PHONY: etl-db-up etl-db-down etl-poll etl-stream etl-load
+etl-db-up:
+	@docker compose --file='dev/etl-harness.docker-compose.yml' --project-name='etl-harness' up -d
+
+etl-db-down:
+	@docker compose --file='dev/etl-harness.docker-compose.yml' --project-name='etl-harness' down -v
+
+etl-poll:
+	go run ./examples/etl --rpc '$(ETL_RPC)' --db '$(ETL_DB_URL)'
+
+etl-stream:
+	go run ./examples/etl --rpc '$(ETL_RPC)' --db '$(ETL_DB_URL)' --stream
+
+etl-load:
+	go run ./examples/loadgen --rpc https://node1.oap.devnet --insecure
+
 .PHONY: run-prod
 run-prod: docker-dev
 	@docker rm -f openaudio-prod-ss 2>/dev/null || true
@@ -237,6 +261,18 @@ down: ss-down
 		--profile=openaudio-dev \
 		down -v
 	rm -rf tmp/oap*
+
+DEVNET_NODES := node1.oap.devnet node2.oap.devnet node3.oap.devnet node4.oap.devnet
+
+.PHONY: devnet-status
+devnet-status:
+	@for node in $(DEVNET_NODES); do \
+		printf "%-22s " "$$node"; \
+		body=$$(curl -fsSk --max-time 5 "https://$$node/health-check" 2>/dev/null) || { echo "unreachable"; continue; }; \
+		git=$$(printf '%s' "$$body" | sed -n 's/.*"git":"\([^"]*\)".*/\1/p' | cut -c1-12); \
+		uptime=$$(printf '%s' "$$body" | sed -n 's/.*"uptime":"\([^"]*\)".*/\1/p'); \
+		echo "healthy  git=$${git:-?}  uptime=$${uptime:-?}"; \
+	done
 
 .PHONY: test
 test: test-mediorum test-integration test-unit

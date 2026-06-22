@@ -2,9 +2,9 @@ package pages
 
 import (
 	"fmt"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates/layouts"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates/layouts"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"strings"
 )
 
@@ -244,15 +244,15 @@ func getTotalValidatorsCount(validators []*ValidatorUptimeInfo) int {
 
 templ ValidatorsUptime(props ValidatorsUptimeProps) {
 	@layouts.Base("Validators Uptime") {
-		<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
-			<div class="flex items-center justify-between mb-6">
+		<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6">
+			<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-6">
 				<div>
 					<h2 class="text-2xl font-light text-gray-900 dark:text-white">Validators Uptime</h2>
 					<p class="text-gray-500 dark:text-[#b3b3b3] text-sm mt-1">
 						Recent SLA rollup performance across all validators. Green indicates meeting SLA requirements, red indicates missing SLA.
 					</p>
 				</div>
-				<div class="flex items-center gap-6 text-sm text-gray-600 dark:text-[#b3b3b3]">
+				<div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600 dark:text-[#b3b3b3]">
 					<div class="flex items-center gap-2">
 						<div class="w-4 h-4 bg-green-400 rounded"></div>
 						<span>Meeting SLA</span>
@@ -277,8 +277,8 @@ templ ValidatorsUptime(props ValidatorsUptimeProps) {
 
 templ ValidatorsUptimeByRollup(props ValidatorsUptimeByRollupProps) {
 	@layouts.Base(fmt.Sprintf("SLA Rollup #%d Uptime", props.RollupID)) {
-		<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
-			<div class="flex items-center justify-between mb-6">
+		<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6">
+			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-6">
 				<div>
 					<h2 class="text-2xl font-light text-gray-900 dark:text-white">SLA Rollup #{ fmt.Sprint(props.RollupID) } Uptime</h2>
 					<p class="text-gray-500 dark:text-[#b3b3b3] text-sm mt-1">

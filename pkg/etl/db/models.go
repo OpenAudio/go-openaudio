@@ -8,6 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AlbumPriceHistory struct {
+	PlaylistID      int32            `json:"playlist_id"`
+	Splits          []byte           `json:"splits"`
+	TotalPriceCents int64            `json:"total_price_cents"`
+	Blocknumber     int32            `json:"blocknumber"`
+	BlockTimestamp  pgtype.Timestamp `json:"block_timestamp"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+}
+
 type AssociatedWallet struct {
 	ID          int32            `json:"id"`
 	UserID      int32            `json:"user_id"`
@@ -24,7 +33,6 @@ type AssociatedWallet struct {
 type Block struct {
 	Blockhash  string      `json:"blockhash"`
 	Parenthash pgtype.Text `json:"parenthash"`
-	IsCurrent  pgtype.Bool `json:"is_current"`
 	Number     pgtype.Int4 `json:"number"`
 }
 
@@ -221,7 +229,7 @@ type EtlStorageProof struct {
 	Cid             string           `json:"cid"`
 	ProofSignature  []byte           `json:"proof_signature"`
 	Proof           []byte           `json:"proof"`
-	Status          interface{}      `json:"status"`
+	Status          string           `json:"status"`
 	BlockHeight     int64            `json:"block_height"`
 	TxHash          string           `json:"tx_hash"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
@@ -378,6 +386,13 @@ type NotificationSeen struct {
 	Txhash      pgtype.Text      `json:"txhash"`
 }
 
+type OauthRedirectUri struct {
+	ID          int32              `json:"id"`
+	ClientID    string             `json:"client_id"`
+	RedirectUri string             `json:"redirect_uri"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Playlist struct {
 	Blockhash                   pgtype.Text      `json:"blockhash"`
 	Blocknumber                 pgtype.Int4      `json:"blocknumber"`
@@ -434,6 +449,14 @@ type PlaylistSeen struct {
 	Txhash      pgtype.Text      `json:"txhash"`
 }
 
+type PlaylistTrack struct {
+	PlaylistID int32              `json:"playlist_id"`
+	TrackID    int32              `json:"track_id"`
+	IsRemoved  bool               `json:"is_removed"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Reaction struct {
 	ID            int32            `json:"id"`
 	ReactionValue int32            `json:"reaction_value"`
@@ -444,12 +467,17 @@ type Reaction struct {
 	Blocknumber   int32            `json:"blocknumber"`
 }
 
+type Remix struct {
+	ParentTrackID int32 `json:"parent_track_id"`
+	ChildTrackID  int32 `json:"child_track_id"`
+}
+
 type Repost struct {
 	Blockhash        pgtype.Text      `json:"blockhash"`
 	Blocknumber      pgtype.Int4      `json:"blocknumber"`
 	UserID           int32            `json:"user_id"`
 	RepostItemID     int32            `json:"repost_item_id"`
-	RepostType       interface{}      `json:"repost_type"`
+	RepostType       string           `json:"repost_type"`
 	IsCurrent        bool             `json:"is_current"`
 	IsDelete         bool             `json:"is_delete"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
@@ -463,7 +491,7 @@ type Safe struct {
 	Blocknumber    pgtype.Int4      `json:"blocknumber"`
 	UserID         int32            `json:"user_id"`
 	SaveItemID     int32            `json:"save_item_id"`
-	SaveType       interface{}      `json:"save_type"`
+	SaveType       string           `json:"save_type"`
 	IsCurrent      bool             `json:"is_current"`
 	IsDelete       bool             `json:"is_delete"`
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
@@ -477,10 +505,15 @@ type Share struct {
 	Blocknumber pgtype.Int4      `json:"blocknumber"`
 	UserID      int32            `json:"user_id"`
 	ShareItemID int32            `json:"share_item_id"`
-	ShareType   interface{}      `json:"share_type"`
+	ShareType   string           `json:"share_type"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 	Txhash      string           `json:"txhash"`
 	Slot        pgtype.Int4      `json:"slot"`
+}
+
+type Stem struct {
+	ParentTrackID int32 `json:"parent_track_id"`
+	ChildTrackID  int32 `json:"child_track_id"`
 }
 
 type Subscription struct {
@@ -567,6 +600,7 @@ type Track struct {
 	CoverOriginalArtist                pgtype.Text      `json:"cover_original_artist"`
 	IsOwnedByUser                      bool             `json:"is_owned_by_user"`
 	NoAiUse                            pgtype.Bool      `json:"no_ai_use"`
+	AccessAuthorities                  []string         `json:"access_authorities"`
 }
 
 type TrackDownload struct {
@@ -579,6 +613,16 @@ type TrackDownload struct {
 	Region        pgtype.Text      `json:"region"`
 	Country       pgtype.Text      `json:"country"`
 	CreatedAt     pgtype.Timestamp `json:"created_at"`
+}
+
+type TrackPriceHistory struct {
+	TrackID         int32            `json:"track_id"`
+	Splits          []byte           `json:"splits"`
+	TotalPriceCents int64            `json:"total_price_cents"`
+	Blocknumber     int32            `json:"blocknumber"`
+	BlockTimestamp  pgtype.Timestamp `json:"block_timestamp"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	Access          string           `json:"access"`
 }
 
 type TrackRoute struct {
@@ -643,4 +687,18 @@ type UserTip struct {
 	Amount         int64            `json:"amount"`
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+}
+
+// EventRoute mirrors TrackRoute for the event_routes table.
+// Added manually — not generated by sqlc.
+type EventRoute struct {
+	Slug        string `json:"slug"`
+	TitleSlug   string `json:"title_slug"`
+	CollisionID int32  `json:"collision_id"`
+	OwnerID     int32  `json:"owner_id"`
+	EventID     int32  `json:"event_id"`
+	IsCurrent   bool   `json:"is_current"`
+	Blockhash   string `json:"blockhash"`
+	Blocknumber int32  `json:"blocknumber"`
+	Txhash      string `json:"txhash"`
 }

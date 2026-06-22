@@ -71,7 +71,7 @@ func EnsureProtocol(endpoint string) string {
 }
 
 func WaitForDevnetHealthy(timeout ...time.Duration) error {
-	timeoutDuration := 60 * time.Second
+	timeoutDuration := 300 * time.Second
 	if len(timeout) > 0 {
 		timeoutDuration = timeout[0]
 	}
@@ -94,67 +94,70 @@ func WaitForDevnetHealthy(timeout ...time.Duration) error {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	client := NewTestHTTPClient()
+	// Use a short per-request timeout so a single slow/hung node cannot
+	// exhaust the overall readiness budget on one iteration.
+	pollClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+		Timeout: 5 * time.Second,
+	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return errors.New("timed out waiting for devnet to be ready")
-		case <-ticker.C:
-			// Check core services are ready
-			allReady := true
-			for _, n := range nodes {
-				status, err := n.Core.GetStatus(context.Background(), connect.NewRequest(&corev1.GetStatusRequest{}))
-				if err != nil {
-					allReady = false
-					break
-				} else if !status.Msg.Ready {
-					allReady = false
-					break
-				}
+	checkReady := func() bool {
+		for _, n := range nodes {
+			reqCtx, reqCancel := context.WithTimeout(ctx, 5*time.Second)
+			status, err := n.Core.GetStatus(reqCtx, connect.NewRequest(&corev1.GetStatusRequest{}))
+			reqCancel()
+			if err != nil || status.Msg == nil || !status.Msg.Ready {
+				return false
 			}
-			if !allReady {
-				continue
+		}
+
+		for _, addr := range nodeAddresses {
+			baseURL := addr
+			if !strings.HasPrefix(baseURL, "https://") && !strings.HasPrefix(baseURL, "http://") {
+				baseURL = "https://" + baseURL
+			} else if strings.HasPrefix(baseURL, "http://") {
+				baseURL = strings.Replace(baseURL, "http://", "https://", 1)
 			}
 
-			// Check mediorum services have wallets registered
-			allMediorumReady := true
+			reqCtx, reqCancel := context.WithTimeout(ctx, 5*time.Second)
+			req, err := http.NewRequestWithContext(reqCtx, "GET", baseURL+"/health-check", nil)
+			if err != nil {
+				reqCancel()
+				return false
+			}
+			resp, err := pollClient.Do(req)
+			reqCancel()
+			if err != nil {
+				return false
+			}
+
 			var healthResponse struct {
 				Storage struct {
 					WalletIsRegistered bool `json:"wallet_is_registered"`
 				} `json:"storage"`
 			}
-
-			for _, addr := range nodeAddresses {
-				// Ensure https:// protocol
-				baseURL := addr
-				if !strings.HasPrefix(baseURL, "https://") && !strings.HasPrefix(baseURL, "http://") {
-					baseURL = "https://" + baseURL
-				} else if strings.HasPrefix(baseURL, "http://") {
-					baseURL = strings.Replace(baseURL, "http://", "https://", 1)
-				}
-
-				req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/health-check", nil)
-				if err != nil {
-					allMediorumReady = false
-					break
-				}
-
-				resp, err := client.Do(req)
-				if err != nil {
-					allMediorumReady = false
-					break
-				}
-
-				if resp.StatusCode != 200 || json.NewDecoder(resp.Body).Decode(&healthResponse) != nil || !healthResponse.Storage.WalletIsRegistered {
-					resp.Body.Close()
-					allMediorumReady = false
-					break
-				}
-				resp.Body.Close()
+			ok := resp.StatusCode == 200 &&
+				json.NewDecoder(resp.Body).Decode(&healthResponse) == nil &&
+				healthResponse.Storage.WalletIsRegistered
+			resp.Body.Close()
+			if !ok {
+				return false
 			}
+		}
+		return true
+	}
 
-			if allReady && allMediorumReady {
+	if checkReady() {
+		return nil
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.New("timed out waiting for devnet to be ready")
+		case <-ticker.C:
+			if checkReady() {
 				return nil
 			}
 		}

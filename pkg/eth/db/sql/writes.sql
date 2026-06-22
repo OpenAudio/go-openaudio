@@ -47,3 +47,9 @@ values ($1, $2, $3, $4, $5, $6, $7, $8);
 -- name: DeleteActiveProposal :exec
 delete from eth_active_proposals
 where id = $1;
+
+-- name: ClearAntiAbuseOracles :exec
+delete from eth_anti_abuse_oracles;
+
+-- name: InsertAntiAbuseOracle :exec
+insert into eth_anti_abuse_oracles (address) values ($1);

@@ -247,19 +247,26 @@ type CoreResource struct {
 }
 
 type CoreReward struct {
-	ID               int64
-	Address          string
-	Index            int64
-	TxHash           string
-	Sender           string
-	RewardID         string
-	Name             string
-	Amount           int64
-	ClaimAuthorities []string
-	RawMessage       []byte
-	BlockHeight      int64
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
+	ID                   int64
+	Address              string
+	Index                int64
+	TxHash               string
+	Sender               string
+	RewardID             string
+	Name                 string
+	Amount               int64
+	RawMessage           []byte
+	BlockHeight          int64
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	RewardsManagerPubkey pgtype.Text
+}
+
+type CoreRewardPool struct {
+	RewardsManagerPubkey string
+	Authorities          []string
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
 }
 
 type CoreTransaction struct {
@@ -303,6 +310,12 @@ type CoreValidator struct {
 	SpID         string
 	CometPubKey  string
 	Jailed       bool
+}
+
+type LaunchpadAuthorityRm struct {
+	Authority            string
+	RewardsManagerPubkey string
+	CreatedAt            pgtype.Timestamptz
 }
 
 type ManagementKey struct {

@@ -79,12 +79,18 @@ const (
 	CoreServiceGetRewardProcedure = "/core.v1.CoreService/GetReward"
 	// CoreServiceGetRewardsProcedure is the fully-qualified name of the CoreService's GetRewards RPC.
 	CoreServiceGetRewardsProcedure = "/core.v1.CoreService/GetRewards"
+	// CoreServiceGetRewardPoolProcedure is the fully-qualified name of the CoreService's GetRewardPool
+	// RPC.
+	CoreServiceGetRewardPoolProcedure = "/core.v1.CoreService/GetRewardPool"
 	// CoreServiceGetRewardAttestationProcedure is the fully-qualified name of the CoreService's
 	// GetRewardAttestation RPC.
 	CoreServiceGetRewardAttestationProcedure = "/core.v1.CoreService/GetRewardAttestation"
 	// CoreServiceGetRewardSenderAttestationProcedure is the fully-qualified name of the CoreService's
 	// GetRewardSenderAttestation RPC.
 	CoreServiceGetRewardSenderAttestationProcedure = "/core.v1.CoreService/GetRewardSenderAttestation"
+	// CoreServiceGetDeleteRewardSenderAttestationProcedure is the fully-qualified name of the
+	// CoreService's GetDeleteRewardSenderAttestation RPC.
+	CoreServiceGetDeleteRewardSenderAttestationProcedure = "/core.v1.CoreService/GetDeleteRewardSenderAttestation"
 	// CoreServiceGetStreamURLsProcedure is the fully-qualified name of the CoreService's GetStreamURLs
 	// RPC.
 	CoreServiceGetStreamURLsProcedure = "/core.v1.CoreService/GetStreamURLs"
@@ -117,8 +123,10 @@ type CoreServiceClient interface {
 	GetPIE(context.Context, *connect.Request[v1.GetPIERequest]) (*connect.Response[v1.GetPIEResponse], error)
 	GetReward(context.Context, *connect.Request[v1.GetRewardRequest]) (*connect.Response[v1.GetRewardResponse], error)
 	GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error)
+	GetRewardPool(context.Context, *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error)
 	GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error)
 	GetRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error)
+	GetDeleteRewardSenderAttestation(context.Context, *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error)
 	GetStreamURLs(context.Context, *connect.Request[v1.GetStreamURLsRequest]) (*connect.Response[v1.GetStreamURLsResponse], error)
 	GetUploadByCID(context.Context, *connect.Request[v1.GetUploadByCIDRequest]) (*connect.Response[v1.GetUploadByCIDResponse], error)
 	StreamBlocks(context.Context, *connect.Request[v1.StreamBlocksRequest]) (*connect.ServerStreamForClient[v1.StreamBlocksResponse], error)
@@ -249,6 +257,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("GetRewards")),
 			connect.WithClientOptions(opts...),
 		),
+		getRewardPool: connect.NewClient[v1.GetRewardPoolRequest, v1.GetRewardPoolResponse](
+			httpClient,
+			baseURL+CoreServiceGetRewardPoolProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetRewardPool")),
+			connect.WithClientOptions(opts...),
+		),
 		getRewardAttestation: connect.NewClient[v1.GetRewardAttestationRequest, v1.GetRewardAttestationResponse](
 			httpClient,
 			baseURL+CoreServiceGetRewardAttestationProcedure,
@@ -259,6 +273,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+CoreServiceGetRewardSenderAttestationProcedure,
 			connect.WithSchema(coreServiceMethods.ByName("GetRewardSenderAttestation")),
+			connect.WithClientOptions(opts...),
+		),
+		getDeleteRewardSenderAttestation: connect.NewClient[v1.GetDeleteRewardSenderAttestationRequest, v1.GetDeleteRewardSenderAttestationResponse](
+			httpClient,
+			baseURL+CoreServiceGetDeleteRewardSenderAttestationProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetDeleteRewardSenderAttestation")),
 			connect.WithClientOptions(opts...),
 		),
 		getStreamURLs: connect.NewClient[v1.GetStreamURLsRequest, v1.GetStreamURLsResponse](
@@ -284,30 +304,32 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // coreServiceClient implements CoreServiceClient.
 type coreServiceClient struct {
-	ping                         *connect.Client[v1.PingRequest, v1.PingResponse]
-	getHealth                    *connect.Client[v1.GetHealthRequest, v1.GetHealthResponse]
-	getStatus                    *connect.Client[v1.GetStatusRequest, v1.GetStatusResponse]
-	getNodeInfo                  *connect.Client[v1.GetNodeInfoRequest, v1.GetNodeInfoResponse]
-	getBlock                     *connect.Client[v1.GetBlockRequest, v1.GetBlockResponse]
-	getBlocks                    *connect.Client[v1.GetBlocksRequest, v1.GetBlocksResponse]
-	getTransaction               *connect.Client[v1.GetTransactionRequest, v1.GetTransactionResponse]
-	sendTransaction              *connect.Client[v1.SendTransactionRequest, v1.SendTransactionResponse]
-	forwardTransaction           *connect.Client[v1.ForwardTransactionRequest, v1.ForwardTransactionResponse]
-	getRegistrationAttestation   *connect.Client[v1.GetRegistrationAttestationRequest, v1.GetRegistrationAttestationResponse]
-	getDeregistrationAttestation *connect.Client[v1.GetDeregistrationAttestationRequest, v1.GetDeregistrationAttestationResponse]
-	getStoredSnapshots           *connect.Client[v1.GetStoredSnapshotsRequest, v1.GetStoredSnapshotsResponse]
-	getSlashAttestation          *connect.Client[v1.GetSlashAttestationRequest, v1.GetSlashAttestationResponse]
-	getSlashAttestations         *connect.Client[v1.GetSlashAttestationsRequest, v1.GetSlashAttestationsResponse]
-	getERN                       *connect.Client[v1.GetERNRequest, v1.GetERNResponse]
-	getMEAD                      *connect.Client[v1.GetMEADRequest, v1.GetMEADResponse]
-	getPIE                       *connect.Client[v1.GetPIERequest, v1.GetPIEResponse]
-	getReward                    *connect.Client[v1.GetRewardRequest, v1.GetRewardResponse]
-	getRewards                   *connect.Client[v1.GetRewardsRequest, v1.GetRewardsResponse]
-	getRewardAttestation         *connect.Client[v1.GetRewardAttestationRequest, v1.GetRewardAttestationResponse]
-	getRewardSenderAttestation   *connect.Client[v1.GetRewardSenderAttestationRequest, v1.GetRewardSenderAttestationResponse]
-	getStreamURLs                *connect.Client[v1.GetStreamURLsRequest, v1.GetStreamURLsResponse]
-	getUploadByCID               *connect.Client[v1.GetUploadByCIDRequest, v1.GetUploadByCIDResponse]
-	streamBlocks                 *connect.Client[v1.StreamBlocksRequest, v1.StreamBlocksResponse]
+	ping                             *connect.Client[v1.PingRequest, v1.PingResponse]
+	getHealth                        *connect.Client[v1.GetHealthRequest, v1.GetHealthResponse]
+	getStatus                        *connect.Client[v1.GetStatusRequest, v1.GetStatusResponse]
+	getNodeInfo                      *connect.Client[v1.GetNodeInfoRequest, v1.GetNodeInfoResponse]
+	getBlock                         *connect.Client[v1.GetBlockRequest, v1.GetBlockResponse]
+	getBlocks                        *connect.Client[v1.GetBlocksRequest, v1.GetBlocksResponse]
+	getTransaction                   *connect.Client[v1.GetTransactionRequest, v1.GetTransactionResponse]
+	sendTransaction                  *connect.Client[v1.SendTransactionRequest, v1.SendTransactionResponse]
+	forwardTransaction               *connect.Client[v1.ForwardTransactionRequest, v1.ForwardTransactionResponse]
+	getRegistrationAttestation       *connect.Client[v1.GetRegistrationAttestationRequest, v1.GetRegistrationAttestationResponse]
+	getDeregistrationAttestation     *connect.Client[v1.GetDeregistrationAttestationRequest, v1.GetDeregistrationAttestationResponse]
+	getStoredSnapshots               *connect.Client[v1.GetStoredSnapshotsRequest, v1.GetStoredSnapshotsResponse]
+	getSlashAttestation              *connect.Client[v1.GetSlashAttestationRequest, v1.GetSlashAttestationResponse]
+	getSlashAttestations             *connect.Client[v1.GetSlashAttestationsRequest, v1.GetSlashAttestationsResponse]
+	getERN                           *connect.Client[v1.GetERNRequest, v1.GetERNResponse]
+	getMEAD                          *connect.Client[v1.GetMEADRequest, v1.GetMEADResponse]
+	getPIE                           *connect.Client[v1.GetPIERequest, v1.GetPIEResponse]
+	getReward                        *connect.Client[v1.GetRewardRequest, v1.GetRewardResponse]
+	getRewards                       *connect.Client[v1.GetRewardsRequest, v1.GetRewardsResponse]
+	getRewardPool                    *connect.Client[v1.GetRewardPoolRequest, v1.GetRewardPoolResponse]
+	getRewardAttestation             *connect.Client[v1.GetRewardAttestationRequest, v1.GetRewardAttestationResponse]
+	getRewardSenderAttestation       *connect.Client[v1.GetRewardSenderAttestationRequest, v1.GetRewardSenderAttestationResponse]
+	getDeleteRewardSenderAttestation *connect.Client[v1.GetDeleteRewardSenderAttestationRequest, v1.GetDeleteRewardSenderAttestationResponse]
+	getStreamURLs                    *connect.Client[v1.GetStreamURLsRequest, v1.GetStreamURLsResponse]
+	getUploadByCID                   *connect.Client[v1.GetUploadByCIDRequest, v1.GetUploadByCIDResponse]
+	streamBlocks                     *connect.Client[v1.StreamBlocksRequest, v1.StreamBlocksResponse]
 }
 
 // Ping calls core.v1.CoreService.Ping.
@@ -405,6 +427,11 @@ func (c *coreServiceClient) GetRewards(ctx context.Context, req *connect.Request
 	return c.getRewards.CallUnary(ctx, req)
 }
 
+// GetRewardPool calls core.v1.CoreService.GetRewardPool.
+func (c *coreServiceClient) GetRewardPool(ctx context.Context, req *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error) {
+	return c.getRewardPool.CallUnary(ctx, req)
+}
+
 // GetRewardAttestation calls core.v1.CoreService.GetRewardAttestation.
 func (c *coreServiceClient) GetRewardAttestation(ctx context.Context, req *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
 	return c.getRewardAttestation.CallUnary(ctx, req)
@@ -413,6 +440,11 @@ func (c *coreServiceClient) GetRewardAttestation(ctx context.Context, req *conne
 // GetRewardSenderAttestation calls core.v1.CoreService.GetRewardSenderAttestation.
 func (c *coreServiceClient) GetRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
 	return c.getRewardSenderAttestation.CallUnary(ctx, req)
+}
+
+// GetDeleteRewardSenderAttestation calls core.v1.CoreService.GetDeleteRewardSenderAttestation.
+func (c *coreServiceClient) GetDeleteRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error) {
+	return c.getDeleteRewardSenderAttestation.CallUnary(ctx, req)
 }
 
 // GetStreamURLs calls core.v1.CoreService.GetStreamURLs.
@@ -451,8 +483,10 @@ type CoreServiceHandler interface {
 	GetPIE(context.Context, *connect.Request[v1.GetPIERequest]) (*connect.Response[v1.GetPIEResponse], error)
 	GetReward(context.Context, *connect.Request[v1.GetRewardRequest]) (*connect.Response[v1.GetRewardResponse], error)
 	GetRewards(context.Context, *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error)
+	GetRewardPool(context.Context, *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error)
 	GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error)
 	GetRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error)
+	GetDeleteRewardSenderAttestation(context.Context, *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error)
 	GetStreamURLs(context.Context, *connect.Request[v1.GetStreamURLsRequest]) (*connect.Response[v1.GetStreamURLsResponse], error)
 	GetUploadByCID(context.Context, *connect.Request[v1.GetUploadByCIDRequest]) (*connect.Response[v1.GetUploadByCIDResponse], error)
 	StreamBlocks(context.Context, *connect.Request[v1.StreamBlocksRequest], *connect.ServerStream[v1.StreamBlocksResponse]) error
@@ -579,6 +613,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("GetRewards")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceGetRewardPoolHandler := connect.NewUnaryHandler(
+		CoreServiceGetRewardPoolProcedure,
+		svc.GetRewardPool,
+		connect.WithSchema(coreServiceMethods.ByName("GetRewardPool")),
+		connect.WithHandlerOptions(opts...),
+	)
 	coreServiceGetRewardAttestationHandler := connect.NewUnaryHandler(
 		CoreServiceGetRewardAttestationProcedure,
 		svc.GetRewardAttestation,
@@ -589,6 +629,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		CoreServiceGetRewardSenderAttestationProcedure,
 		svc.GetRewardSenderAttestation,
 		connect.WithSchema(coreServiceMethods.ByName("GetRewardSenderAttestation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceGetDeleteRewardSenderAttestationHandler := connect.NewUnaryHandler(
+		CoreServiceGetDeleteRewardSenderAttestationProcedure,
+		svc.GetDeleteRewardSenderAttestation,
+		connect.WithSchema(coreServiceMethods.ByName("GetDeleteRewardSenderAttestation")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServiceGetStreamURLsHandler := connect.NewUnaryHandler(
@@ -649,10 +695,14 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceGetRewardHandler.ServeHTTP(w, r)
 		case CoreServiceGetRewardsProcedure:
 			coreServiceGetRewardsHandler.ServeHTTP(w, r)
+		case CoreServiceGetRewardPoolProcedure:
+			coreServiceGetRewardPoolHandler.ServeHTTP(w, r)
 		case CoreServiceGetRewardAttestationProcedure:
 			coreServiceGetRewardAttestationHandler.ServeHTTP(w, r)
 		case CoreServiceGetRewardSenderAttestationProcedure:
 			coreServiceGetRewardSenderAttestationHandler.ServeHTTP(w, r)
+		case CoreServiceGetDeleteRewardSenderAttestationProcedure:
+			coreServiceGetDeleteRewardSenderAttestationHandler.ServeHTTP(w, r)
 		case CoreServiceGetStreamURLsProcedure:
 			coreServiceGetStreamURLsHandler.ServeHTTP(w, r)
 		case CoreServiceGetUploadByCIDProcedure:
@@ -744,12 +794,20 @@ func (UnimplementedCoreServiceHandler) GetRewards(context.Context, *connect.Requ
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetRewards is not implemented"))
 }
 
+func (UnimplementedCoreServiceHandler) GetRewardPool(context.Context, *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetRewardPool is not implemented"))
+}
+
 func (UnimplementedCoreServiceHandler) GetRewardAttestation(context.Context, *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetRewardAttestation is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) GetRewardSenderAttestation(context.Context, *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetRewardSenderAttestation is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetDeleteRewardSenderAttestation(context.Context, *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("core.v1.CoreService.GetDeleteRewardSenderAttestation is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) GetStreamURLs(context.Context, *connect.Request[v1.GetStreamURLsRequest]) (*connect.Response[v1.GetStreamURLsResponse], error) {

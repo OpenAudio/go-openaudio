@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
@@ -29,7 +30,9 @@ import (
 )
 
 var (
-	audioPreviewDuration = "30" // seconds
+	audioPreviewDuration        = "30" // seconds
+	missedTranscodeBatchSize    = 100
+	missedTranscodeRetryBackoff = time.Minute
 )
 
 func (ss *MediorumServer) startTranscoder(ctx context.Context) error {
@@ -40,7 +43,7 @@ func (ss *MediorumServer) startTranscoder(ctx context.Context) error {
 	if numWorkers < 2 {
 		numWorkers = 2
 	}
-	numWorkersOverride := os.Getenv("TRANSCODE_WORKERS")
+	numWorkersOverride := env.String("OPENAUDIO_TRANSCODE_WORKERS", "TRANSCODE_WORKERS")
 	if numWorkersOverride != "" {
 		num, err := strconv.ParseInt(numWorkersOverride, 10, 64)
 		if err != nil {
@@ -95,30 +98,69 @@ func (ss *MediorumServer) startTranscoder(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			ss.findMissedJobs(ss.transcodeWork, myHost)
+			if err := ss.findMissedJobs(ctx, ss.transcodeWork, time.Now().UTC()); err != nil {
+				ss.logger.Warn("failed to find missed transcode jobs", zap.Error(err))
+			}
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
 }
 
-func (ss *MediorumServer) findMissedJobs(work chan *Upload, myHost string) {
-	uploads := []*Upload{}
-	// Only select uploads that have a CID set to avoid race condition with TUS uploads
-	ss.crud.DB.Where("template = 'audio' and status in ? and orig_file_cid != ''", []string{JobStatusNew, JobStatusError}).Find(&uploads)
+func (ss *MediorumServer) findMissedJobs(ctx context.Context, work chan *Upload, now time.Time) error {
+	uploads, err := ss.findMissedJobCandidates(ctx, now, missedTranscodeBatchSize)
+	if err != nil {
+		return err
+	}
+	if len(uploads) == 0 {
+		return nil
+	}
 
 	for _, upload := range uploads {
-		if upload.ErrorCount > 5 {
-			continue
+		upload.TranscodedBy = ss.Config.Self.Host
+		upload.TranscodedAt = now
+		upload.Status = JobStatusBusy
+		if err := ss.crud.Update(upload); err != nil {
+			return err
 		}
 
-		// don't re-process if it was updated recently
-		if time.Since(upload.TranscodedAt) < time.Minute {
-			continue
+		select {
+		case work <- upload:
+		case <-ctx.Done():
+			return ctx.Err()
 		}
-
-		work <- upload
 	}
+
+	ss.logger.Info("queued missed transcode jobs",
+		zap.Int("count", len(uploads)),
+		zap.Int("limit", missedTranscodeBatchSize),
+	)
+	return nil
+}
+
+func (ss *MediorumServer) findMissedJobCandidates(ctx context.Context, now time.Time, limit int) ([]*Upload, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	uploads := []*Upload{}
+	cutoff := now.Add(-missedTranscodeRetryBackoff)
+	// Only select uploads that have a CID set to avoid race condition with TUS uploads
+	err := ss.crud.DB.WithContext(ctx).
+		Where(`
+			template = ?
+			AND status in ?
+			AND orig_file_cid != ''
+			AND COALESCE(error_count, 0) <= ?
+			AND (transcoded_at IS NULL OR transcoded_at <= ?)
+		`, JobTemplateAudio, []string{JobStatusNew, JobStatusError}, 5, cutoff).
+		Order("transcoded_at ASC NULLS FIRST").
+		Order("id ASC").
+		Limit(limit).
+		Find(&uploads).
+		Error
+
+	return uploads, err
 }
 
 func (ss *MediorumServer) startTranscodeWorker(ctx context.Context) error {
@@ -146,7 +188,7 @@ func (ss *MediorumServer) getKeyToTempFile(fileHash string) (*os.File, error) {
 	}
 
 	key := cidutil.ShardCID(fileHash)
-	blob, err := ss.bucket.NewReader(context.Background(), key, nil)
+	blob, _, err := ss.readBlob(context.Background(), key)
 	if err != nil {
 		return nil, err
 	}
@@ -285,8 +327,12 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 	}
 	resultKey := resultHash
 
-	// transcode server will retain transcode result for analysis
-	ss.replicateToMyBucket(ctx, resultHash, dest)
+	// transcode server will retain transcode result for analysis. If the
+	// local write fails we can't claim to be a transcoded mirror — analysis
+	// and downstream replication would look for the blob here and 404.
+	if err := ss.replicateToMyBucket(ctx, resultHash, dest, upload.PlacementHosts); err != nil {
+		return onError(err, upload.Status, "replicateToMyBucket")
+	}
 
 	upload.TranscodeResults["320"] = resultKey
 
@@ -351,13 +397,16 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 		ss.logger.Error("failed to update transcode status", zap.String("id", dbUpload.ID), zap.Error(err))
 		return err
 	}
+	// Keep in-memory upload in sync so analyzeAudio's error callback doesn't
+	// clobber TranscodedBy with an empty string when it calls crud.Update(upload).
+	upload.TranscodedBy = dbUpload.TranscodedBy
 
 	fileHash := upload.OrigFileCID
 
 	logger := ss.logger.With(zap.Any("template", upload.Template), zap.String("cid", fileHash))
 
 	if !ss.haveInMyBucket(fileHash) {
-		_, err := ss.findAndPullBlob(ctx, fileHash)
+		_, err := ss.findAndPullBlob(ctx, fileHash, upload.PlacementHosts)
 		if err != nil {
 			logger.Warn("failed to find blob", zap.Error(err))
 			return err

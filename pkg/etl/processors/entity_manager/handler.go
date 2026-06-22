@@ -8,7 +8,7 @@ import (
 	"time"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"go.uber.org/zap"
 )
 
@@ -46,6 +46,7 @@ const (
 	EntityTypeEmailAccess               = "EmailAccess"
 	EntityTypeEvent                     = "Event"
 	EntityTypeShare                     = "Share"
+	EntityTypeTrackCollaborator         = "TrackCollaborator"
 )
 
 // Action constants.
@@ -94,6 +95,11 @@ const (
 	CharacterLimitDescription = 2500
 	CharacterLimitCommentBody = 400
 )
+
+// MaxTrackCollaborators bounds how many collaborators a single track may invite,
+// so a malformed or hostile metadata blob can't enqueue an unbounded number of
+// rows. Excess entries beyond the cap are ignored.
+const MaxTrackCollaborators = 50
 
 // ValidationError indicates a transaction should be skipped (not a fatal indexing error).
 type ValidationError struct {
@@ -206,6 +212,27 @@ func (p *Params) MetadataInt64(key string) (int64, bool) {
 	return 0, false
 }
 
+// MetadataFloat64 returns a float64 from parsed metadata (supports number and
+// integer JSON values). Returns ok=false when the key is absent or not numeric.
+func (p *Params) MetadataFloat64(key string) (float64, bool) {
+	if p.Metadata == nil {
+		return 0, false
+	}
+	v, ok := p.Metadata[key]
+	if !ok {
+		return 0, false
+	}
+	switch val := v.(type) {
+	case float64:
+		return val, true
+	case int:
+		return float64(val), true
+	case int64:
+		return float64(val), true
+	}
+	return 0, false
+}
+
 // MetadataBool returns a bool from parsed metadata.
 func (p *Params) MetadataBool(key string) (bool, bool) {
 	if p.Metadata == nil {
@@ -244,17 +271,35 @@ type Handler interface {
 	Handle(ctx context.Context, params *Params) error
 }
 
+// PostHook fires after a successful Handler.Handle for a registered
+// (entity_type, action) pair. It receives the same Params the handler did,
+// so it has access to the proto (Params.TX), the DB tx (Params.DBTX), the
+// parsed metadata, and block context.
+//
+// Hooks run only when the parent handler returned nil — a ValidationError
+// or other handler failure short-circuits the dispatch before any hook
+// fires. Errors returned from a hook itself are logged but do NOT fail the
+// parent dispatch; this matches the semantics of apps' Postgres triggers
+// (which swallow errors via `EXCEPTION WHEN others THEN raise warning`)
+// and prevents a buggy consumer-side hook from halting the indexer.
+//
+// Multiple hooks may be registered for the same key; they run in
+// registration order.
+type PostHook func(ctx context.Context, params *Params) error
+
 // Dispatcher routes ManageEntity transactions to registered handlers.
 type Dispatcher struct {
-	handlers map[string]Handler
-	logger   *zap.Logger
+	handlers  map[string]Handler
+	postHooks map[string][]PostHook
+	logger    *zap.Logger
 }
 
 // NewDispatcher creates a Dispatcher with no registered handlers.
 func NewDispatcher(logger *zap.Logger) *Dispatcher {
 	return &Dispatcher{
-		handlers: make(map[string]Handler),
-		logger:   logger,
+		handlers:  make(map[string]Handler),
+		postHooks: make(map[string][]PostHook),
+		logger:    logger,
 	}
 }
 
@@ -267,6 +312,17 @@ func (d *Dispatcher) Register(h Handler) {
 	d.handlers[handlerKey(h.EntityType(), h.Action())] = h
 }
 
+// RegisterPostHook attaches fn to fire after every successful Handle for
+// (entityType, action). See PostHook for error and ordering semantics.
+//
+// Wildcard entityType (EntityTypeAny) is supported and follows the same
+// fallback rule as Register: a tx whose (type, action) has no exact hook
+// match will fire any hooks registered against (EntityTypeAny, action).
+func (d *Dispatcher) RegisterPostHook(entityType, action string, fn PostHook) {
+	key := handlerKey(entityType, action)
+	d.postHooks[key] = append(d.postHooks[key], fn)
+}
+
 // EntityTypeAny is a wildcard entity type for handlers that match any entity type
 // for a given action (e.g., social features: Follow matches entity_type "User",
 // Save matches "Track" or "Playlist").
@@ -276,17 +332,50 @@ const EntityTypeAny = "*"
 // Returns nil if no handler is registered (unhandled entity/action pairs are silently skipped).
 // Returns a ValidationError if the handler rejects the transaction.
 // Returns a non-ValidationError for unexpected failures.
+//
+// After a successful handler invocation, any post-hooks registered for the
+// same (entity_type, action) — or for (EntityTypeAny, action) as a
+// fallback — run in registration order. Hook errors are logged but do not
+// propagate.
 func (d *Dispatcher) Dispatch(ctx context.Context, params *Params) error {
 	key := handlerKey(params.EntityType, params.Action)
 	h, ok := d.handlers[key]
+	hookKey := key
 	if !ok {
 		// Fall back to wildcard entity type match
-		h, ok = d.handlers[handlerKey(EntityTypeAny, params.Action)]
+		hookKey = handlerKey(EntityTypeAny, params.Action)
+		h, ok = d.handlers[hookKey]
 		if !ok {
 			return nil
 		}
 	}
-	return h.Handle(ctx, params)
+	if err := h.Handle(ctx, params); err != nil {
+		return err
+	}
+	d.runPostHooks(ctx, key, hookKey, params)
+	return nil
+}
+
+// runPostHooks fires hooks for the dispatched key and (separately) the
+// wildcard-action key, isolating hook failures so one bad hook doesn't
+// prevent siblings from running and doesn't fail the parent dispatch.
+func (d *Dispatcher) runPostHooks(ctx context.Context, exactKey, fallbackKey string, params *Params) {
+	hooks := d.postHooks[exactKey]
+	if exactKey != fallbackKey {
+		// Also run hooks attached to the wildcard-fallback key so a hook
+		// registered as (EntityTypeAny, action) fires for every entity
+		// type of that action.
+		hooks = append(hooks, d.postHooks[fallbackKey]...)
+	}
+	for _, hook := range hooks {
+		if err := hook(ctx, params); err != nil && d.logger != nil {
+			d.logger.Warn("post-hook returned error",
+				zap.String("entity_type", params.EntityType),
+				zap.String("action", params.Action),
+				zap.Int64("entity_id", params.EntityID),
+				zap.Error(err))
+		}
+	}
 }
 
 // HasHandler returns true if a handler is registered for the given entity_type and action.

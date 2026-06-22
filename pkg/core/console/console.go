@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
+	storagev1connect "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/console/views"
 	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/layout"
@@ -17,19 +18,20 @@ import (
 )
 
 type Console struct {
-	config *config.Config
-	rpc    client.Client
-	db     *db.Queries
-	e      *echo.Echo
-	logger *zap.Logger
-	eth    *eth.EthService
-	core   v1connect.CoreServiceHandler
+	config  *config.Config
+	rpc     client.Client
+	db      *db.Queries
+	e       *echo.Echo
+	logger  *zap.Logger
+	eth     *eth.EthService
+	core    v1connect.CoreServiceHandler
+	storage storagev1connect.StorageServiceHandler
 
 	layouts *layout.Layout
 	views   *views.Views
 }
 
-func NewConsole(config *config.Config, logger *zap.Logger, e *echo.Echo, pool *pgxpool.Pool, ethService *eth.EthService, coreService v1connect.CoreServiceHandler) (*Console, error) {
+func NewConsole(config *config.Config, logger *zap.Logger, e *echo.Echo, pool *pgxpool.Pool, ethService *eth.EthService, coreService v1connect.CoreServiceHandler, storageService storagev1connect.StorageServiceHandler) (*Console, error) {
 	l := logger.With(zap.String("service", "console"))
 	db := db.New(pool)
 	httprpc, err := rpchttp.New(config.RPCladdr)
@@ -44,6 +46,7 @@ func NewConsole(config *config.Config, logger *zap.Logger, e *echo.Echo, pool *p
 		logger:  l,
 		eth:     ethService,
 		core:    coreService,
+		storage: storageService,
 		db:      db,
 		views:   views.NewViews(config, baseURL),
 		layouts: layout.NewLayout(config, baseURL),

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
@@ -275,4 +276,149 @@ func (s *StorageService) GetMediorumHealth() (HealthData, error) {
 
 	data := s.mediorum.getHealth()
 	return data, nil
+}
+
+// GetStorageDiagnostics implements v1connect.StorageServiceHandler.
+func (s *StorageService) GetStorageDiagnostics(ctx context.Context, _ *connect.Request[v1.GetStorageDiagnosticsRequest]) (*connect.Response[v1.GetStorageDiagnosticsResponse], error) {
+	if s.mediorum == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("mediorum not initialized"))
+	}
+	ss := s.mediorum
+
+	blobStorePrefix, _, _ := strings.Cut(ss.Config.BlobStoreDSN, "://")
+	archiveBlobStorePrefix, _, _ := strings.Cut(ss.Config.ArchiveBlobStoreDSN, "://")
+	archiveConfigured := ss.archiveBucket != nil
+
+	resp := &v1.GetStorageDiagnosticsResponse{
+		SelfHost:                ss.Config.Self.Host,
+		DiskUsedBytes:           int64(ss.mediorumPathUsed),
+		DiskTotalBytes:          int64(ss.mediorumPathSize),
+		StorageExpectationBytes: int64(ss.storageExpectation),
+		DiskHasSpace:            ss.diskHasSpace(),
+		PrimaryDiskHasSpace:     ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree),
+		ReplicationFactor:       int32(ss.Config.ReplicationFactor),
+		UploadsCount:            ss.uploadsCount,
+		BlobStorePrefix:         blobStorePrefix,
+		ArchiveConfigured:       archiveConfigured,
+		ArchiveDiskUsedBytes:    int64(ss.archivePathUsed),
+		ArchiveDiskTotalBytes:   int64(ss.archivePathSize),
+		ArchiveBlobStorePrefix:  archiveBlobStorePrefix,
+		ArchiveDiskHasSpace:     archiveConfigured && ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree),
+		StoreAll:                ss.Config.StoreAll,
+		LastSuccessfulRepair:    repairRunToProto(ss.lastSuccessfulRepair),
+		LastSuccessfulCleanup:   repairRunToProto(ss.lastSuccessfulCleanup),
+	}
+
+	// recent repair runs + in-progress run
+	var recent []RepairTracker
+	if err := ss.crud.DB.Order("started_at desc").Limit(20).Find(&recent).Error; err == nil {
+		for i := range recent {
+			if recent[i].FinishedAt.IsZero() && resp.InProgressRepair == nil {
+				resp.InProgressRepair = repairRunToProto(recent[i])
+				continue
+			}
+			resp.RecentRepairRuns = append(resp.RecentRepairRuns, repairRunToProto(recent[i]))
+		}
+	}
+
+	// peers
+	ss.peerHealthsMutex.RLock()
+	for host, ph := range ss.peerHealths {
+		if ph == nil {
+			continue
+		}
+		resp.Peers = append(resp.Peers, &v1.PeerStatus{
+			Host:               host,
+			LastReachable:      timeToProto(ph.LastReachable),
+			LastHealthy:        timeToProto(ph.LastHealthy),
+			ReachablePeerCount: int32(len(ph.ReachablePeers)),
+		})
+	}
+	ss.peerHealthsMutex.RUnlock()
+
+	// served counts: last 30 days
+	thirty := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -30)
+	var metrics []DailyMetrics
+	if err := ss.crud.DB.Where("timestamp >= ?", thirty).Order("timestamp asc").Find(&metrics).Error; err == nil {
+		for _, m := range metrics {
+			resp.ServedCounts = append(resp.ServedCounts, &v1.DailyServedCount{
+				Day:    timestamppb.New(m.Timestamp),
+				Action: m.Action,
+				Count:  m.Count,
+			})
+		}
+	}
+
+	// process-local counters & ring buffers
+	if ss.metrics != nil {
+		resp.ReadRepair = &v1.ReadRepairStats{
+			LocalHits:     ss.metrics.readLocalHits.Load(),
+			Misses:        ss.metrics.readMisses.Load(),
+			PullAttempts:  ss.metrics.readPullAttempts.Load(),
+			PullSuccesses: ss.metrics.readPullSuccesses.Load(),
+			Proxied:       ss.metrics.readProxied.Load(),
+			Redirected:    ss.metrics.readRedirected.Load(),
+		}
+		resp.Pos = &v1.PoSStats{
+			Attempted: ss.metrics.posAttempted.Load(),
+			Passed:    ss.metrics.posPassed.Load(),
+			Failed:    ss.metrics.posFailed.Load(),
+		}
+		resp.Bandwidth = &v1.BandwidthStats{
+			IngressBytes: ss.metrics.bytesIngress.Load(),
+			EgressBytes:  ss.metrics.bytesEgress.Load(),
+			Since:        timestamppb.New(ss.StartedAt),
+		}
+		for _, p := range ss.metrics.snapshotRecentPoS() {
+			resp.RecentPosChallenges = append(resp.RecentPosChallenges, &v1.PoSChallenge{
+				At:    timestamppb.New(p.At),
+				Cid:   p.CID,
+				Ok:    p.OK,
+				Error: p.Error,
+			})
+		}
+		for _, s := range ss.metrics.snapshotRecentServed() {
+			resp.RecentServed = append(resp.RecentServed, &v1.ServedEvent{
+				At:     timestamppb.New(s.At),
+				Cid:    s.CID,
+				Action: s.Action,
+			})
+		}
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+func repairRunToProto(r RepairTracker) *v1.RepairRun {
+	if r.StartedAt.IsZero() {
+		return nil
+	}
+	counters := make(map[string]int64, len(r.Counters))
+	for k, v := range r.Counters {
+		counters[k] = int64(v)
+	}
+	// Sum the per-CID successful actions this run took. Keys are produced
+	// by the repair loop in pkg/mediorum/server/repair.go.
+	filesChanged := int64(counters["pull_mine_success"]) +
+		int64(counters["delete_invalid_success"]) +
+		int64(counters["delete_resized_image_ok"]) +
+		int64(counters["delete_over_replicated_success"])
+	return &v1.RepairRun{
+		StartedAt:        timeToProto(r.StartedAt),
+		FinishedAt:       timeToProto(r.FinishedAt),
+		CleanupMode:      r.CleanupMode,
+		ContentSizeBytes: r.ContentSize,
+		DurationNs:       int64(r.Duration),
+		AbortedReason:    r.AbortedReason,
+		CursorI:          int32(r.CursorI),
+		Counters:         counters,
+		FilesChanged:     filesChanged,
+	}
+}
+
+func timeToProto(t time.Time) *timestamppb.Timestamp {
+	if t.IsZero() {
+		return nil
+	}
+	return timestamppb.New(t)
 }

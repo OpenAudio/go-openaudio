@@ -163,7 +163,8 @@ templ staticAdjudicateStyles() {
         .slashProposalModalContent {
             padding: 20px;
             margin: 10% auto;
-            width: 800px;
+            width: 90%;
+            max-width: 800px;
             border-radius: 8px;
             position: relative;
         }
@@ -234,24 +235,24 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
             <h2 class="text-lg text-gray-400">
                 Node Operator
             </h2>
-            <h1 class="text-xl p-4">
+            <h1 class="text-base sm:text-xl p-4 break-all">
                 { props.ServiceProvider.Address }
             </h1>
 
-            <h2 class="text-lg text-gray-400 px-4 py-2">
+            <h2 class="text-base sm:text-lg text-gray-400 px-4 py-2 flex flex-wrap items-center gap-2">
                 <span>SLA Performance Overview from </span>
-                <div id="startDatePicker" class="datePicker inline-block w-1/5">
+                <div id="startDatePicker" class="datePicker inline-block min-w-[140px]">
                     @datepicker.DatePicker(datepicker.Props{
                         Value: props.StartTime,
                     })
                 </div>
-                <span>&nbsp; to &nbsp;</span>
-                <div id="endDatePicker" class="datePicker inline-block w-1/5">
+                <span>to</span>
+                <div id="endDatePicker" class="datePicker inline-block min-w-[140px]">
                     @datepicker.DatePicker(datepicker.Props{
                         Value: props.EndTime,
                     })
                 </div>
-                <div class="inline-block px-4">
+                <div class="inline-block">
                     @copyButton(CopyButtonProps{
                         Size:     6,
                         CustomId: "copyAdjudicateLinkButton",
@@ -268,67 +269,67 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
         </div>
         <input type="text" id="timeRangeQueryStringInput" class="hidden" value={ getTimeRangeQueryString(props.StartTime, props.EndTime) }>
 
-        <div class="flex flex-row text-center p-2">
-            <div class="basis-1/2 rounded-md bg-secondary py-8 mx-1">
-                <dt class="text-xl">
+        <div class="grid grid-cols-2 gap-2 text-center p-2">
+            <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
+                <dt class="text-lg sm:text-xl">
                     Proof of Work
                 </dt>
             </div>
-            <div class="basis-1/2 rounded-md bg-secondary py-8 mx-1">
-                <dt class="text-xl">
+            <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
+                <dt class="text-lg sm:text-xl">
                     Proof of Storage
                 </dt>
             </div>
         </div>
 
-        <div class="flex flex-row text-center p-2">
-            <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
-                <dt class="text-4xl">{ humanize.Comma(int64(props.TotalSlas)) }</dt>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center p-2">
+            <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
+                <dt class="text-2xl sm:text-4xl">{ humanize.Comma(int64(props.TotalSlas)) }</dt>
                 <dd class="text-sm">Total SLAs</dd>
             </div>
 
-            <div class={ "basis-1/4 rounded-md bg-secondary py-8 mx-1", templ.KV(slaDeadClass(), props.DeadSlas > 0) }>
-                <dt class="text-4xl">{ humanize.Comma(int64(props.DeadSlas)) }</dt>
+            <div class={ "rounded-md bg-secondary py-6 sm:py-8 px-2", templ.KV(slaDeadClass(), props.DeadSlas > 0) }>
+                <dt class="text-2xl sm:text-4xl">{ humanize.Comma(int64(props.DeadSlas)) }</dt>
                 <dd class="text-sm">SLAs Missed</dd>
             </div>
 
-            <div class="basis-1/4 rounded-md bg-secondary py-8 mx-1">
-                <dt class="text-4xl">{ humanize.Comma(int64(props.TotalChallenges)) }</dt>
+            <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
+                <dt class="text-2xl sm:text-4xl">{ humanize.Comma(int64(props.TotalChallenges)) }</dt>
                 <dd class="text-sm">Challenges Received</dd>
             </div>
 
-            <div class={ "basis-1/4 rounded-md bg-secondary py-8 mx-1", templ.KV(slaMissClass(), props.FailedChallenges > 0) }>
-                <dt class="text-4xl">{ humanize.Comma(int64(props.FailedChallenges)) }</dt>
+            <div class={ "rounded-md bg-secondary py-6 sm:py-8 px-2", templ.KV(slaMissClass(), props.FailedChallenges > 0) }>
+                <dt class="text-2xl sm:text-4xl">{ humanize.Comma(int64(props.FailedChallenges)) }</dt>
                 <dd class="text-sm">Challenges Failed</dd>
             </div>
 
         </div>
 
-        <div class="progressRow flex flex-row text-center p-2">
-            <div class="basis-1/2 rounded-md bg-secondary py-8 mx-1">
+        <div class="progressRow grid grid-cols-1 sm:grid-cols-2 gap-2 text-center p-2">
+            <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
                 if props.TotalSlas > 0 {
                     @progress.Progress(progress.Props{
                         Value: props.TotalSlas - props.DeadSlas,
                         Max: props.TotalSlas,
                         Size: progress.SizeLg,
-                        Class: "px-10",
+                        Class: "px-4 sm:px-10",
                         ShowValue: true,
                     })
                 } else {
-                    <dt class="text-4xl">N/A</dt>
+                    <dt class="text-2xl sm:text-4xl">N/A</dt>
                 }
             </div>
-            <div class="basis-1/2 rounded-md bg-secondary py-8 mx-1">
+            <div class="rounded-md bg-secondary py-6 sm:py-8 px-2">
                 if props.TotalChallenges > 0 {
                     @progress.Progress(progress.Props{
                         Value: int(props.TotalChallenges - props.FailedChallenges),
                         Max: int(props.TotalChallenges),
                         Size: progress.SizeLg,
-                        Class: "px-10",
+                        Class: "px-4 sm:px-10",
                         ShowValue: true,
                     })
                 } else {
-                    <dt class="text-4xl">N/A</dt>
+                    <dt class="text-2xl sm:text-4xl">N/A</dt>
                 }
             </div>
         </div>
@@ -336,7 +337,8 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
         @adjudicateProposalRecommendation(props.Slash, props.DashboardURL, props.ActiveSlashProposalId)
 
 
-        <table class="bg-tertiary p-2 rounded validatorReports text-left m-4">
+        <div class="overflow-x-auto m-4">
+        <table class="bg-tertiary p-2 rounded validatorReports text-left w-full min-w-[600px]">
             <colgroup>
                 <col />
                 <col class="bg-secondary" />
@@ -360,6 +362,7 @@ templ (c *Pages) AdjudicatePageHTML(props *AdjudicatePageView) {
                 }
             </tbody>
         </table>
+        </div>
 
         <div id="slashProposalModal" class="slashProposalModal">
           <div class="slashProposalModalContent bg-secondary">

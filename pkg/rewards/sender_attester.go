@@ -12,6 +12,7 @@ import (
 )
 
 const AddSenderMessagePrefix = "add"
+const DeleteSenderMessagePrefix = "del"
 
 type CreateSenderAttestationParams struct {
 	// must be existing validator
@@ -21,23 +22,38 @@ type CreateSenderAttestationParams struct {
 	RewardsManagerAccountPubKey string
 }
 
-func GetCreateSenderAttestation(signer *ecdsa.PrivateKey, params *CreateSenderAttestationParams) (ownerWallet string, signedAttestation string, err error) {
-	newSenderAddress := strings.TrimPrefix(params.NewSenderAddress, "0x")
-	programPubKey := params.RewardsManagerAccountPubKey
+type DeleteSenderAttestationParams struct {
+	// must not be a registered validator
+	SenderAddress string
 
-	programBytes, err := base58.Decode(programPubKey)
+	// base58 encoded pubkey
+	RewardsManagerAccountPubKey string
+}
+
+func GetCreateSenderAttestation(signer *ecdsa.PrivateKey, params *CreateSenderAttestationParams) (ownerWallet string, signedAttestation string, err error) {
+	return getSenderAttestation(signer, AddSenderMessagePrefix, params.NewSenderAddress, params.RewardsManagerAccountPubKey)
+}
+
+func GetDeleteSenderAttestation(signer *ecdsa.PrivateKey, params *DeleteSenderAttestationParams) (ownerWallet string, signedAttestation string, err error) {
+	return getSenderAttestation(signer, DeleteSenderMessagePrefix, params.SenderAddress, params.RewardsManagerAccountPubKey)
+}
+
+func getSenderAttestation(signer *ecdsa.PrivateKey, messagePrefix string, senderAddress string, rewardsManagerAccountPubKey string) (ownerWallet string, signedAttestation string, err error) {
+	senderAddress = strings.TrimPrefix(senderAddress, "0x")
+
+	programBytes, err := base58.Decode(rewardsManagerAccountPubKey)
 	if err != nil {
 		return "", "", fmt.Errorf("invalid program pubkey: %w", err)
 	}
 
-	// concatenate bytes: "add" + rewardsManagerPubkey + newSenderAddress (as bytes)
-	addrBytes, err := hex.DecodeString(newSenderAddress)
+	// concatenate bytes: prefix ("add" or "del") + rewardsManagerPubkey + senderAddress (as bytes)
+	addrBytes, err := hex.DecodeString(senderAddress)
 	if err != nil {
 		return "", "", fmt.Errorf("invalid sender address: %w", err)
 	}
 
 	var attestation bytes.Buffer
-	attestation.WriteString(AddSenderMessagePrefix)
+	attestation.WriteString(messagePrefix)
 	attestation.Write(programBytes)
 	attestation.Write(addrBytes)
 

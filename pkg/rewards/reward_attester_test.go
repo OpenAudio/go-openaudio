@@ -68,7 +68,20 @@ func TestValidate(t *testing.T) {
 		ClaimAuthority:      "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
 	}
 	err = attester.Validate(claim)
-	require.Error(t, err, "should error if amount doesn't match config")
+	require.Error(t, err, "should error if amount exceeds reward config amount")
+
+	// The static reward.Amount acts as a max cap, not a strict equality
+	// check, so per-rank amounts (e.g. trending top 10 winners 6-10 paying
+	// 100 against a 1000 cap) are still attested.
+	claim = rewards.RewardClaim{
+		RewardID:            "c",
+		Specifier:           "b9256e3:202515",
+		Amount:              uint64(1), // configured cap is 1
+		RecipientEthAddress: "0xe811761771ef65f9de0b64d6335f3b8ff50adc44",
+		ClaimAuthority:      "0xF0D5BC18421fa04D0a2A2ef540ba5A9f04014BE3",
+	}
+	err = attester.Validate(claim)
+	require.NoError(t, err, "should accept amount equal to config")
 }
 
 func TestAuthenticate(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/bdragon300/tusgo"
+	"github.com/erni27/imcache"
 	"go.uber.org/zap"
 )
 
@@ -137,9 +138,10 @@ func (ss *MediorumServer) replicateTranscode(ctx context.Context, upload *Upload
 
 // replicateFile is the shared implementation for replicating files to all necessary mirrors in parallel
 func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, cid string, existingMirrors []string, isTranscoded bool) error {
-	// Get the file from our bucket
+	// Get the file from our bucket — hot first, archive fallback so we
+	// source from wherever the blob actually lives on this node.
 	shardedCid := cidutil.ShardCID(cid)
-	_, err := ss.bucket.Attributes(ctx, shardedCid)
+	_, srcBucket, err := ss.blobAttrs(ctx, shardedCid)
 	if err != nil {
 		return fmt.Errorf("failed to get file attributes: %w", err)
 	}
@@ -192,14 +194,14 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 			defer wg.Done()
 
 			// Get a fresh reader for this host
-			reader, err := ss.bucket.NewReader(ctx, shardedCid, nil)
+			reader, err := srcBucket.NewReader(ctx, shardedCid, nil)
 			if err != nil {
 				resultsChan <- replicationResult{host: targetHost, err: err}
 				return
 			}
 			defer reader.Close()
 
-			err = ss.replicateFileToHost(ctx, targetHost, cid, reader)
+			err = ss.replicateFileToHost(ctx, targetHost, cid, reader, upload.PlacementHosts)
 			// TODO: Replicate with TUSD
 			// err = ss.replicateToHost(targetHost, cid, reader, attrs.Size, placementHosts)
 			resultsChan <- replicationResult{host: targetHost, err: err}
@@ -229,31 +231,40 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 		}
 	}
 
+	// No replications succeeded — skip the DB read and the crudr broadcast.
+	// The replication worker re-queues an under-replicated upload every cache
+	// TTL (1h); without this fast-exit, each retry where every reachable peer
+	// fails would write a fresh uploads op with byte-identical mirrors and
+	// fan that op out to every peer in the network, dominating the
+	// uploads-update op rate.
+	if len(newSuccessHosts) == 0 {
+		return nil
+	}
+
 	// Update upload record with successful mirrors using crudr for broadcast
 	var dbUpload Upload
 	if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
 		return fmt.Errorf("failed to get upload from DB: %w", err)
 	}
 
-	// Start with existing mirrors and add new ones
-	var allMirrors []string
-	if isTranscoded {
-		allMirrors = append([]string{}, dbUpload.TranscodedMirrors...)
-	} else {
-		allMirrors = append([]string{}, dbUpload.Mirrors...)
+	// Start with existing mirrors and merge in successful hosts.
+	merged, changed := mergeReplicationMirrors(isTranscoded, &dbUpload, newSuccessHosts)
+	if !changed {
+		// A concurrent worker has already recorded every host we just
+		// replicated to. The merged list equals what's already in the DB,
+		// so emitting a crud op now would broadcast a row with byte-
+		// identical content to every peer for no semantic gain.
+		ss.logger.Debug("replication produced no new mirrors; suppressing crud broadcast",
+			zap.String("uploadID", upload.ID),
+			zap.String("cid", cid),
+			zap.Strings("newSuccessHosts", newSuccessHosts),
+		)
+		return nil
 	}
-
-	// Add newly successful hosts if not already present
-	for _, host := range newSuccessHosts {
-		if !slices.Contains(allMirrors, host) {
-			allMirrors = append(allMirrors, host)
-		}
-	}
-
 	if isTranscoded {
-		dbUpload.TranscodedMirrors = allMirrors
+		dbUpload.TranscodedMirrors = merged
 	} else {
-		dbUpload.Mirrors = allMirrors
+		dbUpload.Mirrors = merged
 	}
 
 	if err := ss.crud.Update(&dbUpload); err != nil {
@@ -269,10 +280,33 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 		zap.String("uploadID", upload.ID),
 		zap.String("cid", cid),
 		zap.String("field", fieldName),
-		zap.Strings(fieldName, allMirrors),
+		zap.Strings(fieldName, merged),
 	)
 
 	return nil
+}
+
+// mergeReplicationMirrors merges newSuccessHosts into the upload's existing
+// mirror list (transcoded vs original chosen by isTranscoded) in stable
+// order, de-duplicating against hosts already present. Returns the merged
+// list and whether the merge actually added anything; callers use the bool
+// to decide whether to broadcast a crud op or suppress a no-op write.
+func mergeReplicationMirrors(isTranscoded bool, upload *Upload, newSuccessHosts []string) ([]string, bool) {
+	var existing []string
+	if isTranscoded {
+		existing = upload.TranscodedMirrors
+	} else {
+		existing = upload.Mirrors
+	}
+	merged := append([]string{}, existing...)
+	changed := false
+	for _, host := range newSuccessHosts {
+		if !slices.Contains(merged, host) {
+			merged = append(merged, host)
+			changed = true
+		}
+	}
+	return merged, changed
 }
 
 func (ss *MediorumServer) replicateToHost(host string, cid string, reader io.Reader, fileSize int64, placementHosts []string) error {
@@ -347,8 +381,15 @@ func (ss *MediorumServer) findMissedReplications() {
 
 	for _, upload := range uploads {
 		if len(upload.Mirrors) < ss.Config.ReplicationFactor {
+			// Backoff so we don't re-queue the same upload every cycle while
+			// it stays under-replicated (e.g. its source blob is gone or
+			// peers keep rejecting it). After the cache TTL we'll try again.
+			if _, attempted := ss.replicationAttempts.Get(upload.ID); attempted {
+				continue
+			}
 			select {
 			case ss.replicationWork <- upload:
+				ss.replicationAttempts.Set(upload.ID, struct{}{}, imcache.WithDefaultExpiration())
 				ss.logger.Info("queued upload for replication", zap.String("uploadID", upload.ID))
 			default:
 				// Channel full, skip for now

@@ -2,9 +2,9 @@ package pages
 
 import (
 	"fmt"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates/layouts"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates/layouts"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 	"strings"
 	"time"
 )
@@ -60,13 +60,13 @@ templ Validator(props ValidatorProps) {
 	@layouts.Base(fmt.Sprintf("Validator %s", props.Validator.Address[:8])) {
 		<div class="space-y-6">
 			<!-- Validator Info Card -->
-			<div class="shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]">
-				<div class="flex justify-between items-start mb-4">
-					<div>
+			<div class="shadow-xl rounded-lg p-4 md:p-6 bg-white dark:bg-[#0a0a0a]">
+				<div class="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start mb-4">
+					<div class="min-w-0">
 						<h2 class="text-2xl font-bold text-gray-900 dark:text-white">Validator Details</h2>
-						<p class="text-gray-500 dark:text-[#b3b3b3] font-mono text-sm mt-1">{ props.Validator.Address }</p>
+						<p class="text-gray-500 dark:text-[#b3b3b3] font-mono text-sm mt-1 break-all">{ props.Validator.Address }</p>
 					</div>
-					<div>
+					<div class="flex-shrink-0">
 						switch props.Validator.Status {
 							case "active":
 								<span class="px-3 py-1 text-sm rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">Active</span>
@@ -128,12 +128,12 @@ templ Validator(props ValidatorProps) {
 			</div>
 			<!-- Events History -->
 			if len(props.Events) > 0 {
-				<div class="shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]">
+				<div class="shadow-xl rounded-lg p-4 md:p-6 bg-white dark:bg-[#0a0a0a]">
 					<h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Event History</h3>
 					<div class="space-y-4">
 						for _, event := range props.Events {
 							<div class="border border-gray-200 dark:border-gray-800 rounded-lg p-4 hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
-								<div class="flex justify-between items-start mb-2">
+								<div class="flex flex-wrap justify-between items-start gap-2 mb-2">
 									<div>
 										switch event.Type {
 											case "registration":
@@ -150,9 +150,9 @@ templ Validator(props ValidatorProps) {
 										@templates.TimeWithTooltip(event.Timestamp)
 									</div>
 								</div>
-								<div class="text-sm text-gray-600 dark:text-[#b3b3b3] space-y-1">
+								<div class="text-sm text-gray-600 dark:text-[#b3b3b3] space-y-1 min-w-0">
 									<div>
-										Block: 
+										Block:
 										<a
 											href={ templ.SafeURL(fmt.Sprintf("/block/%d", event.BlockHeight)) }
 											class="text-gray-400 dark:text-[#b3b3b3] hover:text-gray-600 dark:hover:text-white hover:underline"
@@ -160,8 +160,8 @@ templ Validator(props ValidatorProps) {
 											{ fmt.Sprintf("%d", event.BlockHeight) }
 										</a>
 									</div>
-									<div>
-										Tx: 
+									<div class="break-all">
+										Tx:
 										<a
 											href={ templ.SafeURL(fmt.Sprintf("/transaction/%s", event.TxHash)) }
 											class="text-gray-400 dark:text-[#b3b3b3] hover:text-gray-600 dark:hover:text-white hover:underline font-mono"
@@ -176,12 +176,12 @@ templ Validator(props ValidatorProps) {
 				</div>
 			}
 			<!-- Uptime History Section -->
-			<div class="shadow-xl rounded-lg p-6 bg-white dark:bg-[#0a0a0a]">
+			<div class="shadow-xl rounded-lg p-4 md:p-6 bg-white dark:bg-[#0a0a0a]">
 				<h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4">SLA Rollup History</h3>
 				<p class="text-gray-500 dark:text-[#b3b3b3] text-sm mb-4">
 					Recent SLA rollup performance for this validator. Green indicates meeting SLA requirements, red indicates missing SLA, and dark gray indicates no activity.
 				</p>
-				<div class="flex items-center gap-6 text-sm text-gray-600 dark:text-[#b3b3b3] mb-6">
+				<div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600 dark:text-[#b3b3b3] mb-6">
 					<div class="flex items-center gap-2">
 						<div class="w-4 h-5 bg-green-400 rounded-sm"></div>
 						<span>Meeting SLA</span>
@@ -196,7 +196,7 @@ templ Validator(props ValidatorProps) {
 					</div>
 				</div>
 				<!-- Uptime bars with actual rollup data -->
-				<div class="flex items-center gap-2 mb-6">
+				<div class="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
 					if len(props.Rollups) > 0 {
 						for _, rollup := range props.Rollups {
 							<div class="relative group">

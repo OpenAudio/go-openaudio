@@ -1,0 +1,298 @@
+package fuzz
+
+import (
+	"context"
+	"math/rand"
+	"sync"
+	"testing"
+	"time"
+)
+
+type recordingNetwork struct {
+	mu       sync.Mutex
+	spec     NetworkSpec
+	reader   StatusReader
+	online   map[NodeID]bool
+	active   map[NodeID]bool
+	honest   map[NodeID]bool
+	started  []NodeID
+	stopped  []NodeID
+	restarts []NodeID
+}
+
+func (n *recordingNetwork) Spec() NetworkSpec { return n.spec }
+
+func (n *recordingNetwork) StartNode(_ context.Context, id NodeID) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setOnlineLocked(id, true)
+	n.started = append(n.started, id)
+	return nil
+}
+
+func (n *recordingNetwork) StopNode(_ context.Context, id NodeID) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setOnlineLocked(id, false)
+	n.stopped = append(n.stopped, id)
+	return nil
+}
+
+func (n *recordingNetwork) RestartNode(_ context.Context, id NodeID) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setOnlineLocked(id, true)
+	n.restarts = append(n.restarts, id)
+	return nil
+}
+
+func (n *recordingNetwork) RegisterNode(_ context.Context, node NodeSpec) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setActiveLocked(node.ID, true)
+	n.setOnlineLocked(node.ID, true)
+	n.setHonestLocked(node.ID, true)
+	return nil
+}
+
+func (n *recordingNetwork) DeregisterNode(_ context.Context, node NodeSpec) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setActiveLocked(node.ID, false)
+	n.setOnlineLocked(node.ID, false)
+	return nil
+}
+
+func (n *recordingNetwork) SetNodeEndpoint(_ context.Context, node NodeSpec, endpoint string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setHonestLocked(node.ID, endpoint == "" || endpoint == node.Endpoint)
+	return nil
+}
+
+func (n *recordingNetwork) JailNode(_ context.Context, node NodeSpec) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setActiveLocked(node.ID, false)
+	return nil
+}
+
+func (n *recordingNetwork) UnjailNode(_ context.Context, node NodeSpec) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.setActiveLocked(node.ID, true)
+	n.setOnlineLocked(node.ID, true)
+	return nil
+}
+
+func (n *recordingNetwork) Snapshot(ctx context.Context) (Snapshot, error) {
+	snapshot, err := snapshot(ctx, n.spec, n.reader)
+	if err != nil {
+		return Snapshot{}, err
+	}
+
+	n.mu.Lock()
+	online := make(map[NodeID]bool, len(n.online))
+	for id, isOnline := range n.online {
+		online[id] = isOnline
+	}
+	active := make(map[NodeID]bool, len(n.active))
+	for id, isActive := range n.active {
+		active[id] = isActive
+	}
+	honest := make(map[NodeID]bool, len(n.honest))
+	for id, isHonest := range n.honest {
+		honest[id] = isHonest
+	}
+	n.mu.Unlock()
+
+	for i, node := range snapshot.Nodes {
+		if isOnline, ok := online[node.ID]; ok && !isOnline {
+			snapshot.Nodes[i].Reachable = false
+			snapshot.Nodes[i].Ready = false
+			snapshot.Nodes[i].Live = false
+		}
+		if isActive, ok := active[node.ID]; ok && !isActive {
+			snapshot.Nodes[i].Reachable = false
+			snapshot.Nodes[i].Ready = false
+			snapshot.Nodes[i].Live = false
+			snapshot.Nodes[i].ValidatorPower = 0
+		}
+		if isHonest, ok := honest[node.ID]; ok && !isHonest {
+			snapshot.Nodes[i].Reachable = false
+			snapshot.Nodes[i].Ready = false
+		}
+	}
+	return snapshot, nil
+}
+
+func (n *recordingNetwork) Close(context.Context) error { return nil }
+
+func (n *recordingNetwork) setOnlineLocked(id NodeID, online bool) {
+	if n.online == nil {
+		n.online = make(map[NodeID]bool)
+	}
+	n.online[id] = online
+}
+
+func (n *recordingNetwork) setActiveLocked(id NodeID, active bool) {
+	if n.active == nil {
+		n.active = make(map[NodeID]bool)
+	}
+	n.active[id] = active
+}
+
+func (n *recordingNetwork) setHonestLocked(id NodeID, honest bool) {
+	if n.honest == nil {
+		n.honest = make(map[NodeID]bool)
+	}
+	n.honest[id] = honest
+}
+
+type advancingReader struct {
+	mu      sync.Mutex
+	heights map[NodeID]int64
+}
+
+func newAdvancingReader(spec NetworkSpec) *advancingReader {
+	heights := make(map[NodeID]int64, len(spec.Nodes))
+	for _, node := range spec.Nodes {
+		heights[node.ID] = 1
+	}
+	return &advancingReader{heights: heights}
+}
+
+func (r *advancingReader) GetNodeStatus(_ context.Context, node NodeSpec) (NodeStatus, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.heights[node.ID]++
+	return NodeStatus{
+		ID:             node.ID,
+		Endpoint:       node.Endpoint,
+		Reachable:      true,
+		Ready:          true,
+		Live:           true,
+		Height:         r.heights[node.ID],
+		ValidatorPower: 10,
+		ObservedAt:     time.Now().UTC(),
+	}, nil
+}
+
+func (f *fakeLifecycleController) JailNode(_ context.Context, node NodeSpec) error {
+	f.deregistered = append(f.deregistered, "jail:"+node.ID)
+	return nil
+}
+
+func (f *fakeLifecycleController) UnjailNode(_ context.Context, node NodeSpec) error {
+	f.registered = append(f.registered, "unjail:"+node.ID)
+	return nil
+}
+
+func TestValidatorChaosScenarioRunsWith300Nodes(t *testing.T) {
+	const nodes = 300
+	spec := NetworkSpec{Name: "chaos"}
+	for i := 0; i < nodes; i++ {
+		id := NodeID("node" + itoa(i+1))
+		spec.Nodes = append(spec.Nodes, NodeSpec{ID: id, Endpoint: "https://" + string(id) + ".oap.devnet"})
+	}
+
+	reader := newAdvancingReader(spec)
+	network := &recordingNetwork{spec: spec, reader: reader}
+	scenario := ValidatorChaosScenario(spec, ValidatorChaosController{
+		Registrar:       network,
+		EndpointMutator: network,
+		Jailer:          network,
+	}, ValidatorChaosOptions{
+		Seed:                 42,
+		Steps:                100,
+		StepTimeout:          2 * time.Second,
+		LivenessEvery:        20,
+		LivenessWithin:       time.Second,
+		PollInterval:         time.Millisecond,
+		StartNodes:           true,
+		IncludeProcessFaults: true,
+	})
+
+	result, err := Runner{Network: network, StepTimeout: 2 * time.Second}.Run(context.Background(), scenario)
+	if err != nil {
+		t.Fatalf("scenario failed after %d events: %v", len(result.Events), err)
+	}
+	if len(result.Events) == 0 {
+		t.Fatal("expected scenario events")
+	}
+	network.mu.Lock()
+	started := len(network.started)
+	network.mu.Unlock()
+	if started < nodes {
+		t.Fatalf("expected at least %d start calls, got %d", nodes, started)
+	}
+}
+
+func TestRandomMinorityCohortNeverSelectsMajority(t *testing.T) {
+	ids := make([]NodeID, 300)
+	for i := range ids {
+		ids[i] = NodeID("node" + itoa(i+1))
+	}
+	rng := rand.New(rand.NewSource(1))
+	for i := 0; i < 1000; i++ {
+		cohort := randomMinorityCohort(rng, ids)
+		if len(cohort) == 0 {
+			t.Fatal("expected non-empty cohort")
+		}
+		if len(cohort)*3 > len(ids) {
+			t.Fatalf("cohort selected majority-or-larger partition: %d/%d", len(cohort), len(ids))
+		}
+	}
+}
+
+func TestQuorumLossCohortBreaksQuorumAt300Nodes(t *testing.T) {
+	ids := make([]NodeID, 300)
+	for i := range ids {
+		ids[i] = NodeID("node" + itoa(i+1))
+	}
+	cohort := quorumLossCohort(ids)
+	if len(cohort) != 100 {
+		t.Fatalf("expected 100 nodes to break quorum out of 300, got %d", len(cohort))
+	}
+}
+
+func TestQuorumPreservingCohortKeepsQuorumAt300Nodes(t *testing.T) {
+	ids := make([]NodeID, 300)
+	for i := range ids {
+		ids[i] = NodeID("node" + itoa(i+1))
+	}
+	cohort := quorumPreservingCohort(ids)
+	if len(cohort) != 99 {
+		t.Fatalf("expected 99 nodes to preserve quorum out of 300, got %d", len(cohort))
+	}
+}
+
+func TestMinimumQuorumNodes(t *testing.T) {
+	tests := map[int]int{
+		0:   0,
+		1:   1,
+		3:   3,
+		4:   3,
+		300: 201,
+	}
+	for nodes, want := range tests {
+		if got := minimumQuorumNodes(nodes); got != want {
+			t.Fatalf("minimumQuorumNodes(%d) = %d, want %d", nodes, got, want)
+		}
+	}
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
+}

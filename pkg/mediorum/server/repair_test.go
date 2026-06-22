@@ -50,7 +50,7 @@ func TestRepair(t *testing.T) {
 	data := []byte("repair test")
 	cid, err := cidutil.ComputeFileCID(bytes.NewReader(data))
 	assert.NoError(t, err)
-	err = ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data))
+	err = ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data), nil)
 	assert.NoError(t, err)
 
 	// create a dummy upload for it?
@@ -103,7 +103,7 @@ func TestRepair(t *testing.T) {
 	// now over-replicate file
 	//
 	for _, server := range testNetwork {
-		ss.replicateFileToHost(ctx, server.Config.Self.Host, cid, bytes.NewReader(data))
+		ss.replicateFileToHost(ctx, server.Config.Self.Host, cid, bytes.NewReader(data), nil)
 	}
 
 	// assert over-replicated
@@ -170,12 +170,12 @@ func TestBuildRepairPresenceIndexIncludesLocalBlob(t *testing.T) {
 	data := []byte("presence-index-local-blob")
 	cid, err := cidutil.ComputeFileCID(bytes.NewReader(data))
 	assert.NoError(t, err)
-	assert.NoError(t, ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data)))
+	assert.NoError(t, ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data), nil))
 
 	index, err := ss.buildRepairPresenceIndex(ctx)
 	assert.NoError(t, err)
 
-	entry, ok := index.Lookup(cidutil.ShardCID(cid))
+	entry, ok := index.Lookup(cidutil.ShardCID(cid), ss.bucket)
 	assert.True(t, ok)
 	assert.Equal(t, int64(len(data)), entry.Size)
 }
@@ -187,13 +187,13 @@ func TestRepairCidWithPresenceIndexUsesListedState(t *testing.T) {
 	data := []byte("presence-index-repair-path")
 	cid, err := cidutil.ComputeFileCID(bytes.NewReader(data))
 	assert.NoError(t, err)
-	assert.NoError(t, ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data)))
+	assert.NoError(t, ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data), nil))
 
 	index, err := ss.buildRepairPresenceIndex(ctx)
 	assert.NoError(t, err)
 
 	key := cidutil.ShardCID(cid)
-	ss.knownPresent.Remove(key)
+	ss.knownPresent.Remove(ss.presenceCacheKey(key, ss.bucket))
 	assert.NoError(t, ss.dropFromMyBucket(cid))
 
 	tracker := &RepairTracker{
@@ -215,7 +215,7 @@ func TestRepairCidUsesKnownPresentOutsideCleanup(t *testing.T) {
 	data := []byte("known-present-fast-path")
 	cid, err := cidutil.ComputeFileCID(bytes.NewReader(data))
 	assert.NoError(t, err)
-	assert.NoError(t, ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data)))
+	assert.NoError(t, ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data), nil))
 
 	tracker := &RepairTracker{
 		StartedAt:   time.Now(),

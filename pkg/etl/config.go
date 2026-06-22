@@ -10,6 +10,12 @@ import (
 type Config struct {
 	EnableMaterializedViewRefresh bool
 	EnablePgNotifyListener        bool
+	EnableScheduledReleases       bool
+
+	// BlockStreamEnabled consumes blocks via the CoreService.StreamBlocks gRPC
+	// stream instead of polling GetBlocks. Requires a stream client set with
+	// SetBlockStreamClient; falls back to polling if unset or unsupported.
+	BlockStreamEnabled bool
 
 	// DataTypes controls which entity types the entity manager will index.
 	// If nil (default), all entity types are enabled.
@@ -23,6 +29,7 @@ func DefaultConfig() Config {
 	return Config{
 		EnableMaterializedViewRefresh: true,
 		EnablePgNotifyListener:        true,
+		EnableScheduledReleases:       true,
 		DataTypes:                     nil,
 	}
 }
@@ -70,3 +77,6 @@ func (c *Config) DisableMaterializedViewRefresh() { c.EnableMaterializedViewRefr
 
 // DisablePgNotifyListener disables the PostgreSQL LISTEN-based pubsub (for minimal indexing).
 func (c *Config) DisablePgNotifyListener() { c.EnablePgNotifyListener = false }
+
+// DisableScheduledReleases disables the periodic publish-scheduled-releases task.
+func (c *Config) DisableScheduledReleases() { c.EnableScheduledReleases = false }

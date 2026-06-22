@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/OpenAudio/go-openaudio/pkg/hashes"
 	"github.com/ipfs/go-cid"
 	"github.com/tus/tusd/v2/pkg/filestore"
@@ -19,10 +20,7 @@ import (
 
 func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
 	// Create upload directory if it doesn't exist
-	uploadDir := os.Getenv("TUSD_UPLOAD_DIR")
-	if uploadDir == "" {
-		uploadDir = "/tmp/tusd-uploads"
-	}
+	uploadDir := env.Get("/tmp/tusd-uploads", "OPENAUDIO_TUSD_UPLOAD_DIR", "TUSD_UPLOAD_DIR")
 
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		return nil, err
@@ -392,16 +390,24 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 
 	// Check if this is a replication request - if so, just store the blob without processing
 	if isReplication, ok := event.Upload.MetaData["isReplication"]; ok && isReplication == "true" {
-		// Disk space check for replication
-		if !ss.diskHasSpace() {
-			ss.logger.Warn("disk is too full to accept replication", zap.String("id", event.Upload.ID))
-			return
-		}
-
 		// Get filename (CID) from metadata
 		filename := event.Upload.MetaData["filename"]
 		if filename == "" {
 			filename = event.Upload.ID
+		}
+
+		// The TUS sender (replicateToHost) sets placementHosts in the upload
+		// metadata, so we can route consistent with what the origin used.
+		var replPlacementHosts []string
+		if hostsStr, ok := event.Upload.MetaData["placementHosts"]; ok && hostsStr != "" {
+			replPlacementHosts = strings.Split(hostsStr, ",")
+		}
+
+		// Per-CID disk space check: only the bucket this CID will write to
+		// matters, so a full archive doesn't block primary writes.
+		if !ss.diskHasSpaceForCID(filename, replPlacementHosts) {
+			ss.logger.Warn("disk is too full to accept replication", zap.String("id", event.Upload.ID))
+			return
 		}
 
 		// Open the uploaded file for validation and storage
@@ -432,8 +438,7 @@ func (ss *MediorumServer) handleTusdUploadComplete(uploadDir string, event handl
 			return
 		}
 
-		// Store in bucket
-		if err := ss.replicateToMyBucket(ctx, filename, file); err != nil {
+		if err := ss.replicateToMyBucket(ctx, filename, file, replPlacementHosts); err != nil {
 			ss.logger.Error("failed to store replicated file", zap.String("id", event.Upload.ID), zap.String("filename", filename), zap.Error(err))
 			return
 		}

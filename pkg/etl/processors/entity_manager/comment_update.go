@@ -16,12 +16,24 @@ func (h *commentUpdateHandler) Handle(ctx context.Context, params *Params) error
 
 	body := params.MetadataString("body")
 
+	// video_url is set on create but was dropped on edit, silently removing an
+	// attached video. Only overwrite when the edit includes the key (COALESCE
+	// keeps the stored value when the bound parameter is NULL), so a text-only
+	// edit preserves the existing video. (is_members_only is intentionally left
+	// to the create path: it's a FanClub-gated flag, not edited here.)
+	var videoURL *string
+	if _, ok := params.Metadata["video_url"]; ok {
+		v := params.MetadataString("video_url")
+		videoURL = &v
+	}
+
 	_, err := params.DBTX.Exec(ctx, `
 		UPDATE comments SET
-			text = $1, is_edited = true, updated_at = $2,
-			txhash = $3, blocknumber = $4
+			text = $1, is_edited = true,
+			video_url = COALESCE($6::varchar, video_url),
+			updated_at = $2, txhash = $3, blocknumber = $4
 		WHERE comment_id = $5
-	`, body, params.BlockTime, params.TxHash, params.BlockNumber, params.EntityID)
+	`, body, params.BlockTime, params.TxHash, params.BlockNumber, params.EntityID, videoURL)
 	if err != nil {
 		return err
 	}

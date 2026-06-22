@@ -124,6 +124,49 @@ func TestDeveloperAppUpdate_Success(t *testing.T) {
 	}
 }
 
+// TestDeveloperAppUpdate_RowVersioning asserts that update keeps the prior
+// row (with is_current = false) and appends a new is_current row. This is
+// the contract the rest of the developer_app code relies on, and it would
+// silently break if a UNIQUE (address) constraint were ever reintroduced on
+// the developer_apps table — see migration
+// 0026_drop_developer_apps_unique_address for context.
+func TestDeveloperAppUpdate_RowVersioning(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	seedUser(t, pool, uid, "0xappowner", "appowner")
+
+	createMeta := `{"address":"0xrowver","name":"V1"}`
+	mustHandle(t, DeveloperAppCreate(), buildParams(t, pool, EntityTypeDeveloperApp, ActionCreate, uid, 1, "0xAppOwner", createMeta))
+
+	updateMeta := `{"address":"0xrowver","name":"V2"}`
+	mustHandle(t, DeveloperAppUpdate(), buildParams(t, pool, EntityTypeDeveloperApp, ActionUpdate, uid, 1, "0xAppOwner", updateMeta))
+
+	var total, currentCount int
+	if err := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM developer_apps WHERE address = '0xrowver'").Scan(&total); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("expected 2 rows for address after one update, got %d", total)
+	}
+	if err := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM developer_apps WHERE address = '0xrowver' AND is_current = true").Scan(&currentCount); err != nil {
+		t.Fatalf("count current: %v", err)
+	}
+	if currentCount != 1 {
+		t.Fatalf("expected exactly 1 is_current row, got %d", currentCount)
+	}
+
+	var currentName string
+	if err := pool.QueryRow(context.Background(),
+		"SELECT name FROM developer_apps WHERE address = '0xrowver' AND is_current = true").Scan(&currentName); err != nil {
+		t.Fatalf("query current: %v", err)
+	}
+	if currentName != "V2" {
+		t.Errorf("is_current name = %q, want V2", currentName)
+	}
+}
+
 func TestDeveloperAppUpdate_RejectsWrongOwner(t *testing.T) {
 	pool := setupTestDB(t)
 	uid := int64(UserIDOffset + 1)

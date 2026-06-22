@@ -55,6 +55,7 @@ message GetStatusResponse {
     ProcessStateInfo log_sync = 8;
     ProcessStateInfo state_sync = 9;
     ProcessStateInfo mempool_cache = 10;
+    ProcessStateInfo restore = 11;
   }
 
   message NodeInfo {
@@ -164,9 +165,27 @@ message GetStatusResponse {
     bool is_blob_storage = 1;
     int64 disk_used = 2;
     int64 disk_total = 3;
-    bool disk_has_space = 4;
+    bool disk_has_space = 4; // aggregate (AND of primary + archive)
     int64 storage_expectation = 5;
     string storage_type = 6; // "Blob Storage" or "Disk Storage"
+
+    // Archive bucket (set when OPENAUDIO_ARCHIVE_STORAGE_DRIVER_URL is configured
+    // and OPENAUDIO_STORE_ALL=true). When configured=false, the remaining fields
+    // are zero and should not be rendered.
+    bool archive_configured = 7;
+    bool archive_is_blob_storage = 8;
+    int64 archive_disk_used = 9;
+    int64 archive_disk_total = 10;
+    string archive_storage_type = 11; // "Blob Storage" or "Disk Storage"
+    string archive_storage_prefix = 12; // e.g. "file", "s3", "gs"
+
+    // Per-bucket headroom. primary_disk_has_space is always meaningful;
+    // archive_disk_has_space is false when archive isn't configured.
+    bool primary_disk_has_space = 13;
+    bool archive_disk_has_space = 14;
+
+    // Whether this storage node is running with OPENAUDIO_STORE_ALL/STORE_ALL enabled.
+    bool store_all = 15;
   }
 
   bool live = 1;
@@ -288,7 +307,8 @@ message SignedTransaction {
     ddex.v1beta1.NewReleaseMessage release = 1008;
     RewardMessage reward = 1009;
     FileUpload file_upload = 1010;
-    ManageEntityLegacyMigration manage_entity_migration = 1011;
+    RewardPoolMessage reward_pool = 1011;
+    ManageEntityLegacyMigration manage_entity_migration = 1012;
   }
 }
 
@@ -530,7 +550,29 @@ message GetPIEResponse {
   ddex.v1beta1.PieMessage pie = 1;
 }
 
+// RewardMessage is the wire envelope: it bundles a signed body with its
+// signature. The body is signed by first taking the deterministic protobuf
+// marshaling of body, then computing sha256 over those bytes, and signing
+// that digest; the signature lives alongside the body, not inside it, so
+// signing has no chicken-and-egg.
 message RewardMessage {
+  RewardBody body = 1;
+  // secp256k1 (Ethereum-style) signature, hex-encoded. The signed
+  // digest is sha256(deterministic-protobuf-marshaling of body) — i.e.,
+  // marshal body with proto.MarshalOptions{Deterministic: true}, then
+  // sha256-hash, then crypto.Sign as eth-recoverable. Non-Go clients
+  // must reproduce this pre-hash (sha256, NOT keccak256) to produce a
+  // signature the validator will accept.
+  string signature = 2;
+}
+
+// RewardBody is the signed payload. deadline_block_height bounds the
+// signature's validity (the validator rejects after expiry); the action
+// is the actual operation. The oneof tag discriminates Create from
+// Delete so two actions with otherwise-identical inner shapes produce
+// different bytes.
+message RewardBody {
+  int64 deadline_block_height = 1;
   oneof action {
     CreateReward create = 1000;
     DeleteReward delete = 1001;
@@ -541,15 +583,142 @@ message CreateReward {
   string reward_id = 1;
   string name = 2;
   uint64 amount = 3;
-  repeated ClaimAuthority claim_authorities = 4;
-  int64 deadline_block_height = 5;
-  string signature = 6; // Signature over deterministic reward data
+  // Tags 4–6 are reserved: previously held claim_authorities (4),
+  // deadline_block_height (5), and signature (6) on the pre-pool
+  // CreateReward shape. The wire-compat layer routes legacy bytes
+  // through LegacyCreateReward (which preserves those tags), so the
+  // new CreateReward never decodes legacy data — but reusing those
+  // tag numbers for new fields would still be a footgun for any
+  // future tool that bypasses the wire-compat layer or any refactor
+  // that drops it. Reserve them.
+  reserved 4, 5, 6;
+  reserved "claim_authorities", "deadline_block_height", "signature";
+  // Solana reward manager pubkey (base58, 32 bytes). Identifies the pool
+  // whose authorities are allowed to issue rewards in this RM. The
+  // recovered signer must be a current member of pool.authorities; the
+  // reward inherits attestation rights from the pool going forward.
+  // The pool itself is identified by this same pubkey: pool address ==
+  // rewards_manager_pubkey for first-class pools.
+  string rewards_manager_pubkey = 7;
 }
 
 message DeleteReward {
+  // Tags 2–3 are reserved: previously held deadline_block_height (2)
+  // and signature (3) on the pre-pool DeleteReward shape (now
+  // preserved on LegacyDeleteReward).
+  reserved 2, 3;
+  reserved "deadline_block_height", "signature";
   string address = 1; // The deployed reward address
+}
+
+// RewardPoolMessage is the wire envelope for pool-management transactions.
+// Two signatures cover the same body bytes (`deterministic-protobuf-
+// marshaling of body`); the schemes differ in pre-hashing:
+//
+//   - signature: secp256k1 (eth) recoverable signature, hex-encoded.
+//     Pre-hash is sha256(body_bytes) — see RewardMessage.signature for
+//     the cross-language reproduction recipe. Identifies the fee-paying
+//     tx submitter who must be in the pool's current authority set
+//     (Create: initial authorities; SetAuthorities: existing pool
+//     authorities).
+//   - rm_owner_signature: ed25519 signature over body_bytes directly
+//     (ed25519 handles its own internal hashing — sign body_bytes raw,
+//     do NOT pre-hash). REQUIRED when body.action is Create.
+//     Verification key IS body.create.rewards_manager_pubkey (the
+//     Solana RM state account is itself an ed25519 keypair). Proves
+//     possession of the RM keypair, defeating pool-creation
+//     frontrunning by an observer who watches Solana RM init events
+//     but lacks the launchpad's deterministic-secret. Ignored for
+//     SetAuthorities because rotation is meant to work without the
+//     launchpad.
+message RewardPoolMessage {
+  RewardPoolBody body = 1;
+  string signature = 2;
+  bytes rm_owner_signature = 3;
+}
+
+// RewardPoolBody is the signed payload. deadline_block_height bounds the
+// signature's validity; action discriminates Create from SetAuthorities
+// so two otherwise-identical messages produce different bytes.
+//
+// Cross-chain replay isn't a threat surface here: each environment's
+// launchpad uses a different deterministic secret, so the same
+// rewards_manager_pubkey cannot be derived on more than one chain. A
+// captured CreateRewardPool replayed on a different chain refers to an
+// RM that doesn't exist there.
+message RewardPoolBody {
+  int64 deadline_block_height = 1;
+  oneof action {
+    CreateRewardPool create = 2000;
+    SetRewardPoolAuthorities set_authorities = 2001;
+  }
+}
+
+message CreateRewardPool {
+  // The pool is identified by its Solana reward manager pubkey (base58,
+  // 32 bytes). Subsequent CreateReward / SetRewardPoolAuthorities messages
+  // and the validator's sender-attestation gate use this same value to
+  // resolve the pool. There is no separate "pool address" — the pool's
+  // identity IS the RM pubkey, so pool↔RM binding cannot be set wrong
+  // by construction.
+  string rewards_manager_pubkey = 1;
+  // Initial set of eth addresses authorized to attest for rewards in this
+  // pool. The recovered signer must be a member of this list. Each entry
+  // must be a valid eth hex address. Frontrunning defense lives at the
+  // envelope level (RewardPoolMessage.rm_owner_signature).
+  repeated string authorities = 2;
+}
+
+// SetRewardPoolAuthorities replaces the pool's authority set wholesale. The
+// signer must be in the *current* pool.authorities; the new list must be
+// non-empty and contain only valid eth addresses (otherwise the pool is
+// permanently orphaned). Add and remove are derived views: callers compose
+// the new list themselves.
+message SetRewardPoolAuthorities {
+  string rewards_manager_pubkey = 1;
+  repeated string authorities = 2;
+}
+
+// === Legacy reward wire format (pre-pool-rollout) ===
+//
+// These messages are the on-the-wire shape used before the body+signature
+// envelope was introduced. They are NOT used by new clients or new code paths
+// — they exist solely so that the new binary can decode and apply historical
+// reward transactions encountered during block-sync-from-genesis.
+//
+// DO NOT REMOVE these types or their field tags: removing them would break
+// replay of any chain history that contains rewards committed before the
+// upgrade. Adding new fields here is also forbidden — the wire shape must
+// remain pinned to what the old network produced.
+message LegacyRewardMessage {
+  oneof action {
+    LegacyCreateReward create = 1000;
+    LegacyDeleteReward delete = 1001;
+  }
+}
+
+message LegacyCreateReward {
+  string reward_id = 1;
+  string name = 2;
+  uint64 amount = 3;
+  repeated ClaimAuthority claim_authorities = 4;
+  int64 deadline_block_height = 5;
+  string signature = 6;
+}
+
+message LegacyDeleteReward {
+  string address = 1;
   int64 deadline_block_height = 2;
-  string signature = 3; // Signature over deterministic delete data
+  string signature = 3;
+}
+
+message GetRewardPoolRequest {
+  string rewards_manager_pubkey = 1;
+}
+
+message GetRewardPoolResponse {
+  string rewards_manager_pubkey = 1;
+  repeated string authorities = 2;
 }
 
 message GetRewardRequest {
@@ -656,8 +825,23 @@ message GetRewardSenderAttestationResponse {
   string attestation = 2;
 }
 
+message GetDeleteRewardSenderAttestationRequest {
+  string address = 1;
+  string rewards_manager_pubkey = 2;
+}
+
+message GetDeleteRewardSenderAttestationResponse {
+  string owner = 1;
+  string attestation = 2;
+}
+
 message StreamBlocksRequest {
   bool canon = 1;
+  // When > 0, the server first replays committed blocks from this height up to
+  // the chain head (historical catch-up), then continues with the live feed,
+  // gap-filling any blocks dropped by the in-process pubsub. When 0 (default),
+  // the server streams only blocks committed after subscription (live-tail).
+  int64 start_height = 2;
 }
 
 message StreamBlocksResponse {

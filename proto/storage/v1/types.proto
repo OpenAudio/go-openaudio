@@ -152,3 +152,105 @@ message GetStatusRequest {}
 message GetStatusResponse {
   int64 storage_expectation = 1;
 }
+
+message GetStorageDiagnosticsRequest {}
+
+message GetStorageDiagnosticsResponse {
+  string self_host = 1;
+  int64 disk_used_bytes = 2;
+  int64 disk_total_bytes = 3;
+  int64 storage_expectation_bytes = 4;
+  bool disk_has_space = 5;
+  int32 replication_factor = 6;
+  int64 uploads_count = 7;
+  string blob_store_prefix = 8;
+
+  RepairRun last_successful_repair = 9;
+  RepairRun last_successful_cleanup = 10;
+  RepairRun in_progress_repair = 11;
+  repeated RepairRun recent_repair_runs = 12;
+
+  repeated PeerStatus peers = 13;
+  repeated DailyServedCount served_counts = 14;
+
+  ReadRepairStats read_repair = 15;
+  PoSStats pos = 16;
+  BandwidthStats bandwidth = 17;
+  repeated PoSChallenge recent_pos_challenges = 18;
+  repeated ServedEvent recent_served = 19;
+
+  // Archive bucket (set when OPENAUDIO_ARCHIVE_STORAGE_DRIVER_URL is configured).
+  // When archive_configured=false, the remaining archive fields are zero.
+  bool archive_configured = 20;
+  int64 archive_disk_used_bytes = 21;
+  int64 archive_disk_total_bytes = 22;
+  string archive_blob_store_prefix = 23;
+
+  // Per-bucket headroom; disk_has_space (#5) stays as the AND aggregate.
+  bool primary_disk_has_space = 24;
+  bool archive_disk_has_space = 25;
+
+  // Whether this storage node is running with OPENAUDIO_STORE_ALL/STORE_ALL enabled.
+  bool store_all = 26;
+}
+
+message ReadRepairStats {
+  int64 local_hits = 1;
+  int64 misses = 2;
+  int64 pull_attempts = 3;
+  int64 pull_successes = 4;
+  int64 proxied = 5;
+  int64 redirected = 6;
+}
+
+message PoSStats {
+  int64 attempted = 1;
+  int64 passed = 2;
+  int64 failed = 3;
+}
+
+message BandwidthStats {
+  int64 ingress_bytes = 1;
+  int64 egress_bytes = 2;
+  google.protobuf.Timestamp since = 3;
+}
+
+message PoSChallenge {
+  google.protobuf.Timestamp at = 1;
+  string cid = 2;
+  bool ok = 3;
+  string error = 4;
+}
+
+message ServedEvent {
+  google.protobuf.Timestamp at = 1;
+  string cid = 2;
+  string action = 3;
+}
+
+message RepairRun {
+  google.protobuf.Timestamp started_at = 1;
+  google.protobuf.Timestamp finished_at = 2;
+  bool cleanup_mode = 3;
+  int64 content_size_bytes = 4;
+  int64 duration_ns = 5;
+  string aborted_reason = 6;
+  int32 cursor_i = 7;
+  map<string, int64> counters = 8;
+  // Sum of successful pull + delete actions in this run (pull_mine_success +
+  // delete_invalid_success + delete_resized_image_ok + delete_over_replicated_success).
+  int64 files_changed = 9;
+}
+
+message PeerStatus {
+  string host = 1;
+  google.protobuf.Timestamp last_reachable = 2;
+  google.protobuf.Timestamp last_healthy = 3;
+  int32 reachable_peer_count = 4;
+}
+
+message DailyServedCount {
+  google.protobuf.Timestamp day = 1;
+  string action = 2;
+  int64 count = 3;
+}

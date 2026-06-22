@@ -1,4 +1,4 @@
--- muted_users table matching discovery-provider schema.
+-- muted_users table.
 
 CREATE TABLE IF NOT EXISTS muted_users (
   muted_user_id integer NOT NULL,

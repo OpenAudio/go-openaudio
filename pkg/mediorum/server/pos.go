@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"errors"
 	"io"
+	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
@@ -52,9 +53,12 @@ func (ss *MediorumServer) startPoSHandler(ctx context.Context) error {
 				ss.logger.Info("Generating storage proof", zap.String("cid", cid), zap.Int64("blockHeight", posReq.Height))
 				proof, err = ss.getStorageProof(ctx, cid, posReq.Hash)
 				if err != nil {
+					ss.metrics.recordPoS(PoSResult{At: time.Now().UTC(), CID: cid, OK: false, Error: err.Error()})
 					ss.logger.Error("Failed to get storage proof", zap.String("cid", cid), zap.Error(err))
+					ss.maybeBackgroundPull(cid)
 					continue
 				}
+				ss.metrics.recordPoS(PoSResult{At: time.Now().UTC(), CID: cid, OK: true})
 			}
 			response := pos.PoSResponse{
 				CID:      cid,
@@ -72,7 +76,7 @@ func (ss *MediorumServer) startPoSHandler(ctx context.Context) error {
 func (ss *MediorumServer) getStorageProof(ctx context.Context, cid string, nonce []byte) ([]byte, error) {
 	key := cidutil.ShardCID(cid)
 	var proof []byte
-	blob, err := ss.bucket.NewReader(ctx, key, nil)
+	blob, _, err := ss.readBlob(ctx, key)
 	if err != nil {
 		return proof, err
 	}

@@ -2,9 +2,9 @@ package pages
 
 import (
 	"fmt"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates"
-	"github.com/OpenAudio/go-openaudio/pkg/console/templates/layouts"
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates"
+	"github.com/OpenAudio/go-openaudio/pkg/explorer/templates/layouts"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 type RollupsProps struct {
@@ -19,8 +19,8 @@ type RollupsProps struct {
 
 templ Rollups(props RollupsProps) {
 	@layouts.Base("SLA Rollups") {
-		<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-6">
-			<div class="flex justify-between items-center mb-6">
+		<div class="bg-white dark:bg-[#0a0a0a] rounded-lg shadow-xl p-4 md:p-6">
+			<div class="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-6">
 				<h2 class="text-2xl font-light text-gray-900 dark:text-white">SLA Rollups</h2>
 				<div class="text-sm text-gray-500 dark:text-[#b3b3b3]">
 					Page { fmt.Sprint(props.CurrentPage) } • { fmt.Sprint(props.PageSize) } rollups per page • { fmt.Sprint(props.TotalCount) } total
@@ -29,35 +29,35 @@ templ Rollups(props RollupsProps) {
 			if len(props.Rollups) > 0 {
 				<div class="space-y-2">
 					for _, rollup := range props.Rollups {
-						<div class="flex items-center justify-between py-4 px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
-							<div class="flex items-center gap-6 flex-1">
-								<div class="flex-1">
-									<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Rollup ID</div>
+						<div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between py-4 px-4 md:px-6 border border-gray-200 dark:border-gray-800 rounded hover:bg-gray-100 dark:hover:bg-[#383838] transition-colors">
+							<div class="grid grid-cols-2 gap-3 md:gap-6 md:flex md:items-center md:flex-1">
+								<div class="md:flex-1">
+									<div class="text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Rollup ID</div>
 									<a href={ templ.SafeURL(fmt.Sprintf("/validators/uptime/%d", rollup.ID)) } class="font-semibold text-gray-600 dark:text-white hover:underline">
 										{ fmt.Sprintf("#%d", rollup.ID) }
 									</a>
 								</div>
-								<div class="flex-1">
-									<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Block Range</div>
+								<div class="md:flex-1">
+									<div class="text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Block Range</div>
 									<div class="text-xl font-light text-gray-900 dark:text-white tabular-nums">
 										{ fmt.Sprintf("%d - %d", rollup.BlockStart, rollup.BlockEnd) }
 									</div>
 								</div>
-								<div class="flex-1">
-									<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Validators</div>
+								<div class="md:flex-1">
+									<div class="text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Validators</div>
 									<div class="text-xl font-light text-gray-900 dark:text-white tabular-nums">
 										{ fmt.Sprintf("%d", rollup.ValidatorCount) }
 									</div>
 								</div>
-								<div class="flex-1">
-									<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Transaction</div>
+								<div class="md:flex-1">
+									<div class="text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Transaction</div>
 									<a href={ templ.SafeURL(fmt.Sprintf("/transaction/%s", rollup.TxHash)) } class="font-mono text-xs text-gray-600 dark:text-white hover:underline">
 										@templates.StringWithTooltipCustom(rollup.TxHash, 8, 4)
 									</a>
 								</div>
 							</div>
-							<div class="text-right flex-shrink-0">
-								<div class="text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Time</div>
+							<div class="md:text-right md:flex-shrink-0">
+								<div class="text-xs sm:text-sm font-medium text-gray-500 dark:text-[#b3b3b3] uppercase tracking-wide mb-1">Time</div>
 								<div class="text-sm text-gray-700 dark:text-white">
 									if rollup.CreatedAt.Valid {
 										@templates.TimeWithTooltip(rollup.CreatedAt.Time)

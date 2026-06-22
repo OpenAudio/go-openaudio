@@ -89,6 +89,35 @@ func formatBlockDiff(blockSync *v1.GetStatusResponse_SyncInfo_BlockSyncInfo) str
 	return fmt.Sprintf("%d blocks behind", blockSync.BlockDiff)
 }
 
+func getArchiveRetentionType(status *v1.GetStatusResponse) string {
+	if status != nil && status.PruningInfo != nil && !status.PruningInfo.Enabled {
+		return "Archive"
+	}
+	return "Full node"
+}
+
+func getArchiveRetentionDescription(status *v1.GetStatusResponse) string {
+	switch getArchiveRetentionType(status) {
+	case "Archive":
+		return "Archive node - keeps all historical blocks forever"
+	default:
+		return "Full node - prunes old blocks to save space"
+	}
+}
+
+func getArchiveRetentionIcon(status *v1.GetStatusResponse) templ.Component {
+	switch getArchiveRetentionType(status) {
+	case "Archive":
+		return components.StatusGreenLg("Archive")
+	default:
+		return components.StatusCompleteLg("Full node")
+	}
+}
+
+func getStoreAllEnabled(status *v1.GetStatusResponse) bool {
+	return status != nil && status.StorageInfo != nil && status.StorageInfo.StoreAll
+}
+
 templ (p *Pages) OverviewCriticalFragment(status *v1.GetStatusResponse) {
 	<!-- Critical Status Overview -->
 	<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -332,6 +361,21 @@ templ (p *Pages) OverviewProcessesFragment(status *v1.GetStatusResponse) {
 						}
 					}
 				</div>
+				if status.ProcessInfo.Restore != nil && status.ProcessInfo.Restore.GetState() != v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED {
+					<div class="bg-secondary rounded-lg p-4">
+						<div class="flex items-center justify-between mb-2">
+							<span class="font-medium">DB Restore</span>
+							@getProcessStateIcon(status.ProcessInfo.Restore.GetState())
+						</div>
+						<div class="text-sm text-secondary">{ getProcessStateText(status.ProcessInfo.Restore.GetState()) }</div>
+						if status.ProcessInfo.Restore.Metadata != "" {
+							<div class="text-xs text-secondary mt-1">{ status.ProcessInfo.Restore.Metadata }</div>
+						}
+						if status.ProcessInfo.Restore.Error != "" {
+							<div class="text-xs text-red-600 mt-1">{ status.ProcessInfo.Restore.Error }</div>
+						}
+					</div>
+				}
 			</div>
 		</div>
 	}
@@ -422,7 +466,17 @@ templ (p *Pages) OverviewResourcesFragment(status *v1.GetStatusResponse) {
 templ (p *Pages) OverviewStorageFragment(status *v1.GetStatusResponse) {
 	if status.StorageInfo != nil {
 		<div class="bg-tertiary shadow-md rounded-lg p-6">
-			<h2 class="text-xl font-semibold mb-4">Media Storage</h2>
+			<div class="flex items-center justify-between mb-4">
+				<h2 class="text-xl font-semibold">Media Storage</h2>
+				<div class="flex items-center gap-2">
+					<span class="text-sm text-secondary">Has Space</span>
+					if status.StorageInfo.DiskHasSpace {
+						@components.StatusGreen("Has Space")
+					} else {
+						@components.StatusRed("Full")
+					}
+				</div>
+			</div>
 			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 				if status.StorageInfo.StorageType != "" {
 					<div class="bg-secondary rounded-lg p-4">
@@ -435,14 +489,14 @@ templ (p *Pages) OverviewStorageFragment(status *v1.GetStatusResponse) {
 				<div class="bg-secondary rounded-lg p-4">
 					<div class="flex items-center justify-between mb-2">
 						<span class="font-medium">Disk Has Space</span>
-						if status.StorageInfo.DiskHasSpace {
+						if status.StorageInfo.PrimaryDiskHasSpace {
 							@components.StatusGreenLg("Has Space")
 						} else {
 							@components.StatusRedLg("Full")
 						}
 					</div>
 					<div class="text-sm text-secondary">
-						if status.StorageInfo.DiskHasSpace {
+						if status.StorageInfo.PrimaryDiskHasSpace {
 							Has Space
 						} else {
 							Full
@@ -493,6 +547,66 @@ templ (p *Pages) OverviewStorageFragment(status *v1.GetStatusResponse) {
 					</div>
 				}
 			</div>
+			if status.StorageInfo.ArchiveConfigured {
+				<h2 class="text-xl font-semibold mb-4 mt-6">Archive Storage</h2>
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+					if status.StorageInfo.ArchiveStorageType != "" {
+						<div class="bg-secondary rounded-lg p-4">
+							<div class="flex items-center justify-between mb-2">
+								<span class="font-medium">Storage Type</span>
+							</div>
+							<div class="text-sm text-secondary">{ status.StorageInfo.ArchiveStorageType }</div>
+							if status.StorageInfo.ArchiveStoragePrefix != "" {
+								<div class="text-xs text-secondary mt-1">backend: { status.StorageInfo.ArchiveStoragePrefix }</div>
+							}
+						</div>
+					}
+					<div class="bg-secondary rounded-lg p-4">
+						<div class="flex items-center justify-between mb-2">
+							<span class="font-medium">Disk Has Space</span>
+							if status.StorageInfo.ArchiveDiskHasSpace {
+								@components.StatusGreenLg("Has Space")
+							} else {
+								@components.StatusRedLg("Full")
+							}
+						</div>
+						<div class="text-sm text-secondary">
+							if status.StorageInfo.ArchiveDiskHasSpace {
+								Has Space
+							} else {
+								Full
+							}
+						</div>
+					</div>
+					if !status.StorageInfo.ArchiveIsBlobStorage {
+						if status.StorageInfo.ArchiveDiskTotal > 0 {
+							<div class="bg-secondary rounded-lg p-4">
+								<div class="flex items-center justify-between mb-2">
+									<span class="font-medium">Disk Used</span>
+								</div>
+								<div class="text-sm text-secondary">{ formatBytes(status.StorageInfo.ArchiveDiskUsed) }</div>
+								<div class="text-xs text-secondary mt-1">
+									{ formatPercentage(status.StorageInfo.ArchiveDiskUsed, status.StorageInfo.ArchiveDiskTotal) } of { formatBytes(status.StorageInfo.ArchiveDiskTotal) }
+								</div>
+							</div>
+							<div class="bg-secondary rounded-lg p-4">
+								<div class="flex items-center justify-between mb-2">
+									<span class="font-medium">Disk Total</span>
+								</div>
+								<div class="text-sm text-secondary">{ formatBytes(status.StorageInfo.ArchiveDiskTotal) }</div>
+							</div>
+						} else {
+							<div class="bg-secondary rounded-lg p-4">
+								<div class="flex items-center justify-between mb-2">
+									<span class="font-medium">Disk Usage</span>
+								</div>
+								<div class="text-sm text-secondary">Not available</div>
+								<div class="text-xs text-secondary mt-1">Disk information not yet loaded</div>
+							</div>
+						}
+					}
+				</div>
+			}
 		</div>
 	}
 }
@@ -637,33 +751,42 @@ templ (p *Pages) OverviewPage(status *v1.GetStatusResponse) {
 			<!-- Data Management & Retention -->
 			<div class="bg-tertiary rounded-lg p-6">
 				<h2 class="text-xl font-semibold mb-4">Data Management & Retention</h2>
-				<!-- Node Type & Status -->
-				<div class="bg-secondary rounded-lg p-4 mb-6">
-					<div class="flex items-center justify-between">
-						<div>
-							<h3 class="text-lg font-medium mb-1">Node Type</h3>
-							<div class="text-sm text-secondary">
-								if status.ProcessInfo != nil && status.ProcessInfo.DataCompanion != nil && status.ProcessInfo.DataCompanion.GetState() == v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED {
-									Archive node - keeps all historical blocks forever
-								} else {
-									Full node - prunes old blocks to save space
-								}
+				<!-- Data Mode Status -->
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+					<div class="bg-secondary rounded-lg p-4">
+						<div class="flex items-center justify-between">
+							<div>
+								<h3 class="text-lg font-medium mb-1">Block Retention</h3>
+								<div class="text-sm text-secondary">
+									{ getArchiveRetentionDescription(status) }
+								</div>
+							</div>
+							<div class="text-right">
+								<div class="text-2xl font-bold">
+									@getArchiveRetentionIcon(status)
+									<span>&nbsp;{ getArchiveRetentionType(status) }</span>
+								</div>
 							</div>
 						</div>
-						<div class="text-right">
-							if status.ProcessInfo != nil && status.ProcessInfo.DataCompanion != nil && status.ProcessInfo.DataCompanion.GetState() == v1.GetStatusResponse_ProcessInfo_PROCESS_STATE_COMPLETED {
-								<div class="text-2xl font-bold">
-									@components.StatusGreenLg("Archive")
-									<span>&nbsp;Archive</span>
-								</div>
-							} else {
-								<div class="text-2xl font-bold">
-									@components.StatusGreenLg("Validator")
-									<span>&nbsp;Validator</span>
-								</div>
-							}
-						</div>
 					</div>
+					if getStoreAllEnabled(status) {
+						<div class="bg-secondary rounded-lg p-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<h3 class="text-lg font-medium mb-1">STORE_ALL</h3>
+									<div class="text-sm text-secondary">
+										Store All node - stores all media for this node
+									</div>
+								</div>
+								<div class="text-right">
+									<div class="text-2xl font-bold">
+										@components.StatusGreenLg("STORE_ALL enabled")
+										<span>&nbsp;Enabled</span>
+									</div>
+								</div>
+							</div>
+						</div>
+					}
 				</div>
 				<!-- Block Storage & Pruning -->
 				if status.PruningInfo != nil && status.PruningInfo.Enabled {

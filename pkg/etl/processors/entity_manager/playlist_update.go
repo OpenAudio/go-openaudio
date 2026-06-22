@@ -55,13 +55,31 @@ func updatePlaylist(ctx context.Context, params *Params) error {
 	if err != nil {
 		return err
 	}
+	stripImmutableFields(params.Metadata, immutablePlaylistFields)
 	oldName := ""
 	if base.PlaylistName != nil {
 		oldName = *base.PlaylistName
 	}
 	merged := mergePlaylistFromMetadata(params, base)
 
+	// Bump last_added_to to the block time only when this update introduces a
+	// new track (vs the stored contents). Reorders, removals, and metadata-only
+	// edits preserve the existing value. Matches the legacy indexer's "last add"
+	// timestamp, used for "recently added to" sort and playlist-update notifs.
+	if _, ok := params.Metadata["playlist_contents"]; ok && playlistAddedTrack(base.PlaylistContents, params.Metadata) {
+		merged.LastAddedTo = pgTimestamp(params.BlockTime)
+	}
+
 	if err := updatePlaylistRow(ctx, params.DBTX, merged, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
+		return err
+	}
+
+	if _, ok := params.Metadata["playlist_contents"]; ok {
+		if err := updatePlaylistTracks(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+			return err
+		}
+	}
+	if err := updateAlbumPriceHistory(ctx, params.DBTX, params.EntityID, params.BlockNumber, params.BlockTime, params.Metadata); err != nil {
 		return err
 	}
 

@@ -3,10 +3,13 @@ package entity_manager
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	"github.com/jackc/pgx/v5"
 )
 
 var handleRegexp = regexp.MustCompile(`^[a-z0-9_.]+$`)
@@ -36,7 +39,7 @@ func ValidateHandle(handle string) error {
 	if !handleRegexp.MatchString(handle) {
 		return NewValidationError("handle %q contains illegal characters", handle)
 	}
-	if len(handle) > CharacterLimitHandle {
+	if utf8.RuneCountInString(handle) > CharacterLimitHandle {
 		return NewValidationError("handle %q exceeds %d character limit", handle, CharacterLimitHandle)
 	}
 	if reservedHandles[handle] {
@@ -50,7 +53,7 @@ func ValidateUserName(name string) error {
 	if name == "" {
 		return nil
 	}
-	if len(name) > CharacterLimitUserName {
+	if utf8.RuneCountInString(name) > CharacterLimitUserName {
 		return NewValidationError("name exceeds %d character limit", CharacterLimitUserName)
 	}
 	return nil
@@ -61,7 +64,7 @@ func ValidateBio(bio string) error {
 	if bio == "" {
 		return nil
 	}
-	if len(bio) > CharacterLimitUserBio {
+	if utf8.RuneCountInString(bio) > CharacterLimitUserBio {
 		return NewValidationError("bio exceeds %d character limit", CharacterLimitUserBio)
 	}
 	return nil
@@ -72,27 +75,80 @@ func ValidateDescription(desc string) error {
 	if desc == "" {
 		return nil
 	}
-	if len(desc) > CharacterLimitDescription {
+	if utf8.RuneCountInString(desc) > CharacterLimitDescription {
 		return NewValidationError("description exceeds %d character limit", CharacterLimitDescription)
 	}
 	return nil
 }
 
-// ValidateSigner checks that the signer matches the user's wallet or has a valid grant.
-// For now this does a direct wallet comparison. Grant/DeveloperApp authorization
-// will be added as those entity types are implemented.
+// ValidateSigner checks that the signer is params.UserID's wallet or holds a
+// valid grant from that user. Grants come from either a developer app
+// (auto-approved at creation) or another user wallet acting in manager mode
+// (must be approved by the grantor).
 func ValidateSigner(ctx context.Context, params *Params) error {
-	wallet, err := getUserWallet(ctx, params.DBTX, params.UserID)
+	return validateSignerForUser(ctx, params, params.UserID)
+}
+
+// validateSignerForUser is ValidateSigner against an explicit user id. Grant
+// revocation uses this with the grantee's user id so the grantee (manager) can
+// revoke their own user-to-user grant, matching the legacy indexer.
+func validateSignerForUser(ctx context.Context, params *Params, userID int64) error {
+	wallet, err := getUserWallet(ctx, params.DBTX, userID)
 	if err != nil {
 		return err
 	}
 	if wallet == "" {
-		return NewValidationError("user %d does not exist", params.UserID)
+		return NewValidationError("user %d does not exist", userID)
 	}
-	if !strings.EqualFold(wallet, params.Signer) {
-		return NewValidationError("signer %s does not match user %d wallet", params.Signer, params.UserID)
+	if strings.EqualFold(wallet, params.Signer) {
+		return nil
+	}
+
+	signer := strings.ToLower(params.Signer)
+	grant, err := getActiveGrant(ctx, params.DBTX, signer, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return NewValidationError("signer %s is not authorized for user %d", params.Signer, userID)
+		}
+		return err
+	}
+	if grant.isRevoked {
+		return NewValidationError("signer %s grant for user %d is revoked", params.Signer, userID)
+	}
+
+	isApp, err := developerAppExists(ctx, params.DBTX, signer)
+	if err != nil {
+		return err
+	}
+	isUser, err := activeUserWalletExists(ctx, params.DBTX, signer)
+	if err != nil {
+		return err
+	}
+	if !isApp && !isUser {
+		return NewValidationError("signer %s is no longer a valid developer app or active user", params.Signer)
+	}
+
+	approved := isApp || (grant.isApproved != nil && *grant.isApproved)
+	if !approved {
+		return NewValidationError("signer %s grant for user %d is not approved", params.Signer, userID)
 	}
 	return nil
+}
+
+// activeUserIDByWallet returns the user_id of an active user with the given
+// wallet, and whether one exists.
+func activeUserIDByWallet(ctx context.Context, dbtx db.DBTX, wallet string) (int64, bool, error) {
+	var userID int64
+	err := dbtx.QueryRow(ctx,
+		"SELECT user_id FROM users WHERE wallet = $1 AND is_current = true AND is_deactivated = false LIMIT 1",
+		strings.ToLower(wallet)).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return userID, true, nil
 }
 
 func getUserWallet(ctx context.Context, dbtx db.DBTX, userID int64) (string, error) {
@@ -104,13 +160,42 @@ func getUserWallet(ctx context.Context, dbtx db.DBTX, userID int64) (string, err
 	return wallet, nil
 }
 
-// ValidateGenre checks genre is in the allowlist.
+// validMusicalKeys mirrors the apps indexer's MusicalKey enum
+// (src/tasks/metadata.py). Note: flats only, no sharps — "C# minor" is NOT a
+// valid key; the equivalent is "D flat minor".
+var validMusicalKeys = map[string]bool{
+	"A major": true, "A minor": true,
+	"B flat major": true, "B flat minor": true,
+	"B major": true, "B minor": true,
+	"C major": true, "C minor": true,
+	"D flat major": true, "D flat minor": true,
+	"D major": true, "D minor": true,
+	"E flat major": true, "E flat minor": true,
+	"E major": true, "E minor": true,
+	"F major": true, "F minor": true,
+	"G flat major": true, "G flat minor": true,
+	"G major": true, "G minor": true,
+	"A flat major": true, "A flat minor": true,
+	"Silence": true,
+}
+
+// isValidMusicalKey reports whether s is one of the recognized musical keys.
+// Mirrors apps' is_valid_musical_key (src/tasks/metadata.py): an invalid key
+// is ignored by the indexer (existing value is preserved), not an error.
+func isValidMusicalKey(s string) bool {
+	return validMusicalKeys[s]
+}
+
+// ValidateGenre checks that a genre string is within the 100-character limit.
+// Any non-empty string is accepted; the Open Audio Protocol treats genre as a
+// free-form field at the protocol layer. GenreAllowlist provides canonical
+// autocomplete suggestions for UIs only.
 func ValidateGenre(genre string) error {
 	if genre == "" {
 		return nil
 	}
-	if _, ok := GenreAllowlist[genre]; !ok {
-		return NewValidationError("genre %q is not in the allow list", genre)
+	if utf8.RuneCountInString(genre) > 100 {
+		return NewValidationError("genre exceeds 100 character limit")
 	}
 	return nil
 }

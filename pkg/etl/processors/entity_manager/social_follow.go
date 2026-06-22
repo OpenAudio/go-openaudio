@@ -3,7 +3,7 @@ package entity_manager
 import (
 	"context"
 
-	"github.com/OpenAudio/go-openaudio/etl/db"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
 )
 
 // --- Follow ---
@@ -77,35 +77,38 @@ func validateUnfollow(ctx context.Context, params *Params) error {
 // --- shared ---
 
 func insertFollow(ctx context.Context, params *Params, isDelete bool) error {
-	_, err := params.DBTX.Exec(ctx,
-		"UPDATE follows SET is_current = false WHERE follower_user_id = $1 AND followee_user_id = $2 AND is_current = true",
-		params.UserID, params.EntityID)
-	if err != nil {
-		return err
-	}
-
-	_, err = params.DBTX.Exec(ctx, `
+	// Upsert the single current row in place (arbiter: follows_current_uniq_idx).
+	// Replaces demote-then-insert: avoids unbounded is_current=false history and
+	// gives the aggregate triggers an O(1) is_delete transition to track.
+	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO follows (
 			follower_user_id, followee_user_id, is_current, is_delete,
 			created_at, txhash, blocknumber
 		) VALUES ($1, $2, true, $3, $4, $5, $6)
+		ON CONFLICT (follower_user_id, followee_user_id) WHERE is_current = true
+		DO UPDATE SET
+			is_delete = EXCLUDED.is_delete,
+			created_at = EXCLUDED.created_at,
+			txhash = EXCLUDED.txhash,
+			blocknumber = EXCLUDED.blocknumber
 	`, params.UserID, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
 	if err != nil {
 		return err
 	}
 
-	// Python parity: Follow/Unfollow also creates/deletes a Subscription record
-	_, err = params.DBTX.Exec(ctx,
-		"UPDATE subscriptions SET is_current = false WHERE subscriber_id = $1 AND user_id = $2 AND is_current = true",
-		params.UserID, params.EntityID)
-	if err != nil {
-		return err
-	}
+	// Follow/Unfollow also creates/deletes a Subscription record
+	// (arbiter: subscriptions_current_uniq_idx).
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO subscriptions (
 			subscriber_id, user_id, is_current, is_delete,
 			created_at, txhash, blocknumber
 		) VALUES ($1, $2, true, $3, $4, $5, $6)
+		ON CONFLICT (subscriber_id, user_id) WHERE is_current = true
+		DO UPDATE SET
+			is_delete = EXCLUDED.is_delete,
+			created_at = EXCLUDED.created_at,
+			txhash = EXCLUDED.txhash,
+			blocknumber = EXCLUDED.blocknumber
 	`, params.UserID, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }

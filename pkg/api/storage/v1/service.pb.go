@@ -25,8 +25,8 @@ var file_storage_v1_service_proto_rawDesc = []byte{
 	0x0a, 0x18, 0x73, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x2f, 0x76, 0x31, 0x2f, 0x73, 0x65, 0x72,
 	0x76, 0x69, 0x63, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x0a, 0x73, 0x74, 0x6f, 0x72,
 	0x61, 0x67, 0x65, 0x2e, 0x76, 0x31, 0x1a, 0x16, 0x73, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x2f,
-	0x76, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x32, 0xdf,
-	0x05, 0x0a, 0x0e, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63,
+	0x76, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x32, 0xcf,
+	0x06, 0x0a, 0x0e, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63,
 	0x65, 0x12, 0x3b, 0x0a, 0x04, 0x50, 0x69, 0x6e, 0x67, 0x12, 0x17, 0x2e, 0x73, 0x74, 0x6f, 0x72,
 	0x61, 0x67, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x69, 0x6e, 0x67, 0x52, 0x65, 0x71, 0x75, 0x65,
 	0x73, 0x74, 0x1a, 0x18, 0x2e, 0x73, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x2e, 0x76, 0x31, 0x2e,
@@ -72,6 +72,13 @@ var file_storage_v1_service_proto_rawDesc = []byte{
 	0x65, 0x74, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
 	0x1d, 0x2e, 0x73, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74,
 	0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00,
+	0x12, 0x6e, 0x0a, 0x15, 0x47, 0x65, 0x74, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x44, 0x69,
+	0x61, 0x67, 0x6e, 0x6f, 0x73, 0x74, 0x69, 0x63, 0x73, 0x12, 0x28, 0x2e, 0x73, 0x74, 0x6f, 0x72,
+	0x61, 0x67, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67,
+	0x65, 0x44, 0x69, 0x61, 0x67, 0x6e, 0x6f, 0x73, 0x74, 0x69, 0x63, 0x73, 0x52, 0x65, 0x71, 0x75,
+	0x65, 0x73, 0x74, 0x1a, 0x29, 0x2e, 0x73, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x2e, 0x76, 0x31,
+	0x2e, 0x47, 0x65, 0x74, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x44, 0x69, 0x61, 0x67, 0x6e,
+	0x6f, 0x73, 0x74, 0x69, 0x63, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00,
 	0x42, 0x36, 0x5a, 0x34, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x4f,
 	0x70, 0x65, 0x6e, 0x41, 0x75, 0x64, 0x69, 0x6f, 0x2f, 0x67, 0x6f, 0x2d, 0x6f, 0x70, 0x65, 0x6e,
 	0x61, 0x75, 0x64, 0x69, 0x6f, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x73, 0x74,
@@ -79,24 +86,26 @@ var file_storage_v1_service_proto_rawDesc = []byte{
 }
 
 var file_storage_v1_service_proto_goTypes = []interface{}{
-	(*PingRequest)(nil),                // 0: storage.v1.PingRequest
-	(*GetHealthRequest)(nil),           // 1: storage.v1.GetHealthRequest
-	(*UploadFilesRequest)(nil),         // 2: storage.v1.UploadFilesRequest
-	(*GetUploadRequest)(nil),           // 3: storage.v1.GetUploadRequest
-	(*StreamTrackRequest)(nil),         // 4: storage.v1.StreamTrackRequest
-	(*GetStreamURLRequest)(nil),        // 5: storage.v1.GetStreamURLRequest
-	(*GetIPDataRequest)(nil),           // 6: storage.v1.GetIPDataRequest
-	(*GetRendezvousNodesRequest)(nil),  // 7: storage.v1.GetRendezvousNodesRequest
-	(*GetStatusRequest)(nil),           // 8: storage.v1.GetStatusRequest
-	(*PingResponse)(nil),               // 9: storage.v1.PingResponse
-	(*GetHealthResponse)(nil),          // 10: storage.v1.GetHealthResponse
-	(*UploadFilesResponse)(nil),        // 11: storage.v1.UploadFilesResponse
-	(*GetUploadResponse)(nil),          // 12: storage.v1.GetUploadResponse
-	(*StreamTrackResponse)(nil),        // 13: storage.v1.StreamTrackResponse
-	(*GetStreamURLResponse)(nil),       // 14: storage.v1.GetStreamURLResponse
-	(*GetIPDataResponse)(nil),          // 15: storage.v1.GetIPDataResponse
-	(*GetRendezvousNodesResponse)(nil), // 16: storage.v1.GetRendezvousNodesResponse
-	(*GetStatusResponse)(nil),          // 17: storage.v1.GetStatusResponse
+	(*PingRequest)(nil),                   // 0: storage.v1.PingRequest
+	(*GetHealthRequest)(nil),              // 1: storage.v1.GetHealthRequest
+	(*UploadFilesRequest)(nil),            // 2: storage.v1.UploadFilesRequest
+	(*GetUploadRequest)(nil),              // 3: storage.v1.GetUploadRequest
+	(*StreamTrackRequest)(nil),            // 4: storage.v1.StreamTrackRequest
+	(*GetStreamURLRequest)(nil),           // 5: storage.v1.GetStreamURLRequest
+	(*GetIPDataRequest)(nil),              // 6: storage.v1.GetIPDataRequest
+	(*GetRendezvousNodesRequest)(nil),     // 7: storage.v1.GetRendezvousNodesRequest
+	(*GetStatusRequest)(nil),              // 8: storage.v1.GetStatusRequest
+	(*GetStorageDiagnosticsRequest)(nil),  // 9: storage.v1.GetStorageDiagnosticsRequest
+	(*PingResponse)(nil),                  // 10: storage.v1.PingResponse
+	(*GetHealthResponse)(nil),             // 11: storage.v1.GetHealthResponse
+	(*UploadFilesResponse)(nil),           // 12: storage.v1.UploadFilesResponse
+	(*GetUploadResponse)(nil),             // 13: storage.v1.GetUploadResponse
+	(*StreamTrackResponse)(nil),           // 14: storage.v1.StreamTrackResponse
+	(*GetStreamURLResponse)(nil),          // 15: storage.v1.GetStreamURLResponse
+	(*GetIPDataResponse)(nil),             // 16: storage.v1.GetIPDataResponse
+	(*GetRendezvousNodesResponse)(nil),    // 17: storage.v1.GetRendezvousNodesResponse
+	(*GetStatusResponse)(nil),             // 18: storage.v1.GetStatusResponse
+	(*GetStorageDiagnosticsResponse)(nil), // 19: storage.v1.GetStorageDiagnosticsResponse
 }
 var file_storage_v1_service_proto_depIdxs = []int32{
 	0,  // 0: storage.v1.StorageService.Ping:input_type -> storage.v1.PingRequest
@@ -108,17 +117,19 @@ var file_storage_v1_service_proto_depIdxs = []int32{
 	6,  // 6: storage.v1.StorageService.GetIPData:input_type -> storage.v1.GetIPDataRequest
 	7,  // 7: storage.v1.StorageService.GetRendezvousNodes:input_type -> storage.v1.GetRendezvousNodesRequest
 	8,  // 8: storage.v1.StorageService.GetStatus:input_type -> storage.v1.GetStatusRequest
-	9,  // 9: storage.v1.StorageService.Ping:output_type -> storage.v1.PingResponse
-	10, // 10: storage.v1.StorageService.GetHealth:output_type -> storage.v1.GetHealthResponse
-	11, // 11: storage.v1.StorageService.UploadFiles:output_type -> storage.v1.UploadFilesResponse
-	12, // 12: storage.v1.StorageService.GetUpload:output_type -> storage.v1.GetUploadResponse
-	13, // 13: storage.v1.StorageService.StreamTrack:output_type -> storage.v1.StreamTrackResponse
-	14, // 14: storage.v1.StorageService.GetStreamURL:output_type -> storage.v1.GetStreamURLResponse
-	15, // 15: storage.v1.StorageService.GetIPData:output_type -> storage.v1.GetIPDataResponse
-	16, // 16: storage.v1.StorageService.GetRendezvousNodes:output_type -> storage.v1.GetRendezvousNodesResponse
-	17, // 17: storage.v1.StorageService.GetStatus:output_type -> storage.v1.GetStatusResponse
-	9,  // [9:18] is the sub-list for method output_type
-	0,  // [0:9] is the sub-list for method input_type
+	9,  // 9: storage.v1.StorageService.GetStorageDiagnostics:input_type -> storage.v1.GetStorageDiagnosticsRequest
+	10, // 10: storage.v1.StorageService.Ping:output_type -> storage.v1.PingResponse
+	11, // 11: storage.v1.StorageService.GetHealth:output_type -> storage.v1.GetHealthResponse
+	12, // 12: storage.v1.StorageService.UploadFiles:output_type -> storage.v1.UploadFilesResponse
+	13, // 13: storage.v1.StorageService.GetUpload:output_type -> storage.v1.GetUploadResponse
+	14, // 14: storage.v1.StorageService.StreamTrack:output_type -> storage.v1.StreamTrackResponse
+	15, // 15: storage.v1.StorageService.GetStreamURL:output_type -> storage.v1.GetStreamURLResponse
+	16, // 16: storage.v1.StorageService.GetIPData:output_type -> storage.v1.GetIPDataResponse
+	17, // 17: storage.v1.StorageService.GetRendezvousNodes:output_type -> storage.v1.GetRendezvousNodesResponse
+	18, // 18: storage.v1.StorageService.GetStatus:output_type -> storage.v1.GetStatusResponse
+	19, // 19: storage.v1.StorageService.GetStorageDiagnostics:output_type -> storage.v1.GetStorageDiagnosticsResponse
+	10, // [10:20] is the sub-list for method output_type
+	0,  // [0:10] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name

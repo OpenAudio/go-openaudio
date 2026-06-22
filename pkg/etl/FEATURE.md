@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Standalone Go package (`github.com/OpenAudio/go-openaudio/etl`) that indexes OpenAudio blockchain data into PostgreSQL. **Indexer-only**: no query API. Used by go-openaudio via a wrapper; also importable by external projects.
+Standalone Go package (`github.com/OpenAudio/go-openaudio/pkg/etl`) that indexes OpenAudio blockchain data into PostgreSQL. **Indexer-only**: no query API. Used by go-openaudio via a wrapper; also importable by external projects.
 
 ## Architecture
 
@@ -11,10 +11,10 @@ go-openaudio (main module)
 ├── cmd/openaudio/main.go      # Wires Indexer + Location + etlserver
 ├── pkg/etlserver/             # Wrapper: Indexer + LocationService + ETL ConnectRPC handlers
 ├── pkg/location/              # Geodb for city/country lat-long (explorer play maps)
-├── pkg/console/               # Explorer UI; uses etlserver.GetDB(), GetLocationDB()
+├── pkg/explorer/              # Explorer UI (templ); uses etlserver.GetDB(), GetLocationDB()
 ├── examples/etl/              # Standalone local runner for manual testing
 └── pkg/etl/                   # THIS PACKAGE (submodule)
-    ├── go.mod                 # Module github.com/OpenAudio/go-openaudio/etl
+    ├── go.mod                 # Module github.com/OpenAudio/go-openaudio/pkg/etl
     ├── etl.go                 # Indexer struct, New(), setters
     ├── indexer.go             # Run(), indexBlocks() loop, tx type switch
     ├── schema.go              # Tx type constants (re-exports from processors)
@@ -160,7 +160,7 @@ users, tracks, playlists, follows, saves, reposts, track_routes, playlist_routes
 
 All migrations are idempotent (`IF NOT EXISTS`, `DO $$ EXCEPTION`, `DROP TRIGGER IF EXISTS`).
 
-Schema matches discovery-provider exactly (same table names, columns, composite PKs, enums). This enables the cutover strategy: stop celery indexer, start ETL indexer, same database.
+Schema matches discovery-provider exactly (same table names, columns, composite PKs, enums). This is what allowed the production cutover from the legacy Python celery indexer to the Go ETL on the same database. The Go ETL is now the production indexer; the Python celery indexer is no longer active.
 
 Migrations are embedded and run automatically via `Indexer.Run()` → `db.RunMigrations()`.
 
@@ -175,9 +175,9 @@ core_indexed_blocks(chain_id, height, em_block)
   - offset:   em_block - height (constant per chain_id)
 ```
 
-At startup, the indexer queries `core_indexed_blocks` for the current chain ID to determine the offset. For existing databases with prior Python-indexed data, this continues the `blocks.number` sequence seamlessly. For clean databases, the offset is 0 (em_block = chain height).
+At startup, the indexer queries `core_indexed_blocks` for the current chain ID to determine the offset. For production databases that contain pre-cutover rows written by the legacy Python indexer, this continues the `blocks.number` sequence seamlessly. For clean databases, the offset is 0 (em_block = chain height).
 
-**Known limitation:** Chain ID rollovers (e.g., `audius-mainnet-alpha` → `audius-mainnet-alpha-beta`) are not handled. The offset is looked up once at startup for the current chain ID. If the chain rolls over, the ETL must be restarted (and may need manual intervention to set the correct offset for the new chain). The Python discovery indexer has explicit chain rollover detection logic that the Go ETL does not yet replicate.
+**Known limitation:** Chain ID rollovers (e.g., `audius-mainnet-alpha` → `audius-mainnet-alpha-beta`) are not handled. The offset is looked up once at startup for the current chain ID. If the chain rolls over, the ETL must be restarted (and may need manual intervention to set the correct offset for the new chain). The legacy Python indexer had explicit chain rollover detection logic that the Go ETL does not currently replicate.
 
 ## Testing
 
@@ -216,7 +216,7 @@ Progress is logged at INFO level every 10 seconds (block height, tx counts).
 
 ### Parity testing (against production clone)
 
-Standalone CLI tool in `pkg/etl/parity/` for comparing Go ETL output against existing Python-indexed data.
+Standalone CLI tool in `pkg/etl/parity/` for comparing Go ETL output against the pre-cutover rows written by the legacy Python indexer. This tool was used to validate the production cutover (now complete); it remains useful for auditing the Go ETL against a snapshot of historical data.
 
 ```bash
 cd pkg/etl

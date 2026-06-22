@@ -16,4 +16,5 @@ service StorageService {
   rpc GetIPData(GetIPDataRequest) returns (GetIPDataResponse) {}
   rpc GetRendezvousNodes(GetRendezvousNodesRequest) returns (GetRendezvousNodesResponse) {}
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {}
+  rpc GetStorageDiagnostics(GetStorageDiagnosticsRequest) returns (GetStorageDiagnosticsResponse) {}
 }
