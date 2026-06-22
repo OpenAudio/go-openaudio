@@ -23,6 +23,18 @@ func (s *Server) validateManageEntity(_ context.Context, stx *v1.SignedTransacti
 	return manageEntity, nil
 }
 
+// finalizeManageEntityMigration handles ManageEntityLegacyMigration transactions written
+// by genesis-writer. The transaction is stored as-is; no additional chain-side processing
+// is performed (e.g. sound_recordings/management_keys are not populated for Track creates
+// because genesis migration data does not carry live CIDs).
+func (s *Server) finalizeManageEntityMigration(_ context.Context, stx *v1.SignedTransaction) (proto.Message, error) {
+	me := stx.GetManageEntityMigration()
+	if me == nil {
+		return nil, errors.New("not manage entity migration")
+	}
+	return me, nil
+}
+
 // access_authorities are wallet addresses that can sign to authorize stream access (programmable distribution)
 type trackMetadata struct {
 	CID               string   `json:"cid"`
