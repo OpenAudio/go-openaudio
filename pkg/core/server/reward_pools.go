@@ -260,8 +260,9 @@ func (s *Server) finalizeRewardPoolTransaction(ctx context.Context, req *abcityp
 }
 
 // finalizeCreateRewardPool: pool address == rewards_manager_pubkey. Same-RM
-// in-block collisions surface as a PK violation from InsertRewardPool, which
-// fails the tx (block continues; no chain crash).
+// in-block collisions can pass proposal validation because each tx is checked
+// against pre-block state. Finalize against the in-progress block transaction
+// and make later creates idempotent so duplicate inserts cannot poison commit.
 //
 // Re-validates the message shape at finalize time as defense-in-depth:
 // block-sync replay calls FinalizeBlock without re-running ProcessProposal,
@@ -287,7 +288,13 @@ func (s *Server) finalizeCreateRewardPool(ctx context.Context, envelope *corev1.
 	if !slices.Contains(canonical, strings.ToLower(strings.TrimSpace(signer))) {
 		return fmt.Errorf("%w: signer %s not in initial authorities", ErrRewardUnauthorized, signer)
 	}
-	return s.getDb().InsertRewardPool(ctx, db.InsertRewardPoolParams{
+	qtx := s.getDb()
+	if _, err := qtx.GetRewardPool(ctx, msg.RewardsManagerPubkey); err == nil {
+		return nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("failed to check pool existence at finalize: %w", err)
+	}
+	return qtx.InsertRewardPool(ctx, db.InsertRewardPoolParams{
 		RewardsManagerPubkey: msg.RewardsManagerPubkey,
 		Authorities:          canonical,
 	})
@@ -337,4 +344,3 @@ func (s *Server) checkPoolAuthorization(ctx context.Context, q *db.Queries, rewa
 	}
 	return nil
 }
-
