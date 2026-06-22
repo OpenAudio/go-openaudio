@@ -508,15 +508,14 @@ func (w *Writer) Run(ctx context.Context) error {
 		if err == nil && maxHeight > 0 {
 			w.finalHeight = maxHeight
 			w.finalAppHash = appHash
-			// Recover block hash from core_blocks.
+			// Recover block hash from core_blocks. Only set the hash —
+			// preserve any PartSetHeader already restored from blockstore.
 			var blockHash string
 			if err := w.dstDB.QueryRow(ctx,
 				`SELECT hash FROM core_blocks WHERE height = $1`, maxHeight).
 				Scan(&blockHash); err == nil {
 				hashBytes, _ := hex.DecodeString(blockHash)
-				w.prevBlockID = cmttypes.BlockID{
-					Hash: hashBytes,
-				}
+				w.prevBlockID.Hash = hashBytes
 			}
 			w.logger.Info("recovered final state for CMT write",
 				zap.Int64("height", w.finalHeight),
