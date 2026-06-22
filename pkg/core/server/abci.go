@@ -355,29 +355,21 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				s.logger.Error("error finalizing event", zap.Error(err))
 				txs[i] = &abcitypes.ExecTxResult{Code: 2}
 			} else if vr := signedTx.GetValidatorRegistration(); vr != nil { // TODO: delete legacy registration after chain rollover
-				vrPubKey := ed25519.PubKey(vr.GetPubKey())
-				vrAddr := vrPubKey.Address().String()
-				if _, ok := validatorUpdatesMap[vrAddr]; !ok {
-					validatorUpdatesMap[vrAddr] = abcitypes.ValidatorUpdate{
-						Power:       vr.Power,
-						PubKeyBytes: vr.PubKey,
-						PubKeyType:  "ed25519",
+				if vrAddr, update, ok := s.registeredNodeValidatorUpdate(ctx, vr.GetCometAddress(), vr.GetPubKey(), vr.GetPower()); ok {
+					if _, ok := validatorUpdatesMap[vrAddr]; !ok {
+						validatorUpdatesMap[vrAddr] = update
 					}
 				}
 			} else if att := signedTx.GetAttestation(); att != nil && att.GetValidatorRegistration() != nil {
 				vr := att.GetValidatorRegistration()
-				vrPubKey := ed25519.PubKey(vr.GetPubKey())
-				vrAddr := vrPubKey.Address().String()
-				if _, ok := validatorUpdatesMap[vrAddr]; !ok {
-					validatorUpdatesMap[vrAddr] = abcitypes.ValidatorUpdate{
-						Power:       vr.Power,
-						PubKeyBytes: vr.PubKey,
-						PubKeyType:  "ed25519",
+				if vrAddr, update, ok := s.registeredNodeValidatorUpdate(ctx, vr.GetCometAddress(), vr.GetPubKey(), vr.GetPower()); ok {
+					if _, ok := validatorUpdatesMap[vrAddr]; !ok {
+						validatorUpdatesMap[vrAddr] = update
 					}
-				}
-				if err := s.appendRegistrationToValidatorHistory(ctx, vr, req.Time, req.Height); err != nil {
-					// do not halt on validator history
-					s.logger.Error("failed to append registration event to validator history", zap.Error(err))
+					if err := s.appendRegistrationToValidatorHistory(ctx, vr, req.Time, req.Height); err != nil {
+						// do not halt on validator history
+						s.logger.Error("failed to append registration event to validator history", zap.Error(err))
+					}
 				}
 			} else if att := signedTx.GetAttestation(); att != nil && att.GetValidatorDeregistration() != nil {
 				vr := att.GetValidatorDeregistration()
@@ -879,6 +871,40 @@ func (s *Server) ExtendVote(_ context.Context, extend *abcitypes.ExtendVoteReque
 
 func (s *Server) VerifyVoteExtension(_ context.Context, verify *abcitypes.VerifyVoteExtensionRequest) (*abcitypes.VerifyVoteExtensionResponse, error) {
 	return &abcitypes.VerifyVoteExtensionResponse{}, nil
+}
+
+func (s *Server) registeredNodeValidatorUpdate(ctx context.Context, cometAddress string, pubKey []byte, power int64) (string, abcitypes.ValidatorUpdate, bool) {
+	if cometAddress == "" {
+		return "", abcitypes.ValidatorUpdate{}, false
+	}
+
+	node, err := s.getDb().GetRegisteredNodeByCometAddress(ctx, cometAddress)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", abcitypes.ValidatorUpdate{}, false
+	}
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("failed to check validator state before registration update", zap.String("comet_address", cometAddress), zap.Error(err))
+		}
+		return "", abcitypes.ValidatorUpdate{}, false
+	}
+	if node.Jailed {
+		return "", abcitypes.ValidatorUpdate{}, false
+	}
+
+	vrPubKey := ed25519.PubKey(pubKey)
+	vrAddr := vrPubKey.Address().String()
+	if !strings.EqualFold(vrAddr, node.CometAddress) {
+		if s.logger != nil {
+			s.logger.Error("registration validator update does not match app state", zap.String("comet_address", cometAddress), zap.String("pubkey_address", vrAddr))
+		}
+		return "", abcitypes.ValidatorUpdate{}, false
+	}
+	return vrAddr, abcitypes.ValidatorUpdate{
+		Power:       power,
+		PubKeyBytes: pubKey,
+		PubKeyType:  "ed25519",
+	}, true
 }
 
 func (s *Server) deregistrationNeedsValidatorUpdate(ctx context.Context, tx *v1.SignedTransaction) bool {
