@@ -422,7 +422,8 @@ func (w *Writer) Run(ctx context.Context) error {
 		{"encrypted emails", w.cfg.SkipEmails, w.writeEncryptedEmails},
 		{"email access", w.cfg.SkipEmails, w.writeEmailAccess},
 
-		// Phase 7: Activity — plays and tip reactions
+		// Phase 7: Activity — play count reconciliation, plays, and tip reactions
+		{"play count reconciliation", w.cfg.SkipPlays, w.writePlayCountReconciliation},
 		{"plays", w.cfg.SkipPlays, w.writePlays},
 		{"tip reactions", w.cfg.SkipTipReactions, w.writeTipReactions},
 	}
