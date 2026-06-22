@@ -180,8 +180,7 @@ max_wal_size = '4GB'
 	}
 
 	// Pin listen_addresses to localhost since we're using trust auth.
-	confPath := filepath.Join(pg.dataDir, "postgresql.conf")
-	conf, err := os.ReadFile(confPath)
+	conf, err = os.ReadFile(confPath)
 	if err != nil {
 		return fmt.Errorf("read postgresql.conf: %w", err)
 	}
