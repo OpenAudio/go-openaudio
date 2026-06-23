@@ -93,3 +93,32 @@ func (s *Server) finalizeV2Transaction(ctx context.Context, req *abcitypes.Final
 	}
 	return nil
 }
+
+func (s *Server) finalizeV2TransactionIsolated(ctx context.Context, req *abcitypes.FinalizeBlockRequest, tx *v1beta1.Transaction, txhash string) error {
+	if s.abciState == nil || s.abciState.onGoingBlock == nil {
+		return s.finalizeV2Transaction(ctx, req, tx, txhash)
+	}
+
+	parentTx := s.abciState.onGoingBlock
+	savepoint, err := parentTx.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin v2 finalization savepoint: %w", err)
+	}
+
+	s.abciState.onGoingBlock = savepoint
+	defer func() {
+		s.abciState.onGoingBlock = parentTx
+	}()
+
+	if err := s.finalizeV2Transaction(ctx, req, tx, txhash); err != nil {
+		if rollbackErr := savepoint.Rollback(ctx); rollbackErr != nil {
+			return fmt.Errorf("%w; rollback v2 finalization savepoint: %v", err, rollbackErr)
+		}
+		return err
+	}
+
+	if err := savepoint.Commit(ctx); err != nil {
+		return fmt.Errorf("commit v2 finalization savepoint: %w", err)
+	}
+	return nil
+}

@@ -427,7 +427,7 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				txhash := common.ToTxHashFromBytes(tx)
 
 				// finalize v2 transaction and get receipt data
-				err = s.finalizeV2Transaction(ctx, req, v2Tx, txhash)
+				err = s.finalizeV2TransactionIsolated(ctx, req, v2Tx, txhash)
 				if err != nil {
 					s.logger.Error("failed to finalize v2 transaction", zap.String("txhash", txhash), zap.Error(err))
 					txs[i] = &abcitypes.ExecTxResult{Code: 2}
