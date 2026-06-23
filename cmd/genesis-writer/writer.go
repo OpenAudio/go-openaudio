@@ -397,8 +397,9 @@ func (w *Writer) Run(ctx context.Context) error {
 		{"associated wallets", w.cfg.SkipWallets, w.writeAssociatedWallets},
 		{"dashboard wallet users", w.cfg.SkipWallets, w.writeDashboardWalletUsers},
 
-		// Phase 2: Content — tracks and playlists
+		// Phase 2: Content — tracks, collaborators, and playlists
 		{"tracks", w.cfg.SkipTracks, w.writeTracks},
+		{"track collaborator approvals", w.cfg.SkipTracks, w.writeTrackCollaboratorApprovals},
 		{"track downloads", w.cfg.SkipTracks, w.writeTrackDownloads},
 		{"playlists", w.cfg.SkipPlaylists, w.writePlaylists},
 
