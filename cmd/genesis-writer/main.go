@@ -132,6 +132,7 @@ func writeCmd() *cli.Command {
 			&cli.BoolFlag{Name: "skip-comments", EnvVars: []string{"GENESIS_SKIP_COMMENTS"}, Usage: "Skip comments and comment reactions"},
 			&cli.BoolFlag{Name: "skip-emails", EnvVars: []string{"GENESIS_SKIP_EMAILS"}, Usage: "Skip encrypted emails and email access grants"},
 			&cli.BoolFlag{Name: "skip-tip-reactions", EnvVars: []string{"GENESIS_SKIP_TIP_REACTIONS"}},
+			&cli.BoolFlag{Name: "skip-events", EnvVars: []string{"GENESIS_SKIP_EVENTS"}, Usage: "Skip events"},
 		},
 		Action: func(c *cli.Context) error {
 			logger, _ := zap.NewProduction()
@@ -221,6 +222,7 @@ func writeCmd() *cli.Command {
 				SkipComments:         c.Bool("skip-comments"),
 				SkipEmails:           c.Bool("skip-emails"),
 				SkipTipReactions:     c.Bool("skip-tip-reactions"),
+				SkipEvents:           c.Bool("skip-events"),
 			}
 
 			w, err := NewWriter(cfg, logger)
