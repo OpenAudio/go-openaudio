@@ -32,6 +32,7 @@ type playlistMetadataInner struct {
 type sourcePlaylist struct {
 	PlaylistID          int64
 	PlaylistOwnerID     int64
+	OwnerWallet         string
 	PlaylistName        *string
 	Description         *string
 	IsAlbum             bool
@@ -49,18 +50,21 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 	return processBatched(ctx, w, "playlists",
 		`SELECT count(*) FROM playlists WHERE is_current = true AND is_delete = false`,
 		`SELECT
-			playlist_id, playlist_owner_id, playlist_name, description,
-			is_album, is_private,
-			metadata_multihash, playlist_image_sizes_multihash, playlist_contents,
-			release_date::text, is_stream_gated, stream_conditions,
-			created_at
-		FROM playlists
-		WHERE is_current = true AND is_delete = false
-		ORDER BY playlist_id`,
+			p.playlist_id, p.playlist_owner_id, COALESCE(LOWER(u.wallet), ''),
+			p.playlist_name, p.description,
+			p.is_album, p.is_private,
+			p.metadata_multihash, p.playlist_image_sizes_multihash, p.playlist_contents,
+			p.release_date::text, p.is_stream_gated, p.stream_conditions,
+			p.created_at
+		FROM playlists p
+		LEFT JOIN users u ON u.user_id = p.playlist_owner_id AND u.is_current = true
+		WHERE p.is_current = true AND p.is_delete = false
+		ORDER BY p.playlist_id`,
 		func(rows pgx.Rows) (sourcePlaylist, error) {
 			var p sourcePlaylist
 			err := rows.Scan(
-				&p.PlaylistID, &p.PlaylistOwnerID, &p.PlaylistName, &p.Description,
+				&p.PlaylistID, &p.PlaylistOwnerID, &p.OwnerWallet,
+				&p.PlaylistName, &p.Description,
 				&p.IsAlbum, &p.IsPrivate,
 				&p.MetadataMultihash, &p.ImageSizesMultihash, &p.PlaylistContents,
 				&p.ReleaseDate, &p.IsStreamGated, &p.StreamConditions,
@@ -95,13 +99,13 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("marshal playlist %d metadata: %w", p.PlaylistID, err)
 			}
-			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
+			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     p.PlaylistOwnerID,
 				EntityType: "Playlist",
 				EntityId:   p.PlaylistID,
 				Action:     "Create",
 				Metadata:   string(metaJSON),
-			})
+			}, p.OwnerWallet)
 		},
 	)
 }

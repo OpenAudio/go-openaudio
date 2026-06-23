@@ -62,13 +62,13 @@ func (w *Writer) writeTipReactions(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("marshal tip reaction metadata: %w", err)
 			}
-			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
+			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     userID,
 				EntityType: "Tip",
 				EntityId:   0,
 				Action:     "React",
 				Metadata:   string(metaJSON),
-			})
+			}, strings.ToLower(tr.SenderWallet))
 		},
 	)
 }

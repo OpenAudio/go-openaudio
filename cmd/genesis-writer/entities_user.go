@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
@@ -99,13 +100,17 @@ func (w *Writer) writeUsers(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("marshal user %d metadata: %w", u.UserID, err)
 			}
-			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
+			signer := w.signerAddr
+			if u.Wallet != nil && *u.Wallet != "" {
+				signer = strings.ToLower(*u.Wallet)
+			}
+			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     u.UserID,
 				EntityType: "User",
 				EntityId:   u.UserID,
 				Action:     "Create",
 				Metadata:   string(metaJSON),
-			})
+			}, signer)
 		},
 	)
 }
