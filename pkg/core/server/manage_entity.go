@@ -55,7 +55,7 @@ func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransac
 	// Populate sound_recordings and management_keys for Track Create/Update
 	if strings.EqualFold(manageEntity.EntityType, "Track") &&
 		(strings.EqualFold(manageEntity.Action, "Create") || strings.EqualFold(manageEntity.Action, "Update")) {
-		if err := s.processTrackManageEntity(ctx, manageEntity); err != nil {
+		if err := s.processTrackManageEntityBestEffort(ctx, manageEntity); err != nil {
 			s.logger.Error("failed to process track manage entity", zap.Error(err),
 				zap.String("entity_type", manageEntity.EntityType),
 				zap.Int64("entity_id", manageEntity.EntityId))
@@ -66,7 +66,32 @@ func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransac
 	return manageEntity, nil
 }
 
+func (s *Server) processTrackManageEntityBestEffort(ctx context.Context, me *v1.ManageEntityLegacy) error {
+	if s.abciState != nil && s.abciState.onGoingBlock != nil {
+		savepoint, err := s.abciState.onGoingBlock.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("begin track metadata savepoint: %w", err)
+		}
+		if err := s.processTrackManageEntityWithQueries(ctx, s.db.WithTx(savepoint), me); err != nil {
+			if rollbackErr := savepoint.Rollback(ctx); rollbackErr != nil {
+				return fmt.Errorf("%w; rollback track metadata savepoint: %v", err, rollbackErr)
+			}
+			return err
+		}
+		if err := savepoint.Commit(ctx); err != nil {
+			return fmt.Errorf("commit track metadata savepoint: %w", err)
+		}
+		return nil
+	}
+
+	return s.processTrackManageEntity(ctx, me)
+}
+
 func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEntityLegacy) error {
+	return s.processTrackManageEntityWithQueries(ctx, s.getDb(), me)
+}
+
+func (s *Server) processTrackManageEntityWithQueries(ctx context.Context, q *db.Queries, me *v1.ManageEntityLegacy) error {
 	var meta trackMetadata
 	if err := json.Unmarshal([]byte(me.Metadata), &meta); err != nil {
 		return fmt.Errorf("parse track metadata: %w", err)
@@ -74,7 +99,6 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 
 	signers := meta.AccessAuthorities
 	trackID := strconv.FormatInt(me.EntityId, 10)
-	q := s.getDb()
 
 	if len(signers) == 0 {
 		// access_authorities null/empty: ungate the track by removing management keys
