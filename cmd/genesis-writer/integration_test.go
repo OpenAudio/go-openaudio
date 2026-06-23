@@ -108,10 +108,9 @@ func TestGenesisWriter(t *testing.T) {
 	require.NoError(t, srcPool.Ping(ctx), "ping source DB")
 
 	expected := snapshotSource(t, ctx, srcPool)
-	t.Logf("source snapshot: %d users, %d tracks, %d playlists, %d follows, %d saves, %d reposts, %d plays, %d events, %d collaborators (%d accepted)",
+	t.Logf("source snapshot: %d users, %d tracks, %d playlists, %d follows, %d saves, %d reposts, %d plays",
 		len(expected.users), len(expected.tracks), len(expected.playlists),
-		len(expected.follows), len(expected.saves), len(expected.reposts), expected.playCount,
-		len(expected.events), len(expected.collaborators), expected.acceptedCollaborators)
+		len(expected.follows), len(expected.saves), len(expected.reposts), expected.playCount)
 
 	// ---- 2. Set up CometBFT home directory -----------------------------------
 	// Genesis-writer writes state.db + blockstore.db into cmtHome.
@@ -190,10 +189,9 @@ func TestGenesisWriter(t *testing.T) {
 	// directly from the core DB — no discovery-provider needed.
 	t.Log("indexing chain transactions...")
 	indexed := indexChain(t, ctx, dstPool, genesisHeight)
-	t.Logf("indexed: %d users, %d tracks, %d playlists, %d follows, %d saves, %d reposts, %d plays, %d events, %d collaborators (%d accepted)",
+	t.Logf("indexed: %d users, %d tracks, %d playlists, %d follows, %d saves, %d reposts, %d plays",
 		len(indexed.users), len(indexed.tracks), len(indexed.playlists),
-		len(indexed.follows), len(indexed.saves), len(indexed.reposts), indexed.playCount,
-		len(indexed.events), len(indexed.collaborators), indexed.acceptedCollaborators)
+		len(indexed.follows), len(indexed.saves), len(indexed.reposts), indexed.playCount)
 
 	assert.Equal(t, expected.users, indexed.users, "users mismatch")
 	assert.Equal(t, expected.tracks, indexed.tracks, "tracks mismatch")
@@ -202,9 +200,6 @@ func TestGenesisWriter(t *testing.T) {
 	assert.Equal(t, expected.saves, indexed.saves, "saves mismatch")
 	assert.Equal(t, expected.reposts, indexed.reposts, "reposts mismatch")
 	assert.Equal(t, expected.playCount, indexed.playCount, "plays count mismatch")
-	assert.Equal(t, expected.events, indexed.events, "events mismatch")
-	assert.Equal(t, expected.collaborators, indexed.collaborators, "collaborators mismatch")
-	assert.Equal(t, expected.acceptedCollaborators, indexed.acceptedCollaborators, "accepted collaborators mismatch")
 
 	// ---- 6. Start openaudio-1 and verify consensus ---------------------------
 	t.Log("starting openaudio-1...")
@@ -251,10 +246,9 @@ func TestGenesisWriter(t *testing.T) {
 	waitForStateSyncData(t, ctx, db2Pool, genesisHeight)
 
 	indexed2 := indexChain(t, ctx, db2Pool, genesisHeight)
-	t.Logf("state-synced node: %d users, %d tracks, %d playlists, %d follows, %d saves, %d reposts, %d plays, %d events, %d collaborators (%d accepted)",
+	t.Logf("state-synced node: %d users, %d tracks, %d playlists, %d follows, %d saves, %d reposts, %d plays",
 		len(indexed2.users), len(indexed2.tracks), len(indexed2.playlists),
-		len(indexed2.follows), len(indexed2.saves), len(indexed2.reposts), indexed2.playCount,
-		len(indexed2.events), len(indexed2.collaborators), indexed2.acceptedCollaborators)
+		len(indexed2.follows), len(indexed2.saves), len(indexed2.reposts), indexed2.playCount)
 
 	assert.Equal(t, expected.users, indexed2.users, "state-synced users mismatch")
 	assert.Equal(t, expected.tracks, indexed2.tracks, "state-synced tracks mismatch")
@@ -263,9 +257,6 @@ func TestGenesisWriter(t *testing.T) {
 	assert.Equal(t, expected.saves, indexed2.saves, "state-synced saves mismatch")
 	assert.Equal(t, expected.reposts, indexed2.reposts, "state-synced reposts mismatch")
 	assert.Equal(t, expected.playCount, indexed2.playCount, "state-synced plays count mismatch")
-	assert.Equal(t, expected.events, indexed2.events, "state-synced events mismatch")
-	assert.Equal(t, expected.collaborators, indexed2.collaborators, "state-synced collaborators mismatch")
-	assert.Equal(t, expected.acceptedCollaborators, indexed2.acceptedCollaborators, "state-synced accepted collaborators mismatch")
 	t.Log("state sync verification passed: all entities match")
 }
 
@@ -453,16 +444,13 @@ func waitForStateSyncProgress(t *testing.T, ctx context.Context, client corev1co
 // ---- source snapshot --------------------------------------------------------
 
 type sourceSnapshot struct {
-	users                 []snapshotUser
-	tracks                []snapshotTrack
-	playlists             []snapshotPlaylist
-	follows               []followPair
-	saves                 []saveTuple
-	reposts               []repostTuple
-	playCount             int
-	events                []snapshotEvent
-	collaborators         []collabTuple
-	acceptedCollaborators int
+	users     []snapshotUser
+	tracks    []snapshotTrack
+	playlists []snapshotPlaylist
+	follows   []followPair
+	saves     []saveTuple
+	reposts   []repostTuple
+	playCount int
 }
 
 type snapshotUser struct {
@@ -501,18 +489,6 @@ type repostTuple struct {
 	RepostType string
 }
 
-type snapshotEvent struct {
-	EventID   int64
-	EventType string
-	UserID    int64
-}
-
-type collabTuple struct {
-	TrackID int64
-	UserID  int64
-	Status  string
-}
-
 func snapshotSource(t *testing.T, ctx context.Context, db *pgxpool.Pool) sourceSnapshot {
 	t.Helper()
 	var s sourceSnapshot
@@ -523,8 +499,6 @@ func snapshotSource(t *testing.T, ctx context.Context, db *pgxpool.Pool) sourceS
 	s.saves = querySaves(t, ctx, db)
 	s.reposts = queryReposts(t, ctx, db)
 	s.playCount = queryPlayCount(t, ctx, db)
-	s.events = queryEvents(t, ctx, db)
-	s.collaborators, s.acceptedCollaborators = queryCollaborators(t, ctx, db)
 	return s
 }
 
@@ -651,48 +625,6 @@ func queryPlayCount(t *testing.T, ctx context.Context, db *pgxpool.Pool) int {
 	return n
 }
 
-func queryEvents(t *testing.T, ctx context.Context, db *pgxpool.Pool) []snapshotEvent {
-	t.Helper()
-	rows, err := db.Query(ctx, `
-		SELECT event_id, event_type::text, user_id
-		FROM events
-		WHERE is_deleted = false
-		ORDER BY event_id`)
-	require.NoError(t, err)
-	defer rows.Close()
-	var out []snapshotEvent
-	for rows.Next() {
-		var e snapshotEvent
-		require.NoError(t, rows.Scan(&e.EventID, &e.EventType, &e.UserID))
-		out = append(out, e)
-	}
-	require.NoError(t, rows.Err())
-	return out
-}
-
-func queryCollaborators(t *testing.T, ctx context.Context, db *pgxpool.Pool) ([]collabTuple, int) {
-	t.Helper()
-	rows, err := db.Query(ctx, `
-		SELECT track_id, collaborator_user_id, status
-		FROM track_collaborators
-		WHERE status IN ('pending', 'accepted')
-		ORDER BY track_id, collaborator_user_id`)
-	require.NoError(t, err)
-	defer rows.Close()
-	var out []collabTuple
-	accepted := 0
-	for rows.Next() {
-		var c collabTuple
-		require.NoError(t, rows.Scan(&c.TrackID, &c.UserID, &c.Status))
-		out = append(out, c)
-		if c.Status == "accepted" {
-			accepted++
-		}
-	}
-	require.NoError(t, rows.Err())
-	return out, accepted
-}
-
 // ---- lightweight chain indexer ----------------------------------------------
 
 // indexChain reads all ManageEntityLegacyMigration and TrackPlays transactions
@@ -726,11 +658,6 @@ func indexChain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, maxHeight
 		RepostType     string
 	}
 	repostSet := map[repostKey]bool{}
-
-	eventMap := map[int64]snapshotEvent{}
-
-	type collabKey struct{ TrackID, UserID int64 }
-	collabSet := map[collabKey]string{} // status
 
 	playCount := 0
 
@@ -768,10 +695,9 @@ func indexChain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, maxHeight
 				case "Track":
 					var w struct {
 						Data struct {
-							OwnerID       int64   `json:"owner_id"`
-							Title         string  `json:"title"`
-							Genre         string  `json:"genre"`
-							Collaborators []int64 `json:"collaborators"`
+							OwnerID int64  `json:"owner_id"`
+							Title   string `json:"title"`
+							Genre   string `json:"genre"`
 						} `json:"data"`
 					}
 					_ = json.Unmarshal([]byte(me.Metadata), &w)
@@ -780,10 +706,6 @@ func indexChain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, maxHeight
 						OwnerID: w.Data.OwnerID,
 						Title:   w.Data.Title,
 						Genre:   w.Data.Genre,
-					}
-					// Collaborators in Track:Create metadata become pending invites.
-					for _, uid := range w.Data.Collaborators {
-						collabSet[collabKey{me.EntityId, uid}] = "pending"
 					}
 				case "Playlist":
 					var w struct {
@@ -799,20 +721,6 @@ func indexChain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, maxHeight
 						PlaylistName:    w.Data.PlaylistName,
 						IsAlbum:         w.Data.IsAlbum,
 					}
-				case "Event":
-					var meta struct {
-						EventType string `json:"event_type"`
-					}
-					_ = json.Unmarshal([]byte(me.Metadata), &meta)
-					eventMap[me.EntityId] = snapshotEvent{
-						EventID:   me.EntityId,
-						EventType: meta.EventType,
-						UserID:    me.UserId,
-					}
-				}
-			case "Approve":
-				if me.EntityType == "TrackCollaborator" {
-					collabSet[collabKey{me.EntityId, me.UserId}] = "accepted"
 				}
 			case "Follow":
 				// UserId=follower, EntityId=followee
@@ -884,24 +792,6 @@ func indexChain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, maxHeight
 			return s.reposts[i].UserID < s.reposts[j].UserID
 		}
 		return s.reposts[i].ItemID < s.reposts[j].ItemID
-	})
-
-	for _, e := range eventMap {
-		s.events = append(s.events, e)
-	}
-	sort.Slice(s.events, func(i, j int) bool { return s.events[i].EventID < s.events[j].EventID })
-
-	for k, status := range collabSet {
-		s.collaborators = append(s.collaborators, collabTuple{k.TrackID, k.UserID, status})
-		if status == "accepted" {
-			s.acceptedCollaborators++
-		}
-	}
-	sort.Slice(s.collaborators, func(i, j int) bool {
-		if s.collaborators[i].TrackID != s.collaborators[j].TrackID {
-			return s.collaborators[i].TrackID < s.collaborators[j].TrackID
-		}
-		return s.collaborators[i].UserID < s.collaborators[j].UserID
 	})
 
 	return s

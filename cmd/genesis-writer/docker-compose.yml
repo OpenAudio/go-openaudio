@@ -27,7 +27,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: discovery_provider_1
     volumes:
-      - ../../cmd/genesis-writer/testdata/dp_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ../../cmd/genesis-replay/testdata/dp_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ../../cmd/genesis-writer/testdata/dp_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
       - ../../cmd/genesis-writer/testdata/source_init.sh:/docker-entrypoint-initdb.d/03_source_init.sh:ro
       - ../../cmd/genesis-writer/testdata/seed.sql:/tmp/source_seed.sql:ro
