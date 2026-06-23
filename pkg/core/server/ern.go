@@ -118,11 +118,82 @@ func getERNOAPMessageSender(msg *ddexv1beta1.NewReleaseMessage) string {
 	return oapAddress
 }
 
+func validateUniqueERNEntityReferences(msg *ddexv1beta1.NewReleaseMessage) error {
+	if msg == nil {
+		return nil
+	}
+
+	if err := validateUniqueERNReferences("party", len(msg.GetPartyList()), func(i int) string {
+		return msg.GetPartyList()[i].GetPartyReference()
+	}); err != nil {
+		return err
+	}
+
+	if err := validateUniqueERNReferences("resource", len(msg.GetResourceList()), func(i int) string {
+		return getERNResourceReference(msg.GetResourceList()[i])
+	}); err != nil {
+		return err
+	}
+
+	if err := validateUniqueERNReferences("release", len(msg.GetReleaseList()), func(i int) string {
+		return getERNReleaseReference(msg.GetReleaseList()[i])
+	}); err != nil {
+		return err
+	}
+
+	return validateUniqueERNReferences("deal", len(msg.GetDealList()), func(i int) string {
+		return getERNDealReference(msg.GetDealList()[i])
+	})
+}
+
+func validateUniqueERNReferences(entityType string, count int, refAt func(int) string) error {
+	seen := make(map[string]int, count)
+	for i := 0; i < count; i++ {
+		ref := refAt(i)
+		if firstIndex, ok := seen[ref]; ok {
+			return fmt.Errorf("duplicate ERN %s reference %q at positions %d and %d", entityType, ref, firstIndex+1, i+1)
+		}
+		seen[ref] = i
+	}
+	return nil
+}
+
+func getERNResourceReference(resource *ddexv1beta1.Resource) string {
+	if sr := resource.GetSoundRecording(); sr != nil {
+		return sr.GetResourceReference()
+	}
+	if img := resource.GetImage(); img != nil {
+		return img.GetResourceReference()
+	}
+	return ""
+}
+
+func getERNReleaseReference(release *ddexv1beta1.Release) string {
+	if mr := release.GetMainRelease(); mr != nil {
+		return mr.GetReleaseReference()
+	}
+	if tr := release.GetTrackRelease(); tr != nil {
+		return tr.GetReleaseReference()
+	}
+	return ""
+}
+
+func getERNDealReference(deal *ddexv1beta1.Deal) string {
+	if deal == nil {
+		return ""
+	}
+	return deal.String()
+}
+
 // Validate an ERN message that's expected to be a NEW_MESSAGE, expects that the transaction header is valid
 func (s *Server) validateERNNewMessage(ctx context.Context, msg *ddexv1beta1.NewReleaseMessage) error {
 	// Check feature flag
 	if !s.config.ProgrammableDistributionEnabled {
 		return errors.New("programmable distribution is not enabled in this environment")
+	}
+
+	if err := validateUniqueERNEntityReferences(msg); err != nil {
+		return err
 	}
 
 	resourceList := msg.GetResourceList()
