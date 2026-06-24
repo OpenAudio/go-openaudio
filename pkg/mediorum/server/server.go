@@ -378,7 +378,11 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	echoServer.Debug = true
 
 	echoServer.Use(middleware.Recover())
-	echoServer.Use(middleware.Logger())
+	echoServer.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
+		Skipper: func(c echo.Context) bool {
+			return strings.HasPrefix(c.Request().URL.Path, "/files/")
+		},
+	}))
 	echoServer.Use(common.CORS())
 	echoServer.Use(timingMiddleware)
 
