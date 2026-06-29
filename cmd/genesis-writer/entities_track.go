@@ -44,6 +44,7 @@ type trackMetadataInner struct {
 	StreamConditions   interface{} `json:"stream_conditions,omitempty"`
 	IsDownloadGated    bool        `json:"is_download_gated,omitempty"`
 	DownloadConditions interface{} `json:"download_conditions,omitempty"`
+	Collaborators      []int64     `json:"collaborators,omitempty"`
 }
 
 type sourceTrack struct {
@@ -79,6 +80,13 @@ type sourceTrack struct {
 }
 
 func (w *Writer) writeTracks(ctx context.Context) error {
+	// Pre-load collaborator lists so Track:Create metadata includes them,
+	// which causes the ETL to create pending invites automatically.
+	collabs, err := w.loadTrackCollaborators(ctx)
+	if err != nil {
+		return fmt.Errorf("load track collaborators: %w", err)
+	}
+
 	return processBatched(ctx, w, "tracks",
 		`SELECT count(*) FROM tracks WHERE is_current = true AND is_delete = false AND is_available = true`,
 		`SELECT
@@ -143,6 +151,10 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			inner.DownloadConditions = unmarshalJSONB(t.DownloadConditions)
 
 			inner.TrackCID = deref(t.TrackCID)
+
+			if ids, ok := collabs[t.TrackID]; ok {
+				inner.Collaborators = ids
+			}
 
 			metaJSON, err := json.Marshal(trackMetadataWrapper{
 				CID:               deref(t.TrackCID),
