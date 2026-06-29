@@ -524,6 +524,68 @@ INSERT INTO saves (
    '0xfff0000000000000000000000000000000000000000000000000000000000005', '2021-10-09 01:00:00');
 
 -- ============================================================
+-- EVENTS
+-- 1 – remix contest with entity reference
+-- 2 – live event with end_date, no entity
+-- 3 – new release, deleted (should be skipped)
+-- ============================================================
+
+INSERT INTO events (
+  event_id, event_type, user_id, entity_type, entity_id,
+  end_date, is_deleted, event_data, created_at, updated_at,
+  txhash, blockhash, blocknumber
+) VALUES
+  (
+    1, 'remix_contest', 3000001, 'track', 2000001,
+    NULL, false, '{"prize": "featured placement"}',
+    '2022-01-15 00:00:00', '2022-01-15 00:00:00',
+    '0xeee1000000000000000000000000000000000000000000000000000000000001',
+    '0x0000000000000000000000000000000000000000000000000000000000000001', 1
+  ),
+  (
+    2, 'live_event', 3000002, NULL, NULL,
+    '2022-06-01 23:00:00', false, NULL,
+    '2022-03-01 00:00:00', '2022-03-01 00:00:00',
+    '0xeee1000000000000000000000000000000000000000000000000000000000002',
+    '0x0000000000000000000000000000000000000000000000000000000000000001', 1
+  ),
+  -- deleted event — should NOT be migrated
+  (
+    3, 'new_release', 3000001, 'track', 2000008,
+    NULL, true, '{"message": "surprise drop"}',
+    '2022-04-01 00:00:00', '2022-04-01 00:00:00',
+    '0xeee1000000000000000000000000000000000000000000000000000000000003',
+    '0x0000000000000000000000000000000000000000000000000000000000000001', 1
+  );
+
+-- ============================================================
+-- TRACK COLLABORATORS
+-- Track 2000001 has two collaborators: one accepted, one pending
+-- Track 2000008 has one accepted collaborator
+-- ============================================================
+
+INSERT INTO track_collaborators (
+  track_id, collaborator_user_id, invited_by, status,
+  created_at, updated_at, txhash, blocknumber
+) VALUES
+  -- accepted collaborator on track 2000001
+  (2000001, 3000002, 3000001, 'accepted',
+   '2021-06-02 00:00:00', '2021-06-02 01:00:00',
+   '0xeee2000000000000000000000000000000000000000000000000000000000001', 1),
+  -- pending collaborator on track 2000001
+  (2000001, 3000003, 3000001, 'pending',
+   '2021-06-02 00:00:00', '2021-06-02 00:00:00',
+   '0xeee2000000000000000000000000000000000000000000000000000000000002', 1),
+  -- accepted collaborator on track 2000008
+  (2000008, 3000006, 3000001, 'accepted',
+   '2021-10-02 00:00:00', '2021-10-02 01:00:00',
+   '0xeee2000000000000000000000000000000000000000000000000000000000003', 1),
+  -- rejected collaborator (should NOT produce an approval)
+  (2000001, 3000004, 3000001, 'rejected',
+   '2021-06-03 00:00:00', '2021-06-03 01:00:00',
+   '0xeee2000000000000000000000000000000000000000000000000000000000004', 1);
+
+-- ============================================================
 -- PLAYS
 -- Mix of identified (user_id set) and anonymous (user_id=NULL)
 -- Mix of full geo, partial geo, no geo
