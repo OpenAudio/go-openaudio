@@ -578,6 +578,26 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 	cid := c.Param("cid")
 	key := cidutil.ShardCID(cid)
 
+	if ss.Config.BlobStorageStreaming {
+		_, foundIn, err := ss.blobAttrs(ctx, key)
+		if err != nil {
+			return err
+		}
+
+		signedURL, err := foundIn.SignedURL(ctx, key, &gcblob.SignedURLOptions{
+			Expiry: presignedURLDefaultExpiry,
+			Method: http.MethodGet,
+		})
+		if err == nil {
+			return c.Redirect(http.StatusTemporaryRedirect, signedURL)
+		}
+
+		ss.logger.Warn("internal blob presigned URL generation failed; falling back to proxy stream",
+			zap.String("cid", cid),
+			zap.Error(err),
+		)
+	}
+
 	blob, _, err := ss.readBlob(ctx, key)
 	if err != nil {
 		return err
