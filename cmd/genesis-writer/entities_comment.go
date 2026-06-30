@@ -26,6 +26,7 @@ type sourceComment struct {
 	CommentID       int64
 	Text            *string
 	UserID          int64
+	UserWallet      string
 	EntityID        int64
 	EntityType      string
 	TrackTimestampS *int
@@ -49,13 +50,14 @@ func (w *Writer) writeComments(ctx context.Context) error {
 
 	return processBatched(ctx, w, "comments",
 		`SELECT count(*) FROM comments WHERE is_delete = false`,
-		`SELECT comment_id, text, user_id, entity_id, entity_type, track_timestamp_s, created_at
-		FROM comments
-		WHERE is_delete = false
-		ORDER BY comment_id`,
+		`SELECT c.comment_id, c.text, c.user_id, COALESCE(LOWER(u.wallet), ''), c.entity_id, c.entity_type, c.track_timestamp_s, c.created_at
+		FROM comments c
+		LEFT JOIN users u ON u.user_id = c.user_id AND u.is_current = true
+		WHERE c.is_delete = false
+		ORDER BY c.comment_id`,
 		func(rows pgx.Rows) (sourceComment, error) {
 			var c sourceComment
-			err := rows.Scan(&c.CommentID, &c.Text, &c.UserID, &c.EntityID, &c.EntityType, &c.TrackTimestampS, &c.CreatedAt)
+			err := rows.Scan(&c.CommentID, &c.Text, &c.UserID, &c.UserWallet, &c.EntityID, &c.EntityType, &c.TrackTimestampS, &c.CreatedAt)
 			return c, err
 		},
 		func(ctx context.Context, c sourceComment) error {
@@ -81,13 +83,13 @@ func (w *Writer) writeComments(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("marshal comment %d metadata: %w", c.CommentID, err)
 			}
-			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
+			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     c.UserID,
 				EntityType: "Comment",
 				EntityId:   c.CommentID,
 				Action:     "Create",
 				Metadata:   string(metaJSON),
-			})
+			}, c.UserWallet)
 		},
 	)
 }
@@ -98,17 +100,19 @@ func (w *Writer) writeCommentReactions(ctx context.Context) error {
 	type commentReaction struct {
 		commentID int64
 		userID    int64
+		wallet    string
 		createdAt time.Time
 	}
 	return processBatched(ctx, w, "comment_reactions",
 		`SELECT count(*) FROM comment_reactions WHERE is_delete = false`,
-		`SELECT comment_id, user_id, created_at
-		FROM comment_reactions
-		WHERE is_delete = false
-		ORDER BY comment_id, user_id`,
+		`SELECT cr.comment_id, cr.user_id, COALESCE(LOWER(u.wallet), ''), cr.created_at
+		FROM comment_reactions cr
+		LEFT JOIN users u ON u.user_id = cr.user_id AND u.is_current = true
+		WHERE cr.is_delete = false
+		ORDER BY cr.comment_id, cr.user_id`,
 		func(rows pgx.Rows) (commentReaction, error) {
 			var cr commentReaction
-			err := rows.Scan(&cr.commentID, &cr.userID, &cr.createdAt)
+			err := rows.Scan(&cr.commentID, &cr.userID, &cr.wallet, &cr.createdAt)
 			return cr, err
 		},
 		func(ctx context.Context, cr commentReaction) error {
@@ -116,13 +120,13 @@ func (w *Writer) writeCommentReactions(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("marshal comment reaction metadata: %w", err)
 			}
-			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
+			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     cr.userID,
 				EntityType: "CommentReaction",
 				EntityId:   cr.commentID,
 				Action:     "React",
 				Metadata:   string(metaJSON),
-			})
+			}, cr.wallet)
 		},
 	)
 }

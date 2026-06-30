@@ -50,6 +50,7 @@ type trackMetadataInner struct {
 type sourceTrack struct {
 	TrackID             int64
 	OwnerID             int64
+	OwnerWallet         string
 	Title               *string
 	Description         *string
 	Duration            *int
@@ -90,23 +91,24 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 	return processBatched(ctx, w, "tracks",
 		`SELECT count(*) FROM tracks WHERE is_current = true AND is_delete = false AND is_available = true`,
 		`SELECT
-			track_id, owner_id, title, description, duration, genre, mood, tags,
-			track_cid,
-			cover_art, cover_art_sizes, preview_cid,
-			is_unlisted, is_downloadable, is_original_available,
-			release_date::text, license, isrc, iswc, bpm, musical_key,
-			remix_of, stem_of,
-			is_stream_gated, stream_conditions,
-			is_download_gated, download_conditions,
-			access_authorities,
-			created_at
-		FROM tracks
-		WHERE is_current = true AND is_delete = false AND is_available = true
-		ORDER BY track_id`,
+			t.track_id, t.owner_id, COALESCE(LOWER(u.wallet), ''), t.title, t.description, t.duration, t.genre, t.mood, t.tags,
+			t.track_cid,
+			t.cover_art, t.cover_art_sizes, t.preview_cid,
+			t.is_unlisted, t.is_downloadable, t.is_original_available,
+			t.release_date::text, t.license, t.isrc, t.iswc, t.bpm, t.musical_key,
+			t.remix_of, t.stem_of,
+			t.is_stream_gated, t.stream_conditions,
+			t.is_download_gated, t.download_conditions,
+			t.access_authorities,
+			t.created_at
+		FROM tracks t
+		LEFT JOIN users u ON u.user_id = t.owner_id AND u.is_current = true
+		WHERE t.is_current = true AND t.is_delete = false AND t.is_available = true
+		ORDER BY t.track_id`,
 		func(rows pgx.Rows) (sourceTrack, error) {
 			var t sourceTrack
 			err := rows.Scan(
-				&t.TrackID, &t.OwnerID, &t.Title, &t.Description, &t.Duration, &t.Genre, &t.Mood, &t.Tags,
+				&t.TrackID, &t.OwnerID, &t.OwnerWallet, &t.Title, &t.Description, &t.Duration, &t.Genre, &t.Mood, &t.Tags,
 				&t.TrackCID,
 				&t.CoverArt, &t.CoverArtSizes, &t.PreviewCID,
 				&t.IsUnlisted, &t.IsDownloadable, &t.IsOriginalAvailable,
@@ -164,13 +166,13 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("marshal track %d metadata: %w", t.TrackID, err)
 			}
-			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
+			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     t.OwnerID,
 				EntityType: "Track",
 				EntityId:   t.TrackID,
 				Action:     "Create",
 				Metadata:   string(metaJSON),
-			})
+			}, t.OwnerWallet)
 		},
 	)
 }
@@ -188,6 +190,7 @@ type sourceTrackDownload struct {
 	ParentTrackID int64
 	TrackID       int64
 	UserID        *int64
+	UserWallet    string
 	City          *string
 	Region        *string
 	Country       *string
@@ -197,12 +200,13 @@ type sourceTrackDownload struct {
 func (w *Writer) writeTrackDownloads(ctx context.Context) error {
 	return processBatched(ctx, w, "track_downloads",
 		`SELECT count(*) FROM track_downloads`,
-		`SELECT parent_track_id, track_id, user_id, city, region, country, created_at
-		FROM track_downloads
-		ORDER BY parent_track_id, track_id`,
+		`SELECT td.parent_track_id, td.track_id, td.user_id, COALESCE(LOWER(u.wallet), ''), td.city, td.region, td.country, td.created_at
+		FROM track_downloads td
+		LEFT JOIN users u ON u.user_id = td.user_id AND u.is_current = true
+		ORDER BY td.parent_track_id, td.track_id`,
 		func(rows pgx.Rows) (sourceTrackDownload, error) {
 			var d sourceTrackDownload
-			err := rows.Scan(&d.ParentTrackID, &d.TrackID, &d.UserID, &d.City, &d.Region, &d.Country, &d.CreatedAt)
+			err := rows.Scan(&d.ParentTrackID, &d.TrackID, &d.UserID, &d.UserWallet, &d.City, &d.Region, &d.Country, &d.CreatedAt)
 			return d, err
 		},
 		func(ctx context.Context, d sourceTrackDownload) error {
@@ -220,13 +224,13 @@ func (w *Writer) writeTrackDownloads(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("marshal track download metadata: %w", err)
 			}
-			return w.addManageEntity(ctx, &corev1.ManageEntityLegacy{
+			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     userID,
 				EntityType: "Track",
 				EntityId:   d.TrackID,
 				Action:     "Download",
 				Metadata:   string(metaJSON),
-			})
+			}, d.UserWallet)
 		},
 	)
 }
