@@ -16,6 +16,7 @@ import (
 	"github.com/tus/tusd/v2/pkg/handler"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
+	"golang.org/x/exp/slog"
 )
 
 func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
@@ -40,6 +41,7 @@ func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
 		BasePath:                "/files/",
 		StoreComposer:           composer,
 		DisableDownload:         true,
+		Logger:                  slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})),
 		NotifyCreatedUploads:    true,
 		NotifyCompleteUploads:   true,
 		RespectForwardedHeaders: true,

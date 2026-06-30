@@ -132,6 +132,12 @@ func writeCmd() *cli.Command {
 			&cli.BoolFlag{Name: "skip-comments", EnvVars: []string{"GENESIS_SKIP_COMMENTS"}, Usage: "Skip comments and comment reactions"},
 			&cli.BoolFlag{Name: "skip-emails", EnvVars: []string{"GENESIS_SKIP_EMAILS"}, Usage: "Skip encrypted emails and email access grants"},
 			&cli.BoolFlag{Name: "skip-tip-reactions", EnvVars: []string{"GENESIS_SKIP_TIP_REACTIONS"}},
+			&cli.BoolFlag{Name: "skip-rewards", EnvVars: []string{"GENESIS_SKIP_REWARDS"}, Usage: "Skip reward pools and rewards"},
+			&cli.StringFlag{
+				Name:    "core-cmt-home",
+				Usage:   "CometBFT home directory of the OLD Core chain. Used to scan the blockstore for reward transactions to replay.",
+				EnvVars: []string{"GENESIS_CORE_CMT_HOME"},
+			},
 		},
 		Action: func(c *cli.Context) error {
 			logger, _ := zap.NewProduction()
@@ -221,6 +227,8 @@ func writeCmd() *cli.Command {
 				SkipComments:         c.Bool("skip-comments"),
 				SkipEmails:           c.Bool("skip-emails"),
 				SkipTipReactions:     c.Bool("skip-tip-reactions"),
+				SkipRewards:          c.Bool("skip-rewards"),
+				CoreCMTHome:          c.String("core-cmt-home"),
 			}
 
 			w, err := NewWriter(cfg, logger)

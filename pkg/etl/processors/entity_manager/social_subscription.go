@@ -19,20 +19,28 @@ func (h *subscribeHandler) Handle(ctx context.Context, params *Params) error {
 }
 
 func validateSubscribe(ctx context.Context, params *Params) error {
-	if params.UserID == params.EntityID {
+	entityType := subscriptionEntityType(params)
+	if entityType == EntityTypeUser && params.UserID == params.EntityID {
 		return NewValidationError("user cannot subscribe to themselves")
 	}
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	exists, err := userExists(ctx, params.DBTX, params.EntityID)
+	exists, err := subscriptionTargetExists(ctx, params)
 	if err != nil {
 		return err
 	}
 	if !exists {
-		return NewValidationError("subscription target user %d does not exist", params.EntityID)
+		return NewValidationError("subscription target %s %d does not exist", entityType, params.EntityID)
 	}
-	dup, err := subscriptionExists(ctx, params.DBTX, params.UserID, params.EntityID)
+	conflict, err := subscriptionIdentityTypeConflict(ctx, params.DBTX, params.UserID, params.EntityID, entityType)
+	if err != nil {
+		return err
+	}
+	if conflict {
+		return NewValidationError("subscription already exists from %d to %d with a different entity type", params.UserID, params.EntityID)
+	}
+	dup, err := subscriptionExists(ctx, params.DBTX, params.UserID, params.EntityID, entityType)
 	if err != nil {
 		return err
 	}
@@ -58,7 +66,7 @@ func validateUnsubscribe(ctx context.Context, params *Params) error {
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
-	dup, err := subscriptionExists(ctx, params.DBTX, params.UserID, params.EntityID)
+	dup, err := subscriptionExists(ctx, params.DBTX, params.UserID, params.EntityID, subscriptionEntityType(params))
 	if err != nil {
 		return err
 	}
@@ -69,6 +77,12 @@ func validateUnsubscribe(ctx context.Context, params *Params) error {
 }
 
 func insertSubscription(ctx context.Context, params *Params, isDelete bool) error {
+	entityType := subscriptionEntityType(params)
+	var entityID any
+	if entityType == EntityTypeEvent {
+		entityID = params.EntityID
+	}
+
 	// Upsert the single current row in place (arbiter: subscriptions_current_uniq_idx),
 	// matching the Follow auto-subscribe path in social_follow.go. The prior
 	// demote-then-insert was a two-statement write: between the demote and the
@@ -77,24 +91,48 @@ func insertSubscription(ctx context.Context, params *Params, isDelete bool) erro
 	// single-writer reposts/saves/follows tables.
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO subscriptions (
-			subscriber_id, user_id, is_current, is_delete,
+			subscriber_id, user_id, entity_type, entity_id, is_current, is_delete,
 			created_at, txhash, blocknumber
-		) VALUES ($1, $2, true, $3, $4, $5, $6)
+		) VALUES ($1, $2, $3, $4, true, $5, $6, $7, $8)
 		ON CONFLICT (subscriber_id, user_id) WHERE is_current = true
 		DO UPDATE SET
+			entity_type = EXCLUDED.entity_type,
+			entity_id = EXCLUDED.entity_id,
 			is_delete = EXCLUDED.is_delete,
 			created_at = EXCLUDED.created_at,
 			txhash = EXCLUDED.txhash,
 			blocknumber = EXCLUDED.blocknumber
-	`, params.UserID, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
+	`, params.UserID, params.EntityID, entityType, entityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }
 
-func subscriptionExists(ctx context.Context, dbtx db.DBTX, subscriberID, userID int64) (bool, error) {
+func subscriptionEntityType(params *Params) string {
+	if params.EntityType == EntityTypeEvent {
+		return EntityTypeEvent
+	}
+	return EntityTypeUser
+}
+
+func subscriptionTargetExists(ctx context.Context, params *Params) (bool, error) {
+	if subscriptionEntityType(params) == EntityTypeEvent {
+		return eventExists(ctx, params.DBTX, params.EntityID)
+	}
+	return userExists(ctx, params.DBTX, params.EntityID)
+}
+
+func subscriptionExists(ctx context.Context, dbtx db.DBTX, subscriberID, userID int64, entityType string) (bool, error) {
 	var exists bool
 	err := dbtx.QueryRow(ctx,
-		"SELECT EXISTS(SELECT 1 FROM subscriptions WHERE subscriber_id = $1 AND user_id = $2 AND is_current = true AND is_delete = false)",
-		subscriberID, userID).Scan(&exists)
+		"SELECT EXISTS(SELECT 1 FROM subscriptions WHERE subscriber_id = $1 AND user_id = $2 AND entity_type = $3 AND is_current = true AND is_delete = false)",
+		subscriberID, userID, entityType).Scan(&exists)
+	return exists, err
+}
+
+func subscriptionIdentityTypeConflict(ctx context.Context, dbtx db.DBTX, subscriberID, userID int64, entityType string) (bool, error) {
+	var exists bool
+	err := dbtx.QueryRow(ctx,
+		"SELECT EXISTS(SELECT 1 FROM subscriptions WHERE subscriber_id = $1 AND user_id = $2 AND entity_type <> $3 AND is_current = true)",
+		subscriberID, userID, entityType).Scan(&exists)
 	return exists, err
 }
 
