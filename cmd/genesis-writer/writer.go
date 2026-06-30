@@ -55,6 +55,7 @@ type WriterConfig struct {
 	SkipComments         bool
 	SkipEmails           bool
 	SkipTipReactions     bool
+	SkipEvents           bool
 	SkipRewards          bool
 	// CoreCMTHome is the CometBFT home directory of the OLD chain. When set,
 	// the genesis writer scans its blockstore for RewardMessage and
@@ -429,10 +430,13 @@ func (w *Writer) Run(ctx context.Context) error {
 		{"encrypted emails", w.cfg.SkipEmails, w.writeEncryptedEmails},
 		{"email access", w.cfg.SkipEmails, w.writeEmailAccess},
 
-		// Phase 7: Rewards — replay reward pool and reward txs from old chain blockstore
+		// Phase 7: Events
+		{"events", w.cfg.SkipEvents, w.writeEvents},
+
+		// Phase 8: Rewards — replay reward pool and reward txs from old chain blockstore
 		{"rewards", w.cfg.SkipRewards, w.writeRewards},
 
-		// Phase 8: Activity — play count reconciliation, plays, and tip reactions
+		// Phase 9: Activity — play count reconciliation, plays, and tip reactions
 		{"play count reconciliation", w.cfg.SkipPlays, w.writePlayCountReconciliation},
 		{"plays", w.cfg.SkipPlays, w.writePlays},
 		{"tip reactions", w.cfg.SkipTipReactions, w.writeTipReactions},

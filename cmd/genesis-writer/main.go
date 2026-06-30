@@ -132,6 +132,7 @@ func writeCmd() *cli.Command {
 			&cli.BoolFlag{Name: "skip-comments", EnvVars: []string{"GENESIS_SKIP_COMMENTS"}, Usage: "Skip comments and comment reactions"},
 			&cli.BoolFlag{Name: "skip-emails", EnvVars: []string{"GENESIS_SKIP_EMAILS"}, Usage: "Skip encrypted emails and email access grants"},
 			&cli.BoolFlag{Name: "skip-tip-reactions", EnvVars: []string{"GENESIS_SKIP_TIP_REACTIONS"}},
+			&cli.BoolFlag{Name: "skip-events", EnvVars: []string{"GENESIS_SKIP_EVENTS"}, Usage: "Skip events"},
 			&cli.BoolFlag{Name: "skip-rewards", EnvVars: []string{"GENESIS_SKIP_REWARDS"}, Usage: "Skip reward pools and rewards"},
 			&cli.StringFlag{
 				Name:    "core-cmt-home",
@@ -227,6 +228,7 @@ func writeCmd() *cli.Command {
 				SkipComments:         c.Bool("skip-comments"),
 				SkipEmails:           c.Bool("skip-emails"),
 				SkipTipReactions:     c.Bool("skip-tip-reactions"),
+				SkipEvents:           c.Bool("skip-events"),
 				SkipRewards:          c.Bool("skip-rewards"),
 				CoreCMTHome:          c.String("core-cmt-home"),
 			}
