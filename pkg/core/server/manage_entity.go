@@ -24,14 +24,30 @@ func (s *Server) validateManageEntity(_ context.Context, stx *v1.SignedTransacti
 }
 
 // finalizeManageEntityMigration handles ManageEntityLegacyMigration transactions written
-// by genesis-writer. The transaction is stored as-is; no additional chain-side processing
-// is performed (e.g. sound_recordings/management_keys are not populated for Track creates
-// because genesis migration data does not carry live CIDs).
-func (s *Server) finalizeManageEntityMigration(_ context.Context, stx *v1.SignedTransaction) (proto.Message, error) {
+// by genesis-writer. Populates sound_recordings and management_keys for Track
+// creates that carry access_authorities, matching the finalizeManageEntity path.
+func (s *Server) finalizeManageEntityMigration(ctx context.Context, stx *v1.SignedTransaction) (proto.Message, error) {
 	me := stx.GetManageEntityMigration()
 	if me == nil {
 		return nil, errors.New("not manage entity migration")
 	}
+
+	if strings.EqualFold(me.GetEntityType(), "Track") &&
+		strings.EqualFold(me.GetAction(), "Create") {
+		legacy := &v1.ManageEntityLegacy{
+			UserId:     me.GetUserId(),
+			EntityType: me.GetEntityType(),
+			EntityId:   me.GetEntityId(),
+			Action:     me.GetAction(),
+			Metadata:   me.GetMetadata(),
+		}
+		if err := s.processTrackManageEntity(ctx, legacy); err != nil {
+			s.logger.Error("failed to process migrated track manage entity", zap.Error(err),
+				zap.String("entity_type", me.GetEntityType()),
+				zap.Int64("entity_id", me.GetEntityId()))
+		}
+	}
+
 	return me, nil
 }
 

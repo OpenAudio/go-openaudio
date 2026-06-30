@@ -56,6 +56,12 @@ type WriterConfig struct {
 	SkipEmails           bool
 	SkipTipReactions     bool
 	SkipEvents           bool
+	SkipRewards          bool
+	// CoreCMTHome is the CometBFT home directory of the OLD chain. When set,
+	// the genesis writer scans its blockstore for RewardMessage and
+	// RewardPoolMessage transactions and replays them verbatim into the new
+	// chain. If empty, rewards are skipped.
+	CoreCMTHome          string
 	// RunMigrations applies the Core chain schema to DstDSN before writing.
 	// Useful when starting from a fresh database (e.g., in integration tests).
 	RunMigrations bool
@@ -398,8 +404,9 @@ func (w *Writer) Run(ctx context.Context) error {
 		{"associated wallets", w.cfg.SkipWallets, w.writeAssociatedWallets},
 		{"dashboard wallet users", w.cfg.SkipWallets, w.writeDashboardWalletUsers},
 
-		// Phase 2: Content — tracks and playlists
+		// Phase 2: Content — tracks, collaborators, and playlists
 		{"tracks", w.cfg.SkipTracks, w.writeTracks},
+		{"track collaborator approvals", w.cfg.SkipTracks, w.writeTrackCollaboratorApprovals},
 		{"track downloads", w.cfg.SkipTracks, w.writeTrackDownloads},
 		{"playlists", w.cfg.SkipPlaylists, w.writePlaylists},
 
@@ -426,7 +433,10 @@ func (w *Writer) Run(ctx context.Context) error {
 		// Phase 7: Events
 		{"events", w.cfg.SkipEvents, w.writeEvents},
 
-		// Phase 8: Activity — play count reconciliation, plays, and tip reactions
+		// Phase 8: Rewards — replay reward pool and reward txs from old chain blockstore
+		{"rewards", w.cfg.SkipRewards, w.writeRewards},
+
+		// Phase 9: Activity — play count reconciliation, plays, and tip reactions
 		{"play count reconciliation", w.cfg.SkipPlays, w.writePlayCountReconciliation},
 		{"plays", w.cfg.SkipPlays, w.writePlays},
 		{"tip reactions", w.cfg.SkipTipReactions, w.writeTipReactions},

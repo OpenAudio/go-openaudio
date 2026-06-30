@@ -11,8 +11,9 @@ import (
 )
 
 type trackMetadataWrapper struct {
-	CID  string             `json:"cid"`
-	Data trackMetadataInner `json:"data"`
+	CID               string             `json:"cid"`
+	AccessAuthorities []string           `json:"access_authorities,omitempty"`
+	Data              trackMetadataInner `json:"data"`
 }
 
 type trackMetadataInner struct {
@@ -43,6 +44,7 @@ type trackMetadataInner struct {
 	StreamConditions   interface{} `json:"stream_conditions,omitempty"`
 	IsDownloadGated    bool        `json:"is_download_gated,omitempty"`
 	DownloadConditions interface{} `json:"download_conditions,omitempty"`
+	Collaborators      []int64     `json:"collaborators,omitempty"`
 }
 
 type sourceTrack struct {
@@ -73,10 +75,18 @@ type sourceTrack struct {
 	StreamConditions    []byte // JSONB
 	IsDownloadGated     bool
 	DownloadConditions  []byte // JSONB
+	AccessAuthorities   []string
 	CreatedAt           time.Time
 }
 
 func (w *Writer) writeTracks(ctx context.Context) error {
+	// Pre-load collaborator lists so Track:Create metadata includes them,
+	// which causes the ETL to create pending invites automatically.
+	collabs, err := w.loadTrackCollaborators(ctx)
+	if err != nil {
+		return fmt.Errorf("load track collaborators: %w", err)
+	}
+
 	return processBatched(ctx, w, "tracks",
 		`SELECT count(*) FROM tracks WHERE is_current = true AND is_delete = false AND is_available = true`,
 		`SELECT
@@ -88,6 +98,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			remix_of, stem_of,
 			is_stream_gated, stream_conditions,
 			is_download_gated, download_conditions,
+			access_authorities,
 			created_at
 		FROM tracks
 		WHERE is_current = true AND is_delete = false AND is_available = true
@@ -103,6 +114,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				&t.RemixOf, &t.StemOf,
 				&t.IsStreamGated, &t.StreamConditions,
 				&t.IsDownloadGated, &t.DownloadConditions,
+				&t.AccessAuthorities,
 				&t.CreatedAt,
 			)
 			return t, err
@@ -140,9 +152,14 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 
 			inner.TrackCID = deref(t.TrackCID)
 
+			if ids, ok := collabs[t.TrackID]; ok {
+				inner.Collaborators = ids
+			}
+
 			metaJSON, err := json.Marshal(trackMetadataWrapper{
-				CID:  deref(t.TrackCID),
-				Data: inner,
+				CID:               deref(t.TrackCID),
+				AccessAuthorities: t.AccessAuthorities,
+				Data:              inner,
 			})
 			if err != nil {
 				return fmt.Errorf("marshal track %d metadata: %w", t.TrackID, err)
