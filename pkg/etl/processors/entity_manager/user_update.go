@@ -33,27 +33,6 @@ func validateUserUpdate(ctx context.Context, params *Params) error {
 		return NewValidationError("wrong action %s", params.Action)
 	}
 
-	// Stateless: bio length
-	if bio := params.MetadataString("bio"); bio != "" {
-		if err := ValidateBio(bio); err != nil {
-			return err
-		}
-	}
-
-	// Stateless: name length
-	if name := params.MetadataString("name"); name != "" {
-		if err := ValidateUserName(name); err != nil {
-			return err
-		}
-	}
-
-	// Stateless: handle format (if changing)
-	if handle := params.MetadataString("handle"); handle != "" {
-		if err := ValidateHandle(handle); err != nil {
-			return err
-		}
-	}
-
 	// Stateful: signer must match user wallet
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
@@ -68,15 +47,40 @@ func validateUserUpdate(ctx context.Context, params *Params) error {
 		return NewValidationError("user %d does not exist", params.UserID)
 	}
 
-	// Stateful: if handle changed, check uniqueness
-	if handle := params.MetadataString("handle"); handle != "" {
-		existingHandle, err := getUserHandle(ctx, params.DBTX, params.UserID)
-		if err != nil {
+	// Load the current row so each field is re-validated only when its incoming
+	// value actually differs from what's already stored. Clients resubmit the
+	// entire existing profile on every edit (including account deactivation,
+	// which sends is_deactivated=true plus all current fields). Legacy rows can
+	// hold data that no longer passes current validation — an old handle with a
+	// "-", an over-length name/bio, or an artist_pick_track_id pointing at a
+	// since-deleted track. Validating unchanged fields would make those users
+	// unable to deactivate (or otherwise edit) their account.
+	currentUser, err := getCurrentUser(ctx, params.DBTX, params.UserID)
+	if err != nil {
+		return err
+	}
+
+	// bio length (only if changing)
+	if bio := params.MetadataString("bio"); bio != "" && bio != ptrStr(currentUser.bio) {
+		if err := ValidateBio(bio); err != nil {
 			return err
 		}
+	}
+
+	// name length (only if changing)
+	if name := params.MetadataString("name"); name != "" && name != ptrStr(currentUser.name) {
+		if err := ValidateUserName(name); err != nil {
+			return err
+		}
+	}
+
+	// handle format + uniqueness (only if changing)
+	if handle := params.MetadataString("handle"); handle != "" {
 		newHandleLC := strings.ToLower(handle)
-		// Only check if actually changing
-		if existingHandle != newHandleLC {
+		if newHandleLC != ptrStr(currentUser.handleLC) {
+			if err := ValidateHandle(handle); err != nil {
+				return err
+			}
 			handleTaken, err := handleExists(ctx, params.DBTX, newHandleLC)
 			if err != nil {
 				return err
@@ -87,14 +91,17 @@ func validateUserUpdate(ctx context.Context, params *Params) error {
 		}
 	}
 
-	// Stateful: if artist_pick_track_id set, track must exist and be owned by user
+	// artist_pick_track_id must exist and be owned by user (only if changing)
 	if trackID, ok := params.MetadataInt64("artist_pick_track_id"); ok && trackID != 0 {
-		owned, err := trackExistsAndOwnedBy(ctx, params.DBTX, trackID, params.UserID)
-		if err != nil {
-			return err
-		}
-		if !owned {
-			return NewValidationError("track %d does not exist or is not owned by user %d", trackID, params.UserID)
+		unchanged := currentUser.artistPickTrackID != nil && *currentUser.artistPickTrackID == trackID
+		if !unchanged {
+			owned, err := trackExistsAndOwnedBy(ctx, params.DBTX, trackID, params.UserID)
+			if err != nil {
+				return err
+			}
+			if !owned {
+				return NewValidationError("track %d does not exist or is not owned by user %d", trackID, params.UserID)
+			}
 		}
 	}
 
@@ -113,6 +120,7 @@ func updateUser(ctx context.Context, params *Params) error {
 		lc := strings.ToLower(*handle)
 		handleLC = &lc
 	}
+
 	name := mergeNullStr(params, "name", existing.name)
 	bio := mergeNullStr(params, "bio", existing.bio)
 	location := mergeNullStr(params, "location", existing.location)
@@ -120,6 +128,7 @@ func updateUser(ctx context.Context, params *Params) error {
 	profilePictureSizes := mergeNullStr(params, "profile_picture_sizes", existing.profilePictureSizes)
 	coverPhoto := mergeNullStr(params, "cover_photo", existing.coverPhoto)
 	coverPhotoSizes := mergeNullStr(params, "cover_photo_sizes", existing.coverPhotoSizes)
+
 	// Social links set via profile edit (unverified). The verified_with_* flags
 	// and verification-sourced handles stay owned by the UserVerify handler.
 	twitterHandle := mergeNullStr(params, "twitter_handle", existing.twitterHandle)
@@ -293,10 +302,6 @@ func getUserHandle(ctx context.Context, dbtx db.DBTX, userID int64) (string, err
 	var handleLC sql.NullString
 	err := dbtx.QueryRow(ctx, "SELECT handle_lc FROM users WHERE user_id = $1 AND is_current = true LIMIT 1", userID).Scan(&handleLC)
 	if errors.Is(err, pgx.ErrNoRows) {
-		// User has no current row (deleted between validation and now, or
-		// never existed under is_current=true). Treat as empty handle —
-		// callers compare against the new handle, so empty here means
-		// "different, run the uniqueness check".
 		return "", nil
 	}
 	if handleLC.Valid {
@@ -313,6 +318,14 @@ func trackExistsAndOwnedBy(ctx context.Context, dbtx db.DBTX, trackID, ownerID i
 		)
 	`, trackID, ownerID).Scan(&exists)
 	return exists, err
+}
+
+// ptrStr safely dereferences a *string; returns "" for nil.
+func ptrStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // UserUpdate returns the User Update handler.
