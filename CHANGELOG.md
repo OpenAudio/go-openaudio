@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.6.0](https://github.com/OpenAudio/go-openaudio/compare/v1.5.0...v1.6.0) (2026-07-01)
+
+
+### Features
+
+* **etl:** support ManageEntityMigration transactions ([#375](https://github.com/OpenAudio/go-openaudio/issues/375)) ([dfabacb](https://github.com/OpenAudio/go-openaudio/commit/dfabacb346d9ff3945421b06a21db7b11cda76c1))
+* **genesis-writer:** add offline chain history population tool ([#210](https://github.com/OpenAudio/go-openaudio/issues/210)) ([d730e51](https://github.com/OpenAudio/go-openaudio/commit/d730e511f763aae9277483abde2a66e40225fa4f))
+* **genesis-writer:** add play count reconciliation step ([#376](https://github.com/OpenAudio/go-openaudio/issues/376)) ([2a30516](https://github.com/OpenAudio/go-openaudio/commit/2a30516cdbdb6de3fad0792b1604ff43a2564fb8))
+* **genesis-writer:** add track collaborator migration ([#381](https://github.com/OpenAudio/go-openaudio/issues/381)) ([043923e](https://github.com/OpenAudio/go-openaudio/commit/043923eab95b87f66984970cc5a47bc362536f63))
+* read mediorum ops from core ([#364](https://github.com/OpenAudio/go-openaudio/issues/364)) ([20e6ec8](https://github.com/OpenAudio/go-openaudio/commit/20e6ec8f9cdcc444a0fe4154a1624e92ee1bfd44))
+
+
+### Bug Fixes
+
+* **genesis-writer:** migrate access_authorities for programmable distribution ([#377](https://github.com/OpenAudio/go-openaudio/issues/377)) ([aea1d66](https://github.com/OpenAudio/go-openaudio/commit/aea1d6672dada6a932964945e4412f3ddefb3413))
+* persist user deactivation updates ([#394](https://github.com/OpenAudio/go-openaudio/issues/394)) ([b75c8bb](https://github.com/OpenAudio/go-openaudio/commit/b75c8bb6f8c5c6e58175894d84cc72a2462aaae8))
+* skip validator updates for noop registrations ([#372](https://github.com/OpenAudio/go-openaudio/issues/372)) ([7ee965c](https://github.com/OpenAudio/go-openaudio/commit/7ee965c682108053b755698ac4569e721ebbfbd9))
+
+
+### Reverts
+
+* remove event_routes table and slug handling ([#386](https://github.com/OpenAudio/go-openaudio/issues/386)) ([ca62eef](https://github.com/OpenAudio/go-openaudio/commit/ca62eefc1bb44fce0e311ea0f74030ea03b3236b))
+
 ## [1.5.0](https://github.com/OpenAudio/go-openaudio/compare/v1.4.0...v1.5.0) (2026-06-18)
 
 
