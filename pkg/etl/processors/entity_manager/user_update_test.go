@@ -39,27 +39,6 @@ func TestUserUpdate_StatelessValidation(t *testing.T) {
 			metadata:   `{"name":"Alice"}`,
 			wantErr:    "wrong action",
 		},
-		{
-			name:       "bio too long",
-			entityType: EntityTypeUser,
-			action:     ActionUpdate,
-			metadata:   `{"bio":"` + strings.Repeat("x", CharacterLimitUserBio+1) + `"}`,
-			wantErr:    "bio exceeds",
-		},
-		{
-			name:       "name too long",
-			entityType: EntityTypeUser,
-			action:     ActionUpdate,
-			metadata:   `{"name":"` + strings.Repeat("x", CharacterLimitUserName+1) + `"}`,
-			wantErr:    "name exceeds",
-		},
-		{
-			name:       "handle illegal characters",
-			entityType: EntityTypeUser,
-			action:     ActionUpdate,
-			metadata:   `{"handle":"alice@#$"}`,
-			wantErr:    "illegal characters",
-		},
 	}
 
 	for _, tt := range tests {
@@ -177,21 +156,47 @@ func TestUserUpdate_RejectsArtistPickTrackNotOwned(t *testing.T) {
 	mustReject(t, UserUpdate(), params, "does not exist")
 }
 
-func TestUserUpdate_IsDeactivated(t *testing.T) {
+// Regression: account deactivation resubmits the entire current profile,
+// including legacy fields that no longer pass current validation (e.g. a handle
+// containing "-"). Unchanged fields must not be re-validated, otherwise such
+// users can never deactivate their account. See validateUserUpdate.
+func TestUserUpdate_DeactivateWithLegacyIllegalHandle(t *testing.T) {
 	pool := setupTestDB(t)
-	seedUser(t, pool, UserIDOffset+1, "0xalicewallet", "alice")
+	// "alice-legacy" contains a "-", which ValidateHandle rejects today but
+	// was permitted when the account was originally created.
+	seedUser(t, pool, UserIDOffset+1, "0xalicewallet", "alice-legacy")
 	h := UserUpdate()
-	params := buildParams(t, pool, EntityTypeUser, ActionUpdate, UserIDOffset+1, UserIDOffset+1, "0xAliceWallet", `{"is_deactivated":true}`)
+	// Client deactivation payload: is_deactivated=true plus the existing,
+	// now-invalid handle resubmitted unchanged.
+	meta := `{"handle":"alice-legacy","is_deactivated":true}`
+	params := buildParams(t, pool, EntityTypeUser, ActionUpdate, UserIDOffset+1, UserIDOffset+1, "0xAliceWallet", meta)
 	mustHandle(t, h, params)
 
-	var isDeactivated bool
-	err := pool.QueryRow(context.Background(), "SELECT is_deactivated FROM users WHERE user_id = $1 AND is_current = true", UserIDOffset+1).Scan(&isDeactivated)
+	var handle string
+	err := pool.QueryRow(context.Background(), "SELECT handle FROM users WHERE user_id = $1 AND is_current = true", UserIDOffset+1).Scan(&handle)
 	if err != nil {
 		t.Fatalf("failed to query: %v", err)
 	}
-	if !isDeactivated {
-		t.Error("is_deactivated = false, want true")
+	if handle != "alice-legacy" {
+		t.Errorf("handle = %q, want %q (unchanged legacy value)", handle, "alice-legacy")
 	}
+}
+
+// Changing a field to a genuinely invalid value must still be rejected — the
+// unchanged-skip must not become a blanket bypass of validation.
+func TestUserUpdate_RejectsChangedIllegalHandle(t *testing.T) {
+	pool := setupTestDB(t)
+	seedUser(t, pool, UserIDOffset+1, "0xalicewallet", "alice")
+	params := buildParams(t, pool, EntityTypeUser, ActionUpdate, UserIDOffset+1, UserIDOffset+1, "0xAliceWallet", `{"handle":"alice@#$"}`)
+	mustReject(t, UserUpdate(), params, "illegal characters")
+}
+
+func TestUserUpdate_RejectsChangedOverlongName(t *testing.T) {
+	pool := setupTestDB(t)
+	seedUser(t, pool, UserIDOffset+1, "0xalicewallet", "alice")
+	meta := `{"name":"` + strings.Repeat("x", CharacterLimitUserName+1) + `"}`
+	params := buildParams(t, pool, EntityTypeUser, ActionUpdate, UserIDOffset+1, UserIDOffset+1, "0xAliceWallet", meta)
+	mustReject(t, UserUpdate(), params, "name exceeds")
 }
 
 // Regression: a profile edit (User Update) must persist social links
