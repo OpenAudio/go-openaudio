@@ -206,3 +206,54 @@ func TestIsValidSignedTransaction_OtherTypes(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+func TestValidateMediorumOperationShape(t *testing.T) {
+	valid := &v1.MediorumOperation{
+		Ulid:   "01JY0000000000000000000000",
+		Host:   "https://node.example",
+		Action: "update",
+		Table:  "uploads",
+		Data:   []byte(`[{"id":"cid"}]`),
+	}
+	require.NoError(t, validateMediorumOperationShape(valid))
+
+	cloneWith := func(update func(*v1.MediorumOperation)) *v1.MediorumOperation {
+		op := proto.Clone(valid).(*v1.MediorumOperation)
+		update(op)
+		return op
+	}
+
+	cases := []struct {
+		name string
+		op   *v1.MediorumOperation
+	}{
+		{name: "nil", op: nil},
+		{name: "missing ulid", op: &v1.MediorumOperation{Host: valid.Host, Action: valid.Action, Table: valid.Table, Data: valid.Data}},
+		{name: "invalid ulid", op: cloneWith(func(op *v1.MediorumOperation) { op.Ulid = "not-a-ulid" })},
+		{name: "missing host", op: &v1.MediorumOperation{Ulid: valid.Ulid, Action: valid.Action, Table: valid.Table, Data: valid.Data}},
+		{name: "bad action", op: &v1.MediorumOperation{Ulid: valid.Ulid, Host: valid.Host, Action: "patch", Table: valid.Table, Data: valid.Data}},
+		{name: "uppercase action", op: cloneWith(func(op *v1.MediorumOperation) { op.Action = "UPDATE" })},
+		{name: "missing table", op: &v1.MediorumOperation{Ulid: valid.Ulid, Host: valid.Host, Action: valid.Action, Data: valid.Data}},
+		{name: "unknown table", op: cloneWith(func(op *v1.MediorumOperation) { op.Table = "not_a_registered_model" })},
+		{name: "missing data", op: &v1.MediorumOperation{Ulid: valid.Ulid, Host: valid.Host, Action: valid.Action, Table: valid.Table}},
+		{name: "malformed data", op: cloneWith(func(op *v1.MediorumOperation) { op.Data = []byte(`{`) })},
+		{name: "object data", op: cloneWith(func(op *v1.MediorumOperation) { op.Data = []byte(`{"id":"cid"}`) })},
+		{name: "bad field type", op: cloneWith(func(op *v1.MediorumOperation) { op.Data = []byte(`[{"id":"cid","mirrors":"not-an-array"}]`) })},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Error(t, validateMediorumOperationShape(tc.op))
+			if tc.op != nil {
+				tx := marshalSignedTx(t, &v1.SignedTransaction{
+					Transaction: &v1.SignedTransaction_MediorumOperation{MediorumOperation: tc.op},
+				})
+				require.Equal(t, uint32(1), checkTxCode(t, tx))
+			}
+		})
+	}
+
+	tx := marshalSignedTx(t, &v1.SignedTransaction{
+		Transaction: &v1.SignedTransaction_MediorumOperation{MediorumOperation: valid},
+	})
+	require.Equal(t, uint32(0), checkTxCode(t, tx))
+}

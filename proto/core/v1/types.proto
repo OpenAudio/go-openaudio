@@ -309,6 +309,7 @@ message SignedTransaction {
     FileUpload file_upload = 1010;
     RewardPoolMessage reward_pool = 1011;
     ManageEntityLegacyMigration manage_entity_migration = 1012;
+    MediorumOperation mediorum_operation = 1013;
   }
 }
 
@@ -766,6 +767,18 @@ message FileUpload {
   string validator_address = 6;
   // signature from the validator node
   string validator_signature = 7;
+}
+
+// MediorumOperation is the consensus-carried replacement for the legacy CRUDR
+// peer gossip operation. It intentionally preserves the old CRUDR data shape:
+// action/table identify the GORM model operation, and data is the JSON array
+// payload that mediorum already applies to its storage database.
+message MediorumOperation {
+  string ulid = 1;
+  string host = 2;
+  string action = 3;
+  string table = 4;
+  bytes data = 5;
 }
 
 message GetStreamURLsSignature {
