@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	"github.com/jackc/pgx/v5"
 )
 
 type userUpdateHandler struct{}
@@ -118,6 +120,7 @@ func updateUser(ctx context.Context, params *Params) error {
 		lc := strings.ToLower(*handle)
 		handleLC = &lc
 	}
+
 	name := mergeNullStr(params, "name", existing.name)
 	bio := mergeNullStr(params, "bio", existing.bio)
 	location := mergeNullStr(params, "location", existing.location)
@@ -125,6 +128,7 @@ func updateUser(ctx context.Context, params *Params) error {
 	profilePictureSizes := mergeNullStr(params, "profile_picture_sizes", existing.profilePictureSizes)
 	coverPhoto := mergeNullStr(params, "cover_photo", existing.coverPhoto)
 	coverPhotoSizes := mergeNullStr(params, "cover_photo_sizes", existing.coverPhotoSizes)
+
 	// Social links set via profile edit (unverified). The verified_with_* flags
 	// and verification-sourced handles stay owned by the UserVerify handler.
 	twitterHandle := mergeNullStr(params, "twitter_handle", existing.twitterHandle)
@@ -143,6 +147,11 @@ func updateUser(ctx context.Context, params *Params) error {
 		allowAIAttribution = v
 	}
 
+	isDeactivated := existing.isDeactivated
+	if v, ok := params.MetadataBool("is_deactivated"); ok {
+		isDeactivated = v
+	}
+
 	playlistLibrary := existing.playlistLibrary
 	if v, ok := params.MetadataJSON("playlist_library"); ok && v != nil {
 		jb, err := json.Marshal(v)
@@ -157,7 +166,7 @@ func updateUser(ctx context.Context, params *Params) error {
 			profile_picture = $7, profile_picture_sizes = $8, cover_photo = $9, cover_photo_sizes = $10,
 			twitter_handle = $11, instagram_handle = $12, tiktok_handle = $13, website = $14, donation = $15,
 			playlist_library = $16, artist_pick_track_id = $17, allow_ai_attribution = $18,
-			updated_at = $19, txhash = $20, blocknumber = $21
+			is_deactivated = $19, updated_at = $20, txhash = $21, blocknumber = $22
 		WHERE user_id = $1 AND is_current = true
 	`,
 		params.UserID,
@@ -178,6 +187,7 @@ func updateUser(ctx context.Context, params *Params) error {
 		playlistLibrary,
 		artistPickTrackID,
 		allowAIAttribution,
+		isDeactivated,
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,
@@ -288,13 +298,16 @@ func getCurrentUser(ctx context.Context, dbtx db.DBTX, userID int64) (*currentUs
 	}, nil
 }
 
-// ptrStr dereferences a *string, returning "" for nil. Used to compare an
-// incoming metadata value against the stored column value.
-func ptrStr(p *string) string {
-	if p == nil {
-		return ""
+func getUserHandle(ctx context.Context, dbtx db.DBTX, userID int64) (string, error) {
+	var handleLC sql.NullString
+	err := dbtx.QueryRow(ctx, "SELECT handle_lc FROM users WHERE user_id = $1 AND is_current = true LIMIT 1", userID).Scan(&handleLC)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
 	}
-	return *p
+	if handleLC.Valid {
+		return handleLC.String, err
+	}
+	return "", err
 }
 
 func trackExistsAndOwnedBy(ctx context.Context, dbtx db.DBTX, trackID, ownerID int64) (bool, error) {
@@ -305,6 +318,14 @@ func trackExistsAndOwnedBy(ctx context.Context, dbtx db.DBTX, trackID, ownerID i
 		)
 	`, trackID, ownerID).Scan(&exists)
 	return exists, err
+}
+
+// ptrStr safely dereferences a *string; returns "" for nil.
+func ptrStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // UserUpdate returns the User Update handler.
