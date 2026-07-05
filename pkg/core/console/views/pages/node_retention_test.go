@@ -10,7 +10,7 @@ import (
 	storagev1 "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
 )
 
-func TestGetNodeRetentionType(t *testing.T) {
+func TestGetArchiveRetentionType(t *testing.T) {
 	tests := []struct {
 		name   string
 		status *corev1.GetStatusResponse
@@ -33,21 +33,46 @@ func TestGetNodeRetentionType(t *testing.T) {
 			want: "Archive",
 		},
 		{
-			name: "store all",
+			name: "store all does not override full node",
 			status: &corev1.GetStatusResponse{
 				PruningInfo: &corev1.GetStatusResponse_PruningInfo{Enabled: true},
 				StorageInfo: &corev1.GetStatusResponse_StorageInfo{StoreAll: true},
 			},
-			want: "Store All",
+			want: "Full node",
+		},
+		{
+			name: "archive and store all",
+			status: &corev1.GetStatusResponse{
+				PruningInfo: &corev1.GetStatusResponse_PruningInfo{Enabled: false},
+				StorageInfo: &corev1.GetStatusResponse_StorageInfo{StoreAll: true},
+			},
+			want: "Archive",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := getNodeRetentionType(tt.status); got != tt.want {
-				t.Fatalf("getNodeRetentionType() = %q, want %q", got, tt.want)
+			if got := getArchiveRetentionType(tt.status); got != tt.want {
+				t.Fatalf("getArchiveRetentionType() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGetStoreAllEnabled(t *testing.T) {
+	if getStoreAllEnabled(&corev1.GetStatusResponse{}) {
+		t.Fatal("getStoreAllEnabled() = true, want false")
+	}
+
+	status := &corev1.GetStatusResponse{
+		PruningInfo: &corev1.GetStatusResponse_PruningInfo{Enabled: false},
+		StorageInfo: &corev1.GetStatusResponse_StorageInfo{StoreAll: true},
+	}
+	if !getStoreAllEnabled(status) {
+		t.Fatal("getStoreAllEnabled() = false, want true")
+	}
+	if got := getArchiveRetentionType(status); got != "Archive" {
+		t.Fatalf("getArchiveRetentionType() = %q, want %q", got, "Archive")
 	}
 }
 
@@ -64,5 +89,18 @@ func TestStorageOverviewSectionShowsStoreAllEnabled(t *testing.T) {
 	}
 	if !strings.Contains(html, "Enabled") {
 		t.Fatalf("rendered storage overview missing enabled state: %s", html)
+	}
+}
+
+func TestStorageOverviewSectionHidesStoreAllWhenDisabled(t *testing.T) {
+	var buf bytes.Buffer
+	err := storageOverviewSection(&storagev1.GetStorageDiagnosticsResponse{}).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	html := buf.String()
+	if strings.Contains(html, "STORE_ALL") {
+		t.Fatalf("rendered storage overview should hide STORE_ALL when disabled: %s", html)
 	}
 }

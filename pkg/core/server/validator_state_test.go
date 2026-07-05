@@ -239,6 +239,57 @@ func TestFinalizeDeregisterBranching(t *testing.T) {
 	})
 }
 
+func TestDeregistrationNeedsValidatorUpdate(t *testing.T) {
+	pool := setupValidatorTestDB(t)
+	ctx := context.Background()
+
+	makeServer := func(tx pgx.Tx) *Server {
+		return &Server{
+			db:        db.New(pool),
+			abciState: &ABCIState{onGoingBlock: tx},
+			logger:    zap.NewNop(),
+		}
+	}
+
+	t.Run("active validator removal updates comet validator set", func(t *testing.T) {
+		truncateValidators(t, pool)
+		require.NoError(t, db.New(pool).InsertRegisteredNode(ctx, testNode))
+
+		tx, err := pool.Begin(ctx)
+		require.NoError(t, err)
+		defer tx.Rollback(ctx)
+
+		require.True(t, makeServer(tx).deregistrationNeedsValidatorUpdate(ctx, makeDereigstrationTx("ABCDEF", true)))
+	})
+
+	t.Run("jailed validator removal only mutates app state", func(t *testing.T) {
+		truncateValidators(t, pool)
+		q := db.New(pool)
+		require.NoError(t, q.InsertRegisteredNode(ctx, testNode))
+		require.NoError(t, q.JailRegisteredNode(ctx, "ABCDEF"))
+
+		tx, err := pool.Begin(ctx)
+		require.NoError(t, err)
+		defer tx.Rollback(ctx)
+
+		require.False(t, makeServer(tx).deregistrationNeedsValidatorUpdate(ctx, makeDereigstrationTx("ABCDEF", true)))
+	})
+
+	t.Run("duplicate removal in same block does not update comet twice", func(t *testing.T) {
+		truncateValidators(t, pool)
+		require.NoError(t, db.New(pool).InsertRegisteredNode(ctx, testNode))
+
+		tx, err := pool.Begin(ctx)
+		require.NoError(t, err)
+		defer tx.Rollback(ctx)
+
+		s := makeServer(tx)
+		require.True(t, s.deregistrationNeedsValidatorUpdate(ctx, makeDereigstrationTx("ABCDEF", true)))
+		require.NoError(t, s.getDb().DeleteRegisteredNode(ctx, "ABCDEF"))
+		require.False(t, s.deregistrationNeedsValidatorUpdate(ctx, makeDereigstrationTx("ABCDEF", true)))
+	})
+}
+
 func TestIsSelfAlreadyRegistered(t *testing.T) {
 	pool := setupValidatorTestDB(t)
 	ctx := context.Background()
@@ -393,11 +444,7 @@ func TestRemoveValidatorGoesThoughConsensus(t *testing.T) {
 	})
 }
 
-// TestFinalizeBlockProducesValidatorUpdate verifies that the FinalizeBlock code
-// path correctly builds a ValidatorUpdate with Power=0 for deregistration
-// attestation transactions. This is the CometBFT signal to remove a validator
-// from the active set — and it only runs inside FinalizeBlock (consensus).
-func TestFinalizeBlockProducesValidatorUpdate(t *testing.T) {
+func TestDeregistrationPubKeyAddressRoundTrip(t *testing.T) {
 	privKey := ed25519.GenPrivKey()
 	pubKey := privKey.PubKey().(ed25519.PubKey)
 	cometAddress := pubKey.Address().String()
@@ -426,5 +473,4 @@ func TestFinalizeBlockProducesValidatorUpdate(t *testing.T) {
 	recoveredAddr := recoveredPubKey.Address().String()
 
 	require.Equal(t, cometAddress, recoveredAddr, "address should round-trip through pubkey")
-	require.Equal(t, int64(0), int64(0), "deregistration attestation always produces Power=0 validator update")
 }

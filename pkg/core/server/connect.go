@@ -52,11 +52,25 @@ func (c *CoreService) SetCore(core *Server) {
 		if inv, ok := c.storageService.(interface{ InvalidateTrackAccessCacheForTrack(string) }); ok {
 			c.core.setManagementKeysInvalidator(inv.InvalidateTrackAccessCacheForTrack)
 		}
+		if applier, ok := c.storageService.(mediorumOperationApplier); ok {
+			c.core.setMediorumOperationApplier(applier)
+		}
 	}
 }
 
 func (c *CoreService) SetStorageService(storageService storagev1connect.StorageServiceHandler) {
 	c.storageService = storageService
+	c.coreMu.Lock()
+	defer c.coreMu.Unlock()
+	if c.core == nil {
+		return
+	}
+	if inv, ok := storageService.(interface{ InvalidateTrackAccessCacheForTrack(string) }); ok {
+		c.core.setManagementKeysInvalidator(inv.InvalidateTrackAccessCacheForTrack)
+	}
+	if applier, ok := storageService.(mediorumOperationApplier); ok {
+		c.core.setMediorumOperationApplier(applier)
+	}
 }
 
 // GetStorageService returns the registered storage service handler, or nil.

@@ -117,6 +117,49 @@ func TestGrantDelete_Success(t *testing.T) {
 	}
 }
 
+// Regression: the grantee (manager) of a user-to-user grant may revoke their
+// own grant — the legacy indexer allowed this; the Go port only allowed the
+// grantor.
+func TestGrantDelete_GranteeCanRevokeOwnUserGrant(t *testing.T) {
+	pool := setupTestDB(t)
+	grantor := int64(UserIDOffset + 1)
+	grantee := int64(UserIDOffset + 2)
+	seedUser(t, pool, grantor, "0xgrantor", "grantor")
+	seedUser(t, pool, grantee, "0xgrantee", "grantee")
+
+	grantMeta := `{"grantee_address":"0xgrantee"}`
+	mustHandle(t, GrantCreate(), buildParams(t, pool, EntityTypeGrant, ActionCreate, grantor, 1, "0xGrantor", grantMeta))
+
+	// Grantee signs the revoke of their own management grant.
+	mustHandle(t, GrantDelete(), buildParams(t, pool, EntityTypeGrant, ActionDelete, grantor, 1, "0xGrantee", grantMeta))
+
+	var isRevoked bool
+	if err := pool.QueryRow(context.Background(),
+		"SELECT is_revoked FROM grants WHERE grantee_address='0xgrantee' AND user_id=$1 AND is_current=true", grantor).Scan(&isRevoked); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if !isRevoked {
+		t.Error("grantee-signed revoke should set is_revoked=true")
+	}
+}
+
+// Security guard: a third party who is neither the grantor nor the grantee
+// must NOT be able to revoke the grant.
+func TestGrantDelete_RejectsUnauthorizedSigner(t *testing.T) {
+	pool := setupTestDB(t)
+	grantor := int64(UserIDOffset + 1)
+	grantee := int64(UserIDOffset + 2)
+	stranger := int64(UserIDOffset + 3)
+	seedUser(t, pool, grantor, "0xgrantor", "grantor")
+	seedUser(t, pool, grantee, "0xgrantee", "grantee")
+	seedUser(t, pool, stranger, "0xstranger", "stranger")
+
+	grantMeta := `{"grantee_address":"0xgrantee"}`
+	mustHandle(t, GrantCreate(), buildParams(t, pool, EntityTypeGrant, ActionCreate, grantor, 1, "0xGrantor", grantMeta))
+
+	mustReject(t, GrantDelete(), buildParams(t, pool, EntityTypeGrant, ActionDelete, grantor, 1, "0xStranger", grantMeta), "not authorized")
+}
+
 func TestGrantDelete_RejectsNoActiveGrant(t *testing.T) {
 	pool := setupTestDB(t)
 	uid := int64(UserIDOffset + 1)

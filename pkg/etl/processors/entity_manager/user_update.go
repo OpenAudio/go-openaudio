@@ -138,6 +138,11 @@ func updateUser(ctx context.Context, params *Params) error {
 		allowAIAttribution = v
 	}
 
+	isDeactivated := existing.isDeactivated
+	if v, ok := params.MetadataBool("is_deactivated"); ok {
+		isDeactivated = v
+	}
+
 	playlistLibrary := existing.playlistLibrary
 	if v, ok := params.MetadataJSON("playlist_library"); ok && v != nil {
 		jb, err := json.Marshal(v)
@@ -152,7 +157,7 @@ func updateUser(ctx context.Context, params *Params) error {
 			profile_picture = $7, profile_picture_sizes = $8, cover_photo = $9, cover_photo_sizes = $10,
 			twitter_handle = $11, instagram_handle = $12, tiktok_handle = $13, website = $14, donation = $15,
 			playlist_library = $16, artist_pick_track_id = $17, allow_ai_attribution = $18,
-			updated_at = $19, txhash = $20, blocknumber = $21
+			is_deactivated = $19, updated_at = $20, txhash = $21, blocknumber = $22
 		WHERE user_id = $1 AND is_current = true
 	`,
 		params.UserID,
@@ -173,6 +178,7 @@ func updateUser(ctx context.Context, params *Params) error {
 		playlistLibrary,
 		artistPickTrackID,
 		allowAIAttribution,
+		isDeactivated,
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,

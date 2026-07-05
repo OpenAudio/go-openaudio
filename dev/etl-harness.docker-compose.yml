@@ -1,0 +1,22 @@
+# Throwaway Postgres for the local ETL harness (see examples/etl/README.md).
+# Kept separate from dev/docker-compose.yml so `make up` is unaffected.
+#
+#   make etl-db-up      # start it (host port 5454)
+#   make etl-db-down    # stop + wipe
+services:
+  etl-postgres:
+    image: postgres:15-alpine
+    container_name: etl-harness-postgres
+    environment:
+      POSTGRES_USER: etl
+      POSTGRES_PASSWORD: etl
+      POSTGRES_DB: etl
+    ports:
+      - "5454:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U etl"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/postgresql/data
