@@ -75,7 +75,12 @@ type Server struct {
 	remoteHeadUpdatedAt time.Time
 	remoteHeadMu        sync.Mutex
 
-	onManagementKeysChanged func(trackID string)
+	onManagementKeysChanged  func(trackID string)
+	mediorumOperationApplier mediorumOperationApplier
+}
+
+type mediorumOperationApplier interface {
+	ApplyMediorumOperation(context.Context, *v1.MediorumOperation, string) error
 }
 
 func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.Config, logger *zap.Logger, pool *pgxpool.Pool, ethService *eth.EthService, posChannel chan pos.PoSRequest) (*Server, error) {
@@ -153,6 +158,10 @@ func (s *Server) setSelf(self corev1connect.CoreServiceHandler) {
 
 func (s *Server) setManagementKeysInvalidator(fn func(trackID string)) {
 	s.onManagementKeysChanged = fn
+}
+
+func (s *Server) setMediorumOperationApplier(applier mediorumOperationApplier) {
+	s.mediorumOperationApplier = applier
 }
 
 func (s *Server) invalidateTrackAccessCache(trackID string) {

@@ -73,6 +73,7 @@ type MediorumConfig struct {
 	AudiusDockerCompose       string
 	AutoUpgradeEnabled        bool
 	WalletIsRegistered        bool
+	CoreWritesEnabled         bool
 	StoreAll                  bool
 	StoreRecent               bool
 	StoreRecentTTL            time.Duration `default:"8760h"`
@@ -343,6 +344,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	}
 
 	crud := crudr.New(config.Self.Host, config.privateKey, peerHosts, db, mediorumLifecycle, logger, peerHTTPClient)
+	crud.SetCoreWritesEnabled(config.CoreWritesEnabled)
 	dbMigrate(crud, config.Self.Host)
 
 	deadHosts := config.DeadHosts
@@ -378,7 +380,11 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	echoServer.Debug = true
 
 	echoServer.Use(middleware.Recover())
-	echoServer.Use(middleware.Logger())
+	echoServer.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
+		Skipper: func(c echo.Context) bool {
+			return strings.HasPrefix(c.Request().URL.Path, "/files/")
+		},
+	}))
 	echoServer.Use(common.CORS())
 	echoServer.Use(timingMiddleware)
 
@@ -632,6 +638,10 @@ func (ss *MediorumServer) MustStart() error {
 		ss.lc.AddManagedRoutine("delist status poller", ss.startPollingDelistStatuses)
 		ss.lc.AddManagedRoutine("seeding completion poller", ss.pollForSeedingCompletion)
 		ss.lc.AddManagedRoutine("upload scroller", ss.startUploadScroller)
+		ss.lc.AddManagedRoutine("core mediorum op syncer", ss.startCoreOpSyncer)
+		if ss.Config.CoreWritesEnabled {
+			ss.lc.AddManagedRoutine("core mediorum op submitter", ss.startCoreOpSubmitter)
+		}
 		ss.lc.AddManagedRoutine("play event queue", ss.startPlayEventQueue)
 		ss.lc.AddManagedRoutine("zap syncer", func(ctx context.Context) error {
 			ticker := time.NewTicker(10 * time.Second)

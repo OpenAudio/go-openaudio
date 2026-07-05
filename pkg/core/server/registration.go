@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
@@ -121,6 +122,9 @@ func (s *Server) finalizeRegisterNodeAttestation(ctx context.Context, tx *v1.Sig
 	}
 	if err != nil {
 		return fmt.Errorf("error checking registered node: %v", err)
+	}
+	if !strings.EqualFold(existing.CometAddress, vr.GetCometAddress()) {
+		return nil
 	}
 	// Jailed nodes can re-attest to unjail themselves
 	if existing.Jailed {

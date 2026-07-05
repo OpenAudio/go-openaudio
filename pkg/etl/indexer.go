@@ -154,6 +154,8 @@ func (e *Indexer) Run() error {
 		e.dispatcher.Register(em.CommentUnmute())
 	}
 
+	e.dispatcher.Register(em.PlayCountReconcile())
+
 	// Apply any post-hooks registered by external consumers before Run().
 	// Done after handlers are registered so the dispatcher is in its
 	// final state when hooks attach.
@@ -413,8 +415,11 @@ func (e *Indexer) processBlock(ctx context.Context, pb prefetchedBlock) (*blockR
 	// transactions get one in the legacy schema's chain-head model).
 	hasEM := false
 	for _, t := range block.Transactions {
-		if _, ok := t.Transaction.Transaction.(*corev1.SignedTransaction_ManageEntity); ok {
+		switch t.Transaction.Transaction.(type) {
+		case *corev1.SignedTransaction_ManageEntity, *corev1.SignedTransaction_ManageEntityMigration:
 			hasEM = true
+		}
+		if hasEM {
 			break
 		}
 	}
@@ -427,7 +432,9 @@ func (e *Indexer) processBlock(ctx context.Context, pb prefetchedBlock) (*blockR
 			// our MAX+1 with a different hash. Within our tx, both calls
 			// see the same snapshot semantics (READ COMMITTED), so the
 			// retry only helps if the conflict was with a *committed*
-			// outside writer — which is exactly the cutover scenario.
+			// outside writer — which is what could happen while a second
+			// writer (e.g. the legacy Python indexer) was still running
+			// during the production cutover to the Go ETL.
 			n, err = e.resolveBlockNumber(ctx, tx, block.Hash)
 		}
 		if err != nil {
@@ -596,6 +603,66 @@ func (e *Indexer) processOneTx(
 			// error" logs so a single grep on hash/entity_id shows the full
 			// lifecycle (indexed vs rejected vs errored) of every EM tx.
 			e.logger.Info("entity manager indexed",
+				zap.String("entity_type", me.GetEntityType()),
+				zap.String("action", me.GetAction()),
+				zap.Int64("entity_id", me.GetEntityId()),
+				zap.Int64("user_id", me.GetUserId()),
+				zap.Int64("block", block.Height),
+				zap.String("hash", t.Hash),
+				zap.Duration("elapsed", time.Since(txStart)),
+			)
+		}
+
+	case *corev1.SignedTransaction_ManageEntityMigration:
+		me := signedTx.ManageEntityMigration
+		res.emTxCount++
+
+		pr, err := processors.ManageEntityMigration().Process(ctx, t.Transaction, txCtx, q)
+		if err != nil {
+			e.logger.Error("error processing manage entity migration",
+				zap.String("hash", t.Hash), zap.Error(err))
+			_ = sp.Rollback(ctx)
+			return false
+		}
+		*insertTxParams = pr.InsertTx
+
+		txStart := time.Now()
+		emParams := em.NewParams(&corev1.ManageEntityLegacy{
+			UserId:     me.GetUserId(),
+			EntityType: me.GetEntityType(),
+			EntityId:   me.GetEntityId(),
+			Action:     me.GetAction(),
+			Metadata:   me.GetMetadata(),
+			Signature:  me.GetSignature(),
+			Signer:     me.GetSigner(),
+			Nonce:      me.GetNonce(),
+		}, emBlock, block.Timestamp.AsTime(),
+			block.Hash, t.Hash, sp, e.logger)
+		if dErr := e.dispatcher.Dispatch(ctx, emParams); dErr != nil {
+			res.emRejectCount++
+			if em.IsValidationError(dErr) {
+				e.logger.Warn("entity manager migration validation rejected",
+					zap.String("entity_type", me.GetEntityType()),
+					zap.String("action", me.GetAction()),
+					zap.Int64("entity_id", me.GetEntityId()),
+					zap.Int64("user_id", me.GetUserId()),
+					zap.String("reason", dErr.Error()),
+					zap.String("hash", t.Hash),
+				)
+			} else {
+				e.logger.Error("entity manager migration dispatch error",
+					zap.String("entity_type", me.GetEntityType()),
+					zap.String("action", me.GetAction()),
+					zap.Int64("entity_id", me.GetEntityId()),
+					zap.Int64("user_id", me.GetUserId()),
+					zap.String("hash", t.Hash),
+					zap.Error(dErr),
+				)
+				_ = sp.Rollback(ctx)
+				return false
+			}
+		} else {
+			e.logger.Info("entity manager migration indexed",
 				zap.String("entity_type", me.GetEntityType()),
 				zap.String("action", me.GetAction()),
 				zap.Int64("entity_id", me.GetEntityId()),
@@ -880,8 +947,9 @@ func (e *Indexer) firePlaysHooks(ctx context.Context, sp pgx.Tx, plays []*corev1
 // blocks row if needed, all within the caller-supplied transaction.
 //
 // Idempotent and tolerant of co-existing writers (e.g. the legacy Python
-// indexer during a cutover): if a row for blockHash already exists, its
-// number is adopted. If not, a new row is inserted at MAX(number)+1
+// indexer, which ran alongside the Go ETL during the production cutover):
+// if a row for blockHash already exists, its number is adopted. If not,
+// a new row is inserted at MAX(number)+1
 // computed in-statement. The DB is the source of truth; no in-memory
 // counter to drift from concurrent writers or stale snapshots.
 //

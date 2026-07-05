@@ -46,6 +46,8 @@ func validateTrackCreate(ctx context.Context, params *Params) error {
 		if err := ValidateGenre(genre); err != nil {
 			return err
 		}
+		// Normalize in place so the canonical form is what gets inserted.
+		params.Metadata["genre"] = NormalizeGenre(genre)
 	}
 	if err := ValidateAccessConditions(params); err != nil {
 		return err
@@ -219,11 +221,15 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 	if err := updateStemsTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
 		return err
 	}
-	if err := updateRemixesTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
-		return err
+	if trackCreateHasRemixParents(params.Metadata) {
+		if err := updateRemixesTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+			return err
+		}
 	}
-	if err := updateTrackCollaboratorsTable(ctx, params.DBTX, params.EntityID, params.UserID, params.Metadata, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
-		return err
+	if trackCreateHasCollaborators(params.Metadata, params.UserID) {
+		if err := updateTrackCollaboratorsTable(ctx, params.DBTX, params.EntityID, params.UserID, params.Metadata, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
+			return err
+		}
 	}
 	if err := autoSubscribeToContestOnSubmission(ctx, params); err != nil {
 		return err
@@ -257,6 +263,14 @@ func nullString(s string) any {
 		return nil
 	}
 	return s
+}
+
+func trackCreateHasRemixParents(metadata map[string]any) bool {
+	return len(getRemixParentTrackIDs(metadata)) > 0
+}
+
+func trackCreateHasCollaborators(metadata map[string]any, ownerID int64) bool {
+	return len(getCollaboratorUserIDs(metadata, ownerID)) > 0
 }
 
 // metadataJSONRaw returns JSON bytes for a metadata key, or nil if absent.

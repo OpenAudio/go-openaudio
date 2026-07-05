@@ -159,6 +159,9 @@ func SetupNode(logger *zap.Logger) (*Config, *cconfig.Config, error) {
 	if envConfig.PersistentPeers != "" {
 		cometConfig.P2P.PersistentPeers = envConfig.PersistentPeers
 	}
+	if envConfig.Seeds != "" {
+		cometConfig.P2P.Seeds = envConfig.Seeds
+	}
 	if envConfig.ExternalAddress != "" {
 		cometConfig.P2P.ExternalAddress = envConfig.ExternalAddress
 	}

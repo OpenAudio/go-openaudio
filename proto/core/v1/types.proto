@@ -308,6 +308,8 @@ message SignedTransaction {
     RewardMessage reward = 1009;
     FileUpload file_upload = 1010;
     RewardPoolMessage reward_pool = 1011;
+    ManageEntityLegacyMigration manage_entity_migration = 1012;
+    MediorumOperation mediorum_operation = 1013;
   }
 }
 
@@ -348,6 +350,22 @@ message SlaNodeReport {
 }
 
 message ManageEntityLegacy {
+  int64 user_id = 1;
+  string entity_type = 2;
+  int64 entity_id = 3;
+  string action = 4;
+  string metadata = 5;
+  string signature = 6;
+  string signer = 7;
+  string nonce = 8;
+}
+
+// ManageEntityLegacyMigration is structurally identical to ManageEntityLegacy
+// but signals to indexers that the transaction was produced by genesis-writer
+// during the initial chain migration. Indexers must verify only that the signer
+// matches the genesis migration authority; standard ownership, wallet-uniqueness,
+// and signer checks must not be applied.
+message ManageEntityLegacyMigration {
   int64 user_id = 1;
   string entity_type = 2;
   int64 entity_id = 3;
@@ -749,6 +767,18 @@ message FileUpload {
   string validator_address = 6;
   // signature from the validator node
   string validator_signature = 7;
+}
+
+// MediorumOperation is the consensus-carried replacement for the legacy CRUDR
+// peer gossip operation. It intentionally preserves the old CRUDR data shape:
+// action/table identify the GORM model operation, and data is the JSON array
+// payload that mediorum already applies to its storage database.
+message MediorumOperation {
+  string ulid = 1;
+  string host = 2;
+  string action = 3;
+  string table = 4;
+  bytes data = 5;
 }
 
 message GetStreamURLsSignature {

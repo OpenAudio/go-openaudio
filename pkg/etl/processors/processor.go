@@ -20,6 +20,7 @@ const (
 	TxTypeStorageProof               = "storage_proof"
 	TxTypeStorageProofVerification   = "storage_proof_verification"
 	TxTypeRelease                    = "release"
+	TxTypeManageEntityMigration      = "manage_entity_migration"
 )
 
 // TxContext holds block and transaction metadata for processing.

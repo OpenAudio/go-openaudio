@@ -161,6 +161,58 @@ func TestTrackCreate_Success(t *testing.T) {
 	}
 }
 
+func TestTrackCreate_SkipsEmptyRelationshipReconciliation(t *testing.T) {
+	ownerID := int64(UserIDOffset + 1)
+
+	tests := []struct {
+		name              string
+		metadata          string
+		wantRemixes       bool
+		wantCollaborators bool
+	}{
+		{
+			name:              "no relationship metadata",
+			metadata:          `{"owner_id":3000001,"title":"No Relations"}`,
+			wantRemixes:       false,
+			wantCollaborators: false,
+		},
+		{
+			name:              "empty relationship metadata",
+			metadata:          `{"owner_id":3000001,"title":"Empty Relations","remix_of":{"tracks":[]},"collaborators":[]}`,
+			wantRemixes:       false,
+			wantCollaborators: false,
+		},
+		{
+			name:              "only owner collaborator",
+			metadata:          `{"owner_id":3000001,"title":"Owner Only","collaborators":[3000001]}`,
+			wantRemixes:       false,
+			wantCollaborators: false,
+		},
+		{
+			name:              "has relationship metadata",
+			metadata:          `{"owner_id":3000001,"title":"Relations","remix_of":{"tracks":[{"parent_track_id":2000042}]},"collaborators":[3000002]}`,
+			wantRemixes:       true,
+			wantCollaborators: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var meta map[string]any
+			if err := json.Unmarshal([]byte(tt.metadata), &meta); err != nil {
+				t.Fatalf("unmarshal metadata: %v", err)
+			}
+
+			if got := trackCreateHasRemixParents(meta); got != tt.wantRemixes {
+				t.Fatalf("trackCreateHasRemixParents() = %v, want %v", got, tt.wantRemixes)
+			}
+			if got := trackCreateHasCollaborators(meta, ownerID); got != tt.wantCollaborators {
+				t.Fatalf("trackCreateHasCollaborators() = %v, want %v", got, tt.wantCollaborators)
+			}
+		})
+	}
+}
+
 func TestTrackCreate_PersistsBpmAndKey(t *testing.T) {
 	pool := setupTestDB(t)
 	uid := int64(UserIDOffset + 1)
