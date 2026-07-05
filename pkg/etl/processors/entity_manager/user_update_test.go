@@ -177,6 +177,23 @@ func TestUserUpdate_RejectsArtistPickTrackNotOwned(t *testing.T) {
 	mustReject(t, UserUpdate(), params, "does not exist")
 }
 
+func TestUserUpdate_IsDeactivated(t *testing.T) {
+	pool := setupTestDB(t)
+	seedUser(t, pool, UserIDOffset+1, "0xalicewallet", "alice")
+	h := UserUpdate()
+	params := buildParams(t, pool, EntityTypeUser, ActionUpdate, UserIDOffset+1, UserIDOffset+1, "0xAliceWallet", `{"is_deactivated":true}`)
+	mustHandle(t, h, params)
+
+	var isDeactivated bool
+	err := pool.QueryRow(context.Background(), "SELECT is_deactivated FROM users WHERE user_id = $1 AND is_current = true", UserIDOffset+1).Scan(&isDeactivated)
+	if err != nil {
+		t.Fatalf("failed to query: %v", err)
+	}
+	if !isDeactivated {
+		t.Error("is_deactivated = false, want true")
+	}
+}
+
 // Regression: a profile edit (User Update) must persist social links
 // (instagram/twitter/tiktok/website/donation). These were silently dropped by
 // the writer, so users could not add or change their IG/links on profile.

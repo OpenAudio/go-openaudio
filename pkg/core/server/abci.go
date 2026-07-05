@@ -239,8 +239,11 @@ func (s *Server) Query(ctx context.Context, req *abcitypes.QueryRequest) (*abcit
 }
 
 func (s *Server) CheckTx(_ context.Context, check *abcitypes.CheckTxRequest) (*abcitypes.CheckTxResponse, error) {
-	_, err := s.isValidSignedTransaction(check.Tx)
+	msg, err := s.isValidSignedTransaction(check.Tx)
 	if err != nil {
+		return &abcitypes.CheckTxResponse{Code: 1}, nil
+	}
+	if err := validateSignedTransactionForCheckTx(msg); err != nil {
 		return &abcitypes.CheckTxResponse{Code: 1}, nil
 	}
 
@@ -343,6 +346,8 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 			// set tx to ok and set to not okay later if error occurs
 			txs[i] = &abcitypes.ExecTxResult{Code: abcitypes.CodeTypeOK}
 
+			emitDeregistrationValidatorUpdate := s.deregistrationNeedsValidatorUpdate(ctx, signedTx)
+
 			// Use raw transaction bytes for consistent hashing during block sync
 			txhash := common.ToTxHashFromBytes(tx)
 			finalizedTx, err := s.finalizeTransaction(ctx, req, signedTx, txhash, req.Height)
@@ -350,39 +355,33 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				s.logger.Error("error finalizing event", zap.Error(err))
 				txs[i] = &abcitypes.ExecTxResult{Code: 2}
 			} else if vr := signedTx.GetValidatorRegistration(); vr != nil { // TODO: delete legacy registration after chain rollover
-				vrPubKey := ed25519.PubKey(vr.GetPubKey())
-				vrAddr := vrPubKey.Address().String()
-				if _, ok := validatorUpdatesMap[vrAddr]; !ok {
-					validatorUpdatesMap[vrAddr] = abcitypes.ValidatorUpdate{
-						Power:       vr.Power,
-						PubKeyBytes: vr.PubKey,
-						PubKeyType:  "ed25519",
+				if vrAddr, update, ok := s.registeredNodeValidatorUpdate(ctx, vr.GetCometAddress(), vr.GetPubKey(), vr.GetPower()); ok {
+					if _, ok := validatorUpdatesMap[vrAddr]; !ok {
+						validatorUpdatesMap[vrAddr] = update
 					}
 				}
 			} else if att := signedTx.GetAttestation(); att != nil && att.GetValidatorRegistration() != nil {
 				vr := att.GetValidatorRegistration()
-				vrPubKey := ed25519.PubKey(vr.GetPubKey())
-				vrAddr := vrPubKey.Address().String()
-				if _, ok := validatorUpdatesMap[vrAddr]; !ok {
-					validatorUpdatesMap[vrAddr] = abcitypes.ValidatorUpdate{
-						Power:       vr.Power,
-						PubKeyBytes: vr.PubKey,
-						PubKeyType:  "ed25519",
+				if vrAddr, update, ok := s.registeredNodeValidatorUpdate(ctx, vr.GetCometAddress(), vr.GetPubKey(), vr.GetPower()); ok {
+					if _, ok := validatorUpdatesMap[vrAddr]; !ok {
+						validatorUpdatesMap[vrAddr] = update
 					}
-				}
-				if err := s.appendRegistrationToValidatorHistory(ctx, vr, req.Time, req.Height); err != nil {
-					// do not halt on validator history
-					s.logger.Error("failed to append registration event to validator history", zap.Error(err))
+					if err := s.appendRegistrationToValidatorHistory(ctx, vr, req.Time, req.Height); err != nil {
+						// do not halt on validator history
+						s.logger.Error("failed to append registration event to validator history", zap.Error(err))
+					}
 				}
 			} else if att := signedTx.GetAttestation(); att != nil && att.GetValidatorDeregistration() != nil {
 				vr := att.GetValidatorDeregistration()
 				vrPubKey := ed25519.PubKey(vr.GetPubKey())
 				vrAddr := vrPubKey.Address().String()
-				// intentionally override any existing updates
-				validatorUpdatesMap[vrAddr] = abcitypes.ValidatorUpdate{
-					Power:       int64(0),
-					PubKeyBytes: vr.PubKey,
-					PubKeyType:  "ed25519",
+				if emitDeregistrationValidatorUpdate {
+					// intentionally override any existing updates
+					validatorUpdatesMap[vrAddr] = abcitypes.ValidatorUpdate{
+						Power:       int64(0),
+						PubKeyBytes: vr.PubKey,
+						PubKeyType:  "ed25519",
+					}
 				}
 				if err := s.appendDeregistrationToValidatorHistory(ctx, vr, req.Time, req.Height); err != nil {
 					// do not halt on validator history
@@ -391,11 +390,13 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 			} else if vd := signedTx.GetValidatorDeregistration(); vd != nil { // TODO: delete legacy deregistration after chain rollover
 				vdPubKey := ed25519.PubKey(vd.GetPubKey())
 				vdAddr := vdPubKey.Address().String()
-				// intentionally override any existing updates
-				validatorUpdatesMap[vdAddr] = abcitypes.ValidatorUpdate{
-					Power:       int64(0),
-					PubKeyBytes: vd.PubKey,
-					PubKeyType:  "ed25519",
+				if emitDeregistrationValidatorUpdate {
+					// intentionally override any existing updates
+					validatorUpdatesMap[vdAddr] = abcitypes.ValidatorUpdate{
+						Power:       int64(0),
+						PubKeyBytes: vd.PubKey,
+						PubKeyType:  "ed25519",
+					}
 				}
 			}
 
@@ -559,15 +560,18 @@ func (s *Server) OfferSnapshot(_ context.Context, req *abcitypes.OfferSnapshotRe
 	s.snapshotMutex.Lock()
 	defer s.snapshotMutex.Unlock()
 
-	// If we've already accepted a snapshot, only accept the same one
+	// If we've already accepted a snapshot, check if CometBFT is re-offering the
+	// same one (resume) or a different one (previous snapshot failed verification).
 	if s.acceptedSnapshotHeight != 0 {
 		if req.Snapshot.Height != s.acceptedSnapshotHeight {
-			s.logger.Info("rejecting snapshot: already syncing to different snapshot",
-				zap.Uint64("offered_height", req.Snapshot.Height),
-				zap.Uint64("accepted_height", s.acceptedSnapshotHeight))
-			return &abcitypes.OfferSnapshotResponse{
-				Result: abcitypes.OFFER_SNAPSHOT_RESULT_REJECT,
-			}, nil
+			// CometBFT is offering a different snapshot, which means the previously
+			// accepted one failed (e.g. consensus params verification error). Clear
+			// the old state so we can accept the new snapshot.
+			s.logger.Info("clearing previous snapshot state: CometBFT offered a new snapshot",
+				zap.Uint64("previous_height", s.acceptedSnapshotHeight),
+				zap.Uint64("new_height", req.Snapshot.Height))
+			s.acceptedSnapshotHeight = 0
+			s.acceptedSnapshotHash = nil
 		}
 		// Check hash matches too
 		if !bytes.Equal(req.Snapshot.Hash, s.acceptedSnapshotHash) {
@@ -872,6 +876,69 @@ func (s *Server) VerifyVoteExtension(_ context.Context, verify *abcitypes.Verify
 	return &abcitypes.VerifyVoteExtensionResponse{}, nil
 }
 
+func (s *Server) registeredNodeValidatorUpdate(ctx context.Context, cometAddress string, pubKey []byte, power int64) (string, abcitypes.ValidatorUpdate, bool) {
+	if cometAddress == "" {
+		return "", abcitypes.ValidatorUpdate{}, false
+	}
+
+	node, err := s.getDb().GetRegisteredNodeByCometAddress(ctx, cometAddress)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", abcitypes.ValidatorUpdate{}, false
+	}
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("failed to check validator state before registration update", zap.String("comet_address", cometAddress), zap.Error(err))
+		}
+		return "", abcitypes.ValidatorUpdate{}, false
+	}
+	if node.Jailed {
+		return "", abcitypes.ValidatorUpdate{}, false
+	}
+
+	vrPubKey := ed25519.PubKey(pubKey)
+	vrAddr := vrPubKey.Address().String()
+	if !strings.EqualFold(vrAddr, node.CometAddress) {
+		if s.logger != nil {
+			s.logger.Error("registration validator update does not match app state", zap.String("comet_address", cometAddress), zap.String("pubkey_address", vrAddr))
+		}
+		return "", abcitypes.ValidatorUpdate{}, false
+	}
+	return vrAddr, abcitypes.ValidatorUpdate{
+		Power:       power,
+		PubKeyBytes: pubKey,
+		PubKeyType:  "ed25519",
+	}, true
+}
+
+func (s *Server) deregistrationNeedsValidatorUpdate(ctx context.Context, tx *v1.SignedTransaction) bool {
+	var cometAddress string
+
+	if att := tx.GetAttestation(); att != nil {
+		if dereg := att.GetValidatorDeregistration(); dereg != nil {
+			cometAddress = dereg.GetCometAddress()
+		}
+	} else if dereg := tx.GetValidatorDeregistration(); dereg != nil {
+		cometAddress = dereg.GetCometAddress()
+	}
+
+	if cometAddress == "" {
+		return false
+	}
+
+	node, err := s.getDb().GetRegisteredNodeByCometAddress(ctx, cometAddress)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false
+	}
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("failed to check validator state before deregistration", zap.String("comet_address", cometAddress), zap.Error(err))
+		}
+		return false
+	}
+
+	return !node.Jailed
+}
+
 //////////////////////////////////
 //// Utility Methods for ABCI ////
 //////////////////////////////////
@@ -913,39 +980,49 @@ func (s *Server) isValidSignedTransaction(tx []byte) (*v1.SignedTransaction, err
 	if err := proto.Unmarshal(tx, &msg); err != nil {
 		return nil, err
 	}
+	return &msg, nil
+}
 
+func validateSignedTransactionForCheckTx(msg *v1.SignedTransaction) error {
+	if msg == nil {
+		return fmt.Errorf("transaction is nil")
+	}
 	if msg.Transaction == nil {
-		return nil, fmt.Errorf("transaction has no body")
+		return fmt.Errorf("transaction has no body")
 	}
 
 	switch msg.Transaction.(type) {
 	case *v1.SignedTransaction_StorageProof:
 		sp := msg.GetStorageProof()
 		if len(sp.ProverAddresses) == 0 {
-			return nil, fmt.Errorf("storage proof has no prover addresses")
+			return fmt.Errorf("storage proof has no prover addresses")
 		}
 		if sp.Address == "" {
-			return nil, fmt.Errorf("storage proof has no prover address")
+			return fmt.Errorf("storage proof has no prover address")
 		}
 		if sp.Height == 0 {
-			return nil, fmt.Errorf("storage proof has no height")
+			return fmt.Errorf("storage proof has no height")
 		}
 	case *v1.SignedTransaction_StorageProofVerification:
 		spv := msg.GetStorageProofVerification()
 		if spv.Height == 0 {
-			return nil, fmt.Errorf("storage proof verification has no height")
+			return fmt.Errorf("storage proof verification has no height")
 		}
 		if len(spv.Proof) == 0 {
-			return nil, fmt.Errorf("storage proof verification has no proof")
+			return fmt.Errorf("storage proof verification has no proof")
 		}
 	case *v1.SignedTransaction_Attestation:
 		att := msg.GetAttestation()
 		if att.GetValidatorRegistration() == nil && att.GetValidatorDeregistration() == nil {
-			return nil, fmt.Errorf("attestation has no body")
+			return fmt.Errorf("attestation has no body")
+		}
+	case *v1.SignedTransaction_MediorumOperation:
+		if err := validateMediorumOperationShape(msg.GetMediorumOperation()); err != nil {
+			return err
 		}
 	}
 
-	return &msg, nil
+	return nil
 }
 
 func (s *Server) isValidV2Transaction(tx []byte) (*v1beta1.Transaction, error) {
@@ -1042,6 +1119,11 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 			s.logger.Error("Invalid block: invalid reward pool tx", zap.Error(err))
 			return false, nil
 		}
+	case *v1.SignedTransaction_MediorumOperation:
+		if err := s.isValidMediorumOperationTx(ctx, signedTx); err != nil {
+			s.logger.Error("Invalid block: invalid mediorum operation tx", zap.Error(err))
+			return false, nil
+		}
 	}
 	return true, nil
 }
@@ -1052,6 +1134,8 @@ func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64,
 		return s.isValidRewardTransaction(ctx, signedTx, currentHeight)
 	case *v1.SignedTransaction_RewardPool:
 		return s.isValidRewardPoolTransaction(ctx, signedTx, currentHeight)
+	case *v1.SignedTransaction_MediorumOperation:
+		return s.isValidMediorumOperationTx(ctx, signedTx)
 	default:
 		// For other transaction types, no validation needed during SendTransaction
 		return nil
@@ -1067,6 +1151,8 @@ func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.Finaliz
 		return s.finalizePlayTransaction(ctx, msg)
 	case *v1.SignedTransaction_ManageEntity:
 		return s.finalizeManageEntity(ctx, msg)
+	case *v1.SignedTransaction_ManageEntityMigration:
+		return s.finalizeManageEntityMigration(ctx, msg)
 	case *v1.SignedTransaction_Attestation:
 		return s.finalizeAttestation(ctx, msg, req.Height)
 	case *v1.SignedTransaction_ValidatorRegistration:
@@ -1087,6 +1173,8 @@ func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.Finaliz
 		return s.finalizeRewardPoolTransaction(ctx, req, msg.GetRewardPool(), txHash, 0)
 	case *v1.SignedTransaction_FileUpload:
 		return s.finalizeFileUpload(ctx, msg, txHash, req.Height)
+	case *v1.SignedTransaction_MediorumOperation:
+		return s.finalizeMediorumOperation(ctx, msg, txHash)
 	default:
 		return nil, fmt.Errorf("unhandled proto event: %v %T", msg, t)
 	}

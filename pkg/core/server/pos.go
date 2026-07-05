@@ -223,10 +223,6 @@ func (s *Server) isValidStorageProofTx(ctx context.Context, tx *v1.SignedTransac
 		return fmt.Errorf("proof is for '%s' but was signed by '%s'", sp.Address, node.CometAddress)
 	}
 
-	if len(sp.ProverAddresses) == 0 {
-		return fmt.Errorf("storage proof has no prover addresses")
-	}
-
 	// validate height
 	height := sp.GetHeight()
 	if height == 0 {

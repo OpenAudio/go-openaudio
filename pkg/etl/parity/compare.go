@@ -131,8 +131,10 @@ var compareTables = []compareTable{
 	},
 }
 
-// Compare connects to both the ETL clone and production DB and compares
-// rows created after the snapshot boundary.
+// Compare connects to both the ETL clone and a database holding the
+// pre-cutover rows written by the legacy Python indexer, and compares
+// rows created after the snapshot boundary. (Used to validate the
+// production cutover to the Go ETL, now complete.)
 //
 // The boundary is determined automatically: the first em_block written by
 // the Go ETL is the lowest em_block in core_indexed_blocks that was NOT
@@ -142,7 +144,7 @@ func Compare(ctx context.Context, etlPool *pgxpool.Pool, prodPool *pgxpool.Pool)
 	// Find the em_block boundary using etl_blocks, which only the Go ETL writes to.
 	// The first etl_blocks row marks where Go started indexing. We then find the
 	// minimum em_block assigned by Go in core_indexed_blocks for that height range.
-	// Everything below that em_block was written by the legacy indexer; everything at or above is written here.
+	// Everything below that em_block was written by the legacy Python indexer (pre-cutover); everything at or above was written by the Go ETL.
 	var minGoHeight, maxGoHeight int64
 	err := etlPool.QueryRow(ctx,
 		`SELECT MIN(block_height), MAX(block_height) FROM etl_blocks`).Scan(&minGoHeight, &maxGoHeight)

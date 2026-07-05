@@ -66,6 +66,30 @@ func TestCommentCreate_WithMentions(t *testing.T) {
 	}
 }
 
+func TestCommentCreate_WithDuplicateMentions(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	uid2 := int64(UserIDOffset + 2)
+	trackID := int64(TrackIDOffset + 1)
+	commentID := int64(CommentIDOffset + 12)
+	seedUser(t, pool, uid, "0xcommenter", "commenter")
+	seedUser(t, pool, uid2, "0xmentioned", "mentioned")
+	seedTrack(t, pool, trackID, uid)
+
+	meta := fmt.Sprintf(`{"body":"Hey twice","entity_id":%d,"entity_type":"Track","mentions":[%d,%d]}`, trackID, uid2, uid2)
+	mustHandle(t, CommentCreate(), buildParams(t, pool, EntityTypeComment, ActionCreate, uid, commentID, "0xCommenter", meta))
+
+	var mentionCount int
+	err := pool.QueryRow(context.Background(),
+		"SELECT count(*) FROM comment_mentions WHERE comment_id = $1 AND user_id = $2", commentID, uid2).Scan(&mentionCount)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if mentionCount != 1 {
+		t.Errorf("mention count = %d, want 1", mentionCount)
+	}
+}
+
 func TestCommentCreate_WithThread(t *testing.T) {
 	pool := setupTestDB(t)
 	uid := int64(UserIDOffset + 1)
@@ -92,6 +116,20 @@ func TestCommentCreate_WithThread(t *testing.T) {
 	if threadCount != 1 {
 		t.Errorf("thread count = %d, want 1", threadCount)
 	}
+}
+
+func TestCommentCreate_RejectsMissingParent(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	trackID := int64(TrackIDOffset + 1)
+	childID := int64(CommentIDOffset + 13)
+	missingParentID := int64(CommentIDOffset + 999)
+	seedUser(t, pool, uid, "0xcommenter", "commenter")
+	seedTrack(t, pool, trackID, uid)
+
+	meta := fmt.Sprintf(`{"body":"Reply","entity_id":%d,"entity_type":"Track","parent_comment_id":%d}`, trackID, missingParentID)
+	params := buildParams(t, pool, EntityTypeComment, ActionCreate, uid, childID, "0xCommenter", meta)
+	mustReject(t, CommentCreate(), params, "parent comment")
 }
 
 func TestCommentCreate_RejectsDuplicate(t *testing.T) {

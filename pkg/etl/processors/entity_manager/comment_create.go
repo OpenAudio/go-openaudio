@@ -2,7 +2,10 @@ package entity_manager
 
 import (
 	"context"
+	"errors"
 	"unicode/utf8"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type commentCreateHandler struct{}
@@ -49,17 +52,20 @@ func (h *commentCreateHandler) Handle(ctx context.Context, params *Params) error
 
 	// Insert mentions (first 10)
 	if mentions, ok := getMetadataMentions(params); ok {
-		for _, mentionUserID := range mentions {
-			_, err := params.DBTX.Exec(ctx, `
-				INSERT INTO comment_mentions (
-					comment_id, user_id, created_at, updated_at, is_delete,
-					txhash, blockhash, blocknumber
-				) VALUES ($1, $2, $3, $3, false, $4, $5, $6)
-				ON CONFLICT (comment_id, user_id) DO UPDATE SET is_delete = false, updated_at = $3, txhash = $4, blocknumber = $6
-			`, params.EntityID, mentionUserID, params.BlockTime, params.TxHash, params.BlockHash, params.BlockNumber)
-			if err != nil {
-				return err
-			}
+		_, err := params.DBTX.Exec(ctx, `
+			INSERT INTO comment_mentions (
+				comment_id, user_id, created_at, updated_at, is_delete,
+				txhash, blockhash, blocknumber
+			)
+			SELECT $1, mention_ids.uid, $3, $3, false, $4, $5, $6
+			FROM (
+				SELECT DISTINCT uid
+				FROM unnest($2::int[]) AS mentions(uid)
+			) AS mention_ids
+			ON CONFLICT (comment_id, user_id) DO UPDATE SET is_delete = false, updated_at = $3, txhash = $4, blocknumber = $6
+		`, params.EntityID, mentions, params.BlockTime, params.TxHash, params.BlockHash, params.BlockNumber)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -172,20 +178,15 @@ func validateCommentWrite(ctx context.Context, params *Params, isCreate bool) er
 
 	// Validate parent_comment_id (or parent_id) if provided.
 	if parentID, ok := getCommentParentID(params); ok && isCreate {
-		pExists, err := commentExists(ctx, params.DBTX, parentID)
-		if err != nil {
-			return err
-		}
-		if !pExists {
-			return NewValidationError("parent comment %d does not exist", parentID)
-		}
-
 		// Parent must be on the same entity (track/fanclub) as this child.
 		var parentEntityType string
 		var parentEntityID int64
-		err = params.DBTX.QueryRow(ctx,
+		err := params.DBTX.QueryRow(ctx,
 			"SELECT entity_type, entity_id FROM comments WHERE comment_id = $1",
 			parentID).Scan(&parentEntityType, &parentEntityID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return NewValidationError("parent comment %d does not exist", parentID)
+		}
 		if err != nil {
 			return err
 		}

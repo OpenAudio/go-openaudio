@@ -33,6 +33,8 @@ func validateTrackUpdate(ctx context.Context, params *Params) error {
 			if err := ValidateGenre(genre); err != nil {
 				return err
 			}
+			// Normalize in place so the merge picks up the canonical form.
+			params.Metadata["genre"] = NormalizeGenre(genre)
 		}
 	}
 	if err := ValidateAccessConditions(params); err != nil {

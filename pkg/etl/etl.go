@@ -24,6 +24,10 @@ type Indexer struct {
 	config  Config
 
 	core       corev1connect.CoreServiceClient
+	// streamClient, when set and config.BlockStreamEnabled, sources blocks via
+	// CoreService.StreamBlocks. Must be built with connect.WithGRPC(). The unary
+	// core client above is still used for catch-up fallback and status calls.
+	streamClient corev1connect.CoreServiceClient
 	pool       *pgxpool.Pool
 	db         *db.Queries
 	logger     *zap.Logger
@@ -65,6 +69,13 @@ func New(core corev1connect.CoreServiceClient, logger *zap.Logger) *Indexer {
 // SetConfig sets optional component flags.
 func (e *Indexer) SetConfig(c Config) {
 	e.config = c
+}
+
+// SetBlockStreamClient sets the gRPC client used for CoreService.StreamBlocks
+// when Config.BlockStreamEnabled is true. It must be built with
+// connect.WithGRPC(). If unset, the indexer polls regardless of the flag.
+func (e *Indexer) SetBlockStreamClient(c corev1connect.CoreServiceClient) {
+	e.streamClient = c
 }
 
 func (e *Indexer) SetDBURL(dbURL string) {

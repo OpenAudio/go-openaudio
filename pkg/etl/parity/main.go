@@ -1,4 +1,10 @@
-// Parity compare tool: field-by-field comparison of Go ETL output against production data.
+// Parity compare tool: field-by-field comparison of Go ETL output against the
+// pre-cutover rows written by the legacy Python indexer.
+//
+// This tool was used to validate the production cutover from the legacy Python
+// celery indexer to the Go ETL (now complete — the Go ETL is the production
+// indexer). It remains useful for auditing the Go ETL against a snapshot of
+// historical data.
 //
 // Usage:
 //

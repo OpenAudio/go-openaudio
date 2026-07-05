@@ -23,6 +23,34 @@ func (s *Server) validateManageEntity(_ context.Context, stx *v1.SignedTransacti
 	return manageEntity, nil
 }
 
+// finalizeManageEntityMigration handles ManageEntityLegacyMigration transactions written
+// by genesis-writer. Populates sound_recordings and management_keys for Track
+// creates that carry access_authorities, matching the finalizeManageEntity path.
+func (s *Server) finalizeManageEntityMigration(ctx context.Context, stx *v1.SignedTransaction) (proto.Message, error) {
+	me := stx.GetManageEntityMigration()
+	if me == nil {
+		return nil, errors.New("not manage entity migration")
+	}
+
+	if strings.EqualFold(me.GetEntityType(), "Track") &&
+		strings.EqualFold(me.GetAction(), "Create") {
+		legacy := &v1.ManageEntityLegacy{
+			UserId:     me.GetUserId(),
+			EntityType: me.GetEntityType(),
+			EntityId:   me.GetEntityId(),
+			Action:     me.GetAction(),
+			Metadata:   me.GetMetadata(),
+		}
+		if err := s.processTrackManageEntity(ctx, legacy); err != nil {
+			s.logger.Error("failed to process migrated track manage entity", zap.Error(err),
+				zap.String("entity_type", me.GetEntityType()),
+				zap.Int64("entity_id", me.GetEntityId()))
+		}
+	}
+
+	return me, nil
+}
+
 // access_authorities are wallet addresses that can sign to authorize stream access (programmable distribution)
 type trackMetadata struct {
 	CID               string   `json:"cid"`
