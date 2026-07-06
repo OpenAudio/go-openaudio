@@ -45,7 +45,7 @@ const (
 
 	DefaultCoreRootDir = "/data/core"
 
-	DefaultStateSyncSnapshotMinFreeBytes int64 = 100 * 1024 * 1024 * 1024 // 100 GiB
+	DefaultStateSyncSnapshotMinFreeBytes int64 = 80 * 1024 * 1024 * 1024 // 80 GiB
 )
 
 const (
