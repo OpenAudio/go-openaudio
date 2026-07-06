@@ -5,9 +5,11 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -25,6 +27,9 @@ var (
 	ContentOne   *sdk.OpenAudioSDK
 	ContentTwo   *sdk.OpenAudioSDK
 	ContentThree *sdk.OpenAudioSDK
+
+	devnetReadyMu  sync.Mutex
+	devnetReadyErr error
 )
 
 // NewTestHTTPClient creates an HTTP client configured for local devnet testing.
@@ -74,18 +79,43 @@ func WaitForDevnetHealthy(timeout ...time.Duration) error {
 	timeoutDuration := 300 * time.Second
 	if len(timeout) > 0 {
 		timeoutDuration = timeout[0]
+		return waitForDevnetHealthy(timeoutDuration)
 	}
+
+	devnetReadyMu.Lock()
+	err := devnetReadyErr
+	devnetReadyMu.Unlock()
+	if err != nil {
+		return err
+	}
+
+	err = waitForDevnetHealthy(timeoutDuration)
+	if err != nil {
+		devnetReadyMu.Lock()
+		if devnetReadyErr == nil {
+			devnetReadyErr = err
+		}
+		err = devnetReadyErr
+		devnetReadyMu.Unlock()
+	}
+	return err
+}
+
+func waitForDevnetHealthy(timeoutDuration time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
 	defer cancel()
 
-	nodes := []*sdk.OpenAudioSDK{
-		DiscoveryOne,
-		ContentOne,
-		ContentTwo,
-		ContentThree,
+	nodes := []struct {
+		name string
+		sdk  *sdk.OpenAudioSDK
+	}{
+		{DiscoveryOneRPC, DiscoveryOne},
+		{ContentOneRPC, ContentOne},
+		{ContentTwoRPC, ContentTwo},
+		{ContentThreeRPC, ContentThree},
 	}
 
-	nodeAddresses := []string{
+	storageNodes := []string{
 		ContentOneRPC,
 		ContentTwoRPC,
 		ContentThreeRPC,
@@ -103,17 +133,23 @@ func WaitForDevnetHealthy(timeout ...time.Duration) error {
 		Timeout: 5 * time.Second,
 	}
 
-	checkReady := func() bool {
+	checkReady := func() error {
 		for _, n := range nodes {
 			reqCtx, reqCancel := context.WithTimeout(ctx, 5*time.Second)
-			status, err := n.Core.GetStatus(reqCtx, connect.NewRequest(&corev1.GetStatusRequest{}))
+			status, err := n.sdk.Core.GetStatus(reqCtx, connect.NewRequest(&corev1.GetStatusRequest{}))
 			reqCancel()
-			if err != nil || status.Msg == nil || !status.Msg.Ready {
-				return false
+			if err != nil {
+				return fmt.Errorf("%s core status: %w", n.name, err)
+			}
+			if status == nil || status.Msg == nil {
+				return fmt.Errorf("%s core status: empty response", n.name)
+			}
+			if !status.Msg.Ready {
+				return fmt.Errorf("%s core not ready", n.name)
 			}
 		}
 
-		for _, addr := range nodeAddresses {
+		for _, addr := range storageNodes {
 			baseURL := addr
 			if !strings.HasPrefix(baseURL, "https://") && !strings.HasPrefix(baseURL, "http://") {
 				baseURL = "https://" + baseURL
@@ -125,12 +161,12 @@ func WaitForDevnetHealthy(timeout ...time.Duration) error {
 			req, err := http.NewRequestWithContext(reqCtx, "GET", baseURL+"/health-check", nil)
 			if err != nil {
 				reqCancel()
-				return false
+				return fmt.Errorf("%s storage health request: %w", addr, err)
 			}
 			resp, err := pollClient.Do(req)
-			reqCancel()
 			if err != nil {
-				return false
+				reqCancel()
+				return fmt.Errorf("%s storage health: %w", addr, err)
 			}
 
 			var healthResponse struct {
@@ -138,26 +174,40 @@ func WaitForDevnetHealthy(timeout ...time.Duration) error {
 					WalletIsRegistered bool `json:"wallet_is_registered"`
 				} `json:"storage"`
 			}
-			ok := resp.StatusCode == 200 &&
-				json.NewDecoder(resp.Body).Decode(&healthResponse) == nil &&
-				healthResponse.Storage.WalletIsRegistered
-			resp.Body.Close()
-			if !ok {
-				return false
+			decodeErr := json.NewDecoder(resp.Body).Decode(&healthResponse)
+			closeErr := resp.Body.Close()
+			reqCancel()
+
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("%s storage health returned %s", addr, resp.Status)
+			}
+			if decodeErr != nil {
+				return fmt.Errorf("%s storage health decode: %w", addr, decodeErr)
+			}
+			if closeErr != nil {
+				return fmt.Errorf("%s storage health close: %w", addr, closeErr)
+			}
+			if !healthResponse.Storage.WalletIsRegistered {
+				return fmt.Errorf("%s storage wallet not registered", addr)
 			}
 		}
-		return true
+		return nil
 	}
 
-	if checkReady() {
+	lastErr := checkReady()
+	if lastErr == nil {
 		return nil
 	}
 	for {
 		select {
 		case <-ctx.Done():
+			if lastErr != nil {
+				return fmt.Errorf("timed out waiting for devnet to be ready: last check failed: %w", lastErr)
+			}
 			return errors.New("timed out waiting for devnet to be ready")
 		case <-ticker.C:
-			if checkReady() {
+			lastErr = checkReady()
+			if lastErr == nil {
 				return nil
 			}
 		}
