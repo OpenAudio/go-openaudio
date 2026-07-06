@@ -44,6 +44,8 @@ const (
 	DevDashboardURL   = "http://localhost"
 
 	DefaultCoreRootDir = "/data/core"
+
+	DefaultStateSyncSnapshotMinFreeBytes int64 = 100 * 1024 * 1024 * 1024 // 100 GiB
 )
 
 const (
@@ -179,6 +181,8 @@ type StateSyncConfig struct {
 	BlockInterval int64
 	// number of chunk fetchers to use
 	ChunkFetchers int32
+	// minimum free bytes required on the snapshot disk before creating snapshots
+	SnapshotMinFreeBytes int64
 }
 
 func ReadConfig() (*Config, error) {
@@ -232,12 +236,16 @@ func ReadConfig() (*Config, error) {
 	}
 
 	cfg.StateSync = &StateSyncConfig{
-		ServeSnapshots: env.Get("false", "OPENAUDIO_STATE_SYNC_SERVE_SNAPSHOTS", "stateSyncServeSnapshots") == "true",
-		Enable:         env.Get("true", "OPENAUDIO_STATE_SYNC_ENABLE", "stateSyncEnable") == "true",
-		Keep:           env.GetInt(2, "OPENAUDIO_STATE_SYNC_KEEP", "stateSyncKeep"),
-		BlockInterval:  int64(env.GetInt(100000, "OPENAUDIO_STATE_SYNC_BLOCK_INTERVAL", "stateSyncBlockInterval")),
-		ChunkFetchers:  int32(env.GetInt(10, "OPENAUDIO_STATE_SYNC_CHUNK_FETCHERS", "stateSyncChunkFetchers")),
-		RPCServers:     strings.Split(env.Get(ssRpcServers, "OPENAUDIO_STATE_SYNC_RPC_SERVERS", "stateSyncRPCServers"), ","),
+		ServeSnapshots:       env.Get("false", "OPENAUDIO_STATE_SYNC_SERVE_SNAPSHOTS", "stateSyncServeSnapshots") == "true",
+		Enable:               env.Get("true", "OPENAUDIO_STATE_SYNC_ENABLE", "stateSyncEnable") == "true",
+		Keep:                 env.GetInt(2, "OPENAUDIO_STATE_SYNC_KEEP", "stateSyncKeep"),
+		BlockInterval:        int64(env.GetInt(100000, "OPENAUDIO_STATE_SYNC_BLOCK_INTERVAL", "stateSyncBlockInterval")),
+		ChunkFetchers:        int32(env.GetInt(10, "OPENAUDIO_STATE_SYNC_CHUNK_FETCHERS", "stateSyncChunkFetchers")),
+		SnapshotMinFreeBytes: env.GetInt64(DefaultStateSyncSnapshotMinFreeBytes, "OPENAUDIO_STATE_SYNC_SNAPSHOT_MIN_FREE_BYTES", "stateSyncSnapshotMinFreeBytes"),
+		RPCServers:           strings.Split(env.Get(ssRpcServers, "OPENAUDIO_STATE_SYNC_RPC_SERVERS", "stateSyncRPCServers"), ","),
+	}
+	if cfg.StateSync.SnapshotMinFreeBytes < 0 {
+		cfg.StateSync.SnapshotMinFreeBytes = 0
 	}
 
 	cfg.EthRPCUrl = GetEthRPC()
