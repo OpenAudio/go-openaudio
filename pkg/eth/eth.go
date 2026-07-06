@@ -38,10 +38,12 @@ type EthService struct {
 	env             string
 
 	rpc          *ethclient.Client
+	watchRPC     *ethclient.Client
 	db           *db.Queries
 	pool         *pgxpool.Pool
 	logger       *zap.Logger
 	c            *contracts.AudiusContracts
+	watchC       *contracts.AudiusContracts
 	deregPubsub  *DeregistrationPubsub
 	fundingRound *fundingRoundMetadata
 
@@ -90,20 +92,26 @@ func (eth *EthService) Run(ctx context.Context) error {
 	// Init pubsub
 	eth.deregPubsub = pubsub.NewPubsub[*v1.ServiceEndpoint]()
 
-	// Init eth rpc
-	wsRpcUrl := eth.rpcURL
-	if strings.HasPrefix(eth.rpcURL, "https") {
-		wsRpcUrl = "wss" + strings.TrimPrefix(eth.rpcURL, "https")
-	} else if strings.HasPrefix(eth.rpcURL, "http:") { // local devnet
-		wsRpcUrl = "ws" + strings.TrimPrefix(eth.rpcURL, "http")
-	}
-	ethrpc, err := ethclient.Dial(wsRpcUrl)
+	// Init HTTP eth rpc for read calls. This keeps cacheable eth_call and
+	// eth_getBlockByNumber requests visible to HTTP proxies.
+	httpRpcUrl := ethReadRPCURL(eth.rpcURL)
+	ethrpc, err := ethclient.Dial(httpRpcUrl)
 	if err != nil {
 		eth.logger.Error("eth client dial err", zap.Error(err))
 		return fmt.Errorf("eth client dial err: %v", err)
 	}
 	eth.rpc = ethrpc
 	defer ethrpc.Close()
+
+	// Init websocket eth rpc for event subscriptions.
+	wsRpcUrl := ethWatchRPCURL(eth.rpcURL)
+	watchRPC, err := ethclient.Dial(wsRpcUrl)
+	if err != nil {
+		eth.logger.Error("eth watch client dial err", zap.Error(err))
+		return fmt.Errorf("eth watch client dial err: %v", err)
+	}
+	eth.watchRPC = watchRPC
+	defer watchRPC.Close()
 
 	eth.logger.Info("eth service is connected")
 
@@ -115,6 +123,13 @@ func (eth *EthService) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize eth contracts: %v", err)
 	}
 	eth.c = c
+
+	watchC, err := contracts.NewAudiusContracts(eth.watchRPC, eth.registryAddress)
+	if err != nil {
+		eth.logger.Info("failed to make audius watch contracts")
+		return fmt.Errorf("failed to initialize eth watch contracts: %v", err)
+	}
+	eth.watchC = watchC
 
 	delay := 1 * time.Second
 	ticker := time.NewTicker(delay)
@@ -142,6 +157,28 @@ func (eth *EthService) Run(ctx context.Context) error {
 	return nil
 }
 
+func ethReadRPCURL(rawURL string) string {
+	switch {
+	case strings.HasPrefix(rawURL, "wss://"):
+		return "https://" + strings.TrimPrefix(rawURL, "wss://")
+	case strings.HasPrefix(rawURL, "ws://"):
+		return "http://" + strings.TrimPrefix(rawURL, "ws://")
+	default:
+		return rawURL
+	}
+}
+
+func ethWatchRPCURL(rawURL string) string {
+	switch {
+	case strings.HasPrefix(rawURL, "https://"):
+		return "wss://" + strings.TrimPrefix(rawURL, "https://")
+	case strings.HasPrefix(rawURL, "http://"):
+		return "ws://" + strings.TrimPrefix(rawURL, "http://")
+	default:
+		return rawURL
+	}
+}
+
 func (eth *EthService) startEthDataManager(ctx context.Context) error {
 	// hydrate eth data at startup
 	if err := eth.hydrateEthData(ctx); err != nil {
@@ -151,21 +188,26 @@ func (eth *EthService) startEthDataManager(ctx context.Context) error {
 	eth.logger.Info("eth service is ready")
 	eth.isReady.Store(true)
 
-	// Instantiate the contracts
-	serviceProviderFactory, err := eth.c.GetServiceProviderFactoryContract()
+	// Instantiate websocket-backed contracts for event subscriptions.
+	serviceProviderFactory, err := eth.watchC.GetServiceProviderFactoryContract()
 	if err != nil {
 		eth.logger.Error("eth failed to bind service provider factory contract", zap.Error(err))
 		return fmt.Errorf("failed to bind service provider factory contract: %v", err)
 	}
-	staking, err := eth.c.GetStakingContract()
+	staking, err := eth.watchC.GetStakingContract()
 	if err != nil {
 		eth.logger.Error("eth failed to bind staking contract", zap.Error(err))
 		return fmt.Errorf("failed to bind staking contract: %v", err)
 	}
-	governance, err := eth.c.GetGovernanceContract()
+	governance, err := eth.watchC.GetGovernanceContract()
 	if err != nil {
 		eth.logger.Error("eth could not get governance contract", zap.Error(err))
 		return fmt.Errorf("eth could not get governance contract: %v", err)
+	}
+	readGovernance, err := eth.c.GetGovernanceContract()
+	if err != nil {
+		eth.logger.Error("eth could not get read governance contract", zap.Error(err))
+		return fmt.Errorf("eth could not get read governance contract: %v", err)
 	}
 
 	watchOpts := &bind.WatchOpts{Context: ctx}
@@ -340,7 +382,7 @@ func (eth *EthService) startEthDataManager(ctx context.Context) error {
 				continue
 			}
 		case submission := <-proposalSubmittedChan:
-			if err := eth.addActiveProposal(ctx, governance, submission.ProposalId); err != nil {
+			if err := eth.addActiveProposal(ctx, readGovernance, submission.ProposalId); err != nil {
 				eth.logger.Error("could not add new proposal", zap.Int64("proposal_id", submission.ProposalId.Int64()), zap.Error(err))
 				continue
 			}
