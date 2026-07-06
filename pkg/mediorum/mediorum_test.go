@@ -27,3 +27,7 @@ func TestParseStoreRecentTTL(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultOpsRetention(t *testing.T) {
+	assert.Equal(t, 30*24*time.Hour, server.DefaultOpsRetention)
+}
