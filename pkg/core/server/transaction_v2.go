@@ -18,7 +18,15 @@ var (
 )
 
 func (s *Server) validateV2Transaction(ctx context.Context, currentHeight int64, tx *v1beta1.Transaction) error {
+	if tx == nil || tx.Envelope == nil {
+		return errors.New("transaction envelope is nil")
+	}
+
 	header := tx.Envelope.Header
+	if header == nil {
+		return errors.New("transaction envelope header is nil")
+	}
+
 	if header.ChainId != s.config.GenesisFile.ChainID {
 		return ErrV2TransactionInvalidChainID
 	}
@@ -35,16 +43,28 @@ func (s *Server) validateV2Transaction(ctx context.Context, currentHeight int64,
 	// use errgroup to validate all messages
 	eg := errgroup.Group{}
 	for _, msg := range tx.Envelope.Messages {
+		msg := msg
 		eg.Go(func() error {
+			if msg == nil {
+				return errors.New("transaction message is nil")
+			}
+
 			switch msg.Message.(type) {
 			case *v1beta1.Message_Ern:
-				switch msg.GetErn().MessageHeader.MessageControlType {
-				case ddexv1beta1.MessageControlType_MESSAGE_CONTROL_TYPE_NEW_MESSAGE.Enum():
-					return s.validateERNNewMessage(ctx, msg.GetErn())
-				case ddexv1beta1.MessageControlType_MESSAGE_CONTROL_TYPE_UPDATED_MESSAGE.Enum():
-					return s.validateERNUpdateMessage(ctx, to, from, msg.GetErn())
-				case ddexv1beta1.MessageControlType_MESSAGE_CONTROL_TYPE_TAKEDOWN_MESSAGE.Enum():
-					return s.validateERNTakedownMessage(ctx, msg.GetErn())
+				ern := msg.GetErn()
+				if ern == nil || ern.MessageHeader == nil || ern.MessageHeader.MessageControlType == nil {
+					return errors.New("ERN message control type is nil")
+				}
+
+				switch *ern.MessageHeader.MessageControlType {
+				case ddexv1beta1.MessageControlType_MESSAGE_CONTROL_TYPE_NEW_MESSAGE, ddexv1beta1.MessageControlType_MESSAGE_CONTROL_TYPE_TEST_MESSAGE:
+					return s.validateERNNewMessage(ctx, ern)
+				case ddexv1beta1.MessageControlType_MESSAGE_CONTROL_TYPE_UPDATED_MESSAGE:
+					return s.validateERNUpdateMessage(ctx, to, from, ern)
+				case ddexv1beta1.MessageControlType_MESSAGE_CONTROL_TYPE_TAKEDOWN_MESSAGE:
+					return s.validateERNTakedownMessage(ctx, ern)
+				default:
+					return fmt.Errorf("unsupported ERN message control type: %s", ern.MessageHeader.GetMessageControlType())
 				}
 			case *v1beta1.Message_Mead:
 				return s.validateMEADNewMessage(ctx, msg.GetMead())

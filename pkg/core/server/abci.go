@@ -1033,6 +1033,9 @@ func (s *Server) isValidV2Transaction(tx []byte) (*v1beta1.Transaction, error) {
 	}
 
 	// check tx header info
+	if msg.Envelope == nil || msg.Envelope.Header == nil {
+		return nil, fmt.Errorf("transaction envelope header is nil")
+	}
 	header := msg.Envelope.Header
 	if header.ChainId != s.config.GenesisFile.ChainID {
 		return nil, fmt.Errorf("invalid chain id: %s", header.ChainId)
@@ -1061,9 +1064,13 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 	signedTx, err := s.isValidSignedTransaction(tx)
 	if err != nil {
 		// check if the tx is a v2 transaction
-		_, err := s.isValidV2Transaction(tx)
+		v2Tx, err := s.isValidV2Transaction(tx)
 		if err != nil {
 			s.logger.Error("Invalid block: unrecognized transaction type")
+			return false, nil
+		}
+		if err := s.validateV2Transaction(ctx, blockHeight, v2Tx); err != nil {
+			s.logger.Error("Invalid block: invalid v2 tx", zap.Error(err))
 			return false, nil
 		}
 		return true, nil
