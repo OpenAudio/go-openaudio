@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.7.0](https://github.com/OpenAudio/go-openaudio/compare/v1.6.0...v1.7.0) (2026-07-13)
+
+
+### Features
+
+* enable mediorum core writes ([#365](https://github.com/OpenAudio/go-openaudio/issues/365)) ([f370728](https://github.com/OpenAudio/go-openaudio/commit/f3707281cc1081af32dd3a8b642899257e07527f))
+
+
+### Bug Fixes
+
+* **db:** cap postgres connection pools ([#359](https://github.com/OpenAudio/go-openaudio/issues/359)) ([b7c8a4a](https://github.com/OpenAudio/go-openaudio/commit/b7c8a4a8e67f79605607455460b8253aa9d4fc83))
+* **etl:** restore migration 0034 stub ([#401](https://github.com/OpenAudio/go-openaudio/issues/401)) ([50e54b5](https://github.com/OpenAudio/go-openaudio/commit/50e54b5c236ed71437c3b379f6f5fd05b8e0af36))
+* guard state sync snapshots by disk space ([#400](https://github.com/OpenAudio/go-openaudio/issues/400)) ([cd874bc](https://github.com/OpenAudio/go-openaudio/commit/cd874bcc37b81ecb9794830c03cb5690462ea979))
+* make duplicate reward pool creates idempotent ([#374](https://github.com/OpenAudio/go-openaudio/issues/374)) ([5527ff8](https://github.com/OpenAudio/go-openaudio/commit/5527ff884f8cc000c929a46dca6caeda85eabc69))
+* reject duplicate ERN entity refs ([#383](https://github.com/OpenAudio/go-openaudio/issues/383)) ([6d42ce9](https://github.com/OpenAudio/go-openaudio/commit/6d42ce9108199b5bbb3b33e7a35b2df7abcc0cdb))
+* route eth reads over http ([#396](https://github.com/OpenAudio/go-openaudio/issues/396)) ([17dcef7](https://github.com/OpenAudio/go-openaudio/commit/17dcef7d6148de9ad6da1e4ba76a66c8066a8651))
+
 ## [1.6.0](https://github.com/OpenAudio/go-openaudio/compare/v1.5.0...v1.6.0) (2026-07-01)
 
 

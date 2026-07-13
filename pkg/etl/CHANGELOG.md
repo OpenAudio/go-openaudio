@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.6.0...pkg/etl/v1.6.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **etl:** restore migration 0034 stub ([#401](https://github.com/OpenAudio/go-openaudio/issues/401)) ([50e54b5](https://github.com/OpenAudio/go-openaudio/commit/50e54b5c236ed71437c3b379f6f5fd05b8e0af36))
+
 ## [1.6.0](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.5.0...pkg/etl/v1.6.0) (2026-07-01)
 
 
