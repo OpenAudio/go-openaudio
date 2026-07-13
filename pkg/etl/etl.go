@@ -2,14 +2,22 @@ package etl
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"time"
 
 	"connectrpc.com/connect"
-	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
-	em "github.com/OpenAudio/go-openaudio/pkg/etl/processors/entity_manager"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
+	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
+	em "github.com/OpenAudio/go-openaudio/pkg/etl/processors/entity_manager"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
+)
+
+const (
+	chainIDInitMaxAttempts = 30
+	chainIDInitRetryDelay  = 2 * time.Second
 )
 
 // Indexer extracts blockchain data from a Core RPC and indexes it into PostgreSQL.
@@ -20,18 +28,18 @@ type Indexer struct {
 	startingBlockHeight int64
 	endingBlockHeight   int64
 	checkReadiness      bool
-	ChainID string
-	config  Config
+	ChainID             string
+	config              Config
 
-	core       corev1connect.CoreServiceClient
+	core corev1connect.CoreServiceClient
 	// streamClient, when set and config.BlockStreamEnabled, sources blocks via
 	// CoreService.StreamBlocks. Must be built with connect.WithGRPC(). The unary
 	// core client above is still used for catch-up fallback and status calls.
 	streamClient corev1connect.CoreServiceClient
-	pool       *pgxpool.Pool
-	db         *db.Queries
-	logger     *zap.Logger
-	dispatcher *em.Dispatcher
+	pool         *pgxpool.Pool
+	db           *db.Queries
+	logger       *zap.Logger
+	dispatcher   *em.Dispatcher
 
 	blockPubsub *BlockPubsub
 	playPubsub  *PlayPubsub
@@ -182,14 +190,54 @@ func (e *Indexer) applyPendingPostHooks() {
 
 // InitializeChainID fetches and caches the chain ID from the core service.
 func (e *Indexer) InitializeChainID(ctx context.Context) error {
-	nodeInfoResp, err := e.core.GetNodeInfo(ctx, connect.NewRequest(&corev1.GetNodeInfoRequest{}))
-	if err != nil {
-		e.ChainID = "--"
-		e.logger.Warn("Failed to get chain ID from core service, using fallback", zap.Error(err), zap.String("chainID", e.ChainID))
-		return nil
+	return e.initializeChainID(ctx, chainIDInitMaxAttempts, chainIDInitRetryDelay)
+}
+
+func (e *Indexer) initializeChainID(ctx context.Context, maxAttempts int, retryDelay time.Duration) error {
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		chainID, err := e.getChainID(ctx)
+		if err == nil {
+			e.ChainID = chainID
+			e.logger.Info("Initialized chain ID", zap.String("chainID", e.ChainID))
+			return nil
+		}
+
+		lastErr = err
+		if attempt == maxAttempts {
+			break
+		}
+
+		e.logger.Warn("Failed to get chain ID from core service, retrying",
+			zap.Error(err),
+			zap.Int("attempt", attempt),
+			zap.Int("max_attempts", maxAttempts),
+			zap.Duration("retry_delay", retryDelay))
+
+		timer := time.NewTimer(retryDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf("initialize chain ID canceled: %w", ctx.Err())
+		case <-timer.C:
+		}
 	}
 
-	e.ChainID = nodeInfoResp.Msg.Chainid
-	e.logger.Info("Initialized chain ID", zap.String("chainID", e.ChainID))
-	return nil
+	return fmt.Errorf("initialize chain ID after %d attempts: %w", maxAttempts, lastErr)
+}
+
+func (e *Indexer) getChainID(ctx context.Context) (string, error) {
+	nodeInfoResp, err := e.core.GetNodeInfo(ctx, connect.NewRequest(&corev1.GetNodeInfoRequest{}))
+	if err != nil {
+		return "", fmt.Errorf("get node info: %w", err)
+	}
+	if nodeInfoResp == nil || nodeInfoResp.Msg == nil {
+		return "", fmt.Errorf("get node info: empty response")
+	}
+	chainID := strings.TrimSpace(nodeInfoResp.Msg.Chainid)
+	if chainID == "" {
+		return "", fmt.Errorf("get node info: empty chain ID")
+	}
+
+	return chainID, nil
 }
