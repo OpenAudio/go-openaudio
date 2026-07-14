@@ -1,0 +1,117 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/components"
+)
+
+func consensusLabel(c ConsensusClassification) string {
+	switch c {
+	case ConsensusHealthy:
+		return "Healthy"
+	case ConsensusCatchingUp:
+		return "Syncing"
+	case ConsensusDegraded:
+		return "Degraded"
+	case ConsensusHaltLiveness:
+		return "Halted — Liveness"
+	case ConsensusHaltSplit:
+		return "Halted — Split"
+	case ConsensusHaltUnknown:
+		return "Halted"
+	default:
+		return "Unknown"
+	}
+}
+
+func consensusIcon(c ConsensusClassification) templ.Component {
+	switch c {
+	case ConsensusHealthy:
+		return components.StatusGreenLg("Healthy")
+	case ConsensusCatchingUp:
+		return components.StatusOrangeLg("Syncing")
+	case ConsensusDegraded:
+		return components.StatusOrangeLg("Degraded")
+	case ConsensusHaltLiveness, ConsensusHaltSplit, ConsensusHaltUnknown:
+		return components.StatusRedLg("Halted")
+	default:
+		return components.StatusGrayLg("Unknown")
+	}
+}
+
+func fmtSeconds(s float64) string {
+	if s <= 0 {
+		return "—"
+	}
+	if s < 90 {
+		return fmt.Sprintf("%.0fs", s)
+	}
+	if s < 3600 {
+		return fmt.Sprintf("%.1fm", s/60)
+	}
+	return fmt.Sprintf("%.1fh", s/3600)
+}
+
+func fmtPct(frac float64) string {
+	return fmt.Sprintf("%.0f%%", frac*100)
+}
+
+// ConsensusHaltBanner renders a site-wide alert only when the chain is halted.
+// It is intentionally empty otherwise so it can be polled on every page.
+templ (p *Pages) ConsensusHaltBanner(h *ConsensusHealth) {
+	if h != nil && h.Halted {
+		<div class="w-full border-b-2 border-red-500 bg-red-950 px-4 py-4 text-white shadow-lg md:px-8">
+			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+				<div class="flex items-center gap-3 text-2xl font-bold">
+					@components.StatusRedLg("Halted")
+					<span>Chain Halted</span>
+				</div>
+				<a href="/console/overview#consensus" class="text-sm font-semibold uppercase tracking-wide text-red-200 underline sm:text-right">View consensus diagnostics</a>
+			</div>
+		</div>
+	}
+}
+
+// ConsensusPanelFragment renders the consensus health detail card.
+// ConsensusPanelFragment renders the consensus health detail card, but only for
+// states worth an operator's attention (halted or degraded); healthy, syncing
+// and unknown states render nothing.
+templ (p *Pages) ConsensusPanelFragment(h *ConsensusHealth) {
+	if h.ShowPanel() {
+		<div class="bg-tertiary shadow-md rounded-lg p-6">
+			<div class="mb-4 flex items-center justify-between">
+				<h2 class="text-xl font-semibold">Consensus</h2>
+				<div class="flex items-center gap-2 text-sm font-semibold">
+					@consensusIcon(h.Classification)
+					<span>{ consensusLabel(h.Classification) }</span>
+				</div>
+			</div>
+			<p class="mb-4 text-sm text-secondary">{ h.Summary }</p>
+			<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+				@consensusStat("Height", fmt.Sprintf("%d", h.Height))
+				@consensusStat("Round", fmt.Sprintf("%d", h.Round))
+				@consensusStat("Step", h.Step)
+				@consensusStat("Since last block", fmtSeconds(h.SecondsSinceLastBlock))
+				@consensusStat("Voting validators", fmt.Sprintf("%d / %d", h.VotingValidators, h.TotalValidators))
+				@consensusStat("Prevote power", fmtPct(h.PrevotePowerFrac))
+				@consensusStat("Precommit power", fmtPct(h.PrecommitPowerFrac))
+				@consensusStat("Distinct block hashes", fmt.Sprintf("%d", h.DistinctBlockHashes))
+			</div>
+			if h.Halted {
+				<div class="mt-4 rounded-md border border-red-800 bg-red-950/40 p-3 text-xs text-red-200">
+					<div class="font-semibold uppercase tracking-wide">Vote breakdown (this height)</div>
+					<div class="mt-1">
+						nil prevotes: { fmt.Sprintf("%d", h.NilPrevotes) } · block prevotes: { fmt.Sprintf("%d", h.BlockPrevotes) } · max competing hashes in a round: { fmt.Sprintf("%d", h.MaxHashesInRound) }
+					</div>
+				</div>
+			}
+		</div>
+	}
+}
+
+templ consensusStat(label, value string) {
+	<div class="bg-secondary rounded-lg p-4">
+		<div class="text-lg font-bold">{ value }</div>
+		<div class="text-xs text-secondary">{ label }</div>
+	</div>
+}

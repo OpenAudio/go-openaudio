@@ -674,13 +674,17 @@ templ (p *Pages) OverviewNetworkFragment(status *v1.GetStatusResponse) {
 	}
 }
 
-templ (p *Pages) OverviewPage(status *v1.GetStatusResponse) {
+templ (p *Pages) OverviewPage(status *v1.GetStatusResponse, health *ConsensusHealth) {
 	@p.layout.SiteFrame() {
 		<div class="space-y-6">
 			<h1 class="text-3xl font-bold">Node Overview</h1>
 			<!-- Critical Status Overview - refresh every 3 seconds -->
 			<div hx-get="/console/fragments/overview/critical" hx-trigger="every 3s" hx-swap="innerHTML">
 				@p.OverviewCriticalFragment(status)
+			</div>
+			<!-- Consensus health - rendered on first paint, refreshed every 5 seconds -->
+			<div id="consensus" hx-get="/console/fragments/overview/consensus" hx-trigger="every 5s" hx-swap="innerHTML">
+				@p.ConsensusPanelFragment(health)
 			</div>
 			<!-- Node & Chain Information -->
 			if status.NodeInfo != nil || status.ChainInfo != nil {
