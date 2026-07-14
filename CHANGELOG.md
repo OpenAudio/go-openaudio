@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/OpenAudio/go-openaudio/compare/v1.7.0...v1.7.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **mediorum:** document core-writes default and restore release trigger ([#405](https://github.com/OpenAudio/go-openaudio/issues/405)) ([d0bd006](https://github.com/OpenAudio/go-openaudio/commit/d0bd0060540810ee283111ec74f8ba7ef527dd8f))
+
 ## [1.7.0](https://github.com/OpenAudio/go-openaudio/compare/v1.6.0...v1.7.0) (2026-07-13)
 
 
