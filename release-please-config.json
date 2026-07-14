@@ -18,17 +18,9 @@
     { "type": "ci", "section": "CI/CD", "hidden": true },
     { "type": "chore", "section": "Miscellaneous", "hidden": true }
   ],
-  "plugins": [
-    {
-      "type": "linked-versions",
-      "groupName": "openaudio",
-      "components": ["go-openaudio", "pkg/etl"]
-    }
-  ],
   "packages": {
     ".": {
       "package-name": "go-openaudio",
-      "component": "go-openaudio",
       "include-component-in-tag": false,
       "tag-separator": "",
       "extra-files": [
