@@ -30,6 +30,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -307,7 +308,50 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 		proposalTxs = append(proposalTxs, txBytes)
 	}
 
-	return &abcitypes.PrepareProposalResponse{Txs: proposalTxs}, nil
+	// CometBFT discards the entire proposal if the returned txs exceed
+	// MaxTxBytes once per-tx proto framing is counted (types.Txs.Validate),
+	// leaving the proposer unable to propose at all, so the response must
+	// always fit the budget.
+	return &abcitypes.PrepareProposalResponse{Txs: capProposalTxs(s.logger, proposalTxs, proposal.MaxTxBytes)}, nil
+}
+
+// proposalTxWireCost returns the bytes a tx consumes toward a proposal's
+// MaxTxBytes budget: the tx itself plus the proto framing CometBFT counts
+// when validating block data size (types.ComputeProtoSizeForTxs).
+func proposalTxWireCost(txLen int) int64 {
+	return 1 + int64(protowire.SizeBytes(txLen))
+}
+
+// capProposalTxs returns the longest prefix of txs that fits within the
+// MaxTxBytes budget CometBFT allots to PrepareProposal, preserving order.
+// A tx too large to ever fit any proposal is dropped so it does not block
+// the txs queued behind it; it expires from the mempool once its deadline
+// passes.
+func capProposalTxs(logger *zap.Logger, txs [][]byte, maxTxBytes int64) [][]byte {
+	if maxTxBytes <= 0 {
+		return txs
+	}
+	remaining := maxTxBytes
+	capped := make([][]byte, 0, len(txs))
+	for i, tx := range txs {
+		cost := proposalTxWireCost(len(tx))
+		if cost > maxTxBytes {
+			logger.Error("dropping tx larger than the proposal MaxTxBytes budget",
+				zap.Int("tx_bytes", len(tx)),
+				zap.Int64("max_tx_bytes", maxTxBytes))
+			continue
+		}
+		if cost > remaining {
+			logger.Warn("proposal MaxTxBytes budget reached; deferring remaining txs to a later block",
+				zap.Int("included", len(capped)),
+				zap.Int("deferred", len(txs)-i),
+				zap.Int64("max_tx_bytes", maxTxBytes))
+			return capped
+		}
+		remaining -= cost
+		capped = append(capped, tx)
+	}
+	return capped
 }
 
 func (s *Server) ProcessProposal(ctx context.Context, proposal *abcitypes.ProcessProposalRequest) (*abcitypes.ProcessProposalResponse, error) {
