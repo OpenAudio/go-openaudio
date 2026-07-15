@@ -55,6 +55,8 @@ func (c *Console) registerRoutes() {
 
 	g.GET("/fragments/nav/chain_data", c.navChainData)
 	g.GET("/fragments/nav/jailed_status", c.navJailedStatus)
+	g.GET("/fragments/nav/consensus_halt", c.navConsensusHalt)
+	g.GET("/fragments/overview/consensus", c.overviewConsensusFragment)
 	g.GET("/fragments/overview/critical", c.overviewCriticalFragment)
 	g.GET("/fragments/overview/processes", c.overviewProcessesFragment)
 	g.GET("/fragments/overview/resources", c.overviewResourcesFragment)

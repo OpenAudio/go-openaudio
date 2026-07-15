@@ -22,7 +22,8 @@ func (cs *Console) overviewPage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return cs.views.RenderOverview(c, status)
+	health := cs.getConsensusHealth(c.Request().Context())
+	return cs.views.RenderOverview(c, status, health)
 }
 
 func (cs *Console) overviewCriticalFragment(c echo.Context) error {
