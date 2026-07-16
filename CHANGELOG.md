@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.0](https://github.com/OpenAudio/go-openaudio/compare/v1.7.1...v1.8.0) (2026-07-16)
+
+
+### Features
+
+* **console:** add consensus halt detection panel and banner ([#407](https://github.com/OpenAudio/go-openaudio/issues/407)) ([7f0550a](https://github.com/OpenAudio/go-openaudio/commit/7f0550ac9d9a2a2b4e47b16196b2e2956670fa15))
+
+
+### Bug Fixes
+
+* **ci:** let release-please tag root-only release PRs ([#408](https://github.com/OpenAudio/go-openaudio/issues/408)) ([0a86e3d](https://github.com/OpenAudio/go-openaudio/commit/0a86e3d92194b48fc86da2ae1ee6ed2a8a3ef944))
+* **core:** respect MaxTxBytes when preparing proposals ([#404](https://github.com/OpenAudio/go-openaudio/issues/404)) ([242dc93](https://github.com/OpenAudio/go-openaudio/commit/242dc93f6ae036e4bdc8564ca3fbeedd5a573d1a))
+* **etl:** don't let track updates wipe CIDs via explicit null ([#410](https://github.com/OpenAudio/go-openaudio/issues/410)) ([b4a5ebe](https://github.com/OpenAudio/go-openaudio/commit/b4a5ebe0698ff11ff3fdaf57de3f3aa881d704e7))
+
 ## [1.7.1](https://github.com/OpenAudio/go-openaudio/compare/v1.7.0...v1.7.1) (2026-07-14)
 
 
