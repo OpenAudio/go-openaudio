@@ -96,6 +96,44 @@ func TestTrackUpdate_KeepsBpmKeyOnZeroOrInvalid(t *testing.T) {
 	}
 }
 
+// TestTrackUpdate_KeepsCidsOnNull verifies that an update carrying explicit
+// null CIDs does NOT wipe previously-set content identifiers. Clients send
+// the full track object on edit and can carry "track_cid": null; letting it
+// through makes the track unstreamable even though the audio still exists on
+// content nodes (regression: track 1960897973, wiped by a 2026-07-14 edit).
+func TestTrackUpdate_KeepsCidsOnNull(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 64)
+	seedUser(t, pool, uid, "0xowner", "ou")
+	seedTrackFull(t, pool, tid, uid, "Old Title")
+
+	// First, set CIDs the way the upload flow does.
+	set := `{"title":"Old Title","track_cid":"baecid320","orig_file_cid":"baecidorig","audio_upload_id":"up-abc"}`
+	mustHandle(t, TrackUpdate(), buildParams(t, pool, EntityTypeTrack, ActionUpdate, uid, tid, "0xOwner", set))
+
+	// Then an edit that carries explicit nulls must leave them unchanged.
+	wipe := `{"title":"Old Title","track_cid":null,"orig_file_cid":null,"audio_upload_id":null}`
+	mustHandle(t, TrackUpdate(), buildParams(t, pool, EntityTypeTrack, ActionUpdate, uid, tid, "0xOwner", wipe))
+
+	var trackCid, origCid, uploadID string
+	err := pool.QueryRow(context.Background(),
+		"SELECT COALESCE(track_cid, ''), COALESCE(orig_file_cid, ''), COALESCE(audio_upload_id, '') FROM tracks WHERE track_id = $1 AND is_current = true", tid).
+		Scan(&trackCid, &origCid, &uploadID)
+	if err != nil {
+		t.Fatalf("query track: %v", err)
+	}
+	if trackCid != "baecid320" {
+		t.Errorf("track_cid = %q, want %q (unchanged)", trackCid, "baecid320")
+	}
+	if origCid != "baecidorig" {
+		t.Errorf("orig_file_cid = %q, want %q (unchanged)", origCid, "baecidorig")
+	}
+	if uploadID != "up-abc" {
+		t.Errorf("audio_upload_id = %q, want %q (unchanged)", uploadID, "up-abc")
+	}
+}
+
 func TestTrackUpdate_NotFound(t *testing.T) {
 	pool := setupTestDB(t)
 	uid := int64(UserIDOffset + 1)
