@@ -178,19 +178,36 @@ func mergeTrackFromMetadata(p *Params, base *trackRow) *trackRow {
 			*cur = &cp
 		}
 	}
+	// mergeCidPtr is like mergeStrPtr but never clears an existing value.
+	// Content identifiers are set by the upload flow and no edit flow
+	// legitimately removes them, but clients send the full track object on
+	// update and can carry an explicit "track_cid": null. Letting that null
+	// through wipes the CID and makes the track unstreamable even though the
+	// audio still exists on content nodes (and every cidstream URL the API
+	// then signs has cid="", which no node can serve).
+	mergeCidPtr := func(metaKey string, cur **string) {
+		if s := p.MetadataString(metaKey); s != "" {
+			cp := s
+			*cur = &cp
+		}
+	}
 	mergeStrPtr("genre", &out.Genre)
 	mergeStrPtr("mood", &out.Mood)
 	mergeStrPtr("tags", &out.Tags)
 	mergeStrPtr("description", &out.Description)
 	mergeStrPtr("cover_art", &out.CoverArt)
 	mergeStrPtr("cover_art_sizes", &out.CoverArtSizes)
-	mergeStrPtr("track_cid", &out.TrackCID)
+	mergeCidPtr("track_cid", &out.TrackCID)
+	// preview_cid stays clearable: removing a track preview is a legitimate
+	// edit (paired with preview_start_seconds = null below).
 	mergeStrPtr("preview_cid", &out.PreviewCID)
-	mergeStrPtr("orig_file_cid", &out.OrigFileCID)
+	mergeCidPtr("orig_file_cid", &out.OrigFileCID)
 	mergeStrPtr("ddex_app", &out.DdexApp)
 	// audio_upload_id is a generic passthrough field in apps' indexer (set via
 	// the catch-all setattr branch), needed by the audio-analysis repair job.
-	mergeStrPtr("audio_upload_id", &out.AudioUploadID)
+	// It is also the recovery key for restoring wiped CIDs from content-node
+	// upload records, so it gets the same never-clear treatment.
+	mergeCidPtr("audio_upload_id", &out.AudioUploadID)
 	mergeStrPtr("license", &out.License)
 	mergeStrPtr("isrc", &out.ISRC)
 	mergeStrPtr("iswc", &out.ISWC)
