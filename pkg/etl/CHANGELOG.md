@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.6.1...pkg/etl/v1.6.2) (2026-07-16)
+
+
+### Bug Fixes
+
+* **etl:** don't let track updates wipe CIDs via explicit null ([#410](https://github.com/OpenAudio/go-openaudio/issues/410)) ([b4a5ebe](https://github.com/OpenAudio/go-openaudio/commit/b4a5ebe0698ff11ff3fdaf57de3f3aa881d704e7))
+
 ## [1.6.1](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.6.0...pkg/etl/v1.6.1) (2026-07-13)
 
 
