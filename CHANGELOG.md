@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/OpenAudio/go-openaudio/compare/v1.8.0...v1.8.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* **mediorum:** default core writes off until fleet is capped ([#411](https://github.com/OpenAudio/go-openaudio/issues/411)) ([286fec5](https://github.com/OpenAudio/go-openaudio/commit/286fec5e88c8233ba9d6802f1d3cdecbc0c751ff))
+
 ## [1.8.0](https://github.com/OpenAudio/go-openaudio/compare/v1.7.1...v1.8.0) (2026-07-16)
 
 
