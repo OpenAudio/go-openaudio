@@ -169,13 +169,15 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		GitSHA:               env.String("OPENAUDIO_GIT_SHA", "GIT_SHA"),
 		AudiusDockerCompose:  env.String("OPENAUDIO_DOCKER_COMPOSE_GIT_SHA", "AUDIUS_DOCKER_COMPOSE_GIT_SHA"),
 		AutoUpgradeEnabled:   env.Bool("OPENAUDIO_AUTO_UPGRADE_ENABLED", "autoUpgradeEnabled"),
-		// Core writes default on. The 1.7.0 rollout halted mainnet at height
-		// 28173294 because PrepareProposal ignored the MaxTxBytes budget once
-		// mediorum-op inflow backlogged validator mempools; proposals are now
-		// byte-capped (capProposalTxs), so a backlog can defer txs but can no
-		// longer stall block production. Operators can opt out with
-		// OPENAUDIO_MEDIORUM_CORE_WRITES_ENABLED=false.
-		CoreWritesEnabled:         env.Get("true", "OPENAUDIO_MEDIORUM_CORE_WRITES_ENABLED") == "true",
+		// Core writes default off. Re-enabling by default in 1.8.0 halted
+		// mainnet a second time (height 28272225): upgraded storage nodes
+		// flooded mempools with their pending-op backlogs while most
+		// validators still ran uncapped 1.7.1 proposers. The capProposalTxs
+		// budget only protects once the whole validator set has it, and op
+		// inflow is still unbounded (no size caps or rate limits). Keep off
+		// until ops are bounded and the fleet is fully upgraded, then
+		// re-enable via a dedicated release.
+		CoreWritesEnabled:         env.Get("false", "OPENAUDIO_MEDIORUM_CORE_WRITES_ENABLED") == "true",
 		StoreAll:                  env.Bool("OPENAUDIO_STORE_ALL", "STORE_ALL"),
 		StoreRecent:               env.Bool("OPENAUDIO_STORE_RECENT"),
 		StoreRecentTTL:            storeRecentTTL,
