@@ -59,6 +59,14 @@ func Migrate(db *sql.DB, myHost string) {
 	data->0->>'error' like 'blob (key%NotFound%'
 	`)
 
+	// Quarantine the pre-cutover Core submission backlog once. The migration
+	// hash leaves pending operations created after this run untouched.
+	runMigration(db, `
+	update ops
+	set core_tx_status = 'legacy'
+	where core_tx_status in ('pending', 'error')
+	`)
+
 	// Index for fast CID→duration lookup (presigned URL expiry)
 	runMigration(db, `CREATE INDEX IF NOT EXISTS idx_uploads_transcode_cid_320 ON uploads ((transcode_results::jsonb ->> '320'))`)
 
