@@ -1,11 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/crudr"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/opvalidation"
+	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,4 +48,29 @@ func TestApplyCommittedCoreMediorumOperationSkipsInvalidPayload(t *testing.T) {
 	}
 
 	require.NoError(t, (&MediorumServer{}).applyCommittedCoreMediorumOperation(context.Background(), 42, "test-core-tx-invalid", invalid))
+}
+
+func TestSubmitCoreOpRejectsOversizedData(t *testing.T) {
+	server := testNetwork[0]
+	data := append([]byte(`[{"id":"`), bytes.Repeat([]byte("x"), opvalidation.MaxCoreOperationDataBytes)...)
+	data = append(data, []byte(`"}]`)...)
+	op := &crudr.Op{
+		ULID:         ulid.Make().String(),
+		Host:         server.Config.Self.Host,
+		Action:       crudr.ActionUpdate,
+		Table:        "uploads",
+		Data:         data,
+		CoreTxStatus: crudr.CoreTxStatusPending,
+	}
+	require.NoError(t, server.crud.DB.Create(op).Error)
+	t.Cleanup(func() {
+		server.crud.DB.Delete(&crudr.Op{}, "ulid = ?", op.ULID)
+	})
+
+	require.Error(t, server.submitCoreOp(context.Background(), op))
+
+	var rejected crudr.Op
+	require.NoError(t, server.crud.DB.First(&rejected, "ulid = ?", op.ULID).Error)
+	require.Equal(t, crudr.CoreTxStatusRejected, rejected.CoreTxStatus)
+	require.Contains(t, rejected.CoreTxError, "maximum is 65536")
 }

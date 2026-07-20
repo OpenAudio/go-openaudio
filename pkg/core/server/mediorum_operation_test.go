@@ -8,6 +8,7 @@ import (
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/opvalidation"
 	gethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -52,6 +53,15 @@ func TestIsValidMediorumOperationTx(t *testing.T) {
 	otherKey, err := gethcrypto.GenerateKey()
 	require.NoError(t, err)
 	require.Error(t, s.isValidMediorumOperationTx(ctx, signMediorumOperationForTest(t, validOp, otherKey)))
+}
+
+func TestValidateMediorumOperationSubmissionSize(t *testing.T) {
+	require.NoError(t, validateMediorumOperationSubmissionSize(&v1.MediorumOperation{
+		Data: make([]byte, opvalidation.MaxCoreOperationDataBytes),
+	}))
+	require.Error(t, validateMediorumOperationSubmissionSize(&v1.MediorumOperation{
+		Data: make([]byte, opvalidation.MaxCoreOperationDataBytes+1),
+	}))
 }
 
 func signMediorumOperationForTest(t *testing.T, op *v1.MediorumOperation, key *ecdsa.PrivateKey) *v1.SignedTransaction {

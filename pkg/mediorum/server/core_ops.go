@@ -122,6 +122,11 @@ func (ss *MediorumServer) submitPendingCoreOps(ctx context.Context) error {
 }
 
 func (ss *MediorumServer) submitCoreOp(ctx context.Context, op *crudr.Op) error {
+	if err := opvalidation.ValidateCorePayloadSize(op.Data); err != nil {
+		_ = ss.crud.MarkCoreRejected(ctx, op, time.Now().UTC(), err)
+		return err
+	}
+
 	tx, txHash, err := signedMediorumOperation(op, ss.Config.privateKey)
 	now := time.Now().UTC()
 	if err != nil {

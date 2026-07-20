@@ -1186,6 +1186,9 @@ func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64,
 	case *v1.SignedTransaction_RewardPool:
 		return s.isValidRewardPoolTransaction(ctx, signedTx, currentHeight)
 	case *v1.SignedTransaction_MediorumOperation:
+		if err := validateMediorumOperationSubmissionSize(signedTx.GetMediorumOperation()); err != nil {
+			return err
+		}
 		return s.isValidMediorumOperationTx(ctx, signedTx)
 	default:
 		// For other transaction types, no validation needed during SendTransaction
