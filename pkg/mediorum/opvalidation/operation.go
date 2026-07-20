@@ -100,6 +100,8 @@ var mediorumTableTypes = map[string]reflect.Type{
 	tableNameFor(AudioPreview{}):     reflect.TypeOf(AudioPreview{}),
 }
 
+const MaxCoreOperationDataBytes = 64 * 1024
+
 func tableNameFor(model interface{}) string {
 	return schema.NamingStrategy{}.TableName(reflect.TypeOf(model).Name())
 }
@@ -136,6 +138,13 @@ func ValidatePayload(action, table string, data []byte) error {
 	records := reflect.New(reflect.SliceOf(elemType)).Interface()
 	if err := json.Unmarshal(data, records); err != nil {
 		return fmt.Errorf("invalid mediorum operation data for %s: %w", table, err)
+	}
+	return nil
+}
+
+func ValidateCorePayloadSize(data []byte) error {
+	if len(data) > MaxCoreOperationDataBytes {
+		return fmt.Errorf("mediorum operation data is %d bytes; maximum is %d", len(data), MaxCoreOperationDataBytes)
 	}
 	return nil
 }

@@ -441,6 +441,19 @@ func (c *Crudr) MarkCoreError(ctx context.Context, op *Op, txHash string, attemp
 	}).Error
 }
 
+func (c *Crudr) MarkCoreRejected(ctx context.Context, op *Op, rejectedAt time.Time, err error) error {
+	errString := ""
+	if err != nil {
+		errString = err.Error()
+	}
+	return c.DB.WithContext(ctx).Model(&Op{}).Where("ulid = ?", op.ULID).Updates(map[string]interface{}{
+		"core_tx_hash":      "",
+		"core_tx_status":    CoreTxStatusRejected,
+		"core_tx_error":     errString,
+		"core_attempted_at": rejectedAt,
+	}).Error
+}
+
 func (c *Crudr) GetOutboxSizes() map[string]int {
 	c.mu.Lock()
 	defer c.mu.Unlock()

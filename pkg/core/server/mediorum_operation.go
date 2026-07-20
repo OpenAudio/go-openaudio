@@ -21,6 +21,13 @@ func validateMediorumOperationShape(op *v1.MediorumOperation) error {
 	return opvalidation.ValidateOperation(op.GetUlid(), op.GetHost(), op.GetAction(), op.GetTable(), op.GetData())
 }
 
+func validateMediorumOperationSubmissionSize(op *v1.MediorumOperation) error {
+	if op == nil {
+		return nil
+	}
+	return opvalidation.ValidateCorePayloadSize(op.GetData())
+}
+
 func (s *Server) isValidMediorumOperationTx(ctx context.Context, tx *v1.SignedTransaction) error {
 	op := tx.GetMediorumOperation()
 	if err := validateMediorumOperationShape(op); err != nil {

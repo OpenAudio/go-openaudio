@@ -111,3 +111,8 @@ func TestValidateOperationRejectsUncommittablePayloads(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateCorePayloadSize(t *testing.T) {
+	require.NoError(t, ValidateCorePayloadSize(make([]byte, MaxCoreOperationDataBytes)))
+	require.Error(t, ValidateCorePayloadSize(make([]byte, MaxCoreOperationDataBytes+1)))
+}
