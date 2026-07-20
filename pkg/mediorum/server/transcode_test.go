@@ -3,12 +3,29 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestTruncateUploadError(t *testing.T) {
+	short := "short error"
+	assert.Equal(t, short, truncateUploadError(short))
+
+	exact := strings.Repeat("x", maxPersistedUploadErrorBytes)
+	assert.Equal(t, exact, truncateUploadError(exact))
+
+	long := strings.Repeat("x", maxPersistedUploadErrorBytes+1)
+	assert.Equal(t, exact, truncateUploadError(long))
+
+	unicodeBoundary := strings.Repeat("x", maxPersistedUploadErrorBytes-1) + "\u00e9"
+	truncated := truncateUploadError(unicodeBoundary)
+	assert.LessOrEqual(t, len(truncated), maxPersistedUploadErrorBytes)
+	assert.True(t, strings.ToValidUTF8(truncated, "") == truncated)
+}
 
 func TestFilterErrorLines(t *testing.T) {
 	errorTypes := []string{

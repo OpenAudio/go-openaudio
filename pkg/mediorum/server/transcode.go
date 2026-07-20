@@ -205,6 +205,15 @@ func (ss *MediorumServer) getKeyToTempFile(fileHash string) (*os.File, error) {
 
 type errorCallback func(err error, uploadStatus string, info ...string) error
 
+const maxPersistedUploadErrorBytes = 8 * 1024
+
+func truncateUploadError(errText string) string {
+	if len(errText) <= maxPersistedUploadErrorBytes {
+		return errText
+	}
+	return strings.ToValidUTF8(errText[:maxPersistedUploadErrorBytes], "")
+}
+
 func (ss *MediorumServer) transcodeAudio(_ context.Context, upload *Upload, _ string, cmd *exec.Cmd, logger *zap.Logger, onError errorCallback) error {
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -432,7 +441,7 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 		if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
 			return fmt.Errorf("failed to get upload from DB: %w", err)
 		}
-		dbUpload.Error = errMsg.Error()
+		dbUpload.Error = truncateUploadError(errMsg.Error())
 		dbUpload.Status = JobStatusError
 		dbUpload.ErrorCount = dbUpload.ErrorCount + 1
 		if err := ss.crud.Update(&dbUpload); err != nil {
