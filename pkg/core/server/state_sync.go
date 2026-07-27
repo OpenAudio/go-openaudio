@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"connectrpc.com/connect"
@@ -272,6 +273,18 @@ func (s *Server) createSnapshot(logger *zap.Logger, height int64) error {
 		return fmt.Errorf("error creating snapshot directory: %v", err)
 	}
 
+	freeBytes, hasSpace, err := snapshotDirHasMinFreeBytes(snapshotDir, s.config.StateSync.SnapshotMinFreeBytes)
+	if err != nil {
+		return fmt.Errorf("error checking snapshot disk space: %w", err)
+	}
+	if !hasSpace {
+		logger.Warn("skipping snapshot creation: insufficient disk space",
+			zap.String("snapshotDir", snapshotDir),
+			zap.Int64("freeBytes", freeBytes),
+			zap.Int64("minFreeBytes", s.config.StateSync.SnapshotMinFreeBytes))
+		return nil
+	}
+
 	if s.rpc == nil {
 		return nil
 	}
@@ -299,6 +312,17 @@ func (s *Server) createSnapshot(logger *zap.Logger, height int64) error {
 	if err := os.MkdirAll(latestSnapshotDir, 0755); err != nil {
 		return fmt.Errorf("error creating latest snapshot directory: %v", err)
 	}
+	snapshotComplete := false
+	defer func() {
+		if snapshotComplete {
+			return
+		}
+		if err := os.RemoveAll(latestSnapshotDir); err != nil {
+			logger.Warn("failed to remove incomplete snapshot",
+				zap.String("path", latestSnapshotDir),
+				zap.Error(err))
+		}
+	}()
 
 	logger.Info("Creating pg_dump", zap.Int64("height", blockHeight))
 
@@ -346,10 +370,34 @@ func (s *Server) createSnapshot(logger *zap.Logger, height int64) error {
 	if err := os.WriteFile(snapshotMetadataFile, jsonBytes, 0644); err != nil {
 		return fmt.Errorf("error writing snapshot metadata: %v", err)
 	}
+	snapshotComplete = true
 
 	logger.Info("Snapshot created", zap.Int64("height", blockHeight))
 
 	return nil
+}
+
+func snapshotDirHasMinFreeBytes(snapshotDir string, minFreeBytes int64) (int64, bool, error) {
+	if minFreeBytes <= 0 {
+		return 0, true, nil
+	}
+
+	freeBytes, err := snapshotDirFreeBytes(snapshotDir)
+	if err != nil {
+		return 0, false, err
+	}
+	return freeBytes, freeBytes >= minFreeBytes, nil
+}
+
+func snapshotDirFreeBytes(snapshotDir string) (int64, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(snapshotDir, &stat); err != nil {
+		return 0, err
+	}
+	if stat.Bavail <= 0 || stat.Bsize <= 0 {
+		return 0, nil
+	}
+	return int64(stat.Bavail) * int64(stat.Bsize), nil
 }
 
 // createPgDump creates a pg_dump of the database and writes it to the latest snapshot directory

@@ -1,5 +1,73 @@
 # Changelog
 
+## [1.8.1](https://github.com/OpenAudio/go-openaudio/compare/v1.8.0...v1.8.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* **mediorum:** default core writes off until fleet is capped ([#411](https://github.com/OpenAudio/go-openaudio/issues/411)) ([286fec5](https://github.com/OpenAudio/go-openaudio/commit/286fec5e88c8233ba9d6802f1d3cdecbc0c751ff))
+
+## [1.8.0](https://github.com/OpenAudio/go-openaudio/compare/v1.7.1...v1.8.0) (2026-07-16)
+
+
+### Features
+
+* **console:** add consensus halt detection panel and banner ([#407](https://github.com/OpenAudio/go-openaudio/issues/407)) ([7f0550a](https://github.com/OpenAudio/go-openaudio/commit/7f0550ac9d9a2a2b4e47b16196b2e2956670fa15))
+
+
+### Bug Fixes
+
+* **ci:** let release-please tag root-only release PRs ([#408](https://github.com/OpenAudio/go-openaudio/issues/408)) ([0a86e3d](https://github.com/OpenAudio/go-openaudio/commit/0a86e3d92194b48fc86da2ae1ee6ed2a8a3ef944))
+* **core:** respect MaxTxBytes when preparing proposals ([#404](https://github.com/OpenAudio/go-openaudio/issues/404)) ([242dc93](https://github.com/OpenAudio/go-openaudio/commit/242dc93f6ae036e4bdc8564ca3fbeedd5a573d1a))
+* **etl:** don't let track updates wipe CIDs via explicit null ([#410](https://github.com/OpenAudio/go-openaudio/issues/410)) ([b4a5ebe](https://github.com/OpenAudio/go-openaudio/commit/b4a5ebe0698ff11ff3fdaf57de3f3aa881d704e7))
+
+## [1.7.1](https://github.com/OpenAudio/go-openaudio/compare/v1.7.0...v1.7.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **mediorum:** document core-writes default and restore release trigger ([#405](https://github.com/OpenAudio/go-openaudio/issues/405)) ([d0bd006](https://github.com/OpenAudio/go-openaudio/commit/d0bd0060540810ee283111ec74f8ba7ef527dd8f))
+
+## [1.7.0](https://github.com/OpenAudio/go-openaudio/compare/v1.6.0...v1.7.0) (2026-07-13)
+
+
+### Features
+
+* enable mediorum core writes ([#365](https://github.com/OpenAudio/go-openaudio/issues/365)) ([f370728](https://github.com/OpenAudio/go-openaudio/commit/f3707281cc1081af32dd3a8b642899257e07527f))
+
+
+### Bug Fixes
+
+* **db:** cap postgres connection pools ([#359](https://github.com/OpenAudio/go-openaudio/issues/359)) ([b7c8a4a](https://github.com/OpenAudio/go-openaudio/commit/b7c8a4a8e67f79605607455460b8253aa9d4fc83))
+* **etl:** restore migration 0034 stub ([#401](https://github.com/OpenAudio/go-openaudio/issues/401)) ([50e54b5](https://github.com/OpenAudio/go-openaudio/commit/50e54b5c236ed71437c3b379f6f5fd05b8e0af36))
+* guard state sync snapshots by disk space ([#400](https://github.com/OpenAudio/go-openaudio/issues/400)) ([cd874bc](https://github.com/OpenAudio/go-openaudio/commit/cd874bcc37b81ecb9794830c03cb5690462ea979))
+* make duplicate reward pool creates idempotent ([#374](https://github.com/OpenAudio/go-openaudio/issues/374)) ([5527ff8](https://github.com/OpenAudio/go-openaudio/commit/5527ff884f8cc000c929a46dca6caeda85eabc69))
+* reject duplicate ERN entity refs ([#383](https://github.com/OpenAudio/go-openaudio/issues/383)) ([6d42ce9](https://github.com/OpenAudio/go-openaudio/commit/6d42ce9108199b5bbb3b33e7a35b2df7abcc0cdb))
+* route eth reads over http ([#396](https://github.com/OpenAudio/go-openaudio/issues/396)) ([17dcef7](https://github.com/OpenAudio/go-openaudio/commit/17dcef7d6148de9ad6da1e4ba76a66c8066a8651))
+
+## [1.6.0](https://github.com/OpenAudio/go-openaudio/compare/v1.5.0...v1.6.0) (2026-07-01)
+
+
+### Features
+
+* **etl:** support ManageEntityMigration transactions ([#375](https://github.com/OpenAudio/go-openaudio/issues/375)) ([dfabacb](https://github.com/OpenAudio/go-openaudio/commit/dfabacb346d9ff3945421b06a21db7b11cda76c1))
+* **genesis-writer:** add offline chain history population tool ([#210](https://github.com/OpenAudio/go-openaudio/issues/210)) ([d730e51](https://github.com/OpenAudio/go-openaudio/commit/d730e511f763aae9277483abde2a66e40225fa4f))
+* **genesis-writer:** add play count reconciliation step ([#376](https://github.com/OpenAudio/go-openaudio/issues/376)) ([2a30516](https://github.com/OpenAudio/go-openaudio/commit/2a30516cdbdb6de3fad0792b1604ff43a2564fb8))
+* **genesis-writer:** add track collaborator migration ([#381](https://github.com/OpenAudio/go-openaudio/issues/381)) ([043923e](https://github.com/OpenAudio/go-openaudio/commit/043923eab95b87f66984970cc5a47bc362536f63))
+* read mediorum ops from core ([#364](https://github.com/OpenAudio/go-openaudio/issues/364)) ([20e6ec8](https://github.com/OpenAudio/go-openaudio/commit/20e6ec8f9cdcc444a0fe4154a1624e92ee1bfd44))
+
+
+### Bug Fixes
+
+* **genesis-writer:** migrate access_authorities for programmable distribution ([#377](https://github.com/OpenAudio/go-openaudio/issues/377)) ([aea1d66](https://github.com/OpenAudio/go-openaudio/commit/aea1d6672dada6a932964945e4412f3ddefb3413))
+* persist user deactivation updates ([#394](https://github.com/OpenAudio/go-openaudio/issues/394)) ([b75c8bb](https://github.com/OpenAudio/go-openaudio/commit/b75c8bb6f8c5c6e58175894d84cc72a2462aaae8))
+* skip validator updates for noop registrations ([#372](https://github.com/OpenAudio/go-openaudio/issues/372)) ([7ee965c](https://github.com/OpenAudio/go-openaudio/commit/7ee965c682108053b755698ac4569e721ebbfbd9))
+
+
+### Reverts
+
+* remove event_routes table and slug handling ([#386](https://github.com/OpenAudio/go-openaudio/issues/386)) ([ca62eef](https://github.com/OpenAudio/go-openaudio/commit/ca62eefc1bb44fce0e311ea0f74030ea03b3236b))
+
 ## [1.5.0](https://github.com/OpenAudio/go-openaudio/compare/v1.4.0...v1.5.0) (2026-06-18)
 
 

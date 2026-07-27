@@ -47,6 +47,20 @@ func GetInt(defaultValue int, keys ...string) int {
 	return defaultValue
 }
 
+// GetInt64 returns the int64 value of the first set environment variable.
+// If the value cannot be parsed, defaultValue is returned.
+func GetInt64(defaultValue int64, keys ...string) int64 {
+	for _, key := range keys {
+		if val, ok := os.LookupEnv(key); ok {
+			if i, err := strconv.ParseInt(val, 10, 64); err == nil {
+				return i
+			}
+			return defaultValue
+		}
+	}
+	return defaultValue
+}
+
 // GetDuration returns the duration value of the first set environment variable.
 // If the value cannot be parsed, defaultValue is returned.
 func GetDuration(defaultValue time.Duration, keys ...string) time.Duration {

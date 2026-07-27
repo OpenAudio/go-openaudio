@@ -24,6 +24,7 @@ import (
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
+	"github.com/OpenAudio/go-openaudio/pkg/dbpool"
 	"github.com/OpenAudio/go-openaudio/pkg/env"
 	audiusHttputil "github.com/OpenAudio/go-openaudio/pkg/httputil"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
@@ -45,6 +46,8 @@ import (
 
 	_ "gocloud.dev/blob/fileblob"
 )
+
+const DefaultOpsRetention = 30 * 24 * time.Hour
 
 // trackAccessInfo caches sound_recordings + management_keys lookup for cidstream auth
 type trackAccessInfo struct {
@@ -88,7 +91,7 @@ type MediorumConfig struct {
 	// Archive mode (OPENAUDIO_ARCHIVE) keeps all history: no core block pruning
 	// and no crudr "ops" pruning. Otherwise ops older than OpsRetention are pruned.
 	Archive          bool
-	OpsRetention     time.Duration `default:"8760h"` // 1 year
+	OpsRetention     time.Duration `default:"720h"` // 30 days
 	OpsPruneInterval time.Duration `default:"6h"`
 
 	ProgrammableDistributionEnabled bool
@@ -310,7 +313,12 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 
 	// pg pool
 	// config.PostgresDSN
-	pgConfig, _ := pgxpool.ParseConfig(config.PostgresDSN)
+	pgConfig, err := pgxpool.ParseConfig(config.PostgresDSN)
+	if err != nil {
+		return nil, fmt.Errorf("parse postgres config: %w", err)
+	}
+	dbpool.ConfigurePGX(pgConfig, config.PostgresDSN)
+	logger.Info("mediorum postgres pool configured", zap.Int32("maxConns", pgConfig.MaxConns), zap.Duration("maxConnIdleTime", pgConfig.MaxConnIdleTime))
 	pgPool, err := pgxpool.NewWithConfig(context.Background(), pgConfig)
 	if err != nil {
 		logger.Error("dial postgres failed", zap.Error(err))

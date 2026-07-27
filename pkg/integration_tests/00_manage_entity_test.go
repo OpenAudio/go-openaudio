@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEntityManager(t *testing.T) {
@@ -20,7 +21,7 @@ func TestEntityManager(t *testing.T) {
 	sdk := utils.DiscoveryOne
 
 	err := utils.WaitForDevnetHealthy()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Generate a test private key
 	privateKey, err := crypto.GenerateKey()

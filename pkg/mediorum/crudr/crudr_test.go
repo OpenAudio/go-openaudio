@@ -3,6 +3,7 @@ package crudr
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -394,6 +395,34 @@ func TestCoreRelayState(t *testing.T) {
 	require.Empty(t, updated.CoreTxError)
 	require.NotNil(t, updated.CoreConfirmedAt)
 	require.True(t, updated.CoreConfirmedAt.Equal(confirmedAt))
+}
+
+func TestRejectedCoreOpIsNotRetried(t *testing.T) {
+	ctx := context.Background()
+	db := SetupTestDB()
+	require.NoError(t, db.AutoMigrate(TestBlobThing{}))
+
+	z := zap.NewNop()
+	c := New("host1", nil, nil, db, lifecycle.NewLifecycle(ctx, "crudr test", z), z, nil).RegisterModels(&TestBlobThing{})
+	c.SetCoreWritesEnabled(true)
+	require.NoError(t, c.Create(TestBlobThing{Host: "server1", Key: "oversized"}))
+
+	var op Op
+	require.NoError(t, c.DB.First(&op).Error)
+	rejectedAt := time.Now().UTC().Truncate(time.Second)
+	rejection := errors.New("operation data exceeds limit")
+	require.NoError(t, c.MarkCoreRejected(ctx, &op, rejectedAt, rejection))
+
+	pending, err := c.PendingCoreOps(ctx, 10)
+	require.NoError(t, err)
+	require.Empty(t, pending)
+
+	var rejected Op
+	require.NoError(t, c.DB.First(&rejected, "ulid = ?", op.ULID).Error)
+	require.Equal(t, CoreTxStatusRejected, rejected.CoreTxStatus)
+	require.Equal(t, rejection.Error(), rejected.CoreTxError)
+	require.NotNil(t, rejected.CoreAttemptedAt)
+	require.True(t, rejected.CoreAttemptedAt.Equal(rejectedAt))
 }
 
 func TestValidateOpRejectsUnapplicableOp(t *testing.T) {

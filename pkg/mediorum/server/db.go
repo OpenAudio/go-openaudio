@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/dbpool"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/crudr"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/ddl"
 	slogGorm "github.com/orandin/slog-gorm"
@@ -137,7 +138,7 @@ func dbMustDial(dbPath string) *gorm.DB {
 	}
 
 	sqlDb, _ := db.DB()
-	sqlDb.SetMaxOpenConns(50)
+	dbpool.ConfigureSQL(sqlDb)
 
 	// db = db.Debug()
 

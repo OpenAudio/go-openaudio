@@ -193,6 +193,9 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		mempoolKey = common.ToTxHashFromBytes(txBytes)
 	} else {
 		tx := req.Msg.Transaction
+		if err := validateMediorumOperationSubmissionSize(tx.GetMediorumOperation()); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
 		em := tx.GetManageEntity()
 		if em != nil {
 			err := InjectSigner(c.core.config, em)

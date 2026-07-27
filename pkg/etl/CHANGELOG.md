@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.6.2](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.6.1...pkg/etl/v1.6.2) (2026-07-16)
+
+
+### Bug Fixes
+
+* **etl:** don't let track updates wipe CIDs via explicit null ([#410](https://github.com/OpenAudio/go-openaudio/issues/410)) ([b4a5ebe](https://github.com/OpenAudio/go-openaudio/commit/b4a5ebe0698ff11ff3fdaf57de3f3aa881d704e7))
+
+## [1.6.1](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.6.0...pkg/etl/v1.6.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **etl:** restore migration 0034 stub ([#401](https://github.com/OpenAudio/go-openaudio/issues/401)) ([50e54b5](https://github.com/OpenAudio/go-openaudio/commit/50e54b5c236ed71437c3b379f6f5fd05b8e0af36))
+
+## [1.6.0](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.5.0...pkg/etl/v1.6.0) (2026-07-01)
+
+
+### Features
+
+* **etl:** support ManageEntityMigration transactions ([#375](https://github.com/OpenAudio/go-openaudio/issues/375)) ([dfabacb](https://github.com/OpenAudio/go-openaudio/commit/dfabacb346d9ff3945421b06a21db7b11cda76c1))
+
+
+### Bug Fixes
+
+* persist user deactivation updates ([#394](https://github.com/OpenAudio/go-openaudio/issues/394)) ([b75c8bb](https://github.com/OpenAudio/go-openaudio/commit/b75c8bb6f8c5c6e58175894d84cc72a2462aaae8))
+
+
+### Reverts
+
+* remove event_routes table and slug handling ([#386](https://github.com/OpenAudio/go-openaudio/issues/386)) ([ca62eef](https://github.com/OpenAudio/go-openaudio/commit/ca62eefc1bb44fce0e311ea0f74030ea03b3236b))
+
 ## [1.5.0](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.4.0...pkg/etl/v1.5.0) (2026-06-18)
 
 

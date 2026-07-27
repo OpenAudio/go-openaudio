@@ -1,0 +1,5 @@
+-- Compatibility stub for reverted event_routes migration.
+--
+-- Version 0034 shipped briefly and some long-lived databases recorded it in
+-- etl_db_migrations. Keep this file so golang-migrate can recognize version
+-- 34 without recreating the reverted event_routes schema on fresh databases.
