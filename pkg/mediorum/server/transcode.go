@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/gif"
@@ -30,9 +31,11 @@ import (
 )
 
 var (
-	audioPreviewDuration        = "30" // seconds
-	missedTranscodeBatchSize    = 100
-	missedTranscodeRetryBackoff = time.Minute
+	audioPreviewDuration           = "30" // seconds
+	missedTranscodeBatchSize       = 100
+	missedTranscodeMaxErrorCount   = 5
+	missedTranscodeRetryBackoff    = time.Minute
+	errTranscodeRetryLimitExceeded = errors.New("transcode retry limit exceeded")
 )
 
 func (ss *MediorumServer) startTranscoder(ctx context.Context) error {
@@ -151,9 +154,9 @@ func (ss *MediorumServer) findMissedJobCandidates(ctx context.Context, now time.
 			template = ?
 			AND status in ?
 			AND orig_file_cid != ''
-			AND COALESCE(error_count, 0) <= ?
+			AND COALESCE(error_count, 0) < ?
 			AND (transcoded_at IS NULL OR transcoded_at <= ?)
-		`, JobTemplateAudio, []string{JobStatusNew, JobStatusError}, 5, cutoff).
+		`, JobTemplateAudio, []string{JobStatusNew, JobStatusError}, missedTranscodeMaxErrorCount, cutoff).
 		Order("transcoded_at ASC NULLS FIRST").
 		Order("id ASC").
 		Limit(limit).
@@ -399,6 +402,9 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 	if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
 		return fmt.Errorf("failed to get upload from DB: %w", err)
 	}
+	if transcodeRetryLimitExceeded(dbUpload) {
+		return fmt.Errorf("%w: upload=%s error_count=%d", errTranscodeRetryLimitExceeded, dbUpload.ID, dbUpload.ErrorCount)
+	}
 	dbUpload.TranscodedBy = ss.Config.Self.Host
 	dbUpload.TranscodedAt = time.Now().UTC()
 	dbUpload.Status = JobStatusBusy
@@ -497,6 +503,15 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 	}
 
 	return nil
+}
+
+func transcodeRetryLimitExceeded(upload Upload) bool {
+	return upload.ErrorCount >= missedTranscodeMaxErrorCount && !hasTranscodeResult(upload)
+}
+
+func hasTranscodeResult(upload Upload) bool {
+	cid, ok := upload.TranscodeResults["320"]
+	return ok && cid != ""
 }
 
 type FFProbeResult struct {

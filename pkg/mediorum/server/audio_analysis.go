@@ -117,8 +117,12 @@ func (ss *MediorumServer) findMissedAudioAnalysisCandidates(ctx context.Context,
 			template = 'audio'
 			AND audio_analysis_status IS DISTINCT FROM 'done'
 			AND COALESCE(audio_analysis_error_count, 0) < ?
+			AND NOT (
+				COALESCE(error_count, 0) >= ?
+				AND COALESCE(COALESCE(transcode_results::jsonb, '{}'::jsonb) ->> '320', '') = ''
+			)
 			AND (audio_analyzed_at IS NULL OR audio_analyzed_at <= ?)
-		`, MAX_TRIES, cutoff).
+		`, MAX_TRIES, missedTranscodeMaxErrorCount, cutoff).
 		Order("COALESCE(audio_analysis_error_count, 0) ASC").
 		Order("audio_analyzed_at ASC NULLS FIRST").
 		Order("id ASC").
