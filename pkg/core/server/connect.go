@@ -213,15 +213,24 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		txSize = len(txBytes)
 	}
 
-	// log hash and size, never the payload: full txs at gossip rate flooded
-	// the log pipeline during the July 2026 outage
+	// The full payload may only be logged at debug: debug never ships to
+	// Axiom (see pkg/logger axiomMinLevel), so it is visible locally when an
+	// operator raises OPENAUDIO_LOG_LEVEL without re-creating the July 2026
+	// ingest flood. The hash is the join key against mempool/finalize logs.
 	if req.Msg.Transactionv2 != nil {
-		c.core.logger.Debug("received forwarded v2 tx", zap.String("tx", mempoolKey), zap.Int("size_bytes", txSize))
+		c.core.logger.Debug("received forwarded v2 tx",
+			zap.String("tx", mempoolKey),
+			zap.Int("size_bytes", txSize),
+			zap.Any("payload", req.Msg.Transactionv2))
 		if c.core.config.Environment != "dev" {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("received forwarded v2 tx outside of dev"))
 		}
 	} else {
-		c.core.logger.Debug("received forwarded tx", zap.String("tx", mempoolKey), zap.Int("size_bytes", txSize))
+		c.core.logger.Debug("received forwarded tx",
+			zap.String("tx", mempoolKey),
+			zap.String("type", txTypeName(req.Msg.Transaction)),
+			zap.Int("size_bytes", txSize),
+			zap.Any("payload", req.Msg.Transaction))
 	}
 
 	if c.core.rpc == nil {
