@@ -80,6 +80,13 @@ func updateTrack(ctx context.Context, params *Params) error {
 			return err
 		}
 	}
+	// Keep the stems join table in sync when an update carries a stem_of
+	// value (updateStemsTable no-ops unless parent_track_id is present).
+	// This also makes an on-chain Update usable to repair a stem whose
+	// parent link was lost.
+	if err := updateStemsTable(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+		return err
+	}
 	// Only reconcile collaborators when the owner explicitly sends the list,
 	// so unrelated metadata edits never clear existing collaborators.
 	if _, ok := params.Metadata["collaborators"]; ok {
