@@ -184,6 +184,7 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 
 	var mempoolKey common.TxHash
 	var err error
+	var txSize int
 	// Use consistent hashing by marshaling to bytes first, matching abci.go behavior
 	if req.Msg.Transactionv2 != nil {
 		txBytes, marshalErr := proto.Marshal(req.Msg.Transactionv2)
@@ -191,6 +192,7 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 			return nil, fmt.Errorf("could not marshal transaction: %v", marshalErr)
 		}
 		mempoolKey = common.ToTxHashFromBytes(txBytes)
+		txSize = len(txBytes)
 	} else {
 		tx := req.Msg.Transaction
 		if err := validateMediorumOperationSubmissionSize(tx.GetMediorumOperation()); err != nil {
@@ -208,15 +210,18 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 			return nil, fmt.Errorf("could not marshal transaction: %v", marshalErr)
 		}
 		mempoolKey = common.ToTxHashFromBytes(txBytes)
+		txSize = len(txBytes)
 	}
 
+	// log hash and size, never the payload: full txs at gossip rate flooded
+	// the log pipeline during the July 2026 outage
 	if req.Msg.Transactionv2 != nil {
-		c.core.logger.Debug("received forwarded v2 tx", zap.Any("tx", req.Msg.Transactionv2))
+		c.core.logger.Debug("received forwarded v2 tx", zap.String("tx", mempoolKey), zap.Int("size_bytes", txSize))
 		if c.core.config.Environment != "dev" {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("received forwarded v2 tx outside of dev"))
 		}
 	} else {
-		c.core.logger.Debug("received forwarded tx", zap.Any("tx", req.Msg.Transaction))
+		c.core.logger.Debug("received forwarded tx", zap.String("tx", mempoolKey), zap.Int("size_bytes", txSize))
 	}
 
 	if c.core.rpc == nil {

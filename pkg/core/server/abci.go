@@ -302,7 +302,11 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 			s.logger.Error("tx made it into prepare but couldn't be validated", zap.Error(err))
 			continue
 		} else if !valid {
-			s.logger.Error("invalid tx made it into prepare", zap.Any("tx", tx))
+			// log hash and size, never the payload: full txs here flooded the
+			// log pipeline during the July 2026 outage
+			s.logger.Error("invalid tx made it into prepare",
+				zap.String("tx", common.ToTxHashFromBytes(txBytes)),
+				zap.Int("size_bytes", len(txBytes)))
 			continue
 		}
 		proposalTxs = append(proposalTxs, txBytes)
