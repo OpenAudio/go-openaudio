@@ -169,15 +169,15 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		GitSHA:               env.String("OPENAUDIO_GIT_SHA", "GIT_SHA"),
 		AudiusDockerCompose:  env.String("OPENAUDIO_DOCKER_COMPOSE_GIT_SHA", "AUDIUS_DOCKER_COMPOSE_GIT_SHA"),
 		AutoUpgradeEnabled:   env.Bool("OPENAUDIO_AUTO_UPGRADE_ENABLED", "autoUpgradeEnabled"),
-		// Core writes default off. Re-enabling by default in 1.8.0 halted
-		// mainnet a second time (height 28272225): upgraded storage nodes
-		// flooded mempools with their pending-op backlogs while most
-		// validators still ran uncapped 1.7.1 proposers. The capProposalTxs
-		// budget only protects once the whole validator set has it, and op
-		// inflow is still unbounded (no size caps or rate limits). Keep off
-		// until ops are bounded and the fleet is fully upgraded, then
-		// re-enable via a dedicated release.
-		CoreWritesEnabled:         env.Get("false", "OPENAUDIO_MEDIORUM_CORE_WRITES_ENABLED") == "true",
+		// Core writes default on. The conditions #411 set for re-enabling are
+		// met: the validator fleet is fully on the capProposalTxs proposal
+		// budget (#404, verified ≥v1.8.1 fleet-wide), op inflow is bounded
+		// (64KB size cap #417, paced submitter with retry backoff), the
+		// pre-cutover backlog was quarantined once (#418), and retry-spam op
+		// volume was eliminated at source and receiver (#416/#338/#419).
+		// Set OPENAUDIO_MEDIORUM_CORE_WRITES_ENABLED=false to disable — this
+		// kill-switch was the recovery lever in both prior halts; keep it.
+		CoreWritesEnabled:         env.Get("true", "OPENAUDIO_MEDIORUM_CORE_WRITES_ENABLED") != "false",
 		StoreAll:                  env.Bool("OPENAUDIO_STORE_ALL", "STORE_ALL"),
 		StoreRecent:               env.Bool("OPENAUDIO_STORE_RECENT"),
 		StoreRecentTTL:            storeRecentTTL,
