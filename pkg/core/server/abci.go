@@ -471,7 +471,9 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				txhash := common.ToTxHashFromBytes(tx)
 
 				// finalize v2 transaction and get receipt data
-				err = s.finalizeV2Transaction(ctx, req, v2Tx, txhash)
+				err = s.withBlockSavepoint(ctx, func(ctx context.Context) error {
+					return s.finalizeV2Transaction(ctx, req, v2Tx, txhash)
+				})
 				if err != nil {
 					s.logger.Error("failed to finalize v2 transaction", zap.String("txhash", txhash), zap.Error(err))
 					txs[i] = &abcitypes.ExecTxResult{Code: 2}
@@ -999,6 +1001,40 @@ func (s *Server) startInProgressTx(ctx context.Context) error {
 	}
 
 	s.abciState.onGoingBlock = dbTx
+	return nil
+}
+
+// withBlockSavepoint runs fn inside a savepoint on the block's pg transaction,
+// pointing getDb() at the savepoint for the duration of the call. On error only
+// the savepoint rolls back: a failed tx finalization must not abort the block's
+// pg transaction, or every later statement in the block (and the final commit)
+// fails with it. If no block transaction is open, fn runs directly.
+func (s *Server) withBlockSavepoint(ctx context.Context, fn func(context.Context) error) error {
+	if s.abciState == nil || s.abciState.onGoingBlock == nil {
+		return fn(ctx)
+	}
+
+	parentTx := s.abciState.onGoingBlock
+	savepoint, err := parentTx.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin block savepoint: %w", err)
+	}
+
+	s.abciState.onGoingBlock = savepoint
+	defer func() {
+		s.abciState.onGoingBlock = parentTx
+	}()
+
+	if err := fn(ctx); err != nil {
+		if rollbackErr := savepoint.Rollback(ctx); rollbackErr != nil {
+			return fmt.Errorf("%w; rollback block savepoint: %v", err, rollbackErr)
+		}
+		return err
+	}
+
+	if err := savepoint.Commit(ctx); err != nil {
+		return fmt.Errorf("commit block savepoint: %w", err)
+	}
 	return nil
 }
 
