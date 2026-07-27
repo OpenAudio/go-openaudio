@@ -302,7 +302,18 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 			s.logger.Error("tx made it into prepare but couldn't be validated", zap.Error(err))
 			continue
 		} else if !valid {
-			s.logger.Error("invalid tx made it into prepare", zap.Any("tx", tx))
+			// a rejected tx persists nowhere, so a bounded preview is the only
+			// record of its contents; the full payload is capped because error
+			// logs ship to Axiom (see txPayloadPreviewCap)
+			var msg proto.Message = tx.Txv2
+			if tx.Tx != nil {
+				msg = tx.Tx
+			}
+			s.logger.Error("invalid tx made it into prepare",
+				zap.String("tx", common.ToTxHashFromBytes(txBytes)),
+				zap.String("type", txTypeName(tx.Tx)),
+				zap.Int("size_bytes", len(txBytes)),
+				zap.String("payload_preview", txPayloadPreview(msg)))
 			continue
 		}
 		proposalTxs = append(proposalTxs, txBytes)

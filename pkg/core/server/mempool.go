@@ -114,7 +114,7 @@ func (m *Mempool) RemoveBatch(ids []string) {
 		if element, exists := m.txMap[id]; exists {
 			m.deque.Remove(element)
 			delete(m.txMap, id)
-			m.logger.Info("removed from mempools", zap.String("tx", id))
+			m.logger.Debug("removed from mempools", zap.String("tx", id))
 		}
 	}
 }
@@ -158,14 +158,15 @@ func (s *Server) addMempoolTransaction(key string, tx *MempoolTransaction, broad
 
 	_, exists := m.txMap[key]
 	if exists {
-		m.logger.Warn("duplicate tx tried to add to mempool", zap.String("tx", key))
+		// expected during gossip: every peer forwards the same tx
+		m.logger.Debug("duplicate tx tried to add to mempool", zap.String("tx", key))
 		return nil
 	}
 
 	element := m.deque.PushBack(tx)
 	m.txMap[key] = element
 
-	m.logger.Info("added to mempool", zap.String("tx", key))
+	m.logger.Debug("added to mempool", zap.String("tx", key))
 	return nil
 }
 
@@ -200,7 +201,7 @@ func (s *Server) broadcastMempoolTransaction(key string, tx *MempoolTransaction)
 				logger.Error("could not broadcast tx", zap.String("tx", key), zap.String("peer", addr), zap.Error(err))
 				return
 			}
-			s.logger.Info("broadcasted tx to peer", zap.String("tx", key), zap.String("peer", addr))
+			s.logger.Debug("broadcasted tx to peer", zap.String("tx", key), zap.String("peer", addr))
 		}(addr, s.logger, peer)
 		return true
 	})

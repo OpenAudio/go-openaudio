@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/erni27/imcache"
@@ -285,6 +286,11 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 	return ss.replicateToMyBucket(ctx, cid, resp.Body, placementHosts)
 }
 
+// diskWarnInterval caps how often each dsnHasSpace warn is emitted per DSN.
+// The check runs per CID in repair sweeps and per blob request, so on a
+// disk-full node an unthrottled warn fires thousands of times per second.
+const diskWarnInterval = time.Minute
+
 // dsnHasSpace reports whether a file:// DSN has enough free disk to accept new
 // blobs. Non-file DSNs (S3/GCS/etc) always return true. The fallbackFreeBytes
 // argument is used when we can't statfs the path (e.g. it doesn't exist yet);
@@ -296,8 +302,10 @@ func (ss *MediorumServer) dsnHasSpace(dsn string, fallbackFreeBytes uint64) bool
 
 	_, uri, found := strings.Cut(dsn, "://")
 	if !found {
-		ss.logger.Warn("malformed blob store DSN, falling back to cached free-bytes check",
-			zap.String("dsn", dsn))
+		if ss.diskWarnThrottle.allow("malformed-dsn:"+dsn, diskWarnInterval) {
+			ss.logger.Warn("malformed blob store DSN, falling back to cached free-bytes check",
+				zap.String("dsn", dsn))
+		}
 		return fallbackFreeBytes/uint64(1e9) > 10
 	}
 
@@ -305,9 +313,11 @@ func (ss *MediorumServer) dsnHasSpace(dsn string, fallbackFreeBytes uint64) bool
 
 	_, free, err := getDiskStatus(blobPath)
 	if err != nil {
-		ss.logger.Warn("failed to check blob storage disk space, falling back to cached free-bytes",
-			zap.String("blobPath", blobPath),
-			zap.Error(err))
+		if ss.diskWarnThrottle.allow("statfs-failed:"+blobPath, diskWarnInterval) {
+			ss.logger.Warn("failed to check blob storage disk space, falling back to cached free-bytes",
+				zap.String("blobPath", blobPath),
+				zap.Error(err))
+		}
 		return fallbackFreeBytes/uint64(1e9) > 10
 	}
 
@@ -315,10 +325,12 @@ func (ss *MediorumServer) dsnHasSpace(dsn string, fallbackFreeBytes uint64) bool
 	hasSpace := freeGB > 10
 
 	if !hasSpace {
-		ss.logger.Warn("blob storage disk space below threshold",
-			zap.String("blobPath", blobPath),
-			zap.Uint64("freeGB", freeGB),
-			zap.Uint64("thresholdGB", 10))
+		if ss.diskWarnThrottle.allow("below-threshold:"+blobPath, diskWarnInterval) {
+			ss.logger.Warn("blob storage disk space below threshold",
+				zap.String("blobPath", blobPath),
+				zap.Uint64("freeGB", freeGB),
+				zap.Uint64("thresholdGB", 10))
+		}
 	}
 
 	return hasSpace

@@ -133,6 +133,8 @@ type MediorumServer struct {
 	archivePathSize uint64
 	archivePathFree uint64
 
+	diskWarnThrottle logThrottle
+
 	databaseSize          uint64
 	dbSizeErr             string
 	lastSuccessfulRepair  RepairTracker
