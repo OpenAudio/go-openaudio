@@ -131,6 +131,7 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 	trackCID := params.MetadataString("track_cid")
 	previewCID := params.MetadataString("preview_cid")
 	origFileCID := params.MetadataString("orig_file_cid")
+	origFilename := params.MetadataString("orig_filename")
 
 	duration := 0
 	if d, ok := params.MetadataInt64("duration"); ok && d > 0 {
@@ -154,7 +155,8 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 			bpm, musical_key, is_custom_bpm, is_custom_musical_key, audio_upload_id,
 			is_available, license, isrc, iswc, preview_start_seconds, comments_disabled,
 			cover_original_song_title, cover_original_artist, no_ai_use,
-			route_id, track_segments, created_at, updated_at, txhash, blocknumber
+			route_id, track_segments, created_at, updated_at, txhash, blocknumber,
+			orig_filename
 		) VALUES (
 			$1, $2, true, false, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
@@ -164,7 +166,8 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 			$29, $30, $31, $32, $33,
 			$34, $35, $36, $37, $38, $39,
 			$40, $41, $42,
-			$43, '[]'::jsonb, $44, $44, $45, $46
+			$43, '[]'::jsonb, $44, $44, $45, $46,
+			$47
 		)
 	`,
 		params.EntityID,
@@ -213,6 +216,7 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,
+		nullString(origFilename),
 	)
 	if err != nil {
 		return err
