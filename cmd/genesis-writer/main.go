@@ -135,6 +135,17 @@ func writeCmd() *cli.Command {
 			&cli.BoolFlag{Name: "skip-events", EnvVars: []string{"GENESIS_SKIP_EVENTS"}, Usage: "Skip events"},
 			&cli.BoolFlag{Name: "skip-rewards", EnvVars: []string{"GENESIS_SKIP_REWARDS"}, Usage: "Skip reward pools and rewards"},
 			&cli.StringFlag{
+				Name:    "mediorum-dsn",
+				Usage:   "Mediorum node PostgreSQL DSN. When set, that node's storage state (uploads, audio analyses, audio previews) is seeded into the new chain as MediorumOperation transactions.",
+				EnvVars: []string{"GENESIS_MEDIORUM_DSN"},
+			},
+			&cli.StringFlag{
+				Name:    "mediorum-host",
+				Usage:   "Endpoint of the node backing --mediorum-dsn (e.g. https://node1.example.com). Used as the host on every seeded mediorum op.",
+				EnvVars: []string{"GENESIS_MEDIORUM_HOST"},
+			},
+			&cli.BoolFlag{Name: "skip-mediorum-ops", EnvVars: []string{"GENESIS_SKIP_MEDIORUM_OPS"}, Usage: "Skip mediorum storage state"},
+			&cli.StringFlag{
 				Name:    "core-cmt-home",
 				Usage:   "CometBFT home directory of the OLD Core chain. Used to scan the blockstore for reward transactions to replay.",
 				EnvVars: []string{"GENESIS_CORE_CMT_HOME"},
@@ -230,6 +241,9 @@ func writeCmd() *cli.Command {
 				SkipTipReactions:     c.Bool("skip-tip-reactions"),
 				SkipEvents:           c.Bool("skip-events"),
 				SkipRewards:          c.Bool("skip-rewards"),
+				SkipMediorumOps:      c.Bool("skip-mediorum-ops"),
+				MediorumDSN:          c.String("mediorum-dsn"),
+				MediorumHost:         c.String("mediorum-host"),
 				CoreCMTHome:          c.String("core-cmt-home"),
 			}
 

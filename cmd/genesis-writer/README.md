@@ -109,6 +109,42 @@ genesis-writer write \
 | `--skip-comments` | `GENESIS_SKIP_COMMENTS` | false | Skip comments and comment reactions |
 | `--skip-emails` | `GENESIS_SKIP_EMAILS` | false | Skip encrypted emails and email access grants |
 | `--skip-tip-reactions` | `GENESIS_SKIP_TIP_REACTIONS` | false | Skip tip reactions |
+| `--mediorum-dsn` | `GENESIS_MEDIORUM_DSN` | — | Mediorum node PostgreSQL DSN. When set, that node's storage state is seeded into the chain as `MediorumOperation` transactions |
+| `--mediorum-host` | `GENESIS_MEDIORUM_HOST` | — | Endpoint of the node backing `--mediorum-dsn`. Used as the host on every seeded op (**required** with `--mediorum-dsn`) |
+| `--skip-mediorum-ops` | `GENESIS_SKIP_MEDIORUM_OPS` | false | Skip mediorum storage state |
+
+### Mediorum storage state
+
+Crudr operations are carried on-chain as `MediorumOperation` transactions, and
+core is becoming the only crudr transport. The peer sweep is what backfills a
+new node's storage state today; the core op syncer starts at
+`currentHeight - coreOpSyncInitialLookback` and never walks back further. So
+without seeding, a node joining the new chain would start with empty
+`uploads` / `qm_audio_analyses` / `audio_previews` and nothing would fill them.
+
+Point `--mediorum-dsn` at a well-seeded mediorum node to carry that state over:
+
+```bash
+genesis-writer write \
+  --src-dsn "postgres://user@host:5432/audius_dp?sslmode=disable" \
+  --mediorum-dsn "postgres://user@host:5432/mediorum?sslmode=disable" \
+  --mediorum-host "https://node1.example.com" \
+  --data-dir /data/genesis-output
+```
+
+The writer reads **current table state**, not the `ops` log. Every crudr op
+carries the complete record and `update` applies it as a full-record upsert, so
+the last op per record fully determines final state — replaying the whole log
+would write orders of magnitude more chain data to reach an identical result.
+Reading the tables also handles deletes for free.
+
+Each row becomes one `create` op with a ULID derived deterministically from the
+table and record key, so re-runs and `--resume` produce the same op identity
+rather than appending duplicates. On a node that already holds the record,
+applying the op is a no-op (`OnConflict DoNothing`).
+
+`storage_and_db_sizes` is deliberately excluded — it is per-host disk telemetry
+that every node rewrites within minutes of coming up.
 
 ### Data directory layout
 

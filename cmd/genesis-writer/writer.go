@@ -16,9 +16,9 @@ import (
 	corecfg "github.com/OpenAudio/go-openaudio/pkg/core/config"
 	coredb "github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/core/server"
+	dbm "github.com/cometbft/cometbft-db"
 	cmtproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	cmtapiversion "github.com/cometbft/cometbft/api/cometbft/version/v1"
-	dbm "github.com/cometbft/cometbft-db"
 	cmtcrypto "github.com/cometbft/cometbft/crypto"
 	cmtstore "github.com/cometbft/cometbft/store"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -57,11 +57,20 @@ type WriterConfig struct {
 	SkipTipReactions     bool
 	SkipEvents           bool
 	SkipRewards          bool
+	SkipMediorumOps      bool
+	// MediorumDSN is a mediorum node's PostgreSQL DSN. When set, the writer
+	// seeds the new chain with that node's replicated storage state as
+	// MediorumOperation transactions. Required because core is becoming the
+	// only crudr transport — see writeMediorumOps.
+	MediorumDSN string
+	// MediorumHost is the endpoint of the node backing MediorumDSN. It becomes
+	// the host on every seeded op.
+	MediorumHost string
 	// CoreCMTHome is the CometBFT home directory of the OLD chain. When set,
 	// the genesis writer scans its blockstore for RewardMessage and
 	// RewardPoolMessage transactions and replays them verbatim into the new
 	// chain. If empty, rewards are skipped.
-	CoreCMTHome          string
+	CoreCMTHome string
 	// RunMigrations applies the Core chain schema to DstDSN before writing.
 	// Useful when starting from a fresh database (e.g., in integration tests).
 	RunMigrations bool
@@ -440,6 +449,10 @@ func (w *Writer) Run(ctx context.Context) error {
 		{"play count reconciliation", w.cfg.SkipPlays, w.writePlayCountReconciliation},
 		{"plays", w.cfg.SkipPlays, w.writePlays},
 		{"tip reactions", w.cfg.SkipTipReactions, w.writeTipReactions},
+
+		// Phase 10: Storage — mediorum replicated state, independent of the
+		// DP entities above.
+		{"mediorum ops", w.cfg.SkipMediorumOps, w.writeMediorumOps},
 	}
 
 	// Load completed steps for resume.
