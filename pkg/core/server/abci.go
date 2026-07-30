@@ -30,6 +30,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -301,13 +302,67 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 			s.logger.Error("tx made it into prepare but couldn't be validated", zap.Error(err))
 			continue
 		} else if !valid {
-			s.logger.Error("invalid tx made it into prepare", zap.Any("tx", tx))
+			// a rejected tx persists nowhere, so a bounded preview is the only
+			// record of its contents; the full payload is capped because error
+			// logs ship to Axiom (see txPayloadPreviewCap)
+			var msg proto.Message = tx.Txv2
+			if tx.Tx != nil {
+				msg = tx.Tx
+			}
+			s.logger.Error("invalid tx made it into prepare",
+				zap.String("tx", common.ToTxHashFromBytes(txBytes)),
+				zap.String("type", txTypeName(tx.Tx)),
+				zap.Int("size_bytes", len(txBytes)),
+				zap.String("payload_preview", txPayloadPreview(msg)))
 			continue
 		}
 		proposalTxs = append(proposalTxs, txBytes)
 	}
 
-	return &abcitypes.PrepareProposalResponse{Txs: proposalTxs}, nil
+	// CometBFT discards the entire proposal if the returned txs exceed
+	// MaxTxBytes once per-tx proto framing is counted (types.Txs.Validate),
+	// leaving the proposer unable to propose at all, so the response must
+	// always fit the budget.
+	return &abcitypes.PrepareProposalResponse{Txs: capProposalTxs(s.logger, proposalTxs, proposal.MaxTxBytes)}, nil
+}
+
+// proposalTxWireCost returns the bytes a tx consumes toward a proposal's
+// MaxTxBytes budget: the tx itself plus the proto framing CometBFT counts
+// when validating block data size (types.ComputeProtoSizeForTxs).
+func proposalTxWireCost(txLen int) int64 {
+	return 1 + int64(protowire.SizeBytes(txLen))
+}
+
+// capProposalTxs returns the longest prefix of txs that fits within the
+// MaxTxBytes budget CometBFT allots to PrepareProposal, preserving order.
+// A tx too large to ever fit any proposal is dropped so it does not block
+// the txs queued behind it; it expires from the mempool once its deadline
+// passes.
+func capProposalTxs(logger *zap.Logger, txs [][]byte, maxTxBytes int64) [][]byte {
+	if maxTxBytes <= 0 {
+		return txs
+	}
+	remaining := maxTxBytes
+	capped := make([][]byte, 0, len(txs))
+	for i, tx := range txs {
+		cost := proposalTxWireCost(len(tx))
+		if cost > maxTxBytes {
+			logger.Error("dropping tx larger than the proposal MaxTxBytes budget",
+				zap.Int("tx_bytes", len(tx)),
+				zap.Int64("max_tx_bytes", maxTxBytes))
+			continue
+		}
+		if cost > remaining {
+			logger.Warn("proposal MaxTxBytes budget reached; deferring remaining txs to a later block",
+				zap.Int("included", len(capped)),
+				zap.Int("deferred", len(txs)-i),
+				zap.Int64("max_tx_bytes", maxTxBytes))
+			return capped
+		}
+		remaining -= cost
+		capped = append(capped, tx)
+	}
+	return capped
 }
 
 func (s *Server) ProcessProposal(ctx context.Context, proposal *abcitypes.ProcessProposalRequest) (*abcitypes.ProcessProposalResponse, error) {
@@ -427,7 +482,9 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 				txhash := common.ToTxHashFromBytes(tx)
 
 				// finalize v2 transaction and get receipt data
-				err = s.finalizeV2Transaction(ctx, req, v2Tx, txhash)
+				err = s.withBlockSavepoint(ctx, func(ctx context.Context) error {
+					return s.finalizeV2Transaction(ctx, req, v2Tx, txhash)
+				})
 				if err != nil {
 					s.logger.Error("failed to finalize v2 transaction", zap.String("txhash", txhash), zap.Error(err))
 					txs[i] = &abcitypes.ExecTxResult{Code: 2}
@@ -958,6 +1015,40 @@ func (s *Server) startInProgressTx(ctx context.Context) error {
 	return nil
 }
 
+// withBlockSavepoint runs fn inside a savepoint on the block's pg transaction,
+// pointing getDb() at the savepoint for the duration of the call. On error only
+// the savepoint rolls back: a failed tx finalization must not abort the block's
+// pg transaction, or every later statement in the block (and the final commit)
+// fails with it. If no block transaction is open, fn runs directly.
+func (s *Server) withBlockSavepoint(ctx context.Context, fn func(context.Context) error) error {
+	if s.abciState == nil || s.abciState.onGoingBlock == nil {
+		return fn(ctx)
+	}
+
+	parentTx := s.abciState.onGoingBlock
+	savepoint, err := parentTx.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin block savepoint: %w", err)
+	}
+
+	s.abciState.onGoingBlock = savepoint
+	defer func() {
+		s.abciState.onGoingBlock = parentTx
+	}()
+
+	if err := fn(ctx); err != nil {
+		if rollbackErr := savepoint.Rollback(ctx); rollbackErr != nil {
+			return fmt.Errorf("%w; rollback block savepoint: %v", err, rollbackErr)
+		}
+		return err
+	}
+
+	if err := savepoint.Commit(ctx); err != nil {
+		return fmt.Errorf("commit block savepoint: %w", err)
+	}
+	return nil
+}
+
 // commits the current tx that's finished indexing
 func (s *Server) commitInProgressTx(ctx context.Context) error {
 	state := s.abciState
@@ -1033,6 +1124,9 @@ func (s *Server) isValidV2Transaction(tx []byte) (*v1beta1.Transaction, error) {
 	}
 
 	// check tx header info
+	if msg.Envelope == nil || msg.Envelope.Header == nil {
+		return nil, fmt.Errorf("transaction envelope header is nil")
+	}
 	header := msg.Envelope.Header
 	if header.ChainId != s.config.GenesisFile.ChainID {
 		return nil, fmt.Errorf("invalid chain id: %s", header.ChainId)
@@ -1061,9 +1155,13 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 	signedTx, err := s.isValidSignedTransaction(tx)
 	if err != nil {
 		// check if the tx is a v2 transaction
-		_, err := s.isValidV2Transaction(tx)
+		v2Tx, err := s.isValidV2Transaction(tx)
 		if err != nil {
 			s.logger.Error("Invalid block: unrecognized transaction type")
+			return false, nil
+		}
+		if err := s.validateV2Transaction(ctx, blockHeight, v2Tx); err != nil {
+			s.logger.Error("Invalid block: invalid v2 tx", zap.Error(err))
 			return false, nil
 		}
 		return true, nil
@@ -1135,6 +1233,9 @@ func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64,
 	case *v1.SignedTransaction_RewardPool:
 		return s.isValidRewardPoolTransaction(ctx, signedTx, currentHeight)
 	case *v1.SignedTransaction_MediorumOperation:
+		if err := validateMediorumOperationSubmissionSize(signedTx.GetMediorumOperation()); err != nil {
+			return err
+		}
 		return s.isValidMediorumOperationTx(ctx, signedTx)
 	default:
 		// For other transaction types, no validation needed during SendTransaction

@@ -9,6 +9,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/core/console"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/core/server"
+	"github.com/OpenAudio/go-openaudio/pkg/dbpool"
 	"github.com/OpenAudio/go-openaudio/pkg/eth"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"github.com/OpenAudio/go-openaudio/pkg/pos"
@@ -39,7 +40,14 @@ func run(ctx context.Context, lc *lifecycle.Lifecycle, logger *zap.Logger, posCh
 	logger.Info("db migrations successful")
 
 	// Use the passed context for the pool
-	pool, err := pgxpool.New(ctx, config.PSQLConn)
+	pgConfig, err := pgxpool.ParseConfig(config.PSQLConn)
+	if err != nil {
+		return fmt.Errorf("parsing postgres config: %v", err)
+	}
+	dbpool.ConfigurePGX(pgConfig, config.PSQLConn)
+	logger.Info("core postgres pool configured", zap.Int32("maxConns", pgConfig.MaxConns), zap.Duration("maxConnIdleTime", pgConfig.MaxConnIdleTime))
+
+	pool, err := pgxpool.NewWithConfig(ctx, pgConfig)
 	if err != nil {
 		return fmt.Errorf("couldn't create pgx pool: %v", err)
 	}

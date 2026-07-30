@@ -73,8 +73,8 @@ func (v *Views) RenderAdjudicateView(c echo.Context, view *pages.AdjudicatePageV
 	return v.pages.AdjudicatePageHTML(view).Render(c.Request().Context(), c.Response().Writer)
 }
 
-func (v *Views) RenderOverview(c echo.Context, status *v1.GetStatusResponse) error {
-	return v.pages.OverviewPage(status).Render(c.Request().Context(), c.Response().Writer)
+func (v *Views) RenderOverview(c echo.Context, status *v1.GetStatusResponse, health *pages.ConsensusHealth) error {
+	return v.pages.OverviewPage(status, health).Render(c.Request().Context(), c.Response().Writer)
 }
 
 func (v *Views) RenderOverviewCritical(c echo.Context, status *v1.GetStatusResponse) error {
@@ -99,4 +99,12 @@ func (v *Views) RenderOverviewNetwork(c echo.Context, status *v1.GetStatusRespon
 
 func (v *Views) RenderStorageView(c echo.Context, diag *storagev1.GetStorageDiagnosticsResponse) error {
 	return v.pages.StoragePage(diag).Render(c.Request().Context(), c.Response().Writer)
+}
+
+func (v *Views) RenderConsensusHaltBanner(c echo.Context, h *pages.ConsensusHealth) error {
+	return v.pages.ConsensusHaltBanner(h).Render(c.Request().Context(), c.Response().Writer)
+}
+
+func (v *Views) RenderConsensusPanel(c echo.Context, h *pages.ConsensusHealth) error {
+	return v.pages.ConsensusPanelFragment(h).Render(c.Request().Context(), c.Response().Writer)
 }

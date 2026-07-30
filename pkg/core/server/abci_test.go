@@ -1,12 +1,15 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
+	cometbfttypes "github.com/cometbft/cometbft/types"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -256,4 +259,64 @@ func TestValidateMediorumOperationShape(t *testing.T) {
 		Transaction: &v1.SignedTransaction_MediorumOperation{MediorumOperation: valid},
 	})
 	require.Equal(t, uint32(0), checkTxCode(t, tx))
+}
+
+func TestProposalTxWireCostMatchesCometBFT(t *testing.T) {
+	// The budget accounting must match types.Txs.Validate exactly: an
+	// overshoot of even one byte makes CometBFT discard the proposal.
+	for _, n := range []int{0, 1, 127, 128, 300, 16383, 16384, 52 * 1024, 3 << 20} {
+		tx := make([]byte, n)
+		require.Equal(t, cometbfttypes.ComputeProtoSizeForTxs([]cometbfttypes.Tx{tx}), proposalTxWireCost(n), "tx length %d", n)
+	}
+}
+
+func TestCapProposalTxs(t *testing.T) {
+	logger := zap.NewNop()
+
+	makeTxs := func(count, size int) [][]byte {
+		txs := make([][]byte, count)
+		for i := range txs {
+			txs[i] = bytes.Repeat([]byte{byte(i)}, size)
+		}
+		return txs
+	}
+
+	t.Run("under budget is unchanged", func(t *testing.T) {
+		txs := makeTxs(10, 1024)
+		require.Equal(t, txs, capProposalTxs(logger, txs, 1<<20))
+	})
+
+	t.Run("truncates to a prefix that passes CometBFT validation", func(t *testing.T) {
+		// Mirrors the mainnet halt: a mempool batch of large txs whose
+		// total far exceeds the block budget.
+		txs := makeTxs(100, 40*1024)
+		budget := int64(1 << 20)
+		capped := capProposalTxs(logger, txs, budget)
+		require.NotEmpty(t, capped)
+		require.Less(t, len(capped), len(txs))
+		require.Equal(t, txs[:len(capped)], capped, "must keep mempool order")
+		require.NoError(t, cometbfttypes.ToTxs(capped).Validate(budget))
+		// One more tx would have exceeded the budget.
+		require.Error(t, cometbfttypes.ToTxs(txs[:len(capped)+1]).Validate(budget))
+	})
+
+	t.Run("exact fit is kept", func(t *testing.T) {
+		tx := makeTxs(1, 1024)[0]
+		budget := proposalTxWireCost(len(tx))
+		require.Equal(t, [][]byte{tx}, capProposalTxs(logger, [][]byte{tx}, budget))
+		require.Empty(t, capProposalTxs(logger, [][]byte{tx}, budget-1))
+	})
+
+	t.Run("tx that can never fit is dropped without blocking later txs", func(t *testing.T) {
+		budget := int64(1 << 20)
+		small := makeTxs(2, 1024)
+		monster := bytes.Repeat([]byte{0xFF}, int(budget))
+		capped := capProposalTxs(logger, [][]byte{small[0], monster, small[1]}, budget)
+		require.Equal(t, [][]byte{small[0], small[1]}, capped)
+		require.NoError(t, cometbfttypes.ToTxs(capped).Validate(budget))
+	})
+
+	t.Run("empty input", func(t *testing.T) {
+		require.Empty(t, capProposalTxs(logger, nil, 1<<20))
+	})
 }

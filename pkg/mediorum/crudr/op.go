@@ -30,6 +30,7 @@ const (
 	CoreTxStatusConfirmed = "confirmed"
 	CoreTxStatusLocal     = "local"
 	CoreTxStatusError     = "error"
+	CoreTxStatusRejected  = "rejected"
 )
 
 func WithTransient() withOption {

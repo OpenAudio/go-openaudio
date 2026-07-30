@@ -143,9 +143,9 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	storeRecentTTL := parseStoreRecentTTL(env.String("OPENAUDIO_STORE_RECENT_TTL"))
 
 	// Archive mode keeps all history (no ops pruning). Otherwise the append-only
-	// Mediorum's local operation log is pruned, retaining 1 year by default.
+	// Mediorum's local operation log is pruned, retaining 30 days by default.
 	archive := env.Get("false", "OPENAUDIO_ARCHIVE", "archive") == "true"
-	opsRetention := env.GetDuration(365*24*time.Hour, "OPENAUDIO_OPS_RETENTION")
+	opsRetention := env.GetDuration(server.DefaultOpsRetention, "OPENAUDIO_OPS_RETENTION")
 	opsPruneInterval := env.GetDuration(6*time.Hour, "OPENAUDIO_OPS_PRUNE_INTERVAL")
 
 	config := server.MediorumConfig{

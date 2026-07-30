@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/integration_tests/utils"
@@ -17,10 +18,10 @@ func TestBlockCreation(t *testing.T) {
 	sdk := utils.DiscoveryOne
 
 	_, err := sdk.Core.Ping(ctx, connect.NewRequest(&corev1.PingRequest{}))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	err = utils.WaitForDevnetHealthy()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var blockOne *corev1.Block
 	var blockTwo *corev1.Block
@@ -44,19 +45,19 @@ blockLoop:
 			return
 		case <-ticker.C:
 			blockOneRes, err := sdk.Core.GetBlock(ctx, connect.NewRequest(&corev1.GetBlockRequest{Height: 1}))
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			if blockOneRes.Msg.Block != nil {
 				blockOne = blockOneRes.Msg.Block
 			}
 
 			blockTwoRes, err := sdk.Core.GetBlock(ctx, connect.NewRequest(&corev1.GetBlockRequest{Height: 2}))
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			if blockTwoRes.Msg.Block != nil {
 				blockTwo = blockTwoRes.Msg.Block
 			}
 
 			blockThreeRes, err := sdk.Core.GetBlock(ctx, connect.NewRequest(&corev1.GetBlockRequest{Height: 3}))
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			if blockThreeRes.Msg.Block != nil {
 				blockThree = blockThreeRes.Msg.Block
 			}

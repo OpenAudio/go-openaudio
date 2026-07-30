@@ -182,6 +182,7 @@ func (e *Indexer) Run() error {
 	err = e.InitializeChainID(context.Background())
 	if err != nil {
 		e.logger.Error("error initializing chain ID", zap.Error(err))
+		return fmt.Errorf("error initializing chain ID: %w", err)
 	}
 
 	// blocks.number is resolved per-block at indexing time via

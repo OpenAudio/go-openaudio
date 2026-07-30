@@ -184,6 +184,7 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 
 	var mempoolKey common.TxHash
 	var err error
+	var txSize int
 	// Use consistent hashing by marshaling to bytes first, matching abci.go behavior
 	if req.Msg.Transactionv2 != nil {
 		txBytes, marshalErr := proto.Marshal(req.Msg.Transactionv2)
@@ -191,8 +192,12 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 			return nil, fmt.Errorf("could not marshal transaction: %v", marshalErr)
 		}
 		mempoolKey = common.ToTxHashFromBytes(txBytes)
+		txSize = len(txBytes)
 	} else {
 		tx := req.Msg.Transaction
+		if err := validateMediorumOperationSubmissionSize(tx.GetMediorumOperation()); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
 		em := tx.GetManageEntity()
 		if em != nil {
 			err := InjectSigner(c.core.config, em)
@@ -205,15 +210,27 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 			return nil, fmt.Errorf("could not marshal transaction: %v", marshalErr)
 		}
 		mempoolKey = common.ToTxHashFromBytes(txBytes)
+		txSize = len(txBytes)
 	}
 
+	// The full payload may only be logged at debug: debug never ships to
+	// Axiom (see pkg/logger axiomMinLevel), so it is visible locally when an
+	// operator raises OPENAUDIO_LOG_LEVEL without re-creating the July 2026
+	// ingest flood. The hash is the join key against mempool/finalize logs.
 	if req.Msg.Transactionv2 != nil {
-		c.core.logger.Debug("received forwarded v2 tx", zap.Any("tx", req.Msg.Transactionv2))
+		c.core.logger.Debug("received forwarded v2 tx",
+			zap.String("tx", mempoolKey),
+			zap.Int("size_bytes", txSize),
+			zap.Any("payload", req.Msg.Transactionv2))
 		if c.core.config.Environment != "dev" {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("received forwarded v2 tx outside of dev"))
 		}
 	} else {
-		c.core.logger.Debug("received forwarded tx", zap.Any("tx", req.Msg.Transaction))
+		c.core.logger.Debug("received forwarded tx",
+			zap.String("tx", mempoolKey),
+			zap.String("type", txTypeName(req.Msg.Transaction)),
+			zap.Int("size_bytes", txSize),
+			zap.Any("payload", req.Msg.Transaction))
 	}
 
 	if c.core.rpc == nil {
