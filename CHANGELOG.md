@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.8.2](https://github.com/OpenAudio/go-openaudio/compare/v1.8.1...v1.8.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* **ci:** give release PRs component branches so tagging works ([#413](https://github.com/OpenAudio/go-openaudio/issues/413)) ([16ed1aa](https://github.com/OpenAudio/go-openaudio/commit/16ed1aad54fb0bb03769df409956d0f060ee9b52))
+* **core:** Fix v2 finalization rollback on duplicate tx ([#385](https://github.com/OpenAudio/go-openaudio/issues/385)) ([16c2893](https://github.com/OpenAudio/go-openaudio/commit/16c2893ce04ac1f984422915feb371b0301b5410))
+* **etl:** persist orig_filename and stop updates from unlinking stems ([#421](https://github.com/OpenAudio/go-openaudio/issues/421)) ([1d9f697](https://github.com/OpenAudio/go-openaudio/commit/1d9f69772e870ec920a2dcef3c12328947dbd57d))
+* **mediorum:** enable core writes by default ([#422](https://github.com/OpenAudio/go-openaudio/issues/422)) ([d65dded](https://github.com/OpenAudio/go-openaudio/commit/d65dded51255c6377aad829a5293f29d6067bf12))
+* **mediorum:** limit persisted transcode errors ([#416](https://github.com/OpenAudio/go-openaudio/issues/416)) ([20cc952](https://github.com/OpenAudio/go-openaudio/commit/20cc9524a7c04ef9f6646871136d200372a5bcf7))
+* **mediorum:** mark legacy core backlog once ([#418](https://github.com/OpenAudio/go-openaudio/issues/418)) ([c81982c](https://github.com/OpenAudio/go-openaudio/commit/c81982c48a4435dc386d24d27088a5e5e731c04c))
+* **mediorum:** reject oversized core operations ([#417](https://github.com/OpenAudio/go-openaudio/issues/417)) ([f9895f8](https://github.com/OpenAudio/go-openaudio/commit/f9895f87e3605fdadc0fe92582fea708dc5a11df))
+* **mediorum:** skip legacy transient retry ops ([#419](https://github.com/OpenAudio/go-openaudio/issues/419)) ([77164ea](https://github.com/OpenAudio/go-openaudio/commit/77164eaf103f2d998498e86f9ca9864b79deed62))
+* **mediorum:** stop terminal transcode retries ([#338](https://github.com/OpenAudio/go-openaudio/issues/338)) ([94b7638](https://github.com/OpenAudio/go-openaudio/commit/94b763854927c2c8167318cd916324efb54c8f1e))
+* prevent log spam from flooding Axiom during outages ([#420](https://github.com/OpenAudio/go-openaudio/issues/420)) ([2440570](https://github.com/OpenAudio/go-openaudio/commit/2440570e3e4483a7c1b23f7f4f1f077bb6d50d59))
+
 ## [1.8.1](https://github.com/OpenAudio/go-openaudio/compare/v1.8.0...v1.8.1) (2026-07-17)
 
 
