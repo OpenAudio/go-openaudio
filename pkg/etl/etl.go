@@ -41,6 +41,11 @@ type Indexer struct {
 	logger       *zap.Logger
 	dispatcher   *em.Dispatcher
 
+	// migrationDispatcher handles ManageEntityLegacyMigration transactions. It is
+	// the production dispatcher with the handlers whose validation policy differs
+	// for replayed historical state swapped in; see entity_manager/migration.go.
+	migrationDispatcher *em.Dispatcher
+
 	blockPubsub *BlockPubsub
 	playPubsub  *PlayPubsub
 

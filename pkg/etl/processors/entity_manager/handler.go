@@ -314,6 +314,25 @@ func (d *Dispatcher) Register(h Handler) {
 	d.handlers[handlerKey(h.EntityType(), h.Action())] = h
 }
 
+// Clone returns a dispatcher with the same handlers and post-hooks. It lets a
+// caller derive a variant handler set — such as the genesis migration set, which
+// is the production set with a few handlers replaced — without re-registering
+// everything and risking the two lists drifting apart.
+func (d *Dispatcher) Clone() *Dispatcher {
+	c := &Dispatcher{
+		handlers:  make(map[string]Handler, len(d.handlers)),
+		postHooks: make(map[string][]PostHook, len(d.postHooks)),
+		logger:    d.logger,
+	}
+	for k, v := range d.handlers {
+		c.handlers[k] = v
+	}
+	for k, v := range d.postHooks {
+		c.postHooks[k] = append([]PostHook(nil), v...)
+	}
+	return c
+}
+
 // RegisterPostHook attaches fn to fire after every successful Handle for
 // (entityType, action). See PostHook for error and ordering semantics.
 //

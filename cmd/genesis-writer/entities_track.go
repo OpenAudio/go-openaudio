@@ -45,6 +45,10 @@ type trackMetadataInner struct {
 	IsDownloadGated    bool        `json:"is_download_gated,omitempty"`
 	DownloadConditions interface{} `json:"download_conditions,omitempty"`
 	Collaborators      []int64     `json:"collaborators,omitempty"`
+	// State flags are always serialized: `omitempty` would drop a false value and
+	// the indexer cannot tell "absent" from "false" (is_available defaults true).
+	IsDelete    bool `json:"is_delete"`
+	IsAvailable bool `json:"is_available"`
 }
 
 type sourceTrack struct {
@@ -77,6 +81,8 @@ type sourceTrack struct {
 	IsDownloadGated     bool
 	DownloadConditions  []byte // JSONB
 	AccessAuthorities   []string
+	IsDelete            bool
+	IsAvailable         bool
 	CreatedAt           time.Time
 }
 
@@ -89,7 +95,10 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 	}
 
 	return processBatched(ctx, w, "tracks",
-		`SELECT count(*) FROM tracks WHERE is_current = true AND is_delete = false AND is_available = true`,
+		// Deleted and unavailable tracks are migrated too, carrying their state in
+		// the metadata: the source row is the truth, and omitting them would make
+		// a parity check unable to tell an intentional omission from data loss.
+		`SELECT count(*) FROM tracks WHERE is_current = true`,
 		`SELECT
 			t.track_id, t.owner_id, COALESCE(LOWER(u.wallet), ''), t.title, t.description, t.duration, t.genre, t.mood, t.tags,
 			t.track_cid,
@@ -100,10 +109,11 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			t.is_stream_gated, t.stream_conditions,
 			t.is_download_gated, t.download_conditions,
 			t.access_authorities,
+			t.is_delete, t.is_available,
 			t.created_at
 		FROM tracks t
 		LEFT JOIN users u ON u.user_id = t.owner_id AND u.is_current = true
-		WHERE t.is_current = true AND t.is_delete = false AND t.is_available = true
+		WHERE t.is_current = true
 		ORDER BY t.track_id`,
 		func(rows pgx.Rows) (sourceTrack, error) {
 			var t sourceTrack
@@ -117,6 +127,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				&t.IsStreamGated, &t.StreamConditions,
 				&t.IsDownloadGated, &t.DownloadConditions,
 				&t.AccessAuthorities,
+				&t.IsDelete, &t.IsAvailable,
 				&t.CreatedAt,
 			)
 			return t, err
@@ -145,6 +156,8 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				MusicalKey:      deref(t.MusicalKey),
 				IsStreamGated:   t.IsStreamGated,
 				IsDownloadGated: t.IsDownloadGated,
+				IsDelete:        t.IsDelete,
+				IsAvailable:     t.IsAvailable,
 			}
 
 			inner.RemixOf = unmarshalJSONB(t.RemixOf)

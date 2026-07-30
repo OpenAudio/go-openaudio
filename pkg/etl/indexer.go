@@ -161,6 +161,12 @@ func (e *Indexer) Run() error {
 	// final state when hooks attach.
 	e.applyPendingPostHooks()
 
+	// Derive the genesis migration handler set from the production one, so it
+	// inherits every registration above (including post-hooks) and only the
+	// handlers whose validation policy differs are replaced.
+	e.migrationDispatcher = e.dispatcher.Clone()
+	em.RegisterMigrationOverrides(e.migrationDispatcher)
+
 	if e.dispatcher.HandlerCount() > 0 {
 		e.logger.Info("entity manager enabled", zap.Int("handlers", e.dispatcher.HandlerCount()))
 	} else {
@@ -639,7 +645,8 @@ func (e *Indexer) processOneTx(
 			Nonce:      me.GetNonce(),
 		}, emBlock, block.Timestamp.AsTime(),
 			block.Hash, t.Hash, sp, e.logger)
-		if dErr := e.dispatcher.Dispatch(ctx, emParams); dErr != nil {
+		// Replayed historical state goes through the migration handler set.
+		if dErr := e.migrationDispatcher.Dispatch(ctx, emParams); dErr != nil {
 			res.emRejectCount++
 			if em.IsValidationError(dErr) {
 				e.logger.Warn("entity manager migration validation rejected",

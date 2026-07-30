@@ -157,7 +157,20 @@ func NewWriter(cfg *WriterConfig, logger *zap.Logger) (*Writer, error) {
 		return nil, fmt.Errorf("ping src db: %w", err)
 	}
 
-	dstDB, err := pgxpool.New(context.Background(), cfg.DstDSN)
+	dstPoolCfg, err := pgxpool.ParseConfig(cfg.DstDSN)
+	if err != nil {
+		return nil, fmt.Errorf("parse dst dsn: %w", err)
+	}
+	// Disable synchronous commit on the write path. The migration is fully
+	// re-runnable, so we don't need each block's commit to fsync before
+	// proceeding. This keeps writes fast even against an externally supplied
+	// --dst-dsn whose cluster has synchronous_commit=on (the managed postgres
+	// already sets this off cluster-wide).
+	dstPoolCfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, "SET synchronous_commit = off")
+		return err
+	}
+	dstDB, err := pgxpool.NewWithConfig(context.Background(), dstPoolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("connect dst db: %w", err)
 	}
@@ -838,7 +851,10 @@ func (w *Writer) createTransactionIndexes(ctx context.Context) error {
 	defer conn.Release()
 
 	// Increase maintenance_work_mem for faster index builds on large tables.
-	if _, err := conn.Exec(ctx, "SET maintenance_work_mem = '1GB'"); err != nil {
+	// 1GB is not enough for a 50M+ row core_transactions rebuild: the btree
+	// sort fails with "invalid memory alloc request size" at 1GB but succeeds
+	// at 2GB (verified on a 54M-row table). Use 2GB for headroom.
+	if _, err := conn.Exec(ctx, "SET maintenance_work_mem = '2GB'"); err != nil {
 		w.logger.Warn("could not increase maintenance_work_mem", zap.Error(err))
 	}
 

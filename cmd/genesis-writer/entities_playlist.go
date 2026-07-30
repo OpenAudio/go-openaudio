@@ -27,6 +27,9 @@ type playlistMetadataInner struct {
 	IsStreamGated          bool        `json:"is_stream_gated,omitempty"`
 	StreamConditions       interface{} `json:"stream_conditions,omitempty"`
 	UPC                    string      `json:"upc,omitempty"`
+	// Always serialized: `omitempty` would drop a false value and the indexer
+	// cannot tell "absent" from "false".
+	IsDelete bool `json:"is_delete"`
 }
 
 type sourcePlaylist struct {
@@ -43,22 +46,26 @@ type sourcePlaylist struct {
 	ReleaseDate         *string
 	IsStreamGated       bool
 	StreamConditions    []byte // JSONB
+	IsDelete            bool
 	CreatedAt           time.Time
 }
 
 func (w *Writer) writePlaylists(ctx context.Context) error {
 	return processBatched(ctx, w, "playlists",
-		`SELECT count(*) FROM playlists WHERE is_current = true AND is_delete = false`,
+		// Deleted playlists are migrated too, carrying is_delete in the metadata, so
+		// a parity check can tell an intentional omission from real data loss.
+		`SELECT count(*) FROM playlists WHERE is_current = true`,
 		`SELECT
 			p.playlist_id, p.playlist_owner_id, COALESCE(LOWER(u.wallet), ''),
 			p.playlist_name, p.description,
 			p.is_album, p.is_private,
 			p.metadata_multihash, p.playlist_image_sizes_multihash, p.playlist_contents,
 			p.release_date::text, p.is_stream_gated, p.stream_conditions,
+			p.is_delete,
 			p.created_at
 		FROM playlists p
 		LEFT JOIN users u ON u.user_id = p.playlist_owner_id AND u.is_current = true
-		WHERE p.is_current = true AND p.is_delete = false
+		WHERE p.is_current = true
 		ORDER BY p.playlist_id`,
 		func(rows pgx.Rows) (sourcePlaylist, error) {
 			var p sourcePlaylist
@@ -68,6 +75,7 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 				&p.IsAlbum, &p.IsPrivate,
 				&p.MetadataMultihash, &p.ImageSizesMultihash, &p.PlaylistContents,
 				&p.ReleaseDate, &p.IsStreamGated, &p.StreamConditions,
+				&p.IsDelete,
 				&p.CreatedAt,
 			)
 			return p, err
@@ -82,6 +90,7 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 				PlaylistImageSizesHash: deref(p.ImageSizesMultihash),
 				ReleaseDate:            deref(p.ReleaseDate),
 				IsStreamGated:          p.IsStreamGated,
+				IsDelete:               p.IsDelete,
 			}
 
 			inner.PlaylistContents = unmarshalJSONB(p.PlaylistContents)

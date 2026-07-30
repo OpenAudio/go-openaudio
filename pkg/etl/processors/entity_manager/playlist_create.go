@@ -47,7 +47,14 @@ func validatePlaylistCreate(ctx context.Context, params *Params) error {
 	return nil
 }
 
+// insertPlaylistAndRoute writes a newly created playlist. A new playlist is
+// never created already-deleted; only the genesis migration replays a deleted
+// row, via insertPlaylistAndRouteWithState.
 func insertPlaylistAndRoute(ctx context.Context, params *Params) error {
+	return insertPlaylistAndRouteWithState(ctx, params, false)
+}
+
+func insertPlaylistAndRouteWithState(ctx context.Context, params *Params, isDelete bool) error {
 	playlistName := params.MetadataString("playlist_name")
 	description := params.MetadataString("description")
 	isAlbum := params.MetadataBoolOr("is_album", false)
@@ -102,7 +109,7 @@ func insertPlaylistAndRoute(ctx context.Context, params *Params) error {
 		row.LastAddedTo = pgTimestamp(params.BlockTime)
 	}
 
-	if err := insertPlaylistRow(ctx, params.DBTX, row, false, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
+	if err := insertPlaylistRow(ctx, params.DBTX, row, isDelete, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
 		return err
 	}
 
