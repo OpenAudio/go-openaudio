@@ -23,6 +23,8 @@ import (
 func main() {
 	dbURL := flag.String("db", os.Getenv("ETL_DB_URL"), "Postgres connection string (ETL clone)")
 	prodURL := flag.String("prod-db", os.Getenv("PROD_DB_URL"), "Production Postgres connection string")
+	plays := flag.Bool("plays", false, "Also compare plays (row counts, full aggregate_plays, and a bounded sample)")
+	playsSample := flag.Int("plays-sample", 2000, "Number of plays to compare row by row when --plays is set (0 to skip)")
 	flag.Parse()
 
 	if *dbURL == "" {
@@ -48,5 +50,11 @@ func main() {
 
 	if err := Compare(ctx, pool, prodPool); err != nil {
 		log.Fatalf("compare failed: %v", err)
+	}
+
+	if *plays {
+		if err := ComparePlays(ctx, pool, prodPool, *playsSample); err != nil {
+			log.Fatalf("compare plays failed: %v", err)
+		}
 	}
 }
