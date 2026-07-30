@@ -30,6 +30,9 @@ func validateTrackCreate(ctx context.Context, params *Params) error {
 	if params.Metadata == nil {
 		return NewValidationError("metadata is required for track creation")
 	}
+	if params.MetadataString("title") == "" {
+		return NewValidationError("title is required for track creation")
+	}
 	if _, ok := params.MetadataInt64("owner_id"); !ok {
 		return NewValidationError("owner_id is required in metadata for track creation")
 	}
@@ -73,10 +76,10 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 }
 
 func insertTrackAndRouteWithState(ctx context.Context, params *Params, isDelete bool) error {
+	// A required title is a validation rule (see validateTrackCreate), not a
+	// property of writing the row: a handful of legacy tracks have an empty
+	// title, and the genesis migration keeps them rather than dropping them.
 	title := params.MetadataString("title")
-	if title == "" {
-		return NewValidationError("title is required for track creation")
-	}
 
 	handle, err := getTrackOwnerHandle(ctx, params.DBTX, params.UserID)
 	if err != nil {

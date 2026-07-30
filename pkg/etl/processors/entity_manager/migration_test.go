@@ -213,3 +213,23 @@ func TestRegisterMigrationOverrides_ReplacesOnlyIntendedHandlers(t *testing.T) {
 		t.Error("production dispatcher was mutated by the migration overrides")
 	}
 }
+
+// A handful of legacy tracks have an empty title. Production still requires one
+// — the check belongs to validation, not to writing the row — while the
+// migration handler, which does not run that validator, keeps the track.
+func TestTitleRequiredOnlyForNewTracks(t *testing.T) {
+	params := &Params{
+		UserID:     1,
+		EntityID:   TrackIDOffset + 1, // above the offset so validation reaches the title check
+		EntityType: EntityTypeTrack,
+		Action:     ActionCreate,
+		Signer:     "0xabc123",
+		DBTX:       &stubDBTX{},
+		Metadata:   map[string]any{"owner_id": float64(1)},
+	}
+
+	err := validateTrackCreate(context.Background(), params)
+	if err == nil || !strings.Contains(err.Error(), "title is required") {
+		t.Fatalf("production create should reject an empty title, got %v", err)
+	}
+}
