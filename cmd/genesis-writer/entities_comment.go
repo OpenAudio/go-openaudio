@@ -52,7 +52,13 @@ func (w *Writer) writeComments(ctx context.Context) error {
 		`SELECT count(*) FROM comments WHERE is_delete = false`,
 		`SELECT c.comment_id, c.text, c.user_id, COALESCE(LOWER(u.wallet), ''), c.entity_id, c.entity_type, c.track_timestamp_s, c.created_at
 		FROM comments c
-		LEFT JOIN users u ON u.user_id = c.user_id AND u.is_current = true
+		LEFT JOIN (
+			-- At most one row per user: the source contains a few user_ids with
+			-- more than one is_current row, and joining users directly would
+			-- duplicate every entity those users own.
+			SELECT DISTINCT ON (user_id) user_id, wallet FROM users
+			WHERE is_current = true ORDER BY user_id, blocknumber DESC NULLS LAST
+		) u ON u.user_id = c.user_id
 		WHERE c.is_delete = false
 		ORDER BY c.comment_id`,
 		func(rows pgx.Rows) (sourceComment, error) {
@@ -107,7 +113,13 @@ func (w *Writer) writeCommentReactions(ctx context.Context) error {
 		`SELECT count(*) FROM comment_reactions WHERE is_delete = false`,
 		`SELECT cr.comment_id, cr.user_id, COALESCE(LOWER(u.wallet), ''), cr.created_at
 		FROM comment_reactions cr
-		LEFT JOIN users u ON u.user_id = cr.user_id AND u.is_current = true
+		LEFT JOIN (
+			-- At most one row per user: the source contains a few user_ids with
+			-- more than one is_current row, and joining users directly would
+			-- duplicate every entity those users own.
+			SELECT DISTINCT ON (user_id) user_id, wallet FROM users
+			WHERE is_current = true ORDER BY user_id, blocknumber DESC NULLS LAST
+		) u ON u.user_id = cr.user_id
 		WHERE cr.is_delete = false
 		ORDER BY cr.comment_id, cr.user_id`,
 		func(rows pgx.Rows) (commentReaction, error) {
