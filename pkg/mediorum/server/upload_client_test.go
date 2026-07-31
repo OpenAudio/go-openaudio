@@ -49,15 +49,17 @@ func TestScrollUploadsFromPeerBackfillsAndAdvancesCursor(t *testing.T) {
 
 	target.scrollUploadsFromPeer(ctx, peerHost)
 
-	var got Upload
-	require.NoError(t, target.crud.DB.First(&got, "id = ?", missingID).Error, "missing upload should be backfilled")
-	require.Equal(t, "cid-missing", got.OrigFileCID)
+	// A fresh destination per lookup: GORM folds a populated primary key on the
+	// destination into the next query's conditions.
+	origCID := func(id string) string {
+		var got Upload
+		require.NoError(t, target.crud.DB.First(&got, "id = ?", id).Error)
+		return got.OrigFileCID
+	}
 
-	require.NoError(t, target.crud.DB.First(&got, "id = ?", staleID).Error)
-	require.Equal(t, "cid-stale", got.OrigFileCID, "stale local row should be refreshed from the peer")
-
-	require.NoError(t, target.crud.DB.First(&got, "id = ?", newerID).Error)
-	require.Equal(t, "cid-newer-local", got.OrigFileCID, "newer local row must not be clobbered")
+	require.Equal(t, "cid-missing", origCID(missingID), "missing upload should be backfilled")
+	require.Equal(t, "cid-stale", origCID(staleID), "stale local row should be refreshed from the peer")
+	require.Equal(t, "cid-newer-local", origCID(newerID), "newer local row must not be clobbered")
 
 	var cursor UploadCursor
 	require.NoError(t, target.crud.DB.First(&cursor, "host = ?", peerHost).Error)
