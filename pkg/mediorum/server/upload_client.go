@@ -10,6 +10,9 @@ import (
 )
 
 const (
+	// Backfill is never urgent, and the first pass would otherwise contend with
+	// node startup, so hold off before the first one.
+	uploadScrollStartDelay = 5 * time.Minute
 	// Poll rate while backfilling history, and once the cursor has caught up.
 	uploadScrollBackfillInterval = 5 * time.Minute
 	uploadScrollCaughtUpInterval = time.Hour
@@ -34,7 +37,7 @@ const (
 // Rows are written straight to the table rather than through the op log; a
 // backfill must not manufacture new operations for other nodes to apply.
 func (ss *MediorumServer) startUploadScroller(ctx context.Context) error {
-	ticker := time.NewTicker(time.Minute)
+	ticker := time.NewTicker(uploadScrollStartDelay)
 	defer ticker.Stop()
 	for {
 		select {
@@ -97,11 +100,25 @@ func (ss *MediorumServer) scrollUploadsFromPeer(ctx context.Context, host string
 		return true
 	}
 
+	// One lookup for the whole page rather than one per row: a backfill page is
+	// up to 2000 uploads, and this runs against every peer.
+	ids := make([]string, 0, len(uploads))
+	for _, upload := range uploads {
+		ids = append(ids, upload.ID)
+	}
+	var existing []Upload
+	if err := ss.crud.DB.Select("id", "transcoded_at").Where("id IN ?", ids).Find(&existing).Error; err != nil {
+		logger.Warn("lookup existing uploads failed", zap.Error(err))
+		return false
+	}
+	transcodedAt := make(map[string]time.Time, len(existing))
+	for _, e := range existing {
+		transcodedAt[e.ID] = e.TranscodedAt
+	}
+
 	var overwrites []*Upload
 	for _, upload := range uploads {
-		var existing Upload
-		err := ss.crud.DB.First(&existing, "id = ?", upload.ID).Error
-		if err != nil || existing.TranscodedAt.Before(upload.TranscodedAt) {
+		if prev, ok := transcodedAt[upload.ID]; !ok || prev.Before(upload.TranscodedAt) {
 			overwrites = append(overwrites, upload)
 		}
 		uploadCursor.After = upload.CreatedAt
