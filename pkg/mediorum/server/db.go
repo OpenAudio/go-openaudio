@@ -122,6 +122,13 @@ type MonthlyMetrics struct {
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`
 }
 
+// UploadCursor tracks how far the upload scroller has walked each peer's
+// created_at-ordered upload history. See startUploadScroller.
+type UploadCursor struct {
+	Host  string `gorm:"primaryKey"`
+	After time.Time
+}
+
 func dbMustDial(dbPath string) *gorm.DB {
 	gormLogger := slogGorm.New()
 
@@ -143,7 +150,7 @@ func dbMustDial(dbPath string) *gorm.DB {
 func dbMigrate(crud *crudr.Crudr, myHost string) {
 	// Migrate the schema
 	slog.Info("db: gorm automigrate")
-	err := crud.DB.AutoMigrate(&Upload{}, &RepairTracker{}, &StorageAndDbSize{}, &DailyMetrics{}, &MonthlyMetrics{}, &QmAudioAnalysis{}, &AudioPreview{})
+	err := crud.DB.AutoMigrate(&Upload{}, &RepairTracker{}, &UploadCursor{}, &StorageAndDbSize{}, &DailyMetrics{}, &MonthlyMetrics{}, &QmAudioAnalysis{}, &AudioPreview{})
 	if err != nil {
 		panic(err)
 	}

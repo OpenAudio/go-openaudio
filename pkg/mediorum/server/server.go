@@ -632,6 +632,7 @@ func (ss *MediorumServer) MustStart() error {
 		ss.lc.AddManagedRoutine("repairer", ss.startRepairer)
 		ss.lc.AddManagedRoutine("qm syncer", ss.startQmSyncer)
 		ss.lc.AddManagedRoutine("delist status poller", ss.startPollingDelistStatuses)
+		ss.lc.AddManagedRoutine("upload scroller", ss.startUploadScroller)
 		ss.lc.AddManagedRoutine("core mediorum op submitter", ss.startCoreOpSubmitter)
 		ss.lc.AddManagedRoutine("core mediorum op syncer", ss.startCoreOpSyncer)
 		ss.lc.AddManagedRoutine("play event queue", ss.startPlayEventQueue)
