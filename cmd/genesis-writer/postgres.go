@@ -9,8 +9,45 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shirou/gopsutil/v4/mem"
 	"go.uber.org/zap"
 )
+
+// sizeCaches picks shared_buffers and effective_cache_size for the managed
+// instance, in MB.
+//
+// A genesis migration writes a database that grows into the tens of GB — a real
+// run reached 104GB — so a fixed small shared_buffers leaves postgres fetching
+// index pages from disk on nearly every insert. Measured on such a run with the
+// previous 256MB setting: a 71% buffer cache hit ratio and ~6.5TB read back off
+// the disk, with both the writer and postgres CPU-idle and blocked on
+// IO/DataFileRead.
+//
+// 25% of RAM is the conventional starting point. Clamp it so a small machine
+// still gets a workable value and a large one doesn't reserve an absurd amount.
+//
+// The upper clamp is deliberately modest. Measured on the run above, 4GB reached
+// a 95.9% hit ratio against 96.9% at 8GB — the extra memory bought one point of
+// hit ratio, because the hot index set is far larger than either value and what
+// matters is caching its upper levels. Meanwhile 8GB pushed that machine into
+// heavy swap (macOS swap files live on the boot volume, which ran it low on
+// space). Prefer leaving headroom for the page cache and anything else resident.
+func sizeCaches() (sharedMB, effectiveMB int) {
+	const fallbackMB = 1024
+	vm, err := mem.VirtualMemory()
+	if err != nil || vm.Total == 0 {
+		return fallbackMB, fallbackMB * 3
+	}
+	totalMB := int(vm.Total / (1024 * 1024))
+
+	sharedMB = totalMB / 4
+	sharedMB = min(max(sharedMB, 256), 4096)
+
+	// effective_cache_size is only a planner hint: it describes shared buffers
+	// plus whatever the OS page cache is expected to hold.
+	effectiveMB = max(totalMB*3/4, sharedMB)
+	return sharedMB, effectiveMB
+}
 
 const (
 	pgDatabase = "openaudio"
@@ -149,11 +186,17 @@ func (pg *managedPostgres) initDB() error {
 	if err != nil {
 		return fmt.Errorf("read postgresql.conf: %w", err)
 	}
+	sharedMB, effectiveMB := sizeCaches()
+	pg.logger.Info("sizing postgres caches",
+		zap.Int("shared_buffers_mb", sharedMB),
+		zap.Int("effective_cache_size_mb", effectiveMB),
+	)
 	extras := fmt.Sprintf(`
 # genesis-writer overrides
 port = %s
-shared_buffers = '256MB'
-maintenance_work_mem = '1GB'
+shared_buffers = '%dMB'
+effective_cache_size = '%dMB'
+maintenance_work_mem = '2GB'
 wal_level = minimal
 max_wal_senders = 0
 fsync = off
@@ -161,7 +204,7 @@ synchronous_commit = off
 full_page_writes = off
 checkpoint_completion_target = 0.9
 max_wal_size = '4GB'
-`, pg.port)
+`, pg.port, sharedMB, effectiveMB)
 	if err := os.WriteFile(confPath, append(conf, []byte(extras)...), 0o600); err != nil {
 		return fmt.Errorf("write postgresql.conf: %w", err)
 	}
