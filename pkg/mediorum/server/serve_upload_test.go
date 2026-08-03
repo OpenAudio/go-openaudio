@@ -29,14 +29,10 @@ func TestUploadFile(t *testing.T) {
 	assert.Equal(t, resp.StatusCode, 200)
 	uploadId := uploads[0].ID
 
-	// force sweep (since blob changes SkipBroadcast)
-	for _, s := range testNetwork {
-		s.crud.ForceSweep()
-	}
-
 	// poll for complete
 	var u2 *Upload
 	for i := 0; i < 3; i++ {
+		applyCoreOpsFrom(t, s1)
 		resp, err := s2.reqClient.R().SetSuccessResult(&u2).Get(s2.Config.Self.Host + "/uploads/" + uploadId)
 		assert.NoError(t, err)
 		assert.Equal(t, resp.StatusCode, 200)
@@ -96,14 +92,10 @@ func TestUploadPlacement(t *testing.T) {
 	assert.Equal(t, []string{s3.Config.Self.Host}, uploads[0].Mirrors)
 	uploadId := uploads[0].ID
 
-	// force sweep (since blob changes SkipBroadcast)
-	for _, s := range testNetwork {
-		s.crud.ForceSweep()
-	}
-
 	// poll for complete
 	var u2 *Upload
 	for i := 0; i < 3; i++ {
+		applyCoreOpsFrom(t, s3)
 		resp, err := s2.reqClient.R().SetSuccessResult(&u2).Get(s3.Config.Self.Host + "/uploads/" + uploadId)
 		assert.NoError(t, err)
 		assert.Equal(t, resp.StatusCode, 200)
@@ -190,14 +182,10 @@ func TestUploadPlacementTus(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 204, patchResp.StatusCode)
 
-	// force sweep (since blob changes SkipBroadcast)
-	for _, s := range testNetwork {
-		s.crud.ForceSweep()
-	}
-
 	// poll for complete
 	var u2 *Upload
 	for i := 0; i < 30; i++ {
+		applyCoreOpsFrom(t, s3)
 		var uploadResp Upload
 		resp, err := s2.reqClient.R().SetSuccessResult(&uploadResp).Get(s3.Config.Self.Host + "/uploads/" + uploadId)
 		assert.NoError(t, err)

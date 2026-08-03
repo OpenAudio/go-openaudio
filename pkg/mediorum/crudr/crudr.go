@@ -2,18 +2,15 @@ package crudr
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/httputil"
-	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"go.uber.org/zap"
 
 	"github.com/oklog/ulid/v2"
@@ -37,21 +34,14 @@ var (
 )
 
 type Crudr struct {
-	DB           *gorm.DB
-	myPrivateKey *ecdsa.PrivateKey
+	DB *gorm.DB
 
-	host       string
-	logger     *zap.Logger
-	typeMap    map[string]reflect.Type
-	httpClient *http.Client
-
-	peerClients []*PeerClient
-	coreWrites  bool
+	host    string
+	logger  *zap.Logger
+	typeMap map[string]reflect.Type
 
 	mu        sync.Mutex
 	callbacks []func(op *Op, records interface{})
-
-	lc *lifecycle.Lifecycle
 }
 
 // create ops table if it does not exist
@@ -106,7 +96,7 @@ func migrateOps(db *gorm.DB) error {
 	return nil
 }
 
-func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db *gorm.DB, parentLifecycle *lifecycle.Lifecycle, logger *zap.Logger, httpClient *http.Client) *Crudr {
+func New(selfHost string, db *gorm.DB, logger *zap.Logger) *Crudr {
 	selfHost = httputil.RemoveTrailingSlash(strings.ToLower(selfHost))
 
 	err := migrateOps(db)
@@ -119,51 +109,14 @@ func New(selfHost string, myPrivateKey *ecdsa.PrivateKey, peerHosts []string, db
 		panic(err)
 	}
 
-	if httpClient == nil {
-		httpClient = &http.Client{}
-	}
-
 	c := &Crudr{
-		DB:           db,
-		myPrivateKey: myPrivateKey,
-
-		host:       selfHost,
-		logger:     logger.With(zap.String("module", "crud")),
-		typeMap:    map[string]reflect.Type{},
-		httpClient: httpClient,
-
-		peerClients: make([]*PeerClient, len(peerHosts)),
-		lc:          lifecycle.NewFromLifecycle(parentLifecycle, "crudr lifecycle"),
-	}
-
-	for idx, peerHost := range peerHosts {
-		c.peerClients[idx] = NewPeerClient(peerHost, c, selfHost)
+		DB:      db,
+		host:    selfHost,
+		logger:  logger.With(zap.String("module", "mediorum_ops")),
+		typeMap: map[string]reflect.Type{},
 	}
 
 	return c
-}
-
-func (c *Crudr) SetCoreWritesEnabled(enabled bool) {
-	c.coreWrites = enabled
-}
-
-func (c *Crudr) StartClients() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, p := range c.peerClients {
-		p.Start(c.lc)
-	}
-}
-
-// used for testing
-func (c *Crudr) ForceSweep() {
-	c.mu.Lock()
-	peers := make([]*PeerClient, len(c.peerClients))
-	copy(peers, c.peerClients)
-	c.mu.Unlock()
-	for _, p := range peers {
-		p.doSweep(context.Background())
-	}
 }
 
 // RegisterModels accepts a instance of a GORM model and registers it
@@ -222,13 +175,10 @@ func (c *Crudr) newOp(action string, data interface{}, opts ...withOption) *Op {
 		Action:       action,
 		Table:        tableName,
 		Data:         j,
-		CoreTxStatus: CoreTxStatusLocal,
+		CoreTxStatus: CoreTxStatusPending,
 	}
 	for _, opt := range opts {
 		opt(op)
-	}
-	if c.coreWrites && !op.Transient {
-		op.CoreTxStatus = CoreTxStatusPending
 	}
 	if op.Transient {
 		op.CoreTxStatus = CoreTxStatusLocal
@@ -359,12 +309,6 @@ func (c *Crudr) ApplyOp(op *Op) error {
 		return err
 	}
 
-	// broadcast if this host is origin...
-	if op.Host == c.host && !op.SkipBroadcast {
-		msg, _ := json.Marshal(op)
-		c.broadcast(msg)
-	}
-
 	// notify any local (in memory) subscribers
 	c.callOpCallbacks(op, records)
 
@@ -479,7 +423,6 @@ func (c *Crudr) MarkCoreError(ctx context.Context, op *Op, txHash string, attemp
 		"core_attempted_at": attemptedAt,
 	}).Error
 }
-
 func (c *Crudr) MarkCoreRejected(ctx context.Context, op *Op, rejectedAt time.Time, err error) error {
 	errString := ""
 	if err != nil {
@@ -491,73 +434,4 @@ func (c *Crudr) MarkCoreRejected(ctx context.Context, op *Op, rejectedAt time.Ti
 		"core_tx_error":     errString,
 		"core_attempted_at": rejectedAt,
 	}).Error
-}
-
-func (c *Crudr) GetOutboxSizes() map[string]int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	sizes := make(map[string]int)
-	for _, p := range c.peerClients {
-		sizes[p.Host] = len(p.outbox)
-	}
-	return sizes
-}
-
-func (c *Crudr) GetPercentNodesSeeded() float64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	var nCaughtUp int
-	var nPeers = len(c.peerClients)
-	for _, p := range c.peerClients {
-		if p.Seeded {
-			nCaughtUp++
-		}
-	}
-
-	return (float64(nCaughtUp) / float64(nPeers)) * 100
-}
-
-// UpdatePeers reconciles the crudr peer client list with a new set of peer hosts.
-// New hosts get a PeerClient created and started; removed hosts are dropped.
-func (c *Crudr) UpdatePeers(newHosts []string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Build a set of current peer hosts
-	currentHosts := make(map[string]*PeerClient, len(c.peerClients))
-	for _, p := range c.peerClients {
-		currentHosts[p.Host] = p
-	}
-
-	// Normalize and deduplicate new hosts (excluding self)
-	newHostSet := make(map[string]bool, len(newHosts))
-	for _, h := range newHosts {
-		h = httputil.RemoveTrailingSlash(strings.ToLower(h))
-		if h == c.host {
-			continue
-		}
-		newHostSet[h] = true
-	}
-
-	// Start clients for newly added hosts
-	for h := range newHostSet {
-		if _, exists := currentHosts[h]; !exists {
-			p := NewPeerClient(h, c, c.host)
-			p.Start(c.lc)
-			c.peerClients = append(c.peerClients, p)
-			c.logger.Info("added new crudr peer", zap.String("host", h))
-		}
-	}
-
-	// Remove clients for hosts no longer in the set and stop their goroutines
-	kept := make([]*PeerClient, 0, len(newHostSet))
-	for _, p := range c.peerClients {
-		if newHostSet[p.Host] {
-			kept = append(kept, p)
-		} else {
-			p.Stop()
-			c.logger.Info("removed crudr peer", zap.String("host", p.Host))
-		}
-	}
-	c.peerClients = kept
 }

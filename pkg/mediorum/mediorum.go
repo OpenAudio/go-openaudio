@@ -143,7 +143,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	storeRecentTTL := parseStoreRecentTTL(env.String("OPENAUDIO_STORE_RECENT_TTL"))
 
 	// Archive mode keeps all history (no ops pruning). Otherwise the append-only
-	// crudr "ops" table is pruned, retaining 30 days by default.
+	// Mediorum's local operation log is pruned, retaining 30 days by default.
 	archive := env.Get("false", "OPENAUDIO_ARCHIVE", "archive") == "true"
 	opsRetention := env.GetDuration(server.DefaultOpsRetention, "OPENAUDIO_OPS_RETENTION")
 	opsPruneInterval := env.GetDuration(6*time.Hour, "OPENAUDIO_OPS_PRUNE_INTERVAL")
@@ -153,31 +153,22 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 			Host:   httputil.RemoveTrailingSlash(strings.ToLower(nodeEndpoint)),
 			Wallet: strings.ToLower(walletAddress),
 		},
-		ListenPort:           "1991",
-		Peers:                peers,
-		Signers:              signers,
-		ReplicationFactor:    replicationFactor,
-		PrivateKey:           privateKeyHex,
-		Dir:                  dir,
-		PostgresDSN:          env.Get("postgres://postgres:postgres@db:5432/audius_creator_node", "OPENAUDIO_DB_URL", "dbUrl"),
-		BlobStoreDSN:         blobStoreDSN,
-		ArchiveBlobStoreDSN:  archiveBlobStoreDSN,
-		MoveFromBlobStoreDSN: moveFromBlobStoreDSN,
-		TrustedNotifierID:    trustedNotifierID,
-		SPID:                 spID,
-		SPOwnerWallet:        spOwnerWallet,
-		GitSHA:               env.String("OPENAUDIO_GIT_SHA", "GIT_SHA"),
-		AudiusDockerCompose:  env.String("OPENAUDIO_DOCKER_COMPOSE_GIT_SHA", "AUDIUS_DOCKER_COMPOSE_GIT_SHA"),
-		AutoUpgradeEnabled:   env.Bool("OPENAUDIO_AUTO_UPGRADE_ENABLED", "autoUpgradeEnabled"),
-		// Core writes default on. The conditions #411 set for re-enabling are
-		// met: the validator fleet is fully on the capProposalTxs proposal
-		// budget (#404, verified ≥v1.8.1 fleet-wide), op inflow is bounded
-		// (64KB size cap #417, paced submitter with retry backoff), the
-		// pre-cutover backlog was quarantined once (#418), and retry-spam op
-		// volume was eliminated at source and receiver (#416/#338/#419).
-		// Set OPENAUDIO_MEDIORUM_CORE_WRITES_ENABLED=false to disable — this
-		// kill-switch was the recovery lever in both prior halts; keep it.
-		CoreWritesEnabled:         env.Get("true", "OPENAUDIO_MEDIORUM_CORE_WRITES_ENABLED") != "false",
+		ListenPort:                "1991",
+		Peers:                     peers,
+		Signers:                   signers,
+		ReplicationFactor:         replicationFactor,
+		PrivateKey:                privateKeyHex,
+		Dir:                       dir,
+		PostgresDSN:               env.Get("postgres://postgres:postgres@db:5432/audius_creator_node", "OPENAUDIO_DB_URL", "dbUrl"),
+		BlobStoreDSN:              blobStoreDSN,
+		ArchiveBlobStoreDSN:       archiveBlobStoreDSN,
+		MoveFromBlobStoreDSN:      moveFromBlobStoreDSN,
+		TrustedNotifierID:         trustedNotifierID,
+		SPID:                      spID,
+		SPOwnerWallet:             spOwnerWallet,
+		GitSHA:                    env.String("OPENAUDIO_GIT_SHA", "GIT_SHA"),
+		AudiusDockerCompose:       env.String("OPENAUDIO_DOCKER_COMPOSE_GIT_SHA", "AUDIUS_DOCKER_COMPOSE_GIT_SHA"),
+		AutoUpgradeEnabled:        env.Bool("OPENAUDIO_AUTO_UPGRADE_ENABLED", "autoUpgradeEnabled"),
 		StoreAll:                  env.Bool("OPENAUDIO_STORE_ALL", "STORE_ALL"),
 		StoreRecent:               env.Bool("OPENAUDIO_STORE_RECENT"),
 		StoreRecentTTL:            storeRecentTTL,

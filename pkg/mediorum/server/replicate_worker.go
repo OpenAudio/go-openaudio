@@ -231,17 +231,17 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 		}
 	}
 
-	// No replications succeeded — skip the DB read and the crudr broadcast.
+	// No replications succeeded; skip the DB read and Core operation relay.
 	// The replication worker re-queues an under-replicated upload every cache
 	// TTL (1h); without this fast-exit, each retry where every reachable peer
 	// fails would write a fresh uploads op with byte-identical mirrors and
-	// fan that op out to every peer in the network, dominating the
+	// submit that op to every node via Core, dominating the
 	// uploads-update op rate.
 	if len(newSuccessHosts) == 0 {
 		return nil
 	}
 
-	// Update upload record with successful mirrors using crudr for broadcast
+	// Update upload record with successful mirrors using the operation log.
 	var dbUpload Upload
 	if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
 		return fmt.Errorf("failed to get upload from DB: %w", err)
@@ -252,9 +252,9 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 	if !changed {
 		// A concurrent worker has already recorded every host we just
 		// replicated to. The merged list equals what's already in the DB,
-		// so emitting a crud op now would broadcast a row with byte-
-		// identical content to every peer for no semantic gain.
-		ss.logger.Debug("replication produced no new mirrors; suppressing crud broadcast",
+		// so emitting a Core operation now would relay a row with byte-
+		// identical content to every node for no semantic gain.
+		ss.logger.Debug("replication produced no new mirrors; suppressing core operation",
 			zap.String("uploadID", upload.ID),
 			zap.String("cid", cid),
 			zap.Strings("newSuccessHosts", newSuccessHosts),
@@ -290,7 +290,7 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 // mirror list (transcoded vs original chosen by isTranscoded) in stable
 // order, de-duplicating against hosts already present. Returns the merged
 // list and whether the merge actually added anything; callers use the bool
-// to decide whether to broadcast a crud op or suppress a no-op write.
+// to decide whether to relay a Core operation or suppress a no-op write.
 func mergeReplicationMirrors(isTranscoded bool, upload *Upload, newSuccessHosts []string) ([]string, bool) {
 	var existing []string
 	if isTranscoded {

@@ -86,7 +86,7 @@ func (ss *MediorumServer) startTranscoder(ctx context.Context) error {
 	// with the assumption that if server was in mirrors list it would have the orig upload.
 	// but hash migration changed that assumption...
 	// so hosts would try to transcode and would not have the orig
-	// which would issue a crudr update to put transcode job in error state.
+	// which would issue an operation-log update to put transcode job in error state.
 	//
 	// This is a temporary fix in prod to only find missing transcode jobs on StoreAll nodes
 	// which will have the orig.

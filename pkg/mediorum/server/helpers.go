@@ -116,7 +116,7 @@ func (ss *MediorumServer) getUploadOrigCID(uploadId string) (string, error) {
 		return upload.OrigFileCID, nil
 	}
 
-	// since still no gossip... we might not have upload record...
+	// If this node has not caught up through Core yet, try healthy peers.
 	// try to get upload from healthy peers
 	for _, peerHost := range ss.findHealthyPeers(time.Hour) {
 		if upload, err := ss.peerGetUpload(peerHost, uploadId); err == nil {

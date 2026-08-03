@@ -122,6 +122,8 @@ type MonthlyMetrics struct {
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`
 }
 
+// UploadCursor tracks how far the upload scroller has walked each peer's
+// created_at-ordered upload history. See startUploadScroller.
 type UploadCursor struct {
 	Host  string `gorm:"primaryKey"`
 	After time.Time
@@ -153,7 +155,7 @@ func dbMigrate(crud *crudr.Crudr, myHost string) {
 		panic(err)
 	}
 
-	// register any models to be managed by crudr
+	// register any models to be managed by the mediorum operation log
 	crud.RegisterModels(&Upload{}, &StorageAndDbSize{}, &QmAudioAnalysis{}, &AudioPreview{})
 
 	sqlDb, _ := crud.DB.DB()
