@@ -146,9 +146,10 @@ func main() {
 		indexer.SetDBURL(dbUrl)
 		indexer.SetCheckReadiness(false) // Don't wait for core to be ready when console is enabled
 
-		// Configure ETL data types from env var
+		// Configure ETL data types and background jobs from env vars
 		etlConfig := etl.DefaultConfig()
 		etlConfig.ReadDataTypesEnv()
+		etlConfig.ReadBackgroundJobsEnv()
 		indexer.SetConfig(etlConfig)
 
 		locationDB, err := location.NewLocationService()
