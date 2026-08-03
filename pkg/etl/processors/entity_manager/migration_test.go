@@ -233,3 +233,35 @@ func TestTitleRequiredOnlyForNewTracks(t *testing.T) {
 		t.Fatalf("production create should reject an empty title, got %v", err)
 	}
 }
+
+// aggregate_plays is owned by the consumer, so it is absent from some ETL
+// databases. A Reconcile there must be skipped, not fail: an undefined relation
+// is not a ValidationError and would abort the whole block.
+func TestPlayCountReconcile_SkippedWhenTableAbsent(t *testing.T) {
+	dbtx := &stubDBTX{} // to_regclass scans as NULL -> absent
+	h := PlayCountReconcile()
+	params := &Params{
+		EntityID: 42,
+		DBTX:     dbtx,
+		Metadata: map[string]any{"delta": float64(7)},
+	}
+
+	if err := h.Handle(context.Background(), params); err != nil {
+		t.Fatalf("Reconcile must be skipped when aggregate_plays is absent, got: %v", err)
+	}
+	if dbtx.execArgs != nil {
+		t.Error("no INSERT should have been attempted against the missing table")
+	}
+}
+
+// A malformed Reconcile is still a validation error, not a silent skip.
+func TestPlayCountReconcile_RequiresDelta(t *testing.T) {
+	err := PlayCountReconcile().Handle(context.Background(), &Params{
+		EntityID: 42,
+		DBTX:     &stubDBTX{},
+		Metadata: map[string]any{},
+	})
+	if err == nil || !IsValidationError(err) {
+		t.Fatalf("expected a ValidationError for a missing delta, got %v", err)
+	}
+}
