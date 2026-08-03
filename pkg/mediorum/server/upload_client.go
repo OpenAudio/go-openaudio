@@ -107,18 +107,18 @@ func (ss *MediorumServer) scrollUploadsFromPeer(ctx context.Context, host string
 		ids = append(ids, upload.ID)
 	}
 	var existing []Upload
-	if err := ss.crud.DB.Select("id", "transcoded_at").Where("id IN ?", ids).Find(&existing).Error; err != nil {
+	if err := ss.crud.DB.Select("id", "updated_at").Where("id IN ?", ids).Find(&existing).Error; err != nil {
 		logger.Warn("lookup existing uploads failed", zap.Error(err))
 		return false
 	}
-	transcodedAt := make(map[string]time.Time, len(existing))
+	updatedAt := make(map[string]time.Time, len(existing))
 	for _, e := range existing {
-		transcodedAt[e.ID] = e.TranscodedAt
+		updatedAt[e.ID] = e.UpdatedAt
 	}
 
 	var overwrites []*Upload
 	for _, upload := range uploads {
-		if prev, ok := transcodedAt[upload.ID]; !ok || prev.Before(upload.TranscodedAt) {
+		if prev, ok := updatedAt[upload.ID]; !ok || prev.Before(upload.UpdatedAt) {
 			overwrites = append(overwrites, upload)
 		}
 		uploadCursor.After = upload.CreatedAt
@@ -127,6 +127,7 @@ func (ss *MediorumServer) scrollUploadsFromPeer(ctx context.Context, host string
 	if len(overwrites) > 0 {
 		if err := ss.crud.DB.Clauses(clause.OnConflict{UpdateAll: true}).Create(overwrites).Error; err != nil {
 			logger.Warn("overwrite upload failed", zap.Error(err))
+			return false
 		}
 	}
 

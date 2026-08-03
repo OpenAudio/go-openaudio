@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // The scroller is the only way a node acquires uploads created before it
@@ -33,18 +35,19 @@ func TestScrollUploadsFromPeerBackfillsAndAdvancesCursor(t *testing.T) {
 	cleanup()
 	t.Cleanup(cleanup)
 
-	// The peer holds all three rows; two of them are newer than the target's.
+	// The peer holds all three rows. TranscodedAt is identical for the existing
+	// pairs, so freshness depends on updates made after transcoding.
 	require.NoError(t, source.crud.DB.Create(&[]Upload{
-		{ID: missingID, Template: JobTemplateAudio, OrigFileCID: "cid-missing", CreatedAt: now.Add(-3 * time.Hour), TranscodedAt: now.Add(-3 * time.Hour)},
-		{ID: staleID, Template: JobTemplateAudio, OrigFileCID: "cid-stale", CreatedAt: now.Add(-2 * time.Hour), TranscodedAt: now.Add(-1 * time.Hour)},
-		{ID: newerID, Template: JobTemplateAudio, OrigFileCID: "cid-newer", CreatedAt: now.Add(-1 * time.Hour), TranscodedAt: now.Add(-2 * time.Hour)},
+		{ID: missingID, Template: JobTemplateAudio, OrigFileCID: "cid-missing", CreatedAt: now.Add(-3 * time.Hour), UpdatedAt: now.Add(-2 * time.Hour), TranscodedAt: now.Add(-3 * time.Hour)},
+		{ID: staleID, Template: JobTemplateAudio, OrigFileCID: "cid-stale", CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now.Add(-15 * time.Minute), TranscodedAt: now.Add(-1 * time.Hour)},
+		{ID: newerID, Template: JobTemplateAudio, OrigFileCID: "cid-newer", CreatedAt: now.Add(-1 * time.Hour), UpdatedAt: now.Add(-30 * time.Minute), TranscodedAt: now.Add(-2 * time.Hour)},
 	}).Error)
 
 	// The target is missing one row, has an older copy of another, and a
 	// strictly newer copy of the third that must survive.
 	require.NoError(t, target.crud.DB.Create(&[]Upload{
-		{ID: staleID, Template: JobTemplateAudio, OrigFileCID: "cid-stale-old", CreatedAt: now.Add(-2 * time.Hour), TranscodedAt: now.Add(-90 * time.Minute)},
-		{ID: newerID, Template: JobTemplateAudio, OrigFileCID: "cid-newer-local", CreatedAt: now.Add(-1 * time.Hour), TranscodedAt: now.Add(-time.Minute)},
+		{ID: staleID, Template: JobTemplateAudio, OrigFileCID: "cid-stale-old", CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now.Add(-90 * time.Minute), TranscodedAt: now.Add(-1 * time.Hour)},
+		{ID: newerID, Template: JobTemplateAudio, OrigFileCID: "cid-newer-local", CreatedAt: now.Add(-1 * time.Hour), UpdatedAt: now.Add(-time.Minute), TranscodedAt: now.Add(-2 * time.Hour)},
 	}).Error)
 
 	target.scrollUploadsFromPeer(ctx, peerHost)
@@ -64,4 +67,39 @@ func TestScrollUploadsFromPeerBackfillsAndAdvancesCursor(t *testing.T) {
 	var cursor UploadCursor
 	require.NoError(t, target.crud.DB.First(&cursor, "host = ?", peerHost).Error)
 	require.False(t, cursor.After.IsZero(), "cursor should advance so the next pass skips this page")
+}
+
+func TestScrollUploadsFromPeerDoesNotAdvanceCursorAfterUpsertFailure(t *testing.T) {
+	ctx := context.Background()
+	source := testNetwork[0]
+	target := testNetwork[1]
+	peerHost := source.Config.Self.Host
+
+	now := time.Now().UTC().Truncate(time.Second)
+	id := fmt.Sprintf("scroll-failure-%d", now.UnixNano())
+	require.NoError(t, source.crud.DB.Create(&Upload{
+		ID: id, Template: JobTemplateAudio, CreatedAt: now.Add(-3 * time.Hour), UpdatedAt: now.Add(-2 * time.Hour),
+	}).Error)
+	t.Cleanup(func() {
+		require.NoError(t, source.crud.DB.Delete(&Upload{}, "id = ?", id).Error)
+		require.NoError(t, target.crud.DB.Delete(&Upload{}, "id = ?", id).Error)
+		require.NoError(t, target.crud.DB.Delete(&UploadCursor{}, "host = ?", peerHost).Error)
+	})
+	require.NoError(t, target.crud.DB.Delete(&UploadCursor{}, "host = ?", peerHost).Error)
+
+	callbackName := "test:fail_upload_scroll_upsert"
+	require.NoError(t, target.crud.DB.Callback().Create().Before("gorm:create").Register(callbackName, func(db *gorm.DB) {
+		if db.Statement.Schema != nil && db.Statement.Schema.Table == "uploads" {
+			db.AddError(errors.New("forced upload upsert failure"))
+		}
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, target.crud.DB.Callback().Create().Remove(callbackName))
+	})
+
+	require.False(t, target.scrollUploadsFromPeer(ctx, peerHost))
+
+	var cursorCount int64
+	require.NoError(t, target.crud.DB.Model(&UploadCursor{}).Where("host = ?", peerHost).Count(&cursorCount).Error)
+	require.Zero(t, cursorCount, "cursor must remain in place so the failed page is retried")
 }
