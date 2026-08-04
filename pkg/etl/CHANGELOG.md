@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.3](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.6.2...pkg/etl/v1.6.3) (2026-08-04)
+
+
+### Bug Fixes
+
+* **etl:** index genesis-migration entities without data loss ([#425](https://github.com/OpenAudio/go-openaudio/issues/425)) ([6c116fa](https://github.com/OpenAudio/go-openaudio/commit/6c116fa1841eb8836e43ef162a40b757b7b1ecd3))
+* **etl:** persist orig_filename and stop updates from unlinking stems ([#421](https://github.com/OpenAudio/go-openaudio/issues/421)) ([1d9f697](https://github.com/OpenAudio/go-openaudio/commit/1d9f69772e870ec920a2dcef3c12328947dbd57d))
+* **etl:** record album saves and reposts as playlist ([#428](https://github.com/OpenAudio/go-openaudio/issues/428)) ([26ccde7](https://github.com/OpenAudio/go-openaudio/commit/26ccde79181ff8c3dd1e711070adbb7327e6be68))
+
 ## [1.6.2](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.6.1...pkg/etl/v1.6.2) (2026-07-16)
 
 
