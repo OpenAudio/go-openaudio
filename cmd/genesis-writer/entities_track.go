@@ -112,13 +112,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			t.is_delete, t.is_available,
 			t.created_at
 		FROM tracks t
-		LEFT JOIN (
-			-- At most one row per user: the source contains a few user_ids with
-			-- more than one is_current row, and joining users directly would
-			-- duplicate every entity those users own.
-			SELECT DISTINCT ON (user_id) user_id, wallet FROM users
-			WHERE is_current = true ORDER BY user_id, blocknumber DESC NULLS LAST
-		) u ON u.user_id = t.owner_id
+		LEFT JOIN users u ON u.user_id = t.owner_id AND u.is_current = true
 		WHERE t.is_current = true
 		ORDER BY t.track_id`,
 		func(rows pgx.Rows) (sourceTrack, error) {
@@ -221,13 +215,7 @@ func (w *Writer) writeTrackDownloads(ctx context.Context) error {
 		`SELECT count(*) FROM track_downloads`,
 		`SELECT td.parent_track_id, td.track_id, td.user_id, COALESCE(LOWER(u.wallet), ''), td.city, td.region, td.country, td.created_at
 		FROM track_downloads td
-		LEFT JOIN (
-			-- At most one row per user: the source contains a few user_ids with
-			-- more than one is_current row, and joining users directly would
-			-- duplicate every entity those users own.
-			SELECT DISTINCT ON (user_id) user_id, wallet FROM users
-			WHERE is_current = true ORDER BY user_id, blocknumber DESC NULLS LAST
-		) u ON u.user_id = td.user_id
+		LEFT JOIN users u ON u.user_id = td.user_id AND u.is_current = true
 		ORDER BY td.parent_track_id, td.track_id`,
 		func(rows pgx.Rows) (sourceTrackDownload, error) {
 			var d sourceTrackDownload

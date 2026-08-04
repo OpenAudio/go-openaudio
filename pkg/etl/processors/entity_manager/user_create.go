@@ -109,6 +109,14 @@ type userState struct {
 	IsAvailable   bool
 }
 
+// ON CONFLICT DO NOTHING covers both unique indexes on users: users_pkey
+// (user_id, txhash) for a re-delivered tx, and users_current_uniq_idx
+// (user_id) WHERE is_current for a second Create against a user that already
+// exists. Nothing validates that a user is new, and on a production clone five
+// users had picked up a duplicate current row that way — which silently fans
+// out every join from an entity to its owner's wallet. Now the second Create
+// is a no-op instead, matching how 0030's upsert arbiters made the social
+// inserts tolerant of re-delivery.
 func insertUserWithState(ctx context.Context, params *Params, state userState) error {
 	handle := nullString(params.MetadataString("handle"))
 	var handleLC any
@@ -130,6 +138,7 @@ func insertUserWithState(ctx context.Context, params *Params, state userState) e
 			true, $21, $22, $23, true,
 			$17, $17, $18, $19, $20
 		)
+		ON CONFLICT DO NOTHING
 	`,
 		params.UserID,
 		handle,

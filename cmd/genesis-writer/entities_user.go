@@ -144,23 +144,11 @@ type sourceAssociatedWallet struct {
 func (w *Writer) writeAssociatedWallets(ctx context.Context) error {
 	return processBatched(ctx, w, "associated_wallets",
 		`SELECT count(*) FROM associated_wallets aw
-		 JOIN (
-			-- At most one row per user: the source contains a few user_ids with
-			-- more than one is_current row, and joining users directly would
-			-- duplicate every entity those users own.
-			SELECT DISTINCT ON (user_id) user_id, wallet FROM users
-			WHERE is_current = true ORDER BY user_id, blocknumber DESC NULLS LAST
-		) u ON u.user_id = aw.user_id
+		 JOIN users u ON u.user_id = aw.user_id AND u.is_current = true
 		 WHERE aw.is_current = true AND aw.is_delete = false`,
 		`SELECT aw.user_id, aw.wallet, aw.chain, u.wallet
 		FROM associated_wallets aw
-		JOIN (
-			-- At most one row per user: the source contains a few user_ids with
-			-- more than one is_current row, and joining users directly would
-			-- duplicate every entity those users own.
-			SELECT DISTINCT ON (user_id) user_id, wallet FROM users
-			WHERE is_current = true ORDER BY user_id, blocknumber DESC NULLS LAST
-		) u ON u.user_id = aw.user_id
+		JOIN users u ON u.user_id = aw.user_id AND u.is_current = true
 		WHERE aw.is_current = true AND aw.is_delete = false
 		ORDER BY aw.user_id, aw.wallet`,
 		func(rows pgx.Rows) (sourceAssociatedWallet, error) {
