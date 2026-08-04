@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	connectrpc.com/connect v1.18.1
-	github.com/OpenAudio/go-openaudio v1.6.2 // x-release-please-version
+	github.com/OpenAudio/go-openaudio v1.6.3 // x-release-please-version
 	github.com/ethereum/go-ethereum v1.14.9
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/jackc/pgx/v5 v5.6.0
