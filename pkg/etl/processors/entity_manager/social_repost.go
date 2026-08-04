@@ -118,11 +118,8 @@ func resolveRepostType(ctx context.Context, params *Params) string {
 	if t := repostTypeFromEntityType(params.MetadataString("type")); t != "" {
 		return t
 	}
-	switch repostTypeFromEntityType(params.EntityType) {
-	case "track":
-		return "track"
-	case "playlist":
-		return "playlist"
+	if t := repostTypeFromEntityType(params.EntityType); t != "" {
+		return t
 	}
 	return inferRepostType(ctx, params.DBTX, params.EntityID)
 }

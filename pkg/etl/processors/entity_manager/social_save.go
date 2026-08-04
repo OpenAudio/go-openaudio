@@ -141,11 +141,8 @@ func resolveSaveType(ctx context.Context, params *Params) string {
 	if t := saveTypeFromEntityType(params.MetadataString("type")); t != "" {
 		return t
 	}
-	switch saveTypeFromEntityType(params.EntityType) {
-	case "track":
-		return "track"
-	case "playlist":
-		return "playlist"
+	if t := saveTypeFromEntityType(params.EntityType); t != "" {
+		return t
 	}
 	return inferSaveType(ctx, params.DBTX, params.EntityID)
 }
