@@ -30,6 +30,9 @@ func validateTrackCreate(ctx context.Context, params *Params) error {
 	if params.Metadata == nil {
 		return NewValidationError("metadata is required for track creation")
 	}
+	if params.MetadataString("title") == "" {
+		return NewValidationError("title is required for track creation")
+	}
 	if _, ok := params.MetadataInt64("owner_id"); !ok {
 		return NewValidationError("owner_id is required in metadata for track creation")
 	}
@@ -65,11 +68,18 @@ func validateTrackCreate(ctx context.Context, params *Params) error {
 	return nil
 }
 
+// insertTrackAndRoute writes a newly created track. A new track is never created
+// already-deleted; only the genesis migration replays a deleted row, via
+// insertTrackAndRouteWithState.
 func insertTrackAndRoute(ctx context.Context, params *Params) error {
+	return insertTrackAndRouteWithState(ctx, params, false)
+}
+
+func insertTrackAndRouteWithState(ctx context.Context, params *Params, isDelete bool) error {
+	// A required title is a validation rule (see validateTrackCreate), not a
+	// property of writing the row: a handful of legacy tracks have an empty
+	// title, and the genesis migration keeps them rather than dropping them.
 	title := params.MetadataString("title")
-	if title == "" {
-		return NewValidationError("title is required for track creation")
-	}
 
 	handle, err := getTrackOwnerHandle(ctx, params.DBTX, params.UserID)
 	if err != nil {
@@ -158,7 +168,7 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 			route_id, track_segments, created_at, updated_at, txhash, blocknumber,
 			orig_filename
 		) VALUES (
-			$1, $2, true, false, $3, $4, $5, $6, $7,
+			$1, $2, true, $48, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22,
@@ -217,6 +227,7 @@ func insertTrackAndRoute(ctx context.Context, params *Params) error {
 		params.TxHash,
 		params.BlockNumber,
 		nullString(origFilename),
+		isDelete,
 	)
 	if err != nil {
 		return err

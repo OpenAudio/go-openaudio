@@ -20,6 +20,12 @@ func (h *dashboardWalletCreateHandler) Handle(ctx context.Context, params *Param
 		return err
 	}
 
+	return insertDashboardWalletUser(ctx, params, wallet)
+}
+
+// insertDashboardWalletUser writes the wallet/user association. Shared by the
+// production and genesis migration handlers.
+func insertDashboardWalletUser(ctx context.Context, params *Params, wallet string) error {
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO dashboard_wallet_users (wallet, user_id, is_delete, txhash, blocknumber, created_at, updated_at)
 		VALUES ($1, $2, false, $3, $4, $5, $5)
@@ -29,26 +35,36 @@ func (h *dashboardWalletCreateHandler) Handle(ctx context.Context, params *Param
 }
 
 func validateDashboardWalletCreate(ctx context.Context, params *Params, wallet string) error {
-	exists, err := userExists(ctx, params.DBTX, params.UserID)
+	userWallet, err := validateDashboardWalletAssignment(ctx, params, wallet)
 	if err != nil {
 		return err
 	}
+
+	return verifyDashboardWalletSignatures(params, wallet, userWallet)
+}
+
+// validateDashboardWalletAssignment checks everything about the assignment except
+// the ecrecover signature proof: that the user exists, that the signer is either
+// the user or the wallet being linked, and that the wallet is not already claimed.
+// It returns the user's wallet so the caller can verify signatures without
+// re-reading it. Shared by the production and genesis migration handlers.
+func validateDashboardWalletAssignment(ctx context.Context, params *Params, wallet string) (string, error) {
+	exists, err := userExists(ctx, params.DBTX, params.UserID)
+	if err != nil {
+		return "", err
+	}
 	if !exists {
-		return NewValidationError("user %d does not exist", params.UserID)
+		return "", NewValidationError("user %d does not exist", params.UserID)
 	}
 
 	userWallet, err := getUserWallet(ctx, params.DBTX, params.UserID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	signerIsUser := strings.EqualFold(userWallet, params.Signer)
 	signerIsWallet := strings.EqualFold(wallet, params.Signer)
 	if !signerIsUser && !signerIsWallet {
-		return NewValidationError("signer does not match user or dashboard wallet")
-	}
-
-	if err := verifyDashboardWalletSignatures(params, wallet, userWallet); err != nil {
-		return err
+		return "", NewValidationError("signer does not match user or dashboard wallet")
 	}
 
 	// Check wallet not already assigned to an active user
@@ -61,10 +77,10 @@ func validateDashboardWalletCreate(ctx context.Context, params *Params, wallet s
 		existingFound = true
 	}
 	if existingFound && !existingIsDelete {
-		return NewValidationError("dashboard wallet %s already has an assigned user", wallet)
+		return "", NewValidationError("dashboard wallet %s already has an assigned user", wallet)
 	}
 
-	return nil
+	return userWallet, nil
 }
 
 // verifyDashboardWalletSignatures verifies wallet_signature (signed by dashboard wallet)

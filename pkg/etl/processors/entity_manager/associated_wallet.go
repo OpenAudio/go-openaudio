@@ -22,6 +22,12 @@ func (h *associatedWalletCreateHandler) Handle(ctx context.Context, params *Para
 		return err
 	}
 
+	return insertAssociatedWallet(ctx, params, wallet, chain)
+}
+
+// insertAssociatedWallet claims the wallet for params.UserID and writes the new
+// row. Shared by the production and genesis migration handlers.
+func insertAssociatedWallet(ctx context.Context, params *Params, wallet, chain string) error {
 	// Remove wallet from other users on the same chain (exclusive ownership)
 	_, err := params.DBTX.Exec(ctx,
 		"UPDATE associated_wallets SET is_current = false, is_delete = true WHERE wallet = $1 AND chain = $2 AND user_id != $3 AND is_current = true",
@@ -49,6 +55,17 @@ func validateAssociatedWalletCreate(ctx context.Context, params *Params, wallet,
 	if err := ValidateSigner(ctx, params); err != nil {
 		return err
 	}
+	if err := validateAssociatedWalletShape(wallet, chain); err != nil {
+		return err
+	}
+
+	return verifyAssociatedWalletSignature(params, wallet, chain)
+}
+
+// validateAssociatedWalletShape checks the fields that must be well-formed
+// regardless of how the row arrived. Shared by the production and genesis
+// migration handlers.
+func validateAssociatedWalletShape(wallet, chain string) error {
 	if wallet == "" {
 		return NewValidationError("wallet address is required")
 	}
@@ -58,8 +75,7 @@ func validateAssociatedWalletCreate(ctx context.Context, params *Params, wallet,
 	if chain != "eth" && chain != "sol" {
 		return NewValidationError("chain must be eth or sol, got %s", chain)
 	}
-
-	return verifyAssociatedWalletSignature(params, wallet, chain)
+	return nil
 }
 
 // verifyAssociatedWalletSignature verifies the wallet_signature proves ownership of the wallet.

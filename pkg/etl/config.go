@@ -59,6 +59,37 @@ func (c *Config) ReadDataTypesEnv() {
 	c.DataTypes = &types
 }
 
+// ReadBackgroundJobsEnv lets the periodic, wall-clock-driven components be
+// turned off independently of indexing:
+//
+//	OPENAUDIO_ETL_MV_REFRESH_ENABLED
+//	OPENAUDIO_ETL_SCHEDULED_RELEASES_ENABLED
+//	OPENAUDIO_ETL_PG_NOTIFY_ENABLED
+//
+// Each defaults to enabled and is disabled by setting it to "false".
+//
+// These are worth disabling while catching up on a large backlog. The
+// materialized view refresher, for instance, rebuilds mv_dashboard_* every two
+// minutes by aggregating the whole of etl_transactions — measured at 8.7s per
+// view against 32.7M rows, and growing with the table, while the views
+// themselves are only tens of kilobytes of dashboard analytics that nothing
+// reads during a replay.
+func (c *Config) ReadBackgroundJobsEnv() {
+	disabled := func(key string) bool {
+		v, ok := os.LookupEnv(key)
+		return ok && strings.EqualFold(strings.TrimSpace(v), "false")
+	}
+	if disabled("OPENAUDIO_ETL_MV_REFRESH_ENABLED") {
+		c.DisableMaterializedViewRefresh()
+	}
+	if disabled("OPENAUDIO_ETL_SCHEDULED_RELEASES_ENABLED") {
+		c.DisableScheduledReleases()
+	}
+	if disabled("OPENAUDIO_ETL_PG_NOTIFY_ENABLED") {
+		c.DisablePgNotifyListener()
+	}
+}
+
 // IsDataTypeEnabled returns true if the given entity type should be indexed.
 func (c *Config) IsDataTypeEnabled(entityType string) bool {
 	if c.DataTypes == nil {

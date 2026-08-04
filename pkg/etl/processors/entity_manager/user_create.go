@@ -93,7 +93,31 @@ func validateUserCreate(ctx context.Context, params *Params) error {
 	return nil
 }
 
+// insertUser writes a newly created user. New accounts are always unverified,
+// active and available: those flags are not self-assignable (verification goes
+// through the Verify action, deactivation through Update).
 func insertUser(ctx context.Context, params *Params) error {
+	return insertUserWithState(ctx, params, userState{IsAvailable: true})
+}
+
+// userState carries the account-state flags for an inserted user. Only trusted
+// callers supply a non-default value — see the genesis migration handlers, which
+// replay these flags from the source row.
+type userState struct {
+	IsVerified    bool
+	IsDeactivated bool
+	IsAvailable   bool
+}
+
+// ON CONFLICT DO NOTHING covers both unique indexes on users: users_pkey
+// (user_id, txhash) for a re-delivered tx, and users_current_uniq_idx
+// (user_id) WHERE is_current for a second Create against a user that already
+// exists. Nothing validates that a user is new, and on a production clone five
+// users had picked up a duplicate current row that way — which silently fans
+// out every join from an entity to its owner's wallet. Now the second Create
+// is a no-op instead, matching how 0030's upsert arbiters made the social
+// inserts tolerant of re-delivery.
+func insertUserWithState(ctx context.Context, params *Params, state userState) error {
 	handle := nullString(params.MetadataString("handle"))
 	var handleLC any
 	if h := params.MetadataString("handle"); h != "" {
@@ -111,9 +135,10 @@ func insertUser(ctx context.Context, params *Params) error {
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11,
 			$12, $13, $14, $15, $16,
-			true, false, false, true, true,
+			true, $21, $22, $23, true,
 			$17, $17, $18, $19, $20
 		)
+		ON CONFLICT DO NOTHING
 	`,
 		params.UserID,
 		handle,
@@ -135,6 +160,9 @@ func insertUser(ctx context.Context, params *Params) error {
 		params.TxHash,
 		params.BlockHash,
 		params.BlockNumber,
+		state.IsVerified,
+		state.IsDeactivated,
+		state.IsAvailable,
 	)
 	return err
 }
