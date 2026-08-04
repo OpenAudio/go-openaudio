@@ -111,12 +111,21 @@ type userState struct {
 
 // ON CONFLICT DO NOTHING covers both unique indexes on users: users_pkey
 // (user_id, txhash) for a re-delivered tx, and users_current_uniq_idx
-// (user_id) WHERE is_current for a second Create against a user that already
-// exists. Nothing validates that a user is new, and on a production clone five
-// users had picked up a duplicate current row that way — which silently fans
-// out every join from an entity to its owner's wallet. Now the second Create
-// is a no-op instead, matching how 0030's upsert arbiters made the social
-// inserts tolerant of re-delivery.
+// (user_id) WHERE is_current for a create against a user that already exists.
+//
+// Both callers do check first — validateUserCreate and
+// migratedUserCreateHandler each call userExists — so this is unreachable from
+// a single writer, where the check and the insert share a transaction. It is
+// reachable from a second one: userExists then INSERT is check-then-act, and
+// that is not atomic across transactions, so a concurrent writer can pass its
+// own check before this insert commits. That is the most plausible account of
+// the five duplicate current rows 0035 cleans up, three of which pair a
+// bare-hex txhash with a 0x-prefixed one.
+//
+// Letting the loser raise 23505 instead would be worse than a no-op: a hard
+// error here rolls back the savepoint and drops the tx entirely (its audit row
+// included), which is silent apart from a log line. DO NOTHING is the correct
+// outcome anyway — the row it would have written already exists.
 func insertUserWithState(ctx context.Context, params *Params, state userState) error {
 	handle := nullString(params.MetadataString("handle"))
 	var handleLC any

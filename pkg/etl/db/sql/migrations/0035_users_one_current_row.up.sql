@@ -6,11 +6,19 @@
 -- Update mutates it in place — but was left out, and it is the one table where
 -- the invariant has actually been violated.
 --
--- users_pkey is (user_id, txhash), so a second Create for a user that already
--- exists inserts alongside rather than conflicting: the create path has no
--- existence check. Five users picked up a duplicate that way on a production
--- clone (3.15M users), spread from 2025-06 to 2026-06 — a slow drip, not a
--- one-off. Each pair shares created_at and sits a few blocks apart.
+-- users_pkey is (user_id, txhash), which admits a second is_current row under a
+-- different txhash. Five users on a production clone (3.15M) have one, spread
+-- from 2025-06 to 2026-06 — a slow drip, not a one-off. Each pair shares
+-- created_at and sits a few blocks apart.
+--
+-- Both create paths do check first (validateUserCreate and
+-- migratedUserCreateHandler both call userExists), so a single writer cannot
+-- produce these: its check and its insert share a transaction. A second writer
+-- can — userExists then INSERT is check-then-act, and that is not atomic across
+-- transactions. Three of the five pairs put a bare-hex txhash next to a
+-- 0x-prefixed one, which fits that reading, though it is inference rather than
+-- a diagnosis. This index is what closes the race; the create path keeps an
+-- ON CONFLICT DO NOTHING so the losing writer no-ops instead of erroring.
 --
 -- Five rows, but the blast radius is not five rows: anything joining an entity
 -- to its owner's wallet fans out and silently duplicates every entity those
