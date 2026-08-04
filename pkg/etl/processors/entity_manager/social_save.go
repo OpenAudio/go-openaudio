@@ -118,11 +118,10 @@ func saveExists(ctx context.Context, dbtx db.DBTX, userID, itemID int64, saveTyp
 // resolveSaveType determines the save_type for the saves row.
 //
 // Priority:
-//  1. Metadata `type` if explicitly set ("track" / "playlist" / "album").
-//  2. Chain entity_type — but the chain only distinguishes "Track" vs
-//     "Playlist" (albums are stored as playlists with is_album=true), so we
-//     disambiguate playlist-vs-album by reading playlists.is_album. We
-//     deliberately do NOT fall back to track inference here: the chain said
+//  1. Metadata `type` if explicitly set ("track" / "playlist" / "album" —
+//     "album" is accepted as input but records as "playlist", see below).
+//  2. Chain entity_type — the chain only distinguishes "Track" vs "Playlist".
+//     We deliberately do NOT fall back to track inference here: the chain said
 //     Playlist, so a same-id track is unrelated.
 //  3. Pure DB inference when neither metadata nor entity_type tells us.
 //
@@ -130,6 +129,14 @@ func saveExists(ctx context.Context, dbtx db.DBTX, userID, itemID int64, saveTyp
 // matters: track_id and playlist_id namespaces can collide, and treating a
 // Playlist save as a Track save (via inferSaveType, which checks tracks
 // first) writes the wrong row — observed in production.
+//
+// Albums resolve to "playlist", not "album". An album is a playlist with
+// is_album = true, and that flag is mutable, whereas save_type is written
+// once and is part of the saves primary key — deriving it from is_album made
+// the same chain history index differently depending on when it was replayed.
+// Nothing reads the distinction (every consumer is track/not-track, or ORs
+// the two together), and callers that want it should read playlists.is_album
+// at query time, as the notification triggers already do.
 func resolveSaveType(ctx context.Context, params *Params) string {
 	if t := saveTypeFromEntityType(params.MetadataString("type")); t != "" {
 		return t
@@ -137,36 +144,18 @@ func resolveSaveType(ctx context.Context, params *Params) string {
 	switch saveTypeFromEntityType(params.EntityType) {
 	case "track":
 		return "track"
-	case "album":
-		return "album"
 	case "playlist":
-		if isAlbumPlaylist(ctx, params.DBTX, params.EntityID) {
-			return "album"
-		}
 		return "playlist"
 	}
 	return inferSaveType(ctx, params.DBTX, params.EntityID)
-}
-
-// isAlbumPlaylist returns true if the given playlist_id is currently flagged
-// as an album. Used to disambiguate playlist-vs-album when the chain
-// entity_type is "Playlist".
-func isAlbumPlaylist(ctx context.Context, dbtx db.DBTX, playlistID int64) bool {
-	var isAlbum bool
-	_ = dbtx.QueryRow(ctx,
-		"SELECT is_album FROM playlists WHERE playlist_id = $1 AND is_current = true LIMIT 1",
-		playlistID).Scan(&isAlbum)
-	return isAlbum
 }
 
 func saveTypeFromEntityType(entityType string) string {
 	switch strings.ToLower(entityType) {
 	case "track":
 		return "track"
-	case "playlist":
+	case "playlist", "album":
 		return "playlist"
-	case "album":
-		return "album"
 	}
 	return ""
 }
@@ -179,12 +168,7 @@ func inferSaveType(ctx context.Context, dbtx db.DBTX, entityID int64) string {
 	}
 	_ = dbtx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM playlists WHERE playlist_id = $1)", entityID).Scan(&exists)
 	if exists {
-		// Check if it's an album
-		var isAlbum bool
-		_ = dbtx.QueryRow(ctx, "SELECT is_album FROM playlists WHERE playlist_id = $1 AND is_current = true LIMIT 1", entityID).Scan(&isAlbum)
-		if isAlbum {
-			return "album"
-		}
+		// Albums are playlists with is_album = true; both record as "playlist".
 		return "playlist"
 	}
 	return ""

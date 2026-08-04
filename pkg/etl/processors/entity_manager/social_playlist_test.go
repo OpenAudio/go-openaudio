@@ -3,6 +3,8 @@ package entity_manager
 import (
 	"context"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestSave_Playlist_Success(t *testing.T) {
@@ -53,13 +55,68 @@ func TestRepost_Playlist_Success(t *testing.T) {
 	}
 }
 
-func TestSave_Album_Success(t *testing.T) {
+// TestSave_Album_RecordsAsPlaylist asserts that saving an album records
+// save_type="playlist", both when the chain gives us only entity_type
+// "Playlist" and when the client explicitly sends "type":"album" in metadata.
+//
+// save_type is part of the saves primary key and is written once, whereas
+// is_album is mutable — deriving "album" from it made the same chain history
+// index differently depending on when it was replayed. Consumers that need
+// the distinction read playlists.is_album at query time.
+func TestSave_Album_RecordsAsPlaylist(t *testing.T) {
+	seedAlbum := func(t *testing.T, pool *pgxpool.Pool, pid, ownerID int64) {
+		t.Helper()
+		_, err := pool.Exec(context.Background(), `
+			INSERT INTO playlists (playlist_id, playlist_owner_id, is_album, is_private, playlist_contents, is_current, is_delete, created_at, updated_at, txhash)
+			VALUES ($1, $2, true, false, '{}', true, false, now(), now(), '')
+		`, pid, ownerID)
+		if err != nil {
+			t.Fatalf("seed album: %v", err)
+		}
+	}
+
+	// Metadata "type" is the highest-priority signal, chain entity_type the
+	// next: an album must resolve to "playlist" through either path.
+	for _, tc := range []struct {
+		name string
+		meta string
+	}{
+		{"metadata says album", `{"type":"album"}`},
+		{"chain entity_type only", `{}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := setupTestDB(t)
+			uid := int64(UserIDOffset + 1)
+			pid := int64(PlaylistIDOffset + 3)
+			seedUser(t, pool, uid, "0xalbsaver", "albsaver")
+			seedUser(t, pool, UserIDOffset+2, "0xalbowner", "albowner")
+			seedAlbum(t, pool, pid, UserIDOffset+2)
+
+			params := buildParams(t, pool, EntityTypePlaylist, ActionSave, uid, pid, "0xAlbSaver", tc.meta)
+			mustHandle(t, Save(), params)
+
+			var saveType string
+			err := pool.QueryRow(context.Background(),
+				"SELECT save_type::text FROM saves WHERE user_id = $1 AND save_item_id = $2 AND is_current = true",
+				uid, pid).Scan(&saveType)
+			if err != nil {
+				t.Fatalf("query: %v", err)
+			}
+			if saveType != "playlist" {
+				t.Errorf("save_type = %q, want playlist", saveType)
+			}
+		})
+	}
+}
+
+// TestRepost_Album_RecordsAsPlaylist is the repost-side mirror of
+// TestSave_Album_RecordsAsPlaylist.
+func TestRepost_Album_RecordsAsPlaylist(t *testing.T) {
 	pool := setupTestDB(t)
 	uid := int64(UserIDOffset + 1)
-	pid := int64(PlaylistIDOffset + 3)
-	seedUser(t, pool, uid, "0xalbsaver", "albsaver")
-	seedUser(t, pool, UserIDOffset+2, "0xalbowner", "albowner")
-	// Seed an album
+	pid := int64(PlaylistIDOffset + 4)
+	seedUser(t, pool, uid, "0xalbreposter", "albreposter")
+	seedUser(t, pool, UserIDOffset+2, "0xalbowner2", "albowner2")
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO playlists (playlist_id, playlist_owner_id, is_album, is_private, playlist_contents, is_current, is_delete, created_at, updated_at, txhash)
 		VALUES ($1, $2, true, false, '{}', true, false, now(), now(), '')
@@ -68,19 +125,18 @@ func TestSave_Album_Success(t *testing.T) {
 		t.Fatalf("seed album: %v", err)
 	}
 
-	meta := `{"type":"album"}`
-	params := buildParams(t, pool, EntityTypePlaylist, ActionSave, uid, pid, "0xAlbSaver", meta)
-	mustHandle(t, Save(), params)
+	params := buildParams(t, pool, EntityTypePlaylist, ActionRepost, uid, pid, "0xAlbReposter", `{"type":"album"}`)
+	mustHandle(t, Repost(), params)
 
-	var saveType string
+	var repostType string
 	err = pool.QueryRow(context.Background(),
-		"SELECT save_type::text FROM saves WHERE user_id = $1 AND save_item_id = $2 AND is_current = true",
-		uid, pid).Scan(&saveType)
+		"SELECT repost_type::text FROM reposts WHERE user_id = $1 AND repost_item_id = $2 AND is_current = true",
+		uid, pid).Scan(&repostType)
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
-	if saveType != "album" {
-		t.Errorf("save_type = %q, want album", saveType)
+	if repostType != "playlist" {
+		t.Errorf("repost_type = %q, want playlist", repostType)
 	}
 }
 

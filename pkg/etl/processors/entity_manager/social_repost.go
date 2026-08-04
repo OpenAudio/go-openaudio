@@ -110,8 +110,8 @@ func repostExists(ctx context.Context, dbtx db.DBTX, userID, itemID int64, repos
 }
 
 // resolveRepostType — same priority as resolveSaveType (metadata.type wins,
-// chain entity_type next with is_album disambiguation for "Playlist", DB
-// inference last). See social_save.go:resolveSaveType for full rationale.
+// chain entity_type next, DB inference last), and albums likewise record as
+// "playlist". See social_save.go:resolveSaveType for full rationale.
 // Crucially: when entity_type is "Playlist" we never cross over to "track"
 // even if a same-id track exists.
 func resolveRepostType(ctx context.Context, params *Params) string {
@@ -121,12 +121,7 @@ func resolveRepostType(ctx context.Context, params *Params) string {
 	switch repostTypeFromEntityType(params.EntityType) {
 	case "track":
 		return "track"
-	case "album":
-		return "album"
 	case "playlist":
-		if isAlbumPlaylist(ctx, params.DBTX, params.EntityID) {
-			return "album"
-		}
 		return "playlist"
 	}
 	return inferRepostType(ctx, params.DBTX, params.EntityID)
@@ -136,10 +131,8 @@ func repostTypeFromEntityType(entityType string) string {
 	switch strings.ToLower(entityType) {
 	case "track":
 		return "track"
-	case "playlist":
+	case "playlist", "album":
 		return "playlist"
-	case "album":
-		return "album"
 	}
 	return ""
 }
@@ -152,11 +145,7 @@ func inferRepostType(ctx context.Context, dbtx db.DBTX, entityID int64) string {
 	}
 	_ = dbtx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM playlists WHERE playlist_id = $1)", entityID).Scan(&exists)
 	if exists {
-		var isAlbum bool
-		_ = dbtx.QueryRow(ctx, "SELECT is_album FROM playlists WHERE playlist_id = $1 AND is_current = true LIMIT 1", entityID).Scan(&isAlbum)
-		if isAlbum {
-			return "album"
-		}
+		// Albums are playlists with is_album = true; both record as "playlist".
 		return "playlist"
 	}
 	return ""
