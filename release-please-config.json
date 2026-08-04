@@ -33,10 +33,7 @@
       "component": "pkg/etl",
       "include-component-in-tag": true,
       "tag-separator": "/",
-      "pull-request-title-pattern": "chore(pkg/etl): release ${version}",
-      "extra-files": [
-        { "type": "generic", "path": "go.mod" }
-      ]
+      "pull-request-title-pattern": "chore(pkg/etl): release ${version}"
     }
   }
 }
