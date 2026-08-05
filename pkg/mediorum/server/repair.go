@@ -95,6 +95,9 @@ type RepairTracker struct {
 	Duration         time.Duration            `gorm:"not null"`
 	AbortedReason    string                   `gorm:"not null"`
 	SeenKeys         map[string]seenKeyResult `gorm:"-" json:"-"`
+	// PruneSkips are CIDs the prune job judged not worth chasing. Without it
+	// an unrecoverable CID is retried on every cycle, forever.
+	PruneSkips map[string]struct{} `gorm:"-" json:"-"`
 	mu               *sync.Mutex              `gorm:"-" json:"-"`
 }
 
@@ -222,6 +225,16 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 
 	// Build a presence index from bucket listing to avoid per-key HeadObject.
 	// Replaces hundreds of thousands of HeadObject calls with one ListObjects pagination.
+	if skips, err := ss.loadPruneSkips(ctx); err != nil {
+		ss.logger.Warn("failed to load prune skips; repair will retry skipped CIDs", zap.Error(err))
+	} else {
+		tracker.PruneSkips = skips
+		if len(skips) > 0 {
+			tracker.Counters["prune_skips_loaded"] = len(skips)
+			ss.logger.Info("loaded prune skip list", zap.Int("cids", len(skips)))
+		}
+	}
+
 	var presenceIndex *repairPresenceIndex
 	ss.logger.Info("building repair presence index from bucket listing")
 	indexStart := time.Now()
@@ -448,6 +461,19 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 
 	// fast path: do zero bucket ops if we know we don't care about this cid
 	if !tracker.CleanupMode && !isMine {
+		return nil
+	}
+
+	// A prune already decided this CID is not worth chasing -- unpublished, or
+	// unavailable from any reachable peer. Skip before spending a presence
+	// lookup or a pull on it.
+	tracker.mu.Lock()
+	_, pruneSkipped := tracker.PruneSkips[cid]
+	if pruneSkipped {
+		tracker.Counters["prune_skipped"]++
+	}
+	tracker.mu.Unlock()
+	if pruneSkipped {
 		return nil
 	}
 

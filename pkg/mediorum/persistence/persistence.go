@@ -108,9 +108,14 @@ func FileDirFromDSN(blobDriverURL string) (string, bool) {
 //
 // Only files last modified more than minAge ago are removed, so the sweep is
 // safe to run concurrently with live writes. Cloud backends are a no-op.
-// Returns the number of files removed, which is meaningful even alongside an
-// error since the walk continues past unreadable entries.
-func SweepStaleTempFiles(ctx context.Context, blobDriverURL string, minAge time.Duration) (int, error) {
+//
+// With dryRun set nothing is deleted and the return value is the number of
+// files that *would* have been -- the prune job defaults to that, so an
+// operator can see the cost before authorising it.
+//
+// Returns a count that is meaningful even alongside an error, since the walk
+// continues past unreadable entries.
+func SweepStaleTempFiles(ctx context.Context, blobDriverURL string, minAge time.Duration, dryRun bool) (int, error) {
 	dir, ok := FileDirFromDSN(blobDriverURL)
 	if !ok {
 		return 0, nil
@@ -147,6 +152,10 @@ func SweepStaleTempFiles(ctx context.Context, blobDriverURL string, minAge time.
 		}
 		if info.ModTime().After(cutoff) {
 			// Recently written — assume a live writer owns it.
+			return nil
+		}
+		if dryRun {
+			removed++
 			return nil
 		}
 		if err := os.Remove(path); err == nil {

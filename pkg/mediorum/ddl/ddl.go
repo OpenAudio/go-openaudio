@@ -75,6 +75,16 @@ func Migrate(db *sql.DB, myHost string) {
 ON uploads (COALESCE(audio_analysis_error_count, 0), audio_analyzed_at ASC NULLS FIRST, id)
 WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 
+	// CIDs the prune job has judged not worth chasing. Repair consults this to
+	// stop re-attempting pulls forever. Local only -- deliberately not a crudr
+	// model, because one node's janitorial decision must not gossip to peers.
+	runMigration(db, `
+	create table if not exists prune_skips (
+		"cid" text primary key,
+		"reason" text not null,
+		"created_at" timestamptz not null default now()
+	)`)
+
 	runVacuumFull(db)
 }
 
