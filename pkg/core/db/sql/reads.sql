@@ -268,10 +268,14 @@ group by hour,
 order by hour asc;
 
 -- name: GetBlockTransactions :many
+-- Ordered by index, the transaction's position in the block. created_at is the
+-- row's insertion time: it is coarse enough that many transactions in a block
+-- share one value, so ordering by it returned them arbitrarily within ties and
+-- reversed across them. Consumers replaying a block depend on its real order.
 select *
 from core_transactions
 where block_id = $1
-order by created_at desc;
+order by index;
 
 -- name: GetBlock :one
 select *
