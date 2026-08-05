@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.4](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.6.3...pkg/etl/v1.6.4) (2026-08-05)
+
+
+### Bug Fixes
+
+* **ci:** stop stamping the etl version onto a dependency requirement ([#431](https://github.com/OpenAudio/go-openaudio/issues/431)) ([ec8df1f](https://github.com/OpenAudio/go-openaudio/commit/ec8df1fb3702c522bf39a45701d50bc5c5b25b1f))
+* **etl:** don't delete rows from an ETL migration ([#433](https://github.com/OpenAudio/go-openaudio/issues/433)) ([30b1c1b](https://github.com/OpenAudio/go-openaudio/commit/30b1c1b9d24563858b0ce8886056f0415f9bd056))
+
 ## [1.6.3](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.6.2...pkg/etl/v1.6.3) (2026-08-04)
 
 
