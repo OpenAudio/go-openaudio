@@ -224,3 +224,25 @@ func TestRepairCidUsesKnownPresentOutsideCleanup(t *testing.T) {
 	assert.Equal(t, 1, tracker.Counters["already_have"])
 	assert.Equal(t, 1, tracker.Counters["repair_known_present"])
 }
+
+// The rendezvous ranking is every node on the network, so an unobtainable CID
+// would otherwise be tried against all of them — each miss costing a dial or a
+// hung peer's timeout. The bound keeps that to the replica set plus a margin
+// for ring churn.
+func TestMaxPullAttempts(t *testing.T) {
+	cases := []struct {
+		replicationFactor int
+		want              int
+	}{
+		{4, 4 + pullAttemptMargin},
+		{1, 1 + pullAttemptMargin},
+		{0, pullAttemptMargin},
+		{-5, 1}, // misconfigured: never zero, or no host is ever tried
+	}
+	for _, c := range cases {
+		ss := &MediorumServer{Config: MediorumConfig{ReplicationFactor: c.replicationFactor}}
+		if got := ss.maxPullAttempts(); got != c.want {
+			t.Fatalf("ReplicationFactor=%d: maxPullAttempts()=%d want %d", c.replicationFactor, got, c.want)
+		}
+	}
+}

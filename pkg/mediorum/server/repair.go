@@ -26,6 +26,12 @@ const (
 
 	// uploadScanBatchSize is how many uploads runRepair pulls per keyset page.
 	uploadScanBatchSize = 1000
+
+	// pullAttemptMargin is how many hosts beyond the replica set repair will
+	// try before giving up on a CID for this cycle. A blob is pushed to the top
+	// ReplicationFactor hosts at upload time, so those are where it lives; the
+	// margin absorbs ring churn and hosts that have since dropped it.
+	pullAttemptMargin = 4
 )
 
 // nextUploadBatch returns the page of uploads immediately after cursor.
@@ -45,6 +51,21 @@ func (ss *MediorumServer) nextUploadBatch(cursor string, limit int) ([]Upload, e
 	var uploads []Upload
 	err := ss.crud.DB.Where("id > ?", cursor).Order("id ASC").Limit(limit).Find(&uploads).Error
 	return uploads, err
+}
+
+// maxPullAttempts bounds how many hosts a single repair pull will try.
+//
+// preferredHosts is the full rendezvous ranking — every node on the network —
+// so without a bound an unobtainable CID walks all of them. That is what
+// produced ~2.8 failed attempts per success in production, since each miss
+// costs a dial (or peerHTTPClient's full timeout against a host that accepts
+// and then hangs) before moving on.
+func (ss *MediorumServer) maxPullAttempts() int {
+	n := ss.Config.ReplicationFactor + pullAttemptMargin
+	if n < 1 {
+		return 1
+	}
+	return n
 }
 
 // seenKeyResult stores the outcome of a previous Attributes check for the same
@@ -606,11 +627,30 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 		tracker.mu.Unlock()
 
 		success := false
+		attempts := 0
+		maxAttempts := ss.maxPullAttempts()
 		// loop preferredHosts (not preferredHealthyHosts) because pullFileFromHost can still give us a file even if we thought the host was unhealthy
 		for _, host := range preferredHosts {
 			if host == ss.Config.Self.Host {
 				continue
 			}
+			// Stop after a bounded number of hosts. The full rendezvous ranking
+			// is every node on the network, so an unobtainable CID would
+			// otherwise walk all of them — and each attempt costs a dial, or up
+			// to peerHTTPClient's timeout against a host that accepts and
+			// hangs. A blob lives on the top ReplicationFactor hosts, so
+			// anything past a modest margin for churn is almost never a hit,
+			// and the next repair cycle retries whatever we give up on.
+			if attempts >= maxAttempts {
+				tracker.mu.Lock()
+				tracker.Counters["pull_mine_gave_up"]++
+				tracker.mu.Unlock()
+				logger.Warn("giving up pull after max host attempts",
+					zap.Int("attempts", attempts), zap.Int("candidates", len(preferredHosts)))
+				break
+			}
+			attempts++
+
 			err := ss.pullFileFromHost(ctx, host, cid, placementHosts)
 			if err != nil {
 				tracker.mu.Lock()

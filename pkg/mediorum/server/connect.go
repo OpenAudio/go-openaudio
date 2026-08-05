@@ -405,6 +405,7 @@ func repairRunToProto(r RepairTracker) *v1.RepairRun {
 		int64(counters["delete_over_replicated_success"])
 	return &v1.RepairRun{
 		StartedAt:        timeToProto(r.StartedAt),
+		UpdatedAt:        timeToProto(r.UpdatedAt),
 		FinishedAt:       timeToProto(r.FinishedAt),
 		CleanupMode:      r.CleanupMode,
 		ContentSizeBytes: r.ContentSize,

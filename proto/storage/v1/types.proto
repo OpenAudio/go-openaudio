@@ -240,6 +240,10 @@ message RepairRun {
   // Sum of successful pull + delete actions in this run (pull_mine_success +
   // delete_invalid_success + delete_resized_image_ok + delete_over_replicated_success).
   int64 files_changed = 9;
+  // Last time the run checkpointed its cursors and counters. For a run still in
+  // progress this is the only field that distinguishes "working" from "wedged":
+  // started_at can be months old on a long resume.
+  google.protobuf.Timestamp updated_at = 10;
 }
 
 message PeerStatus {
