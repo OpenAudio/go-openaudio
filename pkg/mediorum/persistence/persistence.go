@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gocloud.dev/blob"
 	_ "gocloud.dev/blob/azureblob"
@@ -71,6 +72,92 @@ func parsePrefix(rawPrefix string) (Prefix, bool) {
 	return prefix, ok
 }
 
+// DefaultStaleTempFileAge is how old a fileblob ".tmp" file must be before the
+// sweeper will delete it.
+//
+// fileblob writes to "<path>.<nanos>.tmp" and renames on a successful Close, so
+// a surviving ".tmp" is an interrupted write — but a write *in progress* looks
+// identical by name. mtime advances as bytes are written, and outbound peer
+// requests are capped at 3 minutes by peerHTTPClient, so an hour is a wide
+// margin against deleting a live write. The cost of guessing too high is only
+// that an orphan survives until the next sweep.
+const DefaultStaleTempFileAge = time.Hour
+
+// FileDirFromDSN returns the filesystem directory backing a file:// blob DSN,
+// stripping any query parameters (e.g. "?no_tmp_dir=true"). It reports false
+// for cloud backends, which have no local tree to sweep.
+func FileDirFromDSN(blobDriverURL string) (string, bool) {
+	rawPrefix, uri, found := strings.Cut(blobDriverURL, "://")
+	if !found {
+		return "", false
+	}
+	if prefix, ok := parsePrefix(rawPrefix); !ok || prefix != FILE {
+		return "", false
+	}
+	path := strings.Split(uri, "?")[0]
+	if path == "" {
+		return "", false
+	}
+	return path, true
+}
+
+// SweepStaleTempFiles removes orphaned ".tmp" files left behind by the fileblob
+// driver when a write is interrupted before Close renames it into place.
+// See https://github.com/google/go-cloud/issues/3286 for the original issue and
+// https://github.com/google/go-cloud/issues/3294 for why it isn't truly fixed.
+//
+// Only files last modified more than minAge ago are removed, so the sweep is
+// safe to run concurrently with live writes. Cloud backends are a no-op.
+// Returns the number of files removed, which is meaningful even alongside an
+// error since the walk continues past unreadable entries.
+func SweepStaleTempFiles(ctx context.Context, blobDriverURL string, minAge time.Duration) (int, error) {
+	dir, ok := FileDirFromDSN(blobDriverURL)
+	if !ok {
+		return 0, nil
+	}
+	// Verify the root up front. WalkDir surfaces a missing or unmounted root
+	// through the callback's err argument, which we deliberately ignore for
+	// individual entries — without this an unmounted bucket would look like an
+	// empty tree and report a clean sweep.
+	if fi, err := os.Stat(dir); err != nil {
+		return 0, fmt.Errorf("blob dir %q is not readable: %w", dir, err)
+	} else if !fi.IsDir() {
+		return 0, fmt.Errorf("blob dir %q is not a directory", dir)
+	}
+
+	cutoff := time.Now().Add(-minAge)
+	removed := 0
+
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			// Couldn't read this entry; skip it rather than abandoning the
+			// whole sweep over one bad file.
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".tmp") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			// Raced with another sweeper or a rename; nothing to do.
+			return nil
+		}
+		if info.ModTime().After(cutoff) {
+			// Recently written — assume a live writer owns it.
+			return nil
+		}
+		if err := os.Remove(path); err == nil {
+			removed++
+		}
+		return nil
+	})
+
+	return removed, err
+}
+
 func checkStorageCredentials(blobDriverUrl string) error {
 	rawPrefix, uri, found := strings.Cut(blobDriverUrl, "://")
 
@@ -96,23 +183,12 @@ func checkStorageCredentials(blobDriverUrl string) error {
 			}
 		}
 
-		// clean up .tmp files left behind by fileblob driver
-		// see https://github.com/google/go-cloud/issues/3286 for original issue
-		// and https://github.com/google/go-cloud/issues/3294 for why it's not truly fixed
-		err := filepath.WalkDir(path, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if !d.IsDir() && strings.HasSuffix(d.Name(), ".tmp") {
-				err = os.Remove(path)
-			}
-			return err
-		})
-		if err != nil {
-			log.Println("failed to clean up temp files: " + err.Error())
-		}
-
+		// NOTE: orphaned ".tmp" files used to be swept here, synchronously,
+		// before Open returned. That put a full recursive walk of the bucket on
+		// the startup critical path — on a store-all archive with millions of
+		// objects it delayed serving, PoS and repair by hours. The sweep is
+		// purely janitorial (no key resolves to a ".tmp", reads never touch
+		// them), so it now runs in the background via SweepStaleTempFiles.
 		return nil
 	case GS:
 		// Check for gcloud cred env vars

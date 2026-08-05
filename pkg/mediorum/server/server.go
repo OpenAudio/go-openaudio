@@ -600,6 +600,8 @@ func (ss *MediorumServer) MustStart() error {
 	ss.lc.AddManagedRoutine("audio analyzer", ss.startAudioAnalyzer)
 	ss.lc.AddManagedRoutine("replication workers", ss.startReplicationWorkers)
 
+	ss.lc.AddManagedRoutine("stale temp file sweeper", ss.startStaleTempSweeper)
+
 	if ss.Config.StoreAll {
 		ss.lc.AddManagedRoutine("fix truncated qm worker", ss.startFixTruncatedQmWorker)
 	}
