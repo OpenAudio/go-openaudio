@@ -13,6 +13,10 @@ import (
 // --- Developer Apps ---
 
 type developerAppMetadata struct {
+	// The indexer reads the app address from metadata (developer_app_create.go
+	// validateDeveloperAppCreate/insertDeveloperApp), not from the signer, so it
+	// has to travel here.
+	Address          string `json:"address"`
 	Name             string `json:"name"`
 	Description      string `json:"description,omitempty"`
 	ImageURL         string `json:"image_url,omitempty"`
@@ -27,23 +31,27 @@ type sourceDeveloperApp struct {
 	Description      *string
 	ImageURL         *string
 	IsPersonalAccess bool
+	OwnerWallet      string
 	CreatedAt        time.Time
 }
 
 func (w *Writer) writeDeveloperApps(ctx context.Context) error {
 	return processBatched(ctx, w, "developer_apps",
 		`SELECT count(*) FROM developer_apps WHERE is_current = true AND is_delete = false`,
-		`SELECT address, user_id, name, description, image_url, is_personal_access, created_at
-		FROM developer_apps
-		WHERE is_current = true AND is_delete = false
-		ORDER BY user_id, address`,
+		`SELECT d.address, d.user_id, COALESCE(LOWER(u.wallet), ''),
+			d.name, d.description, d.image_url, d.is_personal_access, d.created_at
+		FROM developer_apps d
+		LEFT JOIN users u ON u.user_id = d.user_id AND u.is_current = true
+		WHERE d.is_current = true AND d.is_delete = false
+		ORDER BY d.user_id, d.address`,
 		func(rows pgx.Rows) (sourceDeveloperApp, error) {
 			var d sourceDeveloperApp
-			err := rows.Scan(&d.Address, &d.UserID, &d.Name, &d.Description, &d.ImageURL, &d.IsPersonalAccess, &d.CreatedAt)
+			err := rows.Scan(&d.Address, &d.UserID, &d.OwnerWallet, &d.Name, &d.Description, &d.ImageURL, &d.IsPersonalAccess, &d.CreatedAt)
 			return d, err
 		},
 		func(ctx context.Context, d sourceDeveloperApp) error {
 			meta := developerAppMetadata{
+				Address:          d.Address,
 				Name:             deref(d.Name),
 				Description:      deref(d.Description),
 				ImageURL:         deref(d.ImageURL),
@@ -54,14 +62,16 @@ func (w *Writer) writeDeveloperApps(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("marshal developer app %s metadata: %w", d.Address, err)
 			}
-			// DP uses params.signer (the app address) as the DeveloperApp identity.
+			// Signed by the owning user, not the app address: ValidateSigner requires
+			// the signer to be the user's wallet (or hold a grant), and during a
+			// genesis replay no grants exist yet. The app address travels in metadata.
 			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     d.UserID,
 				EntityType: "DeveloperApp",
 				EntityId:   0,
 				Action:     "Create",
 				Metadata:   string(metaJSON),
-			}, d.Address)
+			}, d.OwnerWallet)
 		},
 	)
 }
@@ -77,18 +87,20 @@ type sourceGrant struct {
 	GranteeAddress string
 	UserID         int64
 	CreatedAt      time.Time
+	GrantorWallet  string
 }
 
 func (w *Writer) writeGrants(ctx context.Context) error {
 	return processBatched(ctx, w, "grants",
 		`SELECT count(*) FROM grants WHERE is_current = true AND is_revoked = false AND is_approved = true`,
-		`SELECT grantee_address, user_id, created_at
-		FROM grants
-		WHERE is_current = true AND is_revoked = false AND is_approved = true
-		ORDER BY user_id, grantee_address`,
+		`SELECT g.grantee_address, g.user_id, COALESCE(LOWER(u.wallet), ''), g.created_at
+		FROM grants g
+		LEFT JOIN users u ON u.user_id = g.user_id AND u.is_current = true
+		WHERE g.is_current = true AND g.is_revoked = false AND g.is_approved = true
+		ORDER BY g.user_id, g.grantee_address`,
 		func(rows pgx.Rows) (sourceGrant, error) {
 			var g sourceGrant
-			err := rows.Scan(&g.GranteeAddress, &g.UserID, &g.CreatedAt)
+			err := rows.Scan(&g.GranteeAddress, &g.UserID, &g.GrantorWallet, &g.CreatedAt)
 			return g, err
 		},
 		func(ctx context.Context, g sourceGrant) error {
@@ -99,14 +111,16 @@ func (w *Writer) writeGrants(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("marshal grant metadata: %w", err)
 			}
-			// DP uses the grantee address as signer for Grant creation.
+			// Signed by the granting user: ValidateSigner requires the user's wallet,
+			// and a grant cannot authorize its own creation during replay. The
+			// grantee travels in metadata, which is where the indexer reads it.
 			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     g.UserID,
 				EntityType: "Grant",
 				EntityId:   0,
 				Action:     "Create",
 				Metadata:   string(metaJSON),
-			}, g.GranteeAddress)
+			}, g.GrantorWallet)
 		},
 	)
 }
