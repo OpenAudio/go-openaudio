@@ -260,16 +260,16 @@ func (ss *MediorumServer) pruneTmpFiles(ctx context.Context, run *pruneRun, comm
 	}
 }
 
-// pruneUnpublishedUploads reclaims blobs for uploads no track ever referenced.
+// pruneUnpublishedUploads reclaims blobs for audio uploads no track references.
 //
-// "Unpublished" means no row in the ETL's `tracks` table carries this upload's
-// ID in audio_upload_id -- i.e. no CreateTrack transaction ever pointed at it.
-// The bytes were uploaded and then abandoned, so nothing will ever serve them.
+// "Unpublished" means none of the upload's CIDs appears in tracks.track_cid,
+// orig_file_cid or preview_cid -- no CreateTrack transaction ever pointed at
+// the bytes. They were uploaded and abandoned, so nothing will serve them.
 //
-// Two floors keep this conservative: the upload must be older than
-// unpublishedUploadAge, and checkPruneIndex must certify the index is present
-// and fresh. Without the second, a node that simply doesn't index the chain
-// would classify the entire corpus as unpublished.
+// Three floors keep this conservative: the upload must be older than
+// unpublishedUploadAge, checkPruneIndex must certify the index is present,
+// fresh, and carrying track_cid on nearly every row, and only audio templates
+// are considered.
 //
 // The upload row itself is left alone (see the note at the top of this file);
 // only local blobs go, and the CIDs are skip-listed so repair does not pull
@@ -288,8 +288,10 @@ func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, run *prun
 
 	cutoff := time.Now().Add(-unpublishedUploadAge)
 	var uploads []Upload
+	// Audio only. See the note above publishedCIDs: image CIDs are never in
+	// track_cid, so including them would match nothing and delete all cover art.
 	if err := ss.crud.DB.
-		Where("created_at < ?", cutoff).
+		Where("template = ? AND created_at < ?", JobTemplateAudio, cutoff).
 		Order("created_at").
 		Limit(limit).
 		Find(&uploads).Error; err != nil {
@@ -301,11 +303,11 @@ func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, run *prun
 		return
 	}
 
-	ids := make([]string, 0, len(uploads))
+	allCIDs := make([]string, 0, len(uploads)*2)
 	for _, u := range uploads {
-		ids = append(ids, u.ID)
+		allCIDs = append(allCIDs, uploadCIDs(u)...)
 	}
-	published, err := publishedUploadIDs(ctx, pool, ids)
+	published, err := publishedCIDs(ctx, pool, allCIDs)
 	if err != nil {
 		run.res.Error = err.Error()
 		return
@@ -316,11 +318,20 @@ func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, run *prun
 			return
 		}
 		run.tick(ctx)
-		if _, ok := published[u.ID]; ok {
-			continue
-		}
 		cids := uploadCIDs(u)
 		if len(cids) == 0 {
+			continue
+		}
+		// Any CID referenced anywhere means the upload published; leave the
+		// whole set alone rather than pruning it piecemeal.
+		referenced := false
+		for _, cid := range cids {
+			if _, ok := published[cid]; ok {
+				referenced = true
+				break
+			}
+		}
+		if referenced {
 			continue
 		}
 		run.res.Matched++
@@ -341,21 +352,39 @@ func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, run *prun
 	}
 }
 
-// Publication is determined from the ETL's `tracks` table, which is built from
-// CreateTrack entity-manager transactions. tracks.audio_upload_id is a direct
-// join to an upload's ID -- far better than matching CIDs, and unlike
-// sound_recordings it is actually populated.
+// Publication is determined by matching an upload's CIDs against the ETL's
+// `tracks` table, which is built from CreateTrack entity-manager transactions.
 //
-// The catch: OPENAUDIO_ETL_ENABLED defaults to false, so most nodes have no
-// tracks table at all. On such a node every upload would look unpublished and
-// this task would delete the entire corpus. Hence openPruneIndex, which refuses
-// to proceed unless a populated, reasonably fresh index is available -- locally
-// or via OPENAUDIO_PRUNE_INDEX_DB_URL pointing at a node that does index.
+// It deliberately does NOT use tracks.audio_upload_id. That column is
+// client-supplied metadata rather than something the protocol derives, and
+// measurement against production snapshots shows it cannot carry this:
+//
+//	                     audio_upload_id   track_cid
+//	legacy discovery         39.1%          99.96%
+//	new-chain ETL             0.00%         99.96%
+//
+// On the index a node actually queries it is empty, so relying on it would
+// classify every audio upload as unpublished. track_cid is the durable signal;
+// orig_file_cid and preview_cid are checked too but are only populated on the
+// legacy index.
+//
+// Scope is audio only, and that is a safety property rather than an omission.
+// Image CIDs live in tracks.cover_art_sizes, users.profile_picture_sizes,
+// users.cover_photo_sizes and playlists.playlist_image_sizes_multihash -- never
+// in track_cid. Running this over img_square/img_backdrop uploads would find no
+// match for any of them and delete every piece of cover art on the node.
+// Pruning art needs its own reference check across those tables.
 
 // pruneIndexStaleAfter is how far behind the ETL may be before its answers stop
 // counting as evidence. A stale index still lists old tracks correctly, but it
 // would report recently published uploads as unpublished.
 const pruneIndexStaleAfter = 24 * time.Hour
+
+// minTrackCidCoverage is the share of current tracks that must carry a
+// track_cid before the column is trusted. This is the guard that audio_upload_id
+// would have failed: a fully populated tracks table whose signal column is
+// empty otherwise reads as "nothing is published".
+const minTrackCidCoverage = 0.90
 
 // openPruneIndex returns a pool for publication lookups plus a release func.
 // When OPENAUDIO_PRUNE_INDEX_DB_URL is set it dials that database (for nodes
@@ -376,16 +405,25 @@ func (ss *MediorumServer) openPruneIndex(ctx context.Context) (*pgxpool.Pool, fu
 // support the inference. Each failure mode here would otherwise read as
 // "nothing is published".
 func checkPruneIndex(ctx context.Context, pool *pgxpool.Pool) error {
-	var tracks int64
-	if err := pool.QueryRow(ctx, `select count(*) from tracks`).Scan(&tracks); err != nil {
+	var total, withCid int64
+	err := pool.QueryRow(ctx, `
+		select count(*),
+		       count(*) filter (where track_cid is not null and track_cid <> '')
+		  from tracks where is_current = true`).Scan(&total, &withCid)
+	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "does not exist") {
 			return fmt.Errorf("no tracks table: this node does not index the chain. " +
 				"Enable OPENAUDIO_ETL_ENABLED, or set OPENAUDIO_PRUNE_INDEX_DB_URL to a node that does")
 		}
 		return err
 	}
-	if tracks == 0 {
+	if total == 0 {
 		return fmt.Errorf("tracks table is empty: refusing to treat every upload as unpublished")
+	}
+	if coverage := float64(withCid) / float64(total); coverage < minTrackCidCoverage {
+		return fmt.Errorf("only %.1f%% of %d tracks carry a track_cid (need %.0f%%): "+
+			"the signal column is too sparse to distinguish unpublished from unindexed",
+			coverage*100, total, minTrackCidCoverage*100)
 	}
 
 	// Freshness is best-effort: an index without etl_blocks still answers
@@ -401,26 +439,31 @@ func checkPruneIndex(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-// publishedUploadIDs returns the subset of ids that a track references. Batched
-// deliberately -- one query per page rather than per upload.
-func publishedUploadIDs(ctx context.Context, pool *pgxpool.Pool, ids []string) (map[string]struct{}, error) {
+// publishedCIDs returns the subset of cids referenced by any track. Batched
+// per page rather than per upload: only track_cid is indexed, so the
+// orig_file_cid and preview_cid arms each cost a scan.
+func publishedCIDs(ctx context.Context, pool *pgxpool.Pool, cids []string) (map[string]struct{}, error) {
 	published := map[string]struct{}{}
-	if len(ids) == 0 {
+	if len(cids) == 0 {
 		return published, nil
 	}
-	rows, err := pool.Query(ctx,
-		`select distinct audio_upload_id from tracks where audio_upload_id = any($1)`, ids)
+	rows, err := pool.Query(ctx, `
+		select track_cid     from tracks where track_cid     = any($1)
+		union
+		select orig_file_cid from tracks where orig_file_cid = any($1)
+		union
+		select preview_cid   from tracks where preview_cid   = any($1)`, cids)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var id *string
-		if err := rows.Scan(&id); err != nil {
+		var cid *string
+		if err := rows.Scan(&cid); err != nil {
 			return nil, err
 		}
-		if id != nil && *id != "" {
-			published[*id] = struct{}{}
+		if cid != nil && *cid != "" {
+			published[*cid] = struct{}{}
 		}
 	}
 	return published, rows.Err()

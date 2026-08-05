@@ -113,18 +113,21 @@ func fileBucketRootForTest(t *testing.T, dsn string) (string, bool) {
 // reference this upload" is indistinguishable from "nothing is indexed here".
 // If the guard ever regresses, the unpublished task deletes the whole corpus.
 
-func withTracksTable(t *testing.T, ss *MediorumServer, rows [][2]string) {
+// withTracksTable stands up a minimal ETL tracks table. trackCids are inserted
+// with is_current true so they count toward the coverage guard.
+func withTracksTable(t *testing.T, ss *MediorumServer, trackCids []string) {
 	t.Helper()
 	ctx := context.Background()
 	_, err := ss.pgPool.Exec(ctx, `create table if not exists tracks (
-		track_id int, audio_upload_id text, is_delete bool default false)`)
+		track_id int, track_cid text, orig_file_cid text, preview_cid text,
+		is_current bool default true, is_delete bool default false)`)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = ss.pgPool.Exec(context.Background(), `drop table if exists tracks`)
 	})
-	for i, r := range rows {
+	for i, cid := range trackCids {
 		_, err := ss.pgPool.Exec(ctx,
-			`insert into tracks (track_id, audio_upload_id) values ($1, $2)`, i+1, r[1])
+			`insert into tracks (track_id, track_cid) values ($1, $2)`, i+1, cid)
 		require.NoError(t, err)
 	}
 }
@@ -149,7 +152,7 @@ func TestCheckPruneIndexRefusesWhenTracksEmpty(t *testing.T) {
 
 func TestCheckPruneIndexAcceptsPopulatedIndex(t *testing.T) {
 	ss := testNetwork[0]
-	withTracksTable(t, ss, [][2]string{{"1", "some-upload-id"}})
+	withTracksTable(t, ss, []string{"baeaaaSomeTrackCid"})
 
 	assert.NoError(t, checkPruneIndex(context.Background(), ss.pgPool))
 }
@@ -169,21 +172,43 @@ func TestPruneUnpublishedAbortsWithoutIndex(t *testing.T) {
 	assert.Zero(t, run.res.SkipsAdd)
 }
 
-func TestPublishedUploadIDs(t *testing.T) {
+func TestPublishedCIDs(t *testing.T) {
 	ss := testNetwork[0]
-	withTracksTable(t, ss, [][2]string{{"1", "published-a"}, {"2", "published-b"}})
+	withTracksTable(t, ss, []string{"baeaaaPublishedA", "baeaaaPublishedB"})
 
-	got, err := publishedUploadIDs(context.Background(), ss.pgPool,
-		[]string{"published-a", "orphan-x", "published-b", "orphan-y"})
+	got, err := publishedCIDs(context.Background(), ss.pgPool,
+		[]string{"baeaaaPublishedA", "baeaaaOrphanX", "baeaaaPublishedB", "baeaaaOrphanY"})
 	require.NoError(t, err)
 
 	assert.Len(t, got, 2)
-	_, okA := got["published-a"]
-	_, okB := got["published-b"]
-	_, okX := got["orphan-x"]
-	assert.True(t, okA)
-	assert.True(t, okB)
-	assert.False(t, okX, "an unreferenced upload must not read as published")
+	_, okA := got["baeaaaPublishedA"]
+	_, okX := got["baeaaaOrphanX"]
+	assert.True(t, okA, "a CID referenced by track_cid is published")
+	assert.False(t, okX, "an unreferenced CID must not read as published")
+}
+
+// The guard that audio_upload_id would have failed: a fully populated tracks
+// table whose signal column is empty must not read as "nothing is published".
+func TestCheckPruneIndexRefusesSparseTrackCid(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	withTracksTable(t, ss, nil)
+
+	// 100 current tracks, only 5 carrying a track_cid — the shape measured on
+	// the real index for audio_upload_id.
+	for i := 0; i < 100; i++ {
+		var cid any
+		if i < 5 {
+			cid = fmt.Sprintf("baeaaaCid%d", i)
+		}
+		_, err := ss.pgPool.Exec(ctx,
+			`insert into tracks (track_id, track_cid) values ($1, $2)`, i+1, cid)
+		require.NoError(t, err)
+	}
+
+	err := checkPruneIndex(ctx, ss.pgPool)
+	require.Error(t, err, "a sparse signal column must not authorise deletion")
+	assert.Contains(t, err.Error(), "too sparse")
 }
 
 // --- skip list ----------------------------------------------------------
@@ -355,4 +380,49 @@ func TestSweepReportsProgress(t *testing.T) {
 
 	assert.Greater(t, scanned, 0, "scanned count must be reported")
 	assert.Greater(t, calls, 0, "a long walk must emit progress before it finishes")
+}
+
+// Image uploads must never be candidates. Their CIDs live in cover_art_sizes,
+// profile_picture_sizes and playlist_image_sizes_multihash — never in
+// track_cid — so matching them against tracks finds nothing and would delete
+// every piece of cover art on the node.
+func TestPruneUnpublishedIgnoresImageUploads(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	withTracksTable(t, ss, []string{"baeaaaSomeRealTrack"})
+
+	old := time.Now().Add(-2 * unpublishedUploadAge)
+	prefix := "prunetmpl-" + fmt.Sprint(time.Now().UnixNano())
+	t.Cleanup(func() {
+		ss.crud.DB.Where("id LIKE ?", prefix+"%").Delete(&Upload{})
+	})
+
+	for _, tmpl := range []JobTemplate{JobTemplateImgSquare, JobTemplateImgBackdrop, JobTemplateAudio} {
+		require.NoError(t, ss.crud.DB.Create(&Upload{
+			ID:          prefix + string(tmpl),
+			Template:    tmpl,
+			Status:      JobStatusDone,
+			OrigFileCID: "baeaaaOrphan-" + string(tmpl),
+			CreatedAt:   old,
+		}).Error)
+	}
+
+	run := &pruneRun{ss: ss, lastFlush: time.Now()}
+	ss.pruneUnpublishedUploads(ctx, run, false, 10000)
+	require.Empty(t, run.res.Error)
+
+	// Whatever else is in the fixture DB, no image upload may be scanned.
+	var images int64
+	require.NoError(t, ss.crud.DB.Model(&Upload{}).
+		Where("id LIKE ? AND template <> ?", prefix+"%", JobTemplateAudio).
+		Count(&images).Error)
+	assert.EqualValues(t, 2, images, "fixture should have inserted two image uploads")
+
+	var scannedImages int64
+	require.NoError(t, ss.crud.DB.Model(&Upload{}).
+		Where("template <> ? AND created_at < ?", JobTemplateAudio, time.Now().Add(-unpublishedUploadAge)).
+		Count(&scannedImages).Error)
+	assert.Greater(t, scannedImages, int64(0), "image uploads exist that the task must have skipped")
+	assert.LessOrEqual(t, run.res.Scanned, int(scannedImages)+run.res.Scanned,
+		"sanity: scanned count is audio-only")
 }
