@@ -643,7 +643,7 @@ func (e *Indexer) processOneTx(
 			Signature:  me.GetSignature(),
 			Signer:     me.GetSigner(),
 			Nonce:      me.GetNonce(),
-		}, emBlock, block.Timestamp.AsTime(),
+		}, emBlock, migrationBlockTime(me.GetMetadata(), block.Timestamp.AsTime()),
 			block.Hash, t.Hash, sp, e.logger)
 		// Replayed historical state goes through the migration handler set.
 		if dErr := e.migrationDispatcher.Dispatch(ctx, emParams); dErr != nil {
@@ -1154,4 +1154,57 @@ func (e *Indexer) processStorageProofConsensus(ctx context.Context, q *db.Querie
 	)
 
 	return nil
+}
+
+// migrationBlockTime returns the timestamp a replayed entity should be recorded
+// with. For live indexing the block time is when the action happened, so every
+// handler uses params.BlockTime for created_at/updated_at. For a genesis replay
+// that is the migration date, which collapsed the entire history onto a single
+// day: users, tracks, playlists, comments, shares and all four social tables
+// showed 2019-2026 in the source and one date in the replayed database.
+//
+// genesis-writer already sends the original timestamp; nothing consumed it.
+// Overriding the block time here fixes every entity at once rather than
+// threading a parameter through ~65 call sites, and it keeps production
+// untouched — only the migration branch calls this.
+//
+// It also corrects validation that compares against "now". event_create.go
+// rejects an end_date before params.BlockTime; judged against the migration
+// date every historical event is expired, which is why all 106 Event
+// transactions were rejected. Judged against its own creation time, an event
+// that was valid when created stays valid.
+//
+// The timestamp may sit at the top level or inside the "data" envelope
+// depending on the entity, so both are checked. Anything unparseable falls
+// back to the block time, which is the current behaviour.
+func migrationBlockTime(metadata string, fallback time.Time) time.Time {
+	if metadata == "" {
+		return fallback
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(metadata), &m); err != nil {
+		return fallback
+	}
+	if inner, ok := m["data"].(map[string]any); ok {
+		if ts, ok := parseMigrationTimestamp(inner["created_at"]); ok {
+			return ts
+		}
+	}
+	if ts, ok := parseMigrationTimestamp(m["created_at"]); ok {
+		return ts
+	}
+	return fallback
+}
+
+func parseMigrationTimestamp(v any) (time.Time, bool) {
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05.999999", "2006-01-02 15:04:05"} {
+		if ts, err := time.Parse(layout, s); err == nil {
+			return ts, true
+		}
+	}
+	return time.Time{}, false
 }
