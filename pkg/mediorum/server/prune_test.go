@@ -164,7 +164,7 @@ func TestPruneUnpublishedAbortsWithoutIndex(t *testing.T) {
 	_, _ = ss.pgPool.Exec(context.Background(), `drop table if exists tracks`)
 
 	run := &pruneRun{ss: ss, lastFlush: time.Now()}
-	ss.pruneUnpublishedUploads(context.Background(), run, true, 100)
+	ss.pruneUnpublishedUploads(context.Background(), run, true, 100, []JobTemplate{JobTemplateAudio})
 
 	assert.NotEmpty(t, run.res.Error, "must report why it refused")
 	assert.Zero(t, run.res.Matched, "nothing may be matched without a usable index")
@@ -408,7 +408,7 @@ func TestPruneUnpublishedIgnoresImageUploads(t *testing.T) {
 	}
 
 	run := &pruneRun{ss: ss, lastFlush: time.Now()}
-	ss.pruneUnpublishedUploads(ctx, run, false, 10000)
+	ss.pruneUnpublishedUploads(ctx, run, false, 10000, []JobTemplate{JobTemplateAudio})
 	require.Empty(t, run.res.Error)
 
 	// Whatever else is in the fixture DB, no image upload may be scanned.
@@ -425,4 +425,77 @@ func TestPruneUnpublishedIgnoresImageUploads(t *testing.T) {
 	assert.Greater(t, scannedImages, int64(0), "image uploads exist that the task must have skipped")
 	assert.LessOrEqual(t, run.res.Scanned, int(scannedImages)+run.res.Scanned,
 		"sanity: scanned count is audio-only")
+}
+
+// --- scope ---------------------------------------------------------------
+
+func TestPruneTemplatesDefaultsToAudio(t *testing.T) {
+	assert.Equal(t, []JobTemplate{JobTemplateAudio}, pruneRequest{}.pruneTemplates(),
+		"omitting templates must not silently widen scope to images")
+
+	req := pruneRequest{Templates: []JobTemplate{JobTemplateImgSquare, JobTemplateAudio}}
+	assert.Equal(t, []JobTemplate{JobTemplateImgSquare, JobTemplateAudio}, req.pruneTemplates())
+}
+
+// Art is referenced by CID *or* upload ID depending on client era — roughly a
+// third to a half of every production art column holds a ULID upload ID. A
+// CID-only match would read that share of published artwork as orphaned.
+func TestPublishedArtRefsMatchesCIDsAndUploadIDs(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	withArtTables(t, ss)
+
+	got, err := publishedArtRefs(ctx, ss.pgPool, []string{
+		"QmCoverArtCid", "01HULIDUPLOADID0000000000", "QmProfileCid", "QmOrphanArt",
+	})
+	require.NoError(t, err)
+
+	_, byCid := got["QmCoverArtCid"]
+	_, byUploadID := got["01HULIDUPLOADID0000000000"]
+	_, byProfile := got["QmProfileCid"]
+	_, orphan := got["QmOrphanArt"]
+
+	assert.True(t, byCid, "artwork referenced by CID must read as published")
+	assert.True(t, byUploadID, "artwork referenced by upload ID must read as published")
+	assert.True(t, byProfile, "user profile artwork counts as a reference")
+	assert.False(t, orphan, "unreferenced art must not read as published")
+}
+
+func TestCheckArtPruneIndexRefusesSparseReferences(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	withArtTables(t, ss)
+
+	err := checkArtPruneIndex(ctx, ss.pgPool)
+	require.Error(t, err, "a handful of references must not authorise deleting art")
+	assert.Contains(t, err.Error(), "too sparse")
+}
+
+func withArtTables(t *testing.T, ss *MediorumServer) {
+	t.Helper()
+	ctx := context.Background()
+	for _, ddl := range []string{
+		`create table if not exists tracks (track_id int, track_cid text, orig_file_cid text,
+			preview_cid text, cover_art_sizes text, cover_art text,
+			is_current bool default true, is_delete bool default false)`,
+		`create table if not exists users (user_id int, profile_picture_sizes text, profile_picture text,
+			cover_photo_sizes text, cover_photo text, is_current bool default true)`,
+		`create table if not exists playlists (playlist_id int, playlist_image_sizes_multihash text,
+			playlist_image_multihash text, is_current bool default true)`,
+	} {
+		_, err := ss.pgPool.Exec(ctx, ddl)
+		require.NoError(t, err)
+	}
+	t.Cleanup(func() {
+		for _, tbl := range []string{"tracks", "users", "playlists"} {
+			_, _ = ss.pgPool.Exec(context.Background(), `drop table if exists `+tbl)
+		}
+	})
+
+	_, err := ss.pgPool.Exec(ctx,
+		`insert into tracks (track_id, cover_art_sizes) values (1, 'QmCoverArtCid'), (2, '01HULIDUPLOADID0000000000')`)
+	require.NoError(t, err)
+	_, err = ss.pgPool.Exec(ctx,
+		`insert into users (user_id, profile_picture_sizes) values (1, 'QmProfileCid')`)
+	require.NoError(t, err)
 }

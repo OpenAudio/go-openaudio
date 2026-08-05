@@ -63,9 +63,21 @@ const (
 // pruneRequest selects which tasks to run. DryRun is the default: the caller
 // must opt in to mutation, because two of the three tasks delete data.
 type pruneRequest struct {
-	Tasks  []pruneTask `json:"tasks"`
-	Commit bool        `json:"commit"`
-	Limit  int         `json:"limit"`
+	Tasks []pruneTask `json:"tasks"`
+	// Templates scopes the unpublished task by upload type. Defaults to audio
+	// alone: it is the best-evidenced case, and each template needs its own
+	// reference check against different tables.
+	Templates []JobTemplate `json:"templates"`
+	Commit    bool          `json:"commit"`
+	Limit     int           `json:"limit"`
+}
+
+// pruneTemplates resolves the requested scope, defaulting to audio.
+func (req pruneRequest) pruneTemplates() []JobTemplate {
+	if len(req.Templates) == 0 {
+		return []JobTemplate{JobTemplateAudio}
+	}
+	return req.Templates
 }
 
 type pruneResult struct {
@@ -183,7 +195,7 @@ func (ss *MediorumServer) runPrune(ctx context.Context, req pruneRequest) []prun
 		case pruneTaskTmp:
 			ss.pruneTmpFiles(ctx, run, req.Commit)
 		case pruneTaskUnpublished:
-			ss.pruneUnpublishedUploads(ctx, run, req.Commit, limit)
+			ss.pruneUnpublishedUploads(ctx, run, req.Commit, limit, req.pruneTemplates())
 		default:
 			run.res.Error = "unknown prune task"
 		}
@@ -274,59 +286,86 @@ func (ss *MediorumServer) pruneTmpFiles(ctx context.Context, run *pruneRun, comm
 // The upload row itself is left alone (see the note at the top of this file);
 // only local blobs go, and the CIDs are skip-listed so repair does not pull
 // them straight back from a peer that hasn't pruned.
-func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, run *pruneRun, commit bool, limit int) {
+func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, run *pruneRun, commit bool, limit int, templates []JobTemplate) {
 	pool, release, err := ss.openPruneIndex(ctx)
 	if err != nil {
 		run.res.Error = err.Error()
 		return
 	}
 	defer release()
-	if err := checkPruneIndex(ctx, pool); err != nil {
-		run.res.Error = err.Error()
-		return
-	}
 
+	for _, tmpl := range templates {
+		if ctx.Err() != nil {
+			return
+		}
+		// Each template is verified separately: audio and art are referenced
+		// from different tables, so an index adequate for one says nothing
+		// about the other.
+		if err := checkPruneIndexFor(ctx, pool, tmpl); err != nil {
+			run.res.Error = err.Error()
+			return
+		}
+		if err := ss.pruneUnpublishedTemplate(ctx, run, pool, commit, limit, tmpl); err != nil {
+			run.res.Error = err.Error()
+			return
+		}
+	}
+}
+
+func (ss *MediorumServer) pruneUnpublishedTemplate(ctx context.Context, run *pruneRun, pool *pgxpool.Pool, commit bool, limit int, tmpl JobTemplate) error {
 	cutoff := time.Now().Add(-unpublishedUploadAge)
 	var uploads []Upload
-	// Audio only. See the note above publishedCIDs: image CIDs are never in
-	// track_cid, so including them would match nothing and delete all cover art.
 	if err := ss.crud.DB.
-		Where("template = ? AND created_at < ?", JobTemplateAudio, cutoff).
+		Where("template = ? AND created_at < ?", tmpl, cutoff).
 		Order("created_at").
 		Limit(limit).
 		Find(&uploads).Error; err != nil {
-		run.res.Error = err.Error()
-		return
+		return err
 	}
-	run.res.Scanned = len(uploads)
+	run.res.Scanned += len(uploads)
 	if len(uploads) == 0 {
-		return
+		return nil
 	}
 
-	allCIDs := make([]string, 0, len(uploads)*2)
-	for _, u := range uploads {
-		allCIDs = append(allCIDs, uploadCIDs(u)...)
+	isAudio := tmpl == JobTemplateAudio
+
+	// Audio is referenced by CID only; art by CID or upload ID.
+	refsFor := uploadRefs
+	if isAudio {
+		refsFor = uploadCIDs
 	}
-	published, err := publishedCIDs(ctx, pool, allCIDs)
+
+	all := make([]string, 0, len(uploads)*3)
+	for _, u := range uploads {
+		all = append(all, refsFor(u)...)
+	}
+
+	var published map[string]struct{}
+	var err error
+	if isAudio {
+		published, err = publishedCIDs(ctx, pool, all)
+	} else {
+		published, err = publishedArtRefs(ctx, pool, all)
+	}
 	if err != nil {
-		run.res.Error = err.Error()
-		return
+		return err
 	}
 
 	for _, u := range uploads {
 		if ctx.Err() != nil {
-			return
+			return ctx.Err()
 		}
 		run.tick(ctx)
+
 		cids := uploadCIDs(u)
 		if len(cids) == 0 {
 			continue
 		}
-		// Any CID referenced anywhere means the upload published; leave the
-		// whole set alone rather than pruning it piecemeal.
+		// A single reference means the upload published; never prune such a
+		// set piecemeal.
 		referenced := false
-		for _, cid := range cids {
-			if _, ok := published[cid]; ok {
+		for _, ref := range refsFor(u) {
+			if _, ok := published[ref]; ok {
 				referenced = true
 				break
 			}
@@ -350,6 +389,7 @@ func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, run *prun
 			run.res.SkipsAdd += n
 		}
 	}
+	return nil
 }
 
 // Publication is determined by matching an upload's CIDs against the ETL's
@@ -386,6 +426,12 @@ const pruneIndexStaleAfter = 24 * time.Hour
 // empty otherwise reads as "nothing is published".
 const minTrackCidCoverage = 0.90
 
+// minArtReferences is the floor for artwork references before art pruning is
+// allowed. A real index carries millions (a production snapshot has ~3.2M
+// across tracks, users and playlists); anything near zero means this node is
+// not indexing, not that nothing has artwork.
+const minArtReferences = 100_000
+
 // openPruneIndex returns a pool for publication lookups plus a release func.
 // When OPENAUDIO_PRUNE_INDEX_DB_URL is set it dials that database (for nodes
 // that don't run the ETL themselves); otherwise it reuses the local pool.
@@ -399,6 +445,41 @@ func (ss *MediorumServer) openPruneIndex(ctx context.Context) (*pgxpool.Pool, fu
 		return nil, nil, fmt.Errorf("OPENAUDIO_PRUNE_INDEX_DB_URL: %w", err)
 	}
 	return pool, pool.Close, nil
+}
+
+// checkPruneIndexFor verifies the index can answer for a given upload type.
+// Audio and art are referenced from different tables, so adequacy for one
+// implies nothing about the other.
+func checkPruneIndexFor(ctx context.Context, pool *pgxpool.Pool, tmpl JobTemplate) error {
+	if tmpl == JobTemplateAudio {
+		return checkPruneIndex(ctx, pool)
+	}
+	return checkArtPruneIndex(ctx, pool)
+}
+
+// checkArtPruneIndex refuses when the artwork columns are too sparse to
+// distinguish "not referenced" from "not indexed". The failure mode mirrors the
+// audio_upload_id one: a populated tracks table whose signal column is blank
+// would authorise deleting every image on the node.
+func checkArtPruneIndex(ctx context.Context, pool *pgxpool.Pool) error {
+	var refs int64
+	err := pool.QueryRow(ctx, `
+		select (select count(*) from tracks    where is_current and coalesce(cover_art_sizes,'') <> '')
+		     + (select count(*) from users     where is_current and coalesce(profile_picture_sizes,'') <> '')
+		     + (select count(*) from playlists where is_current and coalesce(playlist_image_sizes_multihash,'') <> '')`).
+		Scan(&refs)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "does not exist") {
+			return fmt.Errorf("artwork reference tables unavailable: this node does not index the chain. " +
+				"Enable OPENAUDIO_ETL_ENABLED, or set OPENAUDIO_PRUNE_INDEX_DB_URL to a node that does")
+		}
+		return err
+	}
+	if refs < minArtReferences {
+		return fmt.Errorf("only %d artwork references indexed (need %d): "+
+			"too sparse to distinguish unreferenced art from an unindexed node", refs, minArtReferences)
+	}
+	return nil
 }
 
 // checkPruneIndex refuses to authorise deletion from an index that cannot
@@ -467,6 +548,71 @@ func publishedCIDs(ctx context.Context, pool *pgxpool.Pool, cids []string) (map[
 		}
 	}
 	return published, rows.Err()
+}
+
+// artReferenceColumns are every place an image upload can be referenced.
+// The "_sizes"/"_multihash" variants dominate; the bare columns are legacy but
+// still carry a few thousand rows.
+var artReferenceColumns = []struct{ table, column string }{
+	{"tracks", "cover_art_sizes"},
+	{"tracks", "cover_art"},
+	{"users", "profile_picture_sizes"},
+	{"users", "profile_picture"},
+	{"users", "cover_photo_sizes"},
+	{"users", "cover_photo"},
+	{"playlists", "playlist_image_sizes_multihash"},
+	{"playlists", "playlist_image_multihash"},
+}
+
+// publishedArtRefs returns which of refs are referenced as artwork anywhere.
+//
+// Art is referenced by EITHER a CID or a mediorum upload ID, depending on which
+// client era wrote it. Measured on a production snapshot, roughly a third to a
+// half of every art column holds a ULID-form upload ID rather than a CID:
+//
+//	tracks.cover_art_sizes        65.3% CIDv0, 3.1% CIDv1, 31.6% ULID
+//	users.profile_picture_sizes   52.9% CIDv0, 0.8% CIDv1, 46.2% ULID
+//
+// Matching only CIDs would therefore read ~40% of published artwork as
+// orphaned. Callers pass both the upload ID and its CIDs.
+//
+// None of these columns is indexed, so each arm is a scan -- hence batching per
+// page rather than per upload.
+func publishedArtRefs(ctx context.Context, pool *pgxpool.Pool, refs []string) (map[string]struct{}, error) {
+	published := map[string]struct{}{}
+	if len(refs) == 0 {
+		return published, nil
+	}
+
+	parts := make([]string, 0, len(artReferenceColumns))
+	for _, c := range artReferenceColumns {
+		parts = append(parts, fmt.Sprintf("select %s as ref from %s where %s = any($1)", c.column, c.table, c.column))
+	}
+	rows, err := pool.Query(ctx, strings.Join(parts, "\nunion\n"), refs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ref *string
+		if err := rows.Scan(&ref); err != nil {
+			return nil, err
+		}
+		if ref != nil && *ref != "" {
+			published[*ref] = struct{}{}
+		}
+	}
+	return published, rows.Err()
+}
+
+// uploadRefs returns everything that could identify an upload in an entity
+// reference: its ID plus all its CIDs.
+func uploadRefs(u Upload) []string {
+	refs := uploadCIDs(u)
+	if u.ID != "" {
+		refs = append(refs, u.ID)
+	}
+	return refs
 }
 
 // uploadCIDs returns every CID an upload owns: the original plus any transcode
@@ -596,12 +742,22 @@ func (ss *MediorumServer) servePrune(c echo.Context) error {
 		}
 	}
 
+	for _, tmpl := range req.Templates {
+		if err := validateJobTemplate(tmpl); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("unknown template %q: expected %q, %q or %q",
+					tmpl, JobTemplateAudio, JobTemplateImgSquare, JobTemplateImgBackdrop),
+			})
+		}
+	}
+
 	select {
 	case ss.pruneTrigger <- req:
 		return c.JSON(http.StatusAccepted, map[string]any{
-			"status": "prune queued; poll GET /internal/prune for progress",
-			"tasks":  req.Tasks,
-			"dryRun": !req.Commit,
+			"status":    "prune queued; poll GET /internal/prune for progress",
+			"tasks":     req.Tasks,
+			"templates": req.pruneTemplates(),
+			"dryRun":    !req.Commit,
 		})
 	default:
 		return c.JSON(http.StatusConflict, map[string]string{
