@@ -62,10 +62,10 @@ func (ss *MediorumServer) nextUploadBatch(cursor string, limit int) ([]Upload, e
 // maxPullAttempts bounds how many hosts a single repair pull will try.
 //
 // preferredHosts is the full rendezvous ranking — every node on the network —
-// so without a bound an unobtainable CID walks all of them. That is what
-// produced ~2.8 failed attempts per success in production, since each miss
-// costs a dial (or peerHTTPClient's full timeout against a host that accepts
-// and then hangs) before moving on.
+// so without a bound a CID the replica set no longer serves walks all of them.
+// In production that produced ~2.8 failed attempts per success. The misses are
+// individually cheap (measured around a second each, mostly 404s rather than
+// timeouts), but at that ratio they still consume most of the per-blob budget.
 func (ss *MediorumServer) maxPullAttempts() int {
 	n := ss.Config.ReplicationFactor + pullAttemptMargin
 	if n < 1 {
@@ -636,9 +636,8 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 		//
 		// Tier 1 is the head of the rendezvous ranking — where the blob was
 		// pushed at upload time, so where it should be. It is bounded: the full
-		// ranking is every node on the network, and walking all of them for an
-		// unobtainable CID costs a dial each (or peerHTTPClient's whole timeout
-		// against a host that accepts and then hangs).
+		// ranking is every node on the network, and walking all of them for a
+		// CID the replica set no longer serves burns a request per host.
 		//
 		// Tier 2 is a small, per-CID-rotated set of store-all peers. Past the
 		// replica set the ranking is uncorrelated with who actually holds a

@@ -49,11 +49,6 @@ import (
 
 const DefaultOpsRetention = 30 * 24 * time.Hour
 
-// peerResponseHeaderTimeout caps how long a peer has to start responding after
-// we finish writing the request. Generous enough for a loaded node committing a
-// large blob before it replies, far below the 3 minute whole-request timeout.
-const peerResponseHeaderTimeout = 45 * time.Second
-
 // trackAccessInfo caches sound_recordings + management_keys lookup for cidstream auth
 type trackAccessInfo struct {
 	TrackID            string
@@ -338,20 +333,11 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	mediorumLifecycle := lifecycle.NewFromLifecycle(lc, "mediorum")
 
 	// HTTP transport for peer requests - skip TLS verify in dev with self-signed certs for replication/upload-scroll to work
-	//
-	// ResponseHeaderTimeout bounds the wait for a peer's response headers. The
-	// client-wide 3 minute Timeout has to stay generous because it also covers
-	// the body, and a large blob over a slow link legitimately needs it — but
-	// that means a host which accepts the connection and then goes silent burns
-	// the full three minutes. The header clock only starts once the request
-	// body is fully written, so this does not shorten replication pushes.
-	baseTransport := http.DefaultTransport.(*http.Transport).Clone()
-	baseTransport.ResponseHeaderTimeout = peerResponseHeaderTimeout
-	var peerTransport http.RoundTripper = baseTransport
+	var peerTransport http.RoundTripper = http.DefaultTransport
 	if config.Env == "dev" && env.Bool("OPENAUDIO_TLS_SELF_SIGNED") {
-		devTransport := baseTransport.Clone()
-		devTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-		peerTransport = devTransport
+		peerTransport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
 		logger.Info("peer HTTP client using InsecureSkipVerify for dev with self-signed TLS")
 	}
 
