@@ -55,6 +55,22 @@ func repairKindLabel(r *storagev1.RepairRun) string {
 	return "repair"
 }
 
+// staleCheckpointAfter is how long an in-progress run may go without
+// checkpointing before the console flags it. Repair saves its cursors after
+// every batch, so on a healthy node this is minutes; anything approaching an
+// hour means the run is stuck somewhere that does not checkpoint.
+const staleCheckpointAfter = time.Hour
+
+func repairCheckpointClass(r *storagev1.RepairRun) string {
+	if r == nil || r.UpdatedAt == nil {
+		return "text-secondary"
+	}
+	if time.Since(r.UpdatedAt.AsTime()) > staleCheckpointAfter {
+		return "text-red-500 font-medium"
+	}
+	return "text-secondary"
+}
+
 func repairStatusLabel(r *storagev1.RepairRun) string {
 	if r == nil {
 		return "—"
@@ -298,6 +314,14 @@ templ repairRunCard(label string, r *storagev1.RepairRun) {
 			<div class="text-xs text-secondary mt-1">{ formatRelative(r.StartedAt.AsTime()) }</div>
 			<div class="text-xs text-secondary mt-1">kind: { repairKindLabel(r) }</div>
 			<div class="text-xs text-secondary">status: { repairStatusLabel(r) }</div>
+			if r.FinishedAt == nil && r.UpdatedAt != nil {
+				// For a run still going, started_at answers nothing — a resumed
+				// tracker can carry a start date months old. The checkpoint age
+				// is what separates "working" from "wedged", so call it out.
+				<div class={ "text-xs mt-1 " + repairCheckpointClass(r) }>
+					last checkpoint: { formatRelative(r.UpdatedAt.AsTime()) }
+				</div>
+			}
 			if r.DurationNs > 0 {
 				<div class="text-xs text-secondary">duration: { formatDuration(r.DurationNs) }</div>
 			}

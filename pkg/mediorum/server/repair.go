@@ -26,6 +26,18 @@ const (
 
 	// uploadScanBatchSize is how many uploads runRepair pulls per keyset page.
 	uploadScanBatchSize = 1000
+
+	// pullAttemptMargin is how many hosts beyond the replica set repair will
+	// try before falling back. A blob is pushed to the top ReplicationFactor
+	// hosts at upload time, so those are where it lives; the margin absorbs
+	// ring churn and hosts that have since dropped it.
+	pullAttemptMargin = 4
+
+	// storeAllFallbackHosts caps how many store-all peers are tried after the
+	// replica set. Kept small on purpose: there are only a handful of them on
+	// the network, they are other operators' production nodes, and every peer
+	// running repair would otherwise converge on the same ones.
+	storeAllFallbackHosts = 2
 )
 
 // nextUploadBatch returns the page of uploads immediately after cursor.
@@ -45,6 +57,21 @@ func (ss *MediorumServer) nextUploadBatch(cursor string, limit int) ([]Upload, e
 	var uploads []Upload
 	err := ss.crud.DB.Where("id > ?", cursor).Order("id ASC").Limit(limit).Find(&uploads).Error
 	return uploads, err
+}
+
+// maxPullAttempts bounds how many hosts a single repair pull will try.
+//
+// preferredHosts is the full rendezvous ranking — every node on the network —
+// so without a bound a CID the replica set no longer serves walks all of them.
+// In production that produced ~2.8 failed attempts per success. The misses are
+// individually cheap (measured around a second each, mostly 404s rather than
+// timeouts), but at that ratio they still consume most of the per-blob budget.
+func (ss *MediorumServer) maxPullAttempts() int {
+	n := ss.Config.ReplicationFactor + pullAttemptMargin
+	if n < 1 {
+		return 1
+	}
+	return n
 }
 
 // seenKeyResult stores the outcome of a previous Attributes check for the same
@@ -605,12 +632,51 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 		tracker.Counters["pull_mine_needed"]++
 		tracker.mu.Unlock()
 
+		// Two tiers of source.
+		//
+		// Tier 1 is the head of the rendezvous ranking — where the blob was
+		// pushed at upload time, so where it should be. It is bounded: the full
+		// ranking is every node on the network, and walking all of them for a
+		// CID the replica set no longer serves burns a request per host.
+		//
+		// Tier 2 is a small, per-CID-rotated set of store-all peers. Past the
+		// replica set the ranking is uncorrelated with who actually holds a
+		// blob, so continuing down it is guessing; a store-all peer holds the
+		// whole corpus and is a near-certain hit. This also covers the case the
+		// tier 1 bound would otherwise lose: a blob that drifted deep in the
+		// ranking after ring churn.
+		//
+		// Note tier 1 uses preferredHosts rather than only healthy ones,
+		// because pullFileFromHost can still succeed against a host we believe
+		// unhealthy.
+		candidates := preferredHosts
+		if len(candidates) > ss.maxPullAttempts() {
+			candidates = candidates[:ss.maxPullAttempts()]
+		}
+		tier1 := len(candidates)
+		for _, host := range ss.findStoreAllPeers(cid, time.Hour, storeAllFallbackHosts) {
+			if !slices.Contains(candidates, host) {
+				candidates = append(candidates, host)
+			}
+		}
+		if len(candidates) > tier1 {
+			tracker.mu.Lock()
+			tracker.Counters["pull_store_all_fallback_offered"]++
+			tracker.mu.Unlock()
+		}
+
 		success := false
-		// loop preferredHosts (not preferredHealthyHosts) because pullFileFromHost can still give us a file even if we thought the host was unhealthy
-		for _, host := range preferredHosts {
+		attempted := 0
+		for i, host := range candidates {
 			if host == ss.Config.Self.Host {
 				continue
 			}
+			if i == tier1 && attempted > 0 {
+				logger.Debug("replica set exhausted; falling back to store-all peers",
+					zap.Int("tried", attempted))
+			}
+			attempted++
+
 			err := ss.pullFileFromHost(ctx, host, cid, placementHosts)
 			if err != nil {
 				tracker.mu.Lock()
@@ -637,7 +703,12 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 			}
 		}
 		if !success {
-			logger.Warn("failed to pull from any host", zap.Strings("hosts", preferredHosts))
+			tracker.mu.Lock()
+			tracker.Counters["pull_mine_gave_up"]++
+			tracker.mu.Unlock()
+			logger.Warn("failed to pull from any host",
+				zap.Int("attempted", attempted), zap.Int("replicaSetTried", tier1),
+				zap.Int("candidates", len(preferredHosts)))
 			return errors.New("failed to pull from any host")
 		}
 	}

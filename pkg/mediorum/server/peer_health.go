@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"hash/fnv"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -80,6 +82,14 @@ func (ss *MediorumServer) startHealthPoller(ctx context.Context) error {
 
 						if v, ok := healthData["version"].(string); ok {
 							ss.peerHealths[peer.Host].Version = v
+						}
+
+						// Track store-all peers so repair can fall back to
+						// them: they hold the whole corpus, so they are far
+						// likelier to serve a blob than an arbitrary host
+						// further down the rendezvous ranking.
+						if v, ok := healthData["storeAll"].(bool); ok {
+							ss.peerHealths[peer.Host].StoreAll = v
 						}
 
 						// set node's reachable peers
@@ -173,6 +183,52 @@ func (ss *MediorumServer) getReachableByMajorityButNotByHost(host string) []stri
 	}
 
 	return unreachableByHost
+}
+
+// findStoreAllPeers returns up to limit healthy peers that report StoreAll,
+// in an order derived from key so different CIDs prefer different sources.
+//
+// Beyond the replica set, the rendezvous ranking is uncorrelated with who
+// actually holds a blob, so walking it is guessing. A store-all peer holds the
+// whole corpus and is a near-certain hit — which makes it the right fallback
+// when the replica set no longer serves a CID.
+//
+// The result is deliberately capped and shuffled. There are only a handful of
+// store-all nodes on the network and they are other operators' production
+// nodes; if every peer fell back to the same one in the same order it would
+// become a hotspot.
+func (ss *MediorumServer) findStoreAllPeers(key string, aliveInLast time.Duration, limit int) []string {
+	if limit < 1 {
+		return nil
+	}
+
+	ss.peerHealthsMutex.RLock()
+	candidates := make([]string, 0, 4)
+	for host, peerHealth := range ss.peerHealths {
+		if host == ss.Config.Self.Host {
+			continue
+		}
+		if peerHealth.StoreAll && time.Since(peerHealth.LastHealthy) < aliveInLast {
+			candidates = append(candidates, host)
+		}
+	}
+	ss.peerHealthsMutex.RUnlock()
+
+	// Sort for determinism (map iteration order is random), then rotate by a
+	// hash of the key so load spreads across store-all peers per-CID rather
+	// than always landing on whoever sorts first.
+	sort.Strings(candidates)
+	if n := len(candidates); n > 1 {
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(key))
+		offset := int(h.Sum32() % uint32(n))
+		candidates = append(candidates[offset:], candidates[:offset]...)
+	}
+
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates
 }
 
 func (ss *MediorumServer) findHealthyPeers(aliveInLast time.Duration) []string {
