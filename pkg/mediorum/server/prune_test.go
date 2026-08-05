@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"fmt"
+
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/persistence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -157,11 +160,13 @@ func TestPruneUnpublishedAbortsWithoutIndex(t *testing.T) {
 	ss := testNetwork[0]
 	_, _ = ss.pgPool.Exec(context.Background(), `drop table if exists tracks`)
 
-	res := ss.pruneUnpublishedUploads(context.Background(), true, 100)
-	assert.NotEmpty(t, res.Error, "must report why it refused")
-	assert.Zero(t, res.Matched, "nothing may be matched without a usable index")
-	assert.Zero(t, res.Removed, "nothing may be deleted without a usable index")
-	assert.Zero(t, res.SkipsAdd)
+	run := &pruneRun{ss: ss, lastFlush: time.Now()}
+	ss.pruneUnpublishedUploads(context.Background(), run, true, 100)
+
+	assert.NotEmpty(t, run.res.Error, "must report why it refused")
+	assert.Zero(t, run.res.Matched, "nothing may be matched without a usable index")
+	assert.Zero(t, run.res.Removed, "nothing may be deleted without a usable index")
+	assert.Zero(t, run.res.SkipsAdd)
 }
 
 func TestPublishedUploadIDs(t *testing.T) {
@@ -238,4 +243,116 @@ func TestUploadCIDs(t *testing.T) {
 	assert.NotContains(t, got, "", "an empty transcode result must not yield a blank key")
 
 	assert.Empty(t, uploadCIDs(Upload{}))
+}
+
+// --- observability ------------------------------------------------------
+//
+// A prune can walk a million-object tree or make thousands of peer probes. If
+// the only signal is a log line emitted when it finishes, an operator cannot
+// tell a running job from a wedged one — which is the exact failure that made
+// a stalled repair invisible for eleven weeks.
+
+// mirrors persistence.progressEvery, which is unexported
+const persistenceProgressEveryForTest = 5000
+
+func TestPruneRunRecordsProgressAndCompletion(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+
+	run := ss.beginPruneRun(ctx, pruneTaskTmp, true)
+	require.NotZero(t, run.id, "a prune must be visible before it finishes")
+	t.Cleanup(func() {
+		_, _ = ss.pgPool.Exec(context.Background(), `delete from prune_runs where id = $1`, run.id)
+	})
+
+	readRow := func() (finished *time.Time, scanned, matched int64) {
+		require.NoError(t, ss.pgPool.QueryRow(ctx,
+			`select finished_at, scanned, matched from prune_runs where id = $1`, run.id).
+			Scan(&finished, &scanned, &matched))
+		return
+	}
+
+	// Visible as in-flight straight away, with no results yet.
+	finished, scanned, _ := readRow()
+	assert.Nil(t, finished, "run must read as in-flight until it completes")
+	assert.Zero(t, scanned)
+
+	// Mid-run progress reaches the row without waiting for completion.
+	run.res.Scanned = 4200
+	run.res.Matched = 7
+	run.lastFlush = time.Now().Add(-2 * pruneProgressInterval) // force the throttle open
+	run.tick(ctx)
+
+	finished, scanned, matched := readRow()
+	assert.Nil(t, finished, "a progress tick must not mark the run finished")
+	assert.EqualValues(t, 4200, scanned, "progress must be visible mid-run")
+	assert.EqualValues(t, 7, matched)
+
+	run.flush(ctx, true)
+	finished, _, _ = readRow()
+	assert.NotNil(t, finished, "completion must be recorded")
+}
+
+// tick throttles, so a task can call it in a tight loop without hammering the
+// database once per upload.
+func TestPruneRunTickThrottles(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+
+	run := ss.beginPruneRun(ctx, pruneTaskUnpublished, true)
+	require.NotZero(t, run.id)
+	t.Cleanup(func() {
+		_, _ = ss.pgPool.Exec(context.Background(), `delete from prune_runs where id = $1`, run.id)
+	})
+
+	run.res.Scanned = 99
+	run.tick(ctx) // immediately after begin: inside the throttle window
+
+	var scanned int64
+	require.NoError(t, ss.pgPool.QueryRow(ctx,
+		`select scanned from prune_runs where id = $1`, run.id).Scan(&scanned))
+	assert.Zero(t, scanned, "tick inside the interval must not write")
+}
+
+// A run interrupted by shutdown must still record how far it got, or a
+// cancelled prune is indistinguishable from one that never ran.
+func TestPruneRunFlushSurvivesCancelledContext(t *testing.T) {
+	ss := testNetwork[0]
+	run := ss.beginPruneRun(context.Background(), pruneTaskUnrecoverable, false)
+	require.NotZero(t, run.id)
+	t.Cleanup(func() {
+		_, _ = ss.pgPool.Exec(context.Background(), `delete from prune_runs where id = $1`, run.id)
+	})
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	run.res.Scanned = 55
+	run.flush(cancelled, true)
+
+	var scanned int64
+	var finished *time.Time
+	require.NoError(t, ss.pgPool.QueryRow(context.Background(),
+		`select scanned, finished_at from prune_runs where id = $1`, run.id).Scan(&scanned, &finished))
+	assert.EqualValues(t, 55, scanned, "partial progress must survive cancellation")
+	assert.NotNil(t, finished)
+}
+
+// The sweep is the longest thing a prune does; it has to stream counts out
+// rather than reporting only at the end.
+func TestSweepReportsProgress(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < persistenceProgressEveryForTest*2; i++ {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(dir, fmt.Sprintf("blob-%05d", i)), []byte("x"), 0o600))
+	}
+
+	calls := 0
+	_, scanned, err := persistence.SweepStaleTempFiles(
+		context.Background(), "file://"+dir, time.Hour, true,
+		func(scanned, matched int) { calls++ })
+	require.NoError(t, err)
+
+	assert.Greater(t, scanned, 0, "scanned count must be reported")
+	assert.Greater(t, calls, 0, "a long walk must emit progress before it finishes")
 }

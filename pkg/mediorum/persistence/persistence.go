@@ -83,6 +83,11 @@ func parsePrefix(rawPrefix string) (Prefix, bool) {
 // that an orphan survives until the next sweep.
 const DefaultStaleTempFileAge = time.Hour
 
+// progressEvery is how many directory entries the sweep visits between progress
+// callbacks. Cheap enough to be invisible, frequent enough that a caller
+// polling every few seconds always sees movement.
+const progressEvery = 5000
+
 // FileDirFromDSN returns the filesystem directory backing a file:// blob DSN,
 // stripping any query parameters (e.g. "?no_tmp_dir=true"). It reports false
 // for cloud backends, which have no local tree to sweep.
@@ -115,23 +120,24 @@ func FileDirFromDSN(blobDriverURL string) (string, bool) {
 //
 // Returns a count that is meaningful even alongside an error, since the walk
 // continues past unreadable entries.
-func SweepStaleTempFiles(ctx context.Context, blobDriverURL string, minAge time.Duration, dryRun bool) (int, error) {
+func SweepStaleTempFiles(ctx context.Context, blobDriverURL string, minAge time.Duration, dryRun bool, onProgress func(scanned, matched int)) (int, int, error) {
 	dir, ok := FileDirFromDSN(blobDriverURL)
 	if !ok {
-		return 0, nil
+		return 0, 0, nil
 	}
 	// Verify the root up front. WalkDir surfaces a missing or unmounted root
 	// through the callback's err argument, which we deliberately ignore for
 	// individual entries — without this an unmounted bucket would look like an
 	// empty tree and report a clean sweep.
 	if fi, err := os.Stat(dir); err != nil {
-		return 0, fmt.Errorf("blob dir %q is not readable: %w", dir, err)
+		return 0, 0, fmt.Errorf("blob dir %q is not readable: %w", dir, err)
 	} else if !fi.IsDir() {
-		return 0, fmt.Errorf("blob dir %q is not a directory", dir)
+		return 0, 0, fmt.Errorf("blob dir %q is not a directory", dir)
 	}
 
 	cutoff := time.Now().Add(-minAge)
 	removed := 0
+	scanned := 0
 
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -141,6 +147,12 @@ func SweepStaleTempFiles(ctx context.Context, blobDriverURL string, minAge time.
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		scanned++
+		// Report periodically so a caller can show movement: this walk runs for
+		// an hour on a large archive and would otherwise be silent throughout.
+		if onProgress != nil && scanned%progressEvery == 0 {
+			onProgress(scanned, removed)
 		}
 		if d.IsDir() || !strings.HasSuffix(d.Name(), ".tmp") {
 			return nil
@@ -164,7 +176,7 @@ func SweepStaleTempFiles(ctx context.Context, blobDriverURL string, minAge time.
 		return nil
 	})
 
-	return removed, err
+	return removed, scanned, err
 }
 
 func checkStorageCredentials(blobDriverUrl string) error {

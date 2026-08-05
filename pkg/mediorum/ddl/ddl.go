@@ -85,6 +85,26 @@ WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 		"created_at" timestamptz not null default now()
 	)`)
 
+	// Prune run history. A prune can walk a multi-million-object tree or make
+	// thousands of peer probes, so an operator needs to see it progressing
+	// rather than waiting for a terminal log line. updated_at is the field that
+	// distinguishes "working" from "wedged".
+	runMigration(db, `
+	create table if not exists prune_runs (
+		"id" bigserial primary key,
+		"task" text not null,
+		"dry_run" boolean not null,
+		"started_at" timestamptz not null default now(),
+		"updated_at" timestamptz not null default now(),
+		"finished_at" timestamptz,
+		"scanned" bigint not null default 0,
+		"matched" bigint not null default 0,
+		"removed" bigint not null default 0,
+		"skips_added" bigint not null default 0,
+		"error" text not null default ''
+	)`)
+	runMigration(db, `create index if not exists idx_prune_runs_started_at on prune_runs(started_at desc)`)
+
 	runVacuumFull(db)
 }
 

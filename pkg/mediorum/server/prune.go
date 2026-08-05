@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,6 +97,72 @@ func (ss *MediorumServer) startPruner(ctx context.Context) error {
 	}
 }
 
+// pruneProgressInterval is how often an in-flight task flushes its counters to
+// prune_runs. Frequent enough that a stalled task is obvious within a minute,
+// rare enough to be invisible next to a tree walk or a network probe.
+const pruneProgressInterval = 10 * time.Second
+
+// pruneRun owns the prune_runs row for one task and flushes progress to it.
+// Without this a long task is silent until it finishes -- and if the node
+// restarts mid-run, silent forever.
+type pruneRun struct {
+	ss        *MediorumServer
+	id        int64
+	res       pruneResult
+	lastFlush time.Time
+}
+
+func (ss *MediorumServer) beginPruneRun(ctx context.Context, task pruneTask, dryRun bool) *pruneRun {
+	run := &pruneRun{ss: ss, lastFlush: time.Now()}
+	run.res.Task = task
+	run.res.DryRun = dryRun
+
+	err := ss.pgPool.QueryRow(ctx,
+		`insert into prune_runs (task, dry_run) values ($1, $2) returning id`,
+		string(task), dryRun).Scan(&run.id)
+	if err != nil {
+		// Losing the history row must not stop the actual work; the task still
+		// runs and still logs, we just cannot report progress for it.
+		ss.logger.Warn("could not record prune run", zap.Error(err))
+	}
+	return run
+}
+
+// tick flushes counters if enough time has passed. Safe to call in a tight
+// loop -- it throttles internally.
+func (run *pruneRun) tick(ctx context.Context) {
+	if run.id == 0 || time.Since(run.lastFlush) < pruneProgressInterval {
+		return
+	}
+	run.flush(ctx, false)
+}
+
+func (run *pruneRun) flush(ctx context.Context, done bool) {
+	if run.id == 0 {
+		return
+	}
+	run.lastFlush = time.Now()
+
+	// Use a background context for the final write: a cancelled prune should
+	// still record how far it got, otherwise a shutdown mid-run looks like a
+	// run that never happened.
+	writeCtx := ctx
+	if done {
+		writeCtx = context.Background()
+	}
+	_, err := run.ss.pgPool.Exec(writeCtx, `
+		update prune_runs
+		   set updated_at = now(),
+		       finished_at = case when $2 then now() else finished_at end,
+		       scanned = $3, matched = $4, removed = $5, skips_added = $6, error = $7
+		 where id = $1`,
+		run.id, done, run.res.Scanned, run.res.Matched, run.res.Removed,
+		run.res.SkipsAdd, run.res.Error)
+	if err != nil {
+		run.ss.logger.Warn("could not update prune run", zap.Error(err))
+	}
+}
+
 func (ss *MediorumServer) runPrune(ctx context.Context, req pruneRequest) []pruneResult {
 	limit := req.Limit
 	if limit <= 0 {
@@ -111,23 +178,27 @@ func (ss *MediorumServer) runPrune(ctx context.Context, req pruneRequest) []prun
 			zap.String("task", "prune"),
 			zap.String("prune_task", string(task)),
 			zap.Bool("dryRun", !req.Commit))
+		logger.Info("prune task starting")
 
 		start := time.Now()
-		var res pruneResult
+		run := ss.beginPruneRun(ctx, task, !req.Commit)
+
 		switch task {
 		case pruneTaskTmp:
-			res = ss.pruneTmpFiles(ctx, req.Commit)
+			ss.pruneTmpFiles(ctx, run, req.Commit)
 		case pruneTaskUnpublished:
-			res = ss.pruneUnpublishedUploads(ctx, req.Commit, limit)
+			ss.pruneUnpublishedUploads(ctx, run, req.Commit, limit)
 		case pruneTaskUnrecoverable:
-			res = ss.pruneUnrecoverableUploads(ctx, req.Commit, limit)
+			ss.pruneUnrecoverableUploads(ctx, run, req.Commit, limit)
 		default:
-			res = pruneResult{Error: "unknown prune task"}
+			run.res.Error = "unknown prune task"
 		}
-		res.Task = task
-		res.DryRun = !req.Commit
+
+		res := run.res
 		res.Duration = time.Since(start)
 		res.Took = res.Duration.String()
+		run.res = res
+		run.flush(ctx, true)
 
 		if res.Error != "" {
 			logger.Warn("prune task failed",
@@ -150,17 +221,16 @@ func (ss *MediorumServer) runPrune(ctx context.Context, req pruneRequest) []prun
 // only catches the residue that leaves behind: a directory never written to
 // again. It is expensive -- a recursive walk of the whole tree -- which is why
 // it is on-demand rather than scheduled.
-func (ss *MediorumServer) pruneTmpFiles(ctx context.Context, commit bool) pruneResult {
-	var res pruneResult
-
+func (ss *MediorumServer) pruneTmpFiles(ctx context.Context, run *pruneRun, commit bool) {
 	dsns := []string{ss.Config.BlobStoreDSN}
 	if ss.Config.ArchiveBlobStoreDSN != "" {
 		dsns = append(dsns, ss.Config.ArchiveBlobStoreDSN)
 	}
 
+	baseScanned, baseMatched := 0, 0
 	for _, dsn := range dsns {
 		if ctx.Err() != nil {
-			return res
+			return
 		}
 		if _, isFile := persistence.FileDirFromDSN(dsn); !isFile {
 			// Cloud backends have no local tree. Their equivalent artifact is an
@@ -168,17 +238,32 @@ func (ss *MediorumServer) pruneTmpFiles(ctx context.Context, commit bool) pruneR
 			// by a bucket lifecycle rule rather than by us.
 			continue
 		}
-		n, err := persistence.SweepStaleTempFiles(ctx, dsn, persistence.DefaultStaleTempFileAge, !commit)
-		res.Matched += n
+
+		// The walk is the longest thing a prune does -- an hour on a
+		// million-object archive. Stream counts out of it so the run row shows
+		// movement instead of nothing until it completes.
+		progress := func(scanned, matched int) {
+			run.res.Scanned = baseScanned + scanned
+			run.res.Matched = baseMatched + matched
+			if commit {
+				run.res.Removed = run.res.Matched
+			}
+			run.tick(ctx)
+		}
+
+		n, scanned, err := persistence.SweepStaleTempFiles(ctx, dsn, persistence.DefaultStaleTempFileAge, !commit, progress)
+		baseScanned += scanned
+		baseMatched += n
+		run.res.Scanned = baseScanned
+		run.res.Matched = baseMatched
 		if commit {
-			res.Removed += n
+			run.res.Removed = baseMatched
 		}
 		if err != nil {
-			res.Error = err.Error()
-			return res
+			run.res.Error = err.Error()
+			return
 		}
 	}
-	return res
 }
 
 // pruneUnpublishedUploads reclaims blobs for uploads no track ever referenced.
@@ -195,18 +280,16 @@ func (ss *MediorumServer) pruneTmpFiles(ctx context.Context, commit bool) pruneR
 // The upload row itself is left alone (see the note at the top of this file);
 // only local blobs go, and the CIDs are skip-listed so repair does not pull
 // them straight back from a peer that hasn't pruned.
-func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, commit bool, limit int) pruneResult {
-	var res pruneResult
-
+func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, run *pruneRun, commit bool, limit int) {
 	pool, release, err := ss.openPruneIndex(ctx)
 	if err != nil {
-		res.Error = err.Error()
-		return res
+		run.res.Error = err.Error()
+		return
 	}
 	defer release()
 	if err := checkPruneIndex(ctx, pool); err != nil {
-		res.Error = err.Error()
-		return res
+		run.res.Error = err.Error()
+		return
 	}
 
 	cutoff := time.Now().Add(-unpublishedUploadAge)
@@ -216,12 +299,12 @@ func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, commit bo
 		Order("created_at").
 		Limit(limit).
 		Find(&uploads).Error; err != nil {
-		res.Error = err.Error()
-		return res
+		run.res.Error = err.Error()
+		return
 	}
-	res.Scanned = len(uploads)
+	run.res.Scanned = len(uploads)
 	if len(uploads) == 0 {
-		return res
+		return
 	}
 
 	ids := make([]string, 0, len(uploads))
@@ -230,14 +313,15 @@ func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, commit bo
 	}
 	published, err := publishedUploadIDs(ctx, pool, ids)
 	if err != nil {
-		res.Error = err.Error()
-		return res
+		run.res.Error = err.Error()
+		return
 	}
 
 	for _, u := range uploads {
 		if ctx.Err() != nil {
-			return res
+			return
 		}
+		run.tick(ctx)
 		if _, ok := published[u.ID]; ok {
 			continue
 		}
@@ -245,7 +329,7 @@ func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, commit bo
 		if len(cids) == 0 {
 			continue
 		}
-		res.Matched++
+		run.res.Matched++
 
 		if !commit {
 			continue
@@ -253,15 +337,14 @@ func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, commit bo
 		for _, cid := range cids {
 			if ss.haveInMyBucket(cid) {
 				if err := ss.dropFromMyBucket(cid); err == nil {
-					res.Removed++
+					run.res.Removed++
 				}
 			}
 		}
 		if n, err := ss.addPruneSkips(ctx, cids, "unpublished"); err == nil {
-			res.SkipsAdd += n
+			run.res.SkipsAdd += n
 		}
 	}
-	return res
 }
 
 // pruneUnrecoverableUploads skip-lists CIDs that no reachable peer can serve.
@@ -273,14 +356,12 @@ func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, commit bo
 // Absence is only concluded from a network that actually answered. If too few
 // peers are reachable the task aborts rather than skip-listing content that is
 // merely unreachable right now.
-func (ss *MediorumServer) pruneUnrecoverableUploads(ctx context.Context, commit bool, limit int) pruneResult {
-	var res pruneResult
-
+func (ss *MediorumServer) pruneUnrecoverableUploads(ctx context.Context, run *pruneRun, commit bool, limit int) {
 	healthy := ss.findHealthyPeers(time.Hour)
 	if len(healthy) < minReachablePeersForAbsence {
-		res.Error = fmt.Sprintf("only %d reachable peers (need %d): cannot distinguish missing content from an unreachable network",
+		run.res.Error = fmt.Sprintf("only %d reachable peers (need %d): cannot distinguish missing content from an unreachable network",
 			len(healthy), minReachablePeersForAbsence)
-		return res
+		return
 	}
 
 	var uploads []Upload
@@ -290,19 +371,22 @@ func (ss *MediorumServer) pruneUnrecoverableUploads(ctx context.Context, commit 
 		Limit(limit).
 		Find(&uploads).Error
 	if err != nil {
-		res.Error = err.Error()
-		return res
+		run.res.Error = err.Error()
+		return
 	}
 
 	for _, u := range uploads {
 		if ctx.Err() != nil {
-			return res
+			return
 		}
-		res.Scanned++
+		run.res.Scanned++
+		// Each CID costs up to ReplicationFactor*2 HTTP probes, so a page of
+		// uploads is thousands of requests. Tick per upload, not per page.
+		run.tick(ctx)
 
 		for _, cid := range uploadCIDs(u) {
 			if ctx.Err() != nil {
-				return res
+				return
 			}
 			// Anything we hold is by definition recoverable.
 			if ss.haveInMyBucket(cid) {
@@ -311,16 +395,15 @@ func (ss *MediorumServer) pruneUnrecoverableUploads(ctx context.Context, commit 
 			if ss.anyPeerHasBlob(cid) {
 				continue
 			}
-			res.Matched++
+			run.res.Matched++
 			if !commit {
 				continue
 			}
 			if n, err := ss.addPruneSkips(ctx, []string{cid}, "unrecoverable"); err == nil {
-				res.SkipsAdd += n
+				run.res.SkipsAdd += n
 			}
 		}
 	}
-	return res
 }
 
 // anyPeerHasBlob probes the hosts most likely to hold a CID. Bounded on
@@ -564,7 +647,7 @@ func (ss *MediorumServer) servePrune(c echo.Context) error {
 	select {
 	case ss.pruneTrigger <- req:
 		return c.JSON(http.StatusAccepted, map[string]any{
-			"status": "prune queued; results are logged with task=prune",
+			"status": "prune queued; poll GET /internal/prune for progress",
 			"tasks":  req.Tasks,
 			"dryRun": !req.Commit,
 		})
@@ -573,4 +656,62 @@ func (ss *MediorumServer) servePrune(c echo.Context) error {
 			"error": "a prune is already queued or running",
 		})
 	}
+}
+
+// PruneRunStatus is one row of prune history. UpdatedAt is the field that
+// matters while a run is in flight: started_at can be hours old on a tree walk,
+// so only the checkpoint age distinguishes progress from a wedged job.
+type PruneRunStatus struct {
+	ID         int64      `json:"id"`
+	Task       string     `json:"task"`
+	DryRun     bool       `json:"dryRun"`
+	StartedAt  time.Time  `json:"startedAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+	FinishedAt *time.Time `json:"finishedAt"`
+	Running    bool       `json:"running"`
+	StaleFor   string     `json:"staleFor,omitempty"`
+	Scanned    int64      `json:"scanned"`
+	Matched    int64      `json:"matched"`
+	Removed    int64      `json:"removed"`
+	SkipsAdded int64      `json:"skipsAdded"`
+	Error      string     `json:"error,omitempty"`
+}
+
+// servePruneStatus reports recent prune runs, newest first.
+func (ss *MediorumServer) servePruneStatus(c echo.Context) error {
+	limit := 20
+	if v, err := strconv.Atoi(c.QueryParam("limit")); err == nil && v > 0 && v <= 200 {
+		limit = v
+	}
+
+	rows, err := ss.pgPool.Query(c.Request().Context(), `
+		select id, task, dry_run, started_at, updated_at, finished_at,
+		       scanned, matched, removed, skips_added, error
+		  from prune_runs
+		 order by started_at desc
+		 limit $1`, limit)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	defer rows.Close()
+
+	out := []PruneRunStatus{}
+	for rows.Next() {
+		var r PruneRunStatus
+		if err := rows.Scan(&r.ID, &r.Task, &r.DryRun, &r.StartedAt, &r.UpdatedAt,
+			&r.FinishedAt, &r.Scanned, &r.Matched, &r.Removed, &r.SkipsAdded, &r.Error); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		r.Running = r.FinishedAt == nil
+		if r.Running {
+			// Surfaced explicitly so an operator does not have to subtract
+			// timestamps to answer "is this still moving?".
+			r.StaleFor = time.Since(r.UpdatedAt).Truncate(time.Second).String()
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, out)
 }

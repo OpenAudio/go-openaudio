@@ -53,7 +53,7 @@ func TestSweepStaleTempFilesLeavesRecentFiles(t *testing.T) {
 	old := time.Now().Add(-2 * time.Hour)
 	require.NoError(t, os.Chtimes(stale, old, old))
 
-	removed, err := SweepStaleTempFiles(context.Background(), "file://"+dir, time.Hour, false)
+	removed, _, err := SweepStaleTempFiles(context.Background(), "file://"+dir, time.Hour, false, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, removed)
 
@@ -65,7 +65,7 @@ func TestSweepStaleTempFilesLeavesRecentFiles(t *testing.T) {
 // Cloud backends have no local tree; the sweep must be a silent no-op rather
 // than an error, since it runs unconditionally for every configured bucket.
 func TestSweepStaleTempFilesSkipsNonFileBackends(t *testing.T) {
-	removed, err := SweepStaleTempFiles(context.Background(), "s3://some-bucket?region=us-west-2", time.Hour, false)
+	removed, _, err := SweepStaleTempFiles(context.Background(), "s3://some-bucket?region=us-west-2", time.Hour, false, nil)
 	assert.NoError(t, err)
 	assert.Zero(t, removed)
 }
@@ -75,8 +75,8 @@ func TestSweepStaleTempFilesSkipsNonFileBackends(t *testing.T) {
 // sweep deliberately ignores per-entry — without an explicit root check this
 // would silently report success on a dropped mount.
 func TestSweepStaleTempFilesErrorsOnMissingDir(t *testing.T) {
-	_, err := SweepStaleTempFiles(context.Background(),
-		"file://"+filepath.Join(t.TempDir(), "not-mounted"), time.Hour, false)
+	_, _, err := SweepStaleTempFiles(context.Background(),
+		"file://"+filepath.Join(t.TempDir(), "not-mounted"), time.Hour, false, nil)
 	assert.Error(t, err)
 }
 
@@ -98,7 +98,7 @@ func TestSweepStaleTempFilesContinuesPastBadEntries(t *testing.T) {
 	require.NoError(t, os.Chmod(unreadable, 0o000))
 	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o755) })
 
-	removed, err := SweepStaleTempFiles(context.Background(), "file://"+dir, time.Hour, false)
+	removed, _, err := SweepStaleTempFiles(context.Background(), "file://"+dir, time.Hour, false, nil)
 	require.NoError(t, err)
 	// a and c are swept even though b could not be read. Running as root
 	// defeats the chmod, in which case all three go.
