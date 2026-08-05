@@ -543,6 +543,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	internalApi.GET("/logs/repair", ss.serveRepairLog)
 	internalApi.POST("/prune", ss.servePrune, middleware.BasicAuth(ss.checkBasicAuth))
 	internalApi.GET("/prune", ss.servePruneStatus)
+	internalApi.GET("/data-loss", ss.serveDataLoss)
 	internalApi.GET("/logs/storageAndDb", ss.serveStorageAndDbLogs)
 	internalApi.GET("/logs/pg-upgrade", ss.getPgUpgradeLog)
 

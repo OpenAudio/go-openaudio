@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/env"
-	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/persistence"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
@@ -41,11 +40,13 @@ const (
 	// pruneTaskUnpublished removes blobs for uploads that never finished
 	// transcoding and are old enough that they never will.
 	pruneTaskUnpublished pruneTask = "unpublished"
-
-	// pruneTaskUnrecoverable skip-lists CIDs that no reachable peer can serve,
-	// so repair stops retrying them every cycle forever.
-	pruneTaskUnrecoverable pruneTask = "unrecoverable"
 )
+
+// Detecting content that no longer exists anywhere used to be a prune task
+// here, probing peers per CID. It now lives in repair (see
+// repair_data_loss.go): repair already attempts those pulls, and failures
+// accumulated across many cycles on different days are much stronger evidence
+// than a single burst of probes, which a transient outage reproduces exactly.
 
 const (
 	// unpublishedUploadAge is how long an upload must have gone unreferenced by
@@ -57,11 +58,6 @@ const (
 	// prunePageSize bounds a single scan so a prune never holds a huge result
 	// set or runs unbounded against a 2M+ row table.
 	prunePageSize = 1000
-
-	// minReachablePeersForAbsence is how many peers must answer before absence
-	// is treated as evidence. Concluding "no one has this" from a node that
-	// cannot reach the network would skip-list the entire corpus.
-	minReachablePeersForAbsence = 5
 )
 
 // pruneRequest selects which tasks to run. DryRun is the default: the caller
@@ -188,8 +184,6 @@ func (ss *MediorumServer) runPrune(ctx context.Context, req pruneRequest) []prun
 			ss.pruneTmpFiles(ctx, run, req.Commit)
 		case pruneTaskUnpublished:
 			ss.pruneUnpublishedUploads(ctx, run, req.Commit, limit)
-		case pruneTaskUnrecoverable:
-			ss.pruneUnrecoverableUploads(ctx, run, req.Commit, limit)
 		default:
 			run.res.Error = "unknown prune task"
 		}
@@ -345,91 +339,6 @@ func (ss *MediorumServer) pruneUnpublishedUploads(ctx context.Context, run *prun
 			run.res.SkipsAdd += n
 		}
 	}
-}
-
-// pruneUnrecoverableUploads skip-lists CIDs that no reachable peer can serve.
-//
-// Repair otherwise retries these every cycle forever: the pull fails against
-// every host, the CID stays missing, and the next cycle tries again. Recording
-// them locally converts an unbounded retry loop into a single decision.
-//
-// Absence is only concluded from a network that actually answered. If too few
-// peers are reachable the task aborts rather than skip-listing content that is
-// merely unreachable right now.
-func (ss *MediorumServer) pruneUnrecoverableUploads(ctx context.Context, run *pruneRun, commit bool, limit int) {
-	healthy := ss.findHealthyPeers(time.Hour)
-	if len(healthy) < minReachablePeersForAbsence {
-		run.res.Error = fmt.Sprintf("only %d reachable peers (need %d): cannot distinguish missing content from an unreachable network",
-			len(healthy), minReachablePeersForAbsence)
-		return
-	}
-
-	var uploads []Upload
-	err := ss.crud.DB.
-		Where("status = ?", JobStatusDone).
-		Order("created_at").
-		Limit(limit).
-		Find(&uploads).Error
-	if err != nil {
-		run.res.Error = err.Error()
-		return
-	}
-
-	for _, u := range uploads {
-		if ctx.Err() != nil {
-			return
-		}
-		run.res.Scanned++
-		// Each CID costs up to ReplicationFactor*2 HTTP probes, so a page of
-		// uploads is thousands of requests. Tick per upload, not per page.
-		run.tick(ctx)
-
-		for _, cid := range uploadCIDs(u) {
-			if ctx.Err() != nil {
-				return
-			}
-			// Anything we hold is by definition recoverable.
-			if ss.haveInMyBucket(cid) {
-				continue
-			}
-			if ss.anyPeerHasBlob(cid) {
-				continue
-			}
-			run.res.Matched++
-			if !commit {
-				continue
-			}
-			if n, err := ss.addPruneSkips(ctx, []string{cid}, "unrecoverable"); err == nil {
-				run.res.SkipsAdd += n
-			}
-		}
-	}
-}
-
-// anyPeerHasBlob probes the hosts most likely to hold a CID. Bounded on
-// purpose: the rendezvous ranking is every node on the network, and a full
-// sweep per CID would make this task quadratic in the corpus.
-func (ss *MediorumServer) anyPeerHasBlob(cid string) bool {
-	key := cidutil.ShardCID(cid)
-	hosts, _ := ss.rendezvousAllHosts(cid)
-
-	probes := ss.Config.ReplicationFactor * 2
-	if probes < 4 {
-		probes = 4
-	}
-	if len(hosts) > probes {
-		hosts = hosts[:probes]
-	}
-
-	for _, host := range hosts {
-		if host == ss.Config.Self.Host {
-			continue
-		}
-		if ss.hostHasBlob(host, key) {
-			return true
-		}
-	}
-	return false
 }
 
 // Publication is determined from the ETL's `tracks` table, which is built from
@@ -632,13 +541,13 @@ func (ss *MediorumServer) servePrune(c echo.Context) error {
 	}
 	if len(req.Tasks) == 0 {
 		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": fmt.Sprintf("specify tasks: any of %q, %q, %q",
-				pruneTaskTmp, pruneTaskUnpublished, pruneTaskUnrecoverable),
+			"error": fmt.Sprintf("specify tasks: any of %q, %q",
+				pruneTaskTmp, pruneTaskUnpublished),
 		})
 	}
 	for _, t := range req.Tasks {
 		switch t {
-		case pruneTaskTmp, pruneTaskUnpublished, pruneTaskUnrecoverable:
+		case pruneTaskTmp, pruneTaskUnpublished:
 		default:
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "unknown task: " + string(t)})
 		}

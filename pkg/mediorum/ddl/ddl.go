@@ -105,6 +105,24 @@ WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 	)`)
 	runMigration(db, `create index if not exists idx_prune_runs_started_at on prune_runs(started_at desc)`)
 
+	// Accumulated evidence that a CID is gone from the network.
+	//
+	// declared_at is written once and never changed: data loss is a monotonic
+	// set, so a recheck that fails again must not re-report as a new loss.
+	// recheck_after schedules the retry instead of expiring the record, which
+	// keeps "total lost" stable while still noticing if content comes back.
+	runMigration(db, `
+	create table if not exists repair_data_loss (
+		"cid" text primary key,
+		"first_failed_at" timestamptz not null default now(),
+		"last_failed_at" timestamptz not null default now(),
+		"failed_cycles" int not null default 0,
+		"declared_at" timestamptz,
+		"recheck_after" timestamptz,
+		"recovered_at" timestamptz
+	)`)
+	runMigration(db, `create index if not exists idx_repair_data_loss_declared on repair_data_loss(declared_at) where recovered_at is null`)
+
 	runVacuumFull(db)
 }
 

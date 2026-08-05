@@ -318,7 +318,7 @@ func TestPruneRunTickThrottles(t *testing.T) {
 // cancelled prune is indistinguishable from one that never ran.
 func TestPruneRunFlushSurvivesCancelledContext(t *testing.T) {
 	ss := testNetwork[0]
-	run := ss.beginPruneRun(context.Background(), pruneTaskUnrecoverable, false)
+	run := ss.beginPruneRun(context.Background(), pruneTaskUnpublished, false)
 	require.NotZero(t, run.id)
 	t.Cleanup(func() {
 		_, _ = ss.pgPool.Exec(context.Background(), `delete from prune_runs where id = $1`, run.id)
