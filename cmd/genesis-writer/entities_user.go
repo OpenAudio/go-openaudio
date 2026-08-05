@@ -32,6 +32,10 @@ type userMetadata struct {
 	TwitterHandle       string `json:"twitter_handle,omitempty"`
 	InstagramHandle     string `json:"instagram_handle,omitempty"`
 	Website             string `json:"website,omitempty"`
+	// user_create.go reads these two but the writer never sent them, so they
+	// landed NULL for 89,557 and 24,924 users respectively.
+	TiktokHandle        string `json:"tiktok_handle,omitempty"`
+	Donation            string `json:"donation,omitempty"`
 	// Account-state flags are always serialized: `omitempty` would drop a false
 	// value, and the indexer cannot distinguish "absent" from "false" — an
 	// unavailable user would silently be recorded as available.
@@ -54,6 +58,8 @@ type sourceUser struct {
 	TwitterHandle       *string
 	InstagramHandle     *string
 	Website             *string
+	TiktokHandle        *string
+	Donation            *string
 	IsVerified          bool
 	IsDeactivated       bool
 	IsAvailable         bool
@@ -74,6 +80,7 @@ func (w *Writer) writeUsers(ctx context.Context) error {
 			profile_picture, profile_picture_sizes,
 			cover_photo, cover_photo_sizes,
 			twitter_handle, instagram_handle, website,
+			tiktok_handle, donation,
 			is_verified, is_deactivated, is_available, created_at
 		FROM users
 		WHERE is_current = true
@@ -85,6 +92,7 @@ func (w *Writer) writeUsers(ctx context.Context) error {
 				&u.ProfilePicture, &u.ProfilePictureSizes,
 				&u.CoverPhoto, &u.CoverPhotoSizes,
 				&u.TwitterHandle, &u.InstagramHandle, &u.Website,
+				&u.TiktokHandle, &u.Donation,
 				&u.IsVerified, &u.IsDeactivated, &u.IsAvailable, &u.CreatedAt,
 			)
 			return u, err
@@ -104,6 +112,8 @@ func (w *Writer) writeUsers(ctx context.Context) error {
 				TwitterHandle:       deref(u.TwitterHandle),
 				InstagramHandle:     deref(u.InstagramHandle),
 				Website:             deref(u.Website),
+				TiktokHandle:        deref(u.TiktokHandle),
+				Donation:            deref(u.Donation),
 				IsVerified:          u.IsVerified,
 				IsDeactivated:       u.IsDeactivated,
 				IsAvailable:         u.IsAvailable,

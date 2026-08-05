@@ -45,6 +45,19 @@ type trackMetadataInner struct {
 	IsDownloadGated    bool        `json:"is_download_gated,omitempty"`
 	DownloadConditions interface{} `json:"download_conditions,omitempty"`
 	Collaborators      []int64     `json:"collaborators,omitempty"`
+	// Content metadata the ETL already inserts but the writer never sent, so it
+	// was landing NULL: orig_file_cid alone covered 1.93M tracks. Key names must
+	// match the reads in track_create.go exactly.
+	OrigFileCID         string      `json:"orig_file_cid,omitempty"`
+	OrigFilename        string      `json:"orig_filename,omitempty"`
+	AudioUploadID       string      `json:"audio_upload_id,omitempty"`
+	FieldVisibility     interface{} `json:"field_visibility,omitempty"`
+	DDEXApp             string      `json:"ddex_app,omitempty"`
+	DDEXReleaseIDs      interface{} `json:"ddex_release_ids,omitempty"`
+	AIAttributionUserID *int64      `json:"ai_attribution_user_id,omitempty"`
+	PreviewStartSeconds *float64    `json:"preview_start_seconds,omitempty"`
+	CoverOriginalTitle  string      `json:"cover_original_song_title,omitempty"`
+	CoverOriginalArtist string      `json:"cover_original_artist,omitempty"`
 	// State flags are always serialized: `omitempty` would drop a false value and
 	// the indexer cannot tell "absent" from "false" (is_available defaults true).
 	IsDelete    bool `json:"is_delete"`
@@ -81,6 +94,16 @@ type sourceTrack struct {
 	IsDownloadGated     bool
 	DownloadConditions  []byte // JSONB
 	AccessAuthorities   []string
+	OrigFileCID         *string
+	OrigFilename        *string
+	AudioUploadID       *string
+	FieldVisibility     []byte // JSONB
+	DDEXApp             *string
+	DDEXReleaseIDs      []byte // JSONB
+	AIAttributionUserID *int64
+	PreviewStartSeconds *float64
+	CoverOriginalTitle  *string
+	CoverOriginalArtist *string
 	IsDelete            bool
 	IsAvailable         bool
 	CreatedAt           time.Time
@@ -109,6 +132,10 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			t.is_stream_gated, t.stream_conditions,
 			t.is_download_gated, t.download_conditions,
 			t.access_authorities,
+			t.orig_file_cid, t.orig_filename, t.audio_upload_id,
+			t.field_visibility, t.ddex_app, t.ddex_release_ids,
+			t.ai_attribution_user_id, t.preview_start_seconds,
+			t.cover_original_song_title, t.cover_original_artist,
 			t.is_delete, t.is_available,
 			t.created_at
 		FROM tracks t
@@ -127,6 +154,10 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				&t.IsStreamGated, &t.StreamConditions,
 				&t.IsDownloadGated, &t.DownloadConditions,
 				&t.AccessAuthorities,
+				&t.OrigFileCID, &t.OrigFilename, &t.AudioUploadID,
+				&t.FieldVisibility, &t.DDEXApp, &t.DDEXReleaseIDs,
+				&t.AIAttributionUserID, &t.PreviewStartSeconds,
+				&t.CoverOriginalTitle, &t.CoverOriginalArtist,
 				&t.IsDelete, &t.IsAvailable,
 				&t.CreatedAt,
 			)
@@ -158,10 +189,21 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				IsDownloadGated: t.IsDownloadGated,
 				IsDelete:        t.IsDelete,
 				IsAvailable:     t.IsAvailable,
+
+				OrigFileCID:         deref(t.OrigFileCID),
+				OrigFilename:        deref(t.OrigFilename),
+				AudioUploadID:       deref(t.AudioUploadID),
+				DDEXApp:             deref(t.DDEXApp),
+				AIAttributionUserID: t.AIAttributionUserID,
+				PreviewStartSeconds: t.PreviewStartSeconds,
+				CoverOriginalTitle:  deref(t.CoverOriginalTitle),
+				CoverOriginalArtist: deref(t.CoverOriginalArtist),
 			}
 
 			inner.RemixOf = unmarshalJSONB(t.RemixOf)
 			inner.StemOf = unmarshalJSONB(t.StemOf)
+			inner.FieldVisibility = unmarshalJSONB(t.FieldVisibility)
+			inner.DDEXReleaseIDs = unmarshalJSONB(t.DDEXReleaseIDs)
 			inner.StreamConditions = unmarshalJSONB(t.StreamConditions)
 			inner.DownloadConditions = unmarshalJSONB(t.DownloadConditions)
 
