@@ -22,37 +22,24 @@
 --
 -- Five rows, but the blast radius is not five rows: anything joining an entity
 -- to its owner's wallet fans out and silently duplicates every entity those
--- users own. genesis-writer carried a DISTINCT ON subquery in all fifteen of
--- its joins for exactly this reason.
+-- users own. Measured against the clone, plain joins returned 18 extra tracks
+-- and 787 extra follows, which is why genesis-writer carried a DISTINCT ON
+-- subquery in all fifteen of its joins.
 --
--- Unlike 0030 this needs a backfill first, since violations already exist.
--- The losers are deleted rather than demoted: users no longer keeps versioned
--- history — the in-place writes mean a production clone has zero is_current =
--- false rows — so demoting would leave behind a category of row that nothing
--- reads and that no other code path produces. Deleting is safe: no foreign key
--- references users, and its triggers are INSERT (on_user) or INSERT OR UPDATE
--- (trg_users), so neither fires.
+-- DELIBERATELY NO BACKFILL HERE. Unlike 0030 this index cannot be created while
+-- violations exist, but removing rows is not something a Go module bump should
+-- do to a consumer's database: these migrations run automatically at indexer
+-- start, so a `go get` would silently delete production data. The repair lives
+-- in the owning application instead — see api's ddl migration
+-- 0237_users_one_current_row_backfill, which deletes the duplicates and runs in
+-- a pre-roll job that every serving deployment depends on, so it completes
+-- before an indexer using this migration can start.
 --
--- Winner is the highest blocknumber, matching how consumers already pick the
--- live row; verified against a production clone, where it also keeps
--- is_deactivated = true for user 666149592, the later of that pair's states.
-
-WITH ranked AS (
-    SELECT
-        user_id,
-        txhash,
-        row_number() OVER (
-            PARTITION BY user_id
-            ORDER BY blocknumber DESC NULLS LAST, updated_at DESC NULLS LAST, txhash DESC
-        ) AS rn
-    FROM users
-    WHERE is_current = true
-)
-DELETE FROM users u
-USING ranked r
-WHERE u.user_id = r.user_id
-  AND u.txhash = r.txhash
-  AND r.rn > 1;
+-- Consequence: if this runs against a database that still has duplicate current
+-- rows, it fails loudly with a unique violation rather than repairing them.
+-- That is the intended failure mode — it means the owning application has not
+-- run its backfill yet. Databases built solely by this indexer are unaffected;
+-- they cannot contain duplicates in the first place.
 
 CREATE UNIQUE INDEX IF NOT EXISTS users_current_uniq_idx
   ON users (user_id) WHERE is_current = true;
