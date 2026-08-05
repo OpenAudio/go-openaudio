@@ -117,6 +117,7 @@ WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 		"first_failed_at" timestamptz not null default now(),
 		"last_failed_at" timestamptz not null default now(),
 		"failed_cycles" int not null default 0,
+		"last_attempt_exhaustive" boolean not null default false,
 		"declared_at" timestamptz,
 		"recheck_after" timestamptz,
 		"recovered_at" timestamptz

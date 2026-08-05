@@ -43,7 +43,7 @@ func TestDataLossRequiresCyclesAndElapsedTime(t *testing.T) {
 	cleanupCID(t, ss, cid)
 
 	for i := 0; i < dataLossMinCycles+2; i++ {
-		ss.recordRepairFailure(ctx, cid, healthyTracker())
+		ss.recordRepairFailure(ctx, cid, healthyTracker(), true)
 	}
 
 	cycles, declared, _, _ := dataLossRow(t, ss, cid)
@@ -57,7 +57,7 @@ func TestDataLossRequiresCyclesAndElapsedTime(t *testing.T) {
 	require.NoError(t, err)
 
 	tr := healthyTracker()
-	ss.recordRepairFailure(ctx, cid, tr)
+	ss.recordRepairFailure(ctx, cid, tr, true)
 	_, declared, recheck, _ := dataLossRow(t, ss, cid)
 	assert.NotNil(t, declared, "both thresholds met must declare loss")
 	assert.NotNil(t, recheck, "a declared loss must be scheduled for recheck")
@@ -84,7 +84,7 @@ func TestDataLossIsDeclaredOnlyOnce(t *testing.T) {
 	// Recheck comes due and fails again, several times.
 	for i := 0; i < 3; i++ {
 		tr := healthyTracker()
-		ss.recordRepairFailure(ctx, cid, tr)
+		ss.recordRepairFailure(ctx, cid, tr, true)
 		assert.Zero(t, tr.Counters["data_loss_declared"],
 			"a failed recheck must never count as a new loss")
 		assert.Equal(t, 1, tr.Counters["data_loss_recheck_failed"])
@@ -107,7 +107,7 @@ func TestDataLossIgnoresUnhealthyRuns(t *testing.T) {
 
 	tr := healthyTracker()
 	tr.HealthyPeerCount = dataLossMinHealthyPeers - 1
-	ss.recordRepairFailure(ctx, cid, tr)
+	ss.recordRepairFailure(ctx, cid, tr, true)
 
 	var n int
 	require.NoError(t, ss.pgPool.QueryRow(ctx,
@@ -158,4 +158,78 @@ func TestLoadRepairSkipsHonorsRecheckWindow(t *testing.T) {
 	_, dueSkipped := skips[due]
 	assert.True(t, pendingSkipped, "a loss not yet due for recheck must be skipped")
 	assert.False(t, dueSkipped, "a loss past its recheck date must be retried")
+}
+
+// The cap in #436 means a normal failed pull only proves ~10 of ~68 hosts came
+// up empty. That is not grounds for declaring the network has lost content, so
+// declaration must wait for a sweep of the full ranking.
+func TestDataLossRequiresExhaustiveSweep(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	cid := "QmDataLossNeedsFullSweep"
+	cleanupCID(t, ss, cid)
+
+	// Both thresholds satisfied, but every attempt was the bounded one.
+	_, err := ss.pgPool.Exec(ctx, `
+		insert into repair_data_loss (cid, failed_cycles, first_failed_at)
+		values ($1, $2, now() - $3::interval)`,
+		cid, dataLossMinCycles, (dataLossMinElapsed + time.Hour).String())
+	require.NoError(t, err)
+
+	tr := healthyTracker()
+	ss.recordRepairFailure(ctx, cid, tr, false)
+
+	_, declared, _, _ := dataLossRow(t, ss, cid)
+	assert.Nil(t, declared, "a bounded pull must never authorise declaring data loss")
+	assert.Equal(t, 1, tr.Counters["data_loss_awaiting_full_sweep"])
+
+	// The same failure, this time from a full-network sweep.
+	tr = healthyTracker()
+	ss.recordRepairFailure(ctx, cid, tr, true)
+
+	_, declared, _, _ = dataLossRow(t, ss, cid)
+	assert.NotNil(t, declared, "an exhaustive sweep that found nothing may declare loss")
+	assert.Equal(t, 1, tr.Counters["data_loss_declared"])
+}
+
+// Escalation must kick in before the declaration threshold, so the cycles
+// leading up to a declaration are full sweeps rather than bounded samples.
+func TestDataLossEscalatesBeforeDeclaring(t *testing.T) {
+	assert.Less(t, dataLossEscalateAfter, dataLossMinCycles,
+		"escalation must precede declaration, or loss is declared on bounded evidence")
+
+	tracker := &RepairTracker{FailingCIDs: map[string]int{"QmHot": dataLossEscalateAfter}}
+	assert.Equal(t, dataLossEscalateAfter, tracker.failedCycles("QmHot"))
+	assert.Zero(t, tracker.failedCycles("QmUnknown"), "an unseen CID must not escalate")
+
+	var nilTracker RepairTracker
+	assert.Zero(t, nilTracker.failedCycles("QmAny"), "nil map must not panic")
+}
+
+// Only CIDs still accumulating evidence need escalation; declared and
+// recovered ones must not be reloaded into the hot path every cycle.
+func TestLoadFailingCIDsExcludesSettledRecords(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	accumulating := "QmAccumulating" + suffix
+	declared := "QmAlreadyDeclared" + suffix
+	recovered := "QmAlreadyRecovered" + suffix
+	for _, c := range []string{accumulating, declared, recovered} {
+		cleanupCID(t, ss, c)
+	}
+
+	_, err := ss.pgPool.Exec(ctx, `
+		insert into repair_data_loss (cid, failed_cycles, declared_at, recovered_at) values
+		  ($1, 4, null, null),
+		  ($2, 9, now(), null),
+		  ($3, 2, null, now())`, accumulating, declared, recovered)
+	require.NoError(t, err)
+
+	failing, err := ss.loadFailingCIDs(ctx)
+	require.NoError(t, err)
+
+	assert.Equal(t, 4, failing[accumulating])
+	assert.NotContains(t, failing, declared, "a declared loss is skipped, not escalated")
+	assert.NotContains(t, failing, recovered, "a recovered CID has no failures to escalate")
 }

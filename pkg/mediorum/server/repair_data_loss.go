@@ -36,6 +36,13 @@ const (
 	// enough to distinguish loss from an outage.
 	dataLossMinElapsed = 7 * 24 * time.Hour
 
+	// dataLossEscalateAfter is how many failed cycles earn a CID a full-network
+	// sweep instead of the bounded pull. The bound protects throughput on the
+	// common path, but "nobody has this" is a claim about the whole network --
+	// declaring it from a ~10-of-68 sample would be wrong. Escalating here
+	// means the cycles leading up to declaration are exhaustive.
+	dataLossEscalateAfter = 3
+
 	// dataLossMinHealthyPeers is how many peers a run must have seen before its
 	// failures count. A run limping along against two reachable peers is not
 	// evidence that the network lacks content.
@@ -56,7 +63,7 @@ const (
 //
 // Failures from an unhealthy run are dropped entirely rather than recorded,
 // since they say more about this node's connectivity than about the network.
-func (ss *MediorumServer) recordRepairFailure(ctx context.Context, cid string, tracker *RepairTracker) {
+func (ss *MediorumServer) recordRepairFailure(ctx context.Context, cid string, tracker *RepairTracker, exhaustive bool) {
 	if tracker.HealthyPeerCount < dataLossMinHealthyPeers {
 		tracker.mu.Lock()
 		tracker.Counters["data_loss_evidence_discarded"]++
@@ -70,14 +77,15 @@ func (ss *MediorumServer) recordRepairFailure(ctx context.Context, cid string, t
 		declaredAt *time.Time
 	)
 	err := ss.pgPool.QueryRow(ctx, `
-		insert into repair_data_loss (cid, failed_cycles)
-		values ($1, 1)
+		insert into repair_data_loss (cid, failed_cycles, last_attempt_exhaustive)
+		values ($1, 1, $2)
 		on conflict (cid) do update
 		   set failed_cycles = repair_data_loss.failed_cycles + 1,
 		       last_failed_at = now(),
+		       last_attempt_exhaustive = $2,
 		       recovered_at = null
 		returning failed_cycles, first_failed_at, declared_at`,
-		cid).Scan(&cycles, &firstFail, &declaredAt)
+		cid, exhaustive).Scan(&cycles, &firstFail, &declaredAt)
 	if err != nil {
 		ss.logger.Warn("could not record repair failure", zap.String("cid", cid), zap.Error(err))
 		return
@@ -102,6 +110,16 @@ func (ss *MediorumServer) recordRepairFailure(ctx context.Context, cid string, t
 		return
 	}
 
+	// The decisive gate. A bounded pull that failed says the replica set and a
+	// couple of store-all peers came up empty -- not that the network did. Only
+	// a sweep of the full ranking can support the claim, so wait for one.
+	if !exhaustive {
+		tracker.mu.Lock()
+		tracker.Counters["data_loss_awaiting_full_sweep"]++
+		tracker.mu.Unlock()
+		return
+	}
+
 	_, err = ss.pgPool.Exec(ctx, `
 		update repair_data_loss
 		   set declared_at = now(), recheck_after = now() + $2::interval
@@ -115,7 +133,7 @@ func (ss *MediorumServer) recordRepairFailure(ctx context.Context, cid string, t
 	tracker.mu.Lock()
 	tracker.Counters["data_loss_declared"]++
 	tracker.mu.Unlock()
-	ss.logger.Warn("declaring data loss: no host served this CID",
+	ss.logger.Warn("declaring data loss: no host on the network served this CID",
 		zap.String("cid", cid),
 		zap.Int("failedCycles", cycles),
 		zap.Duration("over", time.Since(firstFail).Truncate(time.Hour)))
@@ -201,4 +219,37 @@ func (ss *MediorumServer) serveDataLoss(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, s)
+}
+
+// failedCycles reports how many previous repair cycles failed to pull a CID.
+// Zero for the overwhelming majority, which is why the map is cheap to hold.
+func (tracker *RepairTracker) failedCycles(cid string) int {
+	if tracker.FailingCIDs == nil {
+		return 0
+	}
+	return tracker.FailingCIDs[cid]
+}
+
+// loadFailingCIDs reads the banked failure counts so the pull path can decide,
+// without a query per CID, whether a given blob has earned a full-network
+// sweep.
+func (ss *MediorumServer) loadFailingCIDs(ctx context.Context) (map[string]int, error) {
+	rows, err := ss.pgPool.Query(ctx, `
+		select cid, failed_cycles from repair_data_loss
+		 where recovered_at is null and declared_at is null`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]int{}
+	for rows.Next() {
+		var cid string
+		var n int
+		if err := rows.Scan(&cid, &n); err != nil {
+			return nil, err
+		}
+		out[cid] = n
+	}
+	return out, rows.Err()
 }
