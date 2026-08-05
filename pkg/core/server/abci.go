@@ -1083,6 +1083,17 @@ func validateSignedTransactionForCheckTx(msg *v1.SignedTransaction) error {
 	}
 
 	switch msg.Transaction.(type) {
+	case *v1.SignedTransaction_ManageEntityMigration:
+		// Migration transactions are written directly into the genesis block
+		// range by genesis-writer and are never submitted through the mempool.
+		// They are deliberately processed by a relaxed handler set that skips
+		// checks which cannot hold during a replay, so accepting one from a peer
+		// would let anyone write entity state under those relaxed rules —
+		// including, since the indexer takes created_at from their metadata, an
+		// arbitrary timestamp. Rejecting here closes mempool submission without
+		// touching FinalizeBlock, which is how the genesis blocks themselves are
+		// replayed.
+		return fmt.Errorf("manage entity migration transactions cannot be submitted")
 	case *v1.SignedTransaction_StorageProof:
 		sp := msg.GetStorageProof()
 		if len(sp.ProverAddresses) == 0 {
