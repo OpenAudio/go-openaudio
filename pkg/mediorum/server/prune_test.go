@@ -194,8 +194,9 @@ func TestCheckPruneIndexRefusesSparseTrackCid(t *testing.T) {
 	ss := testNetwork[0]
 	withTracksTable(t, ss, nil)
 
-	// 100 current tracks, only 5 carrying a track_cid — the shape measured on
-	// the real index for audio_upload_id.
+	// 100 current tracks, only 5 carrying a track_cid. Exaggerated from the
+	// real shape (audio_upload_id sits at 39% on a production snapshot) so the
+	// guard is unambiguously exercised.
 	for i := 0; i < 100; i++ {
 		var cid any
 		if i < 5 {

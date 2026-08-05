@@ -396,17 +396,18 @@ func (ss *MediorumServer) pruneUnpublishedTemplate(ctx context.Context, run *pru
 // `tracks` table, which is built from CreateTrack entity-manager transactions.
 //
 // It deliberately does NOT use tracks.audio_upload_id. That column is
-// client-supplied metadata rather than something the protocol derives, and
-// measurement against production snapshots shows it cannot carry this:
+// client-supplied metadata carried in CreateTrack rather than something the
+// protocol derives, and it is nullable. Measured against a production snapshot
+// (1,463,753 current, non-deleted tracks):
 //
-//	                     audio_upload_id   track_cid
-//	legacy discovery         39.1%          99.96%
-//	new-chain ETL             0.00%         99.96%
+//	audio_upload_id    39.1%
+//	track_cid          99.96%
+//	orig_file_cid      99.90%
+//	preview_cid         2.1%   (previews are genuinely rare)
 //
-// On the index a node actually queries it is empty, so relying on it would
-// classify every audio upload as unpublished. track_cid is the durable signal;
-// orig_file_cid and preview_cid are checked too but are only populated on the
-// legacy index.
+// Relying on audio_upload_id would classify the ~61% of published tracks that
+// lack it as unpublished, and delete their audio. track_cid and orig_file_cid
+// are both near-complete, so publication is matched on CIDs.
 //
 // Scope is audio only, and that is a safety property rather than an omission.
 // Image CIDs live in tracks.cover_art_sizes, users.profile_picture_sizes,
@@ -427,9 +428,9 @@ const pruneIndexStaleAfter = 24 * time.Hour
 const minTrackCidCoverage = 0.90
 
 // minArtReferences is the floor for artwork references before art pruning is
-// allowed. A real index carries millions (a production snapshot has ~3.2M
-// across tracks, users and playlists); anything near zero means this node is
-// not indexing, not that nothing has artwork.
+// allowed. A real index carries millions -- a production snapshot has ~3.6M
+// across tracks, users and playlists -- so anything near zero means this node
+// is not indexing, not that nothing has artwork.
 const minArtReferences = 100_000
 
 // openPruneIndex returns a pool for publication lookups plus a release func.
@@ -571,7 +572,7 @@ var artReferenceColumns = []struct{ table, column string }{
 // half of every art column holds a ULID-form upload ID rather than a CID:
 //
 //	tracks.cover_art_sizes        65.3% CIDv0, 3.1% CIDv1, 31.6% ULID
-//	users.profile_picture_sizes   52.9% CIDv0, 0.8% CIDv1, 46.2% ULID
+//	users.profile_picture_sizes   53.0% CIDv0, 0.8% CIDv1, 46.2% ULID
 //
 // Matching only CIDs would therefore read ~40% of published artwork as
 // orphaned. Callers pass both the upload ID and its CIDs.
