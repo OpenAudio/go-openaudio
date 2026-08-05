@@ -27,6 +27,9 @@ type playlistMetadataInner struct {
 	IsStreamGated          bool        `json:"is_stream_gated,omitempty"`
 	StreamConditions       interface{} `json:"stream_conditions,omitempty"`
 	UPC                    string      `json:"upc,omitempty"`
+	PlaylistImageHash      string      `json:"playlist_image_multihash,omitempty"`
+	DDEXApp                string      `json:"ddex_app,omitempty"`
+	ParentalWarningType    string      `json:"parental_warning_type,omitempty"`
 	// Always serialized: `omitempty` would drop a false value and the indexer
 	// cannot tell "absent" from "false".
 	IsDelete bool `json:"is_delete"`
@@ -42,7 +45,11 @@ type sourcePlaylist struct {
 	IsPrivate           bool
 	MetadataMultihash   *string
 	ImageSizesMultihash *string
+	ImageMultihash      *string
 	PlaylistContents    []byte // JSONB
+	UPC                 *string
+	DDEXApp             *string
+	ParentalWarningType *string
 	ReleaseDate         *string
 	IsStreamGated       bool
 	StreamConditions    []byte // JSONB
@@ -59,7 +66,8 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 			p.playlist_id, p.playlist_owner_id, COALESCE(LOWER(u.wallet), ''),
 			p.playlist_name, p.description,
 			p.is_album, p.is_private,
-			p.metadata_multihash, p.playlist_image_sizes_multihash, p.playlist_contents,
+			p.metadata_multihash, p.playlist_image_sizes_multihash, p.playlist_image_multihash, p.playlist_contents,
+			p.upc, p.ddex_app, p.parental_warning_type,
 			p.release_date::text, p.is_stream_gated, p.stream_conditions,
 			p.is_delete,
 			p.created_at
@@ -73,7 +81,8 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 				&p.PlaylistID, &p.PlaylistOwnerID, &p.OwnerWallet,
 				&p.PlaylistName, &p.Description,
 				&p.IsAlbum, &p.IsPrivate,
-				&p.MetadataMultihash, &p.ImageSizesMultihash, &p.PlaylistContents,
+				&p.MetadataMultihash, &p.ImageSizesMultihash, &p.ImageMultihash, &p.PlaylistContents,
+				&p.UPC, &p.DDEXApp, &p.ParentalWarningType,
 				&p.ReleaseDate, &p.IsStreamGated, &p.StreamConditions,
 				&p.IsDelete,
 				&p.CreatedAt,
@@ -88,6 +97,10 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 				IsAlbum:                p.IsAlbum,
 				IsPrivate:              p.IsPrivate,
 				PlaylistImageSizesHash: deref(p.ImageSizesMultihash),
+				PlaylistImageHash:      deref(p.ImageMultihash),
+				UPC:                    deref(p.UPC),
+				DDEXApp:                deref(p.DDEXApp),
+				ParentalWarningType:    deref(p.ParentalWarningType),
 				ReleaseDate:            deref(p.ReleaseDate),
 				IsStreamGated:          p.IsStreamGated,
 				IsDelete:               p.IsDelete,
