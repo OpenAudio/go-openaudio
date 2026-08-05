@@ -166,6 +166,10 @@ type MediorumServer struct {
 	// handle communication between core and mediorum for Proof of Storage
 	posChannel chan pos.PoSRequest
 
+	// tmpSweepTrigger requests a full stale-temp sweep; capacity 1 so
+	// concurrent requests collapse instead of queueing traversals.
+	tmpSweepTrigger chan struct{}
+
 	core *coreServer.CoreService
 
 	geoIPdb      *maxminddb.Reader
@@ -407,6 +411,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		transcodeWork:    make(chan *Upload, 100),
 		replicationWork:  make(chan *Upload, 100),
 		posChannel:       posChannel,
+		tmpSweepTrigger:  make(chan struct{}, 1),
 
 		peerHealths:          map[string]*PeerHealth{},
 		redirectCache:        imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
@@ -531,6 +536,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	internalApi.GET("/logs/partition-ops", ss.getPartitionOpsLog)
 	internalApi.GET("/logs/reaper", ss.getReaperLog)
 	internalApi.GET("/logs/repair", ss.serveRepairLog)
+	internalApi.POST("/tmp-sweep", ss.serveTmpSweep, middleware.BasicAuth(ss.checkBasicAuth))
 	internalApi.GET("/logs/storageAndDb", ss.serveStorageAndDbLogs)
 	internalApi.GET("/logs/pg-upgrade", ss.getPgUpgradeLog)
 
@@ -600,7 +606,7 @@ func (ss *MediorumServer) MustStart() error {
 	ss.lc.AddManagedRoutine("audio analyzer", ss.startAudioAnalyzer)
 	ss.lc.AddManagedRoutine("replication workers", ss.startReplicationWorkers)
 
-	ss.lc.AddManagedRoutine("stale temp file sweeper", ss.startStaleTempSweeper)
+	ss.lc.AddManagedRoutine("tmp sweeper", ss.startTmpSweeper)
 
 	if ss.Config.StoreAll {
 		ss.lc.AddManagedRoutine("fix truncated qm worker", ss.startFixTruncatedQmWorker)

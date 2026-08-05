@@ -137,6 +137,13 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 	}
 
 	ss.knownPresent.Set(ss.presenceCacheKey(key, bucket), n, imcache.WithNoExpiration())
+
+	// Reclaim orphaned ".tmp" files sitting alongside this key. Cheap (the
+	// directory is hot from the write and holds a handful of entries) and
+	// self-targeting: an interrupted write leaves both an orphan and a
+	// still-missing key, so repair's retry lands right back here.
+	ss.cleanupStaleTempsNearKey(bucket, key)
+
 	return nil
 }
 
