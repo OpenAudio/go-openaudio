@@ -75,6 +75,55 @@ func Migrate(db *sql.DB, myHost string) {
 ON uploads (COALESCE(audio_analysis_error_count, 0), audio_analyzed_at ASC NULLS FIRST, id)
 WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 
+	// CIDs the prune job has judged not worth chasing. Repair consults this to
+	// stop re-attempting pulls forever. Local only -- deliberately not a crudr
+	// model, because one node's janitorial decision must not gossip to peers.
+	runMigration(db, `
+	create table if not exists prune_skips (
+		"cid" text primary key,
+		"reason" text not null,
+		"created_at" timestamptz not null default now()
+	)`)
+
+	// Prune run history. A prune can walk a multi-million-object tree or make
+	// thousands of peer probes, so an operator needs to see it progressing
+	// rather than waiting for a terminal log line. updated_at is the field that
+	// distinguishes "working" from "wedged".
+	runMigration(db, `
+	create table if not exists prune_runs (
+		"id" bigserial primary key,
+		"task" text not null,
+		"dry_run" boolean not null,
+		"started_at" timestamptz not null default now(),
+		"updated_at" timestamptz not null default now(),
+		"finished_at" timestamptz,
+		"scanned" bigint not null default 0,
+		"matched" bigint not null default 0,
+		"removed" bigint not null default 0,
+		"skips_added" bigint not null default 0,
+		"error" text not null default ''
+	)`)
+	runMigration(db, `create index if not exists idx_prune_runs_started_at on prune_runs(started_at desc)`)
+
+	// Accumulated evidence that a CID is gone from the network.
+	//
+	// declared_at is written once and never changed: data loss is a monotonic
+	// set, so a recheck that fails again must not re-report as a new loss.
+	// recheck_after schedules the retry instead of expiring the record, which
+	// keeps "total lost" stable while still noticing if content comes back.
+	runMigration(db, `
+	create table if not exists repair_data_loss (
+		"cid" text primary key,
+		"first_failed_at" timestamptz not null default now(),
+		"last_failed_at" timestamptz not null default now(),
+		"failed_cycles" int not null default 0,
+		"last_attempt_exhaustive" boolean not null default false,
+		"declared_at" timestamptz,
+		"recheck_after" timestamptz,
+		"recovered_at" timestamptz
+	)`)
+	runMigration(db, `create index if not exists idx_repair_data_loss_declared on repair_data_loss(declared_at) where recovered_at is null`)
+
 	runVacuumFull(db)
 }
 

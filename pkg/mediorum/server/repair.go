@@ -74,6 +74,11 @@ func (ss *MediorumServer) maxPullAttempts() int {
 	return n
 }
 
+// newTrackerMutex builds the mutex a RepairTracker needs before workers touch
+// its counters. runRepair sets this up; tests constructing a tracker directly
+// use it too.
+func newTrackerMutex() *sync.Mutex { return &sync.Mutex{} }
+
 // seenKeyResult stores the outcome of a previous Attributes check for the same
 // key within one repair cycle, allowing duplicate checks to be skipped.
 type seenKeyResult struct {
@@ -95,7 +100,18 @@ type RepairTracker struct {
 	Duration         time.Duration            `gorm:"not null"`
 	AbortedReason    string                   `gorm:"not null"`
 	SeenKeys         map[string]seenKeyResult `gorm:"-" json:"-"`
-	mu               *sync.Mutex              `gorm:"-" json:"-"`
+	// PruneSkips are CIDs repair should not attempt: prune decisions plus
+	// declared data loss not yet due for a recheck. Without it an unrecoverable
+	// CID is retried on every cycle, forever.
+	PruneSkips map[string]struct{} `gorm:"-" json:"-"`
+	// HealthyPeerCount is how many peers this run saw. Pull failures from a run
+	// that could barely reach the network are not evidence of data loss.
+	HealthyPeerCount int `gorm:"-" json:"-"`
+	// FailingCIDs maps a CID to how many previous cycles failed to pull it, so
+	// the pull path can escalate to a full-network sweep before giving up on
+	// it for good. Small by construction: only CIDs that have already failed.
+	FailingCIDs map[string]int `gorm:"-" json:"-"`
+	mu          *sync.Mutex    `gorm:"-" json:"-"`
 }
 
 func (ss *MediorumServer) startRepairer(ctx context.Context) error {
@@ -182,6 +198,8 @@ func (ss *MediorumServer) startRepairer(ctx context.Context) error {
 				continue
 			}
 
+			tracker.HealthyPeerCount = len(healthyPeers)
+
 			logger.Info("repair starting")
 			err := ss.runRepair(ctx, &tracker)
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -222,6 +240,25 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 
 	// Build a presence index from bucket listing to avoid per-key HeadObject.
 	// Replaces hundreds of thousands of HeadObject calls with one ListObjects pagination.
+	if failing, err := ss.loadFailingCIDs(ctx); err != nil {
+		ss.logger.Warn("failed to load repair failure counts; pulls will not escalate", zap.Error(err))
+	} else {
+		tracker.FailingCIDs = failing
+		if len(failing) > 0 {
+			tracker.Counters["repair_failing_cids"] = len(failing)
+		}
+	}
+
+	if skips, err := ss.loadRepairSkips(ctx); err != nil {
+		ss.logger.Warn("failed to load repair skip list; repair will retry skipped CIDs", zap.Error(err))
+	} else {
+		tracker.PruneSkips = skips
+		if len(skips) > 0 {
+			tracker.Counters["repair_skips_loaded"] = len(skips)
+			ss.logger.Info("loaded repair skip list", zap.Int("cids", len(skips)))
+		}
+	}
+
 	var presenceIndex *repairPresenceIndex
 	ss.logger.Info("building repair presence index from bucket listing")
 	indexStart := time.Now()
@@ -451,6 +488,19 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 		return nil
 	}
 
+	// A prune already decided this CID is not worth chasing -- unpublished, or
+	// unavailable from any reachable peer. Skip before spending a presence
+	// lookup or a pull on it.
+	tracker.mu.Lock()
+	_, pruneSkipped := tracker.PruneSkips[cid]
+	if pruneSkipped {
+		tracker.Counters["prune_skipped"]++
+	}
+	tracker.mu.Unlock()
+	if pruneSkipped {
+		return nil
+	}
+
 	tracker.mu.Lock()
 	tracker.Counters["total_checked"]++
 	tracker.mu.Unlock()
@@ -649,9 +699,23 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 		// Note tier 1 uses preferredHosts rather than only healthy ones,
 		// because pullFileFromHost can still succeed against a host we believe
 		// unhealthy.
+		// Tier 3, for a CID that keeps failing: drop the bound and sweep the
+		// whole ranking. The cap exists to protect throughput on the common
+		// path, but "nobody has this" is a claim about the entire network, and
+		// declaring data loss from a 10-of-68 sample would be wrong. Escalation
+		// is rare by construction -- only CIDs that already failed
+		// dataLossEscalateAfter separate cycles -- so it costs a full sweep for
+		// a few hundred CIDs rather than for every pull.
+		exhaustive := tracker.failedCycles(cid) >= dataLossEscalateAfter
+
 		candidates := preferredHosts
-		if len(candidates) > ss.maxPullAttempts() {
+		if !exhaustive && len(candidates) > ss.maxPullAttempts() {
 			candidates = candidates[:ss.maxPullAttempts()]
+		}
+		if exhaustive {
+			tracker.mu.Lock()
+			tracker.Counters["pull_escalated_full_network"]++
+			tracker.mu.Unlock()
 		}
 		tier1 := len(candidates)
 		for _, host := range ss.findStoreAllPeers(cid, time.Hour, storeAllFallbackHosts) {
@@ -692,6 +756,7 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 				tracker.mu.Unlock()
 				logger.Debug("pull OK (blob I should have)", zap.String("host", host))
 				success = true
+				ss.clearRepairFailure(ctx, cid, tracker)
 
 				pulledAttrs, errAttrs := bucket.Attributes(ctx, key)
 				if errAttrs == nil {
@@ -709,6 +774,9 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 			logger.Warn("failed to pull from any host",
 				zap.Int("attempted", attempted), zap.Int("replicaSetTried", tier1),
 				zap.Int("candidates", len(preferredHosts)))
+			// Nothing served it. Bank that as evidence toward declaring data
+			// loss; only an exhaustive sweep can actually authorise it.
+			ss.recordRepairFailure(ctx, cid, tracker, exhaustive)
 			return errors.New("failed to pull from any host")
 		}
 	}
