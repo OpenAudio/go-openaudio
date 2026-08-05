@@ -508,7 +508,8 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 			// If track has access_authorities (management_keys), ONLY those signers may authorize - not validator keys
 			if trackID != "" && managementKeyCount > 0 {
 				var count int
-				s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackID, sig.SignerWallet).Scan(&count)
+				normalizedSignerWallet := strings.ToLower(sig.SignerWallet)
+				s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackID, normalizedSignerWallet).Scan(&count)
 				if count == 0 {
 					s.logger.Debug("sig no match (access_authorities)", zap.String("signed by", sig.SignerWallet), zap.String("track_id", trackID))
 					return c.JSON(401, map[string]string{
@@ -701,7 +702,8 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 	}
 
 	var count int
-	ss.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackId, sig.SignerWallet).Scan(&count)
+	normalizedSignerWallet := strings.ToLower(sig.SignerWallet)
+	ss.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackId, normalizedSignerWallet).Scan(&count)
 	if count == 0 {
 		ss.logger.Debug("sig no match", zap.String("signed by", sig.SignerWallet))
 		return c.JSON(401, map[string]string{
