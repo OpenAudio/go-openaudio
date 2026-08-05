@@ -23,7 +23,29 @@ import (
 
 const (
 	abortContextCanceled = "CONTEXT_CANCELED"
+
+	// uploadScanBatchSize is how many uploads runRepair pulls per keyset page.
+	uploadScanBatchSize = 1000
 )
+
+// nextUploadBatch returns the page of uploads immediately after cursor.
+//
+// Keyset pagination requires the sort direction to match the comparison
+// operator: with "id > cursor" the rows must come back ASC so that the last
+// element is the largest ID in the batch and can serve as the next cursor —
+// a true high-water mark. Pairing "id > cursor" with DESC makes the last
+// element the *smallest* of the batch, so the cursor only ever moves up into
+// rows already read, the candidate window (cursor, max] shrinks every
+// iteration, and every row below the first batch is excluded permanently.
+// That bug limited the scan to the top uploadScanBatchSize uploads no matter
+// how large the table was.
+//
+// Split out from runRepair so the invariant is directly testable.
+func (ss *MediorumServer) nextUploadBatch(cursor string, limit int) ([]Upload, error) {
+	var uploads []Upload
+	err := ss.crud.DB.Where("id > ?", cursor).Order("id ASC").Limit(limit).Find(&uploads).Error
+	return uploads, err
+}
 
 // seenKeyResult stores the outcome of a previous Attributes check for the same
 // key within one repair cycle, allowing duplicate checks to be skipped.
@@ -207,8 +229,8 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 
 		startIter := time.Now()
 
-		var uploads []Upload
-		if err := ss.crud.DB.Where("id > ?", tracker.CursorUploadID).Order("id DESC").Limit(1000).Find(&uploads).Error; err != nil {
+		uploads, err := ss.nextUploadBatch(tracker.CursorUploadID, uploadScanBatchSize)
+		if err != nil {
 			return err
 		}
 		if len(uploads) == 0 {
