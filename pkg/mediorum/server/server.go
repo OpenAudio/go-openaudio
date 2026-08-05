@@ -190,6 +190,10 @@ type PeerHealth struct {
 	LastReachable  time.Time            `json:"lastReachable"`
 	LastHealthy    time.Time            `json:"lastHealthy"`
 	ReachablePeers map[string]time.Time `json:"reachablePeers"`
+	// StoreAll reports whether the peer keeps every CID rather than only its
+	// rendezvous share. Such a peer is the best fallback source for a blob the
+	// replica set no longer serves, since it holds the whole corpus.
+	StoreAll bool `json:"storeAll"`
 }
 
 var (
