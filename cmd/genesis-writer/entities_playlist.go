@@ -26,9 +26,6 @@ type playlistMetadataInner struct {
 	ReleaseDate            string      `json:"release_date,omitempty"`
 	IsStreamGated          bool        `json:"is_stream_gated,omitempty"`
 	StreamConditions       interface{} `json:"stream_conditions,omitempty"`
-	// UPC was already declared here but the SELECT never read the column, so it
-	// serialized empty and omitempty dropped it. These four are all read by
-	// playlist_create.go.
 	UPC                    string      `json:"upc,omitempty"`
 	PlaylistImageHash      string      `json:"playlist_image_multihash,omitempty"`
 	DDEXApp                string      `json:"ddex_app,omitempty"`

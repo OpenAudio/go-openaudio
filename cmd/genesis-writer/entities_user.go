@@ -32,8 +32,6 @@ type userMetadata struct {
 	TwitterHandle       string `json:"twitter_handle,omitempty"`
 	InstagramHandle     string `json:"instagram_handle,omitempty"`
 	Website             string `json:"website,omitempty"`
-	// user_create.go reads these two but the writer never sent them, so they
-	// landed NULL for 89,557 and 24,924 users respectively.
 	TiktokHandle        string `json:"tiktok_handle,omitempty"`
 	Donation            string `json:"donation,omitempty"`
 	// Account-state flags are always serialized: `omitempty` would drop a false

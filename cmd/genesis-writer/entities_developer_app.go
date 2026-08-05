@@ -13,9 +13,7 @@ import (
 // --- Developer Apps ---
 
 type developerAppMetadata struct {
-	// The indexer reads the app address from metadata (developer_app_create.go
-	// validateDeveloperAppCreate/insertDeveloperApp), not from the signer, so it
-	// has to travel here.
+	// The indexer reads the app address from metadata, not from the signer.
 	Address          string `json:"address"`
 	Name             string `json:"name"`
 	Description      string `json:"description,omitempty"`
@@ -63,8 +61,7 @@ func (w *Writer) writeDeveloperApps(ctx context.Context) error {
 				return fmt.Errorf("marshal developer app %s metadata: %w", d.Address, err)
 			}
 			// Signed by the owning user, not the app address: ValidateSigner requires
-			// the signer to be the user's wallet (or hold a grant), and during a
-			// genesis replay no grants exist yet. The app address travels in metadata.
+			// the user's wallet, and no grant exists to stand in for it during replay.
 			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     d.UserID,
 				EntityType: "DeveloperApp",
@@ -111,9 +108,8 @@ func (w *Writer) writeGrants(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("marshal grant metadata: %w", err)
 			}
-			// Signed by the granting user: ValidateSigner requires the user's wallet,
-			// and a grant cannot authorize its own creation during replay. The
-			// grantee travels in metadata, which is where the indexer reads it.
+			// Signed by the granting user: a grant cannot authorize its own creation,
+			// so the grantee address cannot be the signer here.
 			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     g.UserID,
 				EntityType: "Grant",

@@ -45,9 +45,6 @@ type trackMetadataInner struct {
 	IsDownloadGated    bool        `json:"is_download_gated,omitempty"`
 	DownloadConditions interface{} `json:"download_conditions,omitempty"`
 	Collaborators      []int64     `json:"collaborators,omitempty"`
-	// Content metadata the ETL already inserts but the writer never sent, so it
-	// was landing NULL: orig_file_cid alone covered 1.93M tracks. Key names must
-	// match the reads in track_create.go exactly.
 	OrigFileCID         string      `json:"orig_file_cid,omitempty"`
 	OrigFilename        string      `json:"orig_filename,omitempty"`
 	AudioUploadID       string      `json:"audio_upload_id,omitempty"`
