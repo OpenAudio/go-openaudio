@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -44,7 +45,8 @@ func (s *MediorumServer) streamTrackGRPC(ctx context.Context, req *v1storage.Str
 	}
 
 	var count int
-	s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackId, ethAddress).Scan(&count)
+	normalizedEthAddress := strings.ToLower(ethAddress)
+	s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackId, normalizedEthAddress).Scan(&count)
 	if count == 0 {
 		s.logger.Debug("sig no match", zap.String("signed by", ethAddress))
 		return connect.NewError(connect.CodePermissionDenied, errors.New("signer not authorized to access"))

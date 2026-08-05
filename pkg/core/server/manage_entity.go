@@ -129,7 +129,7 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 	for _, addr := range signers {
 		if err := q.InsertManagementKey(ctx, db.InsertManagementKeyParams{
 			TrackID: trackID,
-			Address: addr,
+			Address: strings.ToLower(addr),
 		}); err != nil {
 			return fmt.Errorf("insert management_key: %w", err)
 		}
