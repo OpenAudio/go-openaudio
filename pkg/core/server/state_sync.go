@@ -409,6 +409,13 @@ func (s *Server) createPgDump(logger *zap.Logger, latestSnapshotDir string) erro
 	tables := []string{
 		"access_keys",
 		"core_app_state",
+		// Consensus auth state: enforcement-active nodes validate proposals
+		// against these, so a state-synced node without them would reject
+		// every valid ManageEntity transaction and split from consensus.
+		"core_auth_developer_apps",
+		"core_auth_entities",
+		"core_auth_grants",
+		"core_auth_users",
 		"core_blocks",
 		"core_db_migrations",
 		"core_transactions",

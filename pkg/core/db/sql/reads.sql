@@ -716,3 +716,45 @@ select * from core_parties where ern_address = $1 order by entity_index;
 
 -- name: GetERNDeals :many
 select * from core_deals where ern_address = $1 order by entity_index;
+
+-- Consensus auth state reads. Callers treat "no rows" as "absent", never as
+-- an error; see pkg/core/server/auth_state.go.
+
+-- name: GetAuthUser :one
+select user_id, wallet, handle_lc, is_deactivated
+from core_auth_users
+where user_id = $1;
+
+-- name: GetAuthUserIDByWallet :one
+select user_id
+from core_auth_users
+where wallet = $1 and is_deactivated = false
+order by user_id
+limit 1;
+
+-- name: AuthWalletExists :one
+select exists(select 1 from core_auth_users where wallet = $1);
+
+-- name: AuthActiveWalletExists :one
+select exists(
+    select 1 from core_auth_users
+    where wallet = $1 and is_deactivated = false
+);
+
+-- name: AuthHandleExists :one
+select exists(select 1 from core_auth_users where handle_lc = $1);
+
+-- name: GetAuthGrant :one
+select grantee_address, user_id, is_approved, is_revoked
+from core_auth_grants
+where grantee_address = $1 and user_id = $2;
+
+-- name: GetAuthDeveloperApp :one
+select address, user_id, is_deleted
+from core_auth_developer_apps
+where address = $1;
+
+-- name: GetAuthEntity :one
+select entity_type, entity_id, owner_user_id, is_deleted
+from core_auth_entities
+where entity_type = $1 and entity_id = $2;
