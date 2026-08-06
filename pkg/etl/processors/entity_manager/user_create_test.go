@@ -125,6 +125,34 @@ func TestUserCreate_Success(t *testing.T) {
 	}
 }
 
+// Regression: a Create carrying profile_type must persist it. The Update
+// handler stores it since migration 0036, but the create path dropped it, so
+// an account created as a label started as a plain artist.
+func TestUserCreate_PersistsProfileType(t *testing.T) {
+	pool := setupTestDB(t)
+	h := UserCreate()
+	mustHandle(t, h, buildParams(t, pool, EntityTypeUser, ActionCreate, UserIDOffset+1, UserIDOffset+1, "0xLabelWallet1", `{"handle":"labelco","profile_type":"label"}`))
+
+	var pt *string
+	if err := pool.QueryRow(context.Background(),
+		"SELECT profile_type FROM users WHERE user_id = $1 AND is_current = true", UserIDOffset+1).Scan(&pt); err != nil {
+		t.Fatalf("query inserted user: %v", err)
+	}
+	if pt == nil || *pt != "label" {
+		t.Errorf("profile_type = %v, want \"label\"", pt)
+	}
+
+	// A value outside the enum must not be stored (and must not fail the tx).
+	mustHandle(t, h, buildParams(t, pool, EntityTypeUser, ActionCreate, UserIDOffset+2, UserIDOffset+2, "0xLabelWallet2", `{"handle":"notalabel","profile_type":"bogus"}`))
+	if err := pool.QueryRow(context.Background(),
+		"SELECT profile_type FROM users WHERE user_id = $1 AND is_current = true", UserIDOffset+2).Scan(&pt); err != nil {
+		t.Fatalf("query second user: %v", err)
+	}
+	if pt != nil {
+		t.Errorf("profile_type = %v, want NULL for a value outside the enum", pt)
+	}
+}
+
 func TestUserCreate_RejectsExistingUser(t *testing.T) {
 	pool := setupTestDB(t)
 	seedUser(t, pool, UserIDOffset+1, "0xexistingwallet", "existing")
