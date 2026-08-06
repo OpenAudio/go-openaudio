@@ -42,7 +42,7 @@ func (w *Writer) writeTrackCollaboratorApprovals(ctx context.Context) error {
 		`SELECT count(*) FROM track_collaborators WHERE status = 'accepted'`,
 		`SELECT tc.track_id, tc.collaborator_user_id, COALESCE(LOWER(u.wallet), '')
 		FROM track_collaborators tc
-		LEFT JOIN users u ON u.user_id = tc.collaborator_user_id AND u.is_current = true
+		JOIN users u ON u.user_id = tc.collaborator_user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE tc.status = 'accepted'
 		ORDER BY tc.track_id, tc.collaborator_user_id`,
 		func(rows pgx.Rows) (sourceCollaboratorApproval, error) {

@@ -152,11 +152,11 @@ type sourceAssociatedWallet struct {
 func (w *Writer) writeAssociatedWallets(ctx context.Context) error {
 	return processBatched(ctx, w, "associated_wallets",
 		`SELECT count(*) FROM associated_wallets aw
-		 JOIN users u ON u.user_id = aw.user_id AND u.is_current = true
+		 JOIN users u ON u.user_id = aw.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		 WHERE aw.is_current = true AND aw.is_delete = false`,
 		`SELECT aw.user_id, aw.wallet, aw.chain, u.wallet
 		FROM associated_wallets aw
-		JOIN users u ON u.user_id = aw.user_id AND u.is_current = true
+		JOIN users u ON u.user_id = aw.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE aw.is_current = true AND aw.is_delete = false
 		ORDER BY aw.user_id, aw.wallet`,
 		func(rows pgx.Rows) (sourceAssociatedWallet, error) {

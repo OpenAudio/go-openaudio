@@ -49,10 +49,12 @@ func (w *Writer) writeComments(ctx context.Context) error {
 	}
 
 	return processBatched(ctx, w, "comments",
-		`SELECT count(*) FROM comments WHERE is_delete = false`,
+		`SELECT count(*) FROM comments c
+		JOIN users u ON u.user_id = c.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		WHERE c.is_delete = false`,
 		`SELECT c.comment_id, c.text, c.user_id, COALESCE(LOWER(u.wallet), ''), c.entity_id, c.entity_type, c.track_timestamp_s, c.created_at
 		FROM comments c
-		LEFT JOIN users u ON u.user_id = c.user_id AND u.is_current = true
+		JOIN users u ON u.user_id = c.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE c.is_delete = false
 		-- Chronological, not by id: a reply must be emitted after the comment it
 		-- replies to, and comment ids are not chronological. 12,496 of 24,587
@@ -111,10 +113,12 @@ func (w *Writer) writeCommentReactions(ctx context.Context) error {
 		createdAt time.Time
 	}
 	return processBatched(ctx, w, "comment_reactions",
-		`SELECT count(*) FROM comment_reactions WHERE is_delete = false`,
+		`SELECT count(*) FROM comment_reactions cr
+		JOIN users u ON u.user_id = cr.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		WHERE cr.is_delete = false`,
 		`SELECT cr.comment_id, cr.user_id, COALESCE(LOWER(u.wallet), ''), cr.created_at
 		FROM comment_reactions cr
-		LEFT JOIN users u ON u.user_id = cr.user_id AND u.is_current = true
+		JOIN users u ON u.user_id = cr.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE cr.is_delete = false
 		ORDER BY cr.comment_id, cr.user_id`,
 		func(rows pgx.Rows) (commentReaction, error) {

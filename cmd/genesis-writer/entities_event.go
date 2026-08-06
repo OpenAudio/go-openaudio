@@ -37,7 +37,7 @@ func (w *Writer) writeEvents(ctx context.Context) error {
 		`SELECT e.event_id, e.event_type, e.user_id, COALESCE(LOWER(u.wallet), ''),
 			e.entity_type, e.entity_id, e.end_date, e.event_data, e.created_at
 		FROM events e
-		LEFT JOIN users u ON u.user_id = e.user_id AND u.is_current = true
+		JOIN users u ON u.user_id = e.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE e.is_deleted = false
 		ORDER BY e.event_id`,
 		func(rows pgx.Rows) (sourceEvent, error) {
