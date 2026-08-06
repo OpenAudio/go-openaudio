@@ -129,7 +129,7 @@ func (w *Writer) writeCommentReactions(ctx context.Context) error {
 			}
 			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     cr.userID,
-				EntityType: "CommentReaction",
+				EntityType: "Comment",
 				EntityId:   cr.commentID,
 				Action:     "React",
 				Metadata:   string(metaJSON),
