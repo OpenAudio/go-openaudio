@@ -32,6 +32,7 @@ func (ss *MediorumServer) serveImage(c echo.Context) error {
 	serveSuccessWithBytes := func(blobData []byte, modTime time.Time) error {
 		setTimingHeader(c)
 		c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=2592000, immutable")
+		setMediaResponseHeaders(c.Response().Header(), http.DetectContentType(blobData))
 		ss.metrics.recordServed(ServedItem{At: time.Now().UTC(), CID: cacheKey, Action: ServeImage})
 		http.ServeContent(c.Response(), c.Request(), cacheKey, modTime, bytes.NewReader(blobData))
 		return nil

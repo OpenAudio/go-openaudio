@@ -211,10 +211,12 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 	}()
 
 	if c.Request().Method == "HEAD" {
+		setMediaResponseHeaders(c.Response().Header(), blob.ContentType())
 		return c.NoContent(200)
 	}
 
-	isAudioFile := strings.HasPrefix(blob.ContentType(), "audio")
+	responseContentType, safeInline := mediaResponseContentType(blob.ContentType())
+	isAudioFile := safeInline && strings.HasPrefix(responseContentType, "audio/")
 
 	if isAudioFile {
 		// detect mime type and block mp3 streaming outside of the /tracks/cidstream route
@@ -274,6 +276,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 				return err
 			}
 
+			setMediaResponseHeaders(c.Response().Header(), responseContentType)
 			http.ServeContent(c.Response(), c.Request(), cid, blob.ModTime(), &struct {
 				io.ReadSeeker
 			}{
@@ -283,6 +286,7 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 		}
 
 		// stream audio
+		setMediaResponseHeaders(c.Response().Header(), responseContentType)
 		http.ServeContent(c.Response(), c.Request(), cid, blob.ModTime(), blob)
 		return nil
 	} else {
@@ -295,7 +299,8 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 		}
 		go ss.recordMetric(ServeImage)
 		ss.metrics.recordServed(ServedItem{At: time.Now().UTC(), CID: cid, Action: ServeImage})
-		return c.Blob(200, blob.ContentType(), blobData)
+		setMediaResponseHeaders(c.Response().Header(), blob.ContentType())
+		return c.Blob(200, responseContentType, blobData)
 	}
 
 }
