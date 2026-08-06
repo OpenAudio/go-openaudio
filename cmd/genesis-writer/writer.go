@@ -16,9 +16,9 @@ import (
 	corecfg "github.com/OpenAudio/go-openaudio/pkg/core/config"
 	coredb "github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/core/server"
+	dbm "github.com/cometbft/cometbft-db"
 	cmtproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	cmtapiversion "github.com/cometbft/cometbft/api/cometbft/version/v1"
-	dbm "github.com/cometbft/cometbft-db"
 	cmtcrypto "github.com/cometbft/cometbft/crypto"
 	cmtstore "github.com/cometbft/cometbft/store"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -61,7 +61,7 @@ type WriterConfig struct {
 	// the genesis writer scans its blockstore for RewardMessage and
 	// RewardPoolMessage transactions and replays them verbatim into the new
 	// chain. If empty, rewards are skipped.
-	CoreCMTHome          string
+	CoreCMTHome string
 	// RunMigrations applies the Core chain schema to DstDSN before writing.
 	// Useful when starting from a fresh database (e.g., in integration tests).
 	RunMigrations bool

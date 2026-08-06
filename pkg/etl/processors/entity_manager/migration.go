@@ -50,6 +50,9 @@ func RegisterMigrationOverrides(d *Dispatcher) {
 	d.Register(migratedUserCreate())
 	d.Register(migratedTrackCreate())
 	d.Register(migratedPlaylistCreate())
+	d.Register(migratedCommentCreate())
+	d.Register(migratedDeveloperAppCreate())
+	d.Register(migratedGrantCreate())
 	d.Register(migratedAssociatedWalletCreate())
 	d.Register(migratedDashboardWalletCreate())
 
@@ -213,6 +216,52 @@ func (h *migratedUserCreateHandler) Handle(ctx context.Context, params *Params) 
 }
 
 func migratedUserCreate() Handler { return &migratedUserCreateHandler{} }
+
+// The three handlers below all exist for the same reason: their entity carries
+// a soft-deleted or unapproved state that the production create path hardcodes
+// to "active", because a client cannot create an already deleted row. A
+// migration can, and must -- the source row is the truth. Carrying the state on
+// the Create keeps it to one transaction per row instead of a Create followed
+// by a Delete, which matters when the alternative is several hundred thousand
+// extra transactions to index.
+
+type migratedCommentCreateHandler struct{}
+
+func (h *migratedCommentCreateHandler) EntityType() string { return EntityTypeComment }
+func (h *migratedCommentCreateHandler) Action() string     { return ActionCreate }
+
+func (h *migratedCommentCreateHandler) Handle(ctx context.Context, params *Params) error {
+	if err := validateCommentWrite(ctx, params, true); err != nil {
+		return err
+	}
+	return insertCommentWithState(ctx, params, params.MetadataBoolOr("is_delete", false))
+}
+
+func migratedCommentCreate() Handler { return &migratedCommentCreateHandler{} }
+
+type migratedDeveloperAppCreateHandler struct{}
+
+func (h *migratedDeveloperAppCreateHandler) EntityType() string {
+	return EntityTypeDeveloperApp
+}
+func (h *migratedDeveloperAppCreateHandler) Action() string { return ActionCreate }
+
+func (h *migratedDeveloperAppCreateHandler) Handle(ctx context.Context, params *Params) error {
+	return insertDeveloperAppWithState(ctx, params, params.MetadataBoolOr("is_delete", false))
+}
+
+func migratedDeveloperAppCreate() Handler { return &migratedDeveloperAppCreateHandler{} }
+
+type migratedGrantCreateHandler struct{}
+
+func (h *migratedGrantCreateHandler) EntityType() string { return EntityTypeGrant }
+func (h *migratedGrantCreateHandler) Action() string     { return ActionCreate }
+
+func (h *migratedGrantCreateHandler) Handle(ctx context.Context, params *Params) error {
+	return insertGrantWithState(ctx, params, params.MetadataBoolOr("is_revoked", false))
+}
+
+func migratedGrantCreate() Handler { return &migratedGrantCreateHandler{} }
 
 // migratedAssociatedWalletCreateHandler replays a historical associated wallet.
 //

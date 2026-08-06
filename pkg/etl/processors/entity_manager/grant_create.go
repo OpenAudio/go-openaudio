@@ -55,6 +55,14 @@ func validateGrantCreate(ctx context.Context, params *Params) error {
 }
 
 func insertGrant(ctx context.Context, params *Params) error {
+	return insertGrantWithState(ctx, params, false)
+}
+
+// insertGrantWithState writes a grant carrying its revoked state. Production
+// always creates an unrevoked grant; only the migration replays a revoked one.
+// is_approved keeps its existing derivation -- it depends on whether the
+// grantee is an app, which the source row does not override.
+func insertGrantWithState(ctx context.Context, params *Params, isRevoked bool) error {
 	granteeAddress := strings.ToLower(params.MetadataString("grantee_address"))
 
 	// Determine is_approved: true if grantee is an app, nil if user-to-user
@@ -69,7 +77,7 @@ func insertGrant(ctx context.Context, params *Params) error {
 		INSERT INTO grants (
 			grantee_address, user_id, is_revoked, is_current, is_approved,
 			created_at, updated_at, txhash, blocknumber
-		) VALUES ($1, $2, false, true, $3, $4, $4, $5, $6)
+		) VALUES ($1, $2, $7, true, $3, $4, $4, $5, $6)
 	`,
 		granteeAddress,
 		params.UserID,
@@ -77,6 +85,7 @@ func insertGrant(ctx context.Context, params *Params) error {
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,
+		isRevoked,
 	)
 	return err
 }

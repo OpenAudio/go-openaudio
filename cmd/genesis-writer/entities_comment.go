@@ -20,6 +20,9 @@ type commentMetadata struct {
 	TrackTimestampS *int    `json:"track_timestamp_s,omitempty"`
 	Mentions        []int64 `json:"mentions,omitempty"`
 	CreatedAt       string  `json:"created_at,omitempty"`
+	// Always serialized: `omitempty` would drop a false value and the indexer
+	// cannot tell "absent" from "not deleted".
+	IsDelete bool `json:"is_delete"`
 }
 
 type sourceComment struct {
@@ -31,6 +34,7 @@ type sourceComment struct {
 	EntityType      string
 	TrackTimestampS *int
 	CreatedAt       time.Time
+	IsDelete        bool
 }
 
 func (w *Writer) writeComments(ctx context.Context) error {
@@ -50,12 +54,10 @@ func (w *Writer) writeComments(ctx context.Context) error {
 
 	return processBatched(ctx, w, "comments",
 		`SELECT count(*) FROM comments c
-		JOIN users u ON u.user_id = c.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
-		WHERE c.is_delete = false`,
-		`SELECT c.comment_id, c.text, c.user_id, COALESCE(LOWER(u.wallet), ''), c.entity_id, c.entity_type, c.track_timestamp_s, c.created_at
+		JOIN users u ON u.user_id = c.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''`,
+		`SELECT c.comment_id, c.text, c.user_id, COALESCE(LOWER(u.wallet), ''), c.entity_id, c.entity_type, c.track_timestamp_s, c.created_at, c.is_delete
 		FROM comments c
 		JOIN users u ON u.user_id = c.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
-		WHERE c.is_delete = false
 		-- Chronological, not by id: a reply must be emitted after the comment it
 		-- replies to, and comment ids are not chronological. 12,496 of 24,587
 		-- replies on a production clone have a LOWER id than their parent, so
@@ -66,11 +68,12 @@ func (w *Writer) writeComments(ctx context.Context) error {
 		ORDER BY c.created_at, c.comment_id`,
 		func(rows pgx.Rows) (sourceComment, error) {
 			var c sourceComment
-			err := rows.Scan(&c.CommentID, &c.Text, &c.UserID, &c.UserWallet, &c.EntityID, &c.EntityType, &c.TrackTimestampS, &c.CreatedAt)
+			err := rows.Scan(&c.CommentID, &c.Text, &c.UserID, &c.UserWallet, &c.EntityID, &c.EntityType, &c.TrackTimestampS, &c.CreatedAt, &c.IsDelete)
 			return c, err
 		},
 		func(ctx context.Context, c sourceComment) error {
 			meta := commentMetadata{
+				IsDelete:        c.IsDelete,
 				Body:            deref(c.Text),
 				EntityID:        c.EntityID,
 				EntityType:      c.EntityType,
