@@ -180,8 +180,6 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 
 	// TODO: check signature from known node
 
-	// TODO: validate transaction in same way as send transaction
-
 	var mempoolKey common.TxHash
 	var err error
 	var txSize int
@@ -193,6 +191,10 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		}
 		mempoolKey = common.ToTxHashFromBytes(txBytes)
 		txSize = len(txBytes)
+
+		if err := c.core.validateV2Transaction(ctx, c.core.cache.currentHeight.Load(), req.Msg.Transactionv2); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("transactionv2 validation failed: %v", err))
+		}
 	} else {
 		tx := req.Msg.Transaction
 		if err := validateMediorumOperationSubmissionSize(tx.GetMediorumOperation()); err != nil {
@@ -211,6 +213,15 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		}
 		mempoolKey = common.ToTxHashFromBytes(txBytes)
 		txSize = len(txBytes)
+
+		// Forwarded transactions get the same validation as direct
+		// submissions: without this a peer could park transactions in the
+		// mempool that SendTransaction would have refused (including
+		// unauthorized ManageEntity txs once enforcement is active), leaving
+		// PrepareProposal as the only filter.
+		if err := c.core.validateV1Transaction(ctx, c.core.cache.currentHeight.Load(), req.Msg.Transaction); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("transaction validation failed: %v", err))
+		}
 	}
 
 	// The full payload may only be logged at debug: debug never ships to
