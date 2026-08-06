@@ -66,6 +66,33 @@ type CoreAppState struct {
 	CreatedAt   pgtype.Timestamp
 }
 
+type CoreAuthDeveloperApp struct {
+	Address   string
+	UserID    int64
+	IsDeleted bool
+}
+
+type CoreAuthEntity struct {
+	EntityType  string
+	EntityID    int64
+	OwnerUserID int64
+	IsDeleted   bool
+}
+
+type CoreAuthGrant struct {
+	GranteeAddress string
+	UserID         int64
+	IsApproved     pgtype.Bool
+	IsRevoked      bool
+}
+
+type CoreAuthUser struct {
+	UserID        int64
+	Wallet        string
+	HandleLc      pgtype.Text
+	IsDeactivated bool
+}
+
 type CoreBlock struct {
 	Rowid     int64
 	Height    int64

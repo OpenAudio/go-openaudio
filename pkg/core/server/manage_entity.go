@@ -48,6 +48,8 @@ func (s *Server) finalizeManageEntityMigration(ctx context.Context, stx *v1.Sign
 		}
 	}
 
+	s.projectManageEntityAuthState(ctx, authTxFromManageEntityMigration(me))
+
 	return me, nil
 }
 
@@ -79,7 +81,34 @@ func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransac
 		}
 	}
 
+	s.projectManageEntityAuthState(ctx, authTxFromManageEntity(manageEntity))
+
 	return manageEntity, nil
+}
+
+// projectManageEntityAuthState applies a finalized ManageEntity transaction's
+// authorization effects to the core_auth_* tables, inside the block's
+// transaction. Skips are the projection mirroring an ETL rejection and are
+// expected; store errors are logged without failing the tx, matching how the
+// rest of FinalizeBlock treats db errors so a local infra hiccup cannot make
+// this node's tx results diverge from its peers'.
+func (s *Server) projectManageEntityAuthState(ctx context.Context, tx authTx) {
+	err := applyAuthProjection(ctx, &dbAuthStore{q: s.getDb()}, tx)
+	switch {
+	case err == nil:
+	case isAuthValidationError(err):
+		s.logger.Debug("manage entity auth projection skipped", zap.String("reason", err.Error()),
+			zap.String("entity_type", tx.EntityType),
+			zap.String("action", tx.Action),
+			zap.Int64("entity_id", tx.EntityID),
+			zap.Int64("user_id", tx.UserID))
+	default:
+		s.logger.Error("failed to project manage entity auth state", zap.Error(err),
+			zap.String("entity_type", tx.EntityType),
+			zap.String("action", tx.Action),
+			zap.Int64("entity_id", tx.EntityID),
+			zap.Int64("user_id", tx.UserID))
+	}
 }
 
 func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEntityLegacy) error {

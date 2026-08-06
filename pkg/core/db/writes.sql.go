@@ -152,6 +152,56 @@ func (q *Queries) InsertAccessKey(ctx context.Context, arg InsertAccessKeyParams
 	return err
 }
 
+const insertAuthEntity = `-- name: InsertAuthEntity :exec
+insert into core_auth_entities (entity_type, entity_id, owner_user_id, is_deleted)
+values ($1, $2, $3, $4)
+on conflict (entity_type, entity_id) do nothing
+`
+
+type InsertAuthEntityParams struct {
+	EntityType  string
+	EntityID    int64
+	OwnerUserID int64
+	IsDeleted   bool
+}
+
+func (q *Queries) InsertAuthEntity(ctx context.Context, arg InsertAuthEntityParams) error {
+	_, err := q.db.Exec(ctx, insertAuthEntity,
+		arg.EntityType,
+		arg.EntityID,
+		arg.OwnerUserID,
+		arg.IsDeleted,
+	)
+	return err
+}
+
+const insertAuthUser = `-- name: InsertAuthUser :exec
+
+insert into core_auth_users (user_id, wallet, handle_lc, is_deactivated)
+values ($1, $2, $3, $4)
+on conflict (user_id) do nothing
+`
+
+type InsertAuthUserParams struct {
+	UserID        int64
+	Wallet        string
+	HandleLc      pgtype.Text
+	IsDeactivated bool
+}
+
+// Consensus auth state (core_auth_*): written only by the FinalizeBlock
+// ManageEntity projection in pkg/core/server/auth_state.go, inside the
+// block's transaction. All writes are conflict-safe so replay is idempotent.
+func (q *Queries) InsertAuthUser(ctx context.Context, arg InsertAuthUserParams) error {
+	_, err := q.db.Exec(ctx, insertAuthUser,
+		arg.UserID,
+		arg.Wallet,
+		arg.HandleLc,
+		arg.IsDeactivated,
+	)
+	return err
+}
+
 const insertCoreDeal = `-- name: InsertCoreDeal :exec
 insert into core_deals (
     address,
@@ -1014,6 +1064,58 @@ func (q *Queries) JailRegisteredNode(ctx context.Context, cometAddress string) e
 	return err
 }
 
+const setAuthDeveloperAppDeleted = `-- name: SetAuthDeveloperAppDeleted :exec
+update core_auth_developer_apps set is_deleted = true where address = $1
+`
+
+func (q *Queries) SetAuthDeveloperAppDeleted(ctx context.Context, address string) error {
+	_, err := q.db.Exec(ctx, setAuthDeveloperAppDeleted, address)
+	return err
+}
+
+const setAuthEntityDeleted = `-- name: SetAuthEntityDeleted :exec
+update core_auth_entities set is_deleted = true
+where entity_type = $1 and entity_id = $2
+`
+
+type SetAuthEntityDeletedParams struct {
+	EntityType string
+	EntityID   int64
+}
+
+func (q *Queries) SetAuthEntityDeleted(ctx context.Context, arg SetAuthEntityDeletedParams) error {
+	_, err := q.db.Exec(ctx, setAuthEntityDeleted, arg.EntityType, arg.EntityID)
+	return err
+}
+
+const setAuthUserDeactivated = `-- name: SetAuthUserDeactivated :exec
+update core_auth_users set is_deactivated = $2 where user_id = $1
+`
+
+type SetAuthUserDeactivatedParams struct {
+	UserID        int64
+	IsDeactivated bool
+}
+
+func (q *Queries) SetAuthUserDeactivated(ctx context.Context, arg SetAuthUserDeactivatedParams) error {
+	_, err := q.db.Exec(ctx, setAuthUserDeactivated, arg.UserID, arg.IsDeactivated)
+	return err
+}
+
+const setAuthUserHandle = `-- name: SetAuthUserHandle :exec
+update core_auth_users set handle_lc = $2 where user_id = $1
+`
+
+type SetAuthUserHandleParams struct {
+	UserID   int64
+	HandleLc pgtype.Text
+}
+
+func (q *Queries) SetAuthUserHandle(ctx context.Context, arg SetAuthUserHandleParams) error {
+	_, err := q.db.Exec(ctx, setAuthUserHandle, arg.UserID, arg.HandleLc)
+	return err
+}
+
 const storeBlock = `-- name: StoreBlock :exec
 insert into core_blocks (height, chain_id, hash, proposer, created_at)
 values ($1, $2, $3, $4, $5)
@@ -1158,6 +1260,49 @@ type UpsertAppStateParams struct {
 
 func (q *Queries) UpsertAppState(ctx context.Context, arg UpsertAppStateParams) error {
 	_, err := q.db.Exec(ctx, upsertAppState, arg.BlockHeight, arg.AppHash)
+	return err
+}
+
+const upsertAuthDeveloperApp = `-- name: UpsertAuthDeveloperApp :exec
+insert into core_auth_developer_apps (address, user_id, is_deleted)
+values ($1, $2, false)
+on conflict (address) do update
+set user_id = excluded.user_id,
+    is_deleted = false
+`
+
+type UpsertAuthDeveloperAppParams struct {
+	Address string
+	UserID  int64
+}
+
+func (q *Queries) UpsertAuthDeveloperApp(ctx context.Context, arg UpsertAuthDeveloperAppParams) error {
+	_, err := q.db.Exec(ctx, upsertAuthDeveloperApp, arg.Address, arg.UserID)
+	return err
+}
+
+const upsertAuthGrant = `-- name: UpsertAuthGrant :exec
+insert into core_auth_grants (grantee_address, user_id, is_approved, is_revoked)
+values ($1, $2, $3, $4)
+on conflict (grantee_address, user_id) do update
+set is_approved = excluded.is_approved,
+    is_revoked = excluded.is_revoked
+`
+
+type UpsertAuthGrantParams struct {
+	GranteeAddress string
+	UserID         int64
+	IsApproved     pgtype.Bool
+	IsRevoked      bool
+}
+
+func (q *Queries) UpsertAuthGrant(ctx context.Context, arg UpsertAuthGrantParams) error {
+	_, err := q.db.Exec(ctx, upsertAuthGrant,
+		arg.GranteeAddress,
+		arg.UserID,
+		arg.IsApproved,
+		arg.IsRevoked,
+	)
 	return err
 }
 
