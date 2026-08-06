@@ -455,3 +455,8 @@ on conflict (entity_type, entity_id) do nothing;
 -- name: SetAuthEntityDeleted :exec
 update core_auth_entities set is_deleted = true
 where entity_type = $1 and entity_id = $2;
+
+-- name: InsertAuthCid :exec
+insert into core_auth_cids (cid, uploader_address, attested_by, block_height)
+values ($1, $2, $3, $4)
+on conflict (cid) do nothing;

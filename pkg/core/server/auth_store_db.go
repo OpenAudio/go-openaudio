@@ -93,6 +93,29 @@ func (s *dbAuthStore) GetEntity(ctx context.Context, entityType string, entityID
 	return authEntityRow{OwnerID: row.OwnerUserID, Deleted: row.IsDeleted}, true, nil
 }
 
+func (s *dbAuthStore) GetCid(ctx context.Context, cid string) (authCidRow, bool, error) {
+	row, err := s.q.GetAuthCid(ctx, cid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return authCidRow{}, false, nil
+	}
+	if err != nil {
+		return authCidRow{}, false, err
+	}
+	return authCidRow{
+		UploaderAddress: row.UploaderAddress,
+		AttestedBy:      row.AttestedBy,
+	}, true, nil
+}
+
+func (s *dbAuthStore) InsertCid(ctx context.Context, cid, uploaderAddress, attestedBy string, blockHeight int64) error {
+	return s.q.InsertAuthCid(ctx, db.InsertAuthCidParams{
+		Cid:             cid,
+		UploaderAddress: uploaderAddress,
+		AttestedBy:      attestedBy,
+		BlockHeight:     blockHeight,
+	})
+}
+
 func (s *dbAuthStore) InsertUser(ctx context.Context, userID int64, wallet, handleLC string, deactivated bool) error {
 	handle := pgtype.Text{}
 	if handleLC != "" {

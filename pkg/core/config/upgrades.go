@@ -34,12 +34,26 @@ type UpgradeSchedule struct {
 	// persistent network earlier than the height its auth state began being
 	// tracked, or it will trust state built from unverified signers.
 	AuthEnforcementHeight int64
+
+	// ContentAuthEnforcementHeight activates content authorization: a
+	// FileUpload must carry a validator signature over the bound
+	// UploadAttestation rather than the legacy unbound per-cid signature, and
+	// a ManageEntity Track create/update may only assert cids that the
+	// consensus content-auth state records as belonging to the acting user.
+	//
+	// Must not be scheduled on a persistent network earlier than the height
+	// its content-auth state began being tracked, or tracks whose cids predate
+	// the projection become unwritable. The genesis rollover is the natural
+	// activation point: the migration replay seeds a cid for every track that
+	// exists.
+	ContentAuthEnforcementHeight int64
 }
 
 // Rules is the resolved rule set for a single height: a flat description of
 // active behaviors with no heights in sight.
 type Rules struct {
-	AuthEnforced bool
+	AuthEnforced        bool
+	ContentAuthEnforced bool
 }
 
 // RulesetAt resolves the rules governing the given block height. A nil
@@ -49,7 +63,8 @@ func (u *UpgradeSchedule) RulesetAt(height int64) Rules {
 		return Rules{}
 	}
 	return Rules{
-		AuthEnforced: activeAt(u.AuthEnforcementHeight, height),
+		AuthEnforced:        activeAt(u.AuthEnforcementHeight, height),
+		ContentAuthEnforced: activeAt(u.ContentAuthEnforcementHeight, height),
 	}
 }
 
@@ -65,11 +80,13 @@ func activeAt(activation, height int64) bool {
 var upgradeSchedules = map[string]*UpgradeSchedule{
 	// dev
 	"openaudio-devnet": {
-		AuthEnforcementHeight: 1,
+		AuthEnforcementHeight:        1,
+		ContentAuthEnforcementHeight: 1,
 	},
 	// sandbox
 	"audius-devnet": {
-		AuthEnforcementHeight: 1,
+		AuthEnforcementHeight:        1,
+		ContentAuthEnforcementHeight: 1,
 	},
 	// stage
 	"audius-testnet-alpha": {},

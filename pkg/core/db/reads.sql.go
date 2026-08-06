@@ -354,6 +354,24 @@ func (q *Queries) GetAppStateAtHeight(ctx context.Context, blockHeight int64) (G
 	return i, err
 }
 
+const getAuthCid = `-- name: GetAuthCid :one
+select cid, uploader_address, attested_by, block_height
+from core_auth_cids
+where cid = $1
+`
+
+func (q *Queries) GetAuthCid(ctx context.Context, cid string) (CoreAuthCid, error) {
+	row := q.db.QueryRow(ctx, getAuthCid, cid)
+	var i CoreAuthCid
+	err := row.Scan(
+		&i.Cid,
+		&i.UploaderAddress,
+		&i.AttestedBy,
+		&i.BlockHeight,
+	)
+	return i, err
+}
+
 const getAuthDeveloperApp = `-- name: GetAuthDeveloperApp :one
 select address, user_id, is_deleted
 from core_auth_developer_apps

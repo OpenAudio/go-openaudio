@@ -15,6 +15,7 @@ type memAuthStore struct {
 	grants   map[memGrantKey]authGrantRow
 	apps     map[string]authAppRow
 	entities map[memEntityKey]authEntityRow
+	cids     map[string]authCidRow
 }
 
 type memGrantKey struct {
@@ -33,7 +34,21 @@ func newMemAuthStore() *memAuthStore {
 		grants:   map[memGrantKey]authGrantRow{},
 		apps:     map[string]authAppRow{},
 		entities: map[memEntityKey]authEntityRow{},
+		cids:     map[string]authCidRow{},
 	}
+}
+
+func (m *memAuthStore) GetCid(_ context.Context, cid string) (authCidRow, bool, error) {
+	c, ok := m.cids[cid]
+	return c, ok, nil
+}
+
+func (m *memAuthStore) InsertCid(_ context.Context, cid, uploaderAddress, attestedBy string, _ int64) error {
+	if _, ok := m.cids[cid]; ok {
+		return nil
+	}
+	m.cids[cid] = authCidRow{UploaderAddress: uploaderAddress, AttestedBy: attestedBy}
+	return nil
 }
 
 func (m *memAuthStore) GetUser(_ context.Context, userID int64) (authUserRow, bool, error) {

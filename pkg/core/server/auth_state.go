@@ -205,6 +205,7 @@ type authReader interface {
 	GetGrant(ctx context.Context, granteeAddress string, userID int64) (authGrantRow, bool, error)
 	GetApp(ctx context.Context, address string) (authAppRow, bool, error)
 	GetEntity(ctx context.Context, entityType string, entityID int64) (authEntityRow, bool, error)
+	GetCid(ctx context.Context, cid string) (authCidRow, bool, error)
 }
 
 // authWriter is the write half.
@@ -217,6 +218,7 @@ type authWriter interface {
 	SetAppDeleted(ctx context.Context, address string) error
 	InsertEntity(ctx context.Context, entityType string, entityID, ownerID int64, deleted bool) error
 	SetEntityDeleted(ctx context.Context, entityType string, entityID int64) error
+	InsertCid(ctx context.Context, cid, uploaderAddress, attestedBy string, blockHeight int64) error
 }
 
 // authStore is what the projection runs against: one state machine, two
