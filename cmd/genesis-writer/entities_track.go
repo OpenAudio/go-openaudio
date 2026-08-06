@@ -132,7 +132,9 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 		// Deleted and unavailable tracks are migrated too, carrying their state in
 		// the metadata: the source row is the truth, and omitting them would make
 		// a parity check unable to tell an intentional omission from data loss.
-		`SELECT count(*) FROM tracks WHERE is_current = true`,
+		`SELECT count(*) FROM tracks t
+		JOIN users u ON u.user_id = t.owner_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		WHERE t.is_current = true`,
 		`SELECT
 			t.track_id, t.owner_id, COALESCE(LOWER(u.wallet), ''), t.title, t.description, t.duration, t.genre, t.mood, t.tags,
 			t.track_cid,
@@ -153,7 +155,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			t.is_delete, t.is_available,
 			t.created_at
 		FROM tracks t
-		LEFT JOIN users u ON u.user_id = t.owner_id AND u.is_current = true
+		JOIN users u ON u.user_id = t.owner_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE t.is_current = true
 		ORDER BY t.track_id`,
 		func(rows pgx.Rows) (sourceTrack, error) {
@@ -278,10 +280,11 @@ type sourceTrackDownload struct {
 
 func (w *Writer) writeTrackDownloads(ctx context.Context) error {
 	return processBatched(ctx, w, "track_downloads",
-		`SELECT count(*) FROM track_downloads`,
+		`SELECT count(*) FROM track_downloads td
+		JOIN users u ON u.user_id = td.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''`,
 		`SELECT td.parent_track_id, td.track_id, td.user_id, COALESCE(LOWER(u.wallet), ''), td.city, td.region, td.country, td.created_at
 		FROM track_downloads td
-		LEFT JOIN users u ON u.user_id = td.user_id AND u.is_current = true
+		JOIN users u ON u.user_id = td.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		ORDER BY td.parent_track_id, td.track_id`,
 		func(rows pgx.Rows) (sourceTrackDownload, error) {
 			var d sourceTrackDownload

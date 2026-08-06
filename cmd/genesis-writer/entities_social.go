@@ -39,10 +39,14 @@ func (w *Writer) writeFollows(ctx context.Context) error {
 		isDelete           bool
 	}
 	return processBatched(ctx, w, "follows",
-		`SELECT count(*) FROM follows WHERE is_current = true`,
-		`SELECT f.follower_user_id, f.followee_user_id, COALESCE(LOWER(u.wallet), ''), f.created_at, f.is_delete
+		`SELECT count(*) FROM follows f
+		JOIN users u ON u.user_id = f.follower_user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		JOIN users fe ON fe.user_id = f.followee_user_id AND fe.is_current = true
+		WHERE f.is_current = true`,
+		`SELECT f.follower_user_id, f.followee_user_id, LOWER(u.wallet), f.created_at, f.is_delete
 		FROM follows f
-		LEFT JOIN users u ON u.user_id = f.follower_user_id AND u.is_current = true
+		JOIN users u ON u.user_id = f.follower_user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		JOIN users fe ON fe.user_id = f.followee_user_id AND fe.is_current = true
 		WHERE f.is_current = true
 		ORDER BY f.follower_user_id, f.followee_user_id`,
 		func(rows pgx.Rows) (follow, error) {
@@ -77,10 +81,12 @@ func (w *Writer) writeSaves(ctx context.Context) error {
 		isDelete       bool
 	}
 	return processBatched(ctx, w, "saves",
-		`SELECT count(*) FROM saves WHERE is_current = true`,
-		`SELECT s.user_id, s.save_item_id, COALESCE(LOWER(u.wallet), ''), s.save_type, s.created_at, s.is_delete
+		`SELECT count(*) FROM saves s
+		JOIN users u ON u.user_id = s.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		WHERE s.is_current = true`,
+		`SELECT s.user_id, s.save_item_id, LOWER(u.wallet), s.save_type, s.created_at, s.is_delete
 		FROM saves s
-		LEFT JOIN users u ON u.user_id = s.user_id AND u.is_current = true
+		JOIN users u ON u.user_id = s.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE s.is_current = true
 		ORDER BY s.user_id, s.save_item_id`,
 		func(rows pgx.Rows) (save, error) {
@@ -115,10 +121,12 @@ func (w *Writer) writeReposts(ctx context.Context) error {
 		isDelete       bool
 	}
 	return processBatched(ctx, w, "reposts",
-		`SELECT count(*) FROM reposts WHERE is_current = true`,
+		`SELECT count(*) FROM reposts r
+		JOIN users u ON u.user_id = r.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		WHERE r.is_current = true`,
 		`SELECT r.user_id, r.repost_item_id, COALESCE(LOWER(u.wallet), ''), r.repost_type, r.created_at, r.is_delete
 		FROM reposts r
-		LEFT JOIN users u ON u.user_id = r.user_id AND u.is_current = true
+		JOIN users u ON u.user_id = r.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE r.is_current = true
 		ORDER BY r.user_id, r.repost_item_id`,
 		func(rows pgx.Rows) (repost, error) {
@@ -153,10 +161,11 @@ func (w *Writer) writeShares(ctx context.Context) error {
 		createdAt time.Time
 	}
 	return processBatched(ctx, w, "shares",
-		`SELECT count(*) FROM shares`,
+		`SELECT count(*) FROM shares s
+		JOIN users u ON u.user_id = s.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''`,
 		`SELECT s.user_id, s.share_item_id, COALESCE(LOWER(u.wallet), ''), s.share_type, s.created_at
 		FROM shares s
-		LEFT JOIN users u ON u.user_id = s.user_id AND u.is_current = true
+		JOIN users u ON u.user_id = s.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		ORDER BY s.user_id, s.share_item_id`,
 		func(rows pgx.Rows) (share, error) {
 			var s share
@@ -189,10 +198,14 @@ func (w *Writer) writeSubscriptions(ctx context.Context) error {
 		isDelete             bool
 	}
 	return processBatched(ctx, w, "subscriptions",
-		`SELECT count(*) FROM subscriptions WHERE is_current = true`,
-		`SELECT s.subscriber_id, s.user_id, COALESCE(LOWER(u.wallet), ''), s.created_at, s.is_delete
+		`SELECT count(*) FROM subscriptions s
+		JOIN users u ON u.user_id = s.subscriber_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		JOIN users tu ON tu.user_id = s.user_id AND tu.is_current = true
+		WHERE s.is_current = true`,
+		`SELECT s.subscriber_id, s.user_id, LOWER(u.wallet), s.created_at, s.is_delete
 		FROM subscriptions s
-		LEFT JOIN users u ON u.user_id = s.subscriber_id AND u.is_current = true
+		JOIN users u ON u.user_id = s.subscriber_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		JOIN users tu ON tu.user_id = s.user_id AND tu.is_current = true
 		WHERE s.is_current = true
 		ORDER BY s.subscriber_id, s.user_id`,
 		func(rows pgx.Rows) (subscription, error) {
@@ -225,10 +238,14 @@ func (w *Writer) writeMutedUsers(ctx context.Context) error {
 		createdAt           time.Time
 	}
 	return processBatched(ctx, w, "muted_users",
-		`SELECT count(*) FROM muted_users WHERE is_delete = false`,
+		`SELECT count(*) FROM muted_users m
+		JOIN users u ON u.user_id = m.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		JOIN users mu ON mu.user_id = m.muted_user_id AND mu.is_current = true
+		WHERE m.is_delete = false`,
 		`SELECT m.user_id, m.muted_user_id, COALESCE(LOWER(u.wallet), ''), m.created_at
 		FROM muted_users m
-		LEFT JOIN users u ON u.user_id = m.user_id AND u.is_current = true
+		JOIN users u ON u.user_id = m.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		JOIN users mu ON mu.user_id = m.muted_user_id AND mu.is_current = true
 		WHERE m.is_delete = false
 		ORDER BY m.user_id, m.muted_user_id`,
 		func(rows pgx.Rows) (mutedUser, error) {

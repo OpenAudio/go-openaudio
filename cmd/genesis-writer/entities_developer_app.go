@@ -39,7 +39,7 @@ func (w *Writer) writeDeveloperApps(ctx context.Context) error {
 		`SELECT d.address, d.user_id, COALESCE(LOWER(u.wallet), ''),
 			d.name, d.description, d.image_url, d.is_personal_access, d.created_at
 		FROM developer_apps d
-		LEFT JOIN users u ON u.user_id = d.user_id AND u.is_current = true
+		JOIN users u ON u.user_id = d.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE d.is_current = true AND d.is_delete = false
 		ORDER BY d.user_id, d.address`,
 		func(rows pgx.Rows) (sourceDeveloperApp, error) {
@@ -92,7 +92,7 @@ func (w *Writer) writeGrants(ctx context.Context) error {
 		`SELECT count(*) FROM grants WHERE is_current = true AND is_revoked = false AND is_approved = true`,
 		`SELECT g.grantee_address, g.user_id, COALESCE(LOWER(u.wallet), ''), g.created_at
 		FROM grants g
-		LEFT JOIN users u ON u.user_id = g.user_id AND u.is_current = true
+		JOIN users u ON u.user_id = g.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE g.is_current = true AND g.is_revoked = false AND g.is_approved = true
 		ORDER BY g.user_id, g.grantee_address`,
 		func(rows pgx.Rows) (sourceGrant, error) {

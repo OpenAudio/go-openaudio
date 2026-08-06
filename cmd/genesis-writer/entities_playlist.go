@@ -69,7 +69,9 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 	return processBatched(ctx, w, "playlists",
 		// Deleted playlists are migrated too, carrying is_delete in the metadata, so
 		// a parity check can tell an intentional omission from real data loss.
-		`SELECT count(*) FROM playlists WHERE is_current = true`,
+		`SELECT count(*) FROM playlists p
+		JOIN users u ON u.user_id = p.playlist_owner_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		WHERE p.is_current = true`,
 		`SELECT
 			p.playlist_id, p.playlist_owner_id, COALESCE(LOWER(u.wallet), ''),
 			p.playlist_name, p.description,
@@ -81,7 +83,7 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 			p.is_delete,
 			p.created_at
 		FROM playlists p
-		LEFT JOIN users u ON u.user_id = p.playlist_owner_id AND u.is_current = true
+		JOIN users u ON u.user_id = p.playlist_owner_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE p.is_current = true
 		ORDER BY p.playlist_id`,
 		func(rows pgx.Rows) (sourcePlaylist, error) {
