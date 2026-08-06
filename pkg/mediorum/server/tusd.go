@@ -123,7 +123,25 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	// Check if this is a replication request
 	isReplication, ok := event.Upload.MetaData["isReplication"]
 	if !ok || isReplication != "true" {
-		// Not a replication - allow (user uploads don't require auth)
+		// A user upload. Audio must prove which wallet it came from, because
+		// this node later attests to that wallet on chain and the attestation
+		// is what entitles it to claim the resulting cids on a track.
+		// Rejecting here rather than at completion saves the client sending
+		// bytes it can never use.
+		template := JobTemplateAudio
+		if t, ok := event.Upload.MetaData["template"]; ok {
+			template = JobTemplate(t)
+		}
+		if _, err := ss.resolveUploadIdentity(template, event.Upload.MetaData); err != nil {
+			ss.logger.Warn("rejecting unauthenticated upload",
+				zap.String("id", event.Upload.ID),
+				zap.String("template", string(template)),
+				zap.Error(err))
+			return handler.HTTPResponse{
+				StatusCode: 401,
+				Body:       "upload authentication failed: " + err.Error(),
+			}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+		}
 		return handler.HTTPResponse{}, handler.FileInfoChanges{}, nil
 	}
 
@@ -285,11 +303,6 @@ func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
 		filename = event.Upload.ID
 	}
 
-	userWallet := sql.NullString{Valid: false}
-	if wallet, ok := event.Upload.MetaData["userWallet"]; ok && wallet != "" {
-		userWallet = sql.NullString{String: wallet, Valid: true}
-	}
-
 	// Extract and validate template from metadata
 	template := JobTemplateAudio
 	if templateMeta, ok := event.Upload.MetaData["template"]; ok {
@@ -349,10 +362,30 @@ func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
 		selectedPreview = parsed
 	}
 
+	// Re-verify rather than carry the identity over from the pre-create hook:
+	// the check is cheap, and it keeps the wallet written to the row derived
+	// from a signature this function saw for itself.
+	identity, err := ss.resolveUploadIdentity(template, event.Upload.MetaData)
+	if err != nil {
+		ss.logger.Error("upload authentication failed after create", zap.String("id", event.Upload.ID), zap.Error(err))
+		now := time.Now().UTC()
+		ss.crud.Create(&Upload{
+			ID:        event.Upload.ID,
+			Status:    JobStatusError,
+			Error:     err.Error(),
+			CreatedBy: ss.Config.Self.Host,
+			CreatedAt: now,
+			UpdatedAt: now,
+		})
+		return
+	}
+
 	now := time.Now().UTC()
 	upload := &Upload{
 		ID:               event.Upload.ID,
-		UserWallet:       userWallet,
+		UserWallet:       nullString(identity.Wallet),
+		UserID:           nullInt64(identity.UserID),
+		UploadSignature:  nullString(identity.Signature),
 		Status:           JobStatusNew,
 		Template:         template,
 		SelectedPreview:  selectedPreview,

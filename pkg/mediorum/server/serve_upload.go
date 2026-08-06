@@ -136,8 +136,14 @@ func (ss *MediorumServer) updateUpload(c echo.Context) error {
 	// Do not support deleting previews
 	if selectedPreview.Valid && selectedPreview != upload.SelectedPreview {
 		upload.SelectedPreview = selectedPreview
-		err := ss.generateAudioPreviewForUpload(c.Request().Context(), upload)
+		previewCID, err := ss.generateAudioPreviewForUpload(c.Request().Context(), upload)
 		if err != nil {
+			return err
+		}
+		// A changed preview start yields a cid the original attestation never
+		// covered. Attest before responding, so the caller does not receive a
+		// preview cid it cannot yet name on its track.
+		if err := ss.attestUploadCids(c.Request().Context(), upload, previewCID); err != nil {
 			return err
 		}
 	}

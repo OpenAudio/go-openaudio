@@ -14,7 +14,11 @@ import (
 // which stored preview CID on the upload record itself.
 // This is still expected by client when creating + editing a preview.
 // When client is fully using generate_preview endpoint, this can probably go away.
-func (ss *MediorumServer) generateAudioPreviewForUpload(ctx context.Context, upload *Upload) error {
+// Returns the cid it generated, empty if the upload has no preview selected.
+// Callers are responsible for attesting it: the cid is attested with the rest
+// of the upload during transcoding, but an edit that changes the preview start
+// runs this again and produces a cid that needs an attestation of its own.
+func (ss *MediorumServer) generateAudioPreviewForUpload(ctx context.Context, upload *Upload) (string, error) {
 	// if a start time is set, also transcode an audio preview from the full 320kbps downsample
 	if upload.SelectedPreview.Valid {
 		splitPreview := strings.Split(upload.SelectedPreview.String, "|")
@@ -22,13 +26,16 @@ func (ss *MediorumServer) generateAudioPreviewForUpload(ctx context.Context, upl
 
 		audioPreview, err := ss.generateAudioPreview(ctx, upload.TranscodeResults["320"], previewStart)
 		if err != nil {
-			return err
+			return "", err
 		}
 
 		upload.TranscodeResults[upload.SelectedPreview.String] = audioPreview.CID
-		return ss.crud.Update(upload)
+		if err := ss.crud.Update(upload); err != nil {
+			return "", err
+		}
+		return audioPreview.CID, nil
 	}
-	return nil
+	return "", nil
 }
 
 // generateAudioPreview is the new preview impl which requires only a CID + previewStartSeconds, so that it works with Qm CIDs too.

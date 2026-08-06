@@ -28,7 +28,17 @@ type QmAudioAnalysis struct {
 type Upload struct {
 	ID string `json:"id"` // base32 file hash
 
-	UserWallet        sql.NullString `json:"user_wallet"`
+	// UserWallet is the wallet this node may attest to on chain. On the tus
+	// path it is set only from a verified upload signature. The legacy
+	// POST /uploads and gRPC paths still fall back to an unverified
+	// X-User-Wallet-Addr header, which is why attestation keys off
+	// UploadSignature rather than this field alone.
+	UserWallet sql.NullString `json:"user_wallet"`
+	// UserID is covered by the signed upload payload alongside the wallet.
+	UserID sql.NullInt64 `json:"user_id"`
+	// UploadSignature is the EIP-712 signature the uploader presented,
+	// retained as forensic evidence of what this node verified.
+	UploadSignature   sql.NullString `json:"-"`
 	Template          JobTemplate    `json:"template"`
 	OrigFileName      string         `json:"orig_filename"`
 	OrigFileCID       string         `json:"orig_file_cid" gorm:"column:orig_file_cid;index:idx_uploads_orig_file_cid"` //
