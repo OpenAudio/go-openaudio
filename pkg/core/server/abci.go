@@ -15,6 +15,7 @@ import (
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/env"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
@@ -284,7 +285,11 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 
 	txMemBatch := s.mempl.GetBatch(batch, proposal.Height)
 
-	// TODO: parallelize
+	rules := s.config.Upgrades.RulesetAt(proposal.Height)
+	authOverlay := s.newProposalAuthOverlay()
+
+	// Sequential on purpose: authOverlay carries each accepted tx's auth
+	// effects forward so later txs in this proposal can depend on them.
 	for _, tx := range txMemBatch {
 		var txBytes []byte
 		var err error
@@ -297,7 +302,7 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 			s.logger.Error("tx made it into prepare but couldn't be marshalled", zap.Error(err))
 			continue
 		}
-		valid, err := s.validateBlockTx(ctx, proposal.Time, proposal.Height, proposal.Misbehavior, txBytes)
+		valid, err := s.validateBlockTx(ctx, rules, authOverlay, proposal.Time, proposal.Height, proposal.Misbehavior, txBytes)
 		if err != nil {
 			s.logger.Error("tx made it into prepare but couldn't be validated", zap.Error(err))
 			continue
@@ -1151,8 +1156,10 @@ func (s *Server) isValidV2Transaction(tx []byte) (*v1beta1.Transaction, error) {
 }
 
 func (s *Server) validateBlockTxs(ctx context.Context, blockTime time.Time, blockHeight int64, misbehavior []abcitypes.Misbehavior, txs [][]byte) (bool, error) {
+	rules := s.config.Upgrades.RulesetAt(blockHeight)
+	authOverlay := s.newProposalAuthOverlay()
 	for _, tx := range txs {
-		valid, err := s.validateBlockTx(ctx, blockTime, blockHeight, misbehavior, tx)
+		valid, err := s.validateBlockTx(ctx, rules, authOverlay, blockTime, blockHeight, misbehavior, tx)
 		if err != nil {
 			return false, err
 		} else if !valid {
@@ -1162,7 +1169,11 @@ func (s *Server) validateBlockTxs(ctx context.Context, blockTime time.Time, bloc
 	return true, nil
 }
 
-func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, blockHeight int64, misbehavior []abcitypes.Misbehavior, tx []byte) (bool, error) {
+// validateBlockTx validates a single proposal transaction. authOverlay is
+// shared across the proposal's transactions in order, so a ManageEntity tx
+// may rely on the auth effects of an earlier tx in the same proposal; a
+// rejected tx contributes nothing to it.
+func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOverlay authStore, blockTime time.Time, blockHeight int64, misbehavior []abcitypes.Misbehavior, tx []byte) (bool, error) {
 	signedTx, err := s.isValidSignedTransaction(tx)
 	if err != nil {
 		// check if the tx is a v2 transaction
@@ -1180,6 +1191,28 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 
 	switch signedTx.Transaction.(type) {
 	case *v1.SignedTransaction_Plays:
+	case *v1.SignedTransaction_ManageEntity:
+		if rules.AuthEnforced {
+			if err := s.validateManageEntityAuth(ctx, authOverlay, signedTx.GetManageEntity()); err != nil {
+				if !authRejected(err) {
+					// A store failure means this node cannot tell; surface it
+					// so ProcessProposal reports unknown instead of voting
+					// invalid on a possibly valid proposal.
+					return false, err
+				}
+				s.logger.Error("Invalid block: unauthorized manage entity tx", zap.Error(err))
+				return false, nil
+			}
+		}
+	case *v1.SignedTransaction_ManageEntityMigration:
+		if rules.AuthEnforced {
+			// Migration txs are replayed from the genesis block range via
+			// FinalizeBlock and never pass through proposal validation there;
+			// one appearing in a live proposal is a peer trying to write
+			// entity state under the relaxed replay rules.
+			s.logger.Error("Invalid block: manage entity migration tx in live proposal")
+			return false, nil
+		}
 	case *v1.SignedTransaction_Attestation:
 		if err := s.isValidAttestation(ctx, signedTx, blockHeight); err != nil {
 			s.logger.Error("Invalid block: invalid attestation tx", zap.Error(err))
@@ -1239,6 +1272,13 @@ func (s *Server) validateBlockTx(ctx context.Context, blockTime time.Time, block
 
 func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64, signedTx *v1.SignedTransaction) error {
 	switch signedTx.Transaction.(type) {
+	case *v1.SignedTransaction_ManageEntity:
+		// The mempool admits transactions for the next block, so resolve the
+		// ruleset one height ahead.
+		if s.config.Upgrades.RulesetAt(currentHeight + 1).AuthEnforced {
+			return s.validateManageEntityAuth(ctx, s.newProposalAuthOverlay(), signedTx.GetManageEntity())
+		}
+		return nil
 	case *v1.SignedTransaction_Reward:
 		return s.isValidRewardTransaction(ctx, signedTx, currentHeight)
 	case *v1.SignedTransaction_RewardPool:

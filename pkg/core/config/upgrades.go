@@ -29,11 +29,10 @@ type UpgradeSchedule struct {
 	// ManageEntity transactions: the signer must match the EIP-712 recovery
 	// and be authorized (own wallet or active approved grant) against the
 	// consensus auth state, or the transaction is rejected at the mempool and
-	// proposal stages. Defined here inert — no network schedules it yet; the
-	// enforcement change later in this stack sets it on the ephemeral
-	// networks. Enforcement must not be scheduled on a persistent network
-	// earlier than the height its auth state began being tracked, or it will
-	// trust state built from unverified signers.
+	// proposal stages. It also closes proposal-level submission of genesis
+	// migration transactions. Enforcement must not be scheduled on a
+	// persistent network earlier than the height its auth state began being
+	// tracked, or it will trust state built from unverified signers.
 	AuthEnforcementHeight int64
 }
 
@@ -65,9 +64,13 @@ func activeAt(activation, height int64) bool {
 // validators run a release that knows the entry.
 var upgradeSchedules = map[string]*UpgradeSchedule{
 	// dev
-	"openaudio-devnet": {},
+	"openaudio-devnet": {
+		AuthEnforcementHeight: 1,
+	},
 	// sandbox
-	"audius-devnet": {},
+	"audius-devnet": {
+		AuthEnforcementHeight: 1,
+	},
 	// stage
 	"audius-testnet-alpha": {},
 	// prod
