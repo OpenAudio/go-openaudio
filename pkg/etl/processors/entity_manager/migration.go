@@ -289,7 +289,7 @@ func (h *migratedAssociatedWalletCreateHandler) Handle(ctx context.Context, para
 		return err
 	}
 
-	return insertAssociatedWallet(ctx, params, wallet, chain)
+	return insertAssociatedWalletWithState(ctx, params, wallet, chain, params.MetadataBoolOr("is_delete", false))
 }
 
 func migratedAssociatedWalletCreate() Handler { return &migratedAssociatedWalletCreateHandler{} }
@@ -314,7 +314,7 @@ func (h *migratedDashboardWalletCreateHandler) Handle(ctx context.Context, param
 		return err
 	}
 
-	return insertDashboardWalletUser(ctx, params, wallet)
+	return insertDashboardWalletUserWithState(ctx, params, wallet, params.MetadataBoolOr("is_delete", false))
 }
 
 func migratedDashboardWalletCreate() Handler { return &migratedDashboardWalletCreateHandler{} }

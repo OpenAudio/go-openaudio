@@ -179,9 +179,12 @@ func (w *Writer) writeAssociatedWallets(ctx context.Context) error {
 			return aw, err
 		},
 		func(ctx context.Context, aw sourceAssociatedWallet) error {
-			metaJSON, err := json.Marshal(map[string]string{
+			metaJSON, err := json.Marshal(map[string]any{
 				"wallet": aw.Wallet,
 				"chain":  aw.Chain,
+				// Always serialized: `omitempty` semantics would drop a false
+				// value and the indexer cannot tell "absent" from "not deleted".
+				"is_delete": aw.IsDelete,
 			})
 			if err != nil {
 				return fmt.Errorf("marshal associated wallet: %w", err)
@@ -196,26 +199,14 @@ func (w *Writer) writeAssociatedWallets(ctx context.Context) error {
 			if aw.OwnerWallet != nil && *aw.OwnerWallet != "" {
 				ownerWallet = strings.ToLower(*aw.OwnerWallet)
 			}
-			if err := w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
-				UserId:     aw.UserID,
-				EntityType: "AssociatedWallet",
-				EntityId:   0,
-				Action:     "Create",
-				Metadata:   string(metaJSON),
-			}, ownerWallet); err != nil {
-				return err
-			}
-			// A soft-deleted row still has to exist before it can be deleted, so
-			// replay the removal as a second transaction rather than dropping the
-			// row. The indexer's Delete handler takes the same metadata.
-			if !aw.IsDelete {
-				return nil
-			}
+			// An unlinked wallet carries is_delete on the Create rather than
+			// arriving as a second Delete transaction: the source row is already
+			// the final state, so there is no intermediate moment to replay.
 			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     aw.UserID,
 				EntityType: "AssociatedWallet",
 				EntityId:   0,
-				Action:     "Delete",
+				Action:     "Create",
 				Metadata:   string(metaJSON),
 			}, ownerWallet)
 		},

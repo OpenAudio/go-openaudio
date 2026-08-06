@@ -26,11 +26,17 @@ func (h *dashboardWalletCreateHandler) Handle(ctx context.Context, params *Param
 // insertDashboardWalletUser writes the wallet/user association. Shared by the
 // production and genesis migration handlers.
 func insertDashboardWalletUser(ctx context.Context, params *Params, wallet string) error {
+	return insertDashboardWalletUserWithState(ctx, params, wallet, false)
+}
+
+// insertDashboardWalletUserWithState writes the association carrying its
+// deleted state, for the same reason as associated wallets.
+func insertDashboardWalletUserWithState(ctx context.Context, params *Params, wallet string, isDelete bool) error {
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO dashboard_wallet_users (wallet, user_id, is_delete, txhash, blocknumber, created_at, updated_at)
-		VALUES ($1, $2, false, $3, $4, $5, $5)
-		ON CONFLICT (wallet) DO UPDATE SET user_id = $2, is_delete = false, txhash = $3, blocknumber = $4, updated_at = $5
-	`, wallet, params.UserID, params.TxHash, params.BlockNumber, params.BlockTime)
+		VALUES ($1, $2, $6, $3, $4, $5, $5)
+		ON CONFLICT (wallet) DO UPDATE SET user_id = $2, is_delete = $6, txhash = $3, blocknumber = $4, updated_at = $5
+	`, wallet, params.UserID, params.TxHash, params.BlockNumber, params.BlockTime, isDelete)
 	return err
 }
 

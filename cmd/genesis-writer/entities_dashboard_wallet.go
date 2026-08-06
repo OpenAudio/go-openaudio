@@ -13,6 +13,9 @@ import (
 type dashboardWalletMetadata struct {
 	Wallet    string `json:"wallet"`
 	CreatedAt string `json:"created_at,omitempty"`
+	// Always serialized: `omitempty` would drop a false value and the indexer
+	// cannot tell "absent" from "not deleted".
+	IsDelete bool `json:"is_delete"`
 }
 
 type sourceDashboardWalletUser struct {
@@ -37,30 +40,20 @@ func (w *Writer) writeDashboardWalletUsers(ctx context.Context) error {
 			metaJSON, err := json.Marshal(dashboardWalletMetadata{
 				Wallet:    d.Wallet,
 				CreatedAt: d.CreatedAt.Format(time.RFC3339),
+				IsDelete:  d.IsDelete,
 			})
 			if err != nil {
 				return fmt.Errorf("marshal dashboard wallet user metadata: %w", err)
 			}
 			// DP uses params.signer (the wallet) as identity for DashboardWalletUser.
-			if err := w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
-				UserId:     d.UserID,
-				EntityType: "DashboardWalletUser",
-				EntityId:   0,
-				Action:     "Create",
-				Metadata:   string(metaJSON),
-			}, d.Wallet); err != nil {
-				return err
-			}
-			// See writeAssociatedWallets: replay the removal instead of dropping
-			// the row, so a soft-deleted link survives the migration.
-			if !d.IsDelete {
-				return nil
-			}
+			// An unlinked association carries is_delete on the Create rather than
+			// arriving as a second Delete transaction: the source row is already
+			// the final state, so there is no intermediate moment to replay.
 			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     d.UserID,
 				EntityType: "DashboardWalletUser",
 				EntityId:   0,
-				Action:     "Delete",
+				Action:     "Create",
 				Metadata:   string(metaJSON),
 			}, d.Wallet)
 		},
