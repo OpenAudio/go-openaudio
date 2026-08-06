@@ -49,3 +49,30 @@ func TestScheduleForChainID(t *testing.T) {
 		}
 	}
 }
+
+// The app version rises to an upgrade's number at exactly its activation
+// height, and the bump fires only on that boundary.
+func TestAppVersionAt(t *testing.T) {
+	u := &UpgradeSchedule{AuthEnforcementHeight: 100}
+
+	if u.AppVersionAt(99) != 0 || u.AppVersionAt(100) != 1 || u.AppVersionAt(101) != 1 {
+		t.Fatal("app version must rise at exactly the activation height")
+	}
+	if _, bumped := u.AppVersionBumpAt(99); bumped {
+		t.Fatal("no bump before activation")
+	}
+	if v, bumped := u.AppVersionBumpAt(100); !bumped || v != 1 {
+		t.Fatalf("expected bump to version 1 at activation height, got %d %v", v, bumped)
+	}
+	if _, bumped := u.AppVersionBumpAt(101); bumped {
+		t.Fatal("no bump after the boundary")
+	}
+
+	var nilSchedule *UpgradeSchedule
+	if nilSchedule.AppVersionAt(1<<40) != 0 {
+		t.Fatal("nil schedule must resolve to app version 0")
+	}
+	if (&UpgradeSchedule{}).AppVersionAt(1<<40) != 0 {
+		t.Fatal("empty schedule must resolve to app version 0")
+	}
+}

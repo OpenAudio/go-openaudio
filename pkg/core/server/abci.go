@@ -18,6 +18,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/env"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
+	cmtparams "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	cfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	cmtflags "github.com/cometbft/cometbft/libs/cli/flags"
@@ -549,6 +550,18 @@ func (s *Server) FinalizeBlock(ctx context.Context, req *abcitypes.FinalizeBlock
 
 	if validatorUpdates.Len() > 0 {
 		resp.ValidatorUpdates = validatorUpdates
+	}
+
+	// At an upgrade's activation height, raise the app-version consensus
+	// parameter. Binaries that do not know the upgrade emit no update,
+	// disagree on the consensus params, and halt at header verification on
+	// the boundary instead of forking silently past it.
+	if v, bumped := s.config.Upgrades.AppVersionBumpAt(req.Height); bumped {
+		resp.ConsensusParamUpdates = &cmtparams.ConsensusParams{
+			Version: &cmtparams.VersionParams{App: v},
+		}
+		s.logger.Info("raising app version at upgrade activation height",
+			zap.Int64("height", req.Height), zap.Uint64("app_version", v))
 	}
 
 	s.logger.Info("block finalized", zap.Int64("height", req.Height), zap.Int("txs", len(req.Txs)))

@@ -58,6 +58,42 @@ func activeAt(activation, height int64) bool {
 	return activation != 0 && height >= activation
 }
 
+// Each named upgrade carries a permanent app-version number, assigned in the
+// order upgrades are introduced. When an upgrade activates, FinalizeBlock
+// raises the chain's app-version consensus parameter to that number. A binary
+// that does not know the upgrade emits no such update, disagrees on the
+// consensus params, and stops at header verification on the activation
+// boundary — a loud halt instead of a silent fork. Like activation heights,
+// version numbers are permanent once they have governed a block on a
+// persistent network.
+const (
+	appVersionAuthEnforcement uint64 = 1
+)
+
+// AppVersionAt returns the app version in force at the given height: the
+// highest version among upgrades active at that height, 0 when none are.
+func (u *UpgradeSchedule) AppVersionAt(height int64) uint64 {
+	if u == nil {
+		return 0
+	}
+	v := uint64(0)
+	if activeAt(u.AuthEnforcementHeight, height) {
+		v = max(v, appVersionAuthEnforcement)
+	}
+	return v
+}
+
+// AppVersionBumpAt reports whether the app version changes at exactly this
+// height, and the version to raise it to. FinalizeBlock emits a consensus
+// param update when it does.
+func (u *UpgradeSchedule) AppVersionBumpAt(height int64) (uint64, bool) {
+	next := u.AppVersionAt(height)
+	if next == u.AppVersionAt(height-1) {
+		return 0, false
+	}
+	return next, true
+}
+
 // upgradeSchedules maps genesis chain IDs (pkg/core/config/genesis/*.json) to
 // their activation tables. Ephemeral networks (devnet, sandbox) activate new
 // upgrades at height 1 so every local chain and integration test exercises
