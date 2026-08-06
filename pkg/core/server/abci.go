@@ -1193,7 +1193,7 @@ func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOv
 	case *v1.SignedTransaction_Plays:
 	case *v1.SignedTransaction_ManageEntity:
 		if rules.AuthEnforced {
-			if err := s.validateManageEntityAuth(ctx, authOverlay, signedTx.GetManageEntity()); err != nil {
+			if err := s.validateManageEntityAuth(ctx, rules, authOverlay, signedTx.GetManageEntity()); err != nil {
 				if !authRejected(err) {
 					// A store failure means this node cannot tell; surface it
 					// so ProcessProposal reports unknown instead of voting
@@ -1251,6 +1251,19 @@ func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOv
 			s.logger.Error("Invalid block: invalid reward tx", zap.Error(err))
 			return false, nil
 		}
+	case *v1.SignedTransaction_ContentAttestation:
+		// Only meaningful once content authorization is active. Before that
+		// height the transaction carries no weight, so accepting it would put
+		// unenforced claims on chain and give an attacker a head start on
+		// squatting cids before anyone is checking them.
+		if !rules.ContentAuthEnforced {
+			s.logger.Error("Invalid block: content attestation before content auth is active")
+			return false, nil
+		}
+		if err := s.isValidContentAttestation(ctx, signedTx); err != nil {
+			s.logger.Error("Invalid block: invalid content attestation tx", zap.Error(err))
+			return false, nil
+		}
 	case *v1.SignedTransaction_FileUpload:
 		if err := s.isValidFileUpload(ctx, signedTx); err != nil {
 			s.logger.Error("Invalid block: invalid file upload tx", zap.Error(err))
@@ -1275,8 +1288,9 @@ func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64,
 	case *v1.SignedTransaction_ManageEntity:
 		// The mempool admits transactions for the next block, so resolve the
 		// ruleset one height ahead.
-		if s.config.Upgrades.RulesetAt(currentHeight + 1).AuthEnforced {
-			return s.validateManageEntityAuth(ctx, s.newProposalAuthOverlay(), signedTx.GetManageEntity())
+		rules := s.config.Upgrades.RulesetAt(currentHeight + 1)
+		if rules.AuthEnforced {
+			return s.validateManageEntityAuth(ctx, rules, s.newProposalAuthOverlay(), signedTx.GetManageEntity())
 		}
 		return nil
 	case *v1.SignedTransaction_Reward:
@@ -1288,6 +1302,15 @@ func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64,
 			return err
 		}
 		return s.isValidMediorumOperationTx(ctx, signedTx)
+	case *v1.SignedTransaction_ContentAttestation:
+		// Validate at admission, not only at proposal. Anyone can submit an
+		// attestation with a bogus signature, and without this they occupy
+		// mempool space until a proposer drops them — the same gap forwarded
+		// ManageEntity transactions had.
+		if !s.config.Upgrades.RulesetAt(currentHeight + 1).ContentAuthEnforced {
+			return errors.New("content attestations are not accepted before content auth is active")
+		}
+		return s.isValidContentAttestation(ctx, signedTx)
 	default:
 		// For other transaction types, no validation needed during SendTransaction
 		return nil
@@ -1323,6 +1346,8 @@ func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.Finaliz
 		return s.finalizeRewardTransaction(ctx, req, msg.GetReward(), txHash, sender)
 	case *v1.SignedTransaction_RewardPool:
 		return s.finalizeRewardPoolTransaction(ctx, req, msg.GetRewardPool(), txHash, 0)
+	case *v1.SignedTransaction_ContentAttestation:
+		return s.finalizeContentAttestation(ctx, msg, req.Height)
 	case *v1.SignedTransaction_FileUpload:
 		return s.finalizeFileUpload(ctx, msg, txHash, req.Height)
 	case *v1.SignedTransaction_MediorumOperation:

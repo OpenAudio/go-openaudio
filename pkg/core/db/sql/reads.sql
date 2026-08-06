@@ -758,3 +758,8 @@ where address = $1;
 select entity_type, entity_id, owner_user_id, is_deleted
 from core_auth_entities
 where entity_type = $1 and entity_id = $2;
+
+-- name: GetAuthCid :one
+select cid, uploader_address, attested_by, block_height
+from core_auth_cids
+where cid = $1;

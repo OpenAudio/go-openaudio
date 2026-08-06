@@ -310,6 +310,7 @@ message SignedTransaction {
     RewardPoolMessage reward_pool = 1011;
     ManageEntityLegacyMigration manage_entity_migration = 1012;
     MediorumOperation mediorum_operation = 1013;
+    ContentAttestation content_attestation = 1014;
   }
 }
 
@@ -779,6 +780,52 @@ message MediorumOperation {
   string action = 3;
   string table = 4;
   bytes data = 5;
+}
+
+// ContentAttestationPayload is what a validator signs to attest that a
+// specific wallet uploaded a specific set of bytes to it. Every field the
+// attestation speaks about is inside the signed payload, so a recovered
+// signature cannot be re-paired with a different uploader, upload, or cid set.
+//
+// Deliberately separate from FileUpload, which serves DDEX: there the uploader
+// signs the original cid, while here they authenticate before any cid exists.
+// Sharing one message would mean the same field meaning two different things
+// and every rule branching on which mode produced it.
+message ContentAttestationPayload {
+  // lowercased wallet that proved control of itself when the bytes were uploaded
+  string uploader_address = 1;
+  // cid of the file as uploaded
+  string orig_cid = 2;
+  // transcoded cid (e.g. 320kbps for audio); empty when not applicable
+  string transcoded_cid = 3;
+  // preview cid; empty when the upload has no preview
+  string preview_cid = 4;
+}
+
+// ContentAttestation is a validator stating that a wallet uploaded these bytes
+// to it. It is what entitles that wallet to name the resulting cids on a
+// track, and is the only thing standing between a paywalled master and anyone
+// who can read its cid off the public API.
+message ContentAttestation {
+  // wallet entitled to claim the cids below
+  string uploader_address = 1;
+  string orig_cid = 2;
+  string transcoded_cid = 3;
+  string preview_cid = 4;
+  // registered validator that received the bytes
+  string validator_address = 5;
+  // validator signature over the marshalled ContentAttestationPayload. This is
+  // the load-bearing signature: consensus verifies it and checks the signer is
+  // a registered node.
+  string validator_signature = 6;
+  // The uploader's own EIP-712 signature, as presented to the node. Recorded
+  // for dispute forensics and deliberately NOT verified by consensus: it is
+  // signed before any cid exists, so it names no content and cannot connect
+  // this wallet to these bytes. Only the validator, which saw the bytes arrive
+  // over a connection it had authenticated, can make that connection. Its
+  // freshness window is also unenforceable here, since an unbounded amount of
+  // time passes while transcoding runs.
+  string uploader_signature = 7;
 }
 
 message GetStreamURLsSignature {

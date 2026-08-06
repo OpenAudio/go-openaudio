@@ -66,6 +66,13 @@ type CoreAppState struct {
 	CreatedAt   pgtype.Timestamp
 }
 
+type CoreAuthCid struct {
+	Cid             string
+	UploaderAddress string
+	AttestedBy      string
+	BlockHeight     int64
+}
+
 type CoreAuthDeveloperApp struct {
 	Address   string
 	UserID    int64

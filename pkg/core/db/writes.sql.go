@@ -152,6 +152,29 @@ func (q *Queries) InsertAccessKey(ctx context.Context, arg InsertAccessKeyParams
 	return err
 }
 
+const insertAuthCid = `-- name: InsertAuthCid :exec
+insert into core_auth_cids (cid, uploader_address, attested_by, block_height)
+values ($1, $2, $3, $4)
+on conflict (cid) do nothing
+`
+
+type InsertAuthCidParams struct {
+	Cid             string
+	UploaderAddress string
+	AttestedBy      string
+	BlockHeight     int64
+}
+
+func (q *Queries) InsertAuthCid(ctx context.Context, arg InsertAuthCidParams) error {
+	_, err := q.db.Exec(ctx, insertAuthCid,
+		arg.Cid,
+		arg.UploaderAddress,
+		arg.AttestedBy,
+		arg.BlockHeight,
+	)
+	return err
+}
+
 const insertAuthEntity = `-- name: InsertAuthEntity :exec
 insert into core_auth_entities (entity_type, entity_id, owner_user_id, is_deleted)
 values ($1, $2, $3, $4)

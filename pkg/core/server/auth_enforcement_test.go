@@ -12,6 +12,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// authOnlyRules exercises signer authorization on its own. Content
+// authorization has its own coverage in content_auth_state_test.go, and
+// leaving it off here keeps these cases focused on the signer predicate.
+var authOnlyRules = config.Rules{AuthEnforced: true}
+
 // A later tx in the same proposal must see an earlier tx's auth effects, and
 // none of it may touch the base store: only FinalizeBlock's projection
 // commits state.
@@ -99,21 +104,21 @@ func TestValidateManageEntityAuthSignerRecovery(t *testing.T) {
 	})
 
 	// Legitimate: recovered signer matches, user is new, projection applies.
-	if err := s.validateManageEntityAuth(ctx, newOverlayAuthStore(newMemAuthStore()), em); err != nil {
+	if err := s.validateManageEntityAuth(ctx, authOnlyRules, newOverlayAuthStore(newMemAuthStore()), em); err != nil {
 		t.Fatalf("valid tx rejected: %v", err)
 	}
 
 	// Forged signer field: same signature, different claimed wallet.
 	forged := proto.Clone(em).(*v1.ManageEntityLegacy)
 	forged.Signer = "0x000000000000000000000000000000000000dEaD"
-	err := s.validateManageEntityAuth(ctx, newOverlayAuthStore(newMemAuthStore()), forged)
+	err := s.validateManageEntityAuth(ctx, authOnlyRules, newOverlayAuthStore(newMemAuthStore()), forged)
 	if err == nil || !authRejected(err) {
 		t.Fatalf("expected deterministic rejection for forged signer, got %v", err)
 	}
 
 	// No signature at all.
 	unsigned := &v1.ManageEntityLegacy{UserId: 2, EntityType: "User", Action: "Create"}
-	err = s.validateManageEntityAuth(ctx, newOverlayAuthStore(newMemAuthStore()), unsigned)
+	err = s.validateManageEntityAuth(ctx, authOnlyRules, newOverlayAuthStore(newMemAuthStore()), unsigned)
 	if err == nil || !authRejected(err) {
 		t.Fatalf("expected deterministic rejection for missing signature, got %v", err)
 	}
@@ -137,7 +142,7 @@ func TestValidateManageEntityAuthErrorClassification(t *testing.T) {
 
 	// Seed user 1 so the create is a projection-level rejection.
 	mustProject(t, base, userCreateTx(1, "0xother", "someone"))
-	err := s.validateManageEntityAuth(ctx, newOverlayAuthStore(base), em)
+	err := s.validateManageEntityAuth(ctx, authOnlyRules, newOverlayAuthStore(base), em)
 	if err == nil || !authRejected(err) {
 		t.Fatalf("expected rejection for duplicate user, got %v", err)
 	}
@@ -146,7 +151,7 @@ func TestValidateManageEntityAuthErrorClassification(t *testing.T) {
 	}
 
 	// A failing store must not read as a rejection.
-	err = s.validateManageEntityAuth(ctx, newOverlayAuthStore(&failingAuthStore{}), em)
+	err = s.validateManageEntityAuth(ctx, authOnlyRules, newOverlayAuthStore(&failingAuthStore{}), em)
 	if err == nil || authRejected(err) {
 		t.Fatalf("expected store failure to surface as a plain error, got %v", err)
 	}

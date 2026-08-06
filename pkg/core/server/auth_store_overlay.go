@@ -28,6 +28,7 @@ type overlayAuthStore struct {
 	grants   map[overlayGrantKey]authGrantRow
 	apps     map[string]authAppRow
 	entities map[overlayEntityKey]authEntityRow
+	cids     map[string]authCidRow
 }
 
 type overlayGrantKey struct {
@@ -47,6 +48,7 @@ func newOverlayAuthStore(base authStore) *overlayAuthStore {
 		grants:   map[overlayGrantKey]authGrantRow{},
 		apps:     map[string]authAppRow{},
 		entities: map[overlayEntityKey]authEntityRow{},
+		cids:     map[string]authCidRow{},
 	}
 }
 
@@ -137,6 +139,29 @@ func (o *overlayAuthStore) GetEntity(ctx context.Context, entityType string, ent
 		return e, true, nil
 	}
 	return o.base.GetEntity(ctx, entityType, entityID)
+}
+
+func (o *overlayAuthStore) GetCid(ctx context.Context, cid string) (authCidRow, bool, error) {
+	if c, ok := o.cids[cid]; ok {
+		return c, true, nil
+	}
+	return o.base.GetCid(ctx, cid)
+}
+
+// InsertCid mirrors the durable store's first-attestation-wins semantics: an
+// existing claim is never overwritten, so a second attestation for the same
+// cid inside one proposal loses to the first exactly as it would on disk.
+func (o *overlayAuthStore) InsertCid(ctx context.Context, cid, uploaderAddress, attestedBy string, _ int64) error {
+	if _, ok := o.cids[cid]; ok {
+		return nil
+	}
+	if _, ok, err := o.base.GetCid(ctx, cid); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+	o.cids[cid] = authCidRow{UploaderAddress: uploaderAddress, AttestedBy: attestedBy}
+	return nil
 }
 
 func (o *overlayAuthStore) InsertUser(_ context.Context, userID int64, wallet, handleLC string, deactivated bool) error {
