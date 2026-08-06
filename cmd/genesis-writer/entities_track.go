@@ -62,6 +62,9 @@ type trackMetadataInner struct {
 	CopyrightLine       interface{} `json:"copyright_line,omitempty"`
 	ProducerCopyright   interface{} `json:"producer_copyright_line,omitempty"`
 	ParentalWarning     string      `json:"parental_warning_type,omitempty"`
+	RouteSlug           string      `json:"route_slug,omitempty"`
+	RouteTitleSlug      string      `json:"route_title_slug,omitempty"`
+	RouteCollisionID    int         `json:"route_collision_id,omitempty"`
 	// State flags are always serialized: `omitempty` would drop a false value and
 	// the indexer cannot tell "absent" from "false" (is_available defaults true).
 	IsDelete    bool `json:"is_delete"`
@@ -115,6 +118,9 @@ type sourceTrack struct {
 	CopyrightLine       []byte // JSONB
 	ProducerCopyright   []byte // JSONB
 	ParentalWarning     *string
+	RouteSlug           *string
+	RouteTitleSlug      *string
+	RouteCollisionID    *int
 	IsDelete            bool
 	IsAvailable         bool
 	CreatedAt           time.Time
@@ -152,10 +158,18 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			t.artists, t.resource_contributors, t.indirect_resource_contributors,
 			t.rights_controller, t.copyright_line, t.producer_copyright_line,
 			t.parental_warning_type,
+			r.slug, r.title_slug, r.collision_id,
 			t.is_delete, t.is_available,
 			t.created_at
 		FROM tracks t
 		JOIN users u ON u.user_id = t.owner_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		LEFT JOIN LATERAL (
+			SELECT slug, title_slug, collision_id
+			FROM track_routes tr
+			WHERE tr.track_id = t.track_id AND tr.is_current = true
+			ORDER BY tr.collision_id DESC, tr.slug
+			LIMIT 1
+		) r ON true
 		WHERE t.is_current = true
 		ORDER BY t.track_id`,
 		func(rows pgx.Rows) (sourceTrack, error) {
@@ -177,6 +191,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				&t.Artists, &t.ResourceContribs, &t.IndirectContribs,
 				&t.RightsController, &t.CopyrightLine, &t.ProducerCopyright,
 				&t.ParentalWarning,
+				&t.RouteSlug, &t.RouteTitleSlug, &t.RouteCollisionID,
 				&t.IsDelete, &t.IsAvailable,
 				&t.CreatedAt,
 			)
@@ -218,6 +233,9 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				CoverOriginalTitle:  deref(t.CoverOriginalTitle),
 				CoverOriginalArtist: deref(t.CoverOriginalArtist),
 				ParentalWarning:     deref(t.ParentalWarning),
+				RouteSlug:           deref(t.RouteSlug),
+				RouteTitleSlug:      deref(t.RouteTitleSlug),
+				RouteCollisionID:    derefInt(t.RouteCollisionID),
 			}
 
 			inner.RemixOf = unmarshalJSONB(t.RemixOf)

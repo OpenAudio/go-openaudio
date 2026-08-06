@@ -72,10 +72,33 @@ func validateTrackCreate(ctx context.Context, params *Params) error {
 // already-deleted; only the genesis migration replays a deleted row, via
 // insertTrackAndRouteWithState.
 func insertTrackAndRoute(ctx context.Context, params *Params) error {
-	return insertTrackAndRouteWithState(ctx, params, false)
+	return insertTrackAndRouteWithState(ctx, params, trackState{})
 }
 
-func insertTrackAndRouteWithState(ctx context.Context, params *Params, isDelete bool) error {
+// trackRoute is a track's route as it already exists elsewhere, carried
+// verbatim instead of being recomputed.
+type trackRoute struct {
+	Slug        string
+	TitleSlug   string
+	CollisionID int
+}
+
+// trackState is the non-metadata state a track is created with. Production
+// passes the zero value; only the migration replay fills it in.
+type trackState struct {
+	IsDelete bool
+
+	// Route, when set, replaces slug generation. Legacy slugs are not
+	// reproducible from the title: the rules changed over the catalog's life,
+	// so 618,066 of 1,955,877 tracks on a production clone regenerate to a
+	// different slug than they actually serve -- 330,856 of them because the
+	// old scheme appended the track id, the rest over punctuation and
+	// collision numbering. A slug is a permanent URL, so the migration carries
+	// the real one rather than deriving a plausible one.
+	Route *trackRoute
+}
+
+func insertTrackAndRouteWithState(ctx context.Context, params *Params, state trackState) error {
 	// A required title is a validation rule (see validateTrackCreate), not a
 	// property of writing the row: a handful of legacy tracks have an empty
 	// title, and the genesis migration keeps them rather than dropping them.
@@ -227,7 +250,7 @@ func insertTrackAndRouteWithState(ctx context.Context, params *Params, isDelete 
 		params.TxHash,
 		params.BlockNumber,
 		nullString(origFilename),
-		isDelete,
+		state.IsDelete,
 	)
 	if err != nil {
 		return err
@@ -256,9 +279,18 @@ func insertTrackAndRouteWithState(ctx context.Context, params *Params, isDelete 
 		return err
 	}
 
-	slug, titleSlug, collisionID, err := GenerateSlugAndCollisionID(ctx, params.DBTX, params.UserID, params.EntityID, title)
-	if err != nil {
-		return err
+	var (
+		slug        string
+		titleSlug   string
+		collisionID int
+	)
+	if state.Route != nil {
+		slug, titleSlug, collisionID = state.Route.Slug, state.Route.TitleSlug, state.Route.CollisionID
+	} else {
+		slug, titleSlug, collisionID, err = GenerateSlugAndCollisionID(ctx, params.DBTX, params.UserID, params.EntityID, title)
+		if err != nil {
+			return err
+		}
 	}
 
 	_, err = params.DBTX.Exec(ctx, `
