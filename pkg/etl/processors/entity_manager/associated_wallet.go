@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
-
 )
 
 type associatedWalletCreateHandler struct{}

@@ -17,6 +17,17 @@ func (h *commentCreateHandler) Handle(ctx context.Context, params *Params) error
 	if err := validateCommentWrite(ctx, params, true); err != nil {
 		return err
 	}
+	return insertCommentWithState(ctx, params, false)
+}
+
+// insertCommentWithState writes a comment carrying its deleted state.
+//
+// Production always passes false: a client cannot create an already deleted
+// comment. The migration passes the source row's is_delete, so a soft-deleted
+// comment replays as one transaction rather than a Create followed by a
+// Delete. On a production clone that is 2,853 comments that were previously
+// dropped entirely.
+func insertCommentWithState(ctx context.Context, params *Params, isDelete bool) error {
 
 	body := params.MetadataString("body")
 	entityID, _ := params.MetadataInt64("entity_id")
@@ -40,12 +51,13 @@ func (h *commentCreateHandler) Handle(ctx context.Context, params *Params) error
 			is_delete, is_visible, is_edited,
 			is_members_only, video_url,
 			txhash, blockhash, blocknumber
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, false, true, false, $8, $9, $10, $11, $12)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $13, true, false, $8, $9, $10, $11, $12)
 	`, params.EntityID, body, params.UserID, entityID, entityType,
 		nullableInt(trackTimestamp, hasTimestamp),
 		params.BlockTime,
 		isMembersOnly, nullString(videoURL),
-		params.TxHash, params.BlockHash, params.BlockNumber)
+		params.TxHash, params.BlockHash, params.BlockNumber,
+		isDelete)
 	if err != nil {
 		return err
 	}

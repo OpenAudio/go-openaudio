@@ -20,6 +20,9 @@ type developerAppMetadata struct {
 	ImageURL         string `json:"image_url,omitempty"`
 	IsPersonalAccess bool   `json:"is_personal_access,omitempty"`
 	CreatedAt        string `json:"created_at,omitempty"`
+	// Always serialized: `omitempty` would drop a false value and the indexer
+	// cannot tell "absent" from "not deleted".
+	IsDelete bool `json:"is_delete"`
 }
 
 type sourceDeveloperApp struct {
@@ -31,24 +34,26 @@ type sourceDeveloperApp struct {
 	IsPersonalAccess bool
 	OwnerWallet      string
 	CreatedAt        time.Time
+	IsDelete         bool
 }
 
 func (w *Writer) writeDeveloperApps(ctx context.Context) error {
 	return processBatched(ctx, w, "developer_apps",
-		`SELECT count(*) FROM developer_apps WHERE is_current = true AND is_delete = false`,
+		`SELECT count(*) FROM developer_apps WHERE is_current = true`,
 		`SELECT d.address, d.user_id, COALESCE(LOWER(u.wallet), ''),
-			d.name, d.description, d.image_url, d.is_personal_access, d.created_at
+			d.name, d.description, d.image_url, d.is_personal_access, d.created_at, d.is_delete
 		FROM developer_apps d
 		JOIN users u ON u.user_id = d.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
-		WHERE d.is_current = true AND d.is_delete = false
+		WHERE d.is_current = true
 		ORDER BY d.user_id, d.address`,
 		func(rows pgx.Rows) (sourceDeveloperApp, error) {
 			var d sourceDeveloperApp
-			err := rows.Scan(&d.Address, &d.UserID, &d.OwnerWallet, &d.Name, &d.Description, &d.ImageURL, &d.IsPersonalAccess, &d.CreatedAt)
+			err := rows.Scan(&d.Address, &d.UserID, &d.OwnerWallet, &d.Name, &d.Description, &d.ImageURL, &d.IsPersonalAccess, &d.CreatedAt, &d.IsDelete)
 			return d, err
 		},
 		func(ctx context.Context, d sourceDeveloperApp) error {
 			meta := developerAppMetadata{
+				IsDelete:         d.IsDelete,
 				Address:          d.Address,
 				Name:             deref(d.Name),
 				Description:      deref(d.Description),
@@ -78,6 +83,8 @@ func (w *Writer) writeDeveloperApps(ctx context.Context) error {
 type grantMetadata struct {
 	GranteeAddress string `json:"grantee_address"`
 	CreatedAt      string `json:"created_at,omitempty"`
+	// Always serialized, as above.
+	IsRevoked bool `json:"is_revoked"`
 }
 
 type sourceGrant struct {
@@ -85,23 +92,25 @@ type sourceGrant struct {
 	UserID         int64
 	CreatedAt      time.Time
 	GrantorWallet  string
+	IsRevoked      bool
 }
 
 func (w *Writer) writeGrants(ctx context.Context) error {
 	return processBatched(ctx, w, "grants",
-		`SELECT count(*) FROM grants WHERE is_current = true AND is_revoked = false AND is_approved = true`,
-		`SELECT g.grantee_address, g.user_id, COALESCE(LOWER(u.wallet), ''), g.created_at
+		`SELECT count(*) FROM grants WHERE is_current = true`,
+		`SELECT g.grantee_address, g.user_id, COALESCE(LOWER(u.wallet), ''), g.created_at, g.is_revoked
 		FROM grants g
 		JOIN users u ON u.user_id = g.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
-		WHERE g.is_current = true AND g.is_revoked = false AND g.is_approved = true
+		WHERE g.is_current = true
 		ORDER BY g.user_id, g.grantee_address`,
 		func(rows pgx.Rows) (sourceGrant, error) {
 			var g sourceGrant
-			err := rows.Scan(&g.GranteeAddress, &g.UserID, &g.GrantorWallet, &g.CreatedAt)
+			err := rows.Scan(&g.GranteeAddress, &g.UserID, &g.GrantorWallet, &g.CreatedAt, &g.IsRevoked)
 			return g, err
 		},
 		func(ctx context.Context, g sourceGrant) error {
 			metaJSON, err := json.Marshal(grantMetadata{
+				IsRevoked:      g.IsRevoked,
 				GranteeAddress: g.GranteeAddress,
 				CreatedAt:      g.CreatedAt.Format(time.RFC3339),
 			})

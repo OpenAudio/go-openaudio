@@ -315,3 +315,31 @@ func TestMigratedUserCreate_CarriesUpdateOnlyProfileFields(t *testing.T) {
 		}
 	})
 }
+
+// A soft-deleted or revoked row migrates as one Create carrying its state,
+// not as a Create followed by a Delete.
+func TestMigratedCreateHandlersCarrySoftDeleteState(t *testing.T) {
+	if h := (&migratedCommentCreateHandler{}); h.Action() != ActionCreate || h.EntityType() != EntityTypeComment {
+		t.Errorf("comment override = %s/%s", h.EntityType(), h.Action())
+	}
+	if h := (&migratedDeveloperAppCreateHandler{}); h.Action() != ActionCreate || h.EntityType() != EntityTypeDeveloperApp {
+		t.Errorf("developer app override = %s/%s", h.EntityType(), h.Action())
+	}
+	if h := (&migratedGrantCreateHandler{}); h.Action() != ActionCreate || h.EntityType() != EntityTypeGrant {
+		t.Errorf("grant override = %s/%s", h.EntityType(), h.Action())
+	}
+
+	// The overrides must be registered, or the production handlers run and the
+	// state is silently hardcoded back to "active".
+	d := NewDispatcher(nil)
+	RegisterMigrationOverrides(d)
+	for _, tt := range []struct{ entity, action string }{
+		{EntityTypeComment, ActionCreate},
+		{EntityTypeDeveloperApp, ActionCreate},
+		{EntityTypeGrant, ActionCreate},
+	} {
+		if !d.HasHandler(tt.entity, tt.action) {
+			t.Errorf("no handler registered for %s/%s", tt.entity, tt.action)
+		}
+	}
+}

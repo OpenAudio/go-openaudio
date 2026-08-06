@@ -90,6 +90,13 @@ func validateDeveloperAppCreate(ctx context.Context, params *Params) error {
 }
 
 func insertDeveloperApp(ctx context.Context, params *Params) error {
+	return insertDeveloperAppWithState(ctx, params, false)
+}
+
+// insertDeveloperAppWithState writes an app carrying its deleted state.
+// Production always passes false -- a client cannot create an already deleted
+// app. Only the migration replays one.
+func insertDeveloperAppWithState(ctx context.Context, params *Params, isDelete bool) error {
 	address := strings.ToLower(params.MetadataString("address"))
 	name := params.MetadataString("name")
 	description := params.MetadataString("description")
@@ -100,7 +107,7 @@ func insertDeveloperApp(ctx context.Context, params *Params) error {
 		INSERT INTO developer_apps (
 			address, user_id, name, description, image_url, is_personal_access,
 			is_current, is_delete, created_at, updated_at, txhash, blocknumber
-		) VALUES ($1, $2, $3, $4, $5, $6, true, false, $7, $7, $8, $9)
+		) VALUES ($1, $2, $3, $4, $5, $6, true, $10, $7, $7, $8, $9)
 	`,
 		address,
 		params.UserID,
@@ -111,6 +118,7 @@ func insertDeveloperApp(ctx context.Context, params *Params) error {
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,
+		isDelete,
 	)
 	if err != nil {
 		return err
