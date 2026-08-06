@@ -396,7 +396,69 @@ type blockResult struct {
 //
 // On success the caller may advance its progress counters and assume
 // the block is fully indexed.
+// errNeedSavepoints signals that a savepoint-free attempt hit a hard error and
+// poisoned the block transaction, so the block must be replayed with per-tx
+// savepoints to isolate the failure.
+var errNeedSavepoints = errors.New("block needs per-tx savepoints")
+
+// txScope is the handle one transaction's writes go through.
+//
+// Normally it wraps a SAVEPOINT so a failing handler rolls back only its own
+// writes. During a genesis replay it wraps the block transaction directly:
+// every tx in the block is a migration tx, and a SAVEPOINT per tx measured
+// 55-75% overhead on an insert-plus-lookup workload. Nothing is lost by
+// dropping it, because a hard error there abandons the whole block anyway.
+type txScope struct {
+	tx       pgx.Tx
+	nested   bool
+	poisoned bool
+}
+
+// Rollback undoes this transaction's writes. Without a savepoint there is
+// nothing to roll back to, so it records that the block transaction is
+// unusable and must be retried with savepoints.
+func (s *txScope) Rollback(ctx context.Context) {
+	if s.nested {
+		_ = s.tx.Rollback(ctx)
+		return
+	}
+	s.poisoned = true
+}
+
+// migrationOnlyBlock reports whether every transaction in the block is a
+// genesis-migration transaction. Only those blocks take the savepoint-free
+// path: a mixed or live block keeps per-tx isolation.
+func migrationOnlyBlock(block *corev1.Block) bool {
+	if len(block.Transactions) == 0 {
+		return false
+	}
+	for _, t := range block.Transactions {
+		if t.Transaction == nil {
+			return false
+		}
+		if _, ok := t.Transaction.Transaction.(*corev1.SignedTransaction_ManageEntityMigration); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// processBlock indexes one block, preferring the savepoint-free path for
+// genesis-migration blocks and falling back to per-tx savepoints if that
+// attempt hits a hard error.
 func (e *Indexer) processBlock(ctx context.Context, pb prefetchedBlock) (*blockResult, error) {
+	if migrationOnlyBlock(pb.Block) {
+		res, err := e.processBlockAttempt(ctx, pb, false)
+		if !errors.Is(err, errNeedSavepoints) {
+			return res, err
+		}
+		e.logger.Warn("migration block hit a hard error without savepoints; retrying with per-tx savepoints",
+			zap.Int64("block", pb.Block.Height))
+	}
+	return e.processBlockAttempt(ctx, pb, true)
+}
+
+func (e *Indexer) processBlockAttempt(ctx context.Context, pb prefetchedBlock, useSavepoints bool) (*blockResult, error) {
 	block := pb.Block
 	blockStart := time.Now()
 	res := &blockResult{}
@@ -476,13 +538,20 @@ func (e *Indexer) processBlock(ctx context.Context, pb prefetchedBlock) (*blockR
 			CreatedAt:   pgtype.Timestamp{Time: block.Timestamp.AsTime(), Valid: true},
 		}
 
-		sp, err := tx.Begin(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("begin savepoint for tx %s: %w", t.Hash, err)
+		scope := &txScope{tx: tx}
+		if useSavepoints {
+			sp, err := tx.Begin(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("begin savepoint for tx %s: %w", t.Hash, err)
+			}
+			scope = &txScope{tx: sp, nested: true}
 		}
-		qsp := e.db.WithTx(sp)
+		qsp := e.db.WithTx(scope.tx)
 
-		spOK := e.processOneTx(ctx, sp, qsp, block, emBlock, &insertTxParams, t, res)
+		spOK := e.processOneTx(ctx, scope, qsp, block, emBlock, &insertTxParams, t, res)
+		if scope.poisoned {
+			return nil, errNeedSavepoints
+		}
 
 		// Always try to persist the transactions row, even if the
 		// type-specific handler rolled back its savepoint — the
@@ -493,12 +562,17 @@ func (e *Indexer) processBlock(ctx context.Context, pb prefetchedBlock) (*blockR
 			if err := qsp.InsertTransaction(ctx, insertTxParams); err != nil {
 				e.logger.Error("error inserting transaction",
 					zap.String("tx", t.Hash), zap.Error(err))
-				_ = sp.Rollback(ctx)
+				scope.Rollback(ctx)
+				if scope.poisoned {
+					return nil, errNeedSavepoints
+				}
 				continue
 			}
-			if err := sp.Commit(ctx); err != nil {
-				e.logger.Error("error committing savepoint for tx",
-					zap.String("tx", t.Hash), zap.Error(err))
+			if scope.nested {
+				if err := scope.tx.Commit(ctx); err != nil {
+					e.logger.Error("error committing savepoint for tx",
+						zap.String("tx", t.Hash), zap.Error(err))
+				}
 			}
 		} else {
 			// processOneTx already rolled back sp; record the tx row in
@@ -530,7 +604,7 @@ func (e *Indexer) processBlock(ctx context.Context, pb prefetchedBlock) (*blockR
 // from a handler do trigger a rollback so partial writes don't land.
 func (e *Indexer) processOneTx(
 	ctx context.Context,
-	sp pgx.Tx,
+	scope *txScope,
 	q *db.Queries,
 	block *corev1.Block,
 	emBlock int64,
@@ -552,11 +626,11 @@ func (e *Indexer) processOneTx(
 		if err != nil {
 			e.logger.Error("error processing plays",
 				zap.String("hash", t.Hash), zap.Error(err))
-			_ = sp.Rollback(ctx)
+			scope.Rollback(ctx)
 			return false
 		}
 		*insertTxParams = pr.InsertTx
-		e.firePlaysHooks(ctx, sp, signedTx.Plays.GetPlays(), block, t.Hash)
+		e.firePlaysHooks(ctx, scope.tx, signedTx.Plays.GetPlays(), block, t.Hash)
 
 	case *corev1.SignedTransaction_ManageEntity:
 		me := signedTx.ManageEntity
@@ -566,14 +640,14 @@ func (e *Indexer) processOneTx(
 		if err != nil {
 			e.logger.Error("error processing manage entity",
 				zap.String("hash", t.Hash), zap.Error(err))
-			_ = sp.Rollback(ctx)
+			scope.Rollback(ctx)
 			return false
 		}
 		*insertTxParams = pr.InsertTx
 
 		txStart := time.Now()
 		emParams := em.NewParams(me, emBlock, block.Timestamp.AsTime(),
-			block.Hash, t.Hash, sp, e.logger)
+			block.Hash, t.Hash, scope.tx, e.logger)
 		if dErr := e.dispatcher.Dispatch(ctx, emParams); dErr != nil {
 			res.emRejectCount++
 			if em.IsValidationError(dErr) {
@@ -601,7 +675,7 @@ func (e *Indexer) processOneTx(
 					zap.String("hash", t.Hash),
 					zap.Error(dErr),
 				)
-				_ = sp.Rollback(ctx)
+				scope.Rollback(ctx)
 				return false
 			}
 		} else {
@@ -628,7 +702,7 @@ func (e *Indexer) processOneTx(
 		if err != nil {
 			e.logger.Error("error processing manage entity migration",
 				zap.String("hash", t.Hash), zap.Error(err))
-			_ = sp.Rollback(ctx)
+			scope.Rollback(ctx)
 			return false
 		}
 		*insertTxParams = pr.InsertTx
@@ -644,7 +718,7 @@ func (e *Indexer) processOneTx(
 			Signer:     me.GetSigner(),
 			Nonce:      me.GetNonce(),
 		}, emBlock, migrationBlockTime(me.GetMetadata(), block.Timestamp.AsTime()),
-			block.Hash, t.Hash, sp, e.logger)
+			block.Hash, t.Hash, scope.tx, e.logger)
 		// Replayed historical state goes through the migration handler set.
 		if dErr := e.migrationDispatcher.Dispatch(ctx, emParams); dErr != nil {
 			res.emRejectCount++
@@ -666,7 +740,7 @@ func (e *Indexer) processOneTx(
 					zap.String("hash", t.Hash),
 					zap.Error(dErr),
 				)
-				_ = sp.Rollback(ctx)
+				scope.Rollback(ctx)
 				return false
 			}
 		} else {
@@ -698,7 +772,7 @@ func (e *Indexer) processOneTx(
 		}); err != nil {
 			e.logger.Error("error inserting validator misbehavior deregistration",
 				zap.String("hash", t.Hash), zap.Error(err))
-			_ = sp.Rollback(ctx)
+			scope.Rollback(ctx)
 			return false
 		}
 
@@ -756,7 +830,7 @@ func (e *Indexer) processOneTx(
 		if err != nil {
 			e.logger.Error("error inserting SLA rollup",
 				zap.String("hash", t.Hash), zap.Error(err))
-			_ = sp.Rollback(ctx)
+			scope.Rollback(ctx)
 			return false
 		}
 
@@ -783,7 +857,7 @@ func (e *Indexer) processOneTx(
 					zap.String("hash", t.Hash),
 					zap.String("address", report.Address),
 					zap.Error(err))
-				_ = sp.Rollback(ctx)
+				scope.Rollback(ctx)
 				return false
 			}
 		}
@@ -806,7 +880,7 @@ func (e *Indexer) processOneTx(
 		}); err != nil {
 			e.logger.Error("error inserting storage proof",
 				zap.String("hash", t.Hash), zap.Error(err))
-			_ = sp.Rollback(ctx)
+			scope.Rollback(ctx)
 			return false
 		}
 
@@ -822,14 +896,14 @@ func (e *Indexer) processOneTx(
 		}); err != nil {
 			e.logger.Error("error inserting storage proof verification",
 				zap.String("hash", t.Hash), zap.Error(err))
-			_ = sp.Rollback(ctx)
+			scope.Rollback(ctx)
 			return false
 		}
 		if err := e.processStorageProofConsensus(ctx, q, spv.Height, spv.Proof,
 			block.Height, t.Hash, block.Timestamp.AsTime()); err != nil {
 			e.logger.Error("error processing storage proof consensus",
 				zap.String("hash", t.Hash), zap.Error(err))
-			_ = sp.Rollback(ctx)
+			scope.Rollback(ctx)
 			return false
 		}
 
@@ -852,7 +926,7 @@ func (e *Indexer) processOneTx(
 			}); err != nil {
 				e.logger.Error("error inserting validator registration",
 					zap.String("hash", t.Hash), zap.Error(err))
-				_ = sp.Rollback(ctx)
+				scope.Rollback(ctx)
 				return false
 			}
 			if err := q.RegisterValidator(ctx, db.RegisterValidatorParams{
@@ -870,7 +944,7 @@ func (e *Indexer) processOneTx(
 			}); err != nil {
 				e.logger.Error("error registering validator",
 					zap.String("hash", t.Hash), zap.Error(err))
-				_ = sp.Rollback(ctx)
+				scope.Rollback(ctx)
 				return false
 			}
 		}
@@ -885,7 +959,7 @@ func (e *Indexer) processOneTx(
 			}); err != nil {
 				e.logger.Error("error inserting validator deregistration",
 					zap.String("hash", t.Hash), zap.Error(err))
-				_ = sp.Rollback(ctx)
+				scope.Rollback(ctx)
 				return false
 			}
 			if err := q.DeregisterValidator(ctx, db.DeregisterValidatorParams{
@@ -896,7 +970,7 @@ func (e *Indexer) processOneTx(
 			}); err != nil {
 				e.logger.Error("error deregistering validator",
 					zap.String("hash", t.Hash), zap.Error(err))
-				_ = sp.Rollback(ctx)
+				scope.Rollback(ctx)
 				return false
 			}
 		}
