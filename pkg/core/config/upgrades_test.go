@@ -35,17 +35,18 @@ func TestRulesetAtNilSchedule(t *testing.T) {
 	}
 }
 
-// Every known network ships with an empty schedule until a feature schedules
-// itself, and unknown chain IDs must never inherit another network's
-// activations.
+// Ephemeral networks activate everything at height 1; persistent networks
+// activate nothing until an explicit height is scheduled; unknown chain IDs
+// must never inherit another network's activations.
 func TestScheduleForChainID(t *testing.T) {
-	for _, chainID := range []string{
-		"openaudio-devnet", "audius-devnet",
-		"audius-testnet-alpha", "audius-mainnet-alpha-beta",
-		"some-future-chain",
-	} {
+	for _, chainID := range []string{"openaudio-devnet", "audius-devnet"} {
+		if !ScheduleForChainID(chainID).RulesetAt(1).AuthEnforced {
+			t.Fatalf("%s: auth enforcement should be active from height 1", chainID)
+		}
+	}
+	for _, chainID := range []string{"audius-testnet-alpha", "audius-mainnet-alpha-beta", "some-future-chain"} {
 		if ScheduleForChainID(chainID).RulesetAt(1<<40) != (Rules{}) {
-			t.Fatalf("%s: no upgrades should be active yet", chainID)
+			t.Fatalf("%s: no upgrades should be active", chainID)
 		}
 	}
 }
