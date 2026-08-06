@@ -484,7 +484,7 @@ const getBlockTransactions = `-- name: GetBlockTransactions :many
 select rowid, block_id, index, tx_hash, transaction, created_at
 from core_transactions
 where block_id = $1
-order by created_at desc
+order by index
 `
 
 func (q *Queries) GetBlockTransactions(ctx context.Context, blockID int64) ([]CoreTransaction, error) {
