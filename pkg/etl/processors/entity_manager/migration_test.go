@@ -343,3 +343,33 @@ func TestMigratedCreateHandlersCarrySoftDeleteState(t *testing.T) {
 		}
 	}
 }
+
+// An unlinked wallet migrates as a single Create carrying is_delete, so the
+// production insert must keep defaulting to "linked" while the migration
+// override honours the source row's state.
+func TestMigratedWalletCreateCarriesIsDelete(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		meta map[string]any
+		want bool
+	}{
+		{"active link", map[string]any{}, false},
+		{"unlinked", map[string]any{"is_delete": true}, true},
+		{"explicitly active", map[string]any{"is_delete": false}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := (&Params{Metadata: tt.meta}).MetadataBoolOr("is_delete", false)
+			if got != tt.want {
+				t.Errorf("is_delete = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	d := NewDispatcher(nil)
+	RegisterMigrationOverrides(d)
+	for _, e := range []string{EntityTypeAssociatedWallet, EntityTypeDashboardWalletUser} {
+		if !d.HasHandler(e, ActionCreate) {
+			t.Errorf("no migration override registered for %s/Create", e)
+		}
+	}
+}

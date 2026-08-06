@@ -27,6 +27,14 @@ func (h *associatedWalletCreateHandler) Handle(ctx context.Context, params *Para
 // insertAssociatedWallet claims the wallet for params.UserID and writes the new
 // row. Shared by the production and genesis migration handlers.
 func insertAssociatedWallet(ctx context.Context, params *Params, wallet, chain string) error {
+	return insertAssociatedWalletWithState(ctx, params, wallet, chain, false)
+}
+
+// insertAssociatedWalletWithState writes the link carrying its deleted state.
+// Production always passes false -- a client cannot link an already unlinked
+// wallet. Only the migration replays one, so an unlinked wallet costs a single
+// transaction rather than a Create followed by a Delete.
+func insertAssociatedWalletWithState(ctx context.Context, params *Params, wallet, chain string, isDelete bool) error {
 	// Remove wallet from other users on the same chain (exclusive ownership)
 	_, err := params.DBTX.Exec(ctx,
 		"UPDATE associated_wallets SET is_current = false, is_delete = true WHERE wallet = $1 AND chain = $2 AND user_id != $3 AND is_current = true",
@@ -45,8 +53,8 @@ func insertAssociatedWallet(ctx context.Context, params *Params, wallet, chain s
 	// blockhash is NOT NULL on prod's associated_wallets table.
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO associated_wallets (user_id, wallet, chain, is_current, is_delete, blockhash, blocknumber, created_at, updated_at)
-		VALUES ($1, $2, $3, true, false, $4, $5, $6, $6)
-	`, params.UserID, wallet, chain, params.BlockHash, params.BlockNumber, params.BlockTime)
+		VALUES ($1, $2, $3, true, $7, $4, $5, $6, $6)
+	`, params.UserID, wallet, chain, params.BlockHash, params.BlockNumber, params.BlockTime, isDelete)
 	return err
 }
 

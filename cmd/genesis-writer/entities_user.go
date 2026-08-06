@@ -160,27 +160,31 @@ type sourceAssociatedWallet struct {
 	// OwnerWallet is the owning user's own wallet, used as the transaction
 	// signer. Joined here rather than looked up per row.
 	OwnerWallet *string
+	IsDelete    bool
 }
 
 func (w *Writer) writeAssociatedWallets(ctx context.Context) error {
 	return processBatched(ctx, w, "associated_wallets",
 		`SELECT count(*) FROM associated_wallets aw
 		 JOIN users u ON u.user_id = aw.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
-		 WHERE aw.is_current = true AND aw.is_delete = false`,
-		`SELECT aw.user_id, aw.wallet, aw.chain, u.wallet
+		 WHERE aw.is_current = true`,
+		`SELECT aw.user_id, aw.wallet, aw.chain, u.wallet, aw.is_delete
 		FROM associated_wallets aw
 		JOIN users u ON u.user_id = aw.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
-		WHERE aw.is_current = true AND aw.is_delete = false
+		WHERE aw.is_current = true
 		ORDER BY aw.user_id, aw.wallet`,
 		func(rows pgx.Rows) (sourceAssociatedWallet, error) {
 			var aw sourceAssociatedWallet
-			err := rows.Scan(&aw.UserID, &aw.Wallet, &aw.Chain, &aw.OwnerWallet)
+			err := rows.Scan(&aw.UserID, &aw.Wallet, &aw.Chain, &aw.OwnerWallet, &aw.IsDelete)
 			return aw, err
 		},
 		func(ctx context.Context, aw sourceAssociatedWallet) error {
-			metaJSON, err := json.Marshal(map[string]string{
+			metaJSON, err := json.Marshal(map[string]any{
 				"wallet": aw.Wallet,
 				"chain":  aw.Chain,
+				// Always serialized: `omitempty` semantics would drop a false
+				// value and the indexer cannot tell "absent" from "not deleted".
+				"is_delete": aw.IsDelete,
 			})
 			if err != nil {
 				return fmt.Errorf("marshal associated wallet: %w", err)
@@ -195,6 +199,9 @@ func (w *Writer) writeAssociatedWallets(ctx context.Context) error {
 			if aw.OwnerWallet != nil && *aw.OwnerWallet != "" {
 				ownerWallet = strings.ToLower(*aw.OwnerWallet)
 			}
+			// An unlinked wallet carries is_delete on the Create rather than
+			// arriving as a second Delete transaction: the source row is already
+			// the final state, so there is no intermediate moment to replay.
 			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     aw.UserID,
 				EntityType: "AssociatedWallet",
