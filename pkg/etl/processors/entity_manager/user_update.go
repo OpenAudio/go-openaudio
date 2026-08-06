@@ -128,6 +128,15 @@ func updateUser(ctx context.Context, params *Params) error {
 	website := mergeNullStr(params, "website", existing.website)
 	donation := mergeNullStr(params, "donation", existing.donation)
 
+	splUsdcPayoutWallet := mergeNullStr(params, "spl_usdc_payout_wallet", existing.splUsdcPayoutWallet)
+	coinFlairMint := mergeNullStr(params, "coin_flair_mint", existing.coinFlairMint)
+	// profile_type is a Postgres enum; an unknown label must fail loudly rather
+	// than be stored, so only values the type declares are accepted.
+	profileType := existing.profileType
+	if v := params.MetadataString("profile_type"); v != "" && isKnownProfileType(v) {
+		profileType = &v
+	}
+
 	artistPickTrackID := existing.artistPickTrackID
 	if trackID, ok := params.MetadataInt64("artist_pick_track_id"); ok {
 		artistPickTrackID = &trackID
@@ -157,7 +166,8 @@ func updateUser(ctx context.Context, params *Params) error {
 			profile_picture = $7, profile_picture_sizes = $8, cover_photo = $9, cover_photo_sizes = $10,
 			twitter_handle = $11, instagram_handle = $12, tiktok_handle = $13, website = $14, donation = $15,
 			playlist_library = $16, artist_pick_track_id = $17, allow_ai_attribution = $18,
-			is_deactivated = $19, updated_at = $20, txhash = $21, blocknumber = $22
+			is_deactivated = $19, updated_at = $20, txhash = $21, blocknumber = $22,
+			spl_usdc_payout_wallet = $23, coin_flair_mint = $24, profile_type = $25::profile_type_enum
 		WHERE user_id = $1 AND is_current = true
 	`,
 		params.UserID,
@@ -182,8 +192,19 @@ func updateUser(ctx context.Context, params *Params) error {
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,
+		strPtrVal(splUsdcPayoutWallet),
+		strPtrVal(coinFlairMint),
+		strPtrVal(profileType),
 	)
 	return err
+}
+
+// profileTypeEnumValues mirrors the profile_type_enum labels in migration 0036.
+var profileTypeEnumValues = map[string]struct{}{"label": {}}
+
+func isKnownProfileType(v string) bool {
+	_, ok := profileTypeEnumValues[v]
+	return ok
 }
 
 // mergeNullStr returns the metadata value if present and non-empty;
@@ -226,6 +247,9 @@ type currentUserRow struct {
 	website             *string
 	donation            *string
 	playlistLibrary     []byte
+	splUsdcPayoutWallet *string
+	coinFlairMint       *string
+	profileType         *string
 	artistPickTrackID   *int64
 	allowAIAttribution  bool
 	isVerified          bool
@@ -240,6 +264,7 @@ func getCurrentUser(ctx context.Context, dbtx db.DBTX, userID int64) (*currentUs
 		profilePicture, profilePictureSizes, coverPhoto, coverPhotoSizes sql.NullString
 		twitterHandle, instagramHandle, tiktokHandle, website, donation  sql.NullString
 		playlistLibrary                                                  []byte
+		splUsdcPayoutWallet, coinFlairMint, profileType                  sql.NullString
 		artistPickTrackID                                                *int64
 		allowAIAttribution, isVerified, isDeactivated, isAvailable       bool
 		createdAt                                                        time.Time
@@ -250,14 +275,16 @@ func getCurrentUser(ctx context.Context, dbtx db.DBTX, userID int64) (*currentUs
 			profile_picture, profile_picture_sizes,
 			cover_photo, cover_photo_sizes,
 			twitter_handle, instagram_handle, tiktok_handle, website, donation,
-			playlist_library, artist_pick_track_id, allow_ai_attribution,
+			playlist_library, spl_usdc_payout_wallet, coin_flair_mint, profile_type,
+			artist_pick_track_id, allow_ai_attribution,
 			is_verified, is_deactivated, is_available, created_at
 		FROM users WHERE user_id = $1 AND is_current = true LIMIT 1
 	`, userID).Scan(
 		&handle, &handleLC, &wallet, &name, &bio, &location,
 		&profilePicture, &profilePictureSizes, &coverPhoto, &coverPhotoSizes,
 		&twitterHandle, &instagramHandle, &tiktokHandle, &website, &donation,
-		&playlistLibrary, &artistPickTrackID, &allowAIAttribution,
+		&playlistLibrary, &splUsdcPayoutWallet, &coinFlairMint, &profileType,
+		&artistPickTrackID, &allowAIAttribution,
 		&isVerified, &isDeactivated, &isAvailable, &createdAt,
 	)
 	if err != nil {
@@ -280,6 +307,9 @@ func getCurrentUser(ctx context.Context, dbtx db.DBTX, userID int64) (*currentUs
 		website:             nullStrPtr(website),
 		donation:            nullStrPtr(donation),
 		playlistLibrary:     playlistLibrary,
+		splUsdcPayoutWallet: nullStrPtr(splUsdcPayoutWallet),
+		coinFlairMint:       nullStrPtr(coinFlairMint),
+		profileType:         nullStrPtr(profileType),
 		artistPickTrackID:   artistPickTrackID,
 		allowAIAttribution:  allowAIAttribution,
 		isVerified:          isVerified,
