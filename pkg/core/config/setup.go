@@ -58,6 +58,7 @@ func SetupNode(logger *zap.Logger) (*Config, *cconfig.Config, error) {
 		return nil, nil, fmt.Errorf("reading genesis: %v", err)
 	}
 	envConfig.GenesisFile = genDoc
+	envConfig.Upgrades = ScheduleForChainID(genDoc.ChainID)
 
 	// gather chain id
 	chainID := genDoc.ChainID
