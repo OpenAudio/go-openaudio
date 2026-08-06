@@ -17,34 +17,34 @@ type trackMetadataWrapper struct {
 }
 
 type trackMetadataInner struct {
-	CreatedAt          string      `json:"created_at,omitempty"`
-	Title              string      `json:"title,omitempty"`
-	OwnerID            int64       `json:"owner_id"`
-	Duration           int         `json:"duration,omitempty"`
-	Description        string      `json:"description,omitempty"`
-	Genre              string      `json:"genre,omitempty"`
-	Mood               string      `json:"mood,omitempty"`
-	Tags               string      `json:"tags,omitempty"`
-	TrackCID           string      `json:"track_cid,omitempty"`
-	PreviewCID         string      `json:"preview_cid,omitempty"`
-	CoverArt           string      `json:"cover_art,omitempty"`
-	CoverArtSizes      string      `json:"cover_art_sizes,omitempty"`
-	IsUnlisted         bool        `json:"is_unlisted,omitempty"`
-	IsDownloadable     bool        `json:"is_downloadable,omitempty"`
-	IsOriginalAvail    bool        `json:"is_original_available,omitempty"`
-	ReleaseDate        string      `json:"release_date,omitempty"`
-	License            string      `json:"license,omitempty"`
-	ISRC               string      `json:"isrc,omitempty"`
-	ISWC               string      `json:"iswc,omitempty"`
-	BPM                *float64    `json:"bpm,omitempty"`
-	MusicalKey         string      `json:"musical_key,omitempty"`
-	RemixOf            interface{} `json:"remix_of,omitempty"`
-	StemOf             interface{} `json:"stem_of,omitempty"`
-	IsStreamGated      bool        `json:"is_stream_gated,omitempty"`
-	StreamConditions   interface{} `json:"stream_conditions,omitempty"`
-	IsDownloadGated    bool        `json:"is_download_gated,omitempty"`
-	DownloadConditions interface{} `json:"download_conditions,omitempty"`
-	Collaborators      []int64     `json:"collaborators,omitempty"`
+	CreatedAt           string      `json:"created_at,omitempty"`
+	Title               string      `json:"title,omitempty"`
+	OwnerID             int64       `json:"owner_id"`
+	Duration            int         `json:"duration,omitempty"`
+	Description         string      `json:"description,omitempty"`
+	Genre               string      `json:"genre,omitempty"`
+	Mood                string      `json:"mood,omitempty"`
+	Tags                string      `json:"tags,omitempty"`
+	TrackCID            string      `json:"track_cid,omitempty"`
+	PreviewCID          string      `json:"preview_cid,omitempty"`
+	CoverArt            string      `json:"cover_art,omitempty"`
+	CoverArtSizes       string      `json:"cover_art_sizes,omitempty"`
+	IsUnlisted          bool        `json:"is_unlisted,omitempty"`
+	IsDownloadable      bool        `json:"is_downloadable,omitempty"`
+	IsOriginalAvail     bool        `json:"is_original_available,omitempty"`
+	ReleaseDate         string      `json:"release_date,omitempty"`
+	License             string      `json:"license,omitempty"`
+	ISRC                string      `json:"isrc,omitempty"`
+	ISWC                string      `json:"iswc,omitempty"`
+	BPM                 *float64    `json:"bpm,omitempty"`
+	MusicalKey          string      `json:"musical_key,omitempty"`
+	RemixOf             interface{} `json:"remix_of,omitempty"`
+	StemOf              interface{} `json:"stem_of,omitempty"`
+	IsStreamGated       bool        `json:"is_stream_gated,omitempty"`
+	StreamConditions    interface{} `json:"stream_conditions,omitempty"`
+	IsDownloadGated     bool        `json:"is_download_gated,omitempty"`
+	DownloadConditions  interface{} `json:"download_conditions,omitempty"`
+	Collaborators       []int64     `json:"collaborators,omitempty"`
 	OrigFileCID         string      `json:"orig_file_cid,omitempty"`
 	OrigFilename        string      `json:"orig_filename,omitempty"`
 	AudioUploadID       string      `json:"audio_upload_id,omitempty"`
@@ -55,6 +55,13 @@ type trackMetadataInner struct {
 	PreviewStartSeconds *float64    `json:"preview_start_seconds,omitempty"`
 	CoverOriginalTitle  string      `json:"cover_original_song_title,omitempty"`
 	CoverOriginalArtist string      `json:"cover_original_artist,omitempty"`
+	Artists             interface{} `json:"artists,omitempty"`
+	ResourceContribs    interface{} `json:"resource_contributors,omitempty"`
+	IndirectContribs    interface{} `json:"indirect_resource_contributors,omitempty"`
+	RightsController    interface{} `json:"rights_controller,omitempty"`
+	CopyrightLine       interface{} `json:"copyright_line,omitempty"`
+	ProducerCopyright   interface{} `json:"producer_copyright_line,omitempty"`
+	ParentalWarning     string      `json:"parental_warning_type,omitempty"`
 	// State flags are always serialized: `omitempty` would drop a false value and
 	// the indexer cannot tell "absent" from "false" (is_available defaults true).
 	IsDelete    bool `json:"is_delete"`
@@ -101,6 +108,13 @@ type sourceTrack struct {
 	PreviewStartSeconds *float64
 	CoverOriginalTitle  *string
 	CoverOriginalArtist *string
+	Artists             []byte // JSONB
+	ResourceContribs    []byte // JSONB
+	IndirectContribs    []byte // JSONB
+	RightsController    []byte // JSONB
+	CopyrightLine       []byte // JSONB
+	ProducerCopyright   []byte // JSONB
+	ParentalWarning     *string
 	IsDelete            bool
 	IsAvailable         bool
 	CreatedAt           time.Time
@@ -133,6 +147,9 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			t.field_visibility, t.ddex_app, t.ddex_release_ids,
 			t.ai_attribution_user_id, t.preview_start_seconds,
 			t.cover_original_song_title, t.cover_original_artist,
+			t.artists, t.resource_contributors, t.indirect_resource_contributors,
+			t.rights_controller, t.copyright_line, t.producer_copyright_line,
+			t.parental_warning_type,
 			t.is_delete, t.is_available,
 			t.created_at
 		FROM tracks t
@@ -155,6 +172,9 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				&t.FieldVisibility, &t.DDEXApp, &t.DDEXReleaseIDs,
 				&t.AIAttributionUserID, &t.PreviewStartSeconds,
 				&t.CoverOriginalTitle, &t.CoverOriginalArtist,
+				&t.Artists, &t.ResourceContribs, &t.IndirectContribs,
+				&t.RightsController, &t.CopyrightLine, &t.ProducerCopyright,
+				&t.ParentalWarning,
 				&t.IsDelete, &t.IsAvailable,
 				&t.CreatedAt,
 			)
@@ -195,6 +215,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				PreviewStartSeconds: t.PreviewStartSeconds,
 				CoverOriginalTitle:  deref(t.CoverOriginalTitle),
 				CoverOriginalArtist: deref(t.CoverOriginalArtist),
+				ParentalWarning:     deref(t.ParentalWarning),
 			}
 
 			inner.RemixOf = unmarshalJSONB(t.RemixOf)
@@ -203,6 +224,12 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			inner.DDEXReleaseIDs = unmarshalJSONB(t.DDEXReleaseIDs)
 			inner.StreamConditions = unmarshalJSONB(t.StreamConditions)
 			inner.DownloadConditions = unmarshalJSONB(t.DownloadConditions)
+			inner.Artists = unmarshalJSONB(t.Artists)
+			inner.ResourceContribs = unmarshalJSONB(t.ResourceContribs)
+			inner.IndirectContribs = unmarshalJSONB(t.IndirectContribs)
+			inner.RightsController = unmarshalJSONB(t.RightsController)
+			inner.CopyrightLine = unmarshalJSONB(t.CopyrightLine)
+			inner.ProducerCopyright = unmarshalJSONB(t.ProducerCopyright)
 
 			inner.TrackCID = deref(t.TrackCID)
 
