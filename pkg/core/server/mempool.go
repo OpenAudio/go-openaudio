@@ -27,6 +27,29 @@ var (
 	ErrFullMempool = errors.New("mempool full")
 )
 
+// mempoolAdmissible rejects transaction types that must never enter the
+// mempool, regardless of which ingress they arrive through (SendTransaction,
+// ForwardTransaction, or any future path). It guards the chokepoint because
+// the equivalent check in validateSignedTransactionForCheckTx protects only
+// CometBFT's own mempool — which PrepareProposal never builds blocks from —
+// so a rejection there does not keep a transaction out of proposals.
+func mempoolAdmissible(tx *v1.SignedTransaction) error {
+	if tx == nil {
+		return nil
+	}
+	if tx.GetManageEntityMigration() != nil {
+		// Migration transactions are written directly into the genesis block
+		// range by genesis-writer and are never submitted live. They are
+		// processed by a relaxed handler set that skips checks which cannot
+		// hold during a replay — including taking created_at from their
+		// metadata — so accepting one from a client or peer would let anyone
+		// write entity state under replay rules with a timestamp of their
+		// choosing.
+		return errors.New("manage entity migration transactions cannot be submitted")
+	}
+	return nil
+}
+
 type Mempool struct {
 	logger *zap.Logger
 	config *config.Config
@@ -141,6 +164,10 @@ func (m *Mempool) MempoolSize() (int, int) {
 }
 
 func (s *Server) addMempoolTransaction(key string, tx *MempoolTransaction, broadcast bool) error {
+	if err := mempoolAdmissible(tx.Tx); err != nil {
+		return err
+	}
+
 	// TODO: check db if tx already exists
 
 	// broadcast to peers before adding to our own mempool
