@@ -373,3 +373,36 @@ func TestMigratedWalletCreateCarriesIsDelete(t *testing.T) {
 		}
 	}
 }
+
+// A migrated track keeps the slug it already serves. Regenerating it would
+// silently change 618,066 permalinks on a production clone.
+func TestMigratedTrackRoute(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		meta map[string]any
+		want *trackRoute
+	}{
+		{"carried verbatim",
+			map[string]any{"route_slug": "guava-rain-2", "route_title_slug": "guava-rain-2", "route_collision_id": float64(0)},
+			&trackRoute{Slug: "guava-rain-2", TitleSlug: "guava-rain-2"}},
+		{"random slug for an untitled track",
+			map[string]any{"route_slug": "k2rX2M3"},
+			&trackRoute{Slug: "k2rX2M3", TitleSlug: "k2rX2M3"}},
+		{"collision id preserved",
+			map[string]any{"route_slug": "test-1", "route_title_slug": "test", "route_collision_id": float64(1)},
+			&trackRoute{Slug: "test-1", TitleSlug: "test", CollisionID: 1}},
+		{"absent falls back to generation", map[string]any{}, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := migratedTrackRoute(&Params{Metadata: tt.meta})
+			switch {
+			case tt.want == nil && got != nil:
+				t.Fatalf("got %+v, want nil so the slug is generated", got)
+			case tt.want != nil && got == nil:
+				t.Fatal("got nil, want the carried route")
+			case tt.want != nil && *got != *tt.want:
+				t.Errorf("got %+v, want %+v", *got, *tt.want)
+			}
+		})
+	}
+}

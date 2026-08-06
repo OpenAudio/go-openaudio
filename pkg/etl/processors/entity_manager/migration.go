@@ -132,7 +132,32 @@ func (h *migratedTrackCreateHandler) Handle(ctx context.Context, params *Params)
 		return NewValidationError("track %d already exists", params.EntityID)
 	}
 
-	return insertTrackAndRouteWithState(ctx, params, params.MetadataBoolOr("is_delete", false))
+	return insertTrackAndRouteWithState(ctx, params, trackState{
+		IsDelete: params.MetadataBoolOr("is_delete", false),
+		Route:    migratedTrackRoute(params),
+	})
+}
+
+// migratedTrackRoute reads the route the writer carried from the source, or
+// returns nil so the slug is generated as it would be for a new track.
+//
+// Legacy slugs are not reproducible from the title: the rules changed over the
+// catalog's life. On a production clone 618,066 of 1,955,877 tracks regenerate
+// to a slug different from the one they serve today -- 330,856 because the old
+// scheme appended the track id, the rest over punctuation handling and
+// collision numbering. Untitled tracks are the clearest case: the source holds
+// a random slug like "k2rX2M3" that nothing can derive.
+func migratedTrackRoute(params *Params) *trackRoute {
+	slug := params.MetadataString("route_slug")
+	if slug == "" {
+		return nil
+	}
+	titleSlug := params.MetadataString("route_title_slug")
+	if titleSlug == "" {
+		titleSlug = slug
+	}
+	collisionID, _ := params.MetadataInt64("route_collision_id")
+	return &trackRoute{Slug: slug, TitleSlug: titleSlug, CollisionID: int(collisionID)}
 }
 
 func migratedTrackCreate() Handler { return &migratedTrackCreateHandler{} }
