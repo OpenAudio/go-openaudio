@@ -30,6 +30,10 @@ type playlistMetadataInner struct {
 	PlaylistImageHash      string      `json:"playlist_image_multihash,omitempty"`
 	DDEXApp                string      `json:"ddex_app,omitempty"`
 	ParentalWarningType    string      `json:"parental_warning_type,omitempty"`
+	DDEXReleaseIDs         interface{} `json:"ddex_release_ids,omitempty"`
+	Artists                interface{} `json:"artists,omitempty"`
+	CopyrightLine          interface{} `json:"copyright_line,omitempty"`
+	ProducerCopyright      interface{} `json:"producer_copyright_line,omitempty"`
 	// Always serialized: `omitempty` would drop a false value and the indexer
 	// cannot tell "absent" from "false".
 	IsDelete bool `json:"is_delete"`
@@ -53,6 +57,10 @@ type sourcePlaylist struct {
 	ReleaseDate         *string
 	IsStreamGated       bool
 	StreamConditions    []byte // JSONB
+	DDEXReleaseIDs      []byte // JSONB
+	Artists             []byte // JSONB
+	CopyrightLine       []byte // JSONB
+	ProducerCopyright   []byte // JSONB
 	IsDelete            bool
 	CreatedAt           time.Time
 }
@@ -69,6 +77,7 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 			p.metadata_multihash, p.playlist_image_sizes_multihash, p.playlist_image_multihash, p.playlist_contents,
 			p.upc, p.ddex_app, p.parental_warning_type,
 			p.release_date::text, p.is_stream_gated, p.stream_conditions,
+			p.ddex_release_ids, p.artists, p.copyright_line, p.producer_copyright_line,
 			p.is_delete,
 			p.created_at
 		FROM playlists p
@@ -84,6 +93,7 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 				&p.MetadataMultihash, &p.ImageSizesMultihash, &p.ImageMultihash, &p.PlaylistContents,
 				&p.UPC, &p.DDEXApp, &p.ParentalWarningType,
 				&p.ReleaseDate, &p.IsStreamGated, &p.StreamConditions,
+				&p.DDEXReleaseIDs, &p.Artists, &p.CopyrightLine, &p.ProducerCopyright,
 				&p.IsDelete,
 				&p.CreatedAt,
 			)
@@ -108,6 +118,10 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 
 			inner.PlaylistContents = unmarshalJSONB(p.PlaylistContents)
 			inner.StreamConditions = unmarshalJSONB(p.StreamConditions)
+			inner.DDEXReleaseIDs = unmarshalJSONB(p.DDEXReleaseIDs)
+			inner.Artists = unmarshalJSONB(p.Artists)
+			inner.CopyrightLine = unmarshalJSONB(p.CopyrightLine)
+			inner.ProducerCopyright = unmarshalJSONB(p.ProducerCopyright)
 
 			cid := "genesis-import"
 			if p.MetadataMultihash != nil && *p.MetadataMultihash != "" {

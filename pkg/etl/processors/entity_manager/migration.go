@@ -2,6 +2,7 @@ package entity_manager
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 )
 
@@ -186,11 +187,29 @@ func (h *migratedUserCreateHandler) Handle(ctx context.Context, params *Params) 
 
 	// Account state comes from the source row. Absent flags fall back to the
 	// same defaults a new account would get.
-	return insertUserWithState(ctx, params, userState{
-		IsVerified:    params.MetadataBoolOr("is_verified", false),
-		IsDeactivated: params.MetadataBoolOr("is_deactivated", false),
-		IsAvailable:   params.MetadataBoolOr("is_available", true),
-	})
+	// playlist_library, artist_pick_track_id and allow_ai_attribution are read
+	// here and not in the production create handler on purpose: a live client
+	// only ever sends them on Update. Measured on a production clone, among the
+	// 292,111 users never modified after creation, artist_pick_track_id and
+	// allow_ai_attribution appear exactly zero times. A migration Create carries
+	// an account's final state, so it must accept them or they are lost --
+	// 622,480 users have a playlist library, 13,935 an artist pick, 1,484 the AI
+	// attribution flag.
+	state := userState{
+		IsVerified:         params.MetadataBoolOr("is_verified", false),
+		IsDeactivated:      params.MetadataBoolOr("is_deactivated", false),
+		IsAvailable:        params.MetadataBoolOr("is_available", true),
+		AllowAIAttribution: params.MetadataBoolOr("allow_ai_attribution", false),
+	}
+	if v, ok := params.MetadataJSON("playlist_library"); ok && v != nil {
+		if jb, err := json.Marshal(v); err == nil {
+			state.PlaylistLibrary = jb
+		}
+	}
+	if trackID, ok := params.MetadataInt64("artist_pick_track_id"); ok {
+		state.ArtistPickTrackID = &trackID
+	}
+	return insertUserWithState(ctx, params, state)
 }
 
 func migratedUserCreate() Handler { return &migratedUserCreateHandler{} }

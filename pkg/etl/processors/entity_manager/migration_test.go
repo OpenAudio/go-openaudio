@@ -1,6 +1,7 @@
 package entity_manager
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -264,4 +265,53 @@ func TestPlayCountReconcile_RequiresDelta(t *testing.T) {
 	if err == nil || !IsValidationError(err) {
 		t.Fatalf("expected a ValidationError for a missing delta, got %v", err)
 	}
+}
+
+// The migration create must carry the profile fields the live protocol only
+// ever sends on Update: a migrated Create represents an account's final state,
+// not a signup. The production path must keep ignoring them.
+func TestMigratedUserCreate_CarriesUpdateOnlyProfileFields(t *testing.T) {
+	meta := `{"handle":"e","playlist_library":{"contents":[{"playlist_id":7}]},` +
+		`"artist_pick_track_id":42,"allow_ai_attribution":true}`
+
+	t.Run("migration", func(t *testing.T) {
+		dbtx := &stubDBTX{}
+		params := legacyUserParams(t, dbtx, meta)
+		h := &migratedUserCreateHandler{}
+		if err := h.Handle(context.Background(), params); err != nil {
+			t.Fatalf("Handle: %v", err)
+		}
+		// playlist_library, artist_pick_track_id, allow_ai_attribution sit
+		// immediately ahead of the three trailing state flags.
+		n := len(dbtx.execArgs)
+		lib, _ := dbtx.execArgs[n-6].([]byte)
+		if !bytes.Contains(lib, []byte(`"playlist_id":7`)) {
+			t.Errorf("playlist_library = %s, want the source library", lib)
+		}
+		pick, ok := dbtx.execArgs[n-5].(*int64)
+		if !ok || pick == nil || *pick != 42 {
+			t.Errorf("artist_pick_track_id = %v, want 42", dbtx.execArgs[n-5])
+		}
+		if dbtx.execArgs[n-4] != true {
+			t.Errorf("allow_ai_attribution = %v, want true", dbtx.execArgs[n-4])
+		}
+	})
+
+	t.Run("production ignores them", func(t *testing.T) {
+		dbtx := &stubDBTX{}
+		params := legacyUserParams(t, dbtx, meta)
+		if err := insertUser(context.Background(), params); err != nil {
+			t.Fatalf("insertUser: %v", err)
+		}
+		n := len(dbtx.execArgs)
+		if dbtx.execArgs[n-6] != nil {
+			t.Errorf("playlist_library = %v, want nil on the production path", dbtx.execArgs[n-6])
+		}
+		if dbtx.execArgs[n-5] != (*int64)(nil) {
+			t.Errorf("artist_pick_track_id = %v, want nil on the production path", dbtx.execArgs[n-5])
+		}
+		if dbtx.execArgs[n-4] != false {
+			t.Errorf("allow_ai_attribution = %v, want false on the production path", dbtx.execArgs[n-4])
+		}
+	})
 }

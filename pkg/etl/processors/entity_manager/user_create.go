@@ -107,6 +107,16 @@ type userState struct {
 	IsVerified    bool
 	IsDeactivated bool
 	IsAvailable   bool
+
+	// Profile fields the live protocol only ever sends on Update -- a client
+	// sets them by editing a profile, never at signup. Production leaves them
+	// zero here; only the migration replay populates them, because it collapses
+	// an account's whole history into a single Create and would otherwise drop
+	// them. Zero values are indistinguishable from "not set" and insert as NULL
+	// or false, matching a fresh account.
+	PlaylistLibrary    []byte
+	ArtistPickTrackID  *int64
+	AllowAIAttribution bool
 }
 
 // ON CONFLICT DO NOTHING covers both unique indexes on users: users_pkey
@@ -133,18 +143,27 @@ func insertUserWithState(ctx context.Context, params *Params, state userState) e
 		handleLC = strings.ToLower(h)
 	}
 
+	// nil rather than an empty slice so the column inserts as NULL, not as an
+	// empty jsonb value.
+	var playlistLibrary any
+	if len(state.PlaylistLibrary) > 0 {
+		playlistLibrary = state.PlaylistLibrary
+	}
+
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO users (
 			user_id, handle, handle_lc, wallet, name, bio, location,
 			profile_picture, profile_picture_sizes, cover_photo, cover_photo_sizes,
 			twitter_handle, instagram_handle, tiktok_handle, website, donation,
 			is_current, is_verified, is_deactivated, is_available, is_storage_v2,
+			playlist_library, artist_pick_track_id, allow_ai_attribution,
 			created_at, updated_at, txhash, blockhash, blocknumber
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11,
 			$12, $13, $14, $15, $16,
-			true, $21, $22, $23, true,
+			true, $24, $25, $26, true,
+			$21, $22, $23,
 			$17, $17, $18, $19, $20
 		)
 		ON CONFLICT DO NOTHING
@@ -169,6 +188,11 @@ func insertUserWithState(ctx context.Context, params *Params, state userState) e
 		params.TxHash,
 		params.BlockHash,
 		params.BlockNumber,
+		// The three state flags stay the trailing arguments; tests assert on that
+		// position deliberately, so new columns are bound ahead of them.
+		playlistLibrary,
+		state.ArtistPickTrackID,
+		state.AllowAIAttribution,
 		state.IsVerified,
 		state.IsDeactivated,
 		state.IsAvailable,

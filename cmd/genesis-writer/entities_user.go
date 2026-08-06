@@ -37,9 +37,12 @@ type userMetadata struct {
 	// Account-state flags are always serialized: `omitempty` would drop a false
 	// value, and the indexer cannot distinguish "absent" from "false" — an
 	// unavailable user would silently be recorded as available.
-	IsVerified    bool `json:"is_verified"`
-	IsDeactivated bool `json:"is_deactivated"`
-	IsAvailable   bool `json:"is_available"`
+	IsVerified         bool        `json:"is_verified"`
+	IsDeactivated      bool        `json:"is_deactivated"`
+	IsAvailable        bool        `json:"is_available"`
+	PlaylistLibrary    interface{} `json:"playlist_library,omitempty"`
+	ArtistPickTrackID  *int64      `json:"artist_pick_track_id,omitempty"`
+	AllowAIAttribution bool        `json:"allow_ai_attribution,omitempty"`
 }
 
 type sourceUser struct {
@@ -61,6 +64,9 @@ type sourceUser struct {
 	IsVerified          bool
 	IsDeactivated       bool
 	IsAvailable         bool
+	PlaylistLibrary     []byte // JSONB
+	ArtistPickTrackID   *int64
+	AllowAIAttribution  bool
 	CreatedAt           time.Time
 }
 
@@ -79,7 +85,9 @@ func (w *Writer) writeUsers(ctx context.Context) error {
 			cover_photo, cover_photo_sizes,
 			twitter_handle, instagram_handle, website,
 			tiktok_handle, donation,
-			is_verified, is_deactivated, is_available, created_at
+			is_verified, is_deactivated, is_available,
+			playlist_library, artist_pick_track_id, allow_ai_attribution,
+			created_at
 		FROM users
 		WHERE is_current = true
 		ORDER BY user_id`,
@@ -91,7 +99,9 @@ func (w *Writer) writeUsers(ctx context.Context) error {
 				&u.CoverPhoto, &u.CoverPhotoSizes,
 				&u.TwitterHandle, &u.InstagramHandle, &u.Website,
 				&u.TiktokHandle, &u.Donation,
-				&u.IsVerified, &u.IsDeactivated, &u.IsAvailable, &u.CreatedAt,
+				&u.IsVerified, &u.IsDeactivated, &u.IsAvailable,
+				&u.PlaylistLibrary, &u.ArtistPickTrackID, &u.AllowAIAttribution,
+				&u.CreatedAt,
 			)
 			return u, err
 		},
@@ -115,6 +125,9 @@ func (w *Writer) writeUsers(ctx context.Context) error {
 				IsVerified:          u.IsVerified,
 				IsDeactivated:       u.IsDeactivated,
 				IsAvailable:         u.IsAvailable,
+				PlaylistLibrary:     unmarshalJSONB(u.PlaylistLibrary),
+				ArtistPickTrackID:   u.ArtistPickTrackID,
+				AllowAIAttribution:  u.AllowAIAttribution,
 			}
 			metaJSON, err := json.Marshal(userMetadataWrapper{
 				CID:  "genesis-import",
