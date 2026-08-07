@@ -43,6 +43,14 @@ type trackRow struct {
 	IsPlaylistUpload       bool
 	DdexApp                *string
 	DdexReleaseIDs         []byte
+	Artists                []byte
+	ResourceContributors   []byte
+	IndirectContributors   []byte
+	RightsController       []byte
+	CopyrightLine          []byte
+	ProducerCopyrightLine  []byte
+	ParentalWarningType    *string
+	IsOriginalAvailable    bool
 	Bpm                    *float64
 	MusicalKey             *string
 	IsCustomBpm            bool
@@ -66,6 +74,8 @@ func loadCurrentTrackRow(ctx context.Context, dbtx db.DBTX, trackID int64) (*tra
 	var title, genre, mood, tags, desc, cover, coverSz, tcid, pcid, ofcid, ofname, ddex, musicalKey, audioUploadID sql.NullString
 	var license, isrc, iswc, coverOrigSong, coverOrigArtist sql.NullString
 	var fieldVis, remix, stem, dlCond, streamCond, ddexRel, segments []byte
+	var artists, resContrib, indirectContrib, rightsCtrl, copyright, prodCopyright []byte
+	var parentalWarning sql.NullString
 	var aiAttr sql.NullInt64
 	var bpm, previewStart sql.NullFloat64
 	var releaseDate pgtype.Timestamp
@@ -78,7 +88,10 @@ func loadCurrentTrackRow(ctx context.Context, dbtx db.DBTX, trackID int64) (*tra
 			release_date, is_scheduled_release, ai_attribution_user_id, is_playlist_upload, ddex_app, ddex_release_ids,
 			bpm, musical_key, is_custom_bpm, is_custom_musical_key, audio_upload_id,
 			is_available, license, isrc, iswc, preview_start_seconds, comments_disabled,
-			cover_original_song_title, cover_original_artist, no_ai_use, track_segments, created_at
+			cover_original_song_title, cover_original_artist, no_ai_use, track_segments, created_at,
+			artists, resource_contributors, indirect_resource_contributors,
+			rights_controller, copyright_line, producer_copyright_line,
+			parental_warning_type, is_original_available
 		FROM tracks WHERE track_id = $1 AND is_current = true AND is_delete = false LIMIT 1
 	`, trackID).Scan(
 		&r.TrackID, &r.OwnerID, &title, &genre, &mood, &tags, &desc,
@@ -89,6 +102,9 @@ func loadCurrentTrackRow(ctx context.Context, dbtx db.DBTX, trackID int64) (*tra
 		&bpm, &musicalKey, &r.IsCustomBpm, &r.IsCustomMusicalKey, &audioUploadID,
 		&r.IsAvailable, &license, &isrc, &iswc, &previewStart, &r.CommentsDisabled,
 		&coverOrigSong, &coverOrigArtist, &r.NoAIUse, &segments, &r.CreatedAt,
+		&artists, &resContrib, &indirectContrib,
+		&rightsCtrl, &copyright, &prodCopyright,
+		&parentalWarning, &r.IsOriginalAvailable,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Track was soft-deleted between validation and now (validateTrackUpdate
@@ -122,6 +138,13 @@ func loadCurrentTrackRow(ctx context.Context, dbtx db.DBTX, trackID int64) (*tra
 	r.AiAttributionUserID = nullInt64Ptr(aiAttr)
 	r.DdexApp = nullStrPtr(ddex)
 	r.DdexReleaseIDs = ddexRel
+	r.Artists = artists
+	r.ResourceContributors = resContrib
+	r.IndirectContributors = indirectContrib
+	r.RightsController = rightsCtrl
+	r.CopyrightLine = copyright
+	r.ProducerCopyrightLine = prodCopyright
+	r.ParentalWarningType = nullStrPtr(parentalWarning)
 	r.Bpm = nullFloat64Ptr(bpm)
 	r.MusicalKey = nullStrPtr(musicalKey)
 	r.AudioUploadID = nullStrPtr(audioUploadID)
@@ -209,6 +232,25 @@ func mergeTrackFromMetadata(p *Params, base *trackRow) *trackRow {
 	// edit would otherwise null it out.
 	mergeCidPtr("orig_filename", &out.OrigFilename)
 	mergeStrPtr("ddex_app", &out.DdexApp)
+	// DDEX rights metadata. The DDEX processor sets all of these on
+	// sdk.tracks.uploadTrack, and the playlist path already reads the same
+	// fields -- tracks were simply never given the equivalent.
+	mergeStrPtr("parental_warning_type", &out.ParentalWarningType)
+	if v, ok := p.MetadataBool("is_original_available"); ok {
+		out.IsOriginalAvailable = v
+	}
+	for key, dst := range map[string]*[]byte{
+		"artists":                        &out.Artists,
+		"resource_contributors":          &out.ResourceContributors,
+		"indirect_resource_contributors": &out.IndirectContributors,
+		"rights_controller":              &out.RightsController,
+		"copyright_line":                 &out.CopyrightLine,
+		"producer_copyright_line":        &out.ProducerCopyrightLine,
+	} {
+		if v, ok := p.MetadataJSON(key); ok {
+			*dst = marshalJSONOrNil(v)
+		}
+	}
 	// audio_upload_id is a generic passthrough field in apps' indexer (set via
 	// the catch-all setattr branch), needed by the audio-analysis repair job.
 	// It is also the recovery key for restoring wiped CIDs from content-node
@@ -360,7 +402,10 @@ func updateTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 			is_available = $33,
 			license = $34, isrc = $35, iswc = $36, preview_start_seconds = $37, comments_disabled = $38,
 			cover_original_song_title = $39, cover_original_artist = $40, no_ai_use = $41,
-			updated_at = $42, txhash = $43, blocknumber = $44
+			updated_at = $42, txhash = $43, blocknumber = $44,
+			artists = $46, resource_contributors = $47, indirect_resource_contributors = $48,
+			rights_controller = $49, copyright_line = $50, producer_copyright_line = $51,
+			parental_warning_type = $52, is_original_available = $53
 		WHERE track_id = $1 AND is_current = true
 	`,
 		r.TrackID,
@@ -408,6 +453,14 @@ func updateTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 		txHash,
 		blockNumber,
 		strPtrVal(r.OrigFilename),
+		r.Artists,
+		r.ResourceContributors,
+		r.IndirectContributors,
+		r.RightsController,
+		r.CopyrightLine,
+		r.ProducerCopyrightLine,
+		strPtrVal(r.ParentalWarningType),
+		r.IsOriginalAvailable,
 	)
 	return err
 }
@@ -423,7 +476,10 @@ func insertTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 			bpm, musical_key, is_custom_bpm, is_custom_musical_key, audio_upload_id,
 			is_available, license, isrc, iswc, preview_start_seconds, comments_disabled,
 			cover_original_song_title, cover_original_artist, no_ai_use,
-			track_segments, created_at, updated_at, txhash, blocknumber, orig_filename
+			track_segments, created_at, updated_at, txhash, blocknumber, orig_filename,
+			artists, resource_contributors, indirect_resource_contributors,
+			rights_controller, copyright_line, producer_copyright_line,
+			parental_warning_type, is_original_available
 		) VALUES (
 			$1, $2, true, false, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
@@ -433,7 +489,8 @@ func insertTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 			$29, $30, $31, $32, $33,
 			$34, $35, $36, $37, $38, $39,
 			$40, $41, $42,
-			$43, $44, $45, $46, $47, $48
+			$43, $44, $45, $46, $47, $48,
+			$49, $50, $51, $52, $53, $54, $55, $56
 		)
 	`,
 		r.TrackID,
@@ -484,6 +541,14 @@ func insertTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 		txHash,
 		blockNumber,
 		strPtrVal(r.OrigFilename),
+		r.Artists,
+		r.ResourceContributors,
+		r.IndirectContributors,
+		r.RightsController,
+		r.CopyrightLine,
+		r.ProducerCopyrightLine,
+		strPtrVal(r.ParentalWarningType),
+		r.IsOriginalAvailable,
 	)
 	return err
 }
