@@ -94,9 +94,6 @@ func validateUserCreate(ctx context.Context, params *Params) error {
 	return nil
 }
 
-// insertUser writes a newly created user. New accounts are always unverified,
-// active and available: those flags are not self-assignable (verification goes
-// through the Verify action, deactivation through Update).
 // nullStrPtrFromMeta returns a pointer to the metadata value, or nil when the
 // key is absent or empty, so an unset field inserts as NULL.
 func nullStrPtrFromMeta(params *Params, key string) *string {
@@ -106,6 +103,9 @@ func nullStrPtrFromMeta(params *Params, key string) *string {
 	return nil
 }
 
+// insertUser writes a newly created user. New accounts are always unverified,
+// active and available: those flags are not self-assignable (verification goes
+// through the Verify action, deactivation through Update).
 func insertUser(ctx context.Context, params *Params) error {
 	state := userState{IsAvailable: true}
 	// Everything CreateUserSchema accepts has to be read here, or a signup
