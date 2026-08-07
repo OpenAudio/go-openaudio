@@ -37,7 +37,35 @@ type sourceComment struct {
 	IsDelete        bool
 }
 
+// writeComments emits root comments and replies in two passes.
+//
+// Ordering the query is not enough on its own: processBatched signs and emits
+// each batch concurrently, so rows inside one batch land in a non-deterministic
+// order. A reply that shares a batch with its parent can be written first, and
+// the indexer then rejects it -- 1,237 replies on a production clone, all of
+// them with the parent present, active, created earlier and in the same block.
+//
+// Splitting by depth removes the dependency instead of trying to order around
+// it: every root is emitted before any reply, so both passes stay fully
+// concurrent and no serialization is needed.
 func (w *Writer) writeComments(ctx context.Context) error {
+	// Two passes assume replies are never nested under other replies. Nothing
+	// in the protocol enforces that -- validateCommentWrite only checks the
+	// parent exists and shares the entity -- so verify it rather than trust it.
+	// A second level would need a pass of its own, and silently mis-ordering it
+	// is exactly the failure this is fixing.
+	var nested int64
+	if err := w.srcDB.QueryRow(ctx, `
+		SELECT count(*) FROM comment_threads t
+		WHERE EXISTS (SELECT 1 FROM comment_threads t2 WHERE t2.comment_id = t.parent_comment_id)
+	`).Scan(&nested); err != nil {
+		return fmt.Errorf("check comment nesting depth: %w", err)
+	}
+	if nested > 0 {
+		return fmt.Errorf("%d replies are nested under other replies; the two-pass "+
+			"comment emission only handles one level and would emit them out of order", nested)
+	}
+
 	// Pre-load comment threads (parent_comment_id for each comment).
 	threads, err := preloadMap[int64, int64](ctx, w.srcDB,
 		`SELECT comment_id, parent_comment_id FROM comment_threads`)
@@ -52,19 +80,38 @@ func (w *Writer) writeComments(ctx context.Context) error {
 		return fmt.Errorf("preload comment mentions: %w", err)
 	}
 
-	return processBatched(ctx, w, "comments",
+	if err := w.writeCommentPass(ctx, "comments (roots)", false, threads, mentions); err != nil {
+		return err
+	}
+	return w.writeCommentPass(ctx, "comments (replies)", true, threads, mentions)
+}
+
+// writeCommentPass emits either the roots or the replies. isReply selects which
+// side of comment_threads the pass covers; the two are disjoint and together
+// cover every comment.
+func (w *Writer) writeCommentPass(
+	ctx context.Context,
+	name string,
+	isReply bool,
+	threads map[int64][]int64,
+	mentions map[int64][]int64,
+) error {
+	depthFilter := "NOT EXISTS"
+	if isReply {
+		depthFilter = "EXISTS"
+	}
+	where := "AND " + depthFilter + " (SELECT 1 FROM comment_threads t WHERE t.comment_id = c.comment_id)"
+
+	return processBatched(ctx, w, name,
 		`SELECT count(*) FROM comments c
-		JOIN users u ON u.user_id = c.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''`,
+		JOIN users u ON u.user_id = c.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		`+where,
 		`SELECT c.comment_id, c.text, c.user_id, COALESCE(LOWER(u.wallet), ''), c.entity_id, c.entity_type, c.track_timestamp_s, c.created_at, c.is_delete
 		FROM comments c
 		JOIN users u ON u.user_id = c.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
-		-- Chronological, not by id: a reply must be emitted after the comment it
-		-- replies to, and comment ids are not chronological. 12,496 of 24,587
-		-- replies on a production clone have a LOWER id than their parent, so
-		-- ordering by id emitted them first and the indexer rejected them with
-		-- "parent comment does not exist". Ordering by created_at holds for every
-		-- reply in the clone: 24,585 have created_at strictly greater than their
-		-- parent's, with no ties.
+		`+where+`
+		-- Chronological within a pass. Depth already guarantees a reply cannot
+		-- precede its parent, so this only keeps emission stable and readable.
 		ORDER BY c.created_at, c.comment_id`,
 		func(rows pgx.Rows) (sourceComment, error) {
 			var c sourceComment
