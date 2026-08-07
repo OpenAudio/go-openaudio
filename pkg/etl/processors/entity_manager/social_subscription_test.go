@@ -107,6 +107,50 @@ func TestSubscribe_EventRejectsDuplicate(t *testing.T) {
 	mustReject(t, Subscribe(), buildParams(t, pool, EntityTypeEvent, ActionSubscribe, subscriberID, eventID, "0xsubscriber3", `{}`), "already exists")
 }
 
+func TestSubscribe_UserAndEventWithSameIdCoexist(t *testing.T) {
+	pool := setupTestDB(t)
+	subscriberID := int64(UserIDOffset + 30)
+	// The followed user's id and the event's id collide on purpose: the two id
+	// spaces are independent, and subscriptions.user_id holds either one
+	// depending on entity_type. Both subscriptions must be able to coexist.
+	collidingID := int64(UserIDOffset + 31)
+	hostID := int64(UserIDOffset + 32)
+
+	seedUser(t, pool, subscriberID, "0xcoexsubscriber", "coexsubscriber")
+	seedUser(t, pool, collidingID, "0xcoexpublisher", "coexpublisher")
+	seedUser(t, pool, hostID, "0xcoexhost", "coexhost")
+	seedEvent(t, pool, collidingID, hostID)
+
+	mustHandle(t, Subscribe(), buildParams(t, pool, EntityTypeUser, ActionSubscribe, subscriberID, collidingID, "0xcoexsubscriber", `{}`))
+	mustHandle(t, Subscribe(), buildParams(t, pool, EntityTypeEvent, ActionSubscribe, subscriberID, collidingID, "0xcoexsubscriber", `{}`))
+
+	assertSubscriptionDeleteState(t, pool, subscriberID, collidingID, EntityTypeUser, false)
+	assertSubscriptionDeleteState(t, pool, subscriberID, collidingID, EntityTypeEvent, false)
+
+	// Unsubscribing from the user must tombstone only the User row.
+	mustHandle(t, Unsubscribe(), buildParams(t, pool, EntityTypeUser, ActionUnsubscribe, subscriberID, collidingID, "0xcoexsubscriber", `{}`))
+
+	assertSubscriptionDeleteState(t, pool, subscriberID, collidingID, EntityTypeUser, true)
+	assertSubscriptionDeleteState(t, pool, subscriberID, collidingID, EntityTypeEvent, false)
+}
+
+// assertSubscriptionDeleteState asserts that exactly one current subscriptions
+// row exists for the identity and that its is_delete matches.
+func assertSubscriptionDeleteState(t *testing.T, pool *pgxpool.Pool, subscriberID, userID int64, entityType string, wantDelete bool) {
+	t.Helper()
+	var isDelete bool
+	err := pool.QueryRow(context.Background(), `
+		SELECT is_delete FROM subscriptions
+		WHERE subscriber_id = $1 AND user_id = $2 AND entity_type = $3 AND is_current = true
+	`, subscriberID, userID, entityType).Scan(&isDelete)
+	if err != nil {
+		t.Fatalf("query %s subscription (%d -> %d): %v", entityType, subscriberID, userID, err)
+	}
+	if isDelete != wantDelete {
+		t.Errorf("%s subscription (%d -> %d): is_delete = %v, want %v", entityType, subscriberID, userID, isDelete, wantDelete)
+	}
+}
+
 func TestSubscribe_RejectsSelfSubscription(t *testing.T) {
 	pool := setupTestDB(t)
 	uid := int64(UserIDOffset + 1)
