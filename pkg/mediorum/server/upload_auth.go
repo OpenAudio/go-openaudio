@@ -164,7 +164,7 @@ func (ss *MediorumServer) contentAttestationFor(upload *Upload, cids []string) *
 
 	return &v1.ContentAttestation{
 		UploaderAddress:   strings.ToLower(upload.UserWallet.String),
-		UserId:    upload.UserID.Int64,
+		UserId:            upload.UserID.Int64,
 		Cids:              present,
 		ValidatorAddress:  ss.Config.Self.Wallet,
 		UploaderSignature: upload.UploadSignature.String,
@@ -186,7 +186,35 @@ func (ss *MediorumServer) contentAttestationFor(upload *Upload, cids []string) *
 // for. An error means these cids are not yet claimable.
 func (ss *MediorumServer) attestUploadCids(ctx context.Context, upload *Upload, cids ...string) error {
 	ca := ss.contentAttestationFor(upload, cids)
-	if ca == nil || ss.core == nil {
+	if ca == nil {
+		return nil
+	}
+	if err := ss.sendContentAttestation(ctx, ca); err != nil {
+		return err
+	}
+	ss.logger.Info("attested upload cids",
+		zap.String("uploadID", upload.ID),
+		zap.String("uploader", ca.UploaderAddress),
+		zap.Int64("userID", ca.UserId),
+		zap.Strings("cids", ca.Cids))
+	return nil
+}
+
+// contentAttestation builds an attestation with no uploader attached, for cids
+// this node produced rather than received. The validator signature is the only
+// load-bearing one, so an absent uploader costs nothing but the forensic trail.
+func contentAttestation(userID int64, cid, validatorAddress string) *v1.ContentAttestation {
+	return &v1.ContentAttestation{
+		UserId:           userID,
+		Cids:             []string{cid},
+		ValidatorAddress: validatorAddress,
+	}
+}
+
+// sendContentAttestation signs and submits, blocking until the transaction is
+// committed so callers can treat a nil return as "these cids are claimable".
+func (ss *MediorumServer) sendContentAttestation(ctx context.Context, ca *v1.ContentAttestation) error {
+	if ss.core == nil {
 		return nil
 	}
 
@@ -211,12 +239,6 @@ func (ss *MediorumServer) attestUploadCids(ctx context.Context, upload *Upload, 
 	}); err != nil {
 		return fmt.Errorf("could not send content attestation for %v: %w", ca.Cids, err)
 	}
-
-	ss.logger.Info("attested upload cids",
-		zap.String("uploadID", upload.ID),
-		zap.String("uploader", ca.UploaderAddress),
-		zap.Int64("userID", ca.UserId),
-		zap.Strings("cids", ca.Cids))
 	return nil
 }
 

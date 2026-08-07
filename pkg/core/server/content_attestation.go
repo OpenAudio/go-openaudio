@@ -8,6 +8,7 @@ import (
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
@@ -125,4 +126,23 @@ func (s *Server) finalizeContentAttestation(ctx context.Context, tx *v1.SignedTr
 	}
 
 	return nil, nil
+}
+
+// IsCidClaimedByUser reports whether the consensus content-auth state records
+// this user as a claimant of this cid.
+//
+// Exposed for mediorum, which needs the answer before attesting a cid derived
+// from another (see the preview path). It reads the same block state
+// enforcement reads, so a caller cannot be told yes here and rejected there.
+//
+// Advisory only: claims are append-only, so a stale negative just means the
+// caller retries, and a stale positive produces an attestation that grants
+// nothing it should not.
+func (c *CoreService) IsCidClaimedByUser(ctx context.Context, cid string, userID int64) (bool, error) {
+	c.coreMu.RLock()
+	defer c.coreMu.RUnlock()
+	if c.core == nil {
+		return false, errors.New("core not ready")
+	}
+	return c.core.db.IsCidClaimedByUser(ctx, db.IsCidClaimedByUserParams{Cid: cid, UserID: userID})
 }

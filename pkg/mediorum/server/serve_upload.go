@@ -2,6 +2,7 @@ package server
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -80,12 +81,40 @@ func (ss *MediorumServer) generatePreview(c echo.Context) error {
 	fileHash := c.Param("cid")
 	previewStartSeconds := c.Param("previewStartSeconds")
 
+	// Authorize before transcoding, not after: this endpoint pulls a blob from
+	// the network and runs ffmpeg, so an unauthorized caller should not get that
+	// work done for them.
+	claimant, err := ss.previewClaimant(ctx, fileHash, previewRequestMetadata(c))
+	if err != nil {
+		if errors.Is(err, errPreviewUnverifiable) {
+			return c.String(http.StatusServiceUnavailable, err.Error())
+		}
+		return c.String(http.StatusUnauthorized, err.Error())
+	}
+
 	audioPreview, err := ss.generateAudioPreview(ctx, fileHash, previewStartSeconds)
 	if err != nil {
 		return err
 	}
 
+	// Before responding: the caller writes this cid onto a track as soon as it
+	// has it, and consensus rejects a track naming an unclaimed cid.
+	if err := ss.attestPreviewCid(ctx, claimant, audioPreview.CID); err != nil {
+		return err
+	}
+
 	return c.JSON(200, audioPreview)
+}
+
+// previewRequestMetadata collects the signed fields from the query string into
+// the shape verifyUploadSignature reads, so previews and tus uploads recover a
+// signer through exactly one code path.
+func previewRequestMetadata(c echo.Context) map[string]string {
+	return map[string]string{
+		"signature": c.QueryParam("signature"),
+		"userId":    c.QueryParam("userId"),
+		"timestamp": c.QueryParam("timestamp"),
+	}
 }
 
 // this endpoint should be replaced by generate_preview
