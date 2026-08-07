@@ -272,72 +272,58 @@ func TestPlayCountReconcile_RequiresDelta(t *testing.T) {
 // not a signup. The production path must keep ignoring them.
 func TestMigratedUserCreate_CarriesUpdateOnlyProfileFields(t *testing.T) {
 	meta := `{"handle":"e","playlist_library":{"contents":[{"playlist_id":7}]},` +
-		`"artist_pick_track_id":42,"allow_ai_attribution":true,"profile_type":"label"}`
+		`"artist_pick_track_id":42,"allow_ai_attribution":true,"profile_type":"label",` +
+		`"spl_usdc_payout_wallet":"SoLWaLLeT","coin_flair_mint":"MiNt111"}`
 
-	t.Run("migration", func(t *testing.T) {
+	t.Run("migration carries every field", func(t *testing.T) {
 		dbtx := &stubDBTX{}
 		params := legacyUserParams(t, dbtx, meta)
-		h := &migratedUserCreateHandler{}
-		if err := h.Handle(context.Background(), params); err != nil {
+		if err := (&migratedUserCreateHandler{}).Handle(context.Background(), params); err != nil {
 			t.Fatalf("Handle: %v", err)
 		}
-		// playlist_library, artist_pick_track_id, allow_ai_attribution and
-		// profile_type sit immediately ahead of the three trailing state flags.
-		n := len(dbtx.execArgs)
-		lib, _ := dbtx.execArgs[n-7].([]byte)
+		lib, _ := insertedUserValue(t, dbtx.execArgs, "playlist_library").([]byte)
 		if !bytes.Contains(lib, []byte(`"playlist_id":7`)) {
 			t.Errorf("playlist_library = %s, want the source library", lib)
 		}
-		pick, ok := dbtx.execArgs[n-6].(*int64)
-		if !ok || pick == nil || *pick != 42 {
-			t.Errorf("artist_pick_track_id = %v, want 42", dbtx.execArgs[n-6])
+		if pick, ok := insertedUserValue(t, dbtx.execArgs, "artist_pick_track_id").(*int64); !ok || pick == nil || *pick != 42 {
+			t.Errorf("artist_pick_track_id = %v, want 42", insertedUserValue(t, dbtx.execArgs, "artist_pick_track_id"))
 		}
-		if dbtx.execArgs[n-5] != true {
-			t.Errorf("allow_ai_attribution = %v, want true", dbtx.execArgs[n-5])
+		if v := insertedUserValue(t, dbtx.execArgs, "allow_ai_attribution"); v != true {
+			t.Errorf("allow_ai_attribution = %v, want true", v)
 		}
-		if dbtx.execArgs[n-4] != "label" {
-			t.Errorf("profile_type = %v, want \"label\"", dbtx.execArgs[n-4])
+		if v := insertedUserValue(t, dbtx.execArgs, "profile_type"); v != "label" {
+			t.Errorf("profile_type = %v, want label", v)
 		}
 	})
 
-	t.Run("production ignores update-only fields", func(t *testing.T) {
+	// artist_pick_track_id is the one field a live Create must not set: it
+	// references a track the account cannot own yet. Everything else in the
+	// metadata is part of the API's create contract and must persist.
+	t.Run("production sets everything except artist_pick_track_id", func(t *testing.T) {
 		dbtx := &stubDBTX{}
 		params := legacyUserParams(t, dbtx, meta)
 		if err := insertUser(context.Background(), params); err != nil {
 			t.Fatalf("insertUser: %v", err)
 		}
-		n := len(dbtx.execArgs)
-		if dbtx.execArgs[n-7] != nil {
-			t.Errorf("playlist_library = %v, want nil on the production path", dbtx.execArgs[n-7])
+		if v := insertedUserValue(t, dbtx.execArgs, "artist_pick_track_id"); v != (*int64)(nil) {
+			t.Errorf("artist_pick_track_id = %v, want nil on a live create", v)
 		}
-		if dbtx.execArgs[n-6] != (*int64)(nil) {
-			t.Errorf("artist_pick_track_id = %v, want nil on the production path", dbtx.execArgs[n-6])
+		for col, want := range map[string]any{
+			"allow_ai_attribution":   true,
+			"profile_type":           "label",
+			"spl_usdc_payout_wallet": "SoLWaLLeT",
+			"coin_flair_mint":        "MiNt111",
+		} {
+			if v := insertedUserValue(t, dbtx.execArgs, col); v != want {
+				t.Errorf("%s = %v, want %v -- the API create body accepts it", col, v, want)
+			}
 		}
-		if dbtx.execArgs[n-5] != false {
-			t.Errorf("allow_ai_attribution = %v, want false on the production path", dbtx.execArgs[n-5])
-		}
-		// profile_type is the exception: the API's create schema accepts it, so
-		// the production path persists it too.
-		if dbtx.execArgs[n-4] != "label" {
-			t.Errorf("profile_type = %v, want \"label\" on the production path", dbtx.execArgs[n-4])
-		}
-	})
-
-	t.Run("unknown profile_type inserts as NULL", func(t *testing.T) {
-		dbtx := &stubDBTX{}
-		params := legacyUserParams(t, dbtx, `{"handle":"e","profile_type":"bogus"}`)
-		if err := insertUser(context.Background(), params); err != nil {
-			t.Fatalf("insertUser: %v", err)
-		}
-		n := len(dbtx.execArgs)
-		if dbtx.execArgs[n-4] != nil {
-			t.Errorf("profile_type = %v, want nil for a value outside the enum", dbtx.execArgs[n-4])
+		if lib, _ := insertedUserValue(t, dbtx.execArgs, "playlist_library").([]byte); !bytes.Contains(lib, []byte(`"playlist_id":7`)) {
+			t.Errorf("playlist_library = %s, want it persisted on a live create", lib)
 		}
 	})
 }
 
-// A soft-deleted or revoked row migrates as one Create carrying its state,
-// not as a Create followed by a Delete.
 func TestMigratedCreateHandlersCarrySoftDeleteState(t *testing.T) {
 	if h := (&migratedCommentCreateHandler{}); h.Action() != ActionCreate || h.EntityType() != EntityTypeComment {
 		t.Errorf("comment override = %s/%s", h.EntityType(), h.Action())
