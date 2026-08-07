@@ -1252,17 +1252,23 @@ func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOv
 			return false, nil
 		}
 	case *v1.SignedTransaction_ContentAttestation:
-		// Only meaningful once content authorization is active. Before that
-		// height the transaction carries no weight, so accepting it would put
-		// unenforced claims on chain and give an attacker a head start on
-		// squatting cids before anyone is checking them.
-		if !rules.ContentAuthEnforced {
-			s.logger.Error("Invalid block: content attestation before content auth is active")
-			return false, nil
-		}
-		if err := s.isValidContentAttestation(ctx, signedTx); err != nil {
-			s.logger.Error("Invalid block: invalid content attestation tx", zap.Error(err))
-			return false, nil
+		// Block validity must match what a binary predating this transaction
+		// type decides. That switch has no default case, so an unrecognized
+		// transaction falls through and the block is valid. Rejecting here
+		// before the gate would make upgraded validators vote down proposals
+		// that un-upgraded ones accept — a fork any peer could trigger during a
+		// rolling deploy by submitting one attestation to a node that has not
+		// restarted yet.
+		//
+		// Mempool admission (validateV1Transaction) still refuses them, which
+		// is safe because that is local policy rather than block validity: an
+		// upgraded node declines to propagate or propose one, but never
+		// disagrees about a block that contains one.
+		if rules.ContentAuthEnforced {
+			if err := s.isValidContentAttestation(ctx, signedTx); err != nil {
+				s.logger.Error("Invalid block: invalid content attestation tx", zap.Error(err))
+				return false, nil
+			}
 		}
 	case *v1.SignedTransaction_FileUpload:
 		if err := s.isValidFileUpload(ctx, signedTx); err != nil {

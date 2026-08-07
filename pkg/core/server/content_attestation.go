@@ -98,7 +98,27 @@ func (s *Server) isValidContentAttestation(ctx context.Context, tx *v1.SignedTra
 }
 
 // finalizeContentAttestation records the claims the attestation establishes.
+//
+// Before the gate height this errors rather than succeeding, which is not the
+// same thing as ignoring it.
+//
+// CometBFT folds each transaction's result Code into the block's
+// LastResultsHash (abci.DeterministicExecTxResult keeps Code, Data, GasWanted
+// and GasUsed), and that hash is part of the header. A binary predating this
+// transaction type falls to finalizeTransaction's default case and errors,
+// yielding Code 2. If an upgraded node succeeded here while an un-upgraded one
+// errored, the two would compute different headers and the chain would stall —
+// which is a real failure mode this network has hit before, not a theoretical
+// one. So pre-gate the only safe behaviour is to produce the identical result
+// code, and erroring is what produces it.
+//
+// Returning an error also means no claims are written, which is what keeps an
+// attacker from seeding core_auth_cids ahead of enforcement.
 func (s *Server) finalizeContentAttestation(ctx context.Context, tx *v1.SignedTransaction, blockHeight int64) (proto.Message, error) {
+	if !s.config.Upgrades.RulesetAt(blockHeight).ContentAuthEnforced {
+		return nil, errors.New("content attestation before content auth is active")
+	}
+
 	if err := s.isValidContentAttestation(ctx, tx); err != nil {
 		s.logger.Error("invalid content attestation", zap.Error(err))
 		return nil, err
