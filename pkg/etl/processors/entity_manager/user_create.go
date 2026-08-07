@@ -2,6 +2,7 @@ package entity_manager
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/OpenAudio/go-openaudio/pkg/etl/db"
@@ -93,11 +94,30 @@ func validateUserCreate(ctx context.Context, params *Params) error {
 	return nil
 }
 
+// nullStrPtrFromMeta returns a pointer to the metadata value, or nil when the
+// key is absent or empty, so an unset field inserts as NULL.
+func nullStrPtrFromMeta(params *Params, key string) *string {
+	if v := params.MetadataString(key); v != "" {
+		return &v
+	}
+	return nil
+}
+
 // insertUser writes a newly created user. New accounts are always unverified,
 // active and available: those flags are not self-assignable (verification goes
 // through the Verify action, deactivation through Update).
 func insertUser(ctx context.Context, params *Params) error {
 	state := userState{IsAvailable: true}
+	// Everything CreateUserSchema accepts has to be read here, or a signup
+	// that sets it silently loses it until the user next edits their profile.
+	state.SplUsdcPayoutWallet = nullStrPtrFromMeta(params, "spl_usdc_payout_wallet")
+	state.CoinFlairMint = nullStrPtrFromMeta(params, "coin_flair_mint")
+	if v, ok := params.MetadataJSON("playlist_library"); ok && v != nil {
+		if jb, err := json.Marshal(v); err == nil {
+			state.PlaylistLibrary = jb
+		}
+	}
+	state.AllowAIAttribution = params.MetadataBoolOr("allow_ai_attribution", false)
 	// profile_type is a Postgres enum; only values the type declares are
 	// accepted, mirroring the Update handler.
 	if v := params.MetadataString("profile_type"); isKnownProfileType(v) {
@@ -114,20 +134,23 @@ type userState struct {
 	IsDeactivated bool
 	IsAvailable   bool
 
-	// Profile fields the live protocol only ever sends on Update -- a client
-	// sets them by editing a profile, never at signup. Production leaves them
-	// zero here; only the migration replay populates them, because it collapses
-	// an account's whole history into a single Create and would otherwise drop
-	// them. Zero values are indistinguishable from "not set" and insert as NULL
-	// or false, matching a fresh account.
-	PlaylistLibrary    []byte
-	ArtistPickTrackID  *int64
-	AllowAIAttribution bool
+	// Set only by the migration replay. The live protocol sends these on
+	// Update alone -- a client sets them by editing a profile, never at signup
+	// -- but a migrated Create collapses an account's whole history into one
+	// transaction, so it has to carry them. Zero values are indistinguishable
+	// from "not set" and insert as NULL or false, matching a fresh account.
+	PlaylistLibrary   []byte
+	ArtistPickTrackID *int64
 
-	// Unlike the fields above, profile_type is also accepted on a live Create:
-	// the API's create schema carries it, so an account (e.g. a label) can
-	// declare it at signup. Both callers validate against the enum first.
-	ProfileType *string
+	// Accepted on a live Create as well as on Update. CreateUserSchema carries
+	// spl_usdc_payout_wallet and allow_ai_attribution, so a signup can set
+	// either and both must be read here. profile_type is not in that schema
+	// today, but the handler accepts it defensively: a client posting raw
+	// metadata bypasses the SDK, and the migration replay needs it regardless.
+	SplUsdcPayoutWallet *string
+	AllowAIAttribution  bool
+	ProfileType         *string
+	CoinFlairMint       *string
 }
 
 // ON CONFLICT DO NOTHING covers both unique indexes on users: users_pkey
@@ -168,13 +191,15 @@ func insertUserWithState(ctx context.Context, params *Params, state userState) e
 			twitter_handle, instagram_handle, tiktok_handle, website, donation,
 			is_current, is_verified, is_deactivated, is_available, is_storage_v2,
 			playlist_library, artist_pick_track_id, allow_ai_attribution, profile_type,
+			spl_usdc_payout_wallet, coin_flair_mint,
 			created_at, updated_at, txhash, blockhash, blocknumber
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11,
 			$12, $13, $14, $15, $16,
-			true, $25, $26, $27, true,
+			true, $27, $28, $29, true,
 			$21, $22, $23, $24,
+			$25, $26,
 			$17, $17, $18, $19, $20
 		)
 		ON CONFLICT DO NOTHING
@@ -205,6 +230,10 @@ func insertUserWithState(ctx context.Context, params *Params, state userState) e
 		state.ArtistPickTrackID,
 		state.AllowAIAttribution,
 		strPtrVal(state.ProfileType),
+		strPtrVal(state.SplUsdcPayoutWallet),
+		strPtrVal(state.CoinFlairMint),
+		// The three state flags stay the trailing arguments; tests assert on
+		// that position deliberately, so new columns are bound ahead of them.
 		state.IsVerified,
 		state.IsDeactivated,
 		state.IsAvailable,
