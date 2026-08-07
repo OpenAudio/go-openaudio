@@ -46,8 +46,18 @@ func (s *Server) isValidMediorumOperationTx(ctx context.Context, tx *v1.SignedTr
 		return fmt.Errorf("recover mediorum operation signer: %w", err)
 	}
 
+	// Jailed validators are included on purpose. This runs in FinalizeBlock as
+	// well as at proposal time, and jailed is time-varying: a validator jailed
+	// today was not yesterday. Excluding them would make replaying an old block
+	// judge it against today's jail state rather than the state when it was
+	// first executed, flipping the transaction's result code. CometBFT folds
+	// result codes into the header's LastResultsHash, so the two would compute
+	// different headers and the chain would stall.
+	//
+	// Jailing is also a consensus-participation penalty; it says nothing about
+	// whether a storage operation the node signed actually happened.
 	normalizedHost := httputil.RemoveTrailingSlash(strings.ToLower(op.GetHost()))
-	nodes, err := s.db.GetAllRegisteredNodes(ctx)
+	nodes, err := s.db.GetAllRegisteredNodesIncludingJailed(ctx)
 	if err != nil {
 		return fmt.Errorf("load registered nodes: %w", err)
 	}
