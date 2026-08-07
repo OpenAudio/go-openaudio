@@ -53,6 +53,15 @@ func TestIsValidMediorumOperationTx(t *testing.T) {
 	otherKey, err := gethcrypto.GenerateKey()
 	require.NoError(t, err)
 	require.Error(t, s.isValidMediorumOperationTx(ctx, signMediorumOperationForTest(t, validOp, otherKey)))
+
+	// Jailing the signer must not change the verdict. This runs in
+	// FinalizeBlock too, and jailed is time-varying — if it affected validity,
+	// replaying an old block after the signer was jailed would produce a
+	// different result code and a different LastResultsHash, stalling the
+	// chain.
+	require.NoError(t, q.JailRegisteredNode(ctx, "MEDIORUMCOMETADDRESS"))
+	require.NoError(t, s.isValidMediorumOperationTx(ctx, signMediorumOperationForTest(t, validOp, key)),
+		"a jailed signer's operation must still validate")
 }
 
 func TestValidateMediorumOperationSubmissionSize(t *testing.T) {
