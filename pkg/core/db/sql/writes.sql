@@ -457,6 +457,6 @@ update core_auth_entities set is_deleted = true
 where entity_type = $1 and entity_id = $2;
 
 -- name: InsertAuthCid :exec
-insert into core_auth_cids (cid, uploader_address, attested_by, block_height)
-values ($1, $2, $3, $4)
-on conflict (cid) do nothing;
+insert into core_auth_cids (cid, user_id, tx_hash)
+values ($1, $2, $3)
+on conflict (cid, user_id) do nothing;

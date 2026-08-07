@@ -67,10 +67,9 @@ type CoreAppState struct {
 }
 
 type CoreAuthCid struct {
-	Cid             string
-	UploaderAddress string
-	AttestedBy      string
-	BlockHeight     int64
+	Cid    string
+	UserID int64
+	TxHash string
 }
 
 type CoreAuthDeveloperApp struct {

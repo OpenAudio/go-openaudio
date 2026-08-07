@@ -93,27 +93,16 @@ func (s *dbAuthStore) GetEntity(ctx context.Context, entityType string, entityID
 	return authEntityRow{OwnerID: row.OwnerUserID, Deleted: row.IsDeleted}, true, nil
 }
 
-func (s *dbAuthStore) GetCid(ctx context.Context, cid string) (authCidRow, bool, error) {
-	row, err := s.q.GetAuthCid(ctx, cid)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return authCidRow{}, false, nil
-	}
-	if err != nil {
-		return authCidRow{}, false, err
-	}
-	return authCidRow{
-		UploaderAddress: row.UploaderAddress,
-		AttestedBy:      row.AttestedBy,
-	}, true, nil
+func (s *dbAuthStore) IsCidClaimedByUser(ctx context.Context, cid string, userID int64) (bool, error) {
+	return s.q.IsCidClaimedByUser(ctx, db.IsCidClaimedByUserParams{Cid: cid, UserID: userID})
 }
 
-func (s *dbAuthStore) InsertCid(ctx context.Context, cid, uploaderAddress, attestedBy string, blockHeight int64) error {
-	return s.q.InsertAuthCid(ctx, db.InsertAuthCidParams{
-		Cid:             cid,
-		UploaderAddress: uploaderAddress,
-		AttestedBy:      attestedBy,
-		BlockHeight:     blockHeight,
-	})
+func (s *dbAuthStore) CidIsClaimed(ctx context.Context, cid string) (bool, error) {
+	return s.q.CidIsClaimed(ctx, cid)
+}
+
+func (s *dbAuthStore) InsertCid(ctx context.Context, cid string, uploaderUserID int64, txHash string) error {
+	return s.q.InsertAuthCid(ctx, db.InsertAuthCidParams{Cid: cid, UserID: uploaderUserID, TxHash: txHash})
 }
 
 func (s *dbAuthStore) InsertUser(ctx context.Context, userID int64, wallet, handleLC string, deactivated bool) error {

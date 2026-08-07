@@ -28,7 +28,7 @@ type overlayAuthStore struct {
 	grants   map[overlayGrantKey]authGrantRow
 	apps     map[string]authAppRow
 	entities map[overlayEntityKey]authEntityRow
-	cids     map[string]authCidRow
+	cids     map[overlayCidKey]struct{}
 }
 
 type overlayGrantKey struct {
@@ -41,6 +41,11 @@ type overlayEntityKey struct {
 	entityID   int64
 }
 
+type overlayCidKey struct {
+	cid    string
+	userID int64
+}
+
 func newOverlayAuthStore(base authStore) *overlayAuthStore {
 	return &overlayAuthStore{
 		base:     base,
@@ -48,7 +53,7 @@ func newOverlayAuthStore(base authStore) *overlayAuthStore {
 		grants:   map[overlayGrantKey]authGrantRow{},
 		apps:     map[string]authAppRow{},
 		entities: map[overlayEntityKey]authEntityRow{},
-		cids:     map[string]authCidRow{},
+		cids:     map[overlayCidKey]struct{}{},
 	}
 }
 
@@ -141,26 +146,24 @@ func (o *overlayAuthStore) GetEntity(ctx context.Context, entityType string, ent
 	return o.base.GetEntity(ctx, entityType, entityID)
 }
 
-func (o *overlayAuthStore) GetCid(ctx context.Context, cid string) (authCidRow, bool, error) {
-	if c, ok := o.cids[cid]; ok {
-		return c, true, nil
+func (o *overlayAuthStore) IsCidClaimedByUser(ctx context.Context, cid string, userID int64) (bool, error) {
+	if _, ok := o.cids[overlayCidKey{cid, userID}]; ok {
+		return true, nil
 	}
-	return o.base.GetCid(ctx, cid)
+	return o.base.IsCidClaimedByUser(ctx, cid, userID)
 }
 
-// InsertCid mirrors the durable store's first-attestation-wins semantics: an
-// existing claim is never overwritten, so a second attestation for the same
-// cid inside one proposal loses to the first exactly as it would on disk.
-func (o *overlayAuthStore) InsertCid(ctx context.Context, cid, uploaderAddress, attestedBy string, _ int64) error {
-	if _, ok := o.cids[cid]; ok {
-		return nil
+func (o *overlayAuthStore) CidIsClaimed(ctx context.Context, cid string) (bool, error) {
+	for k := range o.cids {
+		if k.cid == cid {
+			return true, nil
+		}
 	}
-	if _, ok, err := o.base.GetCid(ctx, cid); err != nil {
-		return err
-	} else if ok {
-		return nil
-	}
-	o.cids[cid] = authCidRow{UploaderAddress: uploaderAddress, AttestedBy: attestedBy}
+	return o.base.CidIsClaimed(ctx, cid)
+}
+
+func (o *overlayAuthStore) InsertCid(_ context.Context, cid string, uploaderUserID int64, _ string) error {
+	o.cids[overlayCidKey{cid, uploaderUserID}] = struct{}{}
 	return nil
 }
 

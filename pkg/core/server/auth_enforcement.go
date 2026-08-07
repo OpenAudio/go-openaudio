@@ -72,8 +72,28 @@ func (e *authRejectionError) Error() string {
 	return "manage entity rejected: " + e.reason
 }
 
+// txRejectionError is the same distinction for transaction types outside the
+// manage-entity path: a deterministic reason to vote a block invalid, as
+// opposed to a store failure meaning "this node cannot tell". authRejected
+// matches both, so ProcessProposal can treat them uniformly.
+type txRejectionError struct {
+	reason string
+}
+
+func (e *txRejectionError) Error() string {
+	return e.reason
+}
+
+func txRejectedf(format string, args ...any) error {
+	return &txRejectionError{reason: fmt.Sprintf(format, args...)}
+}
+
 // authRejected reports whether err is (or wraps) a deterministic rejection.
 func authRejected(err error) bool {
 	var r *authRejectionError
-	return errors.As(err, &r)
+	if errors.As(err, &r) {
+		return true
+	}
+	var t *txRejectionError
+	return errors.As(err, &t)
 }

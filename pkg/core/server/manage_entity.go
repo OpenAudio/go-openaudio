@@ -111,16 +111,6 @@ func (s *Server) projectManageEntityAuthState(ctx context.Context, tx authTx) {
 			zap.Int64("user_id", tx.UserID))
 	}
 
-	// Seed content claims for tracks the genesis migration replays. Live
-	// tracks get their claims from a validator's upload attestation instead;
-	// only the replay is allowed to assert a cid without one, because the
-	// legacy source data is the authority on who owns what and there is no
-	// upload event left to attest to.
-	if err := projectMigratedTrackCids(ctx, store, tx); err != nil {
-		s.logger.Error("failed to project migrated track cids", zap.Error(err),
-			zap.Int64("entity_id", tx.EntityID),
-			zap.Int64("user_id", tx.UserID))
-	}
 }
 
 func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEntityLegacy) error {

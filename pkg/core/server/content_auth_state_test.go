@@ -19,13 +19,17 @@ func trackCidTx(userID, trackID int64, signer, action string, cids map[string]an
 	}
 }
 
-func attestation(uploader, validator, origCid, transcodedCid, previewCid string) *v1.ContentAttestation {
+func attestation(uploader, validator string, cids ...string) *v1.ContentAttestation {
+	return attestationFor(1, uploader, validator, cids...)
+}
+
+// attestationFor names the user the upload was made for — the claim's key.
+func attestationFor(userID int64, uploader, validator string, cids ...string) *v1.ContentAttestation {
 	return &v1.ContentAttestation{
+		UserId:           userID,
 		UploaderAddress:  uploader,
 		ValidatorAddress: validator,
-		OrigCid:          origCid,
-		TranscodedCid:    transcodedCid,
-		PreviewCid:       previewCid,
+		Cids:             cids,
 	}
 }
 
@@ -51,76 +55,72 @@ func mustRejectContentAuth(t *testing.T, st authReader, tx authTx, wantReason st
 }
 
 // An attestation entitles the uploader to assert every cid it covers.
-func TestProjectFileUploadCidsRecordsAllThree(t *testing.T) {
+func TestProjectContentAttestationCidsRecordsEveryCid(t *testing.T) {
 	st := newMemAuthStore()
 	fu := attestation("0xUpLoAdEr", "0xVaLiDaToR", "origcid", "320cid", "previewcid")
 
-	if err := projectContentAttestationCids(context.Background(), st, fu, 42); err != nil {
+	if err := projectContentAttestationCids(context.Background(), st, fu, "tx1"); err != nil {
 		t.Fatalf("projection failed: %v", err)
 	}
 
 	for _, cid := range []string{"origcid", "320cid", "previewcid"} {
-		row, ok := st.cids[cid]
-		if !ok {
-			t.Fatalf("expected %q to be recorded", cid)
-		}
-		if row.UploaderAddress != "0xuploader" {
-			t.Fatalf("expected lowercased uploader for %q, got %q", cid, row.UploaderAddress)
-		}
-		if row.AttestedBy != "0xvalidator" {
-			t.Fatalf("expected lowercased attester for %q, got %q", cid, row.AttestedBy)
+		if _, ok := st.cids[memCidKey{cid, 1}]; !ok {
+			t.Fatalf("expected %q claimed for the uploading user", cid)
 		}
 	}
 }
 
 // An upload with no preview must not record an empty-string claim, which would
 // otherwise let any track assert an empty preview_cid against it.
-func TestProjectFileUploadCidsSkipsEmpty(t *testing.T) {
+func TestProjectContentAttestationCidsSkipsEmpty(t *testing.T) {
 	st := newMemAuthStore()
 	fu := attestation("0xuploader", "0xvalidator", "origcid", "320cid", "")
 
-	if err := projectContentAttestationCids(context.Background(), st, fu, 1); err != nil {
+	if err := projectContentAttestationCids(context.Background(), st, fu, "tx1"); err != nil {
 		t.Fatalf("projection failed: %v", err)
 	}
-	if _, ok := st.cids[""]; ok {
+	if _, ok := st.cids[memCidKey{"", 1}]; ok {
 		t.Fatal("empty cid must not be recorded")
 	}
 	if len(st.cids) != 2 {
-		t.Fatalf("expected 2 cids recorded, got %d", len(st.cids))
+		t.Fatalf("expected 2 claims recorded, got %d", len(st.cids))
 	}
 }
 
-// First attestation wins. A second validator attesting the same cid to a
-// different wallet must not take ownership — otherwise one malicious
-// registered node could claim any cid whose bytes it mirrors.
-func TestProjectFileUploadCidsFirstAttestationWins(t *testing.T) {
+// A cid may be claimed by more than one wallet. Possession is the entitlement,
+// so two uploaders who each genuinely hold the same bytes both get a claim and
+// neither blocks the other. Restricting to one would also lock out the ~115k
+// legacy track rows whose cid is shared across owners.
+func TestProjectContentAttestationCidsAllowsMultipleClaimants(t *testing.T) {
 	st := newMemAuthStore()
 	ctx := context.Background()
 
-	if err := projectContentAttestationCids(ctx, st, attestation("0xhonest", "0xv1", "cid", "320", ""), 1); err != nil {
+	if err := projectContentAttestationCids(ctx, st, attestationFor(1, "0xfirst", "0xv1", "cid", "320", ""), "tx1"); err != nil {
 		t.Fatalf("first projection failed: %v", err)
 	}
-	if err := projectContentAttestationCids(ctx, st, attestation("0xattacker", "0xv2", "cid", "320", ""), 2); err != nil {
-		t.Fatalf("second projection should be a no-op, not an error: %v", err)
+	if err := projectContentAttestationCids(ctx, st, attestationFor(2, "0xsecond", "0xv2", "cid", "320", ""), "tx1"); err != nil {
+		t.Fatalf("second projection failed: %v", err)
 	}
 
-	if got := st.cids["cid"].UploaderAddress; got != "0xhonest" {
-		t.Fatalf("expected the first attestation to hold the claim, got %q", got)
+	for _, u := range []int64{1, 2} {
+		if ok, _ := st.IsCidClaimedByUser(ctx, "cid", u); !ok {
+			t.Fatalf("expected user %d to hold a claim", u)
+		}
 	}
 }
 
 // The owner re-uploading their own file is routine and must stay idempotent.
-func TestProjectFileUploadCidsReattestationBySameWalletIsNoop(t *testing.T) {
+func TestProjectContentAttestationCidsReattestationIsNoop(t *testing.T) {
 	st := newMemAuthStore()
 	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
-		if err := projectContentAttestationCids(ctx, st, attestation("0xowner", "0xv1", "cid", "320", ""), int64(i)); err != nil {
+		if err := projectContentAttestationCids(ctx, st, attestationFor(1, "0xowner", "0xv1", "cid", "320", ""), "tx1"); err != nil {
 			t.Fatalf("re-attestation %d failed: %v", i, err)
 		}
 	}
-	if got := st.cids["cid"].UploaderAddress; got != "0xowner" {
-		t.Fatalf("expected owner to retain the claim, got %q", got)
+	if len(st.cids) != 2 {
+		t.Fatalf("re-attesting for the same user must stay one claim per cid, got %d", len(st.cids))
 	}
 }
 
@@ -133,12 +133,12 @@ func TestContentAuthRejectsClaimingAnotherUsersCid(t *testing.T) {
 
 	mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
 	mustProject(t, st, userCreateTx(2, "0xattacker", "attacker"))
-	if err := projectContentAttestationCids(ctx, st, attestation("0xartist", "0xv1", "orig", "gated320", ""), 1); err != nil {
+	if err := projectContentAttestationCids(ctx, st, attestation("0xartist", "0xv1", "orig", "gated320", ""), "tx1"); err != nil {
 		t.Fatalf("projection failed: %v", err)
 	}
 
 	decoy := trackCidTx(2, 2_000_001, "0xattacker", "Create", map[string]any{"track_cid": "gated320"})
-	mustRejectContentAuth(t, st, decoy, "not authorized for user 2")
+	mustRejectContentAuth(t, st, decoy, "was not uploaded for user 2")
 }
 
 // A cid nobody has attested cannot be asserted at all.
@@ -159,12 +159,12 @@ func TestContentAuthChecksOrigAndPreviewCids(t *testing.T) {
 		st := newMemAuthStore()
 		mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
 		mustProject(t, st, userCreateTx(2, "0xattacker", "attacker"))
-		if err := projectContentAttestationCids(ctx, st, attestation("0xartist", "0xv1", "victim-orig", "victim-320", "victim-preview"), 1); err != nil {
+		if err := projectContentAttestationCids(ctx, st, attestationFor(1, "0xartist", "0xv1", "victim-orig", "victim-320", "victim-preview"), "tx1"); err != nil {
 			t.Fatalf("projection failed: %v", err)
 		}
 		// Give the attacker a legitimately attested track_cid so only the
 		// field under test can be the reason for rejection.
-		if err := projectContentAttestationCids(ctx, st, attestation("0xattacker", "0xv1", "own-orig", "own-320", "own-preview"), 2); err != nil {
+		if err := projectContentAttestationCids(ctx, st, attestationFor(2, "0xattacker", "0xv1", "own-orig", "own-320", "own-preview"), "tx1"); err != nil {
 			t.Fatalf("projection failed: %v", err)
 		}
 
@@ -181,7 +181,7 @@ func TestContentAuthChecksOrigAndPreviewCids(t *testing.T) {
 func TestContentAuthAllowsOwnUpload(t *testing.T) {
 	st := newMemAuthStore()
 	mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
-	if err := projectContentAttestationCids(context.Background(), st, attestation("0xartist", "0xv1", "orig", "320", "preview"), 1); err != nil {
+	if err := projectContentAttestationCids(context.Background(), st, attestation("0xartist", "0xv1", "orig", "320", "preview"), "tx1"); err != nil {
 		t.Fatalf("projection failed: %v", err)
 	}
 
@@ -211,7 +211,7 @@ func TestContentAuthAllowsUploadByApprovedManager(t *testing.T) {
 	})
 
 	// Manager's wallet uploaded the bytes; the track belongs to the artist.
-	if err := projectContentAttestationCids(ctx, st, attestation("0xmanager", "0xv1", "orig", "320", ""), 1); err != nil {
+	if err := projectContentAttestationCids(ctx, st, attestation("0xmanager", "0xv1", "orig", "320", ""), "tx1"); err != nil {
 		t.Fatalf("projection failed: %v", err)
 	}
 
@@ -225,10 +225,10 @@ func TestContentAuthAllowsAudioReplacement(t *testing.T) {
 	ctx := context.Background()
 
 	mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
-	if err := projectContentAttestationCids(ctx, st, attestation("0xartist", "0xv1", "orig-v1", "320-v1", ""), 1); err != nil {
+	if err := projectContentAttestationCids(ctx, st, attestation("0xartist", "0xv1", "orig-v1", "320-v1", ""), "tx1"); err != nil {
 		t.Fatalf("projection failed: %v", err)
 	}
-	if err := projectContentAttestationCids(ctx, st, attestation("0xartist", "0xv1", "orig-v2", "320-v2", ""), 2); err != nil {
+	if err := projectContentAttestationCids(ctx, st, attestation("0xartist", "0xv1", "orig-v2", "320-v2", ""), "tx1"); err != nil {
 		t.Fatalf("projection failed: %v", err)
 	}
 
@@ -236,8 +236,8 @@ func TestContentAuthAllowsAudioReplacement(t *testing.T) {
 
 	// The superseded cid must remain claimed: those bytes are still in storage
 	// and still gated, so releasing the claim would let anyone pick it up.
-	if got := st.cids["320-v1"].UploaderAddress; got != "0xartist" {
-		t.Fatalf("expected the replaced cid to stay claimed, got %q", got)
+	if ok, _ := st.IsCidClaimedByUser(ctx, "320-v1", 1); !ok {
+		t.Fatal("the replaced cid must stay claimed")
 	}
 }
 
@@ -268,11 +268,8 @@ func TestMigrationSeedsCidsAndBypassesEnforcement(t *testing.T) {
 	if err := projectMigratedTrackCids(ctx, st, migrated); err != nil {
 		t.Fatalf("migration seeding failed: %v", err)
 	}
-	if got := st.cids["legacy-320"].UploaderAddress; got != "0xlegacyowner" {
-		t.Fatalf("expected legacy cid seeded to the owner, got %q", got)
-	}
-	if st.cids["legacy-320"].AttestedBy != "" {
-		t.Fatal("migration-seeded rows must carry no attester")
+	if ok, _ := st.IsCidClaimedByUser(ctx, "legacy-320", 1); !ok {
+		t.Fatal("expected the legacy cid seeded to its owner")
 	}
 
 	// Migration transactions are exempt from the check itself.
@@ -321,16 +318,98 @@ func TestGenesisWriterEnvelopeSeedsCids(t *testing.T) {
 		meta: parseAuthMetadata(raw),
 	}
 
-	if err := projectMigratedTrackCids(context.Background(), st, tx); err != nil {
+	ctx := context.Background()
+	if err := projectMigratedTrackCids(ctx, st, tx); err != nil {
 		t.Fatalf("seeding failed: %v", err)
 	}
 	for _, cid := range []string{"320cid", "prevcid", "origcid"} {
-		row, ok := st.cids[cid]
-		if !ok {
-			t.Fatalf("expected %q seeded from the genesis writer envelope", cid)
-		}
-		if row.UploaderAddress != "0xownerwallet" {
-			t.Fatalf("expected owner wallet for %q, got %q", cid, row.UploaderAddress)
+		if ok, _ := st.IsCidClaimedByUser(ctx, cid, 1); !ok {
+			t.Fatalf("expected %q seeded to the owning user", cid)
 		}
 	}
+}
+
+// The point of allowing several claimants: two users who each genuinely
+// uploaded the same bytes can both publish. Under one-wallet-per-cid the second
+// would be permanently locked out of a cid they legitimately possess, which is
+// also what would happen to the ~115k legacy track rows sharing a cid across
+// owners once the migration seeds them.
+func TestContentAuthAllowsEitherOfTwoClaimants(t *testing.T) {
+	st := newMemAuthStore()
+	ctx := context.Background()
+
+	mustProject(t, st, userCreateTx(1, "0xalice", "alice"))
+	mustProject(t, st, userCreateTx(2, "0xbob", "bob"))
+
+	// Both uploaded the same bytes, so both hold a claim on the same cid.
+	for _, c := range []struct {
+		user   int64
+		wallet string
+	}{{1, "0xalice"}, {2, "0xbob"}} {
+		if err := projectContentAttestationCids(ctx, st, attestationFor(c.user, c.wallet, "0xv1", "orig", "shared320", ""), "tx1"); err != nil {
+			t.Fatalf("projection for %s failed: %v", c.wallet, err)
+		}
+	}
+
+	mustContentAuth(t, st, trackCidTx(1, 2_000_001, "0xalice", "Create", map[string]any{"track_cid": "shared320"}))
+	mustContentAuth(t, st, trackCidTx(2, 2_000_002, "0xbob", "Create", map[string]any{"track_cid": "shared320"}))
+
+	// A third party with no claim still cannot assert it.
+	mustProject(t, st, userCreateTx(3, "0xmallory", "mallory"))
+	mustRejectContentAuth(t, st,
+		trackCidTx(3, 2_000_003, "0xmallory", "Create", map[string]any{"track_cid": "shared320"}),
+		"was not uploaded for user 3")
+}
+
+// A developer app is one wallet shared by every user who granted it. If claims
+// were keyed on the uploading wallet, any of an app's users could assert any
+// other's uploads just by holding a grant to the same app — reopening the
+// bypass for the whole population of a popular integration.
+func TestContentAuthRejectsSnipeViaSharedDevApp(t *testing.T) {
+	st := newMemAuthStore()
+	ctx := context.Background()
+
+	mustProject(t, st, userCreateTx(1, "0xuser1", "one"))
+	mustProject(t, st, userCreateTx(2, "0xuser2", "two"))
+	mustProject(t, st, authTx{UserID: 1, EntityType: "DeveloperApp", Action: "Create", Signer: "0xuser1",
+		meta: map[string]any{"address": "0xapp"}})
+	// Both users grant the same app.
+	mustProject(t, st, authTx{UserID: 1, EntityType: "Grant", Action: "Create", Signer: "0xuser1",
+		meta: map[string]any{"grantee_address": "0xapp"}})
+	mustProject(t, st, authTx{UserID: 2, EntityType: "Grant", Action: "Create", Signer: "0xuser2",
+		meta: map[string]any{"grantee_address": "0xapp"}})
+
+	// The app uploads for user 1.
+	if err := projectContentAttestationCids(ctx, st,
+		attestationFor(1, "0xapp", "0xv1", "orig", "user1-320", ""), "tx1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// User 2 shares the app but the upload was not for them.
+	mustRejectContentAuth(t, st,
+		trackCidTx(2, 2_000_009, "0xuser2", "Create", map[string]any{"track_cid": "user1-320"}),
+		"was not uploaded for user 2")
+
+	// User 1 can still publish it, including via the app as signer.
+	mustContentAuth(t, st, trackCidTx(1, 2_000_010, "0xuser1", "Create", map[string]any{"track_cid": "user1-320"}))
+	mustContentAuth(t, st, trackCidTx(1, 2_000_011, "0xapp", "Create", map[string]any{"track_cid": "user1-320"}))
+}
+
+// A preview can be generated long after the upload it belongs to — changing a
+// track's preview start regenerates it — so claims must accumulate across
+// attestations rather than being fixed at transcode time.
+func TestProjectContentAttestationCidsAccumulateAcrossAttestations(t *testing.T) {
+	ctx := context.Background()
+	st := newMemAuthStore()
+
+	if err := projectContentAttestationCids(ctx, st, attestation("0xup", "0xval", "origcid", "320cid"), "tx1"); err != nil {
+		t.Fatal(err)
+	}
+	tx := trackCidTx(1, 10, "0xup", "Create", map[string]any{"track_cid": "320cid", "preview_cid": "latepreview"})
+	mustRejectContentAuth(t, st, tx, "not attested to any uploader")
+
+	if err := projectContentAttestationCids(ctx, st, attestation("0xup", "0xval", "latepreview"), "tx2"); err != nil {
+		t.Fatal(err)
+	}
+	mustContentAuth(t, st, tx)
 }

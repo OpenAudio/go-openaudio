@@ -1252,17 +1252,25 @@ func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOv
 			return false, nil
 		}
 	case *v1.SignedTransaction_ContentAttestation:
-		// Only meaningful once content authorization is active. Before that
-		// height the transaction carries no weight, so accepting it would put
-		// unenforced claims on chain and give an attacker a head start on
-		// squatting cids before anyone is checking them.
-		if !rules.ContentAuthEnforced {
-			s.logger.Error("Invalid block: content attestation before content auth is active")
-			return false, nil
-		}
-		if err := s.isValidContentAttestation(ctx, signedTx); err != nil {
-			s.logger.Error("Invalid block: invalid content attestation tx", zap.Error(err))
-			return false, nil
+		// Block validity must match what a binary predating this type decides:
+		// the switch has no default case, so an unrecognized transaction falls
+		// through and the block is valid. Rejecting pre-gate would make
+		// upgraded validators vote down proposals un-upgraded ones accept — a
+		// fork any peer could trigger during a rolling deploy.
+		//
+		// Mempool admission still refuses them. That is local policy rather
+		// than block validity, so nodes may differ there safely.
+		if rules.ContentAuthEnforced {
+			if err := s.isValidContentAttestation(ctx, signedTx); err != nil {
+				if !authRejected(err) {
+					// A store failure means this node cannot tell; surface it
+					// so ProcessProposal reports unknown instead of voting
+					// invalid on a possibly valid proposal.
+					return false, err
+				}
+				s.logger.Error("Invalid block: invalid content attestation tx", zap.Error(err))
+				return false, nil
+			}
 		}
 	case *v1.SignedTransaction_FileUpload:
 		if err := s.isValidFileUpload(ctx, signedTx); err != nil {
@@ -1303,10 +1311,9 @@ func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64,
 		}
 		return s.isValidMediorumOperationTx(ctx, signedTx)
 	case *v1.SignedTransaction_ContentAttestation:
-		// Validate at admission, not only at proposal. Anyone can submit an
-		// attestation with a bogus signature, and without this they occupy
-		// mempool space until a proposer drops them — the same gap forwarded
-		// ManageEntity transactions had.
+		// Validate at admission, not only at proposal: anyone can submit a bogus
+		// attestation, and they would otherwise occupy mempool space until a
+		// proposer drops them.
 		if !s.config.Upgrades.RulesetAt(currentHeight + 1).ContentAuthEnforced {
 			return errors.New("content attestations are not accepted before content auth is active")
 		}
@@ -1347,7 +1354,7 @@ func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.Finaliz
 	case *v1.SignedTransaction_RewardPool:
 		return s.finalizeRewardPoolTransaction(ctx, req, msg.GetRewardPool(), txHash, 0)
 	case *v1.SignedTransaction_ContentAttestation:
-		return s.finalizeContentAttestation(ctx, msg, req.Height)
+		return s.finalizeContentAttestation(ctx, msg, txHash, req.Height)
 	case *v1.SignedTransaction_FileUpload:
 		return s.finalizeFileUpload(ctx, msg, txHash, req.Height)
 	case *v1.SignedTransaction_MediorumOperation:

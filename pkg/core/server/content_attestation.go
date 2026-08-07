@@ -12,106 +12,116 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// ContentAttestation transactions: a validator stating on chain that a wallet
-// uploaded a specific set of bytes to it.
-//
-// This is what makes content authorization possible. A track's cid fields are
-// client metadata, so consensus cannot tell a genuine claim from a stolen one
-// on its own — it needs a statement from the party that witnessed the bytes.
-//
-// Kept separate from FileUpload (files.go), which serves DDEX and is gated on
-// the programmable-distribution flag. Content authorization must be able to
-// activate on a network where DDEX is switched off, and the two carry
-// incompatible notions of what the uploader signed.
+// ContentAttestation transactions record that a wallet uploaded a set of bytes
+// to a validator. See content_auth_state.go for what the resulting claims are
+// used for, and the proto for why this is separate from FileUpload.
 
-// ContentAttestationBytes builds the exact payload a validator signs.
-// Storage nodes sign these bytes and consensus verifies them, so the two must
-// derive them identically — hence one shared constructor rather than a
-// marshal on each side.
-//
-// uploader_address is lowercased inside the payload so signer and verifier
-// cannot disagree over EIP-55 checksum casing, and so the signed bytes match
-// the key core_auth_cids is written under.
+// ContentAttestationBytes builds the payload a validator signs. Storage nodes
+// sign these bytes and consensus verifies them, so both derive them here rather
+// than marshalling separately.
 func ContentAttestationBytes(ca *v1.ContentAttestation) ([]byte, error) {
 	return proto.Marshal(&v1.ContentAttestationPayload{
+		UserId:          ca.GetUserId(),
+		Cids:            ca.GetCids(),
 		UploaderAddress: strings.ToLower(ca.GetUploaderAddress()),
-		OrigCid:         ca.GetOrigCid(),
-		TranscodedCid:   ca.GetTranscodedCid(),
-		PreviewCid:      ca.GetPreviewCid(),
 	})
 }
 
 // isValidContentAttestation checks the attestation is signed by a registered
 // validator over exactly the fields it claims.
 //
-// fu.UploaderSignature is intentionally not checked here — see the proto
-// comment. It is signed before any cid exists, so it names no content and
-// proves nothing about who uploaded these bytes.
+// UploaderSignature is deliberately unverified: it is produced before any cid
+// exists, so it names no content and proves nothing about who uploaded these
+// bytes. See the proto.
+//
+// Deterministic rejections come back as txRejectionError; a store failure comes
+// back bare. Proposal validation depends on the difference — voting a block
+// invalid because this node could not reach its database would disagree with
+// healthy peers over a proposal that is fine.
 func (s *Server) isValidContentAttestation(ctx context.Context, tx *v1.SignedTransaction) error {
 	ca := tx.GetContentAttestation()
 	if ca == nil {
-		return errors.New("content attestation not present")
+		return txRejectedf("content attestation not present")
 	}
 
 	if ca.GetUploaderAddress() == "" {
-		return errors.New("no uploader address provided")
+		return txRejectedf("no uploader address provided")
 	}
-	if ca.GetOrigCid() == "" {
-		return errors.New("no orig cid provided")
+	if ca.GetUserId() == 0 {
+		return txRejectedf("no user id provided")
+	}
+	if len(ca.GetCids()) == 0 {
+		return txRejectedf("no cids provided")
+	}
+	for _, cid := range ca.GetCids() {
+		if cid == "" {
+			return txRejectedf("empty cid provided")
+		}
 	}
 
 	validatorAddress := ca.GetValidatorAddress()
 	if validatorAddress == "" {
-		return errors.New("no validator address provided")
+		return txRejectedf("no validator address provided")
 	}
 	sig := ca.GetValidatorSignature()
 	if sig == "" {
-		return errors.New("no validator signature provided")
+		return txRejectedf("no validator signature provided")
 	}
 
 	payload, err := ContentAttestationBytes(ca)
 	if err != nil {
-		return fmt.Errorf("could not marshal attestation payload: %w", err)
+		return txRejectedf("could not marshal attestation payload: %v", err)
 	}
 
 	_, recovered, err := common.EthRecover(sig, payload)
 	if err != nil {
-		return fmt.Errorf("could not recover attestation signer: %w", err)
+		return txRejectedf("could not recover attestation signer: %v", err)
 	}
 	if !strings.EqualFold(recovered, validatorAddress) {
-		return fmt.Errorf("validator address and attestation signer mismatch: expected %s, got %s", validatorAddress, recovered)
+		return txRejectedf("validator address and attestation signer mismatch: expected %s, got %s", validatorAddress, recovered)
 	}
 
-	// Only a registered node's word counts. Anyone can generate a keypair and
-	// sign an attestation; what makes it meaningful is that the signer is a
-	// staked, accountable participant that actually receives uploads.
-	validators, err := s.db.GetAllRegisteredNodes(ctx)
+	// Only a registered node's word counts: anyone can generate a keypair and
+	// sign, so what makes an attestation meaningful is that the signer is a
+	// staked participant that actually receives uploads.
+	//
+	// Jailed validators count too — see the query comment. Filtering on
+	// time-varying state here would make replay disagree with the original
+	// execution.
+	// Bare, not a rejection: this is the one branch here that can fail for
+	// reasons local to this node.
+	registered, err := s.db.IsRegisteredNodeEthAddress(ctx, validatorAddress)
 	if err != nil {
-		return fmt.Errorf("could not get validators: %w", err)
+		return fmt.Errorf("could not look up validator %s: %w", validatorAddress, err)
 	}
-	for _, v := range validators {
-		if strings.EqualFold(v.EthAddress, validatorAddress) {
-			return nil
-		}
+	if !registered {
+		return txRejectedf("validator %s is not a registered node", validatorAddress)
 	}
-	return fmt.Errorf("validator %s is not a registered node", validatorAddress)
+	return nil
 }
 
 // finalizeContentAttestation records the claims the attestation establishes.
-func (s *Server) finalizeContentAttestation(ctx context.Context, tx *v1.SignedTransaction, blockHeight int64) (proto.Message, error) {
+//
+// Pre-gate this errors rather than succeeding, which is not the same as
+// ignoring it. A binary predating this transaction type falls to
+// finalizeTransaction's default case and errors; CometBFT folds result codes
+// into the header's LastResultsHash, so an upgraded node that succeeded here
+// would compute a different header and stall the chain. Erroring reproduces the
+// old code exactly, and as a side effect writes no claims — which is what stops
+// an attacker seeding core_auth_cids ahead of enforcement.
+func (s *Server) finalizeContentAttestation(ctx context.Context, tx *v1.SignedTransaction, txHash string, blockHeight int64) (proto.Message, error) {
+	if !s.config.Upgrades.RulesetAt(blockHeight).ContentAuthEnforced {
+		return nil, errors.New("content attestation before content auth is active")
+	}
+
 	if err := s.isValidContentAttestation(ctx, tx); err != nil {
 		s.logger.Error("invalid content attestation", zap.Error(err))
 		return nil, err
 	}
 
 	ca := tx.GetContentAttestation()
-	if err := projectContentAttestationCids(ctx, &dbAuthStore{q: s.getDb()}, ca, blockHeight); err != nil {
-		if isAuthValidationError(err) {
-			s.logger.Debug("content attestation cid projection skipped",
-				zap.String("reason", err.Error()), zap.String("orig_cid", ca.GetOrigCid()))
-		} else {
-			return nil, fmt.Errorf("could not project content attestation cids: %w", err)
-		}
+	if err := projectContentAttestationCids(ctx, &dbAuthStore{q: s.getDb()}, ca, txHash); err != nil {
+		return nil, fmt.Errorf("could not project content attestation cids: %w", err)
 	}
 
 	return nil, nil
