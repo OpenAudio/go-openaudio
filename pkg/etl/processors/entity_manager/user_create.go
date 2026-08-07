@@ -97,7 +97,13 @@ func validateUserCreate(ctx context.Context, params *Params) error {
 // active and available: those flags are not self-assignable (verification goes
 // through the Verify action, deactivation through Update).
 func insertUser(ctx context.Context, params *Params) error {
-	return insertUserWithState(ctx, params, userState{IsAvailable: true})
+	state := userState{IsAvailable: true}
+	// profile_type is a Postgres enum; only values the type declares are
+	// accepted, mirroring the Update handler.
+	if v := params.MetadataString("profile_type"); isKnownProfileType(v) {
+		state.ProfileType = &v
+	}
+	return insertUserWithState(ctx, params, state)
 }
 
 // userState carries the account-state flags for an inserted user. Only trusted
@@ -117,6 +123,11 @@ type userState struct {
 	PlaylistLibrary    []byte
 	ArtistPickTrackID  *int64
 	AllowAIAttribution bool
+
+	// Unlike the fields above, profile_type is also accepted on a live Create:
+	// the API's create schema carries it, so an account (e.g. a label) can
+	// declare it at signup. Both callers validate against the enum first.
+	ProfileType *string
 }
 
 // ON CONFLICT DO NOTHING covers both unique indexes on users: users_pkey
@@ -156,14 +167,14 @@ func insertUserWithState(ctx context.Context, params *Params, state userState) e
 			profile_picture, profile_picture_sizes, cover_photo, cover_photo_sizes,
 			twitter_handle, instagram_handle, tiktok_handle, website, donation,
 			is_current, is_verified, is_deactivated, is_available, is_storage_v2,
-			playlist_library, artist_pick_track_id, allow_ai_attribution,
+			playlist_library, artist_pick_track_id, allow_ai_attribution, profile_type,
 			created_at, updated_at, txhash, blockhash, blocknumber
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11,
 			$12, $13, $14, $15, $16,
-			true, $24, $25, $26, true,
-			$21, $22, $23,
+			true, $25, $26, $27, true,
+			$21, $22, $23, $24,
 			$17, $17, $18, $19, $20
 		)
 		ON CONFLICT DO NOTHING
@@ -193,6 +204,7 @@ func insertUserWithState(ctx context.Context, params *Params, state userState) e
 		playlistLibrary,
 		state.ArtistPickTrackID,
 		state.AllowAIAttribution,
+		strPtrVal(state.ProfileType),
 		state.IsVerified,
 		state.IsDeactivated,
 		state.IsAvailable,

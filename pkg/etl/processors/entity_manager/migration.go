@@ -237,6 +237,9 @@ func (h *migratedUserCreateHandler) Handle(ctx context.Context, params *Params) 
 	if trackID, ok := params.MetadataInt64("artist_pick_track_id"); ok {
 		state.ArtistPickTrackID = &trackID
 	}
+	if v := params.MetadataString("profile_type"); isKnownProfileType(v) {
+		state.ProfileType = &v
+	}
 	return insertUserWithState(ctx, params, state)
 }
 

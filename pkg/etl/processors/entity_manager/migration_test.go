@@ -272,7 +272,7 @@ func TestPlayCountReconcile_RequiresDelta(t *testing.T) {
 // not a signup. The production path must keep ignoring them.
 func TestMigratedUserCreate_CarriesUpdateOnlyProfileFields(t *testing.T) {
 	meta := `{"handle":"e","playlist_library":{"contents":[{"playlist_id":7}]},` +
-		`"artist_pick_track_id":42,"allow_ai_attribution":true}`
+		`"artist_pick_track_id":42,"allow_ai_attribution":true,"profile_type":"label"}`
 
 	t.Run("migration", func(t *testing.T) {
 		dbtx := &stubDBTX{}
@@ -281,37 +281,57 @@ func TestMigratedUserCreate_CarriesUpdateOnlyProfileFields(t *testing.T) {
 		if err := h.Handle(context.Background(), params); err != nil {
 			t.Fatalf("Handle: %v", err)
 		}
-		// playlist_library, artist_pick_track_id, allow_ai_attribution sit
-		// immediately ahead of the three trailing state flags.
+		// playlist_library, artist_pick_track_id, allow_ai_attribution and
+		// profile_type sit immediately ahead of the three trailing state flags.
 		n := len(dbtx.execArgs)
-		lib, _ := dbtx.execArgs[n-6].([]byte)
+		lib, _ := dbtx.execArgs[n-7].([]byte)
 		if !bytes.Contains(lib, []byte(`"playlist_id":7`)) {
 			t.Errorf("playlist_library = %s, want the source library", lib)
 		}
-		pick, ok := dbtx.execArgs[n-5].(*int64)
+		pick, ok := dbtx.execArgs[n-6].(*int64)
 		if !ok || pick == nil || *pick != 42 {
-			t.Errorf("artist_pick_track_id = %v, want 42", dbtx.execArgs[n-5])
+			t.Errorf("artist_pick_track_id = %v, want 42", dbtx.execArgs[n-6])
 		}
-		if dbtx.execArgs[n-4] != true {
-			t.Errorf("allow_ai_attribution = %v, want true", dbtx.execArgs[n-4])
+		if dbtx.execArgs[n-5] != true {
+			t.Errorf("allow_ai_attribution = %v, want true", dbtx.execArgs[n-5])
+		}
+		if dbtx.execArgs[n-4] != "label" {
+			t.Errorf("profile_type = %v, want \"label\"", dbtx.execArgs[n-4])
 		}
 	})
 
-	t.Run("production ignores them", func(t *testing.T) {
+	t.Run("production ignores update-only fields", func(t *testing.T) {
 		dbtx := &stubDBTX{}
 		params := legacyUserParams(t, dbtx, meta)
 		if err := insertUser(context.Background(), params); err != nil {
 			t.Fatalf("insertUser: %v", err)
 		}
 		n := len(dbtx.execArgs)
-		if dbtx.execArgs[n-6] != nil {
-			t.Errorf("playlist_library = %v, want nil on the production path", dbtx.execArgs[n-6])
+		if dbtx.execArgs[n-7] != nil {
+			t.Errorf("playlist_library = %v, want nil on the production path", dbtx.execArgs[n-7])
 		}
-		if dbtx.execArgs[n-5] != (*int64)(nil) {
-			t.Errorf("artist_pick_track_id = %v, want nil on the production path", dbtx.execArgs[n-5])
+		if dbtx.execArgs[n-6] != (*int64)(nil) {
+			t.Errorf("artist_pick_track_id = %v, want nil on the production path", dbtx.execArgs[n-6])
 		}
-		if dbtx.execArgs[n-4] != false {
-			t.Errorf("allow_ai_attribution = %v, want false on the production path", dbtx.execArgs[n-4])
+		if dbtx.execArgs[n-5] != false {
+			t.Errorf("allow_ai_attribution = %v, want false on the production path", dbtx.execArgs[n-5])
+		}
+		// profile_type is the exception: the API's create schema accepts it, so
+		// the production path persists it too.
+		if dbtx.execArgs[n-4] != "label" {
+			t.Errorf("profile_type = %v, want \"label\" on the production path", dbtx.execArgs[n-4])
+		}
+	})
+
+	t.Run("unknown profile_type inserts as NULL", func(t *testing.T) {
+		dbtx := &stubDBTX{}
+		params := legacyUserParams(t, dbtx, `{"handle":"e","profile_type":"bogus"}`)
+		if err := insertUser(context.Background(), params); err != nil {
+			t.Fatalf("insertUser: %v", err)
+		}
+		n := len(dbtx.execArgs)
+		if dbtx.execArgs[n-4] != nil {
+			t.Errorf("profile_type = %v, want nil for a value outside the enum", dbtx.execArgs[n-4])
 		}
 	})
 }
