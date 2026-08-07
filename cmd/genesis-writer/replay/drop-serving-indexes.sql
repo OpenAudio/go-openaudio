@@ -1,0 +1,32 @@
+-- Run AFTER the ETL migrations, BEFORE replaying a genesis chain.
+-- Recreate with recreate-serving-indexes.sql when indexing completes.
+--
+-- These indexes serve API queries. During a replay nothing reads them, but
+-- every one of ~58M inserts maintains them -- and their pages evict the ones
+-- that ARE hot, turning inserts into random reads. On a 2026-08 run this was
+-- worth 1.85x on its own.
+--
+-- DO NOT hardcode a list. The set is derived from live statistics because a
+-- list captured from an earlier run WILL be wrong: two etl_manage_entities
+-- indexes carried non-zero scans in one run and zero in the next, and keeping
+-- them cost 3.8 GB of buffer working set.
+--
+-- Take the run's own numbers instead, after indexing a few hundred blocks:
+--
+--   select 'DROP INDEX IF EXISTS '||quote_ident(i.relname)||';'
+--   from pg_class t
+--   join pg_index x on x.indrelid = t.oid
+--   join pg_class i on i.oid = x.indexrelid
+--   left join pg_stat_user_indexes s on s.indexrelid = i.oid
+--   where t.relname in ('etl_transactions','etl_manage_entities','etl_addresses',
+--                       'etl_plays','follows','saves','reposts','subscriptions',
+--                       'users','tracks','playlists')
+--     and not x.indisprimary          -- primary keys stay: ON CONFLICT may need them
+--     and not x.indisunique           -- partial unique indexes are upsert arbiters
+--     and coalesce(s.idx_scan, 0) = 0
+--   order by pg_relation_size(i.oid) desc;
+--
+-- Capture pg_get_indexdef(i.oid) for the same rows first -- that is the
+-- recreate script, and it is exact.
+
+\echo 'Generate the DROP statements from live pg_stat_user_indexes -- see header.'
