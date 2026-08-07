@@ -71,10 +71,6 @@ func validateUnsubscribe(ctx context.Context, params *Params) error {
 
 func insertSubscription(ctx context.Context, params *Params, isDelete bool) error {
 	entityType := subscriptionEntityType(params)
-	var entityID any
-	if entityType == EntityTypeEvent {
-		entityID = params.EntityID
-	}
 
 	// Upsert the single current row in place (arbiter: subscriptions_current_uniq_idx),
 	// matching the Follow auto-subscribe path in social_follow.go. The prior
@@ -86,6 +82,10 @@ func insertSubscription(ctx context.Context, params *Params, isDelete bool) erro
 	// entity_type is part of the identity (migration 0037): user_id is
 	// overloaded with the event id for Event subscriptions, so a User and an
 	// Event subscription to the same numeric id are distinct rows.
+	//
+	// entity_id is the canonical target for both entity types (0038 backfilled
+	// the pre-existing User rows); user_id is kept as a legacy mirror until
+	// all readers key on (entity_type, entity_id).
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO subscriptions (
 			subscriber_id, user_id, entity_type, entity_id, is_current, is_delete,
@@ -98,7 +98,7 @@ func insertSubscription(ctx context.Context, params *Params, isDelete bool) erro
 			created_at = EXCLUDED.created_at,
 			txhash = EXCLUDED.txhash,
 			blocknumber = EXCLUDED.blocknumber
-	`, params.UserID, params.EntityID, entityType, entityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
+	`, params.UserID, params.EntityID, entityType, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }
 

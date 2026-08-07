@@ -100,14 +100,17 @@ func insertFollow(ctx context.Context, params *Params, isDelete bool) error {
 	// (arbiter: subscriptions_current_uniq_idx). entity_type is written
 	// explicitly and is part of the arbiter (migration 0037) so this upsert
 	// can never land on — or tombstone — an Event subscription whose event id
-	// collides numerically with the followee's user id.
+	// collides numerically with the followee's user id. entity_id is the
+	// canonical target for both entity types (see insertSubscription); the
+	// DO UPDATE also heals any pre-0038 NULL left on the row.
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO subscriptions (
-			subscriber_id, user_id, entity_type, is_current, is_delete,
+			subscriber_id, user_id, entity_type, entity_id, is_current, is_delete,
 			created_at, txhash, blocknumber
-		) VALUES ($1, $2, $3, true, $4, $5, $6, $7)
+		) VALUES ($1, $2, $3, $2, true, $4, $5, $6, $7)
 		ON CONFLICT (subscriber_id, user_id, entity_type) WHERE is_current = true
 		DO UPDATE SET
+			entity_id = EXCLUDED.entity_id,
 			is_delete = EXCLUDED.is_delete,
 			created_at = EXCLUDED.created_at,
 			txhash = EXCLUDED.txhash,
