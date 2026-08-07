@@ -11,6 +11,42 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const authActiveWalletExists = `-- name: AuthActiveWalletExists :one
+select exists(
+    select 1 from core_auth_users
+    where wallet = $1 and is_deactivated = false
+)
+`
+
+func (q *Queries) AuthActiveWalletExists(ctx context.Context, wallet string) (bool, error) {
+	row := q.db.QueryRow(ctx, authActiveWalletExists, wallet)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const authHandleExists = `-- name: AuthHandleExists :one
+select exists(select 1 from core_auth_users where handle_lc = $1)
+`
+
+func (q *Queries) AuthHandleExists(ctx context.Context, handleLc pgtype.Text) (bool, error) {
+	row := q.db.QueryRow(ctx, authHandleExists, handleLc)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const authWalletExists = `-- name: AuthWalletExists :one
+select exists(select 1 from core_auth_users where wallet = $1)
+`
+
+func (q *Queries) AuthWalletExists(ctx context.Context, wallet string) (bool, error) {
+	row := q.db.QueryRow(ctx, authWalletExists, wallet)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const getActiveRewards = `-- name: GetActiveRewards :many
 select
     r.id, r.address, r.index, r.tx_hash, r.sender, r.reward_id, r.name, r.amount,
@@ -318,6 +354,101 @@ func (q *Queries) GetAppStateAtHeight(ctx context.Context, blockHeight int64) (G
 	return i, err
 }
 
+const getAuthDeveloperApp = `-- name: GetAuthDeveloperApp :one
+select address, user_id, is_deleted
+from core_auth_developer_apps
+where address = $1
+`
+
+func (q *Queries) GetAuthDeveloperApp(ctx context.Context, address string) (CoreAuthDeveloperApp, error) {
+	row := q.db.QueryRow(ctx, getAuthDeveloperApp, address)
+	var i CoreAuthDeveloperApp
+	err := row.Scan(&i.Address, &i.UserID, &i.IsDeleted)
+	return i, err
+}
+
+const getAuthEntity = `-- name: GetAuthEntity :one
+select entity_type, entity_id, owner_user_id, is_deleted
+from core_auth_entities
+where entity_type = $1 and entity_id = $2
+`
+
+type GetAuthEntityParams struct {
+	EntityType string
+	EntityID   int64
+}
+
+func (q *Queries) GetAuthEntity(ctx context.Context, arg GetAuthEntityParams) (CoreAuthEntity, error) {
+	row := q.db.QueryRow(ctx, getAuthEntity, arg.EntityType, arg.EntityID)
+	var i CoreAuthEntity
+	err := row.Scan(
+		&i.EntityType,
+		&i.EntityID,
+		&i.OwnerUserID,
+		&i.IsDeleted,
+	)
+	return i, err
+}
+
+const getAuthGrant = `-- name: GetAuthGrant :one
+select grantee_address, user_id, is_approved, is_revoked
+from core_auth_grants
+where grantee_address = $1 and user_id = $2
+`
+
+type GetAuthGrantParams struct {
+	GranteeAddress string
+	UserID         int64
+}
+
+func (q *Queries) GetAuthGrant(ctx context.Context, arg GetAuthGrantParams) (CoreAuthGrant, error) {
+	row := q.db.QueryRow(ctx, getAuthGrant, arg.GranteeAddress, arg.UserID)
+	var i CoreAuthGrant
+	err := row.Scan(
+		&i.GranteeAddress,
+		&i.UserID,
+		&i.IsApproved,
+		&i.IsRevoked,
+	)
+	return i, err
+}
+
+const getAuthUser = `-- name: GetAuthUser :one
+
+select user_id, wallet, handle_lc, is_deactivated
+from core_auth_users
+where user_id = $1
+`
+
+// Consensus auth state reads. Callers treat "no rows" as "absent", never as
+// an error; see pkg/core/server/auth_state.go.
+func (q *Queries) GetAuthUser(ctx context.Context, userID int64) (CoreAuthUser, error) {
+	row := q.db.QueryRow(ctx, getAuthUser, userID)
+	var i CoreAuthUser
+	err := row.Scan(
+		&i.UserID,
+		&i.Wallet,
+		&i.HandleLc,
+		&i.IsDeactivated,
+	)
+	return i, err
+}
+
+const getAuthUserIDByWallet = `-- name: GetAuthUserIDByWallet :one
+select user_id
+from core_auth_users
+where wallet = $1 and is_deactivated = false
+order by user_id
+limit 1
+`
+
+func (q *Queries) GetAuthUserIDByWallet(ctx context.Context, wallet string) (int64, error) {
+	row := q.db.QueryRow(ctx, getAuthUserIDByWallet, wallet)
+	var user_id int64
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
 const getAvailableCities = `-- name: GetAvailableCities :many
 select city,
     region,
@@ -487,6 +618,10 @@ where block_id = $1
 order by index
 `
 
+// Ordered by index, the transaction's position in the block. created_at is the
+// row's insertion time: it is coarse enough that many transactions in a block
+// share one value, so ordering by it returned them arbitrarily within ties and
+// reversed across them. Consumers replaying a block depend on its real order.
 func (q *Queries) GetBlockTransactions(ctx context.Context, blockID int64) ([]CoreTransaction, error) {
 	rows, err := q.db.Query(ctx, getBlockTransactions, blockID)
 	if err != nil {

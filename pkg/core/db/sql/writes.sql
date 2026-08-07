@@ -414,3 +414,44 @@ insert into core_uploads(
     tx_hash,
     block_height
 ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+
+-- Consensus auth state (core_auth_*): written only by the FinalizeBlock
+-- ManageEntity projection in pkg/core/server/auth_state.go, inside the
+-- block's transaction. All writes are conflict-safe so replay is idempotent.
+
+-- name: InsertAuthUser :exec
+insert into core_auth_users (user_id, wallet, handle_lc, is_deactivated)
+values ($1, $2, $3, $4)
+on conflict (user_id) do nothing;
+
+-- name: SetAuthUserHandle :exec
+update core_auth_users set handle_lc = $2 where user_id = $1;
+
+-- name: SetAuthUserDeactivated :exec
+update core_auth_users set is_deactivated = $2 where user_id = $1;
+
+-- name: UpsertAuthGrant :exec
+insert into core_auth_grants (grantee_address, user_id, is_approved, is_revoked)
+values ($1, $2, $3, $4)
+on conflict (grantee_address, user_id) do update
+set is_approved = excluded.is_approved,
+    is_revoked = excluded.is_revoked;
+
+-- name: UpsertAuthDeveloperApp :exec
+insert into core_auth_developer_apps (address, user_id, is_deleted)
+values ($1, $2, false)
+on conflict (address) do update
+set user_id = excluded.user_id,
+    is_deleted = false;
+
+-- name: SetAuthDeveloperAppDeleted :exec
+update core_auth_developer_apps set is_deleted = true where address = $1;
+
+-- name: InsertAuthEntity :exec
+insert into core_auth_entities (entity_type, entity_id, owner_user_id, is_deleted)
+values ($1, $2, $3, $4)
+on conflict (entity_type, entity_id) do nothing;
+
+-- name: SetAuthEntityDeleted :exec
+update core_auth_entities set is_deleted = true
+where entity_type = $1 and entity_id = $2;
