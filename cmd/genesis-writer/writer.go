@@ -81,6 +81,14 @@ type Writer struct {
 	nonce      atomic.Uint64
 	logger     *zap.Logger
 
+	// authProjectionSkips counts migration transactions whose authorization
+	// effects the projection declined. This should be zero: the writer only
+	// emits entities whose references resolve, so anything skipped is a defect
+	// rather than a tolerated case. Surfaced at the end because a silent
+	// partial auth state only fails later, when enforcement starts rejecting
+	// traffic the chain should accept.
+	authProjectionSkips int
+
 	// current block being assembled
 	height    int64
 	blockTxs  [][]byte
@@ -296,6 +304,18 @@ func (w *Writer) writeBlockToDB(ctx context.Context, pb pendingBlock) error {
 	)
 	if err != nil {
 		return fmt.Errorf("insert core_app_state height=%d: %w", pb.height, err)
+	}
+
+	// Project the consensus auth state for this block's transactions, in the
+	// same postgres transaction so the tables can never be half-written
+	// relative to the blocks that produced them.
+	//
+	// A live chain gets this from FinalizeBlock. This writer bypasses
+	// consensus entirely, so without it a chain started from a genesis write
+	// begins with every core_auth_* table empty and enforcement rejects
+	// everything.
+	if err := w.projectBlockAuthState(ctx, pgTx, pb); err != nil {
+		return err
 	}
 
 	if err := pgTx.Commit(ctx); err != nil {
@@ -550,6 +570,15 @@ func (w *Writer) Run(ctx context.Context) error {
 				zap.String("app_hash", hex.EncodeToString(appHash)),
 			)
 		}
+	}
+
+	// Expected to be zero. Enforcement later validates every live transaction
+	// against these tables, so anything missing here becomes a rejection the
+	// chain should have accepted — worth resolving before activation rather
+	// than discovering afterwards.
+	if w.authProjectionSkips > 0 {
+		w.logger.Error("auth state projection declined migration transactions; the auth state is incomplete",
+			zap.Int("skipped", w.authProjectionSkips))
 	}
 
 	// Write CometBFT state and genesis file before index rebuild — fast and critical.
@@ -911,4 +940,53 @@ func signingConfig(network string) *corecfg.Config {
 			AcdcChainID:              corecfg.DevAcdcChainID,
 		}
 	}
+}
+
+// projectBlockAuthState applies each migration transaction's authorization
+// effects to the core_auth_* tables, inside the block's postgres transaction.
+//
+// The transactions are re-decoded here rather than carried alongside their
+// bytes. That costs one proto unmarshal per transaction, which is noise next
+// to the signing and hashing already done per entity, and it keeps the change
+// confined to the write path instead of threading a second representation
+// through block assembly.
+//
+// Non-migration transactions (plays, for instance) carry no authorization
+// effects and are skipped.
+func (w *Writer) projectBlockAuthState(ctx context.Context, pgTx pgx.Tx, pb pendingBlock) error {
+	q := coredb.New(pgTx)
+
+	for _, row := range pb.txData {
+		var stx corev1.SignedTransaction
+		if err := proto.Unmarshal(row.txBytes, &stx); err != nil {
+			return fmt.Errorf("decode tx %s for auth projection height=%d: %w", row.hash, pb.height, err)
+		}
+
+		me := stx.GetManageEntityMigration()
+		if me == nil {
+			continue
+		}
+
+		skipped, reason, err := server.ProjectMigrationAuthState(ctx, q, me)
+		if err != nil {
+			return fmt.Errorf("project auth state for tx %s height=%d: %w", row.hash, pb.height, err)
+		}
+		if skipped {
+			// Expected count is zero. The writer only emits entities whose
+			// references resolve, so every migration transaction should
+			// project cleanly; a skip means either the writer emitted
+			// something malformed or a projection rule disagrees with what
+			// legacy data actually looks like. Both are bugs, so log each one
+			// with enough detail to chase rather than just tallying them.
+			w.authProjectionSkips++
+			w.logger.Warn("auth state projection declined a migration transaction",
+				zap.String("reason", reason),
+				zap.String("entity_type", me.GetEntityType()),
+				zap.String("action", me.GetAction()),
+				zap.Int64("entity_id", me.GetEntityId()),
+				zap.Int64("user_id", me.GetUserId()),
+				zap.Int64("height", pb.height))
+		}
+	}
+	return nil
 }

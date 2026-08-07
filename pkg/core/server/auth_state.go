@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 )
 
 // This file maintains the consensus-side authorization state (core_auth_*
@@ -600,4 +601,38 @@ func projectAppDelete(ctx context.Context, st authStore, tx authTx) error {
 		return authValidationErrorf("developer app %s does not belong to user %d", address, tx.UserID)
 	}
 	return st.SetAppDeleted(ctx, address)
+}
+
+// ProjectMigrationAuthState applies a genesis-migration ManageEntity
+// transaction's authorization effects to the core_auth_* tables, using the
+// caller's queries handle so the writes join whatever transaction it owns.
+//
+// This exists for genesis-writer, which builds blocks and inserts them
+// straight into core_blocks/core_transactions without going through consensus.
+// FinalizeBlock never executes those transactions, so nothing would otherwise
+// populate the auth state and a chain started from a genesis write would begin
+// life with every core_auth_* table empty — at which point enforcement rejects
+// every transaction, because validateAuthSigner cannot find any user.
+//
+// It is deliberately the same projection FinalizeBlock runs rather than a
+// reimplementation: the two must agree exactly, and the only way to guarantee
+// that is to share the code.
+//
+// skipped reports that the projection understood the transaction and declined
+// it, with reason describing why. It is returned rather than treated as an
+// error because the caller owns the policy, but it should not happen: a
+// migration replays state the source system already accepted, and the writer
+// only emits entities whose references resolve. A skip therefore means either
+// malformed writer output or a projection rule that disagrees with what legacy
+// data looks like, and callers should surface it rather than absorb it.
+func ProjectMigrationAuthState(ctx context.Context, q *db.Queries, me *v1.ManageEntityLegacyMigration) (skipped bool, reason string, err error) {
+	err = applyAuthProjection(ctx, &dbAuthStore{q: q}, authTxFromManageEntityMigration(me))
+	switch {
+	case err == nil:
+		return false, "", nil
+	case isAuthValidationError(err):
+		return true, err.Error(), nil
+	default:
+		return false, "", err
+	}
 }
