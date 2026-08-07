@@ -146,6 +146,7 @@ type Config struct {
 
 	/* Derived Config */
 	GenesisFile *types.GenesisDoc
+	Upgrades    *UpgradeSchedule
 	EthereumKey *ecdsa.PrivateKey
 	CometKey    *ed25519.PrivKey
 	Rewards     []rewards.Reward
