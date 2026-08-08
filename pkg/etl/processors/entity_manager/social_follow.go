@@ -123,20 +123,23 @@ func insertFollowRow(ctx context.Context, params *Params, isDelete bool) error {
 
 // insertImpliedSubscription writes the subscription a live follow implies.
 // Only the production path calls it -- see insertMigratedFollow.
-// (arbiter: subscriptions_current_uniq_idx)
+// (arbiter: subscriptions_current_uniq_idx). entity_type is written
+// explicitly and is part of the arbiter (migration 0037) so this upsert
+// can never land on — or tombstone — an Event subscription whose event id
+// collides numerically with the followee's user id.
 func insertImpliedSubscription(ctx context.Context, params *Params, isDelete bool) error {
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO subscriptions (
-			subscriber_id, user_id, is_current, is_delete,
+			subscriber_id, user_id, entity_type, is_current, is_delete,
 			created_at, txhash, blocknumber
-		) VALUES ($1, $2, true, $3, $4, $5, $6)
-		ON CONFLICT (subscriber_id, user_id) WHERE is_current = true
+		) VALUES ($1, $2, $3, true, $4, $5, $6, $7)
+		ON CONFLICT (subscriber_id, user_id, entity_type) WHERE is_current = true
 		DO UPDATE SET
 			is_delete = EXCLUDED.is_delete,
 			created_at = EXCLUDED.created_at,
 			txhash = EXCLUDED.txhash,
 			blocknumber = EXCLUDED.blocknumber
-	`, params.UserID, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
+	`, params.UserID, params.EntityID, EntityTypeUser, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
 	return err
 }
 

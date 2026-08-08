@@ -98,3 +98,31 @@ func TestUnfollow_RejectsNoActiveFollow(t *testing.T) {
 	params := buildParams(t, pool, EntityTypeUser, ActionUnfollow, uid1, uid2, "0xFollower", `{}`)
 	mustReject(t, Unfollow(), params, "no active follow")
 }
+
+func TestFollow_AutoSubscribeIgnoresCollidingEventSubscription(t *testing.T) {
+	pool := setupTestDB(t)
+	followerID := int64(UserIDOffset + 40)
+	// The followee's user id and the event's id collide on purpose: the
+	// auto-subscribe upsert must key on entity_type and never land on the
+	// Event row — following or unfollowing the user leaves it untouched.
+	collidingID := int64(UserIDOffset + 41)
+	hostID := int64(UserIDOffset + 42)
+
+	seedUser(t, pool, followerID, "0xafollower", "afollower")
+	seedUser(t, pool, collidingID, "0xafollowee", "afollowee")
+	seedUser(t, pool, hostID, "0xahost", "ahost")
+	seedEvent(t, pool, collidingID, hostID)
+
+	mustHandle(t, Subscribe(), buildParams(t, pool, EntityTypeEvent, ActionSubscribe, followerID, collidingID, "0xafollower", `{}`))
+	mustHandle(t, Follow(), buildParams(t, pool, EntityTypeUser, ActionFollow, followerID, collidingID, "0xafollower", `{}`))
+
+	// The follow created its own User subscription alongside the Event one.
+	assertSubscriptionDeleteState(t, pool, followerID, collidingID, EntityTypeUser, false)
+	assertSubscriptionDeleteState(t, pool, followerID, collidingID, EntityTypeEvent, false)
+
+	// Unfollowing tombstones only the User subscription.
+	mustHandle(t, Unfollow(), buildParams(t, pool, EntityTypeUser, ActionUnfollow, followerID, collidingID, "0xafollower", `{}`))
+
+	assertSubscriptionDeleteState(t, pool, followerID, collidingID, EntityTypeUser, true)
+	assertSubscriptionDeleteState(t, pool, followerID, collidingID, EntityTypeEvent, false)
+}
