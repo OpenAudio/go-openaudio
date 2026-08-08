@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -163,21 +164,38 @@ func Compare(ctx context.Context, etlPool *pgxpool.Pool, prodPool *pgxpool.Pool)
 		return fmt.Errorf("determining em_block boundary: %w", err)
 	}
 
-	// Find the max em_block in prod that corresponds to the Go ETL's max chain height.
-	// Any prod entity with blocknumber > this was modified after our comparison window.
-	var prodMaxEmBlock int64
+	// Find the max em_block in prod that corresponds to the Go ETL's max chain
+	// height. Any prod entity with blocknumber > this was modified after our
+	// comparison window and cannot be compared.
+	//
+	// That cutoff only means something when the reference database took part in
+	// the chain, which is the Python-to-Go cutover this tool was written for.
+	// Comparing a genesis replay against a restored Discovery Provider snapshot
+	// is different: the snapshot has no core_indexed_blocks rows at all, so
+	// MAX(em_block) is NULL, COALESCE made it 0, and every row with
+	// blocknumber > 0 -- which is every row -- was skipped as "ahead of the
+	// window". The run took hours and compared nothing while reporting success.
+	//
+	// A snapshot IS the window, so there is nothing to be ahead of.
+	var prodMaxEmBlockNull *int64
 	err = prodPool.QueryRow(ctx,
-		`SELECT COALESCE(MAX(em_block), 0)
+		`SELECT MAX(em_block)
 		 FROM core_indexed_blocks
-		 WHERE height <= $1 AND em_block IS NOT NULL`, maxGoHeight).Scan(&prodMaxEmBlock)
+		 WHERE height <= $1 AND em_block IS NOT NULL`, maxGoHeight).Scan(&prodMaxEmBlockNull)
 	if err != nil {
 		return fmt.Errorf("determining prod em_block cutoff: %w", err)
+	}
+	prodMaxEmBlock := int64(math.MaxInt64)
+	cutoffLabel := "unbounded (reference has no core_indexed_blocks; it is a snapshot, not a chain participant)"
+	if prodMaxEmBlockNull != nil {
+		prodMaxEmBlock = *prodMaxEmBlockNull
+		cutoffLabel = fmt.Sprintf("%d (prod rows above this are beyond our window)", prodMaxEmBlock)
 	}
 
 	fmt.Printf("=== ETL vs Production Comparison ===\n")
 	fmt.Printf("em_block boundary:     %d (rows with blocknumber > this are Go-written)\n", emBlockBoundary)
 	fmt.Printf("Go ETL chain heights:  %d .. %d\n", minGoHeight, maxGoHeight)
-	fmt.Printf("Prod em_block cutoff:  %d (prod rows above this are beyond our window)\n", prodMaxEmBlock)
+	fmt.Printf("Prod em_block cutoff:  %s\n", cutoffLabel)
 	fmt.Println()
 
 	var totals struct {
@@ -204,6 +222,15 @@ func Compare(ctx context.Context, etlPool *pgxpool.Pool, prodPool *pgxpool.Pool)
 		fmt.Printf("Match rate: %.1f%%\n", float64(totals.matched)/float64(totals.compared)*100)
 	}
 	fmt.Println("=== Done ===")
+
+	// A run that compares nothing is not a pass. Before this guard the tool
+	// skipped every row as "prod ahead", printed a clean summary, and exited 0
+	// -- the most expensive kind of green.
+	if totals.compared == 0 && totals.skippedAhead > 0 {
+		return fmt.Errorf("compared 0 rows: all %d were skipped as ahead of the "+
+			"comparison window. The em_block cutoff is wrong for this pairing, "+
+			"so the run proved nothing", totals.skippedAhead)
+	}
 	return nil
 }
 
