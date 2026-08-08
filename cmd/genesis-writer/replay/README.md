@@ -9,17 +9,51 @@ exception is deliberate and scoped: `migrationOnlyBlock` skips the per-tx
 savepoint for blocks made entirely of migration transactions, and live or
 mixed blocks keep per-transaction isolation.
 
-## Order of operations
+## Running a replay
 
-1. Set `shared_buffers` (`bulk-load-settings.sql`) and restart Postgres. Do
-   this first -- it is the one setting that cannot be changed during a run.
-2. Start the node so the ETL schema is created, or run the migrations directly.
-3. Apply `bulk-load-tables.sql`.
-4. Index a few hundred blocks, then generate and apply the index drops from
-   *this run's* statistics (see `drop-serving-indexes.sql`).
-5. Replay.
-6. Apply `restore-settings.sql`, recreate the dropped indexes from the captured
-   DDL, then `VACUUM ANALYZE`.
+`replay.sh` runs the whole pipeline -- bulk-load settings, warmup, index
+slimming, the replay itself, and the restore -- and needs only `go` and `psql`
+on the host:
+
+    ./replay.sh run \
+      --rpc http://localhost:50051 \
+      --db 'postgres://postgres@localhost:5433/etl?sslmode=disable' \
+      --end 5800000
+
+The phases, which the sections below explain individually:
+
+1. Apply `bulk-load-settings.sql`. `shared_buffers` needs a Postgres restart;
+   pass `--restart-cmd 'docker restart etl-pg'` (or your `pg_ctl` equivalent)
+   to let the script do it, otherwise it stops and asks.
+2. Warmup: index the first blocks (`--warmup-end`, default 300). This runs the
+   ETL migrations and accumulates the index statistics the next phase needs.
+3. Slim: capture recreate DDL for this run's zero-scan serving indexes into
+   `state/recreate-serving-indexes.sql`, drop them, and apply
+   `bulk-load-tables.sql`.
+4. Replay to `--end`.
+5. Restore: apply `restore-settings.sql`, recreate the dropped indexes from
+   the captured DDL, `VACUUM ANALYZE`.
+
+If the replay dies partway, nothing is restored on purpose -- recreating the
+indexes on a partially loaded database is expensive and a resume would only
+drop them again. Rerun `replay.sh run` with the same arguments to resume from
+the last indexed block (the captured DDL in `state/` makes it skip warmup and
+slim), or run `replay.sh restore --db ...` to give up and put the database
+back into serving shape.
+
+## Why the index drops are derived, not listed
+
+The dropped set is derived from the run's own `pg_stat_user_indexes` because a
+hardcoded list captured from an earlier run WILL be wrong: two
+`etl_manage_entities` indexes carried non-zero scans in one run and zero in
+the next, and keeping them cost 3.8 GB of buffer working set -- which is what
+turns inserts into random reads. On a 2026-08 run dropping the zero-scan set
+was worth 1.85x on its own.
+
+Primary keys and unique indexes are excluded by construction: the former may
+back `ON CONFLICT`, the latter are upsert arbiters. The recreate DDL is
+captured with `pg_get_indexdef` *before* anything is dropped, so the restore
+is exact.
 
 ## Run the ETL on the host, not in the node container
 
