@@ -310,6 +310,7 @@ message SignedTransaction {
     RewardPoolMessage reward_pool = 1011;
     ManageEntityLegacyMigration manage_entity_migration = 1012;
     MediorumOperation mediorum_operation = 1013;
+    ContentAttestation content_attestation = 1014;
   }
 }
 
@@ -779,6 +780,53 @@ message MediorumOperation {
   string action = 3;
   string table = 4;
   bytes data = 5;
+}
+
+// ContentAttestationPayload is what a validator signs to attest that a user
+// uploaded a set of bytes to it. Every field the attestation speaks about is
+// inside the signed payload, so a recovered signature cannot be re-paired with
+// a different user or cid set.
+//
+// Separate from FileUpload, which serves DDEX: there the uploader signs the
+// original cid, here they authenticate before any cid exists. One message would
+// mean the same field meaning two things and every rule branching on which.
+message ContentAttestationPayload {
+  // user the content belongs to, asserted at upload time (see mediorum's
+  // upload_auth.go for why an assertion is safe). This is the authorization
+  // key, not a wallet: a developer app is a shared wallet, so authorizing
+  // everyone who can act for it would let any of its users claim any
+  // other's content — and the uploader is not authenticated anyway, so
+  // there is no wallet to record.
+  int64 user_id = 1;
+  // cids this attestation covers, in the order sent
+  repeated string cids = 2;
+}
+
+// ContentAttestation is a validator stating that a user uploaded these bytes to
+// it, which is what entitles that user to name the cids on a track.
+//
+// Deliberately says nothing about what each cid is. The original, the transcode
+// and the preview are all just bytes the uploader possessed; whether a cid is a
+// track's audio or its preview is track metadata, and consensus never asks.
+// Keeping roles out also means an attestation can be sent whenever a cid comes
+// into existence rather than only once — previews in particular can be
+// regenerated long after upload, and a single fixed-shape attestation would
+// leave those cids unclaimable.
+message ContentAttestation {
+  // user entitled to claim the cids below. Usually the one who uploaded them,
+  // but not always: a preview generated from already-claimed audio is attested
+  // to the user that audio belongs to.
+  int64 user_id = 1;
+  repeated string cids = 2;
+  // registered validator that received the bytes
+  string validator_address = 3;
+  // signature over the marshalled ContentAttestationPayload — exactly the
+  // user id and cids, the two things consensus authorizes on. Consensus
+  // verifies it and checks the signer is registered; it is the only
+  // signature involved, since the uploader is not authenticated (the user
+  // above is an assertion made at upload time — see mediorum's
+  // upload_auth.go for why that is safe).
+  string validator_signature = 4;
 }
 
 message GetStreamURLsSignature {

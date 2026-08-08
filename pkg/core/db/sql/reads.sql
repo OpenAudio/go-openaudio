@@ -758,3 +758,25 @@ where address = $1;
 select entity_type, entity_id, owner_user_id, is_deleted
 from core_auth_entities
 where entity_type = $1 and entity_id = $2;
+
+-- name: IsCidClaimedByUser :one
+select exists (
+  select 1
+  from core_auth_cids
+  where cid = @cid::text
+    and user_id = @user_id::bigint
+);
+
+-- name: CidIsClaimed :one
+select exists (select 1 from core_auth_cids where cid = $1);
+
+-- name: IsRegisteredNodeEthAddress :one
+-- Deliberately includes jailed validators. jailed is time-varying, so filtering
+-- on it would make a historical transaction validate differently on replay than
+-- when first executed — changing its result code and the block's
+-- LastResultsHash. Use GetAllRegisteredNodes for the live unjailed set.
+select exists (
+  select 1
+  from core_validators
+  where lower(eth_address) = lower(@eth_address::text)
+);
