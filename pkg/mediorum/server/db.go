@@ -28,7 +28,14 @@ type QmAudioAnalysis struct {
 type Upload struct {
 	ID string `json:"id"` // base32 file hash
 
-	UserWallet        sql.NullString `json:"user_wallet"`
+	// UserWallet is populated only by the legacy POST /uploads and gRPC paths,
+	// from an unverified X-User-Wallet-Addr header. It plays no part in
+	// attestation; the tus path leaves it null.
+	UserWallet sql.NullString `json:"user_wallet"`
+	// UserID is the user this upload was made for, asserted in tus metadata.
+	// An assertion, not proof — see upload_auth.go for why that is safe and
+	// for the constraint it puts on how claims may be interpreted.
+	UserID            sql.NullInt64  `json:"user_id"`
 	Template          JobTemplate    `json:"template"`
 	OrigFileName      string         `json:"orig_filename"`
 	OrigFileCID       string         `json:"orig_file_cid" gorm:"column:orig_file_cid;index:idx_uploads_orig_file_cid"` //

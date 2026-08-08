@@ -366,8 +366,8 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 
 	// if a start time is set, also transcode an audio preview from the full 320kbps downsample
 	if upload.SelectedPreview.Valid {
-		err := ss.generateAudioPreviewForUpload(ctx, upload)
-		if err != nil {
+		// Attested below with the rest of the upload's cids.
+		if _, err := ss.generateAudioPreviewForUpload(ctx, upload); err != nil {
 			return onError(err, upload.Status, "generateAudioPreview")
 		}
 	}
@@ -483,6 +483,18 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 	if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
 		return fmt.Errorf("failed to get upload from DB: %w", err)
 	}
+	// Attest before publishing done, not after. A client creates its track as
+	// soon as the upload reads done, and consensus rejects a track naming cids
+	// it holds no claim for, so flipping the status first would race the
+	// attestation.
+	cids := []string{dbUpload.OrigFileCID, upload.TranscodeResults["320"]}
+	if upload.SelectedPreview.Valid {
+		cids = append(cids, upload.TranscodeResults[upload.SelectedPreview.String])
+	}
+	if err := ss.attestUploadCids(ctx, &dbUpload, cids...); err != nil {
+		return onError(err, upload.Status, "attesting cids")
+	}
+
 	dbUpload.TranscodeProgress = 1
 	dbUpload.TranscodedAt = time.Now().UTC()
 	dbUpload.Status = JobStatusDone
