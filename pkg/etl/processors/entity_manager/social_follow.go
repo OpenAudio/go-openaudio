@@ -76,7 +76,29 @@ func validateUnfollow(ctx context.Context, params *Params) error {
 
 // --- shared ---
 
+// insertFollow records a live follow: the follow itself and the subscription it
+// implies.
 func insertFollow(ctx context.Context, params *Params, isDelete bool) error {
+	if err := insertFollowRow(ctx, params, isDelete); err != nil {
+		return err
+	}
+	return insertImpliedSubscription(ctx, params, isDelete)
+}
+
+// insertMigratedFollow records the follow without inferring a subscription.
+//
+// The genesis migration replays the source's own subscriptions table as
+// explicit Subscribe transactions, covering 6,341,259 of its 6,341,432 rows, so
+// inferring one per follow adds subscriptions the user never had. A full replay
+// produced 26,115,620 subscription rows against a source of 6,341,432 -- a 4.1x
+// inflation -- and every explicit Subscribe then collided with a row the follow
+// had already written (726,607 rejections).
+func insertMigratedFollow(ctx context.Context, params *Params, isDelete bool) error {
+	return insertFollowRow(ctx, params, isDelete)
+}
+
+// insertFollowRow upserts the follow itself.
+func insertFollowRow(ctx context.Context, params *Params, isDelete bool) error {
 	// Upsert the single current row in place (arbiter: follows_current_uniq_idx).
 	// Replaces demote-then-insert: avoids unbounded is_current=false history and
 	// gives the aggregate triggers an O(1) is_delete transition to track.
@@ -96,12 +118,17 @@ func insertFollow(ctx context.Context, params *Params, isDelete bool) error {
 		return err
 	}
 
-	// Follow/Unfollow also creates/deletes a Subscription record
-	// (arbiter: subscriptions_current_uniq_idx). entity_type is written
-	// explicitly and is part of the arbiter (migration 0037) so this upsert
-	// can never land on — or tombstone — an Event subscription whose event id
-	// collides numerically with the followee's user id.
-	_, err = params.DBTX.Exec(ctx, `
+	return nil
+}
+
+// insertImpliedSubscription writes the subscription a live follow implies.
+// Only the production path calls it -- see insertMigratedFollow.
+// (arbiter: subscriptions_current_uniq_idx). entity_type is written
+// explicitly and is part of the arbiter (migration 0037) so this upsert
+// can never land on — or tombstone — an Event subscription whose event id
+// collides numerically with the followee's user id.
+func insertImpliedSubscription(ctx context.Context, params *Params, isDelete bool) error {
+	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO subscriptions (
 			subscriber_id, user_id, entity_type, is_current, is_delete,
 			created_at, txhash, blocknumber
