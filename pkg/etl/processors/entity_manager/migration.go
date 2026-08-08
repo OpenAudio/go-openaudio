@@ -60,7 +60,7 @@ func RegisterMigrationOverrides(d *Dispatcher) {
 	// difference is that is_delete comes from the source row rather than being
 	// hardcoded false, so a soft-deleted follow/save/repost/subscription is
 	// replayed as one transaction instead of a create/delete pair.
-	d.Register(migratedSocial(EntityTypeAny, ActionFollow, validateFollow, insertFollow))
+	d.Register(migratedSocial(EntityTypeAny, ActionFollow, validateFollow, insertMigratedFollow))
 	d.Register(migratedSocial(EntityTypeAny, ActionSave, validateSave, insertSave))
 	d.Register(migratedSocial(EntityTypeAny, ActionRepost, validateRepost, insertRepost))
 	d.Register(migratedSocial(EntityTypeAny, ActionSubscribe, validateSubscribe, insertSubscription))
