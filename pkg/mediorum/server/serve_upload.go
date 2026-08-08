@@ -2,6 +2,7 @@ package server
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -80,12 +81,48 @@ func (ss *MediorumServer) generatePreview(c echo.Context) error {
 	fileHash := c.Param("cid")
 	previewStartSeconds := c.Param("previewStartSeconds")
 
+	// Authorize before transcoding, not after: this endpoint pulls a blob from
+	// the network and runs ffmpeg, so an unauthorized caller should not get that
+	// work done for them.
+	userID, err := previewRequestUserID(c)
+	if err != nil {
+		return c.String(http.StatusBadRequest, err.Error())
+	}
+	claimant, err := ss.previewClaimant(ctx, fileHash, userID)
+	if err != nil {
+		if errors.Is(err, errPreviewUnverifiable) {
+			return c.String(http.StatusServiceUnavailable, err.Error())
+		}
+		return c.String(http.StatusUnauthorized, err.Error())
+	}
+
 	audioPreview, err := ss.generateAudioPreview(ctx, fileHash, previewStartSeconds)
 	if err != nil {
 		return err
 	}
 
+	// Before responding: the caller writes this cid onto a track as soon as it
+	// has it, and consensus rejects a track naming an unclaimed cid.
+	if err := ss.attestPreviewCid(ctx, claimant, audioPreview.CID); err != nil {
+		return err
+	}
+
 	return c.JSON(200, audioPreview)
+}
+
+// previewRequestUserID reads the asserted user from the query string. Absent
+// is 0, letting previewClaimant apply the content-auth rules; malformed is an
+// error regardless, so a bad assertion cannot masquerade as no assertion.
+func previewRequestUserID(c echo.Context) (int64, error) {
+	raw := c.QueryParam("userId")
+	if raw == "" {
+		return 0, nil
+	}
+	userID, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || userID <= 0 {
+		return 0, fmt.Errorf("preview request carries an unusable user id %q", raw)
+	}
+	return userID, nil
 }
 
 // this endpoint should be replaced by generate_preview
@@ -136,8 +173,14 @@ func (ss *MediorumServer) updateUpload(c echo.Context) error {
 	// Do not support deleting previews
 	if selectedPreview.Valid && selectedPreview != upload.SelectedPreview {
 		upload.SelectedPreview = selectedPreview
-		err := ss.generateAudioPreviewForUpload(c.Request().Context(), upload)
+		previewCID, err := ss.generateAudioPreviewForUpload(c.Request().Context(), upload)
 		if err != nil {
+			return err
+		}
+		// A changed preview start yields a cid the original attestation never
+		// covered. Attest before responding, so the caller does not receive a
+		// preview cid it cannot yet name on its track.
+		if err := ss.attestUploadCids(c.Request().Context(), upload, previewCID); err != nil {
 			return err
 		}
 	}

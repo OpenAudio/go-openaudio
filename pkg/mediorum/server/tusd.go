@@ -123,7 +123,26 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	// Check if this is a replication request
 	isReplication, ok := event.Upload.MetaData["isReplication"]
 	if !ok || isReplication != "true" {
-		// Not a replication - allow (user uploads don't require auth)
+		// A user upload. Audio must say which user it is uploaded for, because
+		// this node later attests the resulting cids to that user on chain and
+		// the attestation is what entitles them to name the cids on a track.
+		// The user id is an assertion, not proof — see upload_auth.go for why
+		// that is safe. Rejecting an absent one here rather than at completion
+		// saves the client sending bytes it can never use.
+		template := JobTemplateAudio
+		if t, ok := event.Upload.MetaData["template"]; ok {
+			template = JobTemplate(t)
+		}
+		if _, err := ss.resolveUploadUserID(template, event.Upload.MetaData); err != nil {
+			ss.logger.Warn("rejecting unattributed upload",
+				zap.String("id", event.Upload.ID),
+				zap.String("template", string(template)),
+				zap.Error(err))
+			return handler.HTTPResponse{
+				StatusCode: 400,
+				Body:       "upload attribution failed: " + err.Error(),
+			}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+		}
 		return handler.HTTPResponse{}, handler.FileInfoChanges{}, nil
 	}
 
@@ -285,11 +304,6 @@ func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
 		filename = event.Upload.ID
 	}
 
-	userWallet := sql.NullString{Valid: false}
-	if wallet, ok := event.Upload.MetaData["userWallet"]; ok && wallet != "" {
-		userWallet = sql.NullString{String: wallet, Valid: true}
-	}
-
 	// Extract and validate template from metadata
 	template := JobTemplateAudio
 	if templateMeta, ok := event.Upload.MetaData["template"]; ok {
@@ -349,10 +363,28 @@ func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
 		selectedPreview = parsed
 	}
 
+	// Re-read rather than carry the value over from the pre-create hook: the
+	// parse is cheap, and it keeps the user id written to the row derived from
+	// metadata this function saw for itself.
+	userID, err := ss.resolveUploadUserID(template, event.Upload.MetaData)
+	if err != nil {
+		ss.logger.Error("upload attribution failed after create", zap.String("id", event.Upload.ID), zap.Error(err))
+		now := time.Now().UTC()
+		ss.crud.Create(&Upload{
+			ID:        event.Upload.ID,
+			Status:    JobStatusError,
+			Error:     err.Error(),
+			CreatedBy: ss.Config.Self.Host,
+			CreatedAt: now,
+			UpdatedAt: now,
+		})
+		return
+	}
+
 	now := time.Now().UTC()
 	upload := &Upload{
 		ID:               event.Upload.ID,
-		UserWallet:       userWallet,
+		UserID:           nullInt64(userID),
 		Status:           JobStatusNew,
 		Template:         template,
 		SelectedPreview:  selectedPreview,
