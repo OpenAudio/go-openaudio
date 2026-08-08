@@ -181,6 +181,16 @@ func TestGenesisWriter(t *testing.T) {
 	assert.GreaterOrEqual(t, blockCount, genesisHeight, "core_blocks count should be at least the genesis height")
 	t.Logf("core DB: %d blocks, %d transactions", blockCount, txCount)
 
+	// A live chain populates core_auth_* in FinalizeBlock, which this writer
+	// bypasses — the write path must project the auth state itself, or the
+	// new chain starts empty and enforcement rejects every transaction.
+	var authUsers, authEntities int64
+	require.NoError(t, dstPool.QueryRow(ctx, "SELECT count(*) FROM core_auth_users").Scan(&authUsers))
+	require.NoError(t, dstPool.QueryRow(ctx, "SELECT count(*) FROM core_auth_entities").Scan(&authEntities))
+	assert.Equal(t, int64(len(expected.users)), authUsers, "core_auth_users should hold every migrated user")
+	assert.Greater(t, authEntities, int64(0), "core_auth_entities should be populated")
+	t.Logf("core auth state: %d users, %d entities", authUsers, authEntities)
+
 	// state.db and blockstore.db are directories (PebbleDB), not plain files.
 	require.DirExists(t, filepath.Join(cmtHome, "data", "state.db"))
 	require.DirExists(t, filepath.Join(cmtHome, "data", "blockstore.db"))

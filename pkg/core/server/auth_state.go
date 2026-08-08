@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 )
 
 // This file maintains the consensus-side authorization state (core_auth_*
@@ -600,4 +601,30 @@ func projectAppDelete(ctx context.Context, st authStore, tx authTx) error {
 		return authValidationErrorf("developer app %s does not belong to user %d", address, tx.UserID)
 	}
 	return st.SetAppDeleted(ctx, address)
+}
+
+// ProjectMigrationAuthState applies a genesis-migration ManageEntity
+// transaction's authorization effects to the core_auth_* tables, using the
+// caller's queries handle so the writes join whatever transaction it owns.
+//
+// It exists for genesis-writer, which inserts blocks straight into postgres
+// without going through consensus: FinalizeBlock never executes those
+// transactions, so unless the writer projects the auth state itself the new
+// chain starts with the core_auth_* tables empty and enforcement rejects
+// everything. It deliberately reuses applyAuthProjection so the writer and
+// FinalizeBlock cannot disagree.
+//
+// skipped reports that the projection understood the transaction and declined
+// it, with reason describing why. A migration replays state the source system
+// already accepted, so any skip is a defect the caller should surface.
+func ProjectMigrationAuthState(ctx context.Context, q *db.Queries, me *v1.ManageEntityLegacyMigration) (skipped bool, reason string, err error) {
+	err = applyAuthProjection(ctx, &dbAuthStore{q: q}, authTxFromManageEntityMigration(me))
+	switch {
+	case err == nil:
+		return false, "", nil
+	case isAuthValidationError(err):
+		return true, err.Error(), nil
+	default:
+		return false, "", err
+	}
 }
