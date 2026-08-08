@@ -76,7 +76,28 @@ func validateUnfollow(ctx context.Context, params *Params) error {
 
 // --- shared ---
 
+// insertFollow records the follow and the subscription a live follow implies.
 func insertFollow(ctx context.Context, params *Params, isDelete bool) error {
+	return insertFollowWithSubscription(ctx, params, isDelete, true)
+}
+
+// insertMigratedFollow records only the follow.
+//
+// A live follow implies a subscription, so the production path creates one.
+// The genesis migration does not need that inference: it replays the source's
+// own subscriptions table as explicit Subscribe transactions, and those cover
+// 6,341,259 of the source's 6,341,432 rows. Implying one per follow on top
+// invents subscriptions the user never had -- a full replay produced
+// 26,115,620 rows against a source of 6,341,432, a 4.1x inflation, and made
+// every explicit Subscribe collide with a row the follow had already written
+// (726,607 rejections).
+//
+// It also drops ~26M redundant upserts from the replay, one per follow.
+func insertMigratedFollow(ctx context.Context, params *Params, isDelete bool) error {
+	return insertFollowWithSubscription(ctx, params, isDelete, false)
+}
+
+func insertFollowWithSubscription(ctx context.Context, params *Params, isDelete, withSubscription bool) error {
 	// Upsert the single current row in place (arbiter: follows_current_uniq_idx).
 	// Replaces demote-then-insert: avoids unbounded is_current=false history and
 	// gives the aggregate triggers an O(1) is_delete transition to track.
@@ -94,6 +115,10 @@ func insertFollow(ctx context.Context, params *Params, isDelete bool) error {
 	`, params.UserID, params.EntityID, isDelete, params.BlockTime, params.TxHash, params.BlockNumber)
 	if err != nil {
 		return err
+	}
+
+	if !withSubscription {
+		return nil
 	}
 
 	// Follow/Unfollow also creates/deletes a Subscription record
