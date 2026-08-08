@@ -7,3 +7,10 @@
 UPDATE subscriptions
 SET entity_id = user_id
 WHERE entity_type = 'User' AND entity_id IS NULL;
+
+-- Reader lookup index for the canonical target, the entity_id counterpart of
+-- ix_subscriptions_user_id (0007). Non-unique on purpose: the current-row
+-- invariant stays enforced by subscriptions_current_uniq_idx on user_id, which
+-- is NOT NULL — entity_id isn't yet, and NULLs would bypass a unique key here.
+CREATE INDEX IF NOT EXISTS ix_subscriptions_entity_type_entity_id
+  ON subscriptions (entity_type, entity_id);
