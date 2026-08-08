@@ -31,14 +31,30 @@ func (stubRow) Scan(dest ...any) error {
 // account-state flags were written.
 type stubDBTX struct {
 	execArgs []any
+	// execSQL keeps every statement, so a test can assert on which tables a
+	// handler wrote rather than only on the last call's arguments.
+	execSQL []string
 }
 
-func (s *stubDBTX) Exec(_ context.Context, _ string, args ...any) (pgconn.CommandTag, error) {
+func (s *stubDBTX) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	s.execArgs = args
+	s.execSQL = append(s.execSQL, sql)
 	return pgconn.CommandTag{}, nil
 }
 func (s *stubDBTX) Query(context.Context, string, ...any) (pgx.Rows, error) { return nil, nil }
 func (s *stubDBTX) QueryRow(context.Context, string, ...any) pgx.Row        { return stubRow{} }
+
+func legacyFollowParams(t *testing.T, dbtx *stubDBTX) *Params {
+	t.Helper()
+	return &Params{
+		UserID:     101, // follower
+		EntityID:   202, // followee
+		EntityType: EntityTypeUser,
+		Action:     ActionFollow,
+		Signer:     "0xabc123",
+		DBTX:       dbtx,
+	}
+}
 
 func legacyUserParams(t *testing.T, dbtx *stubDBTX, metadata string) *Params {
 	t.Helper()
@@ -410,5 +426,51 @@ func TestMigratedTrackRoute(t *testing.T) {
 				t.Errorf("got %+v, want %+v", *got, *tt.want)
 			}
 		})
+	}
+}
+
+// A live follow implies a subscription; a migrated one must not. The migration
+// replays the source's subscriptions table explicitly, so inferring one per
+// follow invented 19.8M rows the users never had and made every explicit
+// Subscribe collide with a row the follow had already written.
+func TestMigratedFollowDoesNotImplySubscription(t *testing.T) {
+	countSubscriptionWrites := func(dbtx *stubDBTX) int {
+		n := 0
+		for _, q := range dbtx.execSQL {
+			if strings.Contains(q, "INSERT INTO subscriptions") {
+				n++
+			}
+		}
+		return n
+	}
+
+	t.Run("migration writes only the follow", func(t *testing.T) {
+		dbtx := &stubDBTX{}
+		params := legacyFollowParams(t, dbtx)
+		if err := insertMigratedFollow(context.Background(), params, false); err != nil {
+			t.Fatalf("insertMigratedFollow: %v", err)
+		}
+		if got := countSubscriptionWrites(dbtx); got != 0 {
+			t.Errorf("migrated follow wrote %d subscription rows, want 0", got)
+		}
+	})
+
+	t.Run("production still implies one", func(t *testing.T) {
+		dbtx := &stubDBTX{}
+		params := legacyFollowParams(t, dbtx)
+		if err := insertFollow(context.Background(), params, false); err != nil {
+			t.Fatalf("insertFollow: %v", err)
+		}
+		if got := countSubscriptionWrites(dbtx); got != 1 {
+			t.Errorf("live follow wrote %d subscription rows, want 1", got)
+		}
+	})
+
+	// The override has to be registered, or the production handler runs and the
+	// inference comes back silently.
+	d := NewDispatcher(nil)
+	RegisterMigrationOverrides(d)
+	if !d.HasHandler(EntityTypeAny, ActionFollow) {
+		t.Error("no migration override registered for Follow")
 	}
 }
