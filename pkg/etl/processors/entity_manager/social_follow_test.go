@@ -126,3 +126,25 @@ func TestFollow_AutoSubscribeIgnoresCollidingEventSubscription(t *testing.T) {
 	assertSubscriptionDeleteState(t, pool, followerID, collidingID, EntityTypeUser, true)
 	assertSubscriptionDeleteState(t, pool, followerID, collidingID, EntityTypeEvent, false)
 }
+
+func TestFollow_AutoSubscribeWritesEntityID(t *testing.T) {
+	pool := setupTestDB(t)
+	uid1 := int64(UserIDOffset + 45)
+	uid2 := int64(UserIDOffset + 46)
+	seedUser(t, pool, uid1, "0xeidfollower", "eidfollower")
+	seedUser(t, pool, uid2, "0xeidfollowee", "eidfollowee")
+
+	mustHandle(t, Follow(), buildParams(t, pool, EntityTypeUser, ActionFollow, uid1, uid2, "0xeidfollower", `{}`))
+
+	var entityID int64
+	err := pool.QueryRow(context.Background(), `
+		SELECT COALESCE(entity_id, -1) FROM subscriptions
+		WHERE subscriber_id = $1 AND user_id = $2 AND entity_type = $3 AND is_current = true
+	`, uid1, uid2, EntityTypeUser).Scan(&entityID)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if entityID != uid2 {
+		t.Errorf("entity_id = %d, want %d", entityID, uid2)
+	}
+}

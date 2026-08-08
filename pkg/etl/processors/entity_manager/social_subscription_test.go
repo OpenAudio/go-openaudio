@@ -42,8 +42,9 @@ func TestSubscribe_Success(t *testing.T) {
 	if entityType != EntityTypeUser {
 		t.Errorf("entity_type = %q, want %q", entityType, EntityTypeUser)
 	}
-	if entityID != -1 {
-		t.Errorf("entity_id = %d, want NULL", entityID)
+	// entity_id is the canonical target for User subscriptions too (0038).
+	if entityID != uid2 {
+		t.Errorf("entity_id = %d, want %d", entityID, uid2)
 	}
 }
 
@@ -260,5 +261,36 @@ func seedEvent(t *testing.T, pool *pgxpool.Pool, eventID, hostID int64) {
 	`, eventID, hostID)
 	if err != nil {
 		t.Fatalf("seedEvent(%d): %v", eventID, err)
+	}
+}
+
+func TestUnsubscribe_HealsLegacyNullEntityID(t *testing.T) {
+	pool := setupTestDB(t)
+	uid1 := int64(UserIDOffset + 50)
+	uid2 := int64(UserIDOffset + 51)
+	seedUser(t, pool, uid1, "0xlegacysub", "legacysub")
+	seedUser(t, pool, uid2, "0xlegacypub", "legacypub")
+
+	// A pre-0038 User subscription: entity_id was left NULL.
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO subscriptions (subscriber_id, user_id, entity_type, entity_id, is_current, is_delete, created_at, txhash, blocknumber)
+		VALUES ($1, $2, 'User', NULL, true, false, now(), 'legacy-tx', 100)
+	`, uid1, uid2); err != nil {
+		t.Fatalf("seed legacy subscription: %v", err)
+	}
+
+	// Any upsert landing on the row must backfill entity_id.
+	mustHandle(t, Unsubscribe(), buildParams(t, pool, EntityTypeUser, ActionUnsubscribe, uid1, uid2, "0xlegacysub", `{}`))
+
+	var entityID int64
+	err := pool.QueryRow(context.Background(), `
+		SELECT COALESCE(entity_id, -1) FROM subscriptions
+		WHERE subscriber_id = $1 AND user_id = $2 AND entity_type = 'User' AND is_current = true
+	`, uid1, uid2).Scan(&entityID)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if entityID != uid2 {
+		t.Errorf("entity_id = %d, want %d (healed from NULL)", entityID, uid2)
 	}
 }
