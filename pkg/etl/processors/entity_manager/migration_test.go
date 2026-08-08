@@ -429,6 +429,40 @@ func TestMigratedTrackRoute(t *testing.T) {
 	}
 }
 
+// Playlists drifted the same way tracks did, and further: 189,626 of 312,552
+// migrated playlists regenerate to a slug they do not serve today, and 82,793
+// of those regenerate to one that exists nowhere -- a dead permalink.
+func TestMigratedPlaylistRoute(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		meta map[string]any
+		want *playlistRoute
+	}{
+		{"legacy id-suffixed slug carried verbatim",
+			map[string]any{"route_slug": "unearth-ep-wip-1", "route_title_slug": "unearth-ep-wip-1", "route_collision_id": float64(0)},
+			&playlistRoute{Slug: "unearth-ep-wip-1", TitleSlug: "unearth-ep-wip-1"}},
+		{"punctuation the current sanitizer would strip",
+			map[string]any{"route_slug": "hbk-way-up-prod.-by-nofriends-100001"},
+			&playlistRoute{Slug: "hbk-way-up-prod.-by-nofriends-100001", TitleSlug: "hbk-way-up-prod.-by-nofriends-100001"}},
+		{"collision id preserved",
+			map[string]any{"route_slug": "more-than-enough-1", "route_title_slug": "more-than-enough", "route_collision_id": float64(1)},
+			&playlistRoute{Slug: "more-than-enough-1", TitleSlug: "more-than-enough", CollisionID: 1}},
+		{"absent falls back to generation", map[string]any{}, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := migratedPlaylistRoute(&Params{Metadata: tt.meta})
+			switch {
+			case tt.want == nil && got != nil:
+				t.Fatalf("got %+v, want nil so the slug is generated", got)
+			case tt.want != nil && got == nil:
+				t.Fatal("got nil, want the carried route")
+			case tt.want != nil && *got != *tt.want:
+				t.Errorf("got %+v, want %+v", *got, *tt.want)
+			}
+		})
+	}
+}
+
 // A live follow implies a subscription; a migrated one must not. The migration
 // replays the source's subscriptions table explicitly, so inferring one per
 // follow invented 19.8M rows the users never had and made every explicit

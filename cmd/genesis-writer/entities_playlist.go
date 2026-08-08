@@ -34,6 +34,11 @@ type playlistMetadataInner struct {
 	Artists                interface{} `json:"artists,omitempty"`
 	CopyrightLine          interface{} `json:"copyright_line,omitempty"`
 	ProducerCopyright      interface{} `json:"producer_copyright_line,omitempty"`
+	// The route the playlist serves today. Carried rather than regenerated:
+	// see playlistState.Route in the indexer for the measurements.
+	RouteSlug        string `json:"route_slug,omitempty"`
+	RouteTitleSlug   string `json:"route_title_slug,omitempty"`
+	RouteCollisionID int    `json:"route_collision_id,omitempty"`
 	// Always serialized: `omitempty` would drop a false value and the indexer
 	// cannot tell "absent" from "false".
 	IsDelete bool `json:"is_delete"`
@@ -61,6 +66,9 @@ type sourcePlaylist struct {
 	Artists             []byte // JSONB
 	CopyrightLine       []byte // JSONB
 	ProducerCopyright   []byte // JSONB
+	RouteSlug           *string
+	RouteTitleSlug      *string
+	RouteCollisionID    *int
 	IsDelete            bool
 	CreatedAt           time.Time
 }
@@ -80,10 +88,18 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 			p.upc, p.ddex_app, p.parental_warning_type,
 			p.release_date::text, p.is_stream_gated, p.stream_conditions,
 			p.ddex_release_ids, p.artists, p.copyright_line, p.producer_copyright_line,
+			r.slug, r.title_slug, r.collision_id,
 			p.is_delete,
 			p.created_at
 		FROM playlists p
 		JOIN users u ON u.user_id = p.playlist_owner_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
+		LEFT JOIN LATERAL (
+			SELECT slug, title_slug, collision_id
+			FROM playlist_routes pr
+			WHERE pr.playlist_id = p.playlist_id AND pr.is_current = true
+			ORDER BY pr.collision_id DESC, pr.slug
+			LIMIT 1
+		) r ON true
 		WHERE p.is_current = true
 		ORDER BY p.playlist_id`,
 		func(rows pgx.Rows) (sourcePlaylist, error) {
@@ -96,6 +112,7 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 				&p.UPC, &p.DDEXApp, &p.ParentalWarningType,
 				&p.ReleaseDate, &p.IsStreamGated, &p.StreamConditions,
 				&p.DDEXReleaseIDs, &p.Artists, &p.CopyrightLine, &p.ProducerCopyright,
+				&p.RouteSlug, &p.RouteTitleSlug, &p.RouteCollisionID,
 				&p.IsDelete,
 				&p.CreatedAt,
 			)
@@ -115,6 +132,9 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 				ParentalWarningType:    deref(p.ParentalWarningType),
 				ReleaseDate:            deref(p.ReleaseDate),
 				IsStreamGated:          p.IsStreamGated,
+				RouteSlug:              deref(p.RouteSlug),
+				RouteTitleSlug:         deref(p.RouteTitleSlug),
+				RouteCollisionID:       derefInt(p.RouteCollisionID),
 				IsDelete:               p.IsDelete,
 			}
 
