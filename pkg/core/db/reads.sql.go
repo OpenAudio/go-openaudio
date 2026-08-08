@@ -47,6 +47,17 @@ func (q *Queries) AuthWalletExists(ctx context.Context, wallet string) (bool, er
 	return exists, err
 }
 
+const cidIsClaimed = `-- name: CidIsClaimed :one
+select exists (select 1 from core_auth_cids where cid = $1)
+`
+
+func (q *Queries) CidIsClaimed(ctx context.Context, cid string) (bool, error) {
+	row := q.db.QueryRow(ctx, cidIsClaimed, cid)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const getActiveRewards = `-- name: GetActiveRewards :many
 select
     r.id, r.address, r.index, r.tx_hash, r.sender, r.reward_id, r.name, r.amount,
@@ -3005,6 +3016,46 @@ type HasAccessToTrackReleaseParams struct {
 
 func (q *Queries) HasAccessToTrackRelease(ctx context.Context, arg HasAccessToTrackReleaseParams) (bool, error) {
 	row := q.db.QueryRow(ctx, hasAccessToTrackRelease, arg.TrackID, arg.PubKey)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const isCidClaimedByUser = `-- name: IsCidClaimedByUser :one
+select exists (
+  select 1
+  from core_auth_cids
+  where cid = $1::text
+    and user_id = $2::bigint
+)
+`
+
+type IsCidClaimedByUserParams struct {
+	Cid    string
+	UserID int64
+}
+
+func (q *Queries) IsCidClaimedByUser(ctx context.Context, arg IsCidClaimedByUserParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isCidClaimedByUser, arg.Cid, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const isRegisteredNodeEthAddress = `-- name: IsRegisteredNodeEthAddress :one
+select exists (
+  select 1
+  from core_validators
+  where lower(eth_address) = lower($1::text)
+)
+`
+
+// Deliberately includes jailed validators. jailed is time-varying, so filtering
+// on it would make a historical transaction validate differently on replay than
+// when first executed — changing its result code and the block's
+// LastResultsHash. Use GetAllRegisteredNodes for the live unjailed set.
+func (q *Queries) IsRegisteredNodeEthAddress(ctx context.Context, ethAddress string) (bool, error) {
+	row := q.db.QueryRow(ctx, isRegisteredNodeEthAddress, ethAddress)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err

@@ -28,6 +28,7 @@ type overlayAuthStore struct {
 	grants   map[overlayGrantKey]authGrantRow
 	apps     map[string]authAppRow
 	entities map[overlayEntityKey]authEntityRow
+	cids     map[overlayCidKey]struct{}
 }
 
 type overlayGrantKey struct {
@@ -40,6 +41,11 @@ type overlayEntityKey struct {
 	entityID   int64
 }
 
+type overlayCidKey struct {
+	cid    string
+	userID int64
+}
+
 func newOverlayAuthStore(base authStore) *overlayAuthStore {
 	return &overlayAuthStore{
 		base:     base,
@@ -47,6 +53,7 @@ func newOverlayAuthStore(base authStore) *overlayAuthStore {
 		grants:   map[overlayGrantKey]authGrantRow{},
 		apps:     map[string]authAppRow{},
 		entities: map[overlayEntityKey]authEntityRow{},
+		cids:     map[overlayCidKey]struct{}{},
 	}
 }
 
@@ -137,6 +144,27 @@ func (o *overlayAuthStore) GetEntity(ctx context.Context, entityType string, ent
 		return e, true, nil
 	}
 	return o.base.GetEntity(ctx, entityType, entityID)
+}
+
+func (o *overlayAuthStore) IsCidClaimedByUser(ctx context.Context, cid string, userID int64) (bool, error) {
+	if _, ok := o.cids[overlayCidKey{cid, userID}]; ok {
+		return true, nil
+	}
+	return o.base.IsCidClaimedByUser(ctx, cid, userID)
+}
+
+func (o *overlayAuthStore) CidIsClaimed(ctx context.Context, cid string) (bool, error) {
+	for k := range o.cids {
+		if k.cid == cid {
+			return true, nil
+		}
+	}
+	return o.base.CidIsClaimed(ctx, cid)
+}
+
+func (o *overlayAuthStore) InsertCid(_ context.Context, cid string, uploaderUserID int64, _ string) error {
+	o.cids[overlayCidKey{cid, uploaderUserID}] = struct{}{}
+	return nil
 }
 
 func (o *overlayAuthStore) InsertUser(_ context.Context, userID int64, wallet, handleLC string, deactivated bool) error {

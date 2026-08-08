@@ -93,7 +93,8 @@ func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransac
 // rest of FinalizeBlock treats db errors so a local infra hiccup cannot make
 // this node's tx results diverge from its peers'.
 func (s *Server) projectManageEntityAuthState(ctx context.Context, tx authTx) {
-	err := applyAuthProjection(ctx, &dbAuthStore{q: s.getDb()}, tx)
+	store := &dbAuthStore{q: s.getDb()}
+	err := applyAuthProjection(ctx, store, tx)
 	switch {
 	case err == nil:
 	case isAuthValidationError(err):
@@ -109,6 +110,7 @@ func (s *Server) projectManageEntityAuthState(ctx context.Context, tx authTx) {
 			zap.Int64("entity_id", tx.EntityID),
 			zap.Int64("user_id", tx.UserID))
 	}
+
 }
 
 func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEntityLegacy) error {

@@ -15,6 +15,7 @@ type memAuthStore struct {
 	grants   map[memGrantKey]authGrantRow
 	apps     map[string]authAppRow
 	entities map[memEntityKey]authEntityRow
+	cids     map[memCidKey]struct{}
 }
 
 type memGrantKey struct {
@@ -27,13 +28,38 @@ type memEntityKey struct {
 	entityID   int64
 }
 
+type memCidKey struct {
+	cid    string
+	userID int64
+}
+
 func newMemAuthStore() *memAuthStore {
 	return &memAuthStore{
 		users:    map[int64]authUserRow{},
 		grants:   map[memGrantKey]authGrantRow{},
 		apps:     map[string]authAppRow{},
 		entities: map[memEntityKey]authEntityRow{},
+		cids:     map[memCidKey]struct{}{},
 	}
+}
+
+func (m *memAuthStore) IsCidClaimedByUser(_ context.Context, cid string, userID int64) (bool, error) {
+	_, ok := m.cids[memCidKey{cid, userID}]
+	return ok, nil
+}
+
+func (m *memAuthStore) CidIsClaimed(_ context.Context, cid string) (bool, error) {
+	for k := range m.cids {
+		if k.cid == cid {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (m *memAuthStore) InsertCid(_ context.Context, cid string, uploaderUserID int64, _ string) error {
+	m.cids[memCidKey{cid, uploaderUserID}] = struct{}{}
+	return nil
 }
 
 func (m *memAuthStore) GetUser(_ context.Context, userID int64) (authUserRow, bool, error) {

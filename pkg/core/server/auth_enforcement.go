@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 )
 
 // Height-gated authorization enforcement for ManageEntity transactions
@@ -27,7 +28,7 @@ import (
 // transactions the projection is not tracking; errors are either a
 // deterministic rejection or a store failure, which the caller distinguishes
 // with authRejected.
-func (s *Server) validateManageEntityAuth(ctx context.Context, overlay authStore, em *v1.ManageEntityLegacy) error {
+func (s *Server) validateManageEntityAuth(ctx context.Context, rules config.Rules, overlay authStore, em *v1.ManageEntityLegacy) error {
 	recovered, _, err := RecoverPubkeyFromCoreTx(s.config, em)
 	if err != nil {
 		return &authRejectionError{reason: fmt.Sprintf("signer not recoverable: %v", err)}
@@ -36,7 +37,21 @@ func (s *Server) validateManageEntityAuth(ctx context.Context, overlay authStore
 		return &authRejectionError{reason: fmt.Sprintf("signer %s does not match recovered address %s", em.GetSigner(), recovered)}
 	}
 
-	err = applyAuthProjection(ctx, overlay, authTxFromManageEntity(em))
+	tx := authTxFromManageEntity(em)
+
+	// Content authorization runs before the projection so a track asserting a
+	// cid it has no claim to is rejected without leaving the entity behind in
+	// the overlay for later transactions in the proposal to build on.
+	if rules.ContentAuthEnforced {
+		if err := validateTrackContentAuth(ctx, overlay, tx); err != nil {
+			if isAuthValidationError(err) {
+				return &authRejectionError{reason: err.Error()}
+			}
+			return err
+		}
+	}
+
+	err = applyAuthProjection(ctx, overlay, tx)
 	if err == nil {
 		return nil
 	}
@@ -57,8 +72,28 @@ func (e *authRejectionError) Error() string {
 	return "manage entity rejected: " + e.reason
 }
 
+// txRejectionError is the same distinction for transaction types outside the
+// manage-entity path: a deterministic reason to vote a block invalid, as
+// opposed to a store failure meaning "this node cannot tell". authRejected
+// matches both, so ProcessProposal can treat them uniformly.
+type txRejectionError struct {
+	reason string
+}
+
+func (e *txRejectionError) Error() string {
+	return e.reason
+}
+
+func txRejectedf(format string, args ...any) error {
+	return &txRejectionError{reason: fmt.Sprintf(format, args...)}
+}
+
 // authRejected reports whether err is (or wraps) a deterministic rejection.
 func authRejected(err error) bool {
 	var r *authRejectionError
-	return errors.As(err, &r)
+	if errors.As(err, &r) {
+		return true
+	}
+	var t *txRejectionError
+	return errors.As(err, &t)
 }

@@ -205,6 +205,8 @@ type authReader interface {
 	GetGrant(ctx context.Context, granteeAddress string, userID int64) (authGrantRow, bool, error)
 	GetApp(ctx context.Context, address string) (authAppRow, bool, error)
 	GetEntity(ctx context.Context, entityType string, entityID int64) (authEntityRow, bool, error)
+	IsCidClaimedByUser(ctx context.Context, cid string, userID int64) (bool, error)
+	CidIsClaimed(ctx context.Context, cid string) (bool, error)
 }
 
 // authWriter is the write half.
@@ -217,6 +219,7 @@ type authWriter interface {
 	SetAppDeleted(ctx context.Context, address string) error
 	InsertEntity(ctx context.Context, entityType string, entityID, ownerID int64, deleted bool) error
 	SetEntityDeleted(ctx context.Context, entityType string, entityID int64) error
+	InsertCid(ctx context.Context, cid string, uploaderUserID int64, txHash string) error
 }
 
 // authStore is what the projection runs against: one state machine, two
@@ -298,7 +301,15 @@ func applyAuthProjection(ctx context.Context, st authStore, tx authTx) error {
 	case entityType == authEntityTypeUser && action == authActionUpdate:
 		return projectUserUpdate(ctx, st, tx)
 	case (entityType == authEntityTypeTrack || entityType == authEntityTypePlaylist) && action == authActionCreate:
-		return projectEntityCreate(ctx, st, tx, entityType)
+		if err := projectEntityCreate(ctx, st, tx, entityType); err != nil {
+			return err
+		}
+		// Seeded here rather than at the FinalizeBlock call site so every
+		// caller gets it — genesis-writer projects through this function too,
+		// and cids left unseeded there make enforcement unactivatable. Runs
+		// only after the entity itself projects: a track that was skipped must
+		// not leave claims behind.
+		return projectMigratedTrackCids(ctx, st, tx)
 	case (entityType == authEntityTypeTrack || entityType == authEntityTypePlaylist) && action == authActionDelete:
 		return projectEntityDelete(ctx, st, tx, entityType)
 	case entityType == authEntityTypeGrant && action == authActionCreate:
