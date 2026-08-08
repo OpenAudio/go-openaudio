@@ -11,25 +11,23 @@
 #
 # `run` executes the whole pipeline:
 #
-#   settings   apply bulk-load-settings.sql; restart Postgres if needed
-#   warmup     index the first blocks (runs migrations, accumulates the
-#              pg_stat_user_indexes numbers the next phase derives from)
-#   slim       capture recreate DDL for the run's zero-scan serving indexes,
-#              drop them, disable autovacuum on the hot tables
-#   replay     index to --end
-#   restore    restore settings, recreate the dropped indexes, VACUUM ANALYZE
+#   settings    apply bulk-load-settings.sql; restart Postgres if needed
+#   bootstrap   index one block so the ETL migrations create the schema
+#   slim        apply drop-serving-indexes.sql and bulk-load-tables.sql
+#   replay      index to --end
+#   restore     restore-settings.sql, recreate-serving-indexes.sql,
+#               VACUUM ANALYZE
 #
-# If the replay fails partway, nothing is restored on purpose: recreating the
-# indexes on a partially loaded database is expensive and a resume would only
-# drop them again. Rerun `replay.sh run` with the same arguments to resume
-# from the last indexed block, or run `replay.sh restore` to give up and put
-# the database back into serving shape.
+# Every phase is idempotent, so if the replay dies partway just rerun `run`
+# with the same arguments: it resumes from the last indexed block. Nothing is
+# restored on failure on purpose -- recreating the indexes on a partially
+# loaded database is expensive and a resume would only drop them again. Run
+# `replay.sh restore` to give up and put the database back into serving shape.
 #
 # Flags for `run`:
 #   --rpc URL          core RPC endpoint (fallback: $ETL_RPC_URL)
 #   --db URL           Postgres URL, must be allowed ALTER SYSTEM (fallback: $ETL_DB_URL)
 #   --end HEIGHT       final block height of the replay (required)
-#   --warmup-end N     height at which to pause and slim indexes (default 300)
 #   --restart-cmd CMD  how to restart Postgres when shared_buffers changes,
 #                      e.g. 'docker restart etl-pg' or 'pg_ctl -D ... restart'.
 #                      Without it the script stops and asks you to restart.
@@ -40,37 +38,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-STATE_DIR="$SCRIPT_DIR/state"
-RECREATE_SQL="$STATE_DIR/recreate-serving-indexes.sql"
 
-# Tables whose serving indexes are candidates for the drop. Primary keys and
-# unique indexes are excluded in the queries below: the former may back
-# ON CONFLICT, the latter are upsert arbiters.
-CANDIDATE_TABLES="'etl_transactions','etl_manage_entities','etl_addresses',
-'etl_plays','follows','saves','reposts','subscriptions',
-'users','tracks','playlists'"
-
-INDEX_FILTER="
-  from pg_class t
-  join pg_index x on x.indrelid = t.oid
-  join pg_class i on i.oid = x.indexrelid
-  left join pg_stat_user_indexes s on s.indexrelid = i.oid
-  where t.relname in ($CANDIDATE_TABLES)
-    and not x.indisprimary
-    and not x.indisunique
-    and coalesce(s.idx_scan, 0) = 0"
-
-log()  { printf '\n==> %s\n' "$*"; }
-die()  { printf 'replay.sh: %s\n' "$*" >&2; exit 1; }
+log() { printf '\n==> %s\n' "$*"; }
+die() { printf 'replay.sh: %s\n' "$*" >&2; exit 1; }
 
 psql_run() { psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 "$@"; }
 
-usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 
 DB_URL="${ETL_DB_URL:-}"
 RPC_URL="${ETL_RPC_URL:-}"
 END_BLOCK=""
-WARMUP_END=300
 RESTART_CMD=""
 ETL_FLAGS=()
 
@@ -83,7 +61,6 @@ while [ $# -gt 0 ]; do
     --rpc)         RPC_URL="$2"; shift 2 ;;
     --db)          DB_URL="$2"; shift 2 ;;
     --end)         END_BLOCK="$2"; shift 2 ;;
-    --warmup-end)  WARMUP_END="$2"; shift 2 ;;
     --restart-cmd) RESTART_CMD="$2"; shift 2 ;;
     --stream)      ETL_FLAGS+=(--stream); shift ;;
     --insecure)    ETL_FLAGS+=(--insecure); shift ;;
@@ -119,26 +96,14 @@ phase_settings() {
   fi
 }
 
-phase_warmup() {
-  log "warmup: indexing to block $WARMUP_END (runs migrations, accumulates index stats)"
-  run_etl "$WARMUP_END"
+phase_bootstrap() {
+  log "bootstrap: indexing one block so the ETL migrations create the schema"
+  run_etl 1
 }
 
 phase_slim() {
-  log "slim: deriving zero-scan serving indexes from this run's statistics"
-  mkdir -p "$STATE_DIR"
-  # Capture the recreate DDL BEFORE dropping anything -- it is the exact
-  # restore script, and it only exists while the indexes do.
-  psql_run -Atc "select pg_get_indexdef(i.oid)||';' $INDEX_FILTER
-                 order by pg_relation_size(i.oid) desc" > "$RECREATE_SQL"
-  if [ ! -s "$RECREATE_SQL" ]; then
-    rm -f "$RECREATE_SQL"
-    log "no zero-scan serving indexes found; nothing to drop"
-  else
-    log "captured recreate DDL for $(wc -l < "$RECREATE_SQL" | tr -d ' ') indexes in $RECREATE_SQL"
-    psql_run -Atc "select 'DROP INDEX IF EXISTS '||quote_ident(i.relname)||';' $INDEX_FILTER" \
-      | psql_run -f -
-  fi
+  log "slim: dropping serving indexes, disabling autovacuum on hot tables"
+  psql_run -f "$SCRIPT_DIR/drop-serving-indexes.sql"
   psql_run -f "$SCRIPT_DIR/bulk-load-tables.sql"
 }
 
@@ -150,13 +115,7 @@ phase_replay() {
 phase_restore() {
   log "restore: settings, indexes, VACUUM ANALYZE"
   psql_run -f "$SCRIPT_DIR/restore-settings.sql"
-  if [ -s "$RECREATE_SQL" ]; then
-    psql_run \
-      -c "set maintenance_work_mem = '4GB'" \
-      -c "set max_parallel_maintenance_workers = 4" \
-      -f "$RECREATE_SQL"
-    mv "$RECREATE_SQL" "$RECREATE_SQL.applied"
-  fi
+  psql_run -f "$SCRIPT_DIR/recreate-serving-indexes.sql"
   psql_run -c "VACUUM ANALYZE"
   log "database is back in serving shape"
 }
@@ -170,11 +129,7 @@ fi
 [ -n "$END_BLOCK" ] || die "--end is required for run"
 
 phase_settings
-if [ -e "$RECREATE_SQL" ]; then
-  log "found $RECREATE_SQL from a previous attempt; skipping warmup and slim"
-else
-  phase_warmup
-  phase_slim
-fi
+phase_bootstrap
+phase_slim
 phase_replay
 phase_restore

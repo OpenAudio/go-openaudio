@@ -11,9 +11,8 @@ mixed blocks keep per-transaction isolation.
 
 ## Running a replay
 
-`replay.sh` runs the whole pipeline -- bulk-load settings, warmup, index
-slimming, the replay itself, and the restore -- and needs only `go` and `psql`
-on the host:
+`replay.sh` runs the whole pipeline -- bulk-load settings, index slimming, the
+replay itself, and the restore -- and needs only `go` and `psql` on the host:
 
     ./replay.sh run \
       --rpc http://localhost:50051 \
@@ -25,35 +24,59 @@ The phases, which the sections below explain individually:
 1. Apply `bulk-load-settings.sql`. `shared_buffers` needs a Postgres restart;
    pass `--restart-cmd 'docker restart etl-pg'` (or your `pg_ctl` equivalent)
    to let the script do it, otherwise it stops and asks.
-2. Warmup: index the first blocks (`--warmup-end`, default 300). This runs the
-   ETL migrations and accumulates the index statistics the next phase needs.
-3. Slim: capture recreate DDL for this run's zero-scan serving indexes into
-   `state/recreate-serving-indexes.sql`, drop them, and apply
-   `bulk-load-tables.sql`.
+2. Bootstrap: index one block so the ETL migrations create the schema.
+3. Slim: apply `drop-serving-indexes.sql` and `bulk-load-tables.sql`.
 4. Replay to `--end`.
-5. Restore: apply `restore-settings.sql`, recreate the dropped indexes from
-   the captured DDL, `VACUUM ANALYZE`.
+5. Restore: apply `restore-settings.sql` and `recreate-serving-indexes.sql`,
+   then `VACUUM ANALYZE`.
 
-If the replay dies partway, nothing is restored on purpose -- recreating the
-indexes on a partially loaded database is expensive and a resume would only
-drop them again. Rerun `replay.sh run` with the same arguments to resume from
-the last indexed block (the captured DDL in `state/` makes it skip warmup and
-slim), or run `replay.sh restore --db ...` to give up and put the database
-back into serving shape.
+Every phase is idempotent, and if the replay dies partway nothing is restored
+on purpose -- recreating the indexes on a partially loaded database is
+expensive and a resume would only drop them again. Rerun `replay.sh run` with
+the same arguments to resume from the last indexed block, or run
+`replay.sh restore --db ...` to give up and put the database back into
+serving shape.
 
-## Why the index drops are derived, not listed
+## The drop list is measured, and workload-specific
 
-The dropped set is derived from the run's own `pg_stat_user_indexes` because a
-hardcoded list captured from an earlier run WILL be wrong: two
-`etl_manage_entities` indexes carried non-zero scans in one run and zero in
-the next, and keeping them cost 3.8 GB of buffer working set -- which is what
-turns inserts into random reads. On a 2026-08 run dropping the zero-scan set
-was worth 1.85x on its own.
+Every index in `drop-serving-indexes.sql` recorded zero scans across a full
+58M-transaction replay (2026-08). Dropping the set was worth 1.85x on its own:
+each of those indexes is maintained by every insert, and their pages evict the
+hot ones from the buffer cache, turning inserts into random reads.
 
-Primary keys and unique indexes are excluded by construction: the former may
-back `ON CONFLICT`, the latter are upsert arbiters. The recreate DDL is
-captured with `pg_get_indexdef` *before* anything is dropped, so the restore
-is exact.
+Two things about the list that look wrong but are not:
+
+- `users_new_wallet_idx` and `users_new_handle_lc_idx` are dropped even though
+  the live indexing path looks up users by wallet and handle. Genesis-migration
+  transactions skip signer validation, so those lookups never fire on this
+  workload. Do not reuse this list for a replay of live traffic.
+- Primary keys and unique indexes are never dropped: the former may back
+  `ON CONFLICT`, the latter are upsert arbiters.
+
+### Re-measuring the drop list
+
+If the indexer's queries or the schema change, re-measure rather than guess --
+but do it as its own exercise, not inside a replay. After a run (or a sizable
+prefix of one) *without* the drops applied, zero-scan candidates and their
+exact recreate DDL come from the run's statistics:
+
+    select i.relname, pg_get_indexdef(i.oid)
+    from pg_class t
+    join pg_index x on x.indrelid = t.oid
+    join pg_class i on i.oid = x.indexrelid
+    left join pg_stat_user_indexes s on s.indexrelid = i.oid
+    where t.relname in ('etl_transactions','etl_manage_entities','etl_addresses',
+                        'etl_plays','follows','saves','reposts','subscriptions',
+                        'users','tracks','playlists')
+      and not x.indisprimary
+      and not x.indisunique
+      and coalesce(s.idx_scan, 0) = 0
+    order by pg_relation_size(i.oid) desc;
+
+Then update `drop-serving-indexes.sql` and `recreate-serving-indexes.sql`
+together. Sample well past the first entity type: a genesis chain replays
+entity types in sequence, so an early prefix is not representative of the
+whole run.
 
 ## Run the ETL on the host, not in the node container
 
