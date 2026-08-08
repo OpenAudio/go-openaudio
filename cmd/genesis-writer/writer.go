@@ -81,12 +81,9 @@ type Writer struct {
 	nonce      atomic.Uint64
 	logger     *zap.Logger
 
-	// authProjectionSkips counts migration transactions whose authorization
-	// effects the projection declined. This should be zero: the writer only
-	// emits entities whose references resolve, so anything skipped is a defect
-	// rather than a tolerated case. Surfaced at the end because a silent
-	// partial auth state only fails later, when enforcement starts rejecting
-	// traffic the chain should accept.
+	// authProjectionSkips counts migration transactions the auth projection
+	// declined. Expected to be zero — a skip is a defect, see
+	// projectBlockAuthState — and reported at the end of Run.
 	authProjectionSkips int
 
 	// current block being assembled
@@ -306,14 +303,9 @@ func (w *Writer) writeBlockToDB(ctx context.Context, pb pendingBlock) error {
 		return fmt.Errorf("insert core_app_state height=%d: %w", pb.height, err)
 	}
 
-	// Project the consensus auth state for this block's transactions, in the
-	// same postgres transaction so the tables can never be half-written
-	// relative to the blocks that produced them.
-	//
-	// A live chain gets this from FinalizeBlock. This writer bypasses
-	// consensus entirely, so without it a chain started from a genesis write
-	// begins with every core_auth_* table empty and enforcement rejects
-	// everything.
+	// Project the consensus auth state in the same postgres transaction so the
+	// auth tables can never be half-written relative to their blocks. A live
+	// chain gets this from FinalizeBlock, which this writer bypasses.
 	if err := w.projectBlockAuthState(ctx, pgTx, pb); err != nil {
 		return err
 	}
@@ -572,10 +564,8 @@ func (w *Writer) Run(ctx context.Context) error {
 		}
 	}
 
-	// Expected to be zero. Enforcement later validates every live transaction
-	// against these tables, so anything missing here becomes a rejection the
-	// chain should have accepted — worth resolving before activation rather
-	// than discovering afterwards.
+	// A partial auth state does not fail here; it fails later, as enforcement
+	// rejecting traffic the chain should accept. Surface it loudly.
 	if w.authProjectionSkips > 0 {
 		w.logger.Error("auth state projection declined migration transactions; the auth state is incomplete",
 			zap.Int("skipped", w.authProjectionSkips))
@@ -944,15 +934,10 @@ func signingConfig(network string) *corecfg.Config {
 
 // projectBlockAuthState applies each migration transaction's authorization
 // effects to the core_auth_* tables, inside the block's postgres transaction.
-//
-// The transactions are re-decoded here rather than carried alongside their
-// bytes. That costs one proto unmarshal per transaction, which is noise next
-// to the signing and hashing already done per entity, and it keeps the change
-// confined to the write path instead of threading a second representation
-// through block assembly.
-//
-// Non-migration transactions (plays, for instance) carry no authorization
-// effects and are skipped.
+// Transactions are re-decoded from their bytes — one proto unmarshal per tx,
+// noise next to the per-entity signing and hashing — rather than threading a
+// second representation through block assembly. Non-migration transactions
+// (plays, for instance) carry no authorization effects and are skipped.
 func (w *Writer) projectBlockAuthState(ctx context.Context, pgTx pgx.Tx, pb pendingBlock) error {
 	q := coredb.New(pgTx)
 
@@ -972,12 +957,9 @@ func (w *Writer) projectBlockAuthState(ctx context.Context, pgTx pgx.Tx, pb pend
 			return fmt.Errorf("project auth state for tx %s height=%d: %w", row.hash, pb.height, err)
 		}
 		if skipped {
-			// Expected count is zero. The writer only emits entities whose
-			// references resolve, so every migration transaction should
-			// project cleanly; a skip means either the writer emitted
-			// something malformed or a projection rule disagrees with what
-			// legacy data actually looks like. Both are bugs, so log each one
-			// with enough detail to chase rather than just tallying them.
+			// The writer only emits entities whose references resolve, so
+			// every migration transaction should project cleanly; a skip is a
+			// bug in the writer or the projection. Log enough to chase it.
 			w.authProjectionSkips++
 			w.logger.Warn("auth state projection declined a migration transaction",
 				zap.String("reason", reason),

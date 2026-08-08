@@ -181,12 +181,9 @@ func TestGenesisWriter(t *testing.T) {
 	assert.GreaterOrEqual(t, blockCount, genesisHeight, "core_blocks count should be at least the genesis height")
 	t.Logf("core DB: %d blocks, %d transactions", blockCount, txCount)
 
-	// The consensus auth state must be populated too. A live chain gets it from
-	// FinalizeBlock, which this writer bypasses entirely — so if the projection
-	// is not wired into the write path these tables come out empty, and
-	// authorization enforcement then rejects every transaction on the new chain
-	// because no user exists to validate a signer against. That failure would
-	// not surface until enforcement was switched on.
+	// A live chain populates core_auth_* in FinalizeBlock, which this writer
+	// bypasses — the write path must project the auth state itself, or the
+	// new chain starts empty and enforcement rejects every transaction.
 	var authUsers, authEntities int64
 	require.NoError(t, dstPool.QueryRow(ctx, "SELECT count(*) FROM core_auth_users").Scan(&authUsers))
 	require.NoError(t, dstPool.QueryRow(ctx, "SELECT count(*) FROM core_auth_entities").Scan(&authEntities))

@@ -607,24 +607,16 @@ func projectAppDelete(ctx context.Context, st authStore, tx authTx) error {
 // transaction's authorization effects to the core_auth_* tables, using the
 // caller's queries handle so the writes join whatever transaction it owns.
 //
-// This exists for genesis-writer, which builds blocks and inserts them
-// straight into core_blocks/core_transactions without going through consensus.
-// FinalizeBlock never executes those transactions, so nothing would otherwise
-// populate the auth state and a chain started from a genesis write would begin
-// life with every core_auth_* table empty — at which point enforcement rejects
-// every transaction, because validateAuthSigner cannot find any user.
-//
-// It is deliberately the same projection FinalizeBlock runs rather than a
-// reimplementation: the two must agree exactly, and the only way to guarantee
-// that is to share the code.
+// It exists for genesis-writer, which inserts blocks straight into postgres
+// without going through consensus: FinalizeBlock never executes those
+// transactions, so unless the writer projects the auth state itself the new
+// chain starts with the core_auth_* tables empty and enforcement rejects
+// everything. It deliberately reuses applyAuthProjection so the writer and
+// FinalizeBlock cannot disagree.
 //
 // skipped reports that the projection understood the transaction and declined
-// it, with reason describing why. It is returned rather than treated as an
-// error because the caller owns the policy, but it should not happen: a
-// migration replays state the source system already accepted, and the writer
-// only emits entities whose references resolve. A skip therefore means either
-// malformed writer output or a projection rule that disagrees with what legacy
-// data looks like, and callers should surface it rather than absorb it.
+// it, with reason describing why. A migration replays state the source system
+// already accepted, so any skip is a defect the caller should surface.
 func ProjectMigrationAuthState(ctx context.Context, q *db.Queries, me *v1.ManageEntityLegacyMigration) (skipped bool, reason string, err error) {
 	err = applyAuthProjection(ctx, &dbAuthStore{q: q}, authTxFromManageEntityMigration(me))
 	switch {
