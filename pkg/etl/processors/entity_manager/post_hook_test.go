@@ -169,9 +169,11 @@ func TestDispatcher_PostHook_NoHandlerNoHook(t *testing.T) {
 		return nil
 	})
 
-	// No handler registered → Dispatch returns nil without running hook.
-	if err := d.Dispatch(context.Background(), &Params{EntityType: EntityTypeUser, Action: ActionCreate}); err != nil {
-		t.Fatalf("Dispatch: %v", err)
+	// No handler registered → Dispatch reports ErrNoHandler and no hook runs.
+	// A post-hook must never stand in for the handler it was attached to.
+	err := d.Dispatch(context.Background(), &Params{EntityType: EntityTypeUser, Action: ActionCreate})
+	if !errors.Is(err, ErrNoHandler) {
+		t.Fatalf("Dispatch: got %v, want ErrNoHandler", err)
 	}
 	if hookCalled {
 		t.Error("hook ran for an entity/action with no registered handler")
