@@ -47,14 +47,39 @@ func validatePlaylistCreate(ctx context.Context, params *Params) error {
 	return nil
 }
 
+// playlistRoute is a playlist's route as it already exists elsewhere, carried
+// verbatim instead of being recomputed.
+type playlistRoute struct {
+	Slug        string
+	TitleSlug   string
+	CollisionID int
+}
+
+// playlistState is the non-metadata state a playlist is created with.
+// Production passes the zero value; only the migration replay fills it in.
+type playlistState struct {
+	IsDelete bool
+
+	// Route, when set, replaces slug generation. As with tracks, legacy slugs
+	// are not reproducible from the title: on a production clone 189,626 of
+	// 312,552 migrated playlists regenerate to a slug different from the one
+	// they serve today -- 142,949 because the old scheme appended the playlist
+	// id, the rest over punctuation and collision numbering. 106,833 of those
+	// still resolve through the legacy id-suffixed row written below, but the
+	// remaining 82,793 appear nowhere in the regenerated data and would stop
+	// resolving entirely. A slug is a permanent URL, so the migration carries
+	// the real one rather than deriving a plausible one.
+	Route *playlistRoute
+}
+
 // insertPlaylistAndRoute writes a newly created playlist. A new playlist is
 // never created already-deleted; only the genesis migration replays a deleted
 // row, via insertPlaylistAndRouteWithState.
 func insertPlaylistAndRoute(ctx context.Context, params *Params) error {
-	return insertPlaylistAndRouteWithState(ctx, params, false)
+	return insertPlaylistAndRouteWithState(ctx, params, playlistState{})
 }
 
-func insertPlaylistAndRouteWithState(ctx context.Context, params *Params, isDelete bool) error {
+func insertPlaylistAndRouteWithState(ctx context.Context, params *Params, state playlistState) error {
 	playlistName := params.MetadataString("playlist_name")
 	description := params.MetadataString("description")
 	isAlbum := params.MetadataBoolOr("is_album", false)
@@ -109,7 +134,7 @@ func insertPlaylistAndRouteWithState(ctx context.Context, params *Params, isDele
 		row.LastAddedTo = pgTimestamp(params.BlockTime)
 	}
 
-	if err := insertPlaylistRow(ctx, params.DBTX, row, isDelete, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
+	if err := insertPlaylistRow(ctx, params.DBTX, row, state.IsDelete, params.BlockTime, params.TxHash, params.BlockNumber); err != nil {
 		return err
 	}
 
@@ -124,7 +149,9 @@ func insertPlaylistAndRouteWithState(ctx context.Context, params *Params, isDele
 	//
 	//   1. The current route — `<sanitized-title>` (with a numeric `-N`
 	//      collision suffix appended if another playlist by this owner
-	//      already claimed the same slug). This is the canonical URL.
+	//      already claimed the same slug). This is the canonical URL. A
+	//      migration replay supplies this route instead of deriving it, so the
+	//      playlist keeps serving the URL it serves today (see playlistState).
 	//
 	//   2. A NON-current "legacy ID-suffixed" route of the form
 	//      `<sanitized-title>-<playlist_id>`. Before collision-aware routing,
@@ -133,11 +160,21 @@ func insertPlaylistAndRouteWithState(ctx context.Context, params *Params, isDele
 	//      Skipped when it would equal the current slug — e.g. a playlist
 	//      named literally `my-playlist-400123`.
 	if playlistName != "" {
-		currentSlug, titleSlug, collisionID, err := GeneratePlaylistSlugAndCollisionID(ctx, params.DBTX, params.UserID, params.EntityID, playlistName)
-		if err != nil {
-			return err
+		var (
+			currentSlug string
+			titleSlug   string
+			collisionID int
+		)
+		if state.Route != nil {
+			currentSlug, titleSlug, collisionID = state.Route.Slug, state.Route.TitleSlug, state.Route.CollisionID
+		} else {
+			var err error
+			currentSlug, titleSlug, collisionID, err = GeneratePlaylistSlugAndCollisionID(ctx, params.DBTX, params.UserID, params.EntityID, playlistName)
+			if err != nil {
+				return err
+			}
 		}
-		_, err = params.DBTX.Exec(ctx, `
+		_, err := params.DBTX.Exec(ctx, `
 			INSERT INTO playlist_routes (
 				slug, title_slug, collision_id, owner_id, playlist_id, is_current,
 				blockhash, blocknumber, txhash
