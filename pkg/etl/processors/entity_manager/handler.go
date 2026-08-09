@@ -289,6 +289,27 @@ type Handler interface {
 // registration order.
 type PostHook func(ctx context.Context, params *Params) error
 
+// ErrNoHandler is returned by Dispatch when no handler is registered for a
+// transaction's (entity_type, action), and no wildcard handler matches its
+// action either.
+//
+// This used to be reported as success. It is the failure mode that hid the
+// comment-reaction loss: genesis-writer emitted 73,201 transactions under the
+// entity type "CommentReaction" while every comment action was registered
+// under "Comment", so all 73,201 were accepted, counted as indexed, and wrote
+// nothing. Rejections stayed at zero and per-block reconciliation came out
+// clean; the only symptom was an empty table nobody was counting.
+//
+// Callers decide what it means, because it means different things:
+//
+//   - Live indexing must tolerate it. A node running an older build will meet
+//     entity types a newer client emits, and refusing them would stall the
+//     chain. It is counted and logged, not rejected.
+//   - Migration replay must not. genesis-writer and the migration handler set
+//     ship together, so an unroutable transaction is a writer bug, and the
+//     whole point of a migration run is to find those before going live.
+var ErrNoHandler = errors.New("no handler registered")
+
 // Dispatcher routes ManageEntity transactions to registered handlers.
 type Dispatcher struct {
 	handlers  map[string]Handler
@@ -367,7 +388,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, params *Params) error {
 		hookKey = handlerKey(EntityTypeAny, params.Action)
 		h, ok = d.handlers[hookKey]
 		if !ok {
-			return nil
+			return fmt.Errorf("%w: %s/%s", ErrNoHandler, params.EntityType, params.Action)
 		}
 	}
 	if err := h.Handle(ctx, params); err != nil {

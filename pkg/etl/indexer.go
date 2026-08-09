@@ -349,6 +349,7 @@ func (e *Indexer) indexBlocks() error {
 				zap.Int("txs_in_block", len(block.Transactions)),
 				zap.Int("em_txs", res.emTxCount),
 				zap.Int("em_rejected", res.emRejectCount),
+				zap.Int("em_unrouted", res.emUnroutedCount),
 				zap.Duration("block_time", res.blockElapsed),
 				zap.Float64("blocks_per_sec", blocksPerSec),
 				zap.Float64("txs_per_sec", txsPerSec),
@@ -375,7 +376,11 @@ func (e *Indexer) indexBlocks() error {
 type blockResult struct {
 	emTxCount     int
 	emRejectCount int
-	blockElapsed  time.Duration
+	// Transactions whose (entity_type, action) matched no handler. Tolerated
+	// during live indexing for forward compatibility, so they are counted
+	// apart from rejections rather than folded into them.
+	emUnroutedCount int
+	blockElapsed    time.Duration
 }
 
 // processBlock indexes one CometBFT block atomically.
@@ -649,12 +654,27 @@ func (e *Indexer) processOneTx(
 		emParams := em.NewParams(me, emBlock, block.Timestamp.AsTime(),
 			block.Hash, t.Hash, scope.tx, e.logger)
 		if dErr := e.dispatcher.Dispatch(ctx, emParams); dErr != nil {
-			res.emRejectCount++
-			if em.IsValidationError(dErr) {
+			switch {
+			case errors.Is(dErr, em.ErrNoHandler):
+				// Forward compatibility: a newer client can emit an entity
+				// type this build has no handler for, and refusing those
+				// would stall a node behind the network. Tolerated as before
+				// -- but counted and logged, so an entity type that was
+				// supposed to route is visible instead of silently dropped.
+				res.emUnroutedCount++
+				e.logger.Warn("entity manager unrouted",
+					zap.String("entity_type", me.GetEntityType()),
+					zap.String("action", me.GetAction()),
+					zap.Int64("entity_id", me.GetEntityId()),
+					zap.Int64("user_id", me.GetUserId()),
+					zap.String("hash", t.Hash),
+				)
+			case em.IsValidationError(dErr):
 				// Validation errors mean "the tx was on-chain but its
 				// payload was malformed, so we choose not to act on it".
 				// Match Python's swallow-and-continue: keep the savepoint
 				// alive so the tx's audit row still lands.
+				res.emRejectCount++
 				e.logger.Warn("entity manager validation rejected",
 					zap.String("entity_type", me.GetEntityType()),
 					zap.String("action", me.GetAction()),
@@ -663,10 +683,11 @@ func (e *Indexer) processOneTx(
 					zap.String("reason", dErr.Error()),
 					zap.String("hash", t.Hash),
 				)
-			} else {
+			default:
 				// Hard error from the handler: any partial writes are
 				// rolled back via the savepoint. The tx's audit row is
 				// still recorded by processBlock using the outer tx.
+				res.emRejectCount++
 				e.logger.Error("entity manager dispatch error",
 					zap.String("entity_type", me.GetEntityType()),
 					zap.String("action", me.GetAction()),
@@ -722,7 +743,14 @@ func (e *Indexer) processOneTx(
 		// Replayed historical state goes through the migration handler set.
 		if dErr := e.migrationDispatcher.Dispatch(ctx, emParams); dErr != nil {
 			res.emRejectCount++
-			if em.IsValidationError(dErr) {
+			// Unlike live indexing, an unroutable migration transaction is a
+			// genesis-writer bug, not a version skew: the writer and this
+			// handler set ship together. It is counted as a rejection rather
+			// than tolerated, so it shows up in em_rejected instead of
+			// passing for an indexed row. It is deliberately not a hard
+			// error -- aborting a multi-hour replay on the first bad
+			// transaction would hide how many others share the defect.
+			if em.IsValidationError(dErr) || errors.Is(dErr, em.ErrNoHandler) {
 				e.logger.Warn("entity manager migration validation rejected",
 					zap.String("entity_type", me.GetEntityType()),
 					zap.String("action", me.GetAction()),
