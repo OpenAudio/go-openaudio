@@ -6,10 +6,29 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
+
+// migrationHandlerFor resolves the handler the genesis migration uses for an
+// entity/action, deriving it from the production registration the way the
+// indexer does. Tests go through the dispatcher rather than calling an override
+// directly because an override nobody registers fixes nothing.
+func migrationHandlerFor(t *testing.T, production Handler) Handler {
+	t.Helper()
+	prod := NewDispatcher(nil)
+	prod.Register(production)
+	mig := prod.Clone()
+	RegisterMigrationOverrides(mig)
+
+	h, ok := mig.handlers[handlerKey(production.EntityType(), production.Action())]
+	if !ok {
+		t.Fatalf("no migration handler registered for %s/%s", production.EntityType(), production.Action())
+	}
+	return h
+}
 
 // stubRow satisfies pgx.Row for the EXISTS(...) lookups, always reporting
 // "not found" so the stateful checks resolve without a live database.
@@ -394,6 +413,163 @@ func TestMigratedWalletCreateCarriesIsDelete(t *testing.T) {
 			t.Errorf("no migration override registered for %s/Create", e)
 		}
 	}
+}
+
+// contestMeta builds the metadata genesis-writer sends for a remix contest.
+func contestMeta(trackID int64, endDate time.Time) string {
+	return `{"event_type":"remix_contest","entity_type":"track","entity_id":` + itoa(trackID) +
+		`,"end_date":"` + endDate.Format(time.RFC3339) + `","event_data":{}}`
+}
+
+// stampedAt restamps params the way the indexer stamps a migration tx: with the
+// source row's created_at rather than the block's wall-clock timestamp (see
+// migrationBlockTime).
+func stampedAt(params *Params, createdAt time.Time) *Params {
+	params.BlockTime = createdAt
+	return params
+}
+
+// The end_date rule holds a replay hostage to how the block is stamped. When a
+// migration tx carries a parseable created_at the rule is harmless — a contest
+// was always still running when it was created. When it doesn't, block time
+// falls back to migration wall-clock and the same rule drops every concluded
+// contest: 109 of the 112 live events on the 2026-08-07 snapshot, plus the
+// subscriptions pointing at them. The migration handler doesn't take that bet.
+func TestMigratedEventCreate_KeepsConcludedContest(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 1)
+	seedUser(t, pool, uid, "0xeventowner", "eventowner")
+	seedTrack(t, pool, tid, uid)
+
+	created := time.Now().UTC().Add(-400 * 24 * time.Hour).Truncate(time.Second)
+	ended := created.Add(21 * 24 * time.Hour)
+	meta := contestMeta(tid, ended)
+
+	// Stamped from created_at, the production handler takes the row: this is why
+	// the migration indexes events at all today.
+	mustHandle(t, EventCreate(), stampedAt(
+		buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 700, "0xEventowner", meta), created))
+
+	// Stamped at wall-clock — the fallback whenever created_at is absent or
+	// unparseable — the same row is dropped.
+	mustReject(t, EventCreate(),
+		buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 701, "0xEventowner", meta),
+		"end_date cannot be in the past")
+
+	// The migration handler keeps it either way, end date and all.
+	mustHandle(t, migrationHandlerFor(t, EventCreate()),
+		buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 702, "0xEventowner", meta))
+
+	var gotType string
+	var gotEnd time.Time
+	if err := pool.QueryRow(context.Background(),
+		"SELECT event_type, end_date FROM events WHERE event_id = 702").Scan(&gotType, &gotEnd); err != nil {
+		t.Fatalf("the concluded contest was not indexed: %v", err)
+	}
+	if gotType != "remix_contest" {
+		t.Errorf("event_type = %q, want remix_contest", gotType)
+	}
+	if !gotEnd.Equal(ended) {
+		t.Errorf("end_date = %s, want the source's %s", gotEnd, ended)
+	}
+}
+
+// The uniqueness rule drops a real row however the block is stamped. Track
+// 1174134089 in the source holds two contests created two minutes apart with
+// the same end date (events 925703801 and 1458921100): replaying the second
+// re-asks a question the source already answered its own way, and the first
+// contest — still running at that moment — rejects it.
+func TestMigratedEventCreate_KeepsSecondConcludedContestForSameTrack(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 1)
+	seedUser(t, pool, uid, "0xeventowner", "eventowner")
+	seedTrack(t, pool, tid, uid)
+
+	firstCreated := time.Now().UTC().Add(-400 * 24 * time.Hour).Truncate(time.Second)
+	secondCreated := firstCreated.Add(2 * time.Minute)
+	meta := contestMeta(tid, firstCreated.Add(21*24*time.Hour))
+
+	h := migrationHandlerFor(t, EventCreate())
+	mustHandle(t, h, stampedAt(
+		buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 710, "0xEventowner", meta), firstCreated))
+
+	// The production rule rejects the second row the source is holding.
+	mustReject(t, EventCreate(), stampedAt(
+		buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 711, "0xEventowner", meta), secondCreated),
+		"an existing remix contest for entity_id")
+
+	mustHandle(t, h, stampedAt(
+		buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 711, "0xEventowner", meta), secondCreated))
+
+	var n int
+	if err := pool.QueryRow(context.Background(),
+		"SELECT count(*) FROM events WHERE entity_id = $1", tid).Scan(&n); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("indexed %d contests for track %d, want both source rows", n, tid)
+	}
+}
+
+// Relaxing the migration must not relax live traffic: a second contest opened
+// while the first is still running is still rejected.
+func TestEventCreate_StillRejectsSecondRunningContest(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 1)
+	seedUser(t, pool, uid, "0xeventowner", "eventowner")
+	seedTrack(t, pool, tid, uid)
+
+	meta := contestMeta(tid, time.Now().UTC().Add(24*time.Hour).Truncate(time.Second))
+	mustHandle(t, EventCreate(), buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 720, "0xEventowner", meta))
+	mustReject(t, EventCreate(),
+		buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 721, "0xEventowner", meta),
+		"an existing remix contest for entity_id")
+}
+
+// What the migration keeps: an event is still shaped like an event, still
+// signed by someone who may act for its user, still lands once, and still hangs
+// off rows that exist.
+func TestMigratedEventCreate_KeepsShapeAndSignerChecks(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 1)
+	seedUser(t, pool, uid, "0xeventowner", "eventowner")
+	seedTrack(t, pool, tid, uid)
+
+	past := time.Now().UTC().Add(-24 * time.Hour).Truncate(time.Second)
+	meta := contestMeta(tid, past)
+	h := migrationHandlerFor(t, EventCreate())
+
+	// Idempotency: the same event id must not land twice.
+	mustHandle(t, h, buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 730, "0xEventowner", meta))
+	mustReject(t, h, buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 730, "0xEventowner", meta),
+		"already exists")
+
+	// Signer authority: genesis-writer sends the event owner's wallet, so a
+	// signer with no claim on the user is still rejected.
+	mustReject(t, h, buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 731, "0xImposter", meta),
+		"is not authorized for user")
+
+	// Shape: event_type and end_date are what make the row an event.
+	mustReject(t, h, buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 732, "0xEventowner",
+		`{"entity_type":"track","entity_id":`+itoa(tid)+`,"end_date":"`+past.Format(time.RFC3339)+`"}`),
+		"missing required field: event_type")
+	mustReject(t, h, buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 733, "0xEventowner",
+		`{"event_type":"remix_contest","entity_type":"track","entity_id":`+itoa(tid)+`}`),
+		"missing required field: end_date")
+
+	// Referential: the track the contest hangs off must have migrated.
+	mustReject(t, h, buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 734, "0xEventowner",
+		contestMeta(TrackIDOffset+999, past)),
+		"does not exist")
+
+	// Shape: the dispatcher routes by entity type, so a mismatch is a bug.
+	wrongType := buildParams(t, pool, EntityTypeEvent, ActionCreate, uid, 735, "0xEventowner", meta)
+	wrongType.EntityType = EntityTypeTrack
+	mustReject(t, h, wrongType, "wrong entity type")
 }
 
 // A migrated track keeps the slug it already serves. Regenerating it would
