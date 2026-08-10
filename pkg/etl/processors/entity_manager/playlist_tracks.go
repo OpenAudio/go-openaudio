@@ -129,9 +129,9 @@ func updatePlaylistTracks(ctx context.Context, dbtx db.DBTX, playlistID int64, m
 			if wasRemoved {
 				if _, err := dbtx.Exec(ctx, `
 					UPDATE playlist_tracks
-					SET is_removed = false, updated_at = now()
+					SET is_removed = false, updated_at = $3
 					WHERE playlist_id = $1 AND track_id = $2
-				`, playlistID, trackID); err != nil {
+				`, playlistID, trackID, blockTime); err != nil {
 					return err
 				}
 				added = append(added, trackID)
@@ -141,9 +141,9 @@ func updatePlaylistTracks(ctx context.Context, dbtx db.DBTX, playlistID int64, m
 		if !wasRemoved {
 			if _, err := dbtx.Exec(ctx, `
 				UPDATE playlist_tracks
-				SET is_removed = true, updated_at = now()
+				SET is_removed = true, updated_at = $3
 				WHERE playlist_id = $1 AND track_id = $2
-			`, playlistID, trackID); err != nil {
+			`, playlistID, trackID, blockTime); err != nil {
 				return err
 			}
 			removed = append(removed, trackID)
@@ -155,10 +155,10 @@ func updatePlaylistTracks(ctx context.Context, dbtx db.DBTX, playlistID int64, m
 			continue
 		}
 		if _, err := dbtx.Exec(ctx, `
-			INSERT INTO playlist_tracks (playlist_id, track_id, is_removed)
-			VALUES ($1, $2, false)
+			INSERT INTO playlist_tracks (playlist_id, track_id, is_removed, created_at, updated_at)
+			VALUES ($1, $2, false, $3, $3)
 			ON CONFLICT (playlist_id, track_id) DO NOTHING
-		`, playlistID, trackID); err != nil {
+		`, playlistID, trackID, blockTime); err != nil {
 			return err
 		}
 		added = append(added, trackID)
