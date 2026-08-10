@@ -25,6 +25,24 @@ type socialMeta struct {
 	IsDelete  bool   `json:"is_delete"`
 }
 
+// saveMeta is socialMeta plus is_save_of_repost, which records that the save was
+// made from a repost in someone's feed rather than from the item itself. The
+// indexer reads it in insertSave with a default of false, so `omitempty` cannot
+// flip a value on read and the key rides only on the 28,155 source rows that
+// actually set it rather than on every save.
+type saveMeta struct {
+	socialMeta
+	IsSaveOfRepost bool `json:"is_save_of_repost,omitempty"`
+}
+
+// repostMeta is the repost counterpart of saveMeta: is_repost_of_repost marks a
+// repost made from another repost. Same default-false read in insertRepost, same
+// reasoning for `omitempty`; 21,366 source rows set it.
+type repostMeta struct {
+	socialMeta
+	IsRepostOfRepost bool `json:"is_repost_of_repost,omitempty"`
+}
+
 func fmtCreatedAt(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
@@ -79,23 +97,27 @@ func (w *Writer) writeSaves(ctx context.Context) error {
 		saveType       string
 		createdAt      time.Time
 		isDelete       bool
+		isSaveOfRepost bool
 	}
 	return processBatched(ctx, w, "saves",
 		`SELECT count(*) FROM saves s
 		JOIN users u ON u.user_id = s.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE s.is_current = true`,
-		`SELECT s.user_id, s.save_item_id, LOWER(u.wallet), s.save_type, s.created_at, s.is_delete
+		`SELECT s.user_id, s.save_item_id, LOWER(u.wallet), s.save_type, s.created_at, s.is_delete, s.is_save_of_repost
 		FROM saves s
 		JOIN users u ON u.user_id = s.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE s.is_current = true
 		ORDER BY s.user_id, s.save_item_id`,
 		func(rows pgx.Rows) (save, error) {
 			var s save
-			err := rows.Scan(&s.userID, &s.itemID, &s.wallet, &s.saveType, &s.createdAt, &s.isDelete)
+			err := rows.Scan(&s.userID, &s.itemID, &s.wallet, &s.saveType, &s.createdAt, &s.isDelete, &s.isSaveOfRepost)
 			return s, err
 		},
 		func(ctx context.Context, s save) error {
-			metaJSON, err := json.Marshal(socialMeta{CreatedAt: fmtCreatedAt(s.createdAt), IsDelete: s.isDelete})
+			metaJSON, err := json.Marshal(saveMeta{
+				socialMeta:     socialMeta{CreatedAt: fmtCreatedAt(s.createdAt), IsDelete: s.isDelete},
+				IsSaveOfRepost: s.isSaveOfRepost,
+			})
 			if err != nil {
 				return fmt.Errorf("marshal save metadata: %w", err)
 			}
@@ -114,28 +136,32 @@ func (w *Writer) writeSaves(ctx context.Context) error {
 
 func (w *Writer) writeReposts(ctx context.Context) error {
 	type repost struct {
-		userID, itemID int64
-		wallet         string
-		repostType     string
-		createdAt      time.Time
-		isDelete       bool
+		userID, itemID   int64
+		wallet           string
+		repostType       string
+		createdAt        time.Time
+		isDelete         bool
+		isRepostOfRepost bool
 	}
 	return processBatched(ctx, w, "reposts",
 		`SELECT count(*) FROM reposts r
 		JOIN users u ON u.user_id = r.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE r.is_current = true`,
-		`SELECT r.user_id, r.repost_item_id, COALESCE(LOWER(u.wallet), ''), r.repost_type, r.created_at, r.is_delete
+		`SELECT r.user_id, r.repost_item_id, COALESCE(LOWER(u.wallet), ''), r.repost_type, r.created_at, r.is_delete, r.is_repost_of_repost
 		FROM reposts r
 		JOIN users u ON u.user_id = r.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE r.is_current = true
 		ORDER BY r.user_id, r.repost_item_id`,
 		func(rows pgx.Rows) (repost, error) {
 			var r repost
-			err := rows.Scan(&r.userID, &r.itemID, &r.wallet, &r.repostType, &r.createdAt, &r.isDelete)
+			err := rows.Scan(&r.userID, &r.itemID, &r.wallet, &r.repostType, &r.createdAt, &r.isDelete, &r.isRepostOfRepost)
 			return r, err
 		},
 		func(ctx context.Context, r repost) error {
-			metaJSON, err := json.Marshal(socialMeta{CreatedAt: fmtCreatedAt(r.createdAt), IsDelete: r.isDelete})
+			metaJSON, err := json.Marshal(repostMeta{
+				socialMeta:       socialMeta{CreatedAt: fmtCreatedAt(r.createdAt), IsDelete: r.isDelete},
+				IsRepostOfRepost: r.isRepostOfRepost,
+			})
 			if err != nil {
 				return fmt.Errorf("marshal repost metadata: %w", err)
 			}

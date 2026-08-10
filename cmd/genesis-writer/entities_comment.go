@@ -20,6 +20,13 @@ type commentMetadata struct {
 	TrackTimestampS *int    `json:"track_timestamp_s,omitempty"`
 	Mentions        []int64 `json:"mentions,omitempty"`
 	CreatedAt       string  `json:"created_at,omitempty"`
+	// Fan-club text post fields. The indexer reads both with a default that
+	// matches an unset column (false / NULL), so `omitempty` cannot flip a value
+	// on read and only the 39 members-only and 15 video comments carry them.
+	// is_members_only is emitted verbatim from the source: every row that sets
+	// it is entity_type='FanClub', which is what validateCommentWrite requires.
+	IsMembersOnly bool   `json:"is_members_only,omitempty"`
+	VideoURL      string `json:"video_url,omitempty"`
 	// Always serialized: `omitempty` would drop a false value and the indexer
 	// cannot tell "absent" from "not deleted".
 	IsDelete bool `json:"is_delete"`
@@ -35,6 +42,8 @@ type sourceComment struct {
 	TrackTimestampS *int
 	CreatedAt       time.Time
 	IsDelete        bool
+	IsMembersOnly   bool
+	VideoURL        *string
 }
 
 // writeComments emits root comments and replies in two passes.
@@ -106,7 +115,7 @@ func (w *Writer) writeCommentPass(
 		`SELECT count(*) FROM comments c
 		JOIN users u ON u.user_id = c.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		`+where,
-		`SELECT c.comment_id, c.text, c.user_id, COALESCE(LOWER(u.wallet), ''), c.entity_id, c.entity_type, c.track_timestamp_s, c.created_at, c.is_delete
+		`SELECT c.comment_id, c.text, c.user_id, COALESCE(LOWER(u.wallet), ''), c.entity_id, c.entity_type, c.track_timestamp_s, c.created_at, c.is_delete, c.is_members_only, c.video_url
 		FROM comments c
 		JOIN users u ON u.user_id = c.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		`+where+`
@@ -115,7 +124,7 @@ func (w *Writer) writeCommentPass(
 		ORDER BY c.created_at, c.comment_id`,
 		func(rows pgx.Rows) (sourceComment, error) {
 			var c sourceComment
-			err := rows.Scan(&c.CommentID, &c.Text, &c.UserID, &c.UserWallet, &c.EntityID, &c.EntityType, &c.TrackTimestampS, &c.CreatedAt, &c.IsDelete)
+			err := rows.Scan(&c.CommentID, &c.Text, &c.UserID, &c.UserWallet, &c.EntityID, &c.EntityType, &c.TrackTimestampS, &c.CreatedAt, &c.IsDelete, &c.IsMembersOnly, &c.VideoURL)
 			return c, err
 		},
 		func(ctx context.Context, c sourceComment) error {
@@ -126,6 +135,8 @@ func (w *Writer) writeCommentPass(
 				EntityType:      c.EntityType,
 				TrackTimestampS: c.TrackTimestampS,
 				CreatedAt:       c.CreatedAt.UTC().Format(time.RFC3339),
+				IsMembersOnly:   c.IsMembersOnly,
+				VideoURL:        deref(c.VideoURL),
 			}
 
 			// Attach parent comment if this is a reply.
