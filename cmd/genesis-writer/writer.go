@@ -100,6 +100,12 @@ type Writer struct {
 	// projectBlockAuthState — and reported at the end of Run.
 	authProjectionSkips int
 
+	// rewardProjectionSkips counts reward transactions the reward projection
+	// declined, on the same terms as authProjectionSkips: expected to be zero,
+	// reported at the end of Run. A skip here means a reward that exists as a
+	// transaction and as no row.
+	rewardProjectionSkips int
+
 	// current block being assembled
 	height    int64
 	blockTxs  [][]byte
@@ -317,10 +323,10 @@ func (w *Writer) writeBlockToDB(ctx context.Context, pb pendingBlock) error {
 		return fmt.Errorf("insert core_app_state height=%d: %w", pb.height, err)
 	}
 
-	// Project the consensus auth state in the same postgres transaction so the
-	// auth tables can never be half-written relative to their blocks. A live
-	// chain gets this from FinalizeBlock, which this writer bypasses.
-	if err := w.projectBlockAuthState(ctx, pgTx, pb); err != nil {
+	// Project the consensus state in the same postgres transaction so the
+	// projected tables can never be half-written relative to their blocks. A
+	// live chain gets this from FinalizeBlock, which this writer bypasses.
+	if err := w.projectBlockState(ctx, pgTx, pb); err != nil {
 		return err
 	}
 
@@ -589,6 +595,13 @@ func (w *Writer) Run(ctx context.Context) error {
 	if w.authProjectionSkips > 0 {
 		w.logger.Error("auth state projection declined migration transactions; the auth state is incomplete",
 			zap.Int("skipped", w.authProjectionSkips))
+	}
+
+	// Likewise a partial reward state: the transactions are on the chain, the
+	// rows are not, and the rewards they describe cannot be claimed.
+	if w.rewardProjectionSkips > 0 {
+		w.logger.Error("reward state projection declined transactions; the reward state is incomplete",
+			zap.Int("skipped", w.rewardProjectionSkips))
 	}
 
 	// Write CometBFT state and genesis file before index rebuild — fast and critical.
@@ -952,43 +965,80 @@ func signingConfig(network string) *corecfg.Config {
 	}
 }
 
-// projectBlockAuthState applies each migration transaction's authorization
-// effects to the core_auth_* tables, inside the block's postgres transaction.
+// projectBlockState applies each transaction's state effects to the tables a
+// live chain fills from FinalizeBlock, inside the block's postgres
+// transaction.
+//
 // Transactions are re-decoded from their bytes — one proto unmarshal per tx,
 // noise next to the per-entity signing and hashing — rather than threading a
-// second representation through block assembly. Non-migration transactions
-// (plays, for instance) carry no authorization effects and are skipped.
-func (w *Writer) projectBlockAuthState(ctx context.Context, pgTx pgx.Tx, pb pendingBlock) error {
+// second representation through block assembly. That decode is shared by every
+// projection below rather than repeated per projection: across tens of
+// millions of transactions the difference is not noise.
+//
+// Transaction types with no projected state (plays, for instance) fall through
+// untouched.
+func (w *Writer) projectBlockState(ctx context.Context, pgTx pgx.Tx, pb pendingBlock) error {
 	q := coredb.New(pgTx)
 
 	for _, row := range pb.txData {
 		var stx corev1.SignedTransaction
 		if err := proto.Unmarshal(row.txBytes, &stx); err != nil {
-			return fmt.Errorf("decode tx %s for auth projection height=%d: %w", row.hash, pb.height, err)
+			return fmt.Errorf("decode tx %s for state projection height=%d: %w", row.hash, pb.height, err)
 		}
 
-		me := stx.GetManageEntityMigration()
-		if me == nil {
+		if me := stx.GetManageEntityMigration(); me != nil {
+			if err := w.projectAuthState(ctx, q, me, row.hash, pb.height); err != nil {
+				return err
+			}
 			continue
 		}
 
-		skipped, reason, err := server.ProjectMigrationAuthState(ctx, q, me)
-		if err != nil {
-			return fmt.Errorf("project auth state for tx %s height=%d: %w", row.hash, pb.height, err)
+		if err := w.projectRewardState(ctx, q, &stx, row.hash, pb.height); err != nil {
+			return err
 		}
-		if skipped {
-			// The writer only emits entities whose references resolve, so
-			// every migration transaction should project cleanly; a skip is a
-			// bug in the writer or the projection. Log enough to chase it.
-			w.authProjectionSkips++
-			w.logger.Warn("auth state projection declined a migration transaction",
-				zap.String("reason", reason),
-				zap.String("entity_type", me.GetEntityType()),
-				zap.String("action", me.GetAction()),
-				zap.Int64("entity_id", me.GetEntityId()),
-				zap.Int64("user_id", me.GetUserId()),
-				zap.Int64("height", pb.height))
-		}
+	}
+	return nil
+}
+
+// projectAuthState applies one migration transaction's authorization effects
+// to the core_auth_* tables.
+func (w *Writer) projectAuthState(ctx context.Context, q *coredb.Queries, me *corev1.ManageEntityLegacyMigration, txHash string, height int64) error {
+	skipped, reason, err := server.ProjectMigrationAuthState(ctx, q, me)
+	if err != nil {
+		return fmt.Errorf("project auth state for tx %s height=%d: %w", txHash, height, err)
+	}
+	if skipped {
+		// The writer only emits entities whose references resolve, so
+		// every migration transaction should project cleanly; a skip is a
+		// bug in the writer or the projection. Log enough to chase it.
+		w.authProjectionSkips++
+		w.logger.Warn("auth state projection declined a migration transaction",
+			zap.String("reason", reason),
+			zap.String("entity_type", me.GetEntityType()),
+			zap.String("action", me.GetAction()),
+			zap.Int64("entity_id", me.GetEntityId()),
+			zap.Int64("user_id", me.GetUserId()),
+			zap.Int64("height", height))
+	}
+	return nil
+}
+
+// projectRewardState applies one reward or reward-pool transaction's effects
+// to core_reward_pools / core_rewards. Non-reward transactions are a no-op.
+func (w *Writer) projectRewardState(ctx context.Context, q *coredb.Queries, stx *corev1.SignedTransaction, txHash string, height int64) error {
+	handled, skipped, reason, err := server.ProjectMigrationRewardState(ctx, q, stx, txHash, w.cfg.ChainID, height)
+	if err != nil {
+		return fmt.Errorf("project reward state for tx %s height=%d: %w", txHash, height, err)
+	}
+	if handled && skipped {
+		// A declined reward transaction is a reward that exists on the new
+		// chain as a transaction and as no row — unclaimable, and invisible to
+		// anything that reads the tables rather than the blocks.
+		w.rewardProjectionSkips++
+		w.logger.Warn("reward state projection declined a transaction",
+			zap.String("reason", reason),
+			zap.String("tx_hash", txHash),
+			zap.Int64("height", height))
 	}
 	return nil
 }

@@ -10,7 +10,6 @@ import (
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
-	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -123,12 +122,6 @@ func (s *Server) recoverLegacyDeleteRewardSigner(currentHeight int64, dr *corev1
 }
 
 func (s *Server) finalizeLegacyCreateReward(ctx context.Context, req *abcitypes.FinalizeBlockRequest, txhash string, messageIndex int64, cr *corev1.LegacyCreateReward, signer string) error {
-	txhashBytes, err := common.HexToBytes(txhash)
-	if err != nil {
-		return fmt.Errorf("invalid txhash: %w", err)
-	}
-	rewardAddress := common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, "")
-
 	qtx := s.getDb()
 
 	// Resolve the reward's RM by looking for a launchpad-derived authority
@@ -139,52 +132,44 @@ func (s *Server) finalizeLegacyCreateReward(ctx context.Context, req *abcitypes.
 	// (RM, authorities) state the migration backfill produced for
 	// pre-migration rows, so historical replay and the migration agree
 	// on the resulting apphash.
-	authorityAddrs := make([]string, 0, len(cr.ClaimAuthorities))
-	for _, auth := range cr.ClaimAuthorities {
-		authorityAddrs = append(authorityAddrs, auth.Address)
-	}
-	canonicalAuthorities := rewards.CanonicalAuthorities(authorityAddrs)
+	canonicalAuthorities := legacyClaimAuthorities(cr)
 
 	var rmPubkey pgtype.Text
-	if len(canonicalAuthorities) > 0 {
-		rm, err := qtx.GetLaunchpadRMByAuthority(ctx, canonicalAuthorities)
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-			// No matching launchpad authority. Reward stays orphaned (NULL
-			// rewards_manager_pubkey, no pool). Mirrors what the migration
-			// does for rows whose claim_authorities don't include any known
-			// launchpad-derived authority.
-		case err != nil:
-			return fmt.Errorf("failed to resolve launchpad RM: %w", err)
-		default:
-			// Upsert (UNION) the pool so successive legacy replays of
-			// rewards under the same RM accumulate into the same authority
-			// set the migration's UNION-based backfill produces.
-			if err := qtx.UpsertLegacyReplayRewardPool(ctx, db.UpsertLegacyReplayRewardPoolParams{
-				RewardsManagerPubkey: rm,
-				Authorities:          canonicalAuthorities,
-			}); err != nil {
-				return fmt.Errorf("failed to upsert reward pool for legacy replay: %w", err)
-			}
-			rmPubkey = pgtype.Text{String: rm, Valid: true}
+	rm, ok, err := resolveLegacyRewardRM(ctx, qtx, canonicalAuthorities)
+	if err != nil {
+		return err
+	}
+	if ok {
+		// Upsert (UNION) the pool so successive legacy replays of
+		// rewards under the same RM accumulate into the same authority
+		// set the migration's UNION-based backfill produces.
+		//
+		// The genesis writer's projection deliberately does NOT do this;
+		// see projectLegacyRewardTx for why the two differ.
+		if err := qtx.UpsertLegacyReplayRewardPool(ctx, db.UpsertLegacyReplayRewardPoolParams{
+			RewardsManagerPubkey: rm,
+			Authorities:          canonicalAuthorities,
+		}); err != nil {
+			return fmt.Errorf("failed to upsert reward pool for legacy replay: %w", err)
 		}
+		rmPubkey = pgtype.Text{String: rm, Valid: true}
 	}
 
 	rawMessage, err := proto.Marshal(cr)
 	if err != nil {
 		return fmt.Errorf("failed to marshal legacy create reward: %w", err)
 	}
-	if err := qtx.InsertCoreReward(ctx, db.InsertCoreRewardParams{
-		TxHash:               txhash,
-		Index:                messageIndex,
-		Address:              rewardAddress,
-		Sender:               signer,
-		RewardID:             cr.RewardId,
-		Name:                 cr.Name,
-		Amount:               int64(cr.Amount),
-		RewardsManagerPubkey: rmPubkey,
-		RawMessage:           rawMessage,
-		BlockHeight:          req.Height,
+	if err := insertRewardRow(ctx, qtx, rewardRow{
+		chainID:      s.config.GenesisFile.ChainID,
+		txhash:       txhash,
+		height:       req.Height,
+		messageIndex: messageIndex,
+		signer:       signer,
+		rewardID:     cr.RewardId,
+		name:         cr.Name,
+		amount:       cr.Amount,
+		rmPubkey:     rmPubkey,
+		rawMessage:   rawMessage,
 	}); err != nil {
 		return fmt.Errorf("failed to insert legacy reward: %w", err)
 	}

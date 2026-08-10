@@ -11,7 +11,6 @@ import (
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
-	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/rewards"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	"github.com/jackc/pgx/v5"
@@ -241,28 +240,22 @@ func (s *Server) finalizeCreateReward(ctx context.Context, req *abcitypes.Finali
 		return err
 	}
 
-	txhashBytes, err := common.HexToBytes(txhash)
-	if err != nil {
-		return fmt.Errorf("invalid txhash: %w", err)
-	}
-	rewardAddress := common.CreateAddress(txhashBytes, s.config.GenesisFile.ChainID, req.Height, messageIndex, "")
-
 	rawMessage, err := proto.Marshal(createReward)
 	if err != nil {
 		return fmt.Errorf("failed to marshal create reward message: %w", err)
 	}
 
-	if err := qtx.InsertCoreReward(ctx, db.InsertCoreRewardParams{
-		TxHash:      txhash,
-		Index:       messageIndex,
-		Address:     rewardAddress,
-		Sender:      signer,
-		RewardID:    createReward.RewardId,
-		Name:        createReward.Name,
-		Amount:      int64(createReward.Amount),
-		RewardsManagerPubkey: pgtype.Text{String: createReward.RewardsManagerPubkey, Valid: true},
-		RawMessage:  rawMessage,
-		BlockHeight: req.Height,
+	if err := insertRewardRow(ctx, qtx, rewardRow{
+		chainID:      s.config.GenesisFile.ChainID,
+		txhash:       txhash,
+		height:       req.Height,
+		messageIndex: messageIndex,
+		signer:       signer,
+		rewardID:     createReward.RewardId,
+		name:         createReward.Name,
+		amount:       createReward.Amount,
+		rmPubkey:     pgtype.Text{String: createReward.RewardsManagerPubkey, Valid: true},
+		rawMessage:   rawMessage,
 	}); err != nil {
 		return fmt.Errorf("failed to insert reward: %w", err)
 	}

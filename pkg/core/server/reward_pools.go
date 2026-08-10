@@ -288,16 +288,7 @@ func (s *Server) finalizeCreateRewardPool(ctx context.Context, envelope *corev1.
 	if !slices.Contains(canonical, strings.ToLower(strings.TrimSpace(signer))) {
 		return fmt.Errorf("%w: signer %s not in initial authorities", ErrRewardUnauthorized, signer)
 	}
-	qtx := s.getDb()
-	if _, err := qtx.GetRewardPool(ctx, msg.RewardsManagerPubkey); err == nil {
-		return nil
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("failed to check pool existence at finalize: %w", err)
-	}
-	return qtx.InsertRewardPool(ctx, db.InsertRewardPoolParams{
-		RewardsManagerPubkey: msg.RewardsManagerPubkey,
-		Authorities:          canonical,
-	})
+	return insertRewardPoolIfAbsent(ctx, s.getDb(), msg.RewardsManagerPubkey, msg.Authorities)
 }
 
 // finalizeSetRewardPoolAuthorities re-checks signer authorization against
