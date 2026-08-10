@@ -22,9 +22,20 @@ import (
 // Pool transactions are emitted before reward transactions (matching the
 // original chain order) so that pool authorization checks succeed.
 func (w *Writer) writeRewards(ctx context.Context) error {
+	// Reading the old chain's postgres is preferred: core_transactions holds
+	// the same signed bytes, and a running node serves them safely, where
+	// copying its live Pebble blockstore yields a torn database.
+	if w.cfg.CoreDSN != "" {
+		return w.writeRewardsFromDSN(ctx)
+	}
+	// Reaching here with no source is a mistake, not a choice: --skip-rewards
+	// already exists to say "no rewards on purpose", and the step table skips
+	// this function entirely when it is set. Silently writing a chain with no
+	// reward history looked like a clean run once already, and the omission is
+	// only discoverable by counting rows in a table nobody thought to count.
 	if w.cfg.CoreCMTHome == "" {
-		w.logger.Info("no --core-cmt-home provided, skipping rewards")
-		return nil
+		return fmt.Errorf("rewards need a source: pass --core-dsn (preferred) " +
+			"or --core-cmt-home, or --skip-rewards to migrate without them")
 	}
 
 	dataDir := filepath.Join(w.cfg.CoreCMTHome, "data")
