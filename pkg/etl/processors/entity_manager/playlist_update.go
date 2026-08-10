@@ -75,7 +75,7 @@ func updatePlaylist(ctx context.Context, params *Params) error {
 	}
 
 	if _, ok := params.Metadata["playlist_contents"]; ok {
-		if err := updatePlaylistTracks(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+		if err := updatePlaylistTracks(ctx, params.DBTX, params.EntityID, params.Metadata, params.BlockTime); err != nil {
 			return err
 		}
 	}
