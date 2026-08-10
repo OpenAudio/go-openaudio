@@ -54,7 +54,6 @@ type WriterConfig struct {
 	SkipApps             bool
 	SkipComments         bool
 	SkipEmails           bool
-	SkipTipReactions     bool
 	SkipEvents           bool
 	SkipRewards          bool
 	// CoreCMTHome is the CometBFT home directory of the OLD chain. When set,
@@ -461,10 +460,9 @@ func (w *Writer) Run(ctx context.Context) error {
 		// Phase 8: Rewards — replay reward pool and reward txs from old chain blockstore
 		{"rewards", w.cfg.SkipRewards, w.writeRewards},
 
-		// Phase 9: Activity — play count reconciliation, plays, and tip reactions
+		// Phase 9: Activity — play count reconciliation and plays
 		{"play count reconciliation", w.cfg.SkipPlays, w.writePlayCountReconciliation},
 		{"plays", w.cfg.SkipPlays, w.writePlays},
-		{"tip reactions", w.cfg.SkipTipReactions, w.writeTipReactions},
 	}
 
 	// Load completed steps for resume.
