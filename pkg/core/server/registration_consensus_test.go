@@ -250,9 +250,9 @@ func setupFinalizeBlockTestDB(t *testing.T, pool *pgxpool.Pool) {
 
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `
-			DROP TABLE IF EXISTS validator_history;
-			DROP TABLE IF EXISTS sla_node_reports;
-			DROP TABLE IF EXISTS sla_rollups;
+			DROP TABLE IF EXISTS core_validator_history;
+			DROP TABLE IF EXISTS core_sla_node_reports;
+			DROP TABLE IF EXISTS core_sla_rollups;
 			DROP TABLE IF EXISTS core_tx_stats;
 			DROP TABLE IF EXISTS core_app_state;
 			DROP TABLE IF EXISTS core_transactions;
@@ -289,18 +289,18 @@ func setupFinalizeBlockTestDB(t *testing.T, pool *pgxpool.Pool) {
 			block_height bigint not null,
 			created_at timestamp default current_timestamp
 		);
-		CREATE TABLE IF NOT EXISTS sla_rollups(
+		CREATE TABLE IF NOT EXISTS core_sla_rollups(
 			id serial primary key,
 			tx_hash text not null,
 			block_start bigint not null,
 			block_end bigint not null,
 			time timestamp not null
 		);
-		CREATE TABLE IF NOT EXISTS sla_node_reports(
+		CREATE TABLE IF NOT EXISTS core_sla_node_reports(
 			id serial primary key,
 			address varchar not null,
 			blocks_proposed int not null,
-			sla_rollup_id int references sla_rollups,
+			sla_rollup_id int references core_sla_rollups,
 			unique (address, sla_rollup_id)
 		);
 		DO $$ BEGIN
@@ -308,7 +308,7 @@ func setupFinalizeBlockTestDB(t *testing.T, pool *pgxpool.Pool) {
 				CREATE TYPE validator_event AS ENUM ('registered', 'deregistered');
 			END IF;
 		END $$;
-		CREATE TABLE IF NOT EXISTS validator_history(
+		CREATE TABLE IF NOT EXISTS core_validator_history(
 			rowid serial primary key,
 			endpoint text not null,
 			eth_address text not null,

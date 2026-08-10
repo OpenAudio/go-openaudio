@@ -116,8 +116,8 @@ func cleanPG(ctx context.Context, conn *pgx.Conn, height int64) error {
 		{"core_blocks", fmt.Sprintf("DELETE FROM core_blocks WHERE height = %d", height)},
 		{"core_transactions", fmt.Sprintf("DELETE FROM core_transactions WHERE block_id = %d", height)},
 		{"core_tx_stats", fmt.Sprintf("DELETE FROM core_tx_stats WHERE block_height = %d", height)},
-		{"validator_history", fmt.Sprintf("DELETE FROM validator_history WHERE event_block = %d", height)},
-		{"sla_node_reports (uncommitted)", "DELETE FROM sla_node_reports WHERE sla_rollup_id IS NULL"},
+		{"core_validator_history", fmt.Sprintf("DELETE FROM core_validator_history WHERE event_block = %d", height)},
+		{"core_sla_node_reports (uncommitted)", "DELETE FROM core_sla_node_reports WHERE sla_rollup_id IS NULL"},
 		{"core_app_state", fmt.Sprintf("DELETE FROM core_app_state WHERE block_height = %d", height)},
 	}
 
@@ -140,7 +140,7 @@ func printPGCleanup(height int64) {
 	fmt.Fprintf(os.Stderr, "\n  DELETE FROM core_blocks WHERE height = %d;\n", height)
 	fmt.Fprintf(os.Stderr, "  DELETE FROM core_transactions WHERE block_id = %d;\n", height)
 	fmt.Fprintf(os.Stderr, "  DELETE FROM core_tx_stats WHERE block_height = %d;\n", height)
-	fmt.Fprintf(os.Stderr, "  DELETE FROM validator_history WHERE event_block = %d;\n", height)
-	fmt.Fprintf(os.Stderr, "  DELETE FROM sla_node_reports WHERE sla_rollup_id IS NULL;\n")
+	fmt.Fprintf(os.Stderr, "  DELETE FROM core_validator_history WHERE event_block = %d;\n", height)
+	fmt.Fprintf(os.Stderr, "  DELETE FROM core_sla_node_reports WHERE sla_rollup_id IS NULL;\n")
 	fmt.Fprintf(os.Stderr, "  DELETE FROM core_app_state WHERE block_height = %d;\n", height)
 }

@@ -1497,20 +1497,20 @@ func (q *Queries) GetERNResources(ctx context.Context, ernAddress string) ([]Cor
 
 const getInProgressRollupReports = `-- name: GetInProgressRollupReports :many
 select id, address, blocks_proposed, sla_rollup_id
-from sla_node_reports
+from core_sla_node_reports
 where sla_rollup_id is null
 order by address
 `
 
-func (q *Queries) GetInProgressRollupReports(ctx context.Context) ([]SlaNodeReport, error) {
+func (q *Queries) GetInProgressRollupReports(ctx context.Context) ([]CoreSlaNodeReport, error) {
 	rows, err := q.db.Query(ctx, getInProgressRollupReports)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SlaNodeReport
+	var items []CoreSlaNodeReport
 	for rows.Next() {
-		var i SlaNodeReport
+		var i CoreSlaNodeReport
 		if err := rows.Scan(
 			&i.ID,
 			&i.Address,
@@ -1611,14 +1611,14 @@ func (q *Queries) GetLatestDecodedTxs(ctx context.Context, limit int32) ([]CoreE
 
 const getLatestSlaRollup = `-- name: GetLatestSlaRollup :one
 select id, tx_hash, block_start, block_end, time
-from sla_rollups
+from core_sla_rollups
 order by time desc
 limit 1
 `
 
-func (q *Queries) GetLatestSlaRollup(ctx context.Context) (SlaRollup, error) {
+func (q *Queries) GetLatestSlaRollup(ctx context.Context) (CoreSlaRollup, error) {
 	row := q.db.QueryRow(ctx, getLatestSlaRollup)
-	var i SlaRollup
+	var i CoreSlaRollup
 	err := row.Scan(
 		&i.ID,
 		&i.TxHash,
@@ -1631,7 +1631,7 @@ func (q *Queries) GetLatestSlaRollup(ctx context.Context) (SlaRollup, error) {
 
 const getLaunchpadRMByAuthority = `-- name: GetLaunchpadRMByAuthority :one
 select rewards_manager_pubkey
-from launchpad_authority_rm
+from core_launchpad_authority_rm
 where authority = any($1::text[])
 order by rewards_manager_pubkey, authority
 limit 1
@@ -1818,19 +1818,19 @@ func (q *Queries) GetPIEReceipts(ctx context.Context, txHash string) ([]GetPIERe
 
 const getPreviousSlaRollupFromId = `-- name: GetPreviousSlaRollupFromId :one
 select id, tx_hash, block_start, block_end, time
-from sla_rollups
+from core_sla_rollups
 where time < (
         select time
-        from sla_rollups sr
+        from core_sla_rollups sr
         where sr.id = $1
     )
 order by time desc
 limit 1
 `
 
-func (q *Queries) GetPreviousSlaRollupFromId(ctx context.Context, id int32) (SlaRollup, error) {
+func (q *Queries) GetPreviousSlaRollupFromId(ctx context.Context, id int32) (CoreSlaRollup, error) {
 	row := q.db.QueryRow(ctx, getPreviousSlaRollupFromId, id)
-	var i SlaRollup
+	var i CoreSlaRollup
 	err := row.Scan(
 		&i.ID,
 		&i.TxHash,
@@ -1878,8 +1878,8 @@ func (q *Queries) GetRecentBlocks(ctx context.Context, limit int32) ([]CoreBlock
 const getRecentRollupsForAllNodes = `-- name: GetRecentRollupsForAllNodes :many
 with recent_rollups as (
     select id, tx_hash, block_start, block_end, time
-    from sla_rollups
-    where sla_rollups.id <= $1
+    from core_sla_rollups
+    where core_sla_rollups.id <= $1
     order by time desc
     limit $2
 )
@@ -1891,7 +1891,7 @@ select rr.id,
     nr.address,
     nr.blocks_proposed
 from recent_rollups rr
-    left join sla_node_reports nr on rr.id = nr.sla_rollup_id
+    left join core_sla_node_reports nr on rr.id = nr.sla_rollup_id
 order by rr.time
 `
 
@@ -1941,7 +1941,7 @@ func (q *Queries) GetRecentRollupsForAllNodes(ctx context.Context, arg GetRecent
 const getRecentRollupsForNode = `-- name: GetRecentRollupsForNode :many
 with recent_rollups as (
     select id, tx_hash, block_start, block_end, time
-    from sla_rollups
+    from core_sla_rollups
     order by time desc
     limit $1 
 )
@@ -1953,7 +1953,7 @@ select rr.id,
     nr.address,
     nr.blocks_proposed
 from recent_rollups rr
-    left join sla_node_reports nr on rr.id = nr.sla_rollup_id
+    left join core_sla_node_reports nr on rr.id = nr.sla_rollup_id
     and nr.address = $2
 order by rr.time
 `
@@ -2037,19 +2037,19 @@ func (q *Queries) GetRecentTxs(ctx context.Context, limit int32) ([]CoreTransact
 
 const getRecordingsForTrack = `-- name: GetRecordingsForTrack :many
 select id, sound_recording_id, track_id, cid, encoding_details
-from sound_recordings
+from core_sound_recordings
 where track_id = $1
 `
 
-func (q *Queries) GetRecordingsForTrack(ctx context.Context, trackID string) ([]SoundRecording, error) {
+func (q *Queries) GetRecordingsForTrack(ctx context.Context, trackID string) ([]CoreSoundRecording, error) {
 	rows, err := q.db.Query(ctx, getRecordingsForTrack, trackID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SoundRecording
+	var items []CoreSoundRecording
 	for rows.Next() {
-		var i SoundRecording
+		var i CoreSoundRecording
 		if err := rows.Scan(
 			&i.ID,
 			&i.SoundRecordingID,
@@ -2498,7 +2498,7 @@ func (q *Queries) GetRewardsByClaimAuthority(ctx context.Context, dollar_1 strin
 
 const getRollupReportForNodeAndId = `-- name: GetRollupReportForNodeAndId :one
 select id, address, blocks_proposed, sla_rollup_id
-from sla_node_reports
+from core_sla_node_reports
 where address = $1
     and sla_rollup_id = $2
 `
@@ -2508,9 +2508,9 @@ type GetRollupReportForNodeAndIdParams struct {
 	SlaRollupID pgtype.Int4
 }
 
-func (q *Queries) GetRollupReportForNodeAndId(ctx context.Context, arg GetRollupReportForNodeAndIdParams) (SlaNodeReport, error) {
+func (q *Queries) GetRollupReportForNodeAndId(ctx context.Context, arg GetRollupReportForNodeAndIdParams) (CoreSlaNodeReport, error) {
 	row := q.db.QueryRow(ctx, getRollupReportForNodeAndId, arg.Address, arg.SlaRollupID)
-	var i SlaNodeReport
+	var i CoreSlaNodeReport
 	err := row.Scan(
 		&i.ID,
 		&i.Address,
@@ -2522,20 +2522,20 @@ func (q *Queries) GetRollupReportForNodeAndId(ctx context.Context, arg GetRollup
 
 const getRollupReportsForId = `-- name: GetRollupReportsForId :many
 select id, address, blocks_proposed, sla_rollup_id
-from sla_node_reports
+from core_sla_node_reports
 where sla_rollup_id = $1
 order by address
 `
 
-func (q *Queries) GetRollupReportsForId(ctx context.Context, slaRollupID pgtype.Int4) ([]SlaNodeReport, error) {
+func (q *Queries) GetRollupReportsForId(ctx context.Context, slaRollupID pgtype.Int4) ([]CoreSlaNodeReport, error) {
 	rows, err := q.db.Query(ctx, getRollupReportsForId, slaRollupID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SlaNodeReport
+	var items []CoreSlaNodeReport
 	for rows.Next() {
-		var i SlaNodeReport
+		var i CoreSlaNodeReport
 		if err := rows.Scan(
 			&i.ID,
 			&i.Address,
@@ -2563,12 +2563,12 @@ select
     nr.blocks_proposed,
     (
         select count(distinct address)
-        from sla_node_reports
+        from core_sla_node_reports
         where sla_rollup_id = sr.id
     ) as validator_count
 from 
-    sla_rollups sr
-left join sla_node_reports nr
+    core_sla_rollups sr
+left join core_sla_node_reports nr
     on nr.sla_rollup_id = sr.id and nr.address = $1
 where sr.time > $2 and sr.time <= $3
 order by sr.time
@@ -2634,13 +2634,13 @@ select
     nr.blocks_proposed,
     (
         select count(distinct address)
-        from sla_node_reports
+        from core_sla_node_reports
         where sla_rollup_id = sr.id
     ) as validator_count
 from 
-    sla_rollups sr
+    core_sla_rollups sr
 join address_list al on true
-left join sla_node_reports nr
+left join core_sla_node_reports nr
     on nr.sla_rollup_id = sr.id 
     and nr.address = al.address
 where sr.time > $2 and sr.time <= $3
@@ -2695,13 +2695,13 @@ func (q *Queries) GetRollupReportsForNodesInTimeRange(ctx context.Context, arg G
 
 const getSlaRollupWithBlockEnd = `-- name: GetSlaRollupWithBlockEnd :one
 select id, tx_hash, block_start, block_end, time
-from sla_rollups
+from core_sla_rollups
 where block_end = $1
 `
 
-func (q *Queries) GetSlaRollupWithBlockEnd(ctx context.Context, blockEnd int64) (SlaRollup, error) {
+func (q *Queries) GetSlaRollupWithBlockEnd(ctx context.Context, blockEnd int64) (CoreSlaRollup, error) {
 	row := q.db.QueryRow(ctx, getSlaRollupWithBlockEnd, blockEnd)
-	var i SlaRollup
+	var i CoreSlaRollup
 	err := row.Scan(
 		&i.ID,
 		&i.TxHash,
@@ -2714,13 +2714,13 @@ func (q *Queries) GetSlaRollupWithBlockEnd(ctx context.Context, blockEnd int64) 
 
 const getSlaRollupWithId = `-- name: GetSlaRollupWithId :one
 select id, tx_hash, block_start, block_end, time
-from sla_rollups
+from core_sla_rollups
 where id = $1
 `
 
-func (q *Queries) GetSlaRollupWithId(ctx context.Context, id int32) (SlaRollup, error) {
+func (q *Queries) GetSlaRollupWithId(ctx context.Context, id int32) (CoreSlaRollup, error) {
 	row := q.db.QueryRow(ctx, getSlaRollupWithId, id)
-	var i SlaRollup
+	var i CoreSlaRollup
 	err := row.Scan(
 		&i.ID,
 		&i.TxHash,
@@ -2733,13 +2733,13 @@ func (q *Queries) GetSlaRollupWithId(ctx context.Context, id int32) (SlaRollup, 
 
 const getSlaRollupWithTimestamp = `-- name: GetSlaRollupWithTimestamp :one
 select id, tx_hash, block_start, block_end, time
-from sla_rollups
+from core_sla_rollups
 where time = $1
 `
 
-func (q *Queries) GetSlaRollupWithTimestamp(ctx context.Context, time pgtype.Timestamp) (SlaRollup, error) {
+func (q *Queries) GetSlaRollupWithTimestamp(ctx context.Context, time pgtype.Timestamp) (CoreSlaRollup, error) {
 	row := q.db.QueryRow(ctx, getSlaRollupWithTimestamp, time)
-	var i SlaRollup
+	var i CoreSlaRollup
 	err := row.Scan(
 		&i.ID,
 		&i.TxHash,
@@ -2752,7 +2752,7 @@ func (q *Queries) GetSlaRollupWithTimestamp(ctx context.Context, time pgtype.Tim
 
 const getStorageProof = `-- name: GetStorageProof :one
 select id, block_height, address, cid, proof_signature, proof, prover_addresses, status
-from storage_proofs
+from core_storage_proofs
 where block_height = $1
     and address = $2
 `
@@ -2762,9 +2762,9 @@ type GetStorageProofParams struct {
 	Address     string
 }
 
-func (q *Queries) GetStorageProof(ctx context.Context, arg GetStorageProofParams) (StorageProof, error) {
+func (q *Queries) GetStorageProof(ctx context.Context, arg GetStorageProofParams) (CoreStorageProof, error) {
 	row := q.db.QueryRow(ctx, getStorageProof, arg.BlockHeight, arg.Address)
-	var i StorageProof
+	var i CoreStorageProof
 	err := row.Scan(
 		&i.ID,
 		&i.BlockHeight,
@@ -2780,7 +2780,7 @@ func (q *Queries) GetStorageProof(ctx context.Context, arg GetStorageProofParams
 
 const getStorageProofPeers = `-- name: GetStorageProofPeers :one
 select prover_addresses
-from storage_proof_peers
+from core_storage_proof_peers
 where block_height = $1
 `
 
@@ -2797,7 +2797,7 @@ select address,
         where status = 'fail'
     ) as failed_count,
     count(*) as total_count
-from storage_proofs
+from core_storage_proofs
 where address = $1
     and block_height >= $2
     and block_height <= $3
@@ -2829,7 +2829,7 @@ select address,
         where status = 'fail'
     ) as failed_count,
     count(*) as total_count
-from storage_proofs
+from core_storage_proofs
 where block_height >= $1
     and block_height <= $2
 group by address
@@ -2868,19 +2868,19 @@ func (q *Queries) GetStorageProofRollups(ctx context.Context, arg GetStorageProo
 
 const getStorageProofs = `-- name: GetStorageProofs :many
 select id, block_height, address, cid, proof_signature, proof, prover_addresses, status
-from storage_proofs
+from core_storage_proofs
 where block_height = $1
 `
 
-func (q *Queries) GetStorageProofs(ctx context.Context, blockHeight int64) ([]StorageProof, error) {
+func (q *Queries) GetStorageProofs(ctx context.Context, blockHeight int64) ([]CoreStorageProof, error) {
 	rows, err := q.db.Query(ctx, getStorageProofs, blockHeight)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []StorageProof
+	var items []CoreStorageProof
 	for rows.Next() {
-		var i StorageProof
+		var i CoreStorageProof
 		if err := rows.Scan(
 			&i.ID,
 			&i.BlockHeight,
@@ -2903,10 +2903,10 @@ func (q *Queries) GetStorageProofs(ctx context.Context, blockHeight int64) ([]St
 
 const getStorageProofsForNodeInRange = `-- name: GetStorageProofsForNodeInRange :many
 select id, block_height, address, cid, proof_signature, proof, prover_addresses, status
-from storage_proofs
+from core_storage_proofs
 where block_height in (
         select block_height
-        from storage_proofs sp
+        from core_storage_proofs sp
         where sp.block_height >= $1
             and sp.block_height <= $2
             and sp.address = $3
@@ -2919,15 +2919,15 @@ type GetStorageProofsForNodeInRangeParams struct {
 	Address       string
 }
 
-func (q *Queries) GetStorageProofsForNodeInRange(ctx context.Context, arg GetStorageProofsForNodeInRangeParams) ([]StorageProof, error) {
+func (q *Queries) GetStorageProofsForNodeInRange(ctx context.Context, arg GetStorageProofsForNodeInRangeParams) ([]CoreStorageProof, error) {
 	rows, err := q.db.Query(ctx, getStorageProofsForNodeInRange, arg.BlockHeight, arg.BlockHeight_2, arg.Address)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []StorageProof
+	var items []CoreStorageProof
 	for rows.Next() {
-		var i StorageProof
+		var i CoreStorageProof
 		if err := rows.Scan(
 			&i.ID,
 			&i.BlockHeight,
@@ -2971,7 +2971,7 @@ func (q *Queries) GetTx(ctx context.Context, lower string) (CoreTransaction, err
 
 const getValidatorHistoryForID = `-- name: GetValidatorHistoryForID :one
 select rowid, endpoint, eth_address, comet_address, sp_id, service_type, event_type, event_time, event_block
-from validator_history
+from core_validator_history
 where sp_id = $1
     and service_type = $2
 order by event_time desc
@@ -2983,9 +2983,9 @@ type GetValidatorHistoryForIDParams struct {
 	ServiceType string
 }
 
-func (q *Queries) GetValidatorHistoryForID(ctx context.Context, arg GetValidatorHistoryForIDParams) (ValidatorHistory, error) {
+func (q *Queries) GetValidatorHistoryForID(ctx context.Context, arg GetValidatorHistoryForIDParams) (CoreValidatorHistory, error) {
 	row := q.db.QueryRow(ctx, getValidatorHistoryForID, arg.SpID, arg.ServiceType)
-	var i ValidatorHistory
+	var i CoreValidatorHistory
 	err := row.Scan(
 		&i.Rowid,
 		&i.Endpoint,
@@ -3003,7 +3003,7 @@ func (q *Queries) GetValidatorHistoryForID(ctx context.Context, arg GetValidator
 const hasAccessToTrackRelease = `-- name: HasAccessToTrackRelease :one
 select exists (
         select 1
-        from access_keys
+        from core_access_keys
         where track_id = $1
             and pub_key = $2
     )

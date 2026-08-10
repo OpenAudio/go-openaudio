@@ -105,21 +105,21 @@ func fixtureSignerWallet(t *testing.T) string {
 // setupAccessAuthorityFixture points the fixture cid at a track whose only access
 // authority is authority, and clears the surrounding state the check depends on.
 //
-// sound_recordings and management_keys belong to core, which shares a database with
+// core_sound_recordings and core_management_keys belong to core, which shares a database with
 // mediorum in production. The mediorum unit-test database only runs mediorum's own
 // migrations, so the tables have to be created here.
 func setupAccessAuthorityFixture(t *testing.T, ss *MediorumServer, authority string) {
 	t.Helper()
 
 	for _, stmt := range []string{
-		`create table if not exists sound_recordings(
+		`create table if not exists core_sound_recordings(
 			id serial primary key,
 			sound_recording_id text not null,
 			track_id text not null,
 			cid text not null unique,
 			encoding_details text
 		)`,
-		`create table if not exists management_keys(
+		`create table if not exists core_management_keys(
 			id serial primary key,
 			track_id text not null,
 			address text not null
@@ -129,11 +129,11 @@ func setupAccessAuthorityFixture(t *testing.T, ss *MediorumServer, authority str
 	}
 
 	require.NoError(t, ss.crud.DB.Exec(
-		`insert into sound_recordings (sound_recording_id, track_id, cid) values (?, ?, ?)
+		`insert into core_sound_recordings (sound_recording_id, track_id, cid) values (?, ?, ?)
 		 on conflict (cid) do update set track_id = excluded.track_id`,
 		"sr_"+testSigTrackID, testSigTrackID, testSigCid).Error)
 	require.NoError(t, ss.crud.DB.Exec(
-		`insert into management_keys (track_id, address) values (?, ?)`,
+		`insert into core_management_keys (track_id, address) values (?, ?)`,
 		testSigTrackID, authority).Error)
 
 	// requireRegisteredSignature memoizes the track lookup per cid for 5 minutes.
@@ -146,8 +146,8 @@ func setupAccessAuthorityFixture(t *testing.T, ss *MediorumServer, authority str
 	t.Cleanup(func() {
 		ss.Config.Signers, ss.Config.Peers = origSigners, origPeers
 		ss.trackAccessInfoCache.Remove(testSigCid)
-		ss.crud.DB.Exec(`delete from management_keys where track_id = ?`, testSigTrackID)
-		ss.crud.DB.Exec(`delete from sound_recordings where cid = ?`, testSigCid)
+		ss.crud.DB.Exec(`delete from core_management_keys where track_id = ?`, testSigTrackID)
+		ss.crud.DB.Exec(`delete from core_sound_recordings where cid = ?`, testSigCid)
 	})
 }
 

@@ -18,25 +18,25 @@ update core_validators set jailed = false where comet_address = $1;
 
 -- name: UpsertSlaRollupReport :exec
 with updated as (
-    update sla_node_reports 
+    update core_sla_node_reports 
     set blocks_proposed = blocks_proposed + 1
     where address = $1 and sla_rollup_id is null
     returning *
 )
-insert into sla_node_reports (address, blocks_proposed, sla_rollup_id)
+insert into core_sla_node_reports (address, blocks_proposed, sla_rollup_id)
 select $1, 1, null
 where not exists (select 1 from updated);
 
 -- name: ClearUncommittedSlaNodeReports :exec
-delete from sla_node_reports
+delete from core_sla_node_reports
 where sla_rollup_id is null;
 
 -- name: CommitSlaNodeReport :exec
-insert into sla_node_reports (sla_rollup_id, address, blocks_proposed)
+insert into core_sla_node_reports (sla_rollup_id, address, blocks_proposed)
 values ($1, $2, $3);
 
 -- name: CommitSlaRollup :one
-insert into sla_rollups (time, tx_hash, block_start, block_end)
+insert into core_sla_rollups (time, tx_hash, block_start, block_end)
 values ($1, $2, $3, $4)
 returning id;
 
@@ -54,20 +54,20 @@ insert into core_transactions (block_id, index, tx_hash, transaction, created_at
 values ($1, $2, $3, $4, $5);
 
 -- name: InsertStorageProofPeers :exec
-insert into storage_proof_peers (block_height, prover_addresses)
+insert into core_storage_proof_peers (block_height, prover_addresses)
 values ($1, $2);
 
 -- name: InsertStorageProof :exec
-insert into storage_proofs (block_height, address, cid, proof_signature, prover_addresses)
+insert into core_storage_proofs (block_height, address, cid, proof_signature, prover_addresses)
 values ($1, $2, $3, $4, $5);
 
 -- name: UpdateStorageProof :exec
-update storage_proofs 
+update core_storage_proofs 
 set proof = $1, status = $2
 where block_height = $3 and address = $4;
 
 -- name: InsertFailedStorageProof :exec
-insert into storage_proofs (block_height, address, status)
+insert into core_storage_proofs (block_height, address, status)
 values ($1, $2, 'fail');
 
 -- name: InsertEtlTx :exec
@@ -220,23 +220,23 @@ where not exists (select 1 from duplicate_check)
 on conflict (tx_hash, table_name) do nothing;
 
 -- name: InsertTrackId :exec
-insert into track_releases (track_id) values ($1);
+insert into core_track_releases (track_id) values ($1);
 
 -- name: InsertSoundRecording :exec
-insert into sound_recordings (sound_recording_id, track_id, cid, encoding_details) 
+insert into core_sound_recordings (sound_recording_id, track_id, cid, encoding_details) 
 values ($1, $2, $3, $4);
 
 -- name: InsertAccessKey :exec
-insert into access_keys (track_id, pub_key) values ($1, $2);
+insert into core_access_keys (track_id, pub_key) values ($1, $2);
 
 -- name: InsertManagementKey :exec
-insert into management_keys (track_id, address) values ($1, $2);
+insert into core_management_keys (track_id, address) values ($1, $2);
 
 -- name: DeleteManagementKeysByTrackID :exec
-delete from management_keys where track_id = $1;
+delete from core_management_keys where track_id = $1;
 
 -- name: DeleteSoundRecordingsByTrackID :exec
-delete from sound_recordings where track_id = $1;
+delete from core_sound_recordings where track_id = $1;
 
 -- ERN, MEAD, PIE insert queries - using protobuf storage with new schema
 -- name: InsertCoreERN :exec
@@ -317,7 +317,7 @@ insert into core_pie (
 ) values ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: AppendValidatorHistory :exec
-insert into validator_history (
+insert into core_validator_history (
     endpoint,
     eth_address,
     comet_address,

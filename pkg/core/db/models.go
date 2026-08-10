@@ -54,7 +54,7 @@ func (ns NullProofStatus) Value() (driver.Value, error) {
 	return string(ns.ProofStatus), nil
 }
 
-type AccessKey struct {
+type CoreAccessKey struct {
 	ID      int32
 	TrackID string
 	PubKey  string
@@ -224,6 +224,19 @@ type CoreEtlTxValidatorRegistration struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
+type CoreLaunchpadAuthorityRm struct {
+	Authority            string
+	RewardsManagerPubkey string
+	CreatedAt            pgtype.Timestamptz
+}
+
+type CoreManagementKey struct {
+	ID        int32
+	TrackID   string
+	Address   string
+	CreatedAt pgtype.Timestamptz
+}
+
 type CoreMead struct {
 	ID                int64
 	Address           string
@@ -302,6 +315,51 @@ type CoreRewardPool struct {
 	UpdatedAt            pgtype.Timestamptz
 }
 
+type CoreSlaNodeReport struct {
+	ID             int32
+	Address        string
+	BlocksProposed int32
+	SlaRollupID    pgtype.Int4
+}
+
+type CoreSlaRollup struct {
+	ID         int32
+	TxHash     string
+	BlockStart int64
+	BlockEnd   int64
+	Time       pgtype.Timestamp
+}
+
+type CoreSoundRecording struct {
+	ID               int32
+	SoundRecordingID string
+	TrackID          string
+	Cid              string
+	EncodingDetails  pgtype.Text
+}
+
+type CoreStorageProof struct {
+	ID              int32
+	BlockHeight     int64
+	Address         string
+	Cid             pgtype.Text
+	ProofSignature  pgtype.Text
+	Proof           pgtype.Text
+	ProverAddresses []string
+	Status          ProofStatus
+}
+
+type CoreStorageProofPeer struct {
+	ID              int32
+	BlockHeight     int64
+	ProverAddresses []string
+}
+
+type CoreTrackRelease struct {
+	ID      int32
+	TrackID string
+}
+
 type CoreTransaction struct {
 	Rowid       int64
 	BlockID     int64
@@ -345,65 +403,7 @@ type CoreValidator struct {
 	Jailed       bool
 }
 
-type LaunchpadAuthorityRm struct {
-	Authority            string
-	RewardsManagerPubkey string
-	CreatedAt            pgtype.Timestamptz
-}
-
-type ManagementKey struct {
-	ID        int32
-	TrackID   string
-	Address   string
-	CreatedAt pgtype.Timestamptz
-}
-
-type SlaNodeReport struct {
-	ID             int32
-	Address        string
-	BlocksProposed int32
-	SlaRollupID    pgtype.Int4
-}
-
-type SlaRollup struct {
-	ID         int32
-	TxHash     string
-	BlockStart int64
-	BlockEnd   int64
-	Time       pgtype.Timestamp
-}
-
-type SoundRecording struct {
-	ID               int32
-	SoundRecordingID string
-	TrackID          string
-	Cid              string
-	EncodingDetails  pgtype.Text
-}
-
-type StorageProof struct {
-	ID              int32
-	BlockHeight     int64
-	Address         string
-	Cid             pgtype.Text
-	ProofSignature  pgtype.Text
-	Proof           pgtype.Text
-	ProverAddresses []string
-	Status          ProofStatus
-}
-
-type StorageProofPeer struct {
-	ID              int32
-	BlockHeight     int64
-	ProverAddresses []string
-}
-
-type TrackRelease struct {
-	ID      int32
-	TrackID string
-}
-
-type ValidatorHistory struct {
+type CoreValidatorHistory struct {
 	Rowid        int32
 	Endpoint     string
 	EthAddress   string

@@ -45,7 +45,7 @@ func presignedURLExpiry(durationSeconds float64) time.Duration {
 }
 
 // InvalidateTrackAccessCacheForTrack removes cached track access info for the given track.
-// Called when management_keys change (gate/ungate). Never fails the caller.
+// Called when core_management_keys change (gate/ungate). Never fails the caller.
 func (ss *MediorumServer) InvalidateTrackAccessCacheForTrack(trackID string) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -53,7 +53,7 @@ func (ss *MediorumServer) InvalidateTrackAccessCacheForTrack(trackID string) {
 		}
 	}()
 	var cids []string
-	if res := ss.crud.DB.Table("sound_recordings").Where("track_id = ?", trackID).Pluck("cid", &cids); res.Error != nil {
+	if res := ss.crud.DB.Table("core_sound_recordings").Where("track_id = ?", trackID).Pluck("cid", &cids); res.Error != nil {
 		ss.logger.Debug("track access cache invalidation query failed", zap.Error(res.Error), zap.String("track_id", trackID))
 		return
 	}
@@ -491,9 +491,9 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 				managementKeyCount = info.ManagementKeyCount
 				durationSeconds = info.DurationSeconds
 			} else {
-				s.crud.DB.Raw("SELECT track_id FROM sound_recordings WHERE cid = ?", cid).Scan(&trackID)
+				s.crud.DB.Raw("SELECT track_id FROM core_sound_recordings WHERE cid = ?", cid).Scan(&trackID)
 				if trackID != "" {
-					s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ?", trackID).Scan(&managementKeyCount)
+					s.crud.DB.Raw("SELECT COUNT(*) FROM core_management_keys WHERE track_id = ?", trackID).Scan(&managementKeyCount)
 				}
 				// Look up track duration from uploads table (for presigned URL expiry)
 				if s.Config.BlobStorageStreaming {
@@ -510,11 +510,11 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 			}
 			c.Set("trackDurationSeconds", durationSeconds)
 
-			// If track has access_authorities (management_keys), ONLY those signers may authorize - not validator keys
+			// If track has access_authorities (core_management_keys), ONLY those signers may authorize - not validator keys
 			if trackID != "" && managementKeyCount > 0 {
 				var count int
 				normalizedSignerWallet := strings.ToLower(sig.SignerWallet)
-				s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackID, normalizedSignerWallet).Scan(&count)
+				s.crud.DB.Raw("SELECT COUNT(*) FROM core_management_keys WHERE track_id = ? AND address = ?", trackID, normalizedSignerWallet).Scan(&count)
 				if count == 0 {
 					s.logger.Debug("sig no match (access_authorities)", zap.String("signed by", sig.SignerWallet), zap.String("track_id", trackID))
 					return c.JSON(401, map[string]string{
@@ -701,14 +701,14 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 	}
 
 	var cid string
-	ss.crud.DB.Raw("SELECT cid FROM sound_recordings WHERE track_id = ?", trackId).Scan(&cid)
+	ss.crud.DB.Raw("SELECT cid FROM core_sound_recordings WHERE track_id = ?", trackId).Scan(&cid)
 	if cid == "" {
 		return c.JSON(404, "track not found")
 	}
 
 	var count int
 	normalizedSignerWallet := strings.ToLower(sig.SignerWallet)
-	ss.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackId, normalizedSignerWallet).Scan(&count)
+	ss.crud.DB.Raw("SELECT COUNT(*) FROM core_management_keys WHERE track_id = ? AND address = ?", trackId, normalizedSignerWallet).Scan(&count)
 	if count == 0 {
 		ss.logger.Debug("sig no match", zap.String("signed by", sig.SignerWallet))
 		return c.JSON(401, map[string]string{

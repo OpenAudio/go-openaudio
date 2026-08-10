@@ -49,7 +49,7 @@ import (
 
 const DefaultOpsRetention = 30 * 24 * time.Hour
 
-// trackAccessInfo caches sound_recordings + management_keys lookup for cidstream auth
+// trackAccessInfo caches core_sound_recordings + core_management_keys lookup for cidstream auth
 type trackAccessInfo struct {
 	TrackID            string
 	ManagementKeyCount int

@@ -304,7 +304,7 @@ func (s *Server) finalizeStorageProof(ctx context.Context, tx *v1.SignedTransact
 	proofSigStr := base64.StdEncoding.EncodeToString(sp.ProofSignature)
 
 	// pgx serializes a nil slice as SQL NULL, which violates the NOT NULL
-	// constraint on storage_proofs.prover_addresses and aborts the
+	// constraint on core_storage_proofs.prover_addresses and aborts the
 	// FinalizeBlock transaction — halting the chain.
 	proverAddresses := sp.ProverAddresses
 	if proverAddresses == nil {

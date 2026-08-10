@@ -24,7 +24,7 @@ func (s *Server) validateManageEntity(_ context.Context, stx *v1.SignedTransacti
 }
 
 // finalizeManageEntityMigration handles ManageEntityLegacyMigration transactions written
-// by genesis-writer. Populates sound_recordings and management_keys for Track
+// by genesis-writer. Populates core_sound_recordings and core_management_keys for Track
 // creates that carry access_authorities, matching the finalizeManageEntity path.
 func (s *Server) finalizeManageEntityMigration(ctx context.Context, stx *v1.SignedTransaction) (proto.Message, error) {
 	me := stx.GetManageEntityMigration()
@@ -70,7 +70,7 @@ func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransac
 
 	manageEntity := tx.(*v1.ManageEntityLegacy)
 
-	// Populate sound_recordings and management_keys for Track Create/Update
+	// Populate core_sound_recordings and core_management_keys for Track Create/Update
 	if strings.EqualFold(manageEntity.EntityType, "Track") &&
 		(strings.EqualFold(manageEntity.Action, "Create") || strings.EqualFold(manageEntity.Action, "Update")) {
 		if err := s.processTrackManageEntity(ctx, manageEntity); err != nil {
@@ -127,7 +127,7 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 		// access_authorities null/empty: ungate the track by removing management keys
 		// (no track_cid needed, likely an update)
 		if err := q.DeleteManagementKeysByTrackID(ctx, trackID); err != nil {
-			return fmt.Errorf("delete management_keys: %w", err)
+			return fmt.Errorf("delete core_management_keys: %w", err)
 		}
 		s.invalidateTrackAccessCache(trackID)
 		return nil
@@ -141,10 +141,10 @@ func (s *Server) processTrackManageEntity(ctx context.Context, me *v1.ManageEnti
 	// These operations run in the block's pg tx (getDb returns WithTx(onGoingBlock)).
 	// Replace existing rows (handles both Create and Update)
 	if err := q.DeleteSoundRecordingsByTrackID(ctx, trackID); err != nil {
-		return fmt.Errorf("delete sound_recordings: %w", err)
+		return fmt.Errorf("delete core_sound_recordings: %w", err)
 	}
 	if err := q.DeleteManagementKeysByTrackID(ctx, trackID); err != nil {
-		return fmt.Errorf("delete management_keys: %w", err)
+		return fmt.Errorf("delete core_management_keys: %w", err)
 	}
 
 	soundRecordingID := fmt.Sprintf("sr_%s", trackID)

@@ -31,7 +31,7 @@ import (
 // (sha256 over a pipe-delimited canonical string — see
 // pkg/common/legacy_reward_signing.go), and bind the reward to a real-RM
 // pool by looking up any one of its inline claim_authorities in the
-// launchpad_authority_rm seed (matching the migration backfill exactly).
+// core_launchpad_authority_rm seed (matching the migration backfill exactly).
 // For DeleteReward we re-check authorization against the existing reward's
 // pool authorities. Rewards whose authorities don't match any launchpad
 // entry are inserted with NULL rewards_manager_pubkey.
@@ -69,7 +69,7 @@ func tryParseLegacyReward(rm *corev1.RewardMessage) (*corev1.LegacyRewardMessage
 
 // finalizeLegacyRewardTransaction applies a legacy-shape reward tx. For
 // CreateReward, the reward's RM is resolved by looking up any one of its
-// inline claim_authorities in the launchpad_authority_rm mapping (the
+// inline claim_authorities in the core_launchpad_authority_rm mapping (the
 // schema migration populates this table); rewards whose authorities
 // don't match any known launchpad authority are inserted with NULL
 // rewards_manager_pubkey. For DeleteReward, the row is removed after
@@ -132,7 +132,7 @@ func (s *Server) finalizeLegacyCreateReward(ctx context.Context, req *abcitypes.
 	qtx := s.getDb()
 
 	// Resolve the reward's RM by looking for a launchpad-derived authority
-	// among the message's inline claim_authorities. The launchpad_authority_rm
+	// among the message's inline claim_authorities. The core_launchpad_authority_rm
 	// table (populated by the schema migration) maps each per-mint claim
 	// authority (lowercased eth hex) to the Solana reward manager state
 	// account that mint's rewards live under. This produces the SAME

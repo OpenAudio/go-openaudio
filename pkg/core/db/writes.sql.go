@@ -12,7 +12,7 @@ import (
 )
 
 const appendValidatorHistory = `-- name: AppendValidatorHistory :exec
-insert into validator_history (
+insert into core_validator_history (
     endpoint,
     eth_address,
     comet_address,
@@ -50,7 +50,7 @@ func (q *Queries) AppendValidatorHistory(ctx context.Context, arg AppendValidato
 }
 
 const clearUncommittedSlaNodeReports = `-- name: ClearUncommittedSlaNodeReports :exec
-delete from sla_node_reports
+delete from core_sla_node_reports
 where sla_rollup_id is null
 `
 
@@ -60,7 +60,7 @@ func (q *Queries) ClearUncommittedSlaNodeReports(ctx context.Context) error {
 }
 
 const commitSlaNodeReport = `-- name: CommitSlaNodeReport :exec
-insert into sla_node_reports (sla_rollup_id, address, blocks_proposed)
+insert into core_sla_node_reports (sla_rollup_id, address, blocks_proposed)
 values ($1, $2, $3)
 `
 
@@ -76,7 +76,7 @@ func (q *Queries) CommitSlaNodeReport(ctx context.Context, arg CommitSlaNodeRepo
 }
 
 const commitSlaRollup = `-- name: CommitSlaRollup :one
-insert into sla_rollups (time, tx_hash, block_start, block_end)
+insert into core_sla_rollups (time, tx_hash, block_start, block_end)
 values ($1, $2, $3, $4)
 returning id
 `
@@ -111,7 +111,7 @@ func (q *Queries) DeleteCoreReward(ctx context.Context, address string) error {
 }
 
 const deleteManagementKeysByTrackID = `-- name: DeleteManagementKeysByTrackID :exec
-delete from management_keys where track_id = $1
+delete from core_management_keys where track_id = $1
 `
 
 func (q *Queries) DeleteManagementKeysByTrackID(ctx context.Context, trackID string) error {
@@ -130,7 +130,7 @@ func (q *Queries) DeleteRegisteredNode(ctx context.Context, cometAddress string)
 }
 
 const deleteSoundRecordingsByTrackID = `-- name: DeleteSoundRecordingsByTrackID :exec
-delete from sound_recordings where track_id = $1
+delete from core_sound_recordings where track_id = $1
 `
 
 func (q *Queries) DeleteSoundRecordingsByTrackID(ctx context.Context, trackID string) error {
@@ -139,7 +139,7 @@ func (q *Queries) DeleteSoundRecordingsByTrackID(ctx context.Context, trackID st
 }
 
 const insertAccessKey = `-- name: InsertAccessKey :exec
-insert into access_keys (track_id, pub_key) values ($1, $2)
+insert into core_access_keys (track_id, pub_key) values ($1, $2)
 `
 
 type InsertAccessKeyParams struct {
@@ -859,7 +859,7 @@ func (q *Queries) InsertEtlTx(ctx context.Context, arg InsertEtlTxParams) error 
 }
 
 const insertFailedStorageProof = `-- name: InsertFailedStorageProof :exec
-insert into storage_proofs (block_height, address, status)
+insert into core_storage_proofs (block_height, address, status)
 values ($1, $2, 'fail')
 `
 
@@ -915,7 +915,7 @@ func (q *Queries) InsertFileUpload(ctx context.Context, arg InsertFileUploadPara
 }
 
 const insertManagementKey = `-- name: InsertManagementKey :exec
-insert into management_keys (track_id, address) values ($1, $2)
+insert into core_management_keys (track_id, address) values ($1, $2)
 `
 
 type InsertManagementKeyParams struct {
@@ -980,7 +980,7 @@ func (q *Queries) InsertRewardPool(ctx context.Context, arg InsertRewardPoolPara
 }
 
 const insertSoundRecording = `-- name: InsertSoundRecording :exec
-insert into sound_recordings (sound_recording_id, track_id, cid, encoding_details) 
+insert into core_sound_recordings (sound_recording_id, track_id, cid, encoding_details) 
 values ($1, $2, $3, $4)
 `
 
@@ -1002,7 +1002,7 @@ func (q *Queries) InsertSoundRecording(ctx context.Context, arg InsertSoundRecor
 }
 
 const insertStorageProof = `-- name: InsertStorageProof :exec
-insert into storage_proofs (block_height, address, cid, proof_signature, prover_addresses)
+insert into core_storage_proofs (block_height, address, cid, proof_signature, prover_addresses)
 values ($1, $2, $3, $4, $5)
 `
 
@@ -1026,7 +1026,7 @@ func (q *Queries) InsertStorageProof(ctx context.Context, arg InsertStorageProof
 }
 
 const insertStorageProofPeers = `-- name: InsertStorageProofPeers :exec
-insert into storage_proof_peers (block_height, prover_addresses)
+insert into core_storage_proof_peers (block_height, prover_addresses)
 values ($1, $2)
 `
 
@@ -1041,7 +1041,7 @@ func (q *Queries) InsertStorageProofPeers(ctx context.Context, arg InsertStorage
 }
 
 const insertTrackId = `-- name: InsertTrackId :exec
-insert into track_releases (track_id) values ($1)
+insert into core_track_releases (track_id) values ($1)
 `
 
 func (q *Queries) InsertTrackId(ctx context.Context, trackID string) error {
@@ -1243,7 +1243,7 @@ func (q *Queries) UpdateRewardPoolAuthorities(ctx context.Context, arg UpdateRew
 }
 
 const updateStorageProof = `-- name: UpdateStorageProof :exec
-update storage_proofs 
+update core_storage_proofs 
 set proof = $1, status = $2
 where block_height = $3 and address = $4
 `
@@ -1363,12 +1363,12 @@ func (q *Queries) UpsertLegacyReplayRewardPool(ctx context.Context, arg UpsertLe
 
 const upsertSlaRollupReport = `-- name: UpsertSlaRollupReport :exec
 with updated as (
-    update sla_node_reports 
+    update core_sla_node_reports 
     set blocks_proposed = blocks_proposed + 1
     where address = $1 and sla_rollup_id is null
     returning id, address, blocks_proposed, sla_rollup_id
 )
-insert into sla_node_reports (address, blocks_proposed, sla_rollup_id)
+insert into core_sla_node_reports (address, blocks_proposed, sla_rollup_id)
 select $1, 1, null
 where not exists (select 1 from updated)
 `

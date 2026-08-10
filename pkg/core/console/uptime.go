@@ -77,8 +77,8 @@ func (cs *Console) uptimeFragment(c echo.Context) error {
 	})
 }
 
-func (cs *Console) getActiveSlaRollup(ctx context.Context, rollupBlockEndParam string) (db.SlaRollup, error) {
-	var rollup db.SlaRollup
+func (cs *Console) getActiveSlaRollup(ctx context.Context, rollupBlockEndParam string) (db.CoreSlaRollup, error) {
+	var rollup db.CoreSlaRollup
 	var err error
 	if rollupBlockEndParam == "" || rollupBlockEndParam == "latest" {
 		rollup, err = cs.db.GetLatestSlaRollup(ctx)
