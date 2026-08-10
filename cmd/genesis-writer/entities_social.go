@@ -258,9 +258,12 @@ func (w *Writer) writeMutedUsers(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("marshal muted user metadata: %w", err)
 			}
+			// A mute is expressed on the User entity, not a "MutedUser" one:
+			// that is what the SDK emits (EntityType.USER + Action.MUTE) and
+			// the only key the indexer's mute handler is registered under.
 			return w.addManageEntityWithSigner(ctx, &corev1.ManageEntityLegacy{
 				UserId:     m.userID,
-				EntityType: "MutedUser",
+				EntityType: "User",
 				EntityId:   m.mutedUserID,
 				Action:     "Mute",
 				Metadata:   string(metaJSON),
