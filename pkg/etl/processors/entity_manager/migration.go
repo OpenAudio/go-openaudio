@@ -312,6 +312,14 @@ func (h *migratedUserCreateHandler) Handle(ctx context.Context, params *Params) 
 	if v := params.MetadataString("profile_type"); isKnownProfileType(v) {
 		state.ProfileType = &v
 	}
+	// spl_usdc_payout_wallet and coin_flair_mint are read on a production create
+	// too (CreateUserSchema carries the payout wallet), but this handler builds
+	// its own userState and so has to read them itself or they are dropped for
+	// every migrated row: 3,816 users have a payout wallet and 96 a coin flair
+	// mint. An empty string inserts as NULL, which matters -- the source holds
+	// 376 empty-string coin_flair_mint rows that are not a set value.
+	state.SplUsdcPayoutWallet = nullStrPtrFromMeta(params, "spl_usdc_payout_wallet")
+	state.CoinFlairMint = nullStrPtrFromMeta(params, "coin_flair_mint")
 	return insertUserWithState(ctx, params, state)
 }
 
@@ -358,7 +366,17 @@ func (h *migratedGrantCreateHandler) EntityType() string { return EntityTypeGran
 func (h *migratedGrantCreateHandler) Action() string     { return ActionCreate }
 
 func (h *migratedGrantCreateHandler) Handle(ctx context.Context, params *Params) error {
-	return insertGrantWithState(ctx, params, params.MetadataBoolOr("is_revoked", false))
+	state := grantState{IsRevoked: params.MetadataBoolOr("is_revoked", false)}
+	// An absent is_approved keeps the production derivation, which is right for
+	// the 79 grants the source leaves NULL. A present value wins, including
+	// false: rejecting a grant records is_approved = false alongside
+	// is_revoked = true, and no follow-up Grant/Approve or Grant/Reject
+	// transaction can reproduce that pair -- Approve forces is_revoked to false,
+	// and both require the grantee's own wallet as the signer.
+	if v, ok := params.MetadataBool("is_approved"); ok {
+		state.IsApproved = &v
+	}
+	return insertGrantWithState(ctx, params, state)
 }
 
 func migratedGrantCreate() Handler { return &migratedGrantCreateHandler{} }
