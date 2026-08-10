@@ -214,27 +214,40 @@ go run ./examples/etl \
 Uses debug-level logging to show every transaction's payload and processing result.
 Progress is logged at INFO level every 10 seconds (block height, tx counts).
 
-### Parity testing (against production clone)
+### Parity testing (against a reference database)
 
-Standalone CLI tool in `pkg/etl/parity/` for comparing Go ETL output against the pre-cutover rows written by the legacy Python indexer. This tool was used to validate the production cutover (now complete); it remains useful for auditing the Go ETL against a snapshot of historical data.
+Standalone CLI tool in `pkg/etl/parity/` for checking ETL output against a reference database holding the rows it should reproduce: either the pre-cutover rows written by the legacy Python indexer, or a Discovery Provider snapshot that a genesis migration was replayed from.
 
 ```bash
 cd pkg/etl
 
-# 1. Snapshot baseline (records max chain height + row counts)
-go run ./parity snapshot --db "$ETL_DB_URL"
+# Check every generated query against both schemas first (seconds, no scans)
+go run ./parity --db "$ETL_DB_URL" --prod-db "$PROD_DB_URL" --validate-only
 
-# 2. Run the ETL for some duration
-go run ../../examples/etl --rpc https://rpc.audius.co --db "$ETL_DB_URL" --start <snapshot_max_block + 1>
-
-# 3. Diff results
-go run ./parity diff --db "$ETL_DB_URL"
-
-# 4. Cleanup
-go run ./parity cleanup --db "$ETL_DB_URL"
+# Full run
+go run ./parity --db "$ETL_DB_URL" --prod-db "$PROD_DB_URL"
 ```
 
-The diff cross-references `etl_manage_entities` (which logs every ManageEntity tx) with domain table growth to find match rates, and runs structural integrity checks (non-null required fields, FK targets exist, is_current consistency).
+Three checks, in increasing order of what they can see:
+
+1. **Row counts** — catch a table that was never written.
+2. **Whole-table column aggregates** — catch a table with the right number of rows and a column empty in all of them. This is the layer that matters: `tracks` once came out 1,955,896 reference rows against 1,955,877 indexed, a delta small enough to look like noise, while `playlists_containing_track` was populated on 943,784 reference rows and **zero** indexed ones. Those columns gate album-purchase access to tracks, and row counts saw nothing. A check that is non-zero on one side and zero on the other always fails, whatever `--tolerance-pct` says.
+3. **Field-by-field row comparison** over a deterministic sample — catch values that are wrong rather than missing.
+
+Useful flags:
+
+| Flag | Effect |
+| --- | --- |
+| `--validate-only` | Run every query with an impossible predicate against both databases and exit. Catches a column that exists on only one side in seconds. |
+| `--aggregates=false` / `--rows=false` | Run only one of the two layers. |
+| `--tables tracks,playlists` | Restrict the run. |
+| `--sample-mod N` / `--sample-offset k` | Compare only rows where `mod(abs(id), N) = k`. `1` compares every row; `0` (default) picks `N` per table from its size. |
+| `--sample-rows` | Target sampled rows per table in auto mode (default 25000). |
+| `--tolerance-pct` | Aggregate difference tolerated before a check fails (default 0.5). |
+
+Sampling is arithmetic on the entity id, not `TABLESAMPLE`: it has to be reproducible across runs and select the same logical rows on both sides, and `TABLESAMPLE` samples physical blocks, which two independently written databases do not share. Every table line states the fraction it compared, and the summary lists which tables were sampled — a cap nobody is told about reads as full coverage.
+
+The tool exits non-zero when a query fails, when an aggregate check fails, or when the run compared no rows at all.
 
 ## Module Notes
 
