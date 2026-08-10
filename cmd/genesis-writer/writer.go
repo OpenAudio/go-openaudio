@@ -450,6 +450,10 @@ func (w *Writer) Run(ctx context.Context) error {
 		// Phase 5: Comments — comments and reactions on content
 		{"comments", w.cfg.SkipComments, w.writeComments},
 		{"comment reactions", w.cfg.SkipComments, w.writeCommentReactions},
+		// A pin references both a comment and the track it is pinned to, so it
+		// has to follow the comments step and cannot run if either side was
+		// skipped.
+		{"comment pins", w.cfg.SkipComments || w.cfg.SkipTracks, w.writeCommentPins},
 
 		// Phase 6: Emails — encrypted emails and access grants
 		{"encrypted emails", w.cfg.SkipEmails, w.writeEncryptedEmails},
