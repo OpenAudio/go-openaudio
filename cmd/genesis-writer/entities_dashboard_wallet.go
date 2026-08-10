@@ -39,7 +39,7 @@ func (w *Writer) writeDashboardWalletUsers(ctx context.Context) error {
 		func(ctx context.Context, d sourceDashboardWalletUser) error {
 			metaJSON, err := json.Marshal(dashboardWalletMetadata{
 				Wallet:    d.Wallet,
-				CreatedAt: d.CreatedAt.Format(time.RFC3339),
+				CreatedAt: d.CreatedAt.UTC().Format(time.RFC3339),
 				IsDelete:  d.IsDelete,
 			})
 			if err != nil {

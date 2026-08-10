@@ -176,7 +176,7 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 		},
 		func(ctx context.Context, p sourcePlaylist) error {
 			inner := playlistMetadataInner{
-				CreatedAt:              p.CreatedAt.Format(time.RFC3339),
+				CreatedAt:              p.CreatedAt.UTC().Format(time.RFC3339),
 				PlaylistName:           deref(p.PlaylistName),
 				Description:            deref(p.Description),
 				IsAlbum:                p.IsAlbum,

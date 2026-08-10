@@ -143,7 +143,7 @@ type sourceTrack struct {
 // a column the writer forgets to carry is invisible in the output otherwise.
 func buildTrackMetadata(t sourceTrack, collaborators []int64) trackMetadataInner {
 	inner := trackMetadataInner{
-		CreatedAt:       t.CreatedAt.Format(time.RFC3339),
+		CreatedAt:       t.CreatedAt.UTC().Format(time.RFC3339),
 		OwnerID:         t.OwnerID,
 		Title:           deref(t.Title),
 		Description:     deref(t.Description),
@@ -352,7 +352,7 @@ func (w *Writer) writeTrackDownloads(ctx context.Context) error {
 				City:      deref(d.City),
 				Region:    deref(d.Region),
 				Country:   deref(d.Country),
-				CreatedAt: d.CreatedAt.Format(time.RFC3339),
+				CreatedAt: d.CreatedAt.UTC().Format(time.RFC3339),
 			}
 			metaJSON, err := json.Marshal(meta)
 			if err != nil {

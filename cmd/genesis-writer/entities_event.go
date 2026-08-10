@@ -50,13 +50,13 @@ func (w *Writer) writeEvents(ctx context.Context) error {
 			meta := eventMetadata{
 				EventType: e.EventType,
 				EntityID:  e.EntityID,
-				CreatedAt: e.CreatedAt.Format(time.RFC3339),
+				CreatedAt: e.CreatedAt.UTC().Format(time.RFC3339),
 			}
 			if e.EntityType != nil {
 				meta.EntityType = *e.EntityType
 			}
 			if e.EndDate != nil {
-				meta.EndDate = e.EndDate.Format(time.RFC3339)
+				meta.EndDate = e.EndDate.UTC().Format(time.RFC3339)
 			}
 			meta.EventData = unmarshalJSONB(e.EventData)
 
