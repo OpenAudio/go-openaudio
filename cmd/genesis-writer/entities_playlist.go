@@ -8,6 +8,7 @@ import (
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type playlistMetadataWrapper struct {
@@ -39,9 +40,56 @@ type playlistMetadataInner struct {
 	RouteSlug        string `json:"route_slug,omitempty"`
 	RouteTitleSlug   string `json:"route_title_slug,omitempty"`
 	RouteCollisionID int    `json:"route_collision_id,omitempty"`
+	// The playlist's removal history: tracks that were once in it and have
+	// since left, one entry per source playlist_tracks row with
+	// is_removed = true. Carried rather than derived, because a Create replays
+	// a snapshot and the indexer only recognizes a removal as a transition
+	// between two states — see insertPlaylistTrackTombstones. Empty for the
+	// 308,635 of 312,552 playlists that never lost a track.
+	RemovedTracks []removedPlaylistTrack `json:"removed_tracks,omitempty"`
 	// Always serialized: `omitempty` would drop a false value and the indexer
 	// cannot tell "absent" from "false".
 	IsDelete bool `json:"is_delete"`
+}
+
+// removedPlaylistTrack is one tombstone in a playlist's removal history.
+// created_at is when the track joined the playlist, updated_at when it left —
+// the latter is the timestamp the API compares against a purchase date to
+// decide whether an album buyer still has access to a track that has since left
+// the album, so it is carried verbatim rather than stamped at replay time.
+type removedPlaylistTrack struct {
+	TrackID   int64  `json:"track_id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// preloadRemovedPlaylistTracks loads every tombstone in the source, keyed by
+// playlist. Small enough to hold in memory: 24,579 rows over 4,064 playlists on
+// a production clone.
+func preloadRemovedPlaylistTracks(ctx context.Context, db *pgxpool.Pool) (map[int64][]removedPlaylistTrack, error) {
+	rows, err := db.Query(ctx, `
+		SELECT playlist_id, track_id, created_at, updated_at
+		FROM playlist_tracks
+		WHERE is_removed = true
+		ORDER BY playlist_id, updated_at, track_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	m := make(map[int64][]removedPlaylistTrack)
+	for rows.Next() {
+		var playlistID int64
+		var r removedPlaylistTrack
+		var createdAt, updatedAt time.Time
+		if err := rows.Scan(&playlistID, &r.TrackID, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		r.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+		r.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
+		m[playlistID] = append(m[playlistID], r)
+	}
+	return m, rows.Err()
 }
 
 type sourcePlaylist struct {
@@ -74,6 +122,14 @@ type sourcePlaylist struct {
 }
 
 func (w *Writer) writePlaylists(ctx context.Context) error {
+	// Pre-load the removal history. It lives in playlist_tracks, not in the
+	// playlist row, and a Create carrying only the final contents would lose it
+	// entirely.
+	removedTracks, err := preloadRemovedPlaylistTracks(ctx, w.srcDB)
+	if err != nil {
+		return fmt.Errorf("preload removed playlist tracks: %w", err)
+	}
+
 	return processBatched(ctx, w, "playlists",
 		// Deleted playlists are migrated too, carrying is_delete in the metadata, so
 		// a parity check can tell an intentional omission from real data loss.
@@ -136,6 +192,7 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 				RouteTitleSlug:         deref(p.RouteTitleSlug),
 				RouteCollisionID:       derefInt(p.RouteCollisionID),
 				IsDelete:               p.IsDelete,
+				RemovedTracks:          removedTracks[p.PlaylistID],
 			}
 
 			inner.PlaylistContents = unmarshalJSONB(p.PlaylistContents)
