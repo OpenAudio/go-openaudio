@@ -193,15 +193,7 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 		go func(targetHost string) {
 			defer wg.Done()
 
-			// Get a fresh reader for this host
-			reader, err := srcBucket.NewReader(ctx, shardedCid, nil)
-			if err != nil {
-				resultsChan <- replicationResult{host: targetHost, err: err}
-				return
-			}
-			defer reader.Close()
-
-			err = ss.replicateFileToHost(ctx, targetHost, cid, reader, upload.PlacementHosts)
+			err := ss.replicateStoredFileToHost(ctx, targetHost, cid, srcBucket, shardedCid, upload.PlacementHosts)
 			// TODO: Replicate with TUSD
 			// err = ss.replicateToHost(targetHost, cid, reader, attrs.Size, placementHosts)
 			resultsChan <- replicationResult{host: targetHost, err: err}

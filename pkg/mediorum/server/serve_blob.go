@@ -613,6 +613,54 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 	return c.Stream(200, blob.ContentType(), blob)
 }
 
+type internalBlobPullRequest struct {
+	CID            string   `json:"cid"`
+	PlacementHosts []string `json:"placement_hosts,omitempty"`
+}
+
+func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
+	var request internalBlobPullRequest
+	if err := c.Bind(&request); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid pull request"})
+	}
+	if request.CID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "cid is required"})
+	}
+	if err := ss.validatePlacementHosts(request.PlacementHosts); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	sourceHost, ok := c.Get(authenticatedPeerHostKey).(string)
+	if !ok || sourceHost == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "authenticated peer host unavailable"})
+	}
+	if sourceHost == ss.Config.Self.Host {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "cannot pull blob from self"})
+	}
+
+	if ss.haveInMyBucket(request.CID) {
+		return c.JSON(http.StatusOK, map[string]string{"status": "already_present"})
+	}
+	if !ss.diskHasSpaceForCID(request.CID, request.PlacementHosts) {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "disk is too full to accept new blobs"})
+	}
+
+	err := ss.pullFileFromHostValidated(c.Request().Context(), sourceHost, request.CID, request.PlacementHosts)
+	if errors.Is(err, errPulledBlobCIDMismatch) {
+		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+	}
+	if err != nil {
+		ss.logger.Warn("failed to pull blob for replication",
+			zap.String("sourceHost", sourceHost),
+			zap.String("cid", request.CID),
+			zap.Error(err),
+		)
+		return c.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "pulled"})
+}
+
 func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 	// Peer-driven push. Placement context, when known to the sender, rides
 	// along in the X-Placement-Hosts header. Validate it (must include self,
