@@ -59,7 +59,7 @@ func (w *Writer) writeDeveloperApps(ctx context.Context) error {
 				Description:      deref(d.Description),
 				ImageURL:         deref(d.ImageURL),
 				IsPersonalAccess: d.IsPersonalAccess,
-				CreatedAt:        d.CreatedAt.Format(time.RFC3339),
+				CreatedAt:        d.CreatedAt.UTC().Format(time.RFC3339),
 			}
 			metaJSON, err := json.Marshal(meta)
 			if err != nil {
@@ -112,7 +112,7 @@ func (w *Writer) writeGrants(ctx context.Context) error {
 			metaJSON, err := json.Marshal(grantMetadata{
 				IsRevoked:      g.IsRevoked,
 				GranteeAddress: g.GranteeAddress,
-				CreatedAt:      g.CreatedAt.Format(time.RFC3339),
+				CreatedAt:      g.CreatedAt.UTC().Format(time.RFC3339),
 			})
 			if err != nil {
 				return fmt.Errorf("marshal grant metadata: %w", err)

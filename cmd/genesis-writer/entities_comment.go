@@ -125,7 +125,7 @@ func (w *Writer) writeCommentPass(
 				EntityID:        c.EntityID,
 				EntityType:      c.EntityType,
 				TrackTimestampS: c.TrackTimestampS,
-				CreatedAt:       c.CreatedAt.Format(time.RFC3339),
+				CreatedAt:       c.CreatedAt.UTC().Format(time.RFC3339),
 			}
 
 			// Attach parent comment if this is a reply.
@@ -177,7 +177,7 @@ func (w *Writer) writeCommentReactions(ctx context.Context) error {
 			return cr, err
 		},
 		func(ctx context.Context, cr commentReaction) error {
-			metaJSON, err := json.Marshal(createdAtMeta{CreatedAt: cr.createdAt.Format(time.RFC3339)})
+			metaJSON, err := json.Marshal(createdAtMeta{CreatedAt: cr.createdAt.UTC().Format(time.RFC3339)})
 			if err != nil {
 				return fmt.Errorf("marshal comment reaction metadata: %w", err)
 			}
