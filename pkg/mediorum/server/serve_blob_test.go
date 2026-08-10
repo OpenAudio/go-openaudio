@@ -1,16 +1,23 @@
 package server
 
 import (
+	"context"
+	"crypto/ecdsa"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"net/http/httptest"
 	"testing"
 
+	"connectrpc.com/connect"
+	v1storage "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/OpenAudio/go-openaudio/pkg/registrar"
+	"github.com/erni27/imcache"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,6 +35,10 @@ const (
 
 func TestRequireRegisteredSignatureWithUnregisteredNode(t *testing.T) {
 	ss := testNetwork[0]
+
+	// The track is ungated: the tables exist but hold no row for this cid.
+	ensureTrackAccessTables(t, ss)
+	ss.trackAccessInfoCache.Remove(testSigCid)
 
 	// Empty list of signers means no node's signature will be valid
 	origPeers := ss.Config.Peers
@@ -59,6 +70,10 @@ func TestRequireRegisteredSignatureWithUnregisteredNode(t *testing.T) {
 
 func TestRequireRegisteredSignatureWithOldTimestamp(t *testing.T) {
 	ss := testNetwork[0]
+
+	// The track is ungated: the tables exist but hold no row for this cid.
+	ensureTrackAccessTables(t, ss)
+	ss.trackAccessInfoCache.Remove(testSigCid)
 
 	// Make sure the wallet is registered as a signer
 	origPeers := ss.Config.Peers
@@ -102,13 +117,15 @@ func fixtureSignerWallet(t *testing.T) string {
 	return sig.SignerWallet
 }
 
-// setupAccessAuthorityFixture points the fixture cid at a track whose only access
-// authority is authority, and clears the surrounding state the check depends on.
+// ensureTrackAccessTables creates the tables the cidstream access check reads.
 //
 // sound_recordings and management_keys belong to core, which shares a database with
 // mediorum in production. The mediorum unit-test database only runs mediorum's own
-// migrations, so the tables have to be created here.
-func setupAccessAuthorityFixture(t *testing.T, ss *MediorumServer, authority string) {
+// migrations, so the tables have to be created here. Since the check fails closed,
+// a server missing these tables denies every request -- so even the tests that
+// expect an ungated track need the tables to exist and simply hold no rows for the
+// cid under test.
+func ensureTrackAccessTables(t *testing.T, ss *MediorumServer) {
 	t.Helper()
 
 	for _, stmt := range []string{
@@ -127,6 +144,14 @@ func setupAccessAuthorityFixture(t *testing.T, ss *MediorumServer, authority str
 	} {
 		require.NoError(t, ss.crud.DB.Exec(stmt).Error)
 	}
+}
+
+// setupAccessAuthorityFixture points the fixture cid at a track whose only access
+// authority is authority, and clears the surrounding state the check depends on.
+func setupAccessAuthorityFixture(t *testing.T, ss *MediorumServer, authority string) {
+	t.Helper()
+
+	ensureTrackAccessTables(t, ss)
 
 	require.NoError(t, ss.crud.DB.Exec(
 		`insert into sound_recordings (sound_recording_id, track_id, cid) values (?, ?, ?)
@@ -196,4 +221,239 @@ func TestRequireRegisteredSignatureWithUnrelatedAccessAuthority(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 	assert.Contains(t, rec.Body.String(), "signer not authorized for this track (access_authorities)")
+}
+
+// failEveryQuery points the server's gorm handle at an already-cancelled context,
+// so every query it issues fails at the driver rather than returning zero rows.
+// Stands in for the whole database being unreachable. The returned func restores
+// the working handle early, for tests that need to run queries afterwards; it is
+// also registered as cleanup, and calling it twice is harmless.
+func failEveryQuery(t *testing.T, ss *MediorumServer) (restore func()) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	orig := ss.crud.DB
+	ss.crud.DB = orig.WithContext(ctx)
+	restore = func() { ss.crud.DB = orig }
+	// Registered after any fixture cleanup, so LIFO ordering restores the working
+	// handle before the fixture tries to delete its rows.
+	t.Cleanup(restore)
+
+	return restore
+}
+
+// hideManagementKeys renames management_keys out from under the queries that read
+// it, leaving sound_recordings intact. This reproduces the failure empirically
+// found while renaming these tables: the cid -> track_id lookup still succeeds, so
+// only the access-authority queries error.
+func hideManagementKeys(t *testing.T, ss *MediorumServer) {
+	t.Helper()
+
+	require.NoError(t, ss.crud.DB.Exec(`alter table management_keys rename to management_keys_hidden`).Error)
+	t.Cleanup(func() {
+		ss.crud.DB.Exec(`alter table management_keys_hidden rename to management_keys`)
+	})
+}
+
+// A failed lookup must deny rather than fall through to the validator-signature
+// branch. Zero rows and a failed query are indistinguishable in the result, so
+// treating the failure as "no access authorities" hands a gated track to any
+// registered signer -- the whole point of failing closed.
+func TestRequireRegisteredSignatureDeniesWhenTrackLookupFails(t *testing.T) {
+	ss := testNetwork[1]
+
+	// Gate the track behind an authority that is not the fixture signer...
+	setupAccessAuthorityFixture(t, ss, "0x1234567890123456789012345678901234567890")
+	// ...while registering the fixture signer as a validator, so a fail-open
+	// lookup would sail straight through the no-access-authorities branch.
+	ss.Config.Signers = []registrar.Peer{{Host: "validator.node", Wallet: fixtureSignerWallet(t)}}
+
+	failEveryQuery(t, ss)
+
+	rec := serveAccessAuthorityRequest(t, ss)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "unable to verify track access")
+	assert.Contains(t, body, "track access lookup failed")
+	// "signature too old" here would mean the request got past authorization.
+	assert.NotContains(t, body, "signature too old")
+}
+
+// Same fail-closed requirement for the management_keys count: an errored query
+// must not read as "this track is ungated".
+func TestRequireRegisteredSignatureDeniesWhenManagementKeyCountFails(t *testing.T) {
+	ss := testNetwork[1]
+
+	setupAccessAuthorityFixture(t, ss, "0x1234567890123456789012345678901234567890")
+	ss.Config.Signers = []registrar.Peer{{Host: "validator.node", Wallet: fixtureSignerWallet(t)}}
+
+	hideManagementKeys(t, ss)
+
+	rec := serveAccessAuthorityRequest(t, ss)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Contains(t, rec.Body.String(), "track access lookup failed")
+}
+
+// The per-signer authority check runs after the cached lookup, so it needs its
+// own guard.
+func TestRequireRegisteredSignatureDeniesWhenAccessAuthorityLookupFails(t *testing.T) {
+	ss := testNetwork[1]
+
+	setupAccessAuthorityFixture(t, ss, strings.ToLower(fixtureSignerWallet(t)))
+
+	// Prime the cache so the gated verdict survives, then break only the query
+	// that decides whether this signer is one of the authorities.
+	ss.trackAccessInfoCache.Set(testSigCid, trackAccessInfo{TrackID: testSigTrackID, ManagementKeyCount: 1},
+		imcache.WithExpiration(5*time.Minute))
+	hideManagementKeys(t, ss)
+
+	rec := serveAccessAuthorityRequest(t, ss)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Contains(t, rec.Body.String(), "access authority lookup failed")
+}
+
+// A denial caused by a transient query failure must not be memoized: the next
+// request, once the database recovers, has to see the real gating state.
+func TestRequireRegisteredSignatureDoesNotCacheFailedLookup(t *testing.T) {
+	ss := testNetwork[1]
+
+	setupAccessAuthorityFixture(t, ss, strings.ToLower(fixtureSignerWallet(t)))
+
+	restore := failEveryQuery(t, ss)
+	rec := serveAccessAuthorityRequest(t, ss)
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	restore()
+
+	_, cached := ss.trackAccessInfoCache.Get(testSigCid)
+	assert.False(t, cached, "a failed lookup must not populate the track access cache")
+
+	// The signer is this track's access authority, so the recovered request gets
+	// as far as the age check.
+	rec = serveAccessAuthorityRequest(t, ss)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Contains(t, rec.Body.String(), "signature too old")
+}
+
+// serveTrackRequest exercises serveTrack directly. serveTrack is dev-only, so the
+// env is flipped for the duration of the call.
+func serveTrackRequest(t *testing.T, ss *MediorumServer) *httptest.ResponseRecorder {
+	t.Helper()
+
+	origEnv := ss.Config.Env
+	ss.Config.Env = "dev"
+	defer func() { ss.Config.Env = origEnv }()
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/tracks/%s/stream?signature=%s", testSigTrackID, testSigParam), nil)
+	rec := httptest.NewRecorder()
+	c := ss.echo.NewContext(req, rec)
+	c.SetPath("/tracks/:trackId/stream")
+	c.SetParamNames("trackId")
+	c.SetParamValues(testSigTrackID)
+
+	if err := ss.serveTrack(c); err != nil {
+		ss.echo.HTTPErrorHandler(err, c)
+	}
+
+	return rec
+}
+
+func TestServeTrackRejectsUnrelatedSigner(t *testing.T) {
+	ss := testNetwork[1]
+
+	setupAccessAuthorityFixture(t, ss, "0x1234567890123456789012345678901234567890")
+
+	rec := serveTrackRequest(t, ss)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Contains(t, rec.Body.String(), "signer not authorized to access")
+}
+
+func TestServeTrackDeniesWhenCidLookupFails(t *testing.T) {
+	ss := testNetwork[1]
+
+	setupAccessAuthorityFixture(t, ss, strings.ToLower(fixtureSignerWallet(t)))
+	failEveryQuery(t, ss)
+
+	rec := serveTrackRequest(t, ss)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "unable to verify track access")
+	assert.Contains(t, body, "track lookup failed")
+	// A swallowed error would have surfaced as "track not found" instead.
+	assert.NotContains(t, body, "track not found")
+}
+
+func TestServeTrackDeniesWhenAccessAuthorityLookupFails(t *testing.T) {
+	ss := testNetwork[1]
+
+	setupAccessAuthorityFixture(t, ss, strings.ToLower(fixtureSignerWallet(t)))
+	hideManagementKeys(t, ss)
+
+	rec := serveTrackRequest(t, ss)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "access authority lookup failed")
+	assert.NotContains(t, body, "signer not authorized to access")
+}
+
+// streamTrackSignature signs the fixture track with key, the way a client would.
+func streamTrackSignature(t *testing.T, key *ecdsa.PrivateKey) *v1storage.StreamTrackSignature {
+	t.Helper()
+
+	data := &v1storage.StreamTrackSignatureData{
+		TrackId:   testSigTrackID,
+		Timestamp: 1596159123000,
+	}
+	sig, dataHash, err := common.GeneratePlaySignature(key, data)
+	require.NoError(t, err)
+
+	return &v1storage.StreamTrackSignature{Signature: sig, DataHash: dataHash, Data: data}
+}
+
+// streamTrackGRPC returns before it touches the stream on every path tested here,
+// so a nil stream is enough -- connect exposes no way to build a real one outside
+// a served request.
+func streamTrackGRPCRequest(t *testing.T, ss *MediorumServer) error {
+	t.Helper()
+
+	origEnv := ss.Config.Env
+	ss.Config.Env = "dev"
+	defer func() { ss.Config.Env = origEnv }()
+
+	req := &v1storage.StreamTrackRequest{Signature: streamTrackSignature(t, generateTestPrivateKey(1))}
+
+	return ss.streamTrackGRPC(context.Background(), req, nil)
+}
+
+func TestStreamTrackGRPCDeniesWhenCidLookupFails(t *testing.T) {
+	ss := testNetwork[1]
+
+	setupAccessAuthorityFixture(t, ss, "0x1234567890123456789012345678901234567890")
+	failEveryQuery(t, ss)
+
+	err := streamTrackGRPCRequest(t, ss)
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err), "a failed lookup must not read as CodeNotFound")
+	assert.Contains(t, err.Error(), "unable to verify track access")
+}
+
+func TestStreamTrackGRPCDeniesWhenAccessAuthorityLookupFails(t *testing.T) {
+	ss := testNetwork[1]
+
+	setupAccessAuthorityFixture(t, ss, "0x1234567890123456789012345678901234567890")
+	hideManagementKeys(t, ss)
+
+	err := streamTrackGRPCRequest(t, ss)
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err), "a failed lookup must not read as CodePermissionDenied")
+	assert.Contains(t, err.Error(), "unable to verify track access")
 }
