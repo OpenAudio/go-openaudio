@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"strings"
 	"testing"
 	"unicode/utf8"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -106,5 +109,28 @@ func TestRewardTagsCannotOccurInProtoStringFields(t *testing.T) {
 	if err == nil {
 		t.Error("expected proto to reject a signature containing the tag bytes; " +
 			"if it now accepts them, the false-positive analysis above no longer holds")
+	}
+}
+
+// Rewards are the one migrated entity sourced from the old chain rather than
+// the DP snapshot, so a missing source produces a chain with no reward history
+// and no error. That happened: a full run completed cleanly, and the omission
+// surfaced only when someone counted rows.
+//
+// --skip-rewards is the way to say "no rewards on purpose". Reaching this step
+// without a source therefore means the flag was forgotten, not that rewards
+// were unwanted.
+func TestRewardsRequireASource(t *testing.T) {
+	w := &Writer{cfg: &WriterConfig{}, logger: zap.NewNop()}
+
+	err := w.writeRewards(context.Background())
+	if err == nil {
+		t.Fatal("writing rewards with neither --core-dsn nor --core-cmt-home " +
+			"returned nil; a run with no reward source must not look successful")
+	}
+	for _, want := range []string{"--core-dsn", "--core-cmt-home", "--skip-rewards"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %s; it should name every way out", err, want)
+		}
 	}
 }

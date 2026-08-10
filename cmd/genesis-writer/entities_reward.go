@@ -28,9 +28,14 @@ func (w *Writer) writeRewards(ctx context.Context) error {
 	if w.cfg.CoreDSN != "" {
 		return w.writeRewardsFromDSN(ctx)
 	}
+	// Reaching here with no source is a mistake, not a choice: --skip-rewards
+	// already exists to say "no rewards on purpose", and the step table skips
+	// this function entirely when it is set. Silently writing a chain with no
+	// reward history looked like a clean run once already, and the omission is
+	// only discoverable by counting rows in a table nobody thought to count.
 	if w.cfg.CoreCMTHome == "" {
-		w.logger.Info("no --core-dsn or --core-cmt-home provided, skipping rewards")
-		return nil
+		return fmt.Errorf("rewards need a source: pass --core-dsn (preferred) " +
+			"or --core-cmt-home, or --skip-rewards to migrate without them")
 	}
 
 	dataDir := filepath.Join(w.cfg.CoreCMTHome, "data")
