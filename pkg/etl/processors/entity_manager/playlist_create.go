@@ -138,7 +138,7 @@ func insertPlaylistAndRouteWithState(ctx context.Context, params *Params, state 
 		return err
 	}
 
-	if err := updatePlaylistTracks(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+	if err := updatePlaylistTracks(ctx, params.DBTX, params.EntityID, params.Metadata, params.BlockTime); err != nil {
 		return err
 	}
 	if err := updateAlbumPriceHistory(ctx, params.DBTX, params.EntityID, params.BlockNumber, params.BlockTime, params.Metadata); err != nil {
