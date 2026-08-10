@@ -3,7 +3,6 @@ package entity_manager
 import (
 	"context"
 	"encoding/json"
-	"time"
 )
 
 type eventUpdateHandler struct{}
@@ -61,12 +60,9 @@ func validateUpdateEvent(ctx context.Context, params *Params) error {
 
 	endDateStr := params.MetadataString("end_date")
 	if endDateStr != "" {
-		endDate, err := time.Parse(time.RFC3339, endDateStr)
+		endDate, err := parseEventEndDate(endDateStr)
 		if err != nil {
-			endDate, err = time.Parse("2006-01-02T15:04:05", endDateStr)
-			if err != nil {
-				return NewValidationError("end_date is not a valid iso format")
-			}
+			return err
 		}
 
 		// For remix contests, new end_date must be >= current end_date

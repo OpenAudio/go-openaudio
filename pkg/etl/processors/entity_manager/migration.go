@@ -32,6 +32,10 @@ import (
 //     legacy rows predate these rules; dropping the rows would lose real data
 //   - wallet/handle uniqueness — legacy state is the source of truth and may
 //     contain duplicates that predate the constraint
+//   - rules about the current moment ("this contest has already ended", "this
+//     entity already has one running") — a replayed row records something that
+//     ran and finished long ago, so the source already holds the answer and the
+//     rule only gets to disagree with it
 //   - wallet ownership proofs (`wallet_signature`, dashboard wallet ecrecover) —
 //     those signatures were produced interactively when the wallet was first
 //     linked and are not retained by the source tables, so they cannot be
@@ -51,6 +55,7 @@ func RegisterMigrationOverrides(d *Dispatcher) {
 	d.Register(migratedTrackCreate())
 	d.Register(migratedPlaylistCreate())
 	d.Register(migratedCommentCreate())
+	d.Register(migratedEventCreate())
 	d.Register(migratedDeveloperAppCreate())
 	d.Register(migratedGrantCreate())
 	d.Register(migratedAssociatedWalletCreate())
@@ -338,6 +343,51 @@ func (h *migratedCommentCreateHandler) Handle(ctx context.Context, params *Param
 }
 
 func migratedCommentCreate() Handler { return &migratedCommentCreateHandler{} }
+
+// migratedEventCreateHandler replays a historical event, including a remix
+// contest that has already ended.
+//
+// The production create asks whether the contest may open *now*: its end_date
+// must be in the future, and the entity must not already have a contest still
+// running. Both questions are answered against block time, which for a
+// migration tx is the source row's created_at (see migrationBlockTime in the
+// indexer) -- so on replay "now" is a moment years in the past that the source
+// has already lived through and recorded the outcome of.
+//
+// The end_date rule survives that only by luck: nothing in the source ends
+// before it was created, so as long as every event carries a parseable
+// created_at the rule never fires. It is one metadata change away from firing
+// on everything. Without that timestamp, block time falls back to the block's
+// own -- migration wall-clock -- and 109 of the 112 live events on the
+// 2026-08-07 snapshot have an end_date in the past. A rule that quietly drops
+// 97% of a table when an unrelated field goes missing, taking the subscriptions
+// that point at those events with it, does not belong on the replay path.
+//
+// The uniqueness rule costs a row as things stand. Track 1174134089 holds two
+// contests created two minutes apart with the same end date (events 925703801
+// and 1458921100); replaying the second finds the first still running and
+// rejects it. Both are in the dump, so both must land: the source is the record
+// of what happened, not a submission to be re-adjudicated.
+//
+// Everything in validateEventCreateShape still runs, so a migrated event is
+// still signed by its user, still lands once, and still hangs off a user and
+// track that exist.
+type migratedEventCreateHandler struct{}
+
+func (h *migratedEventCreateHandler) EntityType() string { return EntityTypeEvent }
+func (h *migratedEventCreateHandler) Action() string     { return ActionCreate }
+
+func (h *migratedEventCreateHandler) Handle(ctx context.Context, params *Params) error {
+	if params.EntityType != EntityTypeEvent {
+		return NewValidationError("wrong entity type %s", params.EntityType)
+	}
+	if _, err := validateEventCreateShape(ctx, params); err != nil {
+		return err
+	}
+	return insertEvent(ctx, params)
+}
+
+func migratedEventCreate() Handler { return &migratedEventCreateHandler{} }
 
 type migratedDeveloperAppCreateHandler struct{}
 
