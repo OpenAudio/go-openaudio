@@ -79,7 +79,7 @@ genesis-writer write \
   [--resume]                                           \  # resume interrupted run
   [--skip-users] [--skip-wallets] [--skip-tracks] [--skip-playlists] \
   [--skip-social] [--skip-plays] [--skip-apps] [--skip-comments] \
-  [--skip-emails] [--skip-tip-reactions]
+  [--skip-emails]
 ```
 
 ### Flags reference
@@ -108,7 +108,6 @@ genesis-writer write \
 | `--skip-apps` | `GENESIS_SKIP_APPS` | false | Skip developer apps and grants |
 | `--skip-comments` | `GENESIS_SKIP_COMMENTS` | false | Skip comments and comment reactions |
 | `--skip-emails` | `GENESIS_SKIP_EMAILS` | false | Skip encrypted emails and email access grants |
-| `--skip-tip-reactions` | `GENESIS_SKIP_TIP_REACTIONS` | false | Skip tip reactions |
 
 ### Data directory layout
 
