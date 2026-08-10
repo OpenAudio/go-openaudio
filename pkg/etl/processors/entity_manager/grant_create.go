@@ -54,23 +54,43 @@ func validateGrantCreate(ctx context.Context, params *Params) error {
 	return nil
 }
 
+// insertGrant writes a newly created grant. It passes the zero grantState, so a
+// live client cannot self-assign either flag through metadata: a new grant is
+// always unrevoked, and its approval is derived from the grantee's type exactly
+// as before.
 func insertGrant(ctx context.Context, params *Params) error {
-	return insertGrantWithState(ctx, params, false)
+	return insertGrantWithState(ctx, params, grantState{})
 }
 
-// insertGrantWithState writes a grant carrying its revoked state. Production
-// always creates an unrevoked grant; only the migration replays a revoked one.
-// is_approved keeps its existing derivation -- it depends on whether the
-// grantee is an app, which the source row does not override.
-func insertGrantWithState(ctx context.Context, params *Params, isRevoked bool) error {
+// grantState carries the flags an inserted grant may already hold. Only the
+// genesis migration supplies a non-zero value; see the migration handlers.
+type grantState struct {
+	IsRevoked bool
+
+	// IsApproved is three-valued and nil means "derive it", which is what the
+	// production path passes. A user-to-user grant is approved by a separate
+	// Grant/Approve transaction, so a live create has nothing to carry -- but a
+	// migrated create is the account's final state, and the approval it records
+	// cannot be reconstructed from the grantee's type. 493 approved manager
+	// grants on a production clone derive to NULL, and ValidateSigner refuses a
+	// non-app grantee whose grant is not approved, so each of those managers
+	// would silently lose access to the account they manage.
+	IsApproved *bool
+}
+
+// insertGrantWithState writes a grant carrying its revoked and approved state.
+func insertGrantWithState(ctx context.Context, params *Params, state grantState) error {
 	granteeAddress := strings.ToLower(params.MetadataString("grantee_address"))
 
-	// Determine is_approved: true if grantee is an app, nil if user-to-user
-	isApp, _ := developerAppExists(ctx, params.DBTX, granteeAddress)
-	var isApproved *bool
-	if isApp {
-		t := true
-		isApproved = &t
+	// Determine is_approved: the caller's value if it supplied one, otherwise
+	// true if the grantee is an app and nil if user-to-user.
+	isApproved := state.IsApproved
+	if isApproved == nil {
+		isApp, _ := developerAppExists(ctx, params.DBTX, granteeAddress)
+		if isApp {
+			t := true
+			isApproved = &t
+		}
 	}
 
 	_, err := params.DBTX.Exec(ctx, `
@@ -85,7 +105,7 @@ func insertGrantWithState(ctx context.Context, params *Params, isRevoked bool) e
 		params.BlockTime,
 		params.TxHash,
 		params.BlockNumber,
-		isRevoked,
+		state.IsRevoked,
 	)
 	return err
 }

@@ -85,6 +85,11 @@ type grantMetadata struct {
 	CreatedAt      string `json:"created_at,omitempty"`
 	// Always serialized, as above.
 	IsRevoked bool `json:"is_revoked"`
+	// is_approved is nullable and three-valued, so it travels as a pointer:
+	// `omitempty` drops only the nil case, and the indexer reads an absent key
+	// as "derive it the way a production create would". A non-nil false is still
+	// serialized, which is what makes a rejected grant replayable.
+	IsApproved *bool `json:"is_approved,omitempty"`
 }
 
 type sourceGrant struct {
@@ -93,24 +98,36 @@ type sourceGrant struct {
 	CreatedAt      time.Time
 	GrantorWallet  string
 	IsRevoked      bool
+	IsApproved     *bool
 }
 
 func (w *Writer) writeGrants(ctx context.Context) error {
 	return processBatched(ctx, w, "grants",
 		`SELECT count(*) FROM grants WHERE is_current = true`,
-		`SELECT g.grantee_address, g.user_id, COALESCE(LOWER(u.wallet), ''), g.created_at, g.is_revoked
+		`SELECT g.grantee_address, g.user_id, COALESCE(LOWER(u.wallet), ''), g.created_at, g.is_revoked, g.is_approved
 		FROM grants g
 		JOIN users u ON u.user_id = g.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE g.is_current = true
 		ORDER BY g.user_id, g.grantee_address`,
 		func(rows pgx.Rows) (sourceGrant, error) {
 			var g sourceGrant
-			err := rows.Scan(&g.GranteeAddress, &g.UserID, &g.GrantorWallet, &g.CreatedAt, &g.IsRevoked)
+			err := rows.Scan(&g.GranteeAddress, &g.UserID, &g.GrantorWallet, &g.CreatedAt, &g.IsRevoked, &g.IsApproved)
 			return g, err
 		},
 		func(ctx context.Context, g sourceGrant) error {
+			// Approval rides on the Create for the same reason is_revoked does:
+			// the source row is already the final state. It cannot be replayed as
+			// a follow-up Grant/Approve transaction -- that action forces
+			// is_revoked back to false, so the 35 grants that are both approved
+			// and revoked would be unreproducible, and it requires the grantee's
+			// own wallet as signer, which a manager grant to a deactivated or
+			// missing account cannot supply. Without this, the 493 approved
+			// user-to-user manager grants replay as NULL and every one of those
+			// managers loses the ability to act for the user they manage
+			// (ValidateSigner requires is_approved for a non-app grantee).
 			metaJSON, err := json.Marshal(grantMetadata{
 				IsRevoked:      g.IsRevoked,
+				IsApproved:     g.IsApproved,
 				GranteeAddress: g.GranteeAddress,
 				CreatedAt:      g.CreatedAt.Format(time.RFC3339),
 			})

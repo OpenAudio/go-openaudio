@@ -43,6 +43,16 @@ type userMetadata struct {
 	PlaylistLibrary    interface{} `json:"playlist_library,omitempty"`
 	ArtistPickTrackID  *int64      `json:"artist_pick_track_id,omitempty"`
 	AllowAIAttribution bool        `json:"allow_ai_attribution,omitempty"`
+	// Profile settings a live client only ever sends on Update, so the indexer's
+	// production create path is not where they normally arrive. A migration
+	// Create carries the account's final state, so it has to send them or they
+	// are lost: 3,816 users have a USDC payout wallet, 425 a profile type and 96
+	// a coin flair mint. `omitempty` is correct for all three -- an empty string
+	// is the absent value, and the indexer inserts NULL for it. The source holds
+	// 376 empty-string coin_flair_mint rows that must not become '' downstream.
+	SplUsdcPayoutWallet string `json:"spl_usdc_payout_wallet,omitempty"`
+	ProfileType         string `json:"profile_type,omitempty"`
+	CoinFlairMint       string `json:"coin_flair_mint,omitempty"`
 }
 
 type sourceUser struct {
@@ -67,7 +77,13 @@ type sourceUser struct {
 	PlaylistLibrary     []byte // JSONB
 	ArtistPickTrackID   *int64
 	AllowAIAttribution  bool
-	CreatedAt           time.Time
+	SplUsdcPayoutWallet *string
+	// ProfileType is read as text: the source column is the profile_type_enum
+	// user-defined type, which pgx cannot decode into a Go string without the
+	// cast in the SELECT.
+	ProfileType   *string
+	CoinFlairMint *string
+	CreatedAt     time.Time
 }
 
 // writeUsers migrates every current user row, including deactivated and
@@ -87,6 +103,7 @@ func (w *Writer) writeUsers(ctx context.Context) error {
 			tiktok_handle, donation,
 			is_verified, is_deactivated, is_available,
 			playlist_library, artist_pick_track_id, allow_ai_attribution,
+			spl_usdc_payout_wallet, profile_type::text, coin_flair_mint,
 			created_at
 		FROM users
 		WHERE is_current = true
@@ -101,6 +118,7 @@ func (w *Writer) writeUsers(ctx context.Context) error {
 				&u.TiktokHandle, &u.Donation,
 				&u.IsVerified, &u.IsDeactivated, &u.IsAvailable,
 				&u.PlaylistLibrary, &u.ArtistPickTrackID, &u.AllowAIAttribution,
+				&u.SplUsdcPayoutWallet, &u.ProfileType, &u.CoinFlairMint,
 				&u.CreatedAt,
 			)
 			return u, err
@@ -128,6 +146,9 @@ func (w *Writer) writeUsers(ctx context.Context) error {
 				PlaylistLibrary:     unmarshalJSONB(u.PlaylistLibrary),
 				ArtistPickTrackID:   u.ArtistPickTrackID,
 				AllowAIAttribution:  u.AllowAIAttribution,
+				SplUsdcPayoutWallet: deref(u.SplUsdcPayoutWallet),
+				ProfileType:         deref(u.ProfileType),
+				CoinFlairMint:       deref(u.CoinFlairMint),
 			}
 			metaJSON, err := json.Marshal(userMetadataWrapper{
 				CID:  "genesis-import",
