@@ -39,6 +39,14 @@ import (
 // the SDK and API repo only emit the new envelope. This path is dormant
 // after the migration window and only activates for replay.
 
+// TryParseLegacyReward exposes tryParseLegacyReward to genesis-writer, which
+// converts the legacy reward transactions it replays into the modern shape and
+// so has to decode them first. Reusing this rather than re-implementing the
+// unknown-fields round-trip keeps one definition of what "legacy-shaped" means.
+func TryParseLegacyReward(rm *corev1.RewardMessage) (*corev1.LegacyRewardMessage, error) {
+	return tryParseLegacyReward(rm)
+}
+
 // tryParseLegacyReward inspects a RewardMessage that decoded with Body == nil
 // and re-attempts to decode its bytes as the legacy oneof shape. Returns nil
 // if no legacy action is present (e.g., the bytes really were empty / from a

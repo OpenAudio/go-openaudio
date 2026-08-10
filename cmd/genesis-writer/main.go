@@ -71,6 +71,14 @@ func writeCmd() *cli.Command {
 				EnvVars: []string{"GENESIS_MIGRATION_PRIVATE_KEY"},
 			},
 			&cli.StringFlag{
+				Name: "reward-signing-keys-file",
+				Usage: "Path to a JSON file of {\"0xauthority\": \"privkeyhex\"} for the reward pool authorities. " +
+					"Alternatively set " + rewardSigningKeysEnvVar + " to the JSON itself. Required to replay rewards " +
+					"from --core-dsn (pass --skip-rewards to opt out). The keys are never accepted on the command " +
+					"line, only as a file path or an env var, so they do not appear in ps.",
+				EnvVars: []string{"GENESIS_REWARD_SIGNING_KEYS_FILE"},
+			},
+			&cli.StringFlag{
 				Name:    "data-dir",
 				Usage:   "Root data directory. CometBFT state goes to <data-dir>/core/<chain-id>/, postgres to <data-dir>/postgres/. Mirrors production node layout.",
 				EnvVars: []string{"GENESIS_DATA_DIR"},
@@ -172,6 +180,15 @@ func writeCmd() *cli.Command {
 				return err
 			}
 
+			rewardKeys, err := loadRewardSigningKeys(c.String("reward-signing-keys-file"))
+			if err != nil {
+				return err
+			}
+			if len(rewardKeys) > 0 {
+				logger.Info("loaded reward signing keys",
+					zap.Strings("authorities", rewardKeys.authorityAddresses()))
+			}
+
 			genesisTime := time.Now().UTC()
 			if gt := c.String("genesis-time"); gt != "" {
 				genesisTime, err = time.Parse(time.RFC3339, gt)
@@ -247,6 +264,7 @@ func writeCmd() *cli.Command {
 				CoreDSN:              c.String("core-dsn"),
 				CoreScanChunk:        c.Int64("core-scan-chunk"),
 				CoreScanDryRun:       c.Bool("core-scan-dry-run"),
+				RewardSigningKeys:    rewardKeys,
 			}
 
 			w, err := NewWriter(cfg, logger)

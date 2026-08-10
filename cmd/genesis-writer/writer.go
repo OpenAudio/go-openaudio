@@ -72,6 +72,11 @@ type WriterConfig struct {
 	// is its own short statement, which keeps any single query from holding a
 	// snapshot long enough to stall autovacuum across that database.
 	CoreScanChunk int64
+	// RewardSigningKeys holds the private keys of the reward pool authorities,
+	// keyed by lowercased authority address. The writer signs the pool creates
+	// and the converted reward transactions with them, which is what makes
+	// those transactions genuinely valid rather than unsigned placeholders.
+	RewardSigningKeys rewardSigningKeys
 	// CoreScanDryRun reports what the scan found and emits nothing, so the
 	// counts can be reconciled against the old chain before a writer run
 	// commits to them.

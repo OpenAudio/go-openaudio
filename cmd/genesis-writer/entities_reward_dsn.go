@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
@@ -106,7 +110,8 @@ func (w *Writer) writeRewardsFromDSN(ctx context.Context) error {
 		zap.Int64("chunk", chunk),
 		zap.Bool("dry_run", w.cfg.CoreScanDryRun))
 
-	var poolTxBytes, rewardTxBytes [][]byte
+	var poolTxBytes [][]byte
+	var rewardTxs []scannedRewardTx
 	var falsePositives int
 	start := time.Now()
 
@@ -116,7 +121,7 @@ func (w *Writer) writeRewardsFromDSN(ctx context.Context) error {
 	for lo := minBlock; lo <= maxBlock; lo += chunk {
 		hi := lo + chunk
 		rows, err := conn.Query(ctx, `
-			SELECT transaction
+			SELECT transaction, tx_hash, block_id
 			FROM core_transactions
 			WHERE block_id >= $1 AND block_id < $2
 			  AND (position($3::bytea in transaction) > 0
@@ -127,14 +132,14 @@ func (w *Writer) writeRewardsFromDSN(ctx context.Context) error {
 			return fmt.Errorf("scan core_transactions blocks [%d,%d): %w", lo, hi, err)
 		}
 
-		var window [][]byte
+		var window []scannedRewardTx
 		for rows.Next() {
-			var txBytes []byte
-			if err := rows.Scan(&txBytes); err != nil {
+			var t scannedRewardTx
+			if err := rows.Scan(&t.txBytes, &t.txHash, &t.blockHeight); err != nil {
 				rows.Close()
 				return fmt.Errorf("scan reward tx row: %w", err)
 			}
-			window = append(window, txBytes)
+			window = append(window, t)
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
@@ -142,17 +147,17 @@ func (w *Writer) writeRewardsFromDSN(ctx context.Context) error {
 		}
 
 		// Confirm by type. The byte search is a prefilter, not a decision.
-		for _, txBytes := range window {
+		for _, t := range window {
 			var stx corev1.SignedTransaction
-			if err := proto.Unmarshal(txBytes, &stx); err != nil {
+			if err := proto.Unmarshal(t.txBytes, &stx); err != nil {
 				falsePositives++
 				continue
 			}
 			switch stx.Transaction.(type) {
 			case *corev1.SignedTransaction_RewardPool:
-				poolTxBytes = append(poolTxBytes, txBytes)
+				poolTxBytes = append(poolTxBytes, t.txBytes)
 			case *corev1.SignedTransaction_Reward:
-				rewardTxBytes = append(rewardTxBytes, txBytes)
+				rewardTxs = append(rewardTxs, t)
 			default:
 				falsePositives++
 			}
@@ -163,7 +168,7 @@ func (w *Writer) writeRewardsFromDSN(ctx context.Context) error {
 				zap.Int64("block", hi),
 				zap.Int64("max_block", maxBlock),
 				zap.Int("pools", len(poolTxBytes)),
-				zap.Int("rewards", len(rewardTxBytes)))
+				zap.Int("rewards", len(rewardTxs)))
 		}
 	}
 
@@ -171,11 +176,16 @@ func (w *Writer) writeRewardsFromDSN(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	bindings, err := readRewardBindings(ctx, conn)
+	if err != nil {
+		return err
+	}
 
 	w.logger.Info("found reward txs",
 		zap.Int("scanned_pool_txs", len(poolTxBytes)),
-		zap.Int("rewards", len(rewardTxBytes)),
+		zap.Int("rewards", len(rewardTxs)),
 		zap.Int("pools_in_state", len(pools)),
+		zap.Int("reward_bindings_in_state", len(bindings)),
 		zap.Int("prefilter_false_positives", falsePositives),
 		zap.Duration("scan_elapsed", time.Since(start)))
 
@@ -188,13 +198,39 @@ func (w *Writer) writeRewardsFromDSN(ctx context.Context) error {
 			zap.Strings("authorities", p.Authorities))
 	}
 
+	// Report key coverage before doing anything with it, so a dry run is a
+	// complete pre-flight: an operator finds out a key is missing here rather
+	// than partway through a multi-hour write.
+	missing := w.missingPoolSigners(pools)
+	for _, m := range missing {
+		w.logger.Error("no reward signing key for any authority of pool",
+			zap.String("rewards_manager_pubkey", m.RewardsManagerPubkey),
+			zap.Strings("authorities", m.Authorities))
+	}
+
 	if w.cfg.CoreScanDryRun {
 		w.logger.Info("dry run: emitting nothing. Reconcile these against the old chain " +
 			"(select count(*) from core_reward_pools / core_rewards) before a real run.")
 		return nil
 	}
 
+	// Fail rather than fall back to replaying the legacy bytes. A fallback
+	// would turn a missing key into a chain that quietly carries the artifacts
+	// this conversion exists to remove, discovered — if ever — long after the
+	// migration. Rewards silently degrading is the failure this whole change
+	// is chasing; --skip-rewards is the way to opt out on purpose.
+	if len(missing) > 0 {
+		return fmt.Errorf("no reward signing key for %d of %d pools (see the errors above); "+
+			"set %s or --reward-signing-keys-file, or pass --skip-rewards",
+			len(missing), len(pools), rewardSigningKeysEnvVar)
+	}
+
 	poolCreateTxs, err := w.synthesizeRewardPoolTxs(pools)
+	if err != nil {
+		return err
+	}
+
+	rewardOut, stats, err := w.convertRewardTxs(rewardTxs, pools, bindings)
 	if err != nil {
 		return err
 	}
@@ -206,7 +242,7 @@ func (w *Writer) writeRewardsFromDSN(ctx context.Context) error {
 			return fmt.Errorf("emit reward pool create tx %d: %w", i, err)
 		}
 	}
-	for i, txBytes := range rewardTxBytes {
+	for i, txBytes := range rewardOut {
 		if err := w.addTx(ctx, txBytes); err != nil {
 			return fmt.Errorf("emit reward tx %d: %w", i, err)
 		}
@@ -215,8 +251,230 @@ func (w *Writer) writeRewardsFromDSN(ctx context.Context) error {
 	w.logger.Info("emitted reward txs",
 		zap.Int("pool_creates", len(poolCreateTxs)),
 		zap.Int("dropped_pool_txs", len(poolTxBytes)),
-		zap.Int("rewards", len(rewardTxBytes)))
+		zap.Int("rewards_total", len(rewardOut)),
+		zap.Int("rewards_converted_from_legacy", stats.converted),
+		zap.Int("rewards_already_modern", stats.alreadyModern),
+		zap.Int("rewards_dropped_no_state", stats.droppedNoBinding))
 	return nil
+}
+
+// scannedRewardTx is a reward transaction as found on the old chain, carrying
+// the identity needed to look up the reward manager it resolved to.
+type scannedRewardTx struct {
+	txBytes     []byte
+	txHash      string
+	blockHeight int64
+}
+
+// rewardBindingKey identifies one reward row. tx_hash alone is not enough: on
+// the production chain two byte-identical reward transactions were each
+// committed in two different blocks, so the same hash appears twice with two
+// distinct rewards behind it.
+type rewardBindingKey struct {
+	txHash      string
+	blockHeight int64
+}
+
+// readRewardBindings reads the reward manager each reward resolved to on the
+// old chain.
+//
+// core_rewards.rewards_manager_pubkey IS the resolved binding — the schema
+// migration already walked claim_authorities through launchpad_authority_rm to
+// produce it. Reading it reproduces the old chain's state by construction
+// rather than by recomputing a derivation against a seed table, and it is the
+// reason the converted transactions need no launchpad mapping at all.
+func readRewardBindings(ctx context.Context, conn *pgx.Conn) (map[rewardBindingKey]string, error) {
+	rows, err := conn.Query(ctx,
+		`SELECT tx_hash, block_height, rewards_manager_pubkey
+		 FROM core_rewards WHERE rewards_manager_pubkey IS NOT NULL`)
+	if err != nil {
+		return nil, fmt.Errorf("read core_rewards bindings: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[rewardBindingKey]string{}
+	for rows.Next() {
+		var k rewardBindingKey
+		var rm string
+		if err := rows.Scan(&k.txHash, &k.blockHeight, &rm); err != nil {
+			return nil, fmt.Errorf("scan reward binding: %w", err)
+		}
+		out[k] = rm
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read reward binding rows: %w", err)
+	}
+	return out, nil
+}
+
+// conversionStats is the reconciliation breakdown for a run.
+type conversionStats struct {
+	converted        int
+	alreadyModern    int
+	droppedNoBinding int
+}
+
+// convertRewardTxs turns every scanned reward transaction into a modern,
+// validly-signed CreateReward, so the new chain carries no legacy reward
+// artifacts at all.
+//
+// Legacy-shape transactions are rebuilt as CreateReward and signed fresh with
+// the pool authority's key. Signing fresh rather than carrying the old
+// signature across is what makes the conversion possible: the legacy scheme
+// signs a sha256 over a pipe-delimited string that INCLUDES claim_authorities,
+// while the modern envelope signs deterministic-proto bytes of RewardBody.
+// Carrying the old signature would not fail loudly — secp256k1 recovery
+// against the wrong digest returns a valid-looking but different address —
+// it would silently write a wrong core_rewards.sender, which is served over
+// the public reward API as GetRewardResponse.sender.
+//
+// Transactions already in the modern shape are passed through byte-for-byte.
+// Their signers are the pools' current authorities already, so they are valid
+// as they stand; re-signing them would fabricate transactions to no purpose
+// and would change hashes that today still match the old chain.
+func (w *Writer) convertRewardTxs(
+	scanned []scannedRewardTx,
+	pools []rewardPool,
+	bindings map[rewardBindingKey]string,
+) ([][]byte, conversionStats, error) {
+	var stats conversionStats
+	out := make([][]byte, 0, len(scanned))
+
+	for _, t := range scanned {
+		var stx corev1.SignedTransaction
+		if err := proto.Unmarshal(t.txBytes, &stx); err != nil {
+			return nil, stats, fmt.Errorf("decode reward tx %s: %w", t.txHash, err)
+		}
+		envelope := stx.GetReward()
+		if envelope == nil {
+			return nil, stats, fmt.Errorf("reward tx %s is not a reward message", t.txHash)
+		}
+
+		rm, hasBinding := bindings[rewardBindingKey{txHash: t.txHash, blockHeight: t.blockHeight}]
+		if !hasBinding {
+			// No core_rewards row means the old chain does not carry this
+			// reward in state — it was deleted, or never resolved to a pool.
+			// Replaying it would invent state the source does not have.
+			stats.droppedNoBinding++
+			w.logger.Warn("dropping reward tx with no reward state on the old chain",
+				zap.String("tx_hash", t.txHash),
+				zap.Int64("old_block_height", t.blockHeight))
+			continue
+		}
+
+		if envelope.GetBody() != nil {
+			// Already modern. Confirm the pool it names matches the binding
+			// the old chain recorded before passing the bytes through.
+			create := envelope.GetBody().GetCreate()
+			if create == nil {
+				return nil, stats, fmt.Errorf("reward tx %s has a body but is not a CreateReward", t.txHash)
+			}
+			if create.GetRewardsManagerPubkey() != rm {
+				return nil, stats, fmt.Errorf("reward tx %s names pool %s but the old chain bound it to %s",
+					t.txHash, create.GetRewardsManagerPubkey(), rm)
+			}
+			out = append(out, t.txBytes)
+			stats.alreadyModern++
+			continue
+		}
+
+		legacy, err := server.TryParseLegacyReward(envelope)
+		if err != nil {
+			return nil, stats, fmt.Errorf("decode legacy reward tx %s: %w", t.txHash, err)
+		}
+		if legacy == nil {
+			return nil, stats, fmt.Errorf("reward tx %s has neither a body nor a legacy action", t.txHash)
+		}
+		create, ok := legacy.GetAction().(*corev1.LegacyRewardMessage_Create)
+		if !ok {
+			return nil, stats, fmt.Errorf("reward tx %s is a legacy action this conversion does not cover", t.txHash)
+		}
+
+		converted, err := w.convertLegacyReward(create.Create, rm, pools)
+		if err != nil {
+			return nil, stats, fmt.Errorf("convert reward tx %s: %w", t.txHash, err)
+		}
+		out = append(out, converted)
+		stats.converted++
+	}
+	return out, stats, nil
+}
+
+// convertedRewardDeadlineHeight is the deadline the converted transactions
+// carry.
+//
+// deadline_block_height bounds how long a signature stays admissible, which
+// exists to stop a captured live submission being replayed later. A migrated
+// transaction has no such window — it is written directly into a block at a
+// height the writer chooses — so the only real requirement is that it must not
+// be born expired at any height the genesis range can reach. Production genesis
+// output is a few thousand blocks; this is six orders of magnitude above that,
+// so the transactions stay admissible under any plausible growth of the
+// migrated range while still being a bounded value rather than a sentinel.
+const convertedRewardDeadlineHeight = int64(1_000_000_000)
+
+// convertLegacyReward rebuilds a legacy reward as a modern CreateReward signed
+// by an authority of its pool.
+//
+// claim_authorities is dropped rather than mapped: authorities live on the
+// pool now, and the pool already holds them at their post-rotation values.
+// This is the same union that the projection deliberately suppresses to keep
+// the leaked-secret keys out of the pools — conversion makes that structural
+// instead of something the projection has to remember not to do.
+func (w *Writer) convertLegacyReward(cr *corev1.LegacyCreateReward, rm string, pools []rewardPool) ([]byte, error) {
+	key, authority, err := w.signerForPool(rm, pools)
+	if err != nil {
+		return nil, err
+	}
+	body := &corev1.RewardBody{
+		DeadlineBlockHeight: convertedRewardDeadlineHeight,
+		Action: &corev1.RewardBody_Create{
+			Create: &corev1.CreateReward{
+				RewardId:             cr.GetRewardId(),
+				Name:                 cr.GetName(),
+				Amount:               cr.GetAmount(),
+				RewardsManagerPubkey: rm,
+			},
+		},
+	}
+	sig, err := common.ProtoSign(key, body)
+	if err != nil {
+		return nil, fmt.Errorf("sign converted reward with authority %s: %w", authority, err)
+	}
+	return proto.Marshal(&corev1.SignedTransaction{
+		RequestId: uuid.NewString(),
+		Transaction: &corev1.SignedTransaction_Reward{
+			Reward: &corev1.RewardMessage{Body: body, Signature: sig},
+		},
+	})
+}
+
+// signerForPool returns the key for the first authority of the named pool that
+// the operator supplied a key for, along with that authority's address.
+func (w *Writer) signerForPool(rm string, pools []rewardPool) (*ecdsa.PrivateKey, string, error) {
+	for _, p := range pools {
+		if p.RewardsManagerPubkey != rm {
+			continue
+		}
+		for _, a := range p.Authorities {
+			if key, ok := w.cfg.RewardSigningKeys[strings.ToLower(strings.TrimSpace(a))]; ok {
+				return key, a, nil
+			}
+		}
+		return nil, "", fmt.Errorf("no reward signing key for any authority of pool %s (%v)", rm, p.Authorities)
+	}
+	return nil, "", fmt.Errorf("reward references pool %s, which the old chain has no row for", rm)
+}
+
+// missingPoolSigners returns the pools no supplied key can sign for.
+func (w *Writer) missingPoolSigners(pools []rewardPool) []rewardPool {
+	var missing []rewardPool
+	for _, p := range pools {
+		if _, _, err := w.signerForPool(p.RewardsManagerPubkey, pools); err != nil {
+			missing = append(missing, p)
+		}
+	}
+	return missing
 }
 
 // rewardPool is one row of the old chain's materialized pool state.
@@ -272,34 +530,30 @@ func readRewardPools(ctx context.Context, conn *pgx.Conn) ([]rewardPool, error) 
 //
 // # Signatures
 //
-// The envelope signature and rm_owner_signature are left EMPTY, and that is
-// deliberate rather than a gap to be filled later.
+// The envelope is signed by one of the pool's own initial authorities, using
+// the operator-supplied key for that address. validateCreateRewardPool
+// requires the recovered secp256k1 signer to be a member of msg.authorities,
+// and it is — so this half of the check passes for real, not by exemption.
 //
-// A CreateRewardPool that satisfies validateCreateRewardPool needs two
-// signatures we do not have and must not manufacture. rm_owner_signature is
-// ed25519 over the body by the reward manager keypair, which only the
-// launchpad's deterministic secret can produce — being unable to produce it is
-// the security property, not an obstacle. The envelope's secp256k1 signer must
-// additionally be a member of msg.authorities, and for the two rotated pools
-// those are the post-rotation keys, held by the launchpad. So there is no
-// partially-signed form that validates: signing the envelope with the
-// migration key would produce a transaction that still fails, while looking
-// like it was meant to pass.
+// rm_owner_signature is left EMPTY, and unlike the envelope signature it
+// cannot be filled. It is ed25519 over the body by the reward manager keypair,
+// which only the launchpad's deterministic secret can produce; being unable to
+// produce it is the security property, not an obstacle, and it is not
+// something to forge. So these transactions are authorized by a genuine
+// authority and still fall short of full validateCreateRewardPool acceptance.
 //
-// Nothing re-validates these. The writer bypasses ABCI, and nodes state-sync
-// to the tip rather than replaying genesis-range blocks. The consequence, to
-// be explicit, is that a future full-history validation from genesis would
-// reject them. That is already true of every transaction this writer emits:
-// signAndMarshal signs with the migration key and then overwrites Signer with
-// the entity's real wallet, so the signature provably does not recover to the
-// Signer it carries. Genesis-range transactions are authorized by
-// genesis_migration_address / genesis_migration_end_height in the genesis
-// file, not by per-transaction signature validity, and an unsigned pool create
-// is honest about being one of them.
+// Nothing re-validates them. The writer bypasses ABCI, and nodes state-sync to
+// the tip rather than replaying genesis-range blocks. The residual consequence,
+// stated plainly: a future full-history validation from genesis would reject
+// the four pool creates on the missing rm_owner_signature. Genesis-range
+// transactions are authorized by genesis_migration_address /
+// genesis_migration_end_height rather than by per-transaction signature
+// validity — signAndMarshal already overwrites Signer after signing, so no
+// migration transaction recovers to the Signer it carries — and these are
+// strictly closer to valid than the rest of the migrated range, not further.
 //
-// deadline_block_height is 0 for the same reason: no deadline was ever signed
-// over, and a fabricated one would only make an unvalidatable transaction look
-// more validatable than it is.
+// deadline_block_height matches the converted rewards; see
+// convertedRewardDeadlineHeight.
 func (w *Writer) synthesizeRewardPoolTxs(pools []rewardPool) ([][]byte, error) {
 	txs := make([][]byte, 0, len(pools))
 	for _, p := range pools {
@@ -308,23 +562,29 @@ func (w *Writer) synthesizeRewardPoolTxs(pools []rewardPool) ([][]byte, error) {
 			// attached to it, so emitting it would migrate a dead row.
 			return nil, fmt.Errorf("reward pool %s has no authorities", p.RewardsManagerPubkey)
 		}
-		stx := &corev1.SignedTransaction{
-			RequestId: uuid.NewString(),
-			Transaction: &corev1.SignedTransaction_RewardPool{
-				RewardPool: &corev1.RewardPoolMessage{
-					Body: &corev1.RewardPoolBody{
-						DeadlineBlockHeight: 0,
-						Action: &corev1.RewardPoolBody_Create{
-							Create: &corev1.CreateRewardPool{
-								RewardsManagerPubkey: p.RewardsManagerPubkey,
-								Authorities:          p.Authorities,
-							},
-						},
-					},
+		key, authority, err := w.signerForPool(p.RewardsManagerPubkey, pools)
+		if err != nil {
+			return nil, err
+		}
+		body := &corev1.RewardPoolBody{
+			DeadlineBlockHeight: convertedRewardDeadlineHeight,
+			Action: &corev1.RewardPoolBody_Create{
+				Create: &corev1.CreateRewardPool{
+					RewardsManagerPubkey: p.RewardsManagerPubkey,
+					Authorities:          p.Authorities,
 				},
 			},
 		}
-		txBytes, err := proto.Marshal(stx)
+		sig, err := common.ProtoSign(key, body)
+		if err != nil {
+			return nil, fmt.Errorf("sign create reward pool %s with authority %s: %w", p.RewardsManagerPubkey, authority, err)
+		}
+		txBytes, err := proto.Marshal(&corev1.SignedTransaction{
+			RequestId: uuid.NewString(),
+			Transaction: &corev1.SignedTransaction_RewardPool{
+				RewardPool: &corev1.RewardPoolMessage{Body: body, Signature: sig},
+			},
+		})
 		if err != nil {
 			return nil, fmt.Errorf("marshal create reward pool %s: %w", p.RewardsManagerPubkey, err)
 		}
