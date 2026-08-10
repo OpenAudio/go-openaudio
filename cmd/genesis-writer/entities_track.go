@@ -38,12 +38,16 @@ type trackMetadataInner struct {
 	ISWC                string      `json:"iswc,omitempty"`
 	BPM                 *float64    `json:"bpm,omitempty"`
 	MusicalKey          string      `json:"musical_key,omitempty"`
+	IsCustomBPM         bool        `json:"is_custom_bpm,omitempty"`
+	IsCustomMusicalKey  bool        `json:"is_custom_musical_key,omitempty"`
 	RemixOf             interface{} `json:"remix_of,omitempty"`
 	StemOf              interface{} `json:"stem_of,omitempty"`
 	IsStreamGated       bool        `json:"is_stream_gated,omitempty"`
 	StreamConditions    interface{} `json:"stream_conditions,omitempty"`
 	IsDownloadGated     bool        `json:"is_download_gated,omitempty"`
 	DownloadConditions  interface{} `json:"download_conditions,omitempty"`
+	IsScheduledRelease  bool        `json:"is_scheduled_release,omitempty"`
+	IsPlaylistUpload    bool        `json:"is_playlist_upload,omitempty"`
 	Collaborators       []int64     `json:"collaborators,omitempty"`
 	OrigFileCID         string      `json:"orig_file_cid,omitempty"`
 	OrigFilename        string      `json:"orig_filename,omitempty"`
@@ -62,6 +66,8 @@ type trackMetadataInner struct {
 	CopyrightLine       interface{} `json:"copyright_line,omitempty"`
 	ProducerCopyright   interface{} `json:"producer_copyright_line,omitempty"`
 	ParentalWarning     string      `json:"parental_warning_type,omitempty"`
+	CommentsDisabled    bool        `json:"comments_disabled,omitempty"`
+	NoAIUse             bool        `json:"no_ai_use,omitempty"`
 	RouteSlug           string      `json:"route_slug,omitempty"`
 	RouteTitleSlug      string      `json:"route_title_slug,omitempty"`
 	RouteCollisionID    int         `json:"route_collision_id,omitempty"`
@@ -94,12 +100,16 @@ type sourceTrack struct {
 	ISWC                *string
 	BPM                 *float64
 	MusicalKey          *string
+	IsCustomBPM         bool
+	IsCustomMusicalKey  bool
 	RemixOf             []byte // JSONB
 	StemOf              []byte // JSONB
 	IsStreamGated       bool
 	StreamConditions    []byte // JSONB
 	IsDownloadGated     bool
 	DownloadConditions  []byte // JSONB
+	IsScheduledRelease  bool
+	IsPlaylistUpload    bool
 	AccessAuthorities   []string
 	OrigFileCID         *string
 	OrigFilename        *string
@@ -118,12 +128,87 @@ type sourceTrack struct {
 	CopyrightLine       []byte // JSONB
 	ProducerCopyright   []byte // JSONB
 	ParentalWarning     *string
+	CommentsDisabled    bool
+	NoAIUse             bool
 	RouteSlug           *string
 	RouteTitleSlug      *string
 	RouteCollisionID    *int
 	IsDelete            bool
 	IsAvailable         bool
 	CreatedAt           time.Time
+}
+
+// buildTrackMetadata maps a source row onto the metadata the ETL indexes. It is
+// kept separate from the batch loop so the mapping can be asserted directly:
+// a column the writer forgets to carry is invisible in the output otherwise.
+func buildTrackMetadata(t sourceTrack, collaborators []int64) trackMetadataInner {
+	inner := trackMetadataInner{
+		CreatedAt:       t.CreatedAt.Format(time.RFC3339),
+		OwnerID:         t.OwnerID,
+		Title:           deref(t.Title),
+		Description:     deref(t.Description),
+		Duration:        derefInt(t.Duration),
+		Genre:           deref(t.Genre),
+		Mood:            deref(t.Mood),
+		Tags:            deref(t.Tags),
+		CoverArt:        deref(t.CoverArt),
+		CoverArtSizes:   deref(t.CoverArtSizes),
+		PreviewCID:      deref(t.PreviewCID),
+		IsUnlisted:      t.IsUnlisted,
+		IsDownloadable:  t.IsDownloadable,
+		IsOriginalAvail: t.IsOriginalAvailable,
+		ReleaseDate:     deref(t.ReleaseDate),
+		License:         deref(t.License),
+		ISRC:            deref(t.ISRC),
+		ISWC:            deref(t.ISWC),
+		BPM:             t.BPM,
+		MusicalKey:      deref(t.MusicalKey),
+		IsStreamGated:   t.IsStreamGated,
+		IsDownloadGated: t.IsDownloadGated,
+		IsDelete:        t.IsDelete,
+		IsAvailable:     t.IsAvailable,
+
+		IsScheduledRelease: t.IsScheduledRelease,
+		IsPlaylistUpload:   t.IsPlaylistUpload,
+		IsCustomBPM:        t.IsCustomBPM,
+		IsCustomMusicalKey: t.IsCustomMusicalKey,
+		CommentsDisabled:   t.CommentsDisabled,
+		NoAIUse:            t.NoAIUse,
+
+		OrigFileCID:         deref(t.OrigFileCID),
+		OrigFilename:        deref(t.OrigFilename),
+		AudioUploadID:       deref(t.AudioUploadID),
+		DDEXApp:             deref(t.DDEXApp),
+		AIAttributionUserID: t.AIAttributionUserID,
+		PreviewStartSeconds: t.PreviewStartSeconds,
+		CoverOriginalTitle:  deref(t.CoverOriginalTitle),
+		CoverOriginalArtist: deref(t.CoverOriginalArtist),
+		ParentalWarning:     deref(t.ParentalWarning),
+		RouteSlug:           deref(t.RouteSlug),
+		RouteTitleSlug:      deref(t.RouteTitleSlug),
+		RouteCollisionID:    derefInt(t.RouteCollisionID),
+	}
+
+	inner.RemixOf = unmarshalJSONB(t.RemixOf)
+	inner.StemOf = unmarshalJSONB(t.StemOf)
+	inner.FieldVisibility = unmarshalJSONB(t.FieldVisibility)
+	inner.DDEXReleaseIDs = unmarshalJSONB(t.DDEXReleaseIDs)
+	inner.StreamConditions = unmarshalJSONB(t.StreamConditions)
+	inner.DownloadConditions = unmarshalJSONB(t.DownloadConditions)
+	inner.Artists = unmarshalJSONB(t.Artists)
+	inner.ResourceContribs = unmarshalJSONB(t.ResourceContribs)
+	inner.IndirectContribs = unmarshalJSONB(t.IndirectContribs)
+	inner.RightsController = unmarshalJSONB(t.RightsController)
+	inner.CopyrightLine = unmarshalJSONB(t.CopyrightLine)
+	inner.ProducerCopyright = unmarshalJSONB(t.ProducerCopyright)
+
+	inner.TrackCID = deref(t.TrackCID)
+
+	if len(collaborators) > 0 {
+		inner.Collaborators = collaborators
+	}
+
+	return inner
 }
 
 func (w *Writer) writeTracks(ctx context.Context) error {
@@ -147,9 +232,11 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			t.cover_art, t.cover_art_sizes, t.preview_cid,
 			t.is_unlisted, t.is_downloadable, t.is_original_available,
 			t.release_date::text, t.license, t.isrc, t.iswc, t.bpm, t.musical_key,
+			t.is_custom_bpm, t.is_custom_musical_key,
 			t.remix_of, t.stem_of,
 			t.is_stream_gated, t.stream_conditions,
 			t.is_download_gated, t.download_conditions,
+			t.is_scheduled_release, t.is_playlist_upload,
 			t.access_authorities,
 			t.orig_file_cid, t.orig_filename, t.audio_upload_id,
 			t.field_visibility, t.ddex_app, t.ddex_release_ids,
@@ -158,6 +245,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			t.artists, t.resource_contributors, t.indirect_resource_contributors,
 			t.rights_controller, t.copyright_line, t.producer_copyright_line,
 			t.parental_warning_type,
+			t.comments_disabled, t.no_ai_use,
 			r.slug, r.title_slug, r.collision_id,
 			t.is_delete, t.is_available,
 			t.created_at
@@ -180,9 +268,11 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				&t.CoverArt, &t.CoverArtSizes, &t.PreviewCID,
 				&t.IsUnlisted, &t.IsDownloadable, &t.IsOriginalAvailable,
 				&t.ReleaseDate, &t.License, &t.ISRC, &t.ISWC, &t.BPM, &t.MusicalKey,
+				&t.IsCustomBPM, &t.IsCustomMusicalKey,
 				&t.RemixOf, &t.StemOf,
 				&t.IsStreamGated, &t.StreamConditions,
 				&t.IsDownloadGated, &t.DownloadConditions,
+				&t.IsScheduledRelease, &t.IsPlaylistUpload,
 				&t.AccessAuthorities,
 				&t.OrigFileCID, &t.OrigFilename, &t.AudioUploadID,
 				&t.FieldVisibility, &t.DDEXApp, &t.DDEXReleaseIDs,
@@ -191,6 +281,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				&t.Artists, &t.ResourceContribs, &t.IndirectContribs,
 				&t.RightsController, &t.CopyrightLine, &t.ProducerCopyright,
 				&t.ParentalWarning,
+				&t.CommentsDisabled, &t.NoAIUse,
 				&t.RouteSlug, &t.RouteTitleSlug, &t.RouteCollisionID,
 				&t.IsDelete, &t.IsAvailable,
 				&t.CreatedAt,
@@ -198,64 +289,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			return t, err
 		},
 		func(ctx context.Context, t sourceTrack) error {
-			inner := trackMetadataInner{
-				CreatedAt:       t.CreatedAt.Format(time.RFC3339),
-				OwnerID:         t.OwnerID,
-				Title:           deref(t.Title),
-				Description:     deref(t.Description),
-				Duration:        derefInt(t.Duration),
-				Genre:           deref(t.Genre),
-				Mood:            deref(t.Mood),
-				Tags:            deref(t.Tags),
-				CoverArt:        deref(t.CoverArt),
-				CoverArtSizes:   deref(t.CoverArtSizes),
-				PreviewCID:      deref(t.PreviewCID),
-				IsUnlisted:      t.IsUnlisted,
-				IsDownloadable:  t.IsDownloadable,
-				IsOriginalAvail: t.IsOriginalAvailable,
-				ReleaseDate:     deref(t.ReleaseDate),
-				License:         deref(t.License),
-				ISRC:            deref(t.ISRC),
-				ISWC:            deref(t.ISWC),
-				BPM:             t.BPM,
-				MusicalKey:      deref(t.MusicalKey),
-				IsStreamGated:   t.IsStreamGated,
-				IsDownloadGated: t.IsDownloadGated,
-				IsDelete:        t.IsDelete,
-				IsAvailable:     t.IsAvailable,
-
-				OrigFileCID:         deref(t.OrigFileCID),
-				OrigFilename:        deref(t.OrigFilename),
-				AudioUploadID:       deref(t.AudioUploadID),
-				DDEXApp:             deref(t.DDEXApp),
-				AIAttributionUserID: t.AIAttributionUserID,
-				PreviewStartSeconds: t.PreviewStartSeconds,
-				CoverOriginalTitle:  deref(t.CoverOriginalTitle),
-				CoverOriginalArtist: deref(t.CoverOriginalArtist),
-				ParentalWarning:     deref(t.ParentalWarning),
-				RouteSlug:           deref(t.RouteSlug),
-				RouteTitleSlug:      deref(t.RouteTitleSlug),
-				RouteCollisionID:    derefInt(t.RouteCollisionID),
-			}
-
-			inner.RemixOf = unmarshalJSONB(t.RemixOf)
-			inner.StemOf = unmarshalJSONB(t.StemOf)
-			inner.FieldVisibility = unmarshalJSONB(t.FieldVisibility)
-			inner.DDEXReleaseIDs = unmarshalJSONB(t.DDEXReleaseIDs)
-			inner.StreamConditions = unmarshalJSONB(t.StreamConditions)
-			inner.DownloadConditions = unmarshalJSONB(t.DownloadConditions)
-			inner.Artists = unmarshalJSONB(t.Artists)
-			inner.ResourceContribs = unmarshalJSONB(t.ResourceContribs)
-			inner.IndirectContribs = unmarshalJSONB(t.IndirectContribs)
-			inner.RightsController = unmarshalJSONB(t.RightsController)
-			inner.CopyrightLine = unmarshalJSONB(t.CopyrightLine)
-			inner.ProducerCopyright = unmarshalJSONB(t.ProducerCopyright)
-
-			inner.TrackCID = deref(t.TrackCID)
-
-			if ids, ok := collabs[t.TrackID]; ok {
-				inner.Collaborators = ids
-			}
+			inner := buildTrackMetadata(t, collabs[t.TrackID])
 
 			metaJSON, err := json.Marshal(trackMetadataWrapper{
 				CID:               deref(t.TrackCID),

@@ -245,6 +245,83 @@ func TestTrackCreate_PersistsBpmAndKey(t *testing.T) {
 	}
 }
 
+// TestTrackCreate_PersistsMigratedStateFlags covers the genesis migration's
+// half of the is_playlist_upload / is_scheduled_release contract. The metadata
+// here is shaped exactly as genesis-writer emits it (see
+// cmd/genesis-writer/entities_track.go), so the two sides stay pinned together:
+// the writer proves it emits the keys, this proves they reach the columns.
+func TestTrackCreate_PersistsMigratedStateFlags(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 45)
+	seedUser(t, pool, uid, "0xflagowner", "flagowner")
+	meta := `{"owner_id":3000001,"title":"Flagged","genre":"Electronic","is_scheduled_release":true,"is_playlist_upload":true,"is_custom_bpm":true,"is_custom_musical_key":true,"comments_disabled":true,"no_ai_use":true,"is_available":true,"is_delete":false}`
+	params := buildParams(t, pool, EntityTypeTrack, ActionCreate, uid, tid, "0xFlagOwner", meta)
+	mustHandle(t, TrackCreate(), params)
+
+	var scheduledRelease, playlistUpload, customBpm, customKey, commentsDisabled, noAIUse bool
+	err := pool.QueryRow(context.Background(),
+		`SELECT is_scheduled_release, is_playlist_upload, is_custom_bpm,
+		        is_custom_musical_key, comments_disabled, no_ai_use
+		 FROM tracks WHERE track_id = $1 AND is_current = true`, tid).
+		Scan(&scheduledRelease, &playlistUpload, &customBpm, &customKey, &commentsDisabled, &noAIUse)
+	if err != nil {
+		t.Fatalf("query track: %v", err)
+	}
+	for _, f := range []struct {
+		name string
+		got  bool
+	}{
+		{"is_scheduled_release", scheduledRelease},
+		{"is_playlist_upload", playlistUpload},
+		{"is_custom_bpm", customBpm},
+		{"is_custom_musical_key", customKey},
+		{"comments_disabled", commentsDisabled},
+		{"no_ai_use", noAIUse},
+	} {
+		if !f.got {
+			t.Errorf("%s = false, want true", f.name)
+		}
+	}
+}
+
+// TestTrackCreate_OmittedStateFlagsDefaultFalse is why genesis-writer can use
+// `omitempty` on these six: an absent key and an explicit false index the same.
+func TestTrackCreate_OmittedStateFlagsDefaultFalse(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 46)
+	seedUser(t, pool, uid, "0xnoflagowner", "noflagowner")
+	meta := `{"owner_id":3000001,"title":"Unflagged","genre":"Electronic","is_available":true,"is_delete":false}`
+	params := buildParams(t, pool, EntityTypeTrack, ActionCreate, uid, tid, "0xNoFlagOwner", meta)
+	mustHandle(t, TrackCreate(), params)
+
+	var scheduledRelease, playlistUpload, customBpm, customKey, commentsDisabled, noAIUse bool
+	err := pool.QueryRow(context.Background(),
+		`SELECT is_scheduled_release, is_playlist_upload, is_custom_bpm,
+		        is_custom_musical_key, comments_disabled, no_ai_use
+		 FROM tracks WHERE track_id = $1 AND is_current = true`, tid).
+		Scan(&scheduledRelease, &playlistUpload, &customBpm, &customKey, &commentsDisabled, &noAIUse)
+	if err != nil {
+		t.Fatalf("query track: %v", err)
+	}
+	for _, f := range []struct {
+		name string
+		got  bool
+	}{
+		{"is_scheduled_release", scheduledRelease},
+		{"is_playlist_upload", playlistUpload},
+		{"is_custom_bpm", customBpm},
+		{"is_custom_musical_key", customKey},
+		{"comments_disabled", commentsDisabled},
+		{"no_ai_use", noAIUse},
+	} {
+		if f.got {
+			t.Errorf("%s = true, want false when the key is absent", f.name)
+		}
+	}
+}
+
 // TestTrackCreate_RejectsInvalidMusicalKey mirrors apps' is_valid_musical_key:
 // an unrecognized key (here a sharp, which the enum does not use) is dropped,
 // leaving musical_key NULL rather than persisting the bad value.
