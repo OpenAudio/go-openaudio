@@ -22,8 +22,14 @@ import (
 // Pool transactions are emitted before reward transactions (matching the
 // original chain order) so that pool authorization checks succeed.
 func (w *Writer) writeRewards(ctx context.Context) error {
+	// Reading the old chain's postgres is preferred: core_transactions holds
+	// the same signed bytes, and a running node serves them safely, where
+	// copying its live Pebble blockstore yields a torn database.
+	if w.cfg.CoreDSN != "" {
+		return w.writeRewardsFromDSN(ctx)
+	}
 	if w.cfg.CoreCMTHome == "" {
-		w.logger.Info("no --core-cmt-home provided, skipping rewards")
+		w.logger.Info("no --core-dsn or --core-cmt-home provided, skipping rewards")
 		return nil
 	}
 

@@ -138,6 +138,21 @@ func writeCmd() *cli.Command {
 				Usage:   "CometBFT home directory of the OLD Core chain. Used to scan the blockstore for reward transactions to replay.",
 				EnvVars: []string{"GENESIS_CORE_CMT_HOME"},
 			},
+			&cli.StringFlag{
+				Name:    "core-dsn",
+				Usage:   "OLD Core chain PostgreSQL DSN. Reads reward transactions from core_transactions instead of the blockstore; safe against a running node. Takes precedence over --core-cmt-home.",
+				EnvVars: []string{"GENESIS_CORE_DSN"},
+			},
+			&cli.Int64Flag{
+				Name:    "core-scan-chunk",
+				Value:   defaultCoreScanChunk,
+				Usage:   "Block ids per --core-dsn scan query. Smaller chunks hold each snapshot for less time.",
+				EnvVars: []string{"GENESIS_CORE_SCAN_CHUNK"},
+			},
+			&cli.BoolFlag{
+				Name:  "core-scan-dry-run",
+				Usage: "With --core-dsn, report the reward transactions found and emit nothing.",
+			},
 		},
 		Action: func(c *cli.Context) error {
 			logger, _ := zap.NewProduction()
@@ -229,6 +244,9 @@ func writeCmd() *cli.Command {
 				SkipEvents:           c.Bool("skip-events"),
 				SkipRewards:          c.Bool("skip-rewards"),
 				CoreCMTHome:          c.String("core-cmt-home"),
+				CoreDSN:              c.String("core-dsn"),
+				CoreScanChunk:        c.Int64("core-scan-chunk"),
+				CoreScanDryRun:       c.Bool("core-scan-dry-run"),
 			}
 
 			w, err := NewWriter(cfg, logger)
