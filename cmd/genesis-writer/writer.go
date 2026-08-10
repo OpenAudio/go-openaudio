@@ -459,7 +459,10 @@ func (w *Writer) Run(ctx context.Context) error {
 		{"email access", w.cfg.SkipEmails, w.writeEmailAccess},
 
 		// Phase 7: Events
+		// Event subscriptions follow the events they point at: the indexer
+		// rejects a subscription whose target event does not exist yet.
 		{"events", w.cfg.SkipEvents, w.writeEvents},
+		{"event subscriptions", w.cfg.SkipEvents, w.writeEventSubscriptions},
 
 		// Phase 8: Rewards — replay reward pool and reward txs from old chain blockstore
 		{"rewards", w.cfg.SkipRewards, w.writeRewards},

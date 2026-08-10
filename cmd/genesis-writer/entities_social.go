@@ -190,6 +190,12 @@ func (w *Writer) writeShares(ctx context.Context) error {
 
 // --- Subscriptions ---
 
+// writeSubscriptions carries user subscriptions only. The same table also holds
+// entity_type='Event' rows, whose user_id column is overloaded with an event id;
+// those are migrated by writeEventSubscriptions after the events themselves
+// exist. The entity_type filter is what keeps the split explicit — the `users`
+// join below happens to exclude event rows today only because no event id
+// currently collides with a user id, and the two id spaces overlap.
 func (w *Writer) writeSubscriptions(ctx context.Context) error {
 	type subscription struct {
 		subscriberID, userID int64
@@ -201,12 +207,12 @@ func (w *Writer) writeSubscriptions(ctx context.Context) error {
 		`SELECT count(*) FROM subscriptions s
 		JOIN users u ON u.user_id = s.subscriber_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		JOIN users tu ON tu.user_id = s.user_id AND tu.is_current = true
-		WHERE s.is_current = true`,
+		WHERE s.is_current = true AND s.entity_type = 'User'`,
 		`SELECT s.subscriber_id, s.user_id, LOWER(u.wallet), s.created_at, s.is_delete
 		FROM subscriptions s
 		JOIN users u ON u.user_id = s.subscriber_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		JOIN users tu ON tu.user_id = s.user_id AND tu.is_current = true
-		WHERE s.is_current = true
+		WHERE s.is_current = true AND s.entity_type = 'User'
 		ORDER BY s.subscriber_id, s.user_id`,
 		func(rows pgx.Rows) (subscription, error) {
 			var s subscription
