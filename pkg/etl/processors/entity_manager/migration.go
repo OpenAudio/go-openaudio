@@ -188,9 +188,60 @@ func (h *migratedPlaylistCreateHandler) Handle(ctx context.Context, params *Para
 	}
 
 	return insertPlaylistAndRouteWithState(ctx, params, playlistState{
-		IsDelete: params.MetadataBoolOr("is_delete", false),
-		Route:    migratedPlaylistRoute(params),
+		IsDelete:      params.MetadataBoolOr("is_delete", false),
+		Route:         migratedPlaylistRoute(params),
+		RemovedTracks: migratedPlaylistRemovedTracks(params),
 	})
+}
+
+// migratedPlaylistRemovedTracks reads the removal history the writer carried
+// from the source's playlist_tracks rows with is_removed = true, under the
+// `removed_tracks` metadata key:
+//
+//	[{"track_id": 1, "created_at": "<rfc3339>", "updated_at": "<rfc3339>"}, ...]
+//
+// created_at is when the track joined the playlist, updated_at when it left.
+// Absent for a production create, and for the vast majority of migrated
+// playlists — 3,917 of 312,552 have any removal history at all.
+func migratedPlaylistRemovedTracks(params *Params) []removedPlaylistTrack {
+	raw, ok := params.MetadataJSON("removed_tracks")
+	if !ok {
+		return nil
+	}
+	entries, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]removedPlaylistTrack, 0, len(entries))
+	for _, entry := range entries {
+		obj, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		trackID, ok := pickPlaylistTrackID(obj)
+		if !ok {
+			continue
+		}
+		removed := removedPlaylistTrack{TrackID: trackID}
+		if ts, ok := parseReleaseDate(stringField(obj, "updated_at")); ok {
+			removed.UpdatedAt = ts.Time
+		}
+		if ts, ok := parseReleaseDate(stringField(obj, "created_at")); ok {
+			removed.CreatedAt = ts.Time
+		}
+		out = append(out, removed)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// stringField reads a string out of a decoded JSON object, or "" if absent or
+// of another type.
+func stringField(obj map[string]any, key string) string {
+	s, _ := obj[key].(string)
+	return s
 }
 
 // migratedPlaylistRoute reads the route the writer carried from the source, or

@@ -70,6 +70,13 @@ type playlistState struct {
 	// resolving entirely. A slug is a permanent URL, so the migration carries
 	// the real one rather than deriving a plausible one.
 	Route *playlistRoute
+
+	// RemovedTracks are the playlist's tombstones — tracks that were once in it
+	// and have since left. A Create can only produce live membership on its own,
+	// so the migration carries the removal history explicitly; see
+	// insertPlaylistTrackTombstones for why it cannot be derived and why it
+	// matters.
+	RemovedTracks []removedPlaylistTrack
 }
 
 // insertPlaylistAndRoute writes a newly created playlist. A new playlist is
@@ -128,9 +135,11 @@ func insertPlaylistAndRouteWithState(ctx context.Context, params *Params, state 
 		CreatedAt:                   params.BlockTime,
 	}
 
+	trackIDs := extractPlaylistTrackIDs(params.Metadata)
+
 	// last_added_to is the block time of the most recent track add; set it when
 	// the playlist is created with tracks (matches the legacy indexer), else NULL.
-	if len(extractPlaylistTrackIDs(params.Metadata)) > 0 {
+	if len(trackIDs) > 0 {
 		row.LastAddedTo = pgTimestamp(params.BlockTime)
 	}
 
@@ -139,6 +148,12 @@ func insertPlaylistAndRouteWithState(ctx context.Context, params *Params, state 
 	}
 
 	if err := updatePlaylistTracks(ctx, params.DBTX, params.EntityID, params.Metadata, params.BlockTime); err != nil {
+		return err
+	}
+	// Tombstones are written after the live rows so the live membership wins any
+	// contradiction between the two. Empty for a real create — only the
+	// migration carries removal history.
+	if err := insertPlaylistTrackTombstones(ctx, params.DBTX, params.EntityID, state.RemovedTracks, trackIDs, params.BlockTime); err != nil {
 		return err
 	}
 	if err := updateAlbumPriceHistory(ctx, params.DBTX, params.EntityID, params.BlockNumber, params.BlockTime, params.Metadata); err != nil {
