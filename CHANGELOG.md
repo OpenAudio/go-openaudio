@@ -1,5 +1,78 @@
 # Changelog
 
+## [1.9.0](https://github.com/OpenAudio/go-openaudio/compare/v1.8.2...v1.9.0) (2026-08-10)
+
+
+### Features
+
+* **core:** add height-gated consensus ruleset engine ([#447](https://github.com/OpenAudio/go-openaudio/issues/447)) ([708f6d6](https://github.com/OpenAudio/go-openaudio/commit/708f6d68a9d0d1282dd7e9a7ee06331cf61e7bd5))
+* **core:** authorize track cids against validator upload attestations ([#477](https://github.com/OpenAudio/go-openaudio/issues/477)) ([878a6a7](https://github.com/OpenAudio/go-openaudio/commit/878a6a706680cd7a7e55269bd9a0a6b750c715e7))
+* **core:** enforce manage entity authorization behind a height gate ([#450](https://github.com/OpenAudio/go-openaudio/issues/450)) ([97140a6](https://github.com/OpenAudio/go-openaudio/commit/97140a69e32fced9edf930b500a57e61c92be285))
+* **core:** track authorization state at consensus ([#448](https://github.com/OpenAudio/go-openaudio/issues/448)) ([3b5730c](https://github.com/OpenAudio/go-openaudio/commit/3b5730c3f2af6a82701150f8a6935216467c13b6))
+* **etl:** carry playlist removal history through the migration ([#485](https://github.com/OpenAudio/go-openaudio/issues/485)) ([222a6b4](https://github.com/OpenAudio/go-openaudio/commit/222a6b4bc575dc06093b9ecc9de31ae9038d5228))
+* **etl:** make entity_id the canonical subscription target for both types ([#470](https://github.com/OpenAudio/go-openaudio/issues/470)) ([b137701](https://github.com/OpenAudio/go-openaudio/commit/b13770197842d46c10af385b89c4d16b477fddfc))
+* **etl:** store the payout wallet, coin flair and profile type users send ([#453](https://github.com/OpenAudio/go-openaudio/issues/453)) ([7753833](https://github.com/OpenAudio/go-openaudio/commit/7753833bf1ae782ebfa6a99e90f4ab4c39a3d16c))
+* **genesis-writer:** carry profile settings and grant approval on migrated creates ([#492](https://github.com/OpenAudio/go-openaudio/issues/492)) ([06d9e62](https://github.com/OpenAudio/go-openaudio/commit/06d9e624ae25dd922329d0d57faf397322955b52))
+* **genesis-writer:** migrate pinned comments ([#487](https://github.com/OpenAudio/go-openaudio/issues/487)) ([0cbaa69](https://github.com/OpenAudio/go-openaudio/commit/0cbaa697b9e532fdeddf8c563577144944d4893d))
+* **mediorum:** attribute uploads to an asserted user and attest their cids ([#476](https://github.com/OpenAudio/go-openaudio/issues/476)) ([123f53e](https://github.com/OpenAudio/go-openaudio/commit/123f53ea40fa1176268db264f44425d2c7d7c41a))
+* **mediorum:** operator-run prune job, and infer data loss from repair failures ([#437](https://github.com/OpenAudio/go-openaudio/issues/437)) ([e62185a](https://github.com/OpenAudio/go-openaudio/commit/e62185ac01037891b3647c97ccc3a138e184c498))
+* **parity:** compare column contents, not just row counts ([#484](https://github.com/OpenAudio/go-openaudio/issues/484)) ([bf016d6](https://github.com/OpenAudio/go-openaudio/commit/bf016d64241da26b7b1be18c369e4e51523c58c3))
+
+
+### Bug Fixes
+
+* **ci:** stop stamping the etl version onto a dependency requirement ([#431](https://github.com/OpenAudio/go-openaudio/issues/431)) ([ec8df1f](https://github.com/OpenAudio/go-openaudio/commit/ec8df1fb3702c522bf39a45701d50bc5c5b25b1f))
+* **core:** keep jailed validators valid for mediorum operations ([#468](https://github.com/OpenAudio/go-openaudio/issues/468)) ([f0b14d7](https://github.com/OpenAudio/go-openaudio/commit/f0b14d7b22f01df2b2e95a6075f2ccb9b6b87bbc))
+* **core:** keep migration transactions out of the custom mempool ([#457](https://github.com/OpenAudio/go-openaudio/issues/457)) ([4a97d21](https://github.com/OpenAudio/go-openaudio/commit/4a97d21a7ffe95d0fd322df12f348afc750197e3))
+* **core:** serve a block's transactions in block order ([#443](https://github.com/OpenAudio/go-openaudio/issues/443)) ([a6f3e5b](https://github.com/OpenAudio/go-openaudio/commit/a6f3e5b0ef20911bf7b85f0014a652aa6be36491))
+* **dev:** prune blockstore on devnet nodes 3 and 4 ([#426](https://github.com/OpenAudio/go-openaudio/issues/426)) ([fc6c83f](https://github.com/OpenAudio/go-openaudio/commit/fc6c83f76597a30ab7374d6f2fdacb911c904e25))
+* **etl:** do not imply a subscription for migrated follows ([#473](https://github.com/OpenAudio/go-openaudio/issues/473)) ([5293b49](https://github.com/OpenAudio/go-openaudio/commit/5293b497e54eabe92c020f7b772f09576dbd6276))
+* **etl:** don't delete rows from an ETL migration ([#433](https://github.com/OpenAudio/go-openaudio/issues/433)) ([30b1c1b](https://github.com/OpenAudio/go-openaudio/commit/30b1c1b9d24563858b0ce8886056f0415f9bd056))
+* **etl:** index genesis-migration entities without data loss ([#425](https://github.com/OpenAudio/go-openaudio/issues/425)) ([6c116fa](https://github.com/OpenAudio/go-openaudio/commit/6c116fa1841eb8836e43ef162a40b757b7b1ecd3))
+* **etl:** keep the slug a migrated playlist already serves ([#479](https://github.com/OpenAudio/go-openaudio/issues/479)) ([b0bd305](https://github.com/OpenAudio/go-openaudio/commit/b0bd305308f1e59b541168dbc81c9dd96659ee8c))
+* **etl:** key subscription identity on entity_type, not just numeric id ([#469](https://github.com/OpenAudio/go-openaudio/issues/469)) ([7d7f7d6](https://github.com/OpenAudio/go-openaudio/commit/7d7f7d6a6f5badbe3d011a9bbf5e7cc8e9862b0c))
+* **etl:** maintain the playlist reverse index on tracks ([#481](https://github.com/OpenAudio/go-openaudio/issues/481)) ([95f8e2f](https://github.com/OpenAudio/go-openaudio/commit/95f8e2ff0c66573920488e272dc53ca245c57343))
+* **etl:** persist every user field the create contract accepts ([#466](https://github.com/OpenAudio/go-openaudio/issues/466)) ([db5c632](https://github.com/OpenAudio/go-openaudio/commit/db5c632c3a94fe3e6289360ee25877491ea14b79))
+* **etl:** persist profile_type on user Create ([#458](https://github.com/OpenAudio/go-openaudio/issues/458)) ([a60f996](https://github.com/OpenAudio/go-openaudio/commit/a60f996ec83b2bade5aa334f054161d5ec9ddd2c))
+* **etl:** record album saves and reposts as playlist ([#428](https://github.com/OpenAudio/go-openaudio/issues/428)) ([26ccde7](https://github.com/OpenAudio/go-openaudio/commit/26ccde79181ff8c3dd1e711070adbb7327e6be68))
+* **etl:** record migrated entities with their original created_at ([#439](https://github.com/OpenAudio/go-openaudio/issues/439)) ([a0aa0e8](https://github.com/OpenAudio/go-openaudio/commit/a0aa0e81975f4ef3074171b4305469f4a34ce7b1))
+* **etl:** replay concluded remix contests through the migration ([#494](https://github.com/OpenAudio/go-openaudio/issues/494)) ([28a05c3](https://github.com/OpenAudio/go-openaudio/commit/28a05c3d86dbbfa532b1c15a882deffa5cefb380))
+* **etl:** report transactions that match no handler ([#480](https://github.com/OpenAudio/go-openaudio/issues/480)) ([36c806c](https://github.com/OpenAudio/go-openaudio/commit/36c806ca96dedff61b647d6b3ff72d08ecdeef9e))
+* **etl:** store the DDEX rights metadata tracks already send ([#461](https://github.com/OpenAudio/go-openaudio/issues/461)) ([c1c8993](https://github.com/OpenAudio/go-openaudio/commit/c1c899310c323c162fa152a9c0243954fd61b86e))
+* **etl:** write playlist_tracks timestamps in block time ([#482](https://github.com/OpenAudio/go-openaudio/issues/482)) ([733c8b2](https://github.com/OpenAudio/go-openaudio/commit/733c8b26e4094682a9bffe293d625c4262092fb5))
+* **genesis-writer:** emit email_owner_user_id so encrypted emails index ([#490](https://github.com/OpenAudio/go-openaudio/issues/490)) ([b7c3597](https://github.com/OpenAudio/go-openaudio/commit/b7c35979cf67dadde2df4c97837203ff578dfa25))
+* **genesis-writer:** emit every timestamp in UTC ([#488](https://github.com/OpenAudio/go-openaudio/issues/488)) ([3a877e1](https://github.com/OpenAudio/go-openaudio/commit/3a877e14e292441bd1920594a504464d0f9b658c))
+* **genesis-writer:** emit muted users under the User entity type ([#489](https://github.com/OpenAudio/go-openaudio/issues/489)) ([e590681](https://github.com/OpenAudio/go-openaudio/commit/e590681b6ae22c5b8dad9c26b6a7584ef7b72ae0))
+* **genesis-writer:** emit six missing track state flags ([#486](https://github.com/OpenAudio/go-openaudio/issues/486)) ([3a4883a](https://github.com/OpenAudio/go-openaudio/commit/3a4883a6259d4599f548f6a6d90d362e862ff13e))
+* **genesis-writer:** emit six state fields the indexer reads ([#491](https://github.com/OpenAudio/go-openaudio/issues/491)) ([a708bc1](https://github.com/OpenAudio/go-openaudio/commit/a708bc1988243f295abb9650cc27d4c988c41b4d))
+* **genesis-writer:** migrate subscriptions to events ([#493](https://github.com/OpenAudio/go-openaudio/issues/493)) ([04ee231](https://github.com/OpenAudio/go-openaudio/commit/04ee2314b56ef06b8cdfadb3c756c4623a06bca7))
+* **genesis:** carry soft-deleted state on Create instead of dropping the row ([#455](https://github.com/OpenAudio/go-openaudio/issues/455)) ([74e3a70](https://github.com/OpenAudio/go-openaudio/commit/74e3a70d160da6775648b1aef1604a29bf6d73c3))
+* **genesis:** carry the entity fields the writer never put on Create ([#445](https://github.com/OpenAudio/go-openaudio/issues/445)) ([947c053](https://github.com/OpenAudio/go-openaudio/commit/947c053f1a181d7ee018d0f589ba61654d221f6a))
+* **genesis:** emit comment reactions under the Comment entity type ([#444](https://github.com/OpenAudio/go-openaudio/issues/444)) ([28b9190](https://github.com/OpenAudio/go-openaudio/commit/28b9190f11b8d2c211d25d65eaaa6c56828a8db5))
+* **genesis:** emit comment replies after their parents ([#441](https://github.com/OpenAudio/go-openaudio/issues/441)) ([68fd451](https://github.com/OpenAudio/go-openaudio/commit/68fd451bfe9c1c70b325b8c273dd08b0dfc18b03))
+* **genesis:** emit missing entity metadata and sign apps/grants as the owning user ([#438](https://github.com/OpenAudio/go-openaudio/issues/438)) ([3e2e259](https://github.com/OpenAudio/go-openaudio/commit/3e2e2597410353f4d8fd036b3c435f69dd61e92c))
+* **genesis:** emit root comments and replies in separate passes ([#472](https://github.com/OpenAudio/go-openaudio/issues/472)) ([b009158](https://github.com/OpenAudio/go-openaudio/commit/b0091586f9989110bc4ed77c8084d10824a521ee))
+* **genesis:** keep each track's existing slug instead of regenerating it ([#452](https://github.com/OpenAudio/go-openaudio/issues/452)) ([49841ce](https://github.com/OpenAudio/go-openaudio/commit/49841cea93aa5f796820e32f52b64c4ce4f8d883))
+* **genesis:** migrate soft-deleted wallet links by carrying is_delete on Create ([#442](https://github.com/OpenAudio/go-openaudio/issues/442)) ([cb5abe8](https://github.com/OpenAudio/go-openaudio/commit/cb5abe865c068758117177304fad794bb34c9b03))
+* **genesis:** only emit transactions whose references resolve ([#449](https://github.com/OpenAudio/go-openaudio/issues/449)) ([da0256d](https://github.com/OpenAudio/go-openaudio/commit/da0256d51bf80a520d69a620c815e496dd34dd63))
+* **genesis:** project consensus auth state during the genesis write ([#464](https://github.com/OpenAudio/go-openaudio/issues/464)) ([f8a8fa3](https://github.com/OpenAudio/go-openaudio/commit/f8a8fa38d179a215dca5a7f88007fcc4efb77023))
+* **mediorum:** bound repair pulls, fall back to store-all peers, surface checkpoint age ([#436](https://github.com/OpenAudio/go-openaudio/issues/436)) ([56153da](https://github.com/OpenAudio/go-openaudio/commit/56153dabeeba6e433559c5860ec739bc554632e1))
+* **mediorum:** harden media response headers ([#446](https://github.com/OpenAudio/go-openaudio/issues/446)) ([98273f7](https://github.com/OpenAudio/go-openaudio/commit/98273f783b238490546fc53c5fbf60eca83098b2))
+* **mediorum:** match access authorities case-insensitively ([#203](https://github.com/OpenAudio/go-openaudio/issues/203)) ([acd150d](https://github.com/OpenAudio/go-openaudio/commit/acd150d65328e7bafaee0340112c26969e88c1f1))
+* **mediorum:** reclaim orphaned .tmp files on write instead of walking at startup ([#435](https://github.com/OpenAudio/go-openaudio/issues/435)) ([10d1953](https://github.com/OpenAudio/go-openaudio/commit/10d1953d3204b3315394a8c0a4cc8150b59f66c3))
+* **mediorum:** repair upload cursor and quadratic file-bucket listing ([#434](https://github.com/OpenAudio/go-openaudio/issues/434)) ([63cc6c6](https://github.com/OpenAudio/go-openaudio/commit/63cc6c6df0c6c52b40b79a3c352c12d8594c2816))
+* **parity:** do not skip every row when the reference is a snapshot ([#475](https://github.com/OpenAudio/go-openaudio/issues/475)) ([72da008](https://github.com/OpenAudio/go-openaudio/commit/72da0082a267b98a6b01248cf59746252b024b1a))
+
+
+### Performance Improvements
+
+* **etl:** drop the per-transaction savepoint when replaying migration blocks ([#451](https://github.com/OpenAudio/go-openaudio/issues/451)) ([4639757](https://github.com/OpenAudio/go-openaudio/commit/46397573275d9208e58c83557534c2d47a996698))
+
+
+### Code Refactoring
+
+* remove crudr peer transport ([#366](https://github.com/OpenAudio/go-openaudio/issues/366)) ([2f80b66](https://github.com/OpenAudio/go-openaudio/commit/2f80b66aa533b2d6e1292a7bb11aef6442e43f3e))
+
 ## [1.8.2](https://github.com/OpenAudio/go-openaudio/compare/v1.8.1...v1.8.2) (2026-07-28)
 
 
