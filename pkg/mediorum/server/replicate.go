@@ -1,11 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -21,6 +24,14 @@ import (
 	"gocloud.dev/blob"
 	"gocloud.dev/gcerrors"
 )
+
+var (
+	errPeerPullUnsupported   = errors.New("peer does not support pull replication")
+	errPeerPullFailed        = errors.New("peer could not pull blob")
+	errPulledBlobCIDMismatch = errors.New("pulled blob CID mismatch")
+)
+
+const maxPeerErrorBytes = 8 << 10
 
 func (ss *MediorumServer) replicateFileParallel(ctx context.Context, cid string, filePath string, placementHosts []string) ([]string, error) {
 	replicaCount := ss.Config.ReplicationFactor
@@ -241,6 +252,93 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 	return <-errChan
 }
 
+// replicateStoredFileToHost asks capable peers to pull directly from this
+// node's blob storage. Older peers fall back to the multipart push path.
+func (ss *MediorumServer) replicateStoredFileToHost(
+	ctx context.Context,
+	peer string,
+	fileName string,
+	sourceBucket *blob.Bucket,
+	sourceKey string,
+	placementHosts []string,
+) error {
+	if peer == ss.Config.Self.Host {
+		return nil
+	}
+
+	if ss.Config.BlobStorageStreaming {
+		err := ss.requestPeerPull(ctx, peer, fileName, placementHosts)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, errPeerPullUnsupported) && !errors.Is(err, errPeerPullFailed) {
+			return err
+		}
+		ss.logger.Debug("falling back to multipart blob replication",
+			zap.String("host", peer),
+			zap.String("cid", fileName),
+			zap.Error(err),
+		)
+	}
+
+	reader, err := sourceBucket.NewReader(ctx, sourceKey, nil)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	return ss.replicateFileToHost(ctx, peer, fileName, reader, placementHosts)
+}
+
+func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string, placementHosts []string) error {
+	payload, err := json.Marshal(internalBlobPullRequest{
+		CID:            cid,
+		PlacementHosts: placementHosts,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := signature.SignedPost(
+		ctx,
+		peer+"/internal/blobs/pull",
+		"application/json",
+		bytes.NewReader(payload),
+		ss.Config.privateKey,
+		ss.Config.Self.Host,
+	)
+	if err != nil {
+		return err
+	}
+
+	resp, err := ss.peerHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxPeerErrorBytes))
+		return nil
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxPeerErrorBytes))
+		return fmt.Errorf("%w: %s", errPeerPullUnsupported, resp.Status)
+	case http.StatusBadGateway, http.StatusGatewayTimeout:
+		return fmt.Errorf("%w: %s", errPeerPullFailed, peerResponseError(resp))
+	default:
+		return fmt.Errorf("pull replication request failed: %s", peerResponseError(resp))
+	}
+}
+
+func peerResponseError(resp *http.Response) string {
+	detail, _ := io.ReadAll(io.LimitReader(resp.Body, maxPeerErrorBytes))
+	if len(detail) == 0 {
+		return resp.Status
+	}
+	return fmt.Sprintf("%s: %s", resp.Status, strings.TrimSpace(string(detail)))
+}
+
 // hostHasBlob is a "quick check" that a host has a blob (used for checking host has blob before redirecting to it).
 func (ss *MediorumServer) hostHasBlob(host, key string) bool {
 	attr, err := ss.hostGetBlobInfo(host, key)
@@ -265,32 +363,71 @@ func (ss *MediorumServer) hostGetBlobInfo(host, key string) (*blob.Attributes, e
 // caller has placement context (repair) so the local write lands in the same
 // bucket reads expect; pass nil for opportunistic pulls (e.g. serveBlob fallback).
 func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string, placementHosts []string) error {
+	body, err := ss.openBlobFromHost(ctx, host, cid)
+	if err != nil {
+		return err
+	}
+	defer body.Close()
+
+	return ss.replicateToMyBucket(ctx, cid, body, placementHosts)
+}
+
+func (ss *MediorumServer) pullFileFromHostValidated(ctx context.Context, host, cid string, placementHosts []string) error {
+	body, err := ss.openBlobFromHost(ctx, host, cid)
+	if err != nil {
+		return err
+	}
+	defer body.Close()
+
+	tmp, err := os.CreateTemp("", "mediorum-pull-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	defer tmp.Close()
+
+	if _, err := io.Copy(tmp, body); err != nil {
+		return err
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	if err := cidutil.ValidateCID(cid, tmp); err != nil {
+		return fmt.Errorf("%w: %v", errPulledBlobCIDMismatch, err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
+	return ss.replicateToMyBucket(ctx, cid, tmp, placementHosts)
+}
+
+func (ss *MediorumServer) openBlobFromHost(ctx context.Context, host, cid string) (io.ReadCloser, error) {
 	if host == ss.Config.Self.Host {
-		return errors.New("should not pull blob from self")
+		return nil, errors.New("should not pull blob from self")
 	}
 	u := apiPath(host, "internal/blobs", url.PathEscape(cid))
 
 	req, err := signature.SignedGet(ctx, u, ss.Config.privateKey, ss.Config.Self.Host)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	// Note: placementHosts is NOT sent on the wire. The peer's GET
-	// endpoint uses hot-first-then-archive fallback, so it'll find the
-	// blob wherever it lives without needing routing context. The
-	// placementHosts param here only governs where *this node's* local
-	// write lands after we receive the blob.
+	// The peer's GET endpoint uses hot-first-then-archive fallback, so it
+	// finds the blob without placement context. Placement only governs the
+	// receiver's local write after this stream is validated.
 
 	resp, err := ss.peerHTTPClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("pull blob: bad status: %d cid: %s host: %s", resp.StatusCode, cid, host)
+		resp.Body.Close()
+		return nil, fmt.Errorf("pull blob: bad status: %d cid: %s host: %s", resp.StatusCode, cid, host)
 	}
 
-	return ss.replicateToMyBucket(ctx, cid, resp.Body, placementHosts)
+	return resp.Body, nil
 }
 
 // diskWarnInterval caps how often each dsnHasSpace warn is emitted per DSN.

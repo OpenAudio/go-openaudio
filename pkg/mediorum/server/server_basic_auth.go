@@ -25,9 +25,20 @@ func recoverSigner(input string, signature []byte) (common.Address, error) {
 	return sigverify.EcRecoverEx(hash.Bytes(), signature)
 }
 
-func (ss *MediorumServer) checkBasicAuth(user, pass string, _ echo.Context) (bool, error) {
+const authenticatedPeerHostKey = "authenticatedPeerHost"
+
+func (ss *MediorumServer) checkBasicAuth(user, pass string, c echo.Context) (bool, error) {
 	// for dev:
 	if ss.Config.privateKey == nil {
+		if c != nil {
+			peerHost := strings.TrimPrefix(c.Request().UserAgent(), "mediorum ")
+			for _, peer := range ss.Config.Peers {
+				if peer.Host == peerHost {
+					c.Set(authenticatedPeerHostKey, peer.Host)
+					break
+				}
+			}
+		}
 		return true, nil
 	}
 
@@ -53,6 +64,9 @@ func (ss *MediorumServer) checkBasicAuth(user, pass string, _ echo.Context) (boo
 	// check peer list for wallet
 	for _, peer := range ss.Config.Peers {
 		if strings.EqualFold(peer.Wallet, wallet.Hex()) {
+			if c != nil {
+				c.Set(authenticatedPeerHostKey, peer.Host)
+			}
 			return true, nil
 		}
 	}

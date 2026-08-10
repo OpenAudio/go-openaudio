@@ -542,6 +542,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	// internal: blobs between peers
 	internalApi.GET("/blobs/:cid", ss.serveInternalBlobGET, cidutil.UnescapeCidParam, middleware.BasicAuth(ss.checkBasicAuth))
 	internalApi.POST("/blobs", ss.serveInternalBlobPOST, middleware.BasicAuth(ss.checkBasicAuth))
+	internalApi.POST("/blobs/pull", ss.serveInternalBlobPull, middleware.BasicAuth(ss.checkBasicAuth))
 	internalApi.GET("/qm.csv", ss.serveInternalQmCsv)
 
 	// WIP internal: metrics
