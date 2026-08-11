@@ -119,6 +119,7 @@ func TestRMKeyForPoolFailsClosed(t *testing.T) {
 // mints would otherwise proceed to find no pool derivable and blame the secret.
 func TestSecretWithoutMintsIsRejected(t *testing.T) {
 	t.Setenv(launchpadSecretEnvVar, strings.Repeat("1", 64))
+	t.Setenv(launchpadRotatedSecretEnvVar, strings.Repeat("2", 64))
 	t.Setenv(launchpadMintsEnvVar, "")
 
 	_, err := loadLaunchpadKeys("")
@@ -132,6 +133,7 @@ func TestSecretWithoutMintsIsRejected(t *testing.T) {
 
 func TestSecretLengthIsValidated(t *testing.T) {
 	t.Setenv(launchpadSecretEnvVar, "abcd")
+	t.Setenv(launchpadRotatedSecretEnvVar, strings.Repeat("2", 64))
 	t.Setenv(launchpadMintsEnvVar, rmDerivationVectors[0].mint)
 
 	if _, err := loadLaunchpadKeys(""); err == nil {
@@ -141,8 +143,34 @@ func TestSecretLengthIsValidated(t *testing.T) {
 
 // No secret configured is not an error at load time — the caller decides
 // whether reward pools are being written at all.
+// One secret alone derives half the key material, and the resulting failure is
+// a per-pool "no mint derives this reward manager", which reads like a bad mint
+// list rather than a missing secret. Fail up front, naming the variable.
+func TestBothSecretsAreRequired(t *testing.T) {
+	for _, tc := range []struct{ name, set, missing string }{
+		{"only original", launchpadSecretEnvVar, launchpadRotatedSecretEnvVar},
+		{"only rotated", launchpadRotatedSecretEnvVar, launchpadSecretEnvVar},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(launchpadSecretEnvVar, "")
+			t.Setenv(launchpadRotatedSecretEnvVar, "")
+			t.Setenv(tc.set, strings.Repeat("1", 64))
+			t.Setenv(launchpadMintsEnvVar, rmDerivationVectors[0].mint)
+
+			_, err := loadLaunchpadKeys("")
+			if err == nil {
+				t.Fatalf("setting only %s was accepted; it derives half the key material", tc.set)
+			}
+			if !strings.Contains(err.Error(), tc.missing) {
+				t.Errorf("error %q does not name the missing variable %s", err, tc.missing)
+			}
+		})
+	}
+}
+
 func TestNoSecretYieldsNoKeys(t *testing.T) {
 	t.Setenv(launchpadSecretEnvVar, "")
+	t.Setenv(launchpadRotatedSecretEnvVar, "")
 	keys, err := loadLaunchpadKeys("")
 	if err != nil {
 		t.Fatalf("absent secret should not error at load: %v", err)
@@ -184,6 +212,7 @@ So11111111111111111111111111111111111111112
 func TestDerivedKeyMatchesItsRewardManager(t *testing.T) {
 	v := rmDerivationVectors[0]
 	t.Setenv(launchpadSecretEnvVar, v.secret)
+	t.Setenv(launchpadRotatedSecretEnvVar, strings.Repeat("2", 64))
 	t.Setenv(launchpadMintsEnvVar, v.mint)
 
 	keys, err := loadLaunchpadKeys("")

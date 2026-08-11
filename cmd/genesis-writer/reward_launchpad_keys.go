@@ -50,15 +50,19 @@ import (
 // duplication to reference vectors generated from the API's own
 // implementations, so a divergence fails a test rather than silently producing
 // keys that authorize nothing.
+// These names match rewards_cli's rotate-launchpad-secret deliberately. The two
+// tools consume the same two secrets, and giving them different names invites
+// setting one tool's variable and running the other: the derivations would then
+// match no pool and the failure would read as a bad mint list rather than a
+// misconfigured secret.
 const (
 	// launchpadSecretEnvVar is the ORIGINAL deterministic secret — the one the
 	// Solana reward manager accounts were actually initialized under.
-	launchpadSecretEnvVar = "GENESIS_LAUNCHPAD_SECRET"
-	// launchpadRotatedSecretEnvVar is the post-rotation secret. Optional at
-	// load time: a network that never rotated has only one. Whether its absence
-	// matters is decided per pool, where the error can name what is missing.
-	launchpadRotatedSecretEnvVar = "GENESIS_LAUNCHPAD_SECRET_ROTATED"
-	launchpadMintsEnvVar         = "GENESIS_LAUNCHPAD_MINTS"
+	launchpadSecretEnvVar = "LAUNCHPAD_OLD_SECRET"
+	// launchpadRotatedSecretEnvVar is the post-rotation secret, which derives
+	// the claim authorities the pools currently carry.
+	launchpadRotatedSecretEnvVar = "LAUNCHPAD_NEW_SECRET"
+	launchpadMintsEnvVar         = "LAUNCHPAD_MINTS"
 )
 
 // claimAuthorityDomain is the domain separator the API's
@@ -200,13 +204,28 @@ func deriveClaimAuthority(secretHex string, mint []byte) (string, *ecdsa.Private
 func loadLaunchpadKeys(mintsFile string) (*launchpadKeys, error) {
 	original := strings.TrimSpace(os.Getenv(launchpadSecretEnvVar))
 	rotated := strings.TrimSpace(os.Getenv(launchpadRotatedSecretEnvVar))
-	if original == "" && rotated == "" {
+
+	// Both are required. Either one alone derives half the key material: the
+	// original owns the reward managers, the rotated one owns the authorities
+	// the pools currently carry, and a run missing either fails later with a
+	// per-pool error that reads like a bad mint list. Failing here names the
+	// actual problem, before anything is read or written.
+	var missing []string
+	if original == "" {
+		missing = append(missing, launchpadSecretEnvVar)
+	}
+	if rotated == "" {
+		missing = append(missing, launchpadRotatedSecretEnvVar)
+	}
+	if len(missing) == 2 {
+		// Neither set at all — the caller decides whether that is fatal, since
+		// it depends on whether rewards are being migrated.
 		return nil, nil
 	}
-	if original == "" {
-		return nil, fmt.Errorf("%s is set but %s is not. The rotated secret alone cannot derive the "+
-			"reward managers, which were initialized under the original secret",
-			launchpadRotatedSecretEnvVar, launchpadSecretEnvVar)
+	if len(missing) == 1 {
+		return nil, fmt.Errorf("%s is not set; both launchpad secrets are required "+
+			"(%s derives the reward managers, %s derives the authorities they carry)",
+			missing[0], launchpadSecretEnvVar, launchpadRotatedSecretEnvVar)
 	}
 
 	mints, err := loadLaunchpadMints(mintsFile)
@@ -229,10 +248,7 @@ func loadLaunchpadKeys(mintsFile string) (*launchpadKeys, error) {
 		generation secretGeneration
 		secret     string
 	}
-	gens := []gen{{secretOriginal, original}}
-	if rotated != "" {
-		gens = append(gens, gen{secretRotated, rotated})
-	}
+	gens := []gen{{secretOriginal, original}, {secretRotated, rotated}}
 
 	for _, g := range gens {
 		// Both derivations require 32-byte hex; a secret of another length
