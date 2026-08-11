@@ -56,26 +56,14 @@ type WriterConfig struct {
 	SkipEmails           bool
 	SkipEvents           bool
 	SkipRewards          bool
-	// CoreCMTHome is the CometBFT home directory of the OLD chain. When set,
-	// the genesis writer scans its blockstore for RewardMessage and
-	// RewardPoolMessage transactions and replays them verbatim into the new
-	// chain. If empty, rewards are skipped.
-	CoreCMTHome string
-	// CoreDSN reads the same reward transactions from the OLD chain's postgres
-	// instead of its blockstore. core_transactions holds the identical signed
-	// bytes, so the replay is the same; what differs is that a running node
-	// serves it over a connection, where copying a live Pebble blockstore
-	// yields a torn database. Takes precedence over CoreCMTHome.
+	// CoreDSN is the OLD chain's PostgreSQL DSN. Reward pools and rewards are
+	// rebuilt from core_reward_pools and core_rewards; the connection is
+	// read-only and safe to point at a running production node.
 	CoreDSN string
-	// CoreScanChunk is how many block ids one scan query covers. The scan runs
-	// against a production validator, so it is deliberately split: each chunk
-	// is its own short statement, which keeps any single query from holding a
-	// snapshot long enough to stall autovacuum across that database.
-	CoreScanChunk int64
-	// CoreScanDryRun reports what the scan found and emits nothing, so the
-	// counts can be reconciled against the old chain before a writer run
-	// commits to them.
-	CoreScanDryRun bool
+	// LaunchpadMintsFile lists the launchpad mints to derive reward manager and
+	// claim-authority keys for. Without it the secrets derive nothing, since
+	// every launchpad key is a function of (secret, mint).
+	LaunchpadMintsFile string
 	// RunMigrations applies the Core chain schema to DstDSN before writing.
 	// Useful when starting from a fresh database (e.g., in integration tests).
 	RunMigrations bool
