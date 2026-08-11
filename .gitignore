@@ -20,3 +20,8 @@ package-lock.json
 openaudio
 programmable-distribution
 /etl
+
+# Binaries built into the repo root by `go build ./cmd/...`. Rooted so they
+# only match the artifact, not same-named source directories under cmd/.
+/genesis-writer
+/rollback
