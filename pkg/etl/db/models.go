@@ -51,6 +51,8 @@ type Comment struct {
 	Txhash          string           `json:"txhash"`
 	Blockhash       string           `json:"blockhash"`
 	Blocknumber     int32            `json:"blocknumber"`
+	IsMembersOnly   bool             `json:"is_members_only"`
+	VideoUrl        pgtype.Text      `json:"video_url"`
 }
 
 type CommentMention struct {
@@ -525,6 +527,8 @@ type Subscription struct {
 	IsDelete     bool             `json:"is_delete"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	Txhash       string           `json:"txhash"`
+	EntityType   string           `json:"entity_type"`
+	EntityID     pgtype.Int4      `json:"entity_id"`
 }
 
 type Track struct {
@@ -603,6 +607,17 @@ type Track struct {
 	AccessAuthorities                  []string         `json:"access_authorities"`
 }
 
+type TrackCollaborator struct {
+	TrackID            int32            `json:"track_id"`
+	CollaboratorUserID int32            `json:"collaborator_user_id"`
+	InvitedBy          int32            `json:"invited_by"`
+	Status             string           `json:"status"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	Txhash             string           `json:"txhash"`
+	Blocknumber        pgtype.Int4      `json:"blocknumber"`
+}
+
 type TrackDownload struct {
 	Txhash        string           `json:"txhash"`
 	Blocknumber   pgtype.Int4      `json:"blocknumber"`
@@ -677,6 +692,11 @@ type User struct {
 	VerifiedWithTwitter    pgtype.Bool      `json:"verified_with_twitter"`
 	VerifiedWithInstagram  pgtype.Bool      `json:"verified_with_instagram"`
 	VerifiedWithTiktok     pgtype.Bool      `json:"verified_with_tiktok"`
+	Website                pgtype.Text      `json:"website"`
+	Donation               pgtype.Text      `json:"donation"`
+	SplUsdcPayoutWallet    pgtype.Text      `json:"spl_usdc_payout_wallet"`
+	CoinFlairMint          pgtype.Text      `json:"coin_flair_mint"`
+	ProfileType            interface{}      `json:"profile_type"`
 }
 
 type UserTip struct {
