@@ -70,6 +70,10 @@ import (
 )
 
 const (
+	// defaultHTTPPort is shared by the echo server and by the URL the embedded
+	// ETL uses to reach it. They must agree.
+	defaultHTTPPort = "80"
+
 	initialBackoff = 10 * time.Second
 	maxBackoff     = 10 * time.Minute
 	maxRetries     = 10
@@ -135,13 +139,7 @@ func main() {
 	var etlService *etlserver.ETLService
 	if cfg.EnableETL {
 		httpClient := &http.Client{Timeout: 30 * time.Second}
-		baseURL := "http://localhost"
-		if hostUrl.Port() != "" {
-			baseURL = fmt.Sprintf("http://localhost:%s", hostUrl.Port())
-		} else {
-			baseURL = "http://localhost:80"
-		}
-		coreClient := corev1connect.NewCoreServiceClient(httpClient, baseURL, connectJSONOpt)
+		coreClient := corev1connect.NewCoreServiceClient(httpClient, etlCoreBaseURL(), connectJSONOpt)
 		indexer := etl.New(coreClient, rootLogger)
 		indexer.SetDBURL(dbUrl)
 		indexer.SetCheckReadiness(false) // Don't wait for core to be ready when console is enabled
@@ -292,8 +290,22 @@ func setupDelegateKeyPair(logger *zap.Logger) {
 	logger.Info("Generated and set delegate key pair", zap.String("ownerWallet", ownerWallet))
 }
 
+// etlCoreBaseURL is where the embedded ETL reaches this node's own core
+// service.
+//
+// It must track the port the echo server actually binds, which is
+// OPENAUDIO_HTTP_PORT (see getEchoServerConfig). This previously derived the
+// port from nodeEndpoint instead -- but nodeEndpoint is validated to carry no
+// port at all, so that branch was dead and the URL always resolved to :80.
+// Setting OPENAUDIO_HTTP_PORT therefore moved the server without moving the
+// ETL, and the ETL failed to initialize against a node that was running
+// perfectly well, reporting only "service not ready".
+func etlCoreBaseURL() string {
+	return fmt.Sprintf("http://localhost:%s", oaenv.Get(defaultHTTPPort, "OPENAUDIO_HTTP_PORT"))
+}
+
 func getEchoServerConfig(hostUrl *url.URL) serverConfig {
-	httpPort := oaenv.Get("80", "OPENAUDIO_HTTP_PORT")
+	httpPort := oaenv.Get(defaultHTTPPort, "OPENAUDIO_HTTP_PORT")
 	httpsPort := oaenv.Get("443", "OPENAUDIO_HTTPS_PORT")
 	hostname := hostUrl.Hostname()
 
