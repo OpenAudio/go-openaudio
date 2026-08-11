@@ -441,6 +441,15 @@ func (w *Writer) Run(ctx context.Context) error {
 		skip bool
 		fn   func(context.Context) error
 	}{
+		// Rewards first: it is the only step that depends on something outside
+		// this process (--core-dsn, pointed at the old chain, usually across a
+		// port-forward), and it is seconds of work against hours for the rest.
+		// Ordered last, an unreachable source failed the run only after all of
+		// that had completed. Nothing here depends on ordering — rewards
+		// reference only the pools this step creates, and no entity references
+		// a reward.
+		{"rewards", w.cfg.SkipRewards, w.writeRewards},
+
 		// Phase 1: Identity — users and their linked wallets
 		{"users", w.cfg.SkipUsers, w.writeUsers},
 		{"associated wallets", w.cfg.SkipWallets, w.writeAssociatedWallets},
@@ -481,9 +490,6 @@ func (w *Writer) Run(ctx context.Context) error {
 		// rejects a subscription whose target event does not exist yet.
 		{"events", w.cfg.SkipEvents, w.writeEvents},
 		{"event subscriptions", w.cfg.SkipEvents, w.writeEventSubscriptions},
-
-		// Phase 8: Rewards — replay reward pool and reward txs from old chain blockstore
-		{"rewards", w.cfg.SkipRewards, w.writeRewards},
 
 		// Phase 9: Activity — play count reconciliation and plays
 		{"play count reconciliation", w.cfg.SkipPlays, w.writePlayCountReconciliation},
