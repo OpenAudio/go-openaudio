@@ -399,9 +399,24 @@ func (w *Writer) Run(ctx context.Context) error {
 				Hash:          lastBlock.Hash(),
 				PartSetHeader: blockParts.Header(),
 			}
-			lastCommit := w.blockStore.LoadBlockCommit(maxHeight)
+			// LoadSeenCommit, not LoadBlockCommit. SaveBlock stores the commit
+			// it is handed under the SEEN-commit key for that height, and
+			// separately stores block.LastCommit under the commit key for
+			// height-1. So LoadBlockCommit(h) only returns a value once block
+			// h+1 has been saved -- which is never true for the last block
+			// written.
+			//
+			// Resume always lands on the last block, so this could only ever
+			// fail, reporting a missing commit for a blockstore that is
+			// perfectly intact. The error read like data loss and sent me
+			// looking for a truncated write that had not happened.
+			//
+			// The seen commit is also what the non-resume path assigns to
+			// w.lastCommit after each block, so this restores exactly the value
+			// a continuous run would have held at that point.
+			lastCommit := w.blockStore.LoadSeenCommit(maxHeight)
 			if lastCommit == nil {
-				return fmt.Errorf("load resume commit %d from blockstore: not found", maxHeight)
+				return fmt.Errorf("load resume seen commit %d from blockstore: not found", maxHeight)
 			}
 			w.lastCommit = lastCommit
 
