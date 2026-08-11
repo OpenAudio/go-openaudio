@@ -949,10 +949,28 @@ func signingConfig(network string) *corecfg.Config {
 func (w *Writer) projectBlockAuthState(ctx context.Context, pgTx pgx.Tx, pb pendingBlock) error {
 	q := coredb.New(pgTx)
 
-	for _, row := range pb.txData {
+	for i, row := range pb.txData {
 		var stx corev1.SignedTransaction
 		if err := proto.Unmarshal(row.txBytes, &stx); err != nil {
-			return fmt.Errorf("decode tx %s for auth projection height=%d: %w", row.hash, pb.height, err)
+			return fmt.Errorf("decode tx %s for state projection height=%d: %w", row.hash, pb.height, err)
+		}
+
+		// Reward pools and rewards live in core tables that FinalizeBlock
+		// populates, exactly like the auth tables below. Without projecting
+		// them the migrated chain would hold reward transactions whose state
+		// never materializes, and nothing downstream repairs that: the
+		// bootstrap node treats these blocks as already committed, and other
+		// nodes state-sync from its tables.
+		//
+		// The transaction's position in the block is its message index, which
+		// is what core_rewards.address is derived from — so this can only
+		// happen here, not at synthesis time.
+		handled, err := server.ProjectMigrationRewardState(ctx, q, &stx, w.cfg.ChainID, pb.height, int64(i), row.hash)
+		if err != nil {
+			return fmt.Errorf("project reward state for tx %s height=%d: %w", row.hash, pb.height, err)
+		}
+		if handled {
+			continue
 		}
 
 		me := stx.GetManageEntityMigration()
