@@ -87,16 +87,9 @@ func validateUserUpdate(ctx context.Context, params *Params) error {
 		}
 	}
 
-	// Stateful: if artist_pick_track_id set, track must exist and be owned by user
-	if trackID, ok := params.MetadataInt64("artist_pick_track_id"); ok && trackID != 0 {
-		owned, err := trackExistsAndOwnedBy(ctx, params.DBTX, trackID, params.UserID)
-		if err != nil {
-			return err
-		}
-		if !owned {
-			return NewValidationError("track %d does not exist or is not owned by user %d", trackID, params.UserID)
-		}
-	}
+	// NOTE: artist_pick_track_id is deliberately NOT validated here. An
+	// unresolvable pick is dropped by updateUser rather than rejecting the
+	// whole update — see the comment on resolveArtistPick.
 
 	return nil
 }
@@ -137,9 +130,9 @@ func updateUser(ctx context.Context, params *Params) error {
 		profileType = &v
 	}
 
-	artistPickTrackID := existing.artistPickTrackID
-	if trackID, ok := params.MetadataInt64("artist_pick_track_id"); ok {
-		artistPickTrackID = &trackID
+	artistPickTrackID, err := resolveArtistPick(ctx, params, existing.artistPickTrackID)
+	if err != nil {
+		return err
 	}
 
 	allowAIAttribution := existing.allowAIAttribution
@@ -197,6 +190,51 @@ func updateUser(ctx context.Context, params *Params) error {
 		strPtrVal(profileType),
 	)
 	return err
+}
+
+// resolveArtistPick determines the artist_pick_track_id to store, given the
+// incoming metadata and the currently stored value.
+//
+// Key absent → preserve existing. JSON null or 0 → clear. A track id → set.
+// In every case a pick that no longer resolves (deleted track, or a track the
+// user doesn't own) is dropped to NULL rather than stored or rejected.
+//
+// Rejecting was the old behavior and it deadlocked accounts: clients resend
+// the full user object on every profile edit, so a stale artist_pick_track_id
+// rode along with edits that had nothing to do with it. Once the picked track
+// was deleted, *every* subsequent User Update — profile picture, cover photo,
+// bio, name — failed validation and was silently swallowed by the indexer, so
+// the user's changes appeared to revert on refresh with nothing surfaced to
+// them. 1,241 accounts were stuck this way in prod on 2026-08-11, all of them
+// from a deleted pick; the only escape was picking a different valid track,
+// since a chain-supplied null was read as "no change" and couldn't clear it.
+//
+// Dropping the pick instead also self-heals those rows: the next edit any
+// affected user makes clears the dangling reference.
+func resolveArtistPick(ctx context.Context, params *Params, existing *int64) (*int64, error) {
+	pick := existing
+	if v, ok := params.Metadata["artist_pick_track_id"]; ok {
+		if v == nil {
+			pick = nil
+		} else if trackID, ok := params.MetadataInt64("artist_pick_track_id"); ok {
+			if trackID == 0 {
+				pick = nil
+			} else {
+				pick = &trackID
+			}
+		}
+	}
+	if pick == nil {
+		return nil, nil
+	}
+	owned, err := trackExistsAndOwnedBy(ctx, params.DBTX, *pick, params.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return nil, nil
+	}
+	return pick, nil
 }
 
 // profileTypeEnumValues mirrors the profile_type_enum labels in migration 0036.
