@@ -58,13 +58,16 @@ func (h *trackDownloadHandler) Handle(ctx context.Context, params *Params) error
 	region := params.MetadataString("region")
 	country := params.MetadataString("country")
 
+	// created_at must be written, not left to the column's CURRENT_TIMESTAMP
+	// default: on a genesis replay that default stamps every row with the time
+	// of the replay instead of the time of the download.
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO track_downloads (
 			txhash, blocknumber, parent_track_id, track_id, user_id,
-			city, region, country
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			city, region, country, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`, params.TxHash, params.BlockNumber, parentTrackID, trackID, params.UserID,
-		nilIfEmpty(city), nilIfEmpty(region), nilIfEmpty(country))
+		nilIfEmpty(city), nilIfEmpty(region), nilIfEmpty(country), params.BlockTime)
 	return err
 }
 
