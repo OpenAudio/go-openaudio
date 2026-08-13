@@ -347,6 +347,93 @@ func (s *txCopySource) Err() error { return nil }
 
 // Run processes all entity types in dependency order, writes them as real
 // CometBFT blocks, then writes CometBFT state files.
+
+// writeStep is one phase of the run. Order matters: the indexer validates
+// references against the state a transaction lands on, so a step emitting rows
+// that point at entities a later step creates loses them silently.
+type writeStep struct {
+	name string
+	skip bool
+	fn   func(context.Context) error
+}
+
+// steps is the ordered plan for a run. TestStepOrderPutsReferencedEntitiesFirst
+// pins the dependencies that are not obvious from reading it.
+func (w *Writer) steps() []writeStep {
+	return []writeStep{
+		// Rewards first: it is the only step that depends on something outside
+		// this process (--core-dsn, pointed at the old chain, usually across a
+		// port-forward), and it is seconds of work against hours for the rest.
+		// Ordered last, an unreachable source failed the run only after all of
+		// that had completed. Nothing here depends on ordering — rewards
+		// reference only the pools this step creates, and no entity references
+		// a reward.
+		{"rewards", w.cfg.SkipRewards, w.writeRewards},
+
+		// Phase 1: Identity — users and their linked wallets
+		{"users", w.cfg.SkipUsers, w.writeUsers},
+		{"associated wallets", w.cfg.SkipWallets, w.writeAssociatedWallets},
+		{"dashboard wallet users", w.cfg.SkipWallets, w.writeDashboardWalletUsers},
+
+		// Phase 2: Content — tracks, collaborators, and playlists
+		{"tracks", w.cfg.SkipTracks, w.writeTracks},
+		{"track collaborator approvals", w.cfg.SkipTracks, w.writeTrackCollaboratorApprovals},
+		{"track downloads", w.cfg.SkipTracks, w.writeTrackDownloads},
+		{"playlists", w.cfg.SkipPlaylists, w.writePlaylists},
+
+		// Phase 3: Social — relationships between users and content
+		{"follows", w.cfg.SkipSocial, w.writeFollows},
+		{"saves", w.cfg.SkipSocial, w.writeSaves},
+		{"reposts", w.cfg.SkipSocial, w.writeReposts},
+		{"shares", w.cfg.SkipSocial, w.writeShares},
+		{"subscriptions", w.cfg.SkipSocial, w.writeSubscriptions},
+		{"muted users", w.cfg.SkipSocial, w.writeMutedUsers},
+
+		// Phase 4: Apps — developer apps and API grants
+		{"developer apps", w.cfg.SkipApps, w.writeDeveloperApps},
+		{"grants", w.cfg.SkipApps, w.writeGrants},
+
+		// Phase 5: Events — before comments, which can hang off them.
+		// A comment carrying entity_type=Event is rejected outright if the
+		// event is not in place yet ("event %d does not exist"), and every
+		// comment transaction precedes every event transaction when this step
+		// runs later. On the 2026-08-07 snapshot that silently dropped all 69
+		// Event comments -- the writer emitted them, the indexer refused them,
+		// and row counts on a 327k-row table hid it.
+		// Event subscriptions follow the events they point at for the same
+		// reason: the indexer rejects a subscription whose target event does
+		// not exist yet.
+		{"events", w.cfg.SkipEvents, w.writeEvents},
+		{"event subscriptions", w.cfg.SkipEvents, w.writeEventSubscriptions},
+
+		// Phase 6: Comments — comments and reactions on content
+		{"comments", w.cfg.SkipComments, w.writeComments},
+		{"comment reactions", w.cfg.SkipComments, w.writeCommentReactions},
+		// A pin references both a comment and the track it is pinned to, so it
+		// has to follow the comments step and cannot run if either side was
+		// skipped.
+		{"comment pins", w.cfg.SkipComments || w.cfg.SkipTracks, w.writeCommentPins},
+
+		// Phase 7: Emails — encrypted emails and access grants
+		{"encrypted emails", w.cfg.SkipEmails, w.writeEncryptedEmails},
+		{"email access", w.cfg.SkipEmails, w.writeEmailAccess},
+
+		// Phase 9: Activity — play count reconciliation and plays
+		{"play count reconciliation", w.cfg.SkipPlays, w.writePlayCountReconciliation},
+		{"plays", w.cfg.SkipPlays, w.writePlays},
+	}
+}
+
+// stepNames returns the step order for tests.
+func (w *Writer) stepNames() []string {
+	steps := w.steps()
+	names := make([]string, 0, len(steps))
+	for _, s := range steps {
+		names = append(names, s.name)
+	}
+	return names
+}
+
 func (w *Writer) Run(ctx context.Context) error {
 	start := time.Now()
 	w.logger.Info("starting genesis write")
@@ -436,65 +523,7 @@ func (w *Writer) Run(ctx context.Context) error {
 	w.startBlockWriter(ctx)
 	defer w.stopBlockWriter() //nolint:errcheck // explicit stop below captures the error
 
-	steps := []struct {
-		name string
-		skip bool
-		fn   func(context.Context) error
-	}{
-		// Rewards first: it is the only step that depends on something outside
-		// this process (--core-dsn, pointed at the old chain, usually across a
-		// port-forward), and it is seconds of work against hours for the rest.
-		// Ordered last, an unreachable source failed the run only after all of
-		// that had completed. Nothing here depends on ordering — rewards
-		// reference only the pools this step creates, and no entity references
-		// a reward.
-		{"rewards", w.cfg.SkipRewards, w.writeRewards},
-
-		// Phase 1: Identity — users and their linked wallets
-		{"users", w.cfg.SkipUsers, w.writeUsers},
-		{"associated wallets", w.cfg.SkipWallets, w.writeAssociatedWallets},
-		{"dashboard wallet users", w.cfg.SkipWallets, w.writeDashboardWalletUsers},
-
-		// Phase 2: Content — tracks, collaborators, and playlists
-		{"tracks", w.cfg.SkipTracks, w.writeTracks},
-		{"track collaborator approvals", w.cfg.SkipTracks, w.writeTrackCollaboratorApprovals},
-		{"track downloads", w.cfg.SkipTracks, w.writeTrackDownloads},
-		{"playlists", w.cfg.SkipPlaylists, w.writePlaylists},
-
-		// Phase 3: Social — relationships between users and content
-		{"follows", w.cfg.SkipSocial, w.writeFollows},
-		{"saves", w.cfg.SkipSocial, w.writeSaves},
-		{"reposts", w.cfg.SkipSocial, w.writeReposts},
-		{"shares", w.cfg.SkipSocial, w.writeShares},
-		{"subscriptions", w.cfg.SkipSocial, w.writeSubscriptions},
-		{"muted users", w.cfg.SkipSocial, w.writeMutedUsers},
-
-		// Phase 4: Apps — developer apps and API grants
-		{"developer apps", w.cfg.SkipApps, w.writeDeveloperApps},
-		{"grants", w.cfg.SkipApps, w.writeGrants},
-
-		// Phase 5: Comments — comments and reactions on content
-		{"comments", w.cfg.SkipComments, w.writeComments},
-		{"comment reactions", w.cfg.SkipComments, w.writeCommentReactions},
-		// A pin references both a comment and the track it is pinned to, so it
-		// has to follow the comments step and cannot run if either side was
-		// skipped.
-		{"comment pins", w.cfg.SkipComments || w.cfg.SkipTracks, w.writeCommentPins},
-
-		// Phase 6: Emails — encrypted emails and access grants
-		{"encrypted emails", w.cfg.SkipEmails, w.writeEncryptedEmails},
-		{"email access", w.cfg.SkipEmails, w.writeEmailAccess},
-
-		// Phase 7: Events
-		// Event subscriptions follow the events they point at: the indexer
-		// rejects a subscription whose target event does not exist yet.
-		{"events", w.cfg.SkipEvents, w.writeEvents},
-		{"event subscriptions", w.cfg.SkipEvents, w.writeEventSubscriptions},
-
-		// Phase 9: Activity — play count reconciliation and plays
-		{"play count reconciliation", w.cfg.SkipPlays, w.writePlayCountReconciliation},
-		{"plays", w.cfg.SkipPlays, w.writePlays},
-	}
+	steps := w.steps()
 
 	// Load completed steps for resume.
 	completedSteps := make(map[string]bool)
