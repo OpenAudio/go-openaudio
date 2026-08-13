@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.10.0](https://github.com/OpenAudio/go-openaudio/compare/v1.9.0...v1.10.0) (2026-08-13)
+
+
+### Features
+
+* **genesis-writer:** read rewards from the old chain's postgres ([#496](https://github.com/OpenAudio/go-openaudio/issues/496)) ([0059c0d](https://github.com/OpenAudio/go-openaudio/commit/0059c0db4cbb772583cc060ecc6f0089d8dad42c))
+* **genesis-writer:** rebuild rewards from table state, not replayed transactions ([#504](https://github.com/OpenAudio/go-openaudio/issues/504)) ([db54989](https://github.com/OpenAudio/go-openaudio/commit/db5498932f67c0e8302b63dabe725e6b91a5975d))
+* **mediorum:** pull replicated blobs from storage ([#497](https://github.com/OpenAudio/go-openaudio/issues/497)) ([6daf1db](https://github.com/OpenAudio/go-openaudio/commit/6daf1dbc4c56fc7066d15c16b97dbfc2767938ee))
+
+
+### Bug Fixes
+
+* **etl:** exit bounded runs instead of hanging in Wait() ([#512](https://github.com/OpenAudio/go-openaudio/issues/512)) ([570b44f](https://github.com/OpenAudio/go-openaudio/commit/570b44fefe23e609933a28ef451f723d055a8fcd))
+* **etl:** resume from MAX(block_height) and honor --start ([#513](https://github.com/OpenAudio/go-openaudio/issues/513)) ([6a2724b](https://github.com/OpenAudio/go-openaudio/commit/6a2724b653184509ed6bf93c7bfbf19f6904db53))
+* **genesis-writer:** resume from the seen commit, not the block commit ([#505](https://github.com/OpenAudio/go-openaudio/issues/505)) ([ddd0a71](https://github.com/OpenAudio/go-openaudio/commit/ddd0a717380e8c07f494bc7c0995e7f6d42f9208))
+* **genesis-writer:** stop disabling autovacuum during replay ([#511](https://github.com/OpenAudio/go-openaudio/issues/511)) ([0aaa0dc](https://github.com/OpenAudio/go-openaudio/commit/0aaa0dc5a44f9432fe96f8c93bde6db3b854c606))
+* **openaudio:** point the embedded ETL at the configured HTTP port ([#507](https://github.com/OpenAudio/go-openaudio/issues/507)) ([ab10fa5](https://github.com/OpenAudio/go-openaudio/commit/ab10fa53f7be9162e0c1ce994c92237e06a1d4c9))
+
+
+### Code Refactoring
+
+* **genesis-writer:** run rewards first so an unreachable source fails fast ([#506](https://github.com/OpenAudio/go-openaudio/issues/506)) ([faa6fb7](https://github.com/OpenAudio/go-openaudio/commit/faa6fb7465e2444eb473efceeb07427c2d5620f5))
+
 ## [1.9.0](https://github.com/OpenAudio/go-openaudio/compare/v1.8.2...v1.9.0) (2026-08-10)
 
 
