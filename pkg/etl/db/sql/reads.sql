@@ -1,9 +1,10 @@
 -- get latest indexed block height
+-- The last-inserted height is not the max unless writes are strictly ascending.
+-- HAVING preserves the no-rows (pgx.ErrNoRows) contract: bare MAX over an empty table returns one NULL row.
 -- name: GetLatestIndexedBlock :one
-SELECT block_height
+SELECT MAX(block_height)::bigint
 FROM etl_blocks
-ORDER BY id DESC
-LIMIT 1;
+HAVING MAX(block_height) IS NOT NULL;
 
 -- name: GetTotalTransactions :one
 select id from etl_transactions order by id desc limit 1;
