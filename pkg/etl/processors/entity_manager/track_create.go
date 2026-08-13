@@ -178,6 +178,17 @@ func insertTrackAndRouteWithState(ctx context.Context, params *Params, state tra
 
 	releaseDate := releaseDateOrDefault(params.MetadataString("release_date"), params.BlockTime)
 
+	// DDEX rights metadata. mergeTrackFromMetadata (the update path) has read
+	// these for a while; create never did, so a track that arrives complete --
+	// as every genesis-migration track does, in a single Create -- lost them.
+	ddexJSON := func(key string) []byte {
+		if v, ok := params.MetadataJSON(key); ok {
+			return marshalJSONOrNil(v)
+		}
+		return nil
+	}
+	isOriginalAvailable, _ := params.MetadataBool("is_original_available")
+
 	_, err = params.DBTX.Exec(ctx, `
 		INSERT INTO tracks (
 			track_id, owner_id, is_current, is_delete, title, genre, mood, tags, description,
@@ -189,7 +200,10 @@ func insertTrackAndRouteWithState(ctx context.Context, params *Params, state tra
 			is_available, license, isrc, iswc, preview_start_seconds, comments_disabled,
 			cover_original_song_title, cover_original_artist, no_ai_use,
 			route_id, track_segments, created_at, updated_at, txhash, blocknumber,
-			orig_filename
+			orig_filename,
+			artists, resource_contributors, indirect_resource_contributors,
+			rights_controller, copyright_line, producer_copyright_line,
+			parental_warning_type, is_original_available
 		) VALUES (
 			$1, $2, true, $48, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
@@ -200,7 +214,10 @@ func insertTrackAndRouteWithState(ctx context.Context, params *Params, state tra
 			$34, $35, $36, $37, $38, $39,
 			$40, $41, $42,
 			$43, '[]'::jsonb, $44, $44, $45, $46,
-			$47
+			$47,
+			$49, $50, $51,
+			$52, $53, $54,
+			$55, $56
 		)
 	`,
 		params.EntityID,
@@ -251,6 +268,14 @@ func insertTrackAndRouteWithState(ctx context.Context, params *Params, state tra
 		params.BlockNumber,
 		nullString(origFilename),
 		state.IsDelete,
+		ddexJSON("artists"),
+		ddexJSON("resource_contributors"),
+		ddexJSON("indirect_resource_contributors"),
+		ddexJSON("rights_controller"),
+		ddexJSON("copyright_line"),
+		ddexJSON("producer_copyright_line"),
+		nullString(params.MetadataString("parental_warning_type")),
+		isOriginalAvailable,
 	)
 	if err != nil {
 		return err
