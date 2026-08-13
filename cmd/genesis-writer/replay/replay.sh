@@ -13,7 +13,7 @@
 #
 #   settings    apply bulk-load-settings.sql; restart Postgres if needed
 #   bootstrap   index one block so the ETL migrations create the schema
-#   slim        apply drop-serving-indexes.sql and bulk-load-tables.sql
+#   slim        apply drop-serving-indexes.sql
 #   replay      index to --end
 #   restore     restore-settings.sql, recreate-serving-indexes.sql,
 #               VACUUM ANALYZE
@@ -102,9 +102,8 @@ phase_bootstrap() {
 }
 
 phase_slim() {
-  log "slim: dropping serving indexes, disabling autovacuum on hot tables"
+  log "slim: dropping serving indexes"
   psql_run -f "$SCRIPT_DIR/drop-serving-indexes.sql"
-  psql_run -f "$SCRIPT_DIR/bulk-load-tables.sql"
 }
 
 phase_replay() {
