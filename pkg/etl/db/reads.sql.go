@@ -371,18 +371,19 @@ func (q *Queries) GetHealthyValidatorCountsForRollups(ctx context.Context, dolla
 }
 
 const getLatestIndexedBlock = `-- name: GetLatestIndexedBlock :one
-SELECT block_height
+SELECT MAX(block_height)::bigint
 FROM etl_blocks
-ORDER BY id DESC
-LIMIT 1
+HAVING MAX(block_height) IS NOT NULL
 `
 
 // get latest indexed block height
+// The last-inserted height is not the max unless writes are strictly ascending.
+// HAVING preserves the no-rows (pgx.ErrNoRows) contract: bare MAX over an empty table returns one NULL row.
 func (q *Queries) GetLatestIndexedBlock(ctx context.Context) (int64, error) {
 	row := q.db.QueryRow(ctx, getLatestIndexedBlock)
-	var block_height int64
-	err := row.Scan(&block_height)
-	return block_height, err
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const getLatestSlaRollup = `-- name: GetLatestSlaRollup :one

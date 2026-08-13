@@ -280,16 +280,23 @@ func (e *Indexer) indexBlocks() error {
 	lastLog := time.Now()
 
 	// Determine start height (chain height, not blocks.number).
-	// 1. Check etl_blocks (our own tracking table) for the last chain height we indexed.
-	// 2. If empty and --start was given, use that.
-	// 3. Otherwise, fall back to core_indexed_blocks which tracks what chain height
-	//    the production indexer last processed.
-	latestHeight, err := e.db.GetLatestIndexedBlock(context.Background())
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			if e.startingBlockHeight > 0 {
-				latestHeight = e.startingBlockHeight - 1
-			} else {
+	// 1. If --start was given, use it — even against a populated etl_blocks, since
+	//    re-indexing a range is how a gap gets repaired (0 = resume from last indexed).
+	// 2. Otherwise check etl_blocks (our own tracking table) for the highest chain
+	//    height we indexed.
+	// 3. If that is empty, fall back to core_indexed_blocks which tracks what chain
+	//    height the production indexer last processed.
+	var latestHeight int64
+	if e.startingBlockHeight > 0 {
+		latestHeight = e.startingBlockHeight - 1
+		e.logger.Info("starting from explicit height, not resuming",
+			zap.Int64("start_height", e.startingBlockHeight),
+		)
+	} else {
+		var err error
+		latestHeight, err = e.db.GetLatestIndexedBlock(context.Background())
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
 				var maxHeight *int64
 				err = e.pool.QueryRow(context.Background(),
 					"SELECT MAX(height) FROM core_indexed_blocks WHERE chain_id = $1",
@@ -303,9 +310,9 @@ func (e *Indexer) indexBlocks() error {
 						zap.Int64("last_chain_height", latestHeight),
 					)
 				}
+			} else {
+				return fmt.Errorf("error getting latest indexed block: %w", err)
 			}
-		} else {
-			return fmt.Errorf("error getting latest indexed block: %w", err)
 		}
 	}
 	startHeight := latestHeight + 1
