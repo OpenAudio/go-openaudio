@@ -25,7 +25,7 @@ The phases, which the sections below explain individually:
    pass `--restart-cmd 'docker restart etl-pg'` (or your `pg_ctl` equivalent)
    to let the script do it, otherwise it stops and asks.
 2. Bootstrap: index one block so the ETL migrations create the schema.
-3. Slim: apply `drop-serving-indexes.sql` and `bulk-load-tables.sql`.
+3. Slim: apply `drop-serving-indexes.sql`.
 4. Replay to `--end`.
 5. Restore: apply `restore-settings.sql` and `recreate-serving-indexes.sql`,
    then `VACUUM ANALYZE`.
@@ -36,6 +36,18 @@ expensive and a resume would only drop them again. Rerun `replay.sh run` with
 the same arguments to resume from the last indexed block, or run
 `replay.sh restore --db ...` to give up and put the database back into
 serving shape.
+
+## Autovacuum stays on
+
+An earlier version of this playbook disabled autovacuum on the hot ETL tables,
+reasoning that a replay only inserts and so has nothing to vacuum. It bought
+nothing -- 1,528 tx/s with it off against 1,667 tx/s with it on -- and
+`autovacuum_enabled = false` also disables autoanalyze, so planner statistics
+froze at whatever the row counts were when the flag was set. Mid-replay the
+planner believed `etl_transactions` held 310k rows against 17.7M actual (57x),
+and throughput fell to 333 tx/s; a plain `ANALYZE` fixed it in 10 seconds. If
+vacuum pressure ever needs reducing, tune the autovacuum thresholds instead of
+switching the daemon off.
 
 ## The drop list is measured, and workload-specific
 
