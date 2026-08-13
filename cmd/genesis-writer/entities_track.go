@@ -94,7 +94,7 @@ type sourceTrack struct {
 	IsUnlisted          bool
 	IsDownloadable      bool
 	IsOriginalAvailable bool
-	ReleaseDate         *string
+	ReleaseDate         *time.Time
 	License             *string
 	ISRC                *string
 	ISWC                *string
@@ -157,7 +157,7 @@ func buildTrackMetadata(t sourceTrack, collaborators []int64) trackMetadataInner
 		IsUnlisted:      t.IsUnlisted,
 		IsDownloadable:  t.IsDownloadable,
 		IsOriginalAvail: t.IsOriginalAvailable,
-		ReleaseDate:     deref(t.ReleaseDate),
+		ReleaseDate:     fmtReleaseDate(t.ReleaseDate),
 		License:         deref(t.License),
 		ISRC:            deref(t.ISRC),
 		ISWC:            deref(t.ISWC),
@@ -211,6 +211,21 @@ func buildTrackMetadata(t sourceTrack, collaborators []int64) trackMetadataInner
 	return inner
 }
 
+// fmtReleaseDate emits RFC3339, the format the indexer's parseReleaseDate
+// accepts. Selecting release_date::text instead yields Postgres's own
+// "2026-09-06 22:06:00", which matches none of the accepted layouts, so the
+// indexer silently fell back to block time. That is not a cosmetic date
+// difference: a track whose release_date lands in the past is picked up by the
+// scheduled-release publisher, which sets is_unlisted = false. On the
+// 2026-08-07 snapshot 372 unlisted tracks with a future release date had the
+// date rewritten and 368 of them were published early.
+func fmtReleaseDate(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
 func (w *Writer) writeTracks(ctx context.Context) error {
 	// Pre-load collaborator lists so Track:Create metadata includes them,
 	// which causes the ETL to create pending invites automatically.
@@ -231,7 +246,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			t.track_cid,
 			t.cover_art, t.cover_art_sizes, t.preview_cid,
 			t.is_unlisted, t.is_downloadable, t.is_original_available,
-			t.release_date::text, t.license, t.isrc, t.iswc, t.bpm, t.musical_key,
+			t.release_date, t.license, t.isrc, t.iswc, t.bpm, t.musical_key,
 			t.is_custom_bpm, t.is_custom_musical_key,
 			t.remix_of, t.stem_of,
 			t.is_stream_gated, t.stream_conditions,
