@@ -202,7 +202,8 @@ func (e *Indexer) Run() error {
 		}
 	}
 
-	ctx := context.Background()
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
 	g, gCtx := errgroup.WithContext(ctx)
 
 	if e.config.EnableMaterializedViewRefresh {
@@ -224,6 +225,9 @@ func (e *Indexer) Run() error {
 	}
 
 	g.Go(func() error {
+		// a bounded run returns nil, and an errgroup only cancels on error, so
+		// without this the unconditional helpers would keep the group alive
+		defer stop()
 		if err := e.indexBlocks(); err != nil {
 			return fmt.Errorf("error indexing blocks: %v", err)
 		}
@@ -235,7 +239,12 @@ func (e *Indexer) Run() error {
 		return e.syncValidatorsFromCore(gCtx)
 	})
 
-	return g.Wait()
+	err = g.Wait()
+	// our own shutdown, not a failure
+	if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+		return nil
+	}
+	return err
 }
 
 func (e *Indexer) awaitReadiness() error {
