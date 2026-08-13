@@ -537,6 +537,26 @@ func (w *Writer) Run(ctx context.Context) error {
 			}
 			return fmt.Errorf("write %s: %w", step.name, err)
 		}
+		// Barrier before the checkpoint. Rows accumulate in w.blockTxs and are
+		// written by the async pipeline, so step.fn returning does not mean the
+		// step's rows are durable -- its trailing block may still be unflushed
+		// or sitting in blockWriteCh. Recording progress first lets the
+		// checkpoint outrun the data: a later resume then skips a step whose
+		// tail never landed, and nothing detects it because the step is marked
+		// complete. A 2026-08 run lost the last 36 of 112 events exactly this
+		// way, taking 606 event subscriptions and 63 comments with them.
+		//
+		// The cost is that each step ends its block early, so blocks no longer
+		// pack to exactly --max-txs-per-block. That is already true of the last
+		// block of a run and costs nothing but a few partial blocks.
+		if err := w.flushBlock(ctx); err != nil {
+			return fmt.Errorf("flush %s: %w", step.name, err)
+		}
+		if err := w.stopBlockWriter(); err != nil {
+			return fmt.Errorf("block writer after %s: %w", step.name, err)
+		}
+		w.startBlockWriter(ctx)
+
 		// Record step completion for resume.
 		if _, err := w.dstDB.Exec(ctx,
 			`INSERT INTO genesis_writer_progress (step_name) VALUES ($1) ON CONFLICT DO NOTHING`,
