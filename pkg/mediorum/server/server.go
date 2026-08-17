@@ -127,6 +127,10 @@ type MediorumServer struct {
 	replicationWork  chan *Upload
 	ethService       ethv1connect.EthServiceHandler
 
+	// isDbLocalhost is reported by the health check. Derived once from the
+	// parsed connection config below, since the DSN can't change at runtime.
+	isDbLocalhost bool
+
 	// stats
 	statsMutex         sync.RWMutex
 	transcodeStats     *TranscodeStats
@@ -419,6 +423,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		quit:             make(chan error, 1),
 		ethService:       ethService,
 		trustedNotifier:  &trustedNotifier,
+		isDbLocalhost:    isLocalHost(pgConfig.ConnConfig.Host),
 		isSeeding:        false,
 		isAudiusdManaged: isAudiusdManaged,
 		rendezvousHasher: rendezvousHasher,
