@@ -3,6 +3,8 @@ package performance
 import (
 	"bytes"
 	"fmt"
+
+	"github.com/OpenAudio/go-openaudio/pkg/common"
 )
 
 // Tree is a sorted-pair Keccak Merkle tree. An unpaired node is promoted to
@@ -37,7 +39,7 @@ func hashPair(left, right Hash) Hash {
 	if bytes.Compare(left[:], right[:]) > 0 {
 		left, right = right, left
 	}
-	return keccak(left[:], right[:])
+	return Hash(common.Keccak256Concat(left[:], right[:]))
 }
 
 // Root returns the tree root.

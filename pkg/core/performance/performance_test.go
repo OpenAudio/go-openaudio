@@ -8,6 +8,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -100,7 +101,7 @@ func TestMerkleProofsOddEvenAndTampering(t *testing.T) {
 	for count := 1; count <= 8; count++ {
 		leaves := make([]Hash, count)
 		for i := range leaves {
-			leaves[i] = keccak([]byte{byte(i + 1)})
+			leaves[i] = Hash(common.Keccak256Concat([]byte{byte(i + 1)}))
 		}
 		tree, err := NewTree(leaves)
 		require.NoError(t, err)
@@ -108,7 +109,7 @@ func TestMerkleProofsOddEvenAndTampering(t *testing.T) {
 			proof, err := tree.Proof(i)
 			require.NoError(t, err)
 			require.True(t, VerifyProof(leaf, proof, tree.Root()), "count=%d index=%d", count, i)
-			require.False(t, VerifyProof(keccak([]byte("tampered")), proof, tree.Root()))
+			require.False(t, VerifyProof(Hash(common.Keccak256Concat([]byte("tampered"))), proof, tree.Root()))
 		}
 	}
 	_, err := NewTree(nil)
@@ -212,6 +213,10 @@ func TestCrossLanguageGoldenVector(t *testing.T) {
 		configAccount[i] = byte(32 + i)
 	}
 	require.Len(t, snapshot.CommitmentMessage(programID, configAccount), 251)
+	require.Equal(t,
+		"4f41505f504552464f524d414e43455f534e415053484f545f5631000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f0000000000000007000000006553f10000000000655d2b80000000000000006400000000000000c8619efdf3ad4bbfad5ca8e6172aa1247fc27e8e5f91465f570b870ef6b3d8fa54000000000000000a28823611c1c6d274a4d71ab65ade7629644dfc5be8459c8edceda54ae7d01d2b810ce6736b0210076f96a10e7f843acfcf0738d5c897d9257aca392826ccc0bd00000000000018f4000009184e72a000",
+		hex.EncodeToString(snapshot.CommitmentMessage(programID, configAccount)),
+	)
 	commitmentHash := snapshot.CommitmentHash(programID, configAccount)
 	require.Equal(t, "8fd92a4a73c4c1d8a7c54ed18fde09408aca9369b5abc58e8d3fafc628240d93", hex.EncodeToString(commitmentHash[:]))
 }

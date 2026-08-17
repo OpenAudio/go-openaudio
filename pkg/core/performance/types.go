@@ -23,6 +23,7 @@ const (
 var (
 	ErrInvalidEpoch       = errors.New("invalid performance epoch")
 	ErrInvalidAddress     = errors.New("invalid ethereum address")
+	ErrInvalidHash        = errors.New("invalid performance hash")
 	ErrInvalidMetric      = errors.New("invalid performance metric")
 	ErrDuplicateOperator  = errors.New("duplicate operator")
 	ErrDuplicateSigner    = errors.New("duplicate signer")
@@ -32,6 +33,37 @@ var (
 
 // Hash is a fixed-width Keccak-256 digest.
 type Hash [32]byte
+
+// ParseHash parses a 32-byte hex digest with an optional 0x prefix.
+func ParseHash(value string) (Hash, error) {
+	var result Hash
+	value = strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(value), "0x"), "0X")
+	if len(value) != hex.EncodedLen(len(result)) {
+		return result, fmt.Errorf("%w: expected 32 bytes", ErrInvalidHash)
+	}
+	decoded, err := hex.DecodeString(value)
+	if err != nil {
+		return result, fmt.Errorf("%w: %v", ErrInvalidHash, err)
+	}
+	copy(result[:], decoded)
+	return result, nil
+}
+
+// String returns a lower-case 0x-prefixed digest.
+func (h Hash) String() string { return "0x" + hex.EncodeToString(h[:]) }
+
+// MarshalText makes hashes stable, readable JSON strings.
+func (h Hash) MarshalText() ([]byte, error) { return []byte(h.String()), nil }
+
+// UnmarshalText parses a stable JSON/text hash.
+func (h *Hash) UnmarshalText(text []byte) error {
+	parsed, err := ParseHash(string(text))
+	if err != nil {
+		return err
+	}
+	*h = parsed
+	return nil
+}
 
 // Address is a raw Ethereum address without a textual 0x prefix.
 type Address [20]byte
@@ -57,68 +89,81 @@ func ParseAddress(value string) (Address, error) {
 // String returns a lower-case 0x-prefixed Ethereum address.
 func (a Address) String() string { return "0x" + hex.EncodeToString(a[:]) }
 
+// MarshalText makes addresses stable, lower-case JSON strings.
+func (a Address) MarshalText() ([]byte, error) { return []byte(a.String()), nil }
+
+// UnmarshalText parses an Ethereum address from JSON or text.
+func (a *Address) UnmarshalText(text []byte) error {
+	parsed, err := ParseAddress(string(text))
+	if err != nil {
+		return err
+	}
+	*a = parsed
+	return nil
+}
+
 // IsZero reports whether the address is all zeroes.
 func (a Address) IsZero() bool { return a == Address{} }
 
 // Epoch fixes the time and block ranges used by every node generating a snapshot.
 // EndUnix and EndBlock are exclusive.
 type Epoch struct {
-	ID         uint64
-	StartUnix  uint64
-	EndUnix    uint64
-	StartBlock uint64
-	EndBlock   uint64
+	ID         uint64 `json:"id"`
+	StartUnix  uint64 `json:"start_unix"`
+	EndUnix    uint64 `json:"end_unix"`
+	StartBlock uint64 `json:"start_block"`
+	EndBlock   uint64 `json:"end_block"`
 }
 
 // Metric is an aggregate performance ratio plus a hash of its underlying
 // consensus evidence. Completed must not exceed Total.
 type Metric struct {
-	Completed    uint64
-	Total        uint64
-	EvidenceHash Hash
+	Completed    uint64 `json:"completed"`
+	Total        uint64 `json:"total"`
+	EvidenceHash Hash   `json:"evidence_hash"`
 }
 
 // OperatorInput contains the Ethereum-derived frozen identity/weight and the
 // three consensus-derived performance inputs for one validator node operator.
 type OperatorInput struct {
-	Operator        Address
-	Signer          Address
-	Weight          uint64
-	Storage         Metric
-	UsefulWork      Metric
-	BlockProduction Metric
+	Operator        Address `json:"operator"`
+	Signer          Address `json:"signer"`
+	Weight          uint64  `json:"weight"`
+	Storage         Metric  `json:"storage"`
+	UsefulWork      Metric  `json:"useful_work"`
+	BlockProduction Metric  `json:"block_production"`
 }
 
 // Entry is a claimable leaf in the global performance snapshot.
 type Entry struct {
-	Operator     Address
-	Score        uint64
-	Allocation   uint64
-	Version      Hash
-	EvidenceHash Hash
-	Leaf         Hash
-	Proof        []Hash
+	Operator     Address `json:"operator"`
+	Score        uint64  `json:"score"`
+	Allocation   uint64  `json:"allocation"`
+	Version      Hash    `json:"scoring_version"`
+	EvidenceHash Hash    `json:"evidence_hash"`
+	Leaf         Hash    `json:"leaf"`
+	Proof        []Hash  `json:"proof"`
 }
 
 // EligibleSigner is a frozen weighted attester and its membership proof.
 type EligibleSigner struct {
-	Signer   Address
-	Operator Address
-	Weight   uint64
-	Leaf     Hash
-	Proof    []Hash
+	Signer   Address `json:"signer"`
+	Operator Address `json:"operator"`
+	Weight   uint64  `json:"weight"`
+	Leaf     Hash    `json:"leaf"`
+	Proof    []Hash  `json:"proof"`
 }
 
 // Snapshot is the complete deterministic artifact attested and finalized on Solana.
 type Snapshot struct {
-	Epoch               Epoch
-	Budget              uint64
-	ScoringVersion      Hash
-	EligibleRoot        Hash
-	MerkleRoot          Hash
-	TotalEligibleWeight uint64
-	TotalScore          uint64
-	TotalAllocated      uint64
-	EligibleSigners     []EligibleSigner
-	Entries             []Entry
+	Epoch               Epoch            `json:"epoch"`
+	Budget              uint64           `json:"budget"`
+	ScoringVersion      Hash             `json:"scoring_version"`
+	EligibleRoot        Hash             `json:"eligible_root"`
+	MerkleRoot          Hash             `json:"merkle_root"`
+	TotalEligibleWeight uint64           `json:"total_eligible_weight"`
+	TotalScore          uint64           `json:"total_score"`
+	TotalAllocated      uint64           `json:"total_allocated"`
+	EligibleSigners     []EligibleSigner `json:"eligible_signers"`
+	Entries             []Entry          `json:"entries"`
 }

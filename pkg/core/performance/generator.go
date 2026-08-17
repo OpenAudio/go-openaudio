@@ -5,9 +5,10 @@ import (
 	"fmt"
 )
 
-// Source supplies consensus-derived, epoch-frozen inputs. Production Core can
-// implement this interface once useful work has an authoritative per-operator
-// metric; tests and offline tooling can provide immutable input fixtures now.
+// Source supplies already validated, epoch-frozen inputs to the scoring engine.
+// Production batch generation uses FinalizedSource and GenerateArtifact so the
+// source registration, evidence, useful-work quorum, and relayer projection are
+// all enforced; this smaller seam remains useful for deterministic engines.
 type Source interface {
 	PerformanceInputs(context.Context, Epoch) ([]OperatorInput, error)
 }
