@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -128,7 +129,7 @@ func (ss *MediorumServer) getHealth() HealthData {
 		FailsPeerReachability:     ss.failsPeerReachability,
 		Signers:                   ss.Config.Signers,
 		StoreAll:                  ss.Config.StoreAll,
-		IsDbLocalhost:             isDbLocalhost(ss.Config.PostgresDSN),
+		IsDbLocalhost:             ss.isDbLocalhost,
 		IsDiscoveryListensEnabled: ss.Config.discoveryListensEnabled(),
 		DiskHasSpace:              ss.diskHasSpace(),
 		PrimaryDiskHasSpace:       ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree),
@@ -226,13 +227,34 @@ func (ss *MediorumServer) serveMediorumHealthCheck(c echo.Context) error {
 	return c.JSON(200, response)
 }
 
-func isDbLocalhost(postgresDSN string) bool {
-	switch postgresDSN {
-	case "postgres://postgres:postgres@db:5432/audius_creator_node", "postgresql://postgres:postgres@db:5432/audius_creator_node", "postgres://postgres:postgres@db:5432/openaudio", "postgresql://postgres:postgres@db:5432/openaudio", "localhost":
+// isLocalHost reports whether the Postgres host mediorum dials refers to this
+// machine. The host comes from the connection config parsed in New(), so this
+// classifies exactly what we connect to rather than re-deriving it.
+//
+// An earlier version compared the whole DSN against a handful of literal
+// defaults, so any operator who set a password, port, database name, sslmode
+// param, or used localhost/127.0.0.1 in place of the compose alias "db" was
+// reported as remote.
+func isLocalHost(host string) bool {
+	if host == "" {
+		// No host: libpq connects over a unix socket on this machine.
 		return true
-	default:
-		return false
 	}
+	// Unix socket directory, or a Linux abstract socket.
+	if strings.HasPrefix(host, "/") || strings.HasPrefix(host, "@") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback() // 127.0.0.0/8 and ::1
+	}
+	switch strings.ToLower(strings.TrimSuffix(host, ".")) {
+	case "localhost":
+		return true
+	case "db":
+		// Service alias for the database in the bundled docker-compose stack.
+		return true
+	}
+	return false
 }
 
 func (ss *MediorumServer) requireHealthy(next echo.HandlerFunc) echo.HandlerFunc {
