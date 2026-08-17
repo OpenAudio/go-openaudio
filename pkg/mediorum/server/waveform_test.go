@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/persistence"
 	"github.com/stretchr/testify/require"
 )
 
@@ -695,4 +696,53 @@ func TestNonTerminalRowsAreStampedAndHiddenFromDiscovery(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, waveformStatusDone, row.Status)
 	require.Equal(t, waveformVersion, row.Version)
+}
+
+func TestAnalyzeWaveformRefusesArchiveTierAtTheRead(t *testing.T) {
+	// A cid's tier is not fixed: rendezvous rank shifts when the validator set
+	// changes, so a row recorded while it was primary-tier can be re-queued by
+	// the retry sweep after it has become archive-tier. readBlob falls back to
+	// archive unconditionally, so without a check at the read that path pulls
+	// from cold storage with the flag off.
+	ss := testNetwork[0]
+	ctx := context.Background()
+
+	archive, err := persistence.Open("file://" + t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { archive.Close() })
+
+	origBucket, origStoreAll, origFlag := ss.archiveBucket, ss.Config.StoreAll, ss.Config.WaveformArchiveEnabled
+	ss.archiveBucket, ss.Config.StoreAll, ss.Config.WaveformArchiveEnabled = archive, true, false
+	t.Cleanup(func() {
+		ss.archiveBucket, ss.Config.StoreAll, ss.Config.WaveformArchiveEnabled = origBucket, origStoreAll, origFlag
+	})
+
+	// Find a cid this node would route to archive, i.e. one it holds only
+	// because StoreAll.
+	var cid string
+	for i := 0; i < 500 && cid == ""; i++ {
+		candidate := fmt.Sprintf("waveform-archive-%d-%d", time.Now().UnixNano(), i)
+		if ss.isArchiveCID(candidate, nil) {
+			cid = candidate
+		}
+	}
+	require.NotEmpty(t, cid, "expected some cid to rank into the archive tier")
+	t.Cleanup(func() { deleteTestWaveform(t, ss, cid) })
+
+	// Queued directly, as the retry sweep would after an earlier attempt.
+	require.NoError(t, ss.analyzeWaveform(ctx, waveformJob{cid: cid}))
+
+	row, err := ss.getWaveform(ctx, cid)
+	require.NoError(t, err)
+	// The distinguishing assertion: had the guard not fired, the blob is absent
+	// from both buckets, so this would read and record not_local instead.
+	require.Equal(t, waveformStatusArchiveSkipped, row.Status,
+		"must skip before touching a bucket, not after failing to read one")
+
+	// With the flag on it proceeds to the read and reports the blob missing.
+	ss.Config.WaveformArchiveEnabled = true
+	require.Error(t, ss.analyzeWaveform(ctx, waveformJob{cid: cid}))
+	row, err = ss.getWaveform(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, waveformStatusNotLocal, row.Status)
 }

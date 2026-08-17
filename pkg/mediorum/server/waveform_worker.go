@@ -159,6 +159,27 @@ func (ss *MediorumServer) processWaveformJob(ctx context.Context, job waveformJo
 // envelope. It never fetches from a peer -- avoiding that egress is the whole
 // point of doing this on the node.
 func (ss *MediorumServer) analyzeWaveform(ctx context.Context, job waveformJob) error {
+	// The archive guard belongs here, immediately before the first bucket call,
+	// rather than only where jobs are queued.
+	//
+	// Which tier a cid belongs to is not fixed: rendezvous rank shifts whenever
+	// the validator set changes, and replicateToMyBucket writes through
+	// bucketForCID, so a blob can move to archive after an earlier attempt
+	// recorded not_local or unavailable. The retry sweep re-queues those rows
+	// without consulting the tier, and readBlob falls back to archive on
+	// NotFound unconditionally -- so a rank shift could pull a whole slice of
+	// the catalog out of cold storage with the flag switched off.
+	//
+	// Checking at the read makes the flag authoritative however the job was
+	// queued. It costs nothing: isArchiveCID is rendezvous arithmetic against
+	// the in-memory host ring and touches no bucket.
+	if !ss.Config.WaveformArchiveEnabled && ss.isArchiveCID(job.cid, job.placementHosts) {
+		if err := ss.markWaveformStatus(ctx, job.cid, waveformStatusArchiveSkipped, nil, waveformRetryBackoffNotLocal); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	key := cidutil.ShardCID(job.cid)
 
 	// blobAttrs and readBlob both try primary, then fall back to archive on
@@ -332,8 +353,10 @@ func (ss *MediorumServer) sweepWaveformDiscovery(ctx context.Context) {
 			continue
 		}
 
-		// Answered from the hash ring with no bucket call, so filtering here
-		// costs nothing and keeps a StoreAll backfill off cold storage.
+		// An optimization, not the guarantee -- analyzeWaveform re-checks
+		// immediately before its first bucket call, since a cid's tier can
+		// change between being queued and being read. Filtering here just
+		// keeps work that would be skipped anyway out of the queue.
 		//
 		// Recorded rather than silently skipped: the status doubles as the
 		// re-sweep predicate if the operator later opts in, and it makes the
