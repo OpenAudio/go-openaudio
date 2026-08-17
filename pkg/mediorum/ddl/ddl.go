@@ -171,6 +171,11 @@ on uploads (created_at desc, id desc) where template = 'audio'`)
 	// Single-row cursor for the newest-first backfill walk over uploads.
 	// Newest-first so the recent slice operators actually care about lands in
 	// days rather than after a full multi-week history walk.
+	// The cursor doubles as the current backfill run: where the walk has
+	// reached, when this pass began, and what it has done so far. A pass is
+	// what the console reports on, so the counters live beside the position
+	// they describe rather than in a separate history table.
+	//
 	// version records which waveform version the walk was performed under. When
 	// the running version differs, the cursor resets and history is walked
 	// again -- that is what makes an algorithm or parameter change re-backfill.
@@ -181,6 +186,9 @@ on uploads (created_at desc, id desc) where template = 'audio'`)
 		"upload_id" text,
 		"exhausted" boolean not null default false,
 		"version" int,
+		"started_at" timestamptz,
+		"queued" bigint not null default 0,
+		"archive_skipped" bigint not null default 0,
 		"updated_at" timestamptz not null default now()
 	)`)
 

@@ -192,6 +192,69 @@ message GetStorageDiagnosticsResponse {
 
   // Whether this storage node is running with OPENAUDIO_STORE_ALL/STORE_ALL enabled.
   bool store_all = 26;
+
+  WaveformStatus waveforms = 27;
+}
+
+// WaveformStatus reports the state of precomputed waveform analysis: whether it
+// is switched on, what the current backfill pass has done, and how the stored
+// population breaks down.
+message WaveformStatus {
+  // The three switches nest: backfill does nothing without enabled, and
+  // archive does nothing without backfill. Reporting all three is what
+  // distinguishes "off" from "on but not walking history".
+  bool enabled = 1;
+  bool backfill_enabled = 2;
+  bool archive_enabled = 3;
+
+  // version is a fingerprint of the algorithm version and the parameters that
+  // change the output, so it is opaque alone -- the following three fields are
+  // what make it readable. A row at a different version is recomputed.
+  int32 version = 4;
+  int32 algorithm_version = 5;
+  int32 buckets = 6;
+  int32 sample_rate = 7;
+
+  // Row counts by status: done, not_local, unavailable, error, archive_skipped.
+  map<string, int64> by_status = 8;
+  // Completed rows computed under different settings, i.e. the size of the
+  // re-backfill the current version implies.
+  int64 stale_version = 9;
+
+  WaveformRun run = 10;
+}
+
+// WaveformRun is one pass of the backfill walk. The walk descends through
+// upload created_at, so a pass has a start, a position, and an end.
+message WaveformRun {
+  google.protobuf.Timestamp started_at = 1;
+  // Last checkpoint. On a long pass this is what separates "working" from
+  // "wedged"; started_at can be hours old while nothing is happening.
+  google.protobuf.Timestamp updated_at = 2;
+  // Position of the walk. Absent before the first batch of a pass.
+  google.protobuf.Timestamp cursor_created_at = 3;
+  // Set once the walk has reached the end of history. It restarts after an
+  // interval, since uploads replicate in with older timestamps than the walk
+  // has already passed.
+  bool exhausted = 4;
+
+  // Queued for analysis and skipped as archive-tier during this pass.
+  int64 queued = 5;
+  int64 archive_skipped = 6;
+
+  // Fraction of the upload history walked, 0..1, estimated from where the
+  // cursor sits between the oldest and newest audio upload. Uploads are not
+  // spread evenly across that span, so this and remaining_ns are an order of
+  // magnitude rather than a deadline -- counting the rows left would mean a
+  // scan on every render.
+  double fraction = 7;
+  int64 elapsed_ns = 8;
+  // Zero when there is not yet enough progress to project from.
+  int64 remaining_ns = 9;
+
+  // The version this pass is walking under. Differing from WaveformStatus
+  // version means a re-backfill is due but has not been picked up yet.
+  int32 version = 10;
 }
 
 message ReadRepairStats {

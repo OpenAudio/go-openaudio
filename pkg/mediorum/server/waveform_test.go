@@ -783,7 +783,7 @@ func TestDiscoveryCursorStopsAtAFullQueue(t *testing.T) {
 	// Start the walk immediately above the seeded rows. Relying on them simply
 	// being the newest in the table would make this depend on whatever else
 	// the suite has left lying around.
-	require.NoError(t, ss.setWaveformCursor(ctx, base.Add(time.Second), "~"))
+	require.NoError(t, ss.setWaveformCursor(ctx, base.Add(time.Second), "~", 0, 0))
 
 	// Leave room for exactly two before the queue is full.
 	const free = 2

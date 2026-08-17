@@ -10,12 +10,14 @@ import (
 	"strconv"
 	"time"
 
+	v1 "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/erni27/imcache"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 	"gocloud.dev/gcerrors"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -404,6 +406,7 @@ func (ss *MediorumServer) sweepWaveformDiscovery(ctx context.Context) bool {
 		// re-walk hours later.
 		var advanceTo *Upload
 		full := false
+		batchQueued, batchSkipped := int64(0), int64(0)
 
 		for i := range uploads {
 			upload := uploads[i]
@@ -431,6 +434,7 @@ func (ss *MediorumServer) sweepWaveformDiscovery(ctx context.Context) bool {
 					ss.logger.Warn("failed to record archive skip", zap.String("cid", cid), zap.Error(err))
 				}
 				skippedArchive++
+				batchSkipped++
 				advanceTo = &upload
 				continue
 			}
@@ -440,12 +444,15 @@ func (ss *MediorumServer) sweepWaveformDiscovery(ctx context.Context) bool {
 				break
 			}
 			queued++
+			batchQueued++
 			advanceTo = &upload
 		}
 
+		// Checkpoint position and progress together, so the run's counters can
+		// never claim work the cursor has not actually passed.
 		if advanceTo != nil {
 			cursorTime, cursorID = advanceTo.CreatedAt, advanceTo.ID
-			if err := ss.setWaveformCursor(ctx, cursorTime, cursorID); err != nil {
+			if err := ss.setWaveformCursor(ctx, cursorTime, cursorID, batchQueued, batchSkipped); err != nil {
 				ss.logger.Warn("waveform cursor update failed", zap.Error(err))
 				return true
 			}
@@ -591,13 +598,17 @@ func (ss *MediorumServer) getWaveform(ctx context.Context, cid string) (*wavefor
 	return row, nil
 }
 
-// waveformCursor is where the newest-first backfill walk has reached, and the
-// waveform version it was walking under.
+// waveformCursor is the current backfill run: where the newest-first walk has
+// reached, the waveform version it is walking under, and what the pass has done
+// so far.
 type waveformCursor struct {
 	CreatedAt time.Time
 	UploadID  string
 	Exhausted bool
 	Version   int
+	StartedAt time.Time
+	Queued    int64
+	Skipped   int64
 	UpdatedAt time.Time
 }
 
@@ -608,9 +619,13 @@ func (ss *MediorumServer) getWaveformCursor(ctx context.Context) (waveformCursor
 		version   *int
 		cur       waveformCursor
 	)
-	err := ss.pgPool.QueryRow(ctx,
-		`select created_at, upload_id, exhausted, version, updated_at from waveform_cursor where id = 1`,
-	).Scan(&createdAt, &uploadID, &cur.Exhausted, &version, &cur.UpdatedAt)
+	var startedAt *time.Time
+	err := ss.pgPool.QueryRow(ctx, `
+		select created_at, upload_id, exhausted, version, started_at,
+		       coalesce(queued, 0), coalesce(archive_skipped, 0), updated_at
+		from waveform_cursor where id = 1
+	`).Scan(&createdAt, &uploadID, &cur.Exhausted, &version, &startedAt,
+		&cur.Queued, &cur.Skipped, &cur.UpdatedAt)
 	if err != nil {
 		// No row yet means the walk has not started. Report the current version
 		// so a first run is not mistaken for a version change.
@@ -629,35 +644,192 @@ func (ss *MediorumServer) getWaveformCursor(ctx context.Context) (waveformCursor
 	if version != nil {
 		cur.Version = *version
 	}
+	if startedAt != nil {
+		cur.StartedAt = *startedAt
+	}
 	return cur, nil
 }
 
-// resetWaveformCursor sends the walk back to the newest upload and stamps the
-// version it is now walking under.
+// resetWaveformCursor starts a new run: back to the newest upload, stamped with
+// the version it is walking under, counters cleared.
 func (ss *MediorumServer) resetWaveformCursor(ctx context.Context) error {
 	_, err := ss.pgPool.Exec(ctx, `
-		insert into waveform_cursor (id, created_at, upload_id, exhausted, version, updated_at)
-		values (1, null, null, false, $1, now())
+		insert into waveform_cursor
+			(id, created_at, upload_id, exhausted, version, started_at, queued, archive_skipped, updated_at)
+		values (1, null, null, false, $1, now(), 0, 0, now())
 		on conflict (id) do update set
 			created_at = null,
 			upload_id = null,
 			exhausted = false,
 			version = excluded.version,
+			started_at = now(),
+			queued = 0,
+			archive_skipped = 0,
 			updated_at = now()
 	`, waveformVersion)
 	return err
 }
 
-func (ss *MediorumServer) setWaveformCursor(ctx context.Context, createdAt time.Time, uploadID string) error {
+// setWaveformCursor checkpoints the walk and accumulates what this batch did.
+// updated_at is the field that separates "working" from "wedged" on a long run,
+// so it is stamped on every checkpoint.
+func (ss *MediorumServer) setWaveformCursor(ctx context.Context, createdAt time.Time, uploadID string, queued, skipped int64) error {
 	_, err := ss.pgPool.Exec(ctx, `
-		insert into waveform_cursor (id, created_at, upload_id, exhausted, updated_at)
-		values (1, $1, $2, false, now())
+		insert into waveform_cursor
+			(id, created_at, upload_id, exhausted, version, started_at, queued, archive_skipped, updated_at)
+		values (1, $1, $2, false, $3, now(), $4, $5, now())
 		on conflict (id) do update set
 			created_at = excluded.created_at,
 			upload_id = excluded.upload_id,
+			started_at = coalesce(waveform_cursor.started_at, now()),
+			queued = coalesce(waveform_cursor.queued, 0) + excluded.queued,
+			archive_skipped = coalesce(waveform_cursor.archive_skipped, 0) + excluded.archive_skipped,
 			updated_at = now()
-	`, createdAt, uploadID)
+	`, createdAt, uploadID, waveformVersion, queued, skipped)
 	return err
+}
+
+// waveformProgress describes how far the current run has walked and how long
+// the rest is likely to take.
+type waveformProgress struct {
+	// Fraction of history walked, 0..1.
+	Fraction float64
+	// Elapsed since this run began, and the projection for what is left.
+	Elapsed   time.Duration
+	Remaining time.Duration
+	// Bounds of the audio uploads the walk covers, for rendering position.
+	Oldest time.Time
+	Newest time.Time
+	Known  bool
+}
+
+// waveformRunProgress estimates progress from where the cursor sits in time,
+// rather than by counting rows.
+//
+// The walk descends through created_at, so its position within the span of
+// audio uploads is a usable proxy for how much is left. It assumes uploads are
+// spread evenly across that span, which they are not -- a busy month walks
+// slower than a quiet year -- so treat the estimate as an order of magnitude,
+// not a deadline. The alternative is counting remaining rows on every render,
+// which is the scan this deliberately avoids.
+//
+// Both bounds come from the ends of idx_uploads_waveform_scan, so this costs
+// two index lookups regardless of catalog size.
+func (ss *MediorumServer) waveformRunProgress(ctx context.Context, cur waveformCursor) waveformProgress {
+	var p waveformProgress
+
+	err := ss.pgPool.QueryRow(ctx, `
+		select min(created_at), max(created_at) from uploads where template = 'audio'
+	`).Scan(&p.Oldest, &p.Newest)
+	if err != nil || p.Newest.IsZero() || !p.Newest.After(p.Oldest) {
+		return p
+	}
+	p.Known = true
+
+	span := p.Newest.Sub(p.Oldest)
+	switch {
+	case cur.Exhausted:
+		p.Fraction = 1
+	case cur.CreatedAt.IsZero():
+		p.Fraction = 0 // not started, or just reset to the top
+	default:
+		p.Fraction = p.Newest.Sub(cur.CreatedAt).Seconds() / span.Seconds()
+	}
+	if p.Fraction < 0 {
+		p.Fraction = 0
+	}
+	if p.Fraction > 1 {
+		p.Fraction = 1
+	}
+
+	if cur.StartedAt.IsZero() {
+		return p
+	}
+	p.Elapsed = time.Since(cur.StartedAt)
+
+	// Below a few percent the projection is dominated by startup noise and
+	// would read as a wild number, so leave it unset until there is signal.
+	if p.Fraction >= 0.02 && p.Fraction < 1 {
+		p.Remaining = time.Duration(float64(p.Elapsed) * (1 - p.Fraction) / p.Fraction)
+	}
+	return p
+}
+
+// waveformStatusProto assembles what the console shows. It is best-effort: the
+// storage page is a diagnostic, so a failure here degrades to an empty section
+// rather than taking the whole page down with it.
+func (ss *MediorumServer) waveformStatusProto(ctx context.Context) *v1.WaveformStatus {
+	status := &v1.WaveformStatus{
+		Enabled:          ss.Config.WaveformEnabled,
+		BackfillEnabled:  ss.Config.WaveformBackfillEnabled,
+		ArchiveEnabled:   ss.Config.WaveformArchiveEnabled,
+		Version:          int32(waveformVersion),
+		AlgorithmVersion: int32(waveformAlgorithmVersion),
+		Buckets:          int32(waveformBuckets),
+		SampleRate:       int32(waveformSampleRate),
+		ByStatus:         map[string]int64{},
+	}
+	// Nothing has been written and no run exists, so skip the queries wholesale
+	// rather than reporting zeros that look like a stalled backfill.
+	if !ss.Config.WaveformEnabled {
+		return status
+	}
+
+	rows, err := ss.pgPool.Query(ctx, `
+		select status, count(*)::bigint,
+		       count(*) filter (where status = $1 and version <> $2)::bigint
+		from waveforms group by status
+	`, waveformStatusDone, waveformVersion)
+	if err != nil {
+		ss.logger.Warn("waveform status query failed", zap.Error(err))
+		return status
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		var count, stale int64
+		if err := rows.Scan(&name, &count, &stale); err != nil {
+			ss.logger.Warn("waveform status scan failed", zap.Error(err))
+			return status
+		}
+		status.ByStatus[name] = count
+		status.StaleVersion += stale
+	}
+	if err := rows.Err(); err != nil {
+		ss.logger.Warn("waveform status query failed", zap.Error(err))
+		return status
+	}
+
+	cur, err := ss.getWaveformCursor(ctx)
+	if err != nil {
+		ss.logger.Warn("waveform cursor read failed", zap.Error(err))
+		return status
+	}
+	if cur.StartedAt.IsZero() && cur.CreatedAt.IsZero() && !cur.Exhausted {
+		return status // no pass has begun
+	}
+
+	p := ss.waveformRunProgress(ctx, cur)
+	run := &v1.WaveformRun{
+		Exhausted:      cur.Exhausted,
+		Queued:         cur.Queued,
+		ArchiveSkipped: cur.Skipped,
+		Fraction:       p.Fraction,
+		ElapsedNs:      int64(p.Elapsed),
+		RemainingNs:    int64(p.Remaining),
+		Version:        int32(cur.Version),
+	}
+	if !cur.StartedAt.IsZero() {
+		run.StartedAt = timestamppb.New(cur.StartedAt)
+	}
+	if !cur.UpdatedAt.IsZero() {
+		run.UpdatedAt = timestamppb.New(cur.UpdatedAt)
+	}
+	if !cur.CreatedAt.IsZero() {
+		run.CursorCreatedAt = timestamppb.New(cur.CreatedAt)
+	}
+	status.Run = run
+	return status
 }
 
 // -- serving --------------------------------------------------------------
