@@ -155,6 +155,17 @@ If interrupted mid-step, the entire step is rerun on resume. This may
 produce duplicate blocks for already-written entities, but the data is
 idempotent — indexers processing these blocks will see the same final state.
 
+A step is checkpointed only once its rows are durable. Transactions
+accumulate in memory and are written by an async pipeline, so a step
+function returning does not by itself mean its trailing block has landed;
+the run flushes and drains that pipeline before recording the step. Without
+that barrier the checkpoint can outrun the data, and a later resume skips a
+step whose tail was never written — silently, since the step reads as
+complete. A 2026-08 run lost the last 36 of 112 events that way, taking 606
+event subscriptions and 63 comments with it. The cost is that each step ends
+its block early, so blocks no longer pack to exactly
+`--max-txs-per-block`.
+
 ## Indexer integration
 
 Indexers that consume the Core chain must handle `ManageEntityLegacyMigration`
