@@ -109,13 +109,40 @@ var compareTables = []compareTable{
 			"cover_art", "cover_art_sizes",
 			"is_unlisted", "is_delete",
 			"track_cid", "preview_cid", "orig_file_cid",
-			"duration", "is_downloadable", "is_available",
+			"is_downloadable", "is_available",
 			"is_stream_gated", "is_download_gated",
 			"is_scheduled_release", "is_playlist_upload",
 			"playlists_containing_track",
 		},
 		Where:     "is_current = true AND is_delete = false",
 		SampleCol: "track_id",
+		// duration: the reference leaves it NULL when unknown; the indexer
+		// writes 0. Accepted -- ~99k tracks, no semantic difference for a
+		// field whose absence and zero both mean "no duration known". Listed
+		// here so it is reported rather than counted as a mismatch.
+		KnownDiffs: []string{"duration"},
+		// Compared as a set, not a sequence. The reference order is the order
+		// playlists were appended and removed over that track's history; it
+		// is not derivable from any column -- 63% of multi-playlist tracks
+		// carry one identical backfill created_at across every row, and where
+		// timestamps do differ the array still does not follow them. The
+		// migration replays playlist_tracks grouped by playlist_id, so its
+		// arrays come out ascending. Sorting both sides compares the
+		// membership we can actually reproduce instead of failing on an
+		// ordering nobody can. Without this, 434 of 3,526 sampled tracks
+		// mismatch on nothing but sequence.
+		//
+		// DISTINCT for the same reason. The reference appends unconditionally,
+		// so a track added to one playlist repeatedly is listed repeatedly
+		// ([18598, 18601 x8] for track 161160). The indexer dedupes on purpose
+		// -- it checks @> ARRAY[id] before appending -- so comparing multisets
+		// reports a divergence the indexer is designed to create. Membership
+		// is still compared; only multiplicity is ignored, and the whole-table
+		// in_playlists aggregates below still catch over- or under-population.
+		CastCols: map[string]string{
+			"playlists_containing_track": "CASE WHEN playlists_containing_track IS NULL THEN NULL " +
+				"ELSE coalesce((SELECT array_agg(DISTINCT v ORDER BY v) FROM unnest(playlists_containing_track) v), '{}') END",
+		},
 		Aggregates: []aggCheck{
 			{"current", countWhere("is_current")},
 			{"current_deleted", countWhere("is_current AND is_delete")},
