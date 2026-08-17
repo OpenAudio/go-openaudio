@@ -124,6 +124,49 @@ WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 	)`)
 	runMigration(db, `create index if not exists idx_repair_data_loss_declared on repair_data_loss(declared_at) where recovered_at is null`)
 
+	// Precomputed waveform envelopes, keyed by CID.
+	//
+	// Local only -- deliberately not a crudr model. Mediorum rows replicate
+	// solely by riding the core chain as MediorumOperation txs, and the table
+	// allowlist those txs are validated against is consulted in FinalizeBlock,
+	// where result codes fold into the header. Registering this table would
+	// therefore make a derived rendering hint into consensus-affecting state,
+	// and commit roughly a kilobyte per track to the chain permanently. Every
+	// node recomputes its own instead; the inputs are pinned so they agree.
+	//
+	// peaks is exactly `buckets` bytes, one uint8 per bucket, and stays null
+	// until status = 'done'. version exists so an algorithm change is a
+	// re-sweep rather than a table rewrite.
+	runMigration(db, `
+	create table if not exists waveforms (
+		"cid" text primary key,
+		"peaks" bytea,
+		"buckets" int not null default 750,
+		"version" int not null default 1,
+		"sample_rate" int,
+		"sample_count" bigint,
+		"duration_ms" bigint,
+		"status" text not null,
+		"error" text not null default '',
+		"error_count" int not null default 0,
+		"analyzed_at" timestamptz not null default now(),
+		"next_attempt_at" timestamptz
+	)`)
+	runMigration(db, `create index if not exists idx_waveforms_retry on waveforms (next_attempt_at) where status <> 'done'`)
+	runMigration(db, `create index if not exists idx_waveforms_version on waveforms (version) where status = 'done'`)
+
+	// Single-row cursor for the newest-first backfill walk over uploads.
+	// Newest-first so the recent slice operators actually care about lands in
+	// days rather than after a full multi-week history walk.
+	runMigration(db, `
+	create table if not exists waveform_cursor (
+		"id" int primary key default 1,
+		"created_at" timestamptz,
+		"upload_id" text,
+		"exhausted" boolean not null default false,
+		"updated_at" timestamptz not null default now()
+	)`)
+
 	runVacuumFull(db)
 }
 

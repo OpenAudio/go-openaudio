@@ -142,6 +142,14 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	repairConcurrency := env.GetInt(1, "OPENAUDIO_REPAIR_CONCURRENCY")
 	storeRecentTTL := parseStoreRecentTTL(env.String("OPENAUDIO_STORE_RECENT_TTL"))
 
+	// Waveform analysis configuration. Every switch defaults to false so the
+	// feature is opt-in; env.Bool is the default-false idiom used elsewhere
+	// here (see StoreAll below).
+	waveformEnabled := env.Bool("OPENAUDIO_WAVEFORM_ENABLED")
+	waveformBackfillEnabled := env.Bool("OPENAUDIO_WAVEFORM_BACKFILL_ENABLED")
+	waveformArchiveEnabled := env.Bool("OPENAUDIO_WAVEFORM_ARCHIVE_ENABLED")
+	waveformWorkers := env.GetInt(2, "OPENAUDIO_WAVEFORM_WORKERS")
+
 	// Archive mode keeps all history (no ops pruning). Otherwise the append-only
 	// Mediorum's local operation log is pruned, retaining 30 days by default.
 	archive := env.Get("false", "OPENAUDIO_ARCHIVE", "archive") == "true"
@@ -183,6 +191,10 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		OpsRetention:              opsRetention,
 		OpsPruneInterval:          opsPruneInterval,
 		BlobStorageStreaming:      env.Bool("OPENAUDIO_BLOB_STORAGE_STREAMING"),
+		WaveformEnabled:           waveformEnabled,
+		WaveformBackfillEnabled:   waveformBackfillEnabled,
+		WaveformArchiveEnabled:    waveformArchiveEnabled,
+		WaveformWorkers:           waveformWorkers,
 	}
 
 	ss, err := server.New(lc, logger, config, posChannel, core, ethService)
