@@ -3,8 +3,11 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -313,4 +316,129 @@ func TestComputeWaveformRejectsNonAudio(t *testing.T) {
 
 	_, err := computeWaveform(ctx, bytes.NewReader([]byte("this is not audio at all")), 0)
 	require.Error(t, err)
+}
+
+// -- serving tests --------------------------------------------------------
+//
+// These run against the real test network, so they exercise the middleware
+// chain and the cross-node probe rather than the handler in isolation.
+
+func insertTestWaveform(t *testing.T, ss *MediorumServer, cid string) {
+	t.Helper()
+	peaks := make([]byte, waveformBuckets)
+	for i := range peaks {
+		peaks[i] = uint8(i % 256)
+	}
+	_, err := ss.pgPool.Exec(context.Background(), `
+		insert into waveforms (cid, peaks, buckets, version, sample_rate, sample_count, duration_ms, status, analyzed_at)
+		values ($1, $2, $3, $4, $5, $6, $7, 'done', now())
+		on conflict (cid) do update set peaks = excluded.peaks, status = 'done'
+	`, cid, peaks, waveformBuckets, waveformVersion, waveformSampleRate, int64(waveformSampleRate*10), int64(10000))
+	require.NoError(t, err)
+}
+
+func deleteTestWaveform(t *testing.T, ss *MediorumServer, cid string) {
+	t.Helper()
+	_, _ = ss.pgPool.Exec(context.Background(), `delete from waveforms where cid = $1`, cid)
+}
+
+// noRedirectClient reports the redirect instead of following it.
+func noRedirectClient() *http.Client {
+	return &http.Client{
+		Timeout:       10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
+func TestServeWaveformReturnsStoredPeaks(t *testing.T) {
+	ss := testNetwork[0]
+	cid := fmt.Sprintf("waveform-serve-%d", time.Now().UnixNano())
+	insertTestWaveform(t, ss, cid)
+	t.Cleanup(func() { deleteTestWaveform(t, ss, cid) })
+
+	resp, err := noRedirectClient().Get(ss.Config.Self.Host + "/waveform/" + cid)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var got waveformResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+	require.Equal(t, cid, got.CID)
+	require.Len(t, got.Peaks, waveformBuckets)
+	require.Equal(t, waveformSampleRate, got.SampleRate)
+}
+
+func TestServeWaveformHeadOmitsBody(t *testing.T) {
+	ss := testNetwork[0]
+	cid := fmt.Sprintf("waveform-head-%d", time.Now().UnixNano())
+	insertTestWaveform(t, ss, cid)
+	t.Cleanup(func() { deleteTestWaveform(t, ss, cid) })
+
+	// This is the shape peers probe with, so it must answer without paying to
+	// serialize 750 bytes of peaks.
+	req, err := http.NewRequest(http.MethodHead, ss.Config.Self.Host+"/waveform/"+cid+"?localOnly=true", nil)
+	require.NoError(t, err)
+	resp, err := noRedirectClient().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Empty(t, body)
+}
+
+func TestServeWaveformLocalOnlyDoesNotRedirect(t *testing.T) {
+	// A node that lacks the waveform must answer 404 under localOnly rather
+	// than forwarding. Without this a probe would recurse across the network.
+	holder := testNetwork[0]
+	asked := testNetwork[1]
+	cid := fmt.Sprintf("waveform-localonly-%d", time.Now().UnixNano())
+	insertTestWaveform(t, holder, cid)
+	t.Cleanup(func() { deleteTestWaveform(t, holder, cid) })
+
+	resp, err := noRedirectClient().Get(asked.Config.Self.Host + "/waveform/" + cid + "?localOnly=true")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+func TestServeWaveformRedirectsToPeerThatHasIt(t *testing.T) {
+	asked := testNetwork[1]
+	cid := fmt.Sprintf("waveform-redirect-%d", time.Now().UnixNano())
+
+	// Seed every other node so the answer does not depend on where this cid
+	// happens to land in the rendezvous ranking.
+	for i, ss := range testNetwork {
+		if i == 1 {
+			continue
+		}
+		insertTestWaveform(t, ss, cid)
+		t.Cleanup(func() { deleteTestWaveform(t, ss, cid) })
+	}
+
+	resp, err := noRedirectClient().Get(asked.Config.Self.Host + "/waveform/" + cid)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	loc := resp.Header.Get("Location")
+	require.Contains(t, loc, "/waveform/"+cid)
+	require.NotContains(t, loc, asked.Config.Self.Host, "must not redirect to itself")
+}
+
+func TestServeWaveformMissEverywhereDoesNotQueueWork(t *testing.T) {
+	// On-demand analysis was removed: an unauthenticated GET must not be able
+	// to schedule a decode, which on a StoreAll node could mean a cold-storage
+	// retrieval the backfill sweep deliberately refuses.
+	ss := testNetwork[0]
+	cid := fmt.Sprintf("waveform-absent-%d", time.Now().UnixNano())
+
+	before := len(ss.waveformWork)
+	resp, err := noRedirectClient().Get(ss.Config.Self.Host + "/waveform/" + cid)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	require.Equal(t, before, len(ss.waveformWork), "request must not enqueue analysis")
 }

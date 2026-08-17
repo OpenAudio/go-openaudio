@@ -348,21 +348,6 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 
 	upload.TranscodeResults["320"] = resultKey
 
-	// Compute the waveform while the finished 320 is still on local disk. This
-	// is the cheap path: the backfill sweep would otherwise have to read the
-	// blob back out of the bucket, which on an S3-backed node is a billed GET
-	// and on a StoreAll node may be a cold-storage retrieval.
-	//
-	// Opt-in, and strictly advisory: a waveform is a rendering hint, so a
-	// failure is recorded against the waveforms row and never reaches onError.
-	// Letting it fail an upload would trade a real capability for a cosmetic
-	// one.
-	if ss.Config.WaveformEnabled {
-		if err := ss.analyzeWaveformFromFile(ctx, resultKey, destPath); err != nil {
-			logger.Warn("waveform analysis failed", zap.String("cid", resultKey), zap.Error(err))
-		}
-	}
-
 	// Only add self to TranscodedMirrors if we're in the placement hosts (or rendezvous set if no placement hosts)
 	shouldAddSelf := false
 	if len(upload.PlacementHosts) > 0 {
@@ -378,6 +363,26 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 	}
 
 	logger.Info("audio transcode done", zap.String("cid", resultHash))
+
+	// Compute the waveform while the finished 320 is still on local disk --
+	// the deferred remove at the top of this function has not run yet. Doing it
+	// here is the cheap path: the backfill sweep would otherwise read the blob
+	// back out of the bucket, which on an S3-backed node is a billed GET and on
+	// a StoreAll node may be a cold-storage retrieval.
+	//
+	// Deliberately after the mirror bookkeeping above: this decodes the whole
+	// track, and it runs inline on a path HTTP handlers call synchronously, so
+	// it must not sit between the transcode finishing and this node claiming to
+	// be a transcoded mirror.
+	//
+	// Opt-in, and strictly advisory: a waveform is a rendering hint, so failure
+	// is recorded against the waveforms row and never reaches onError. Letting
+	// it fail an upload would trade a real capability for a cosmetic one.
+	if ss.Config.WaveformEnabled {
+		if err := ss.analyzeWaveformFromFile(ctx, resultKey, destPath); err != nil {
+			logger.Warn("waveform analysis failed", zap.String("cid", resultKey), zap.Error(err))
+		}
+	}
 
 	// if a start time is set, also transcode an audio preview from the full 320kbps downsample
 	if upload.SelectedPreview.Valid {

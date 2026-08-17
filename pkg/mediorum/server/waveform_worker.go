@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
+	"github.com/erni27/imcache"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
@@ -42,6 +45,12 @@ const (
 	// Archive reads come from a colder, slower tier.
 	waveformJobTimeout        = 5 * time.Minute
 	waveformArchiveJobTimeout = 20 * time.Minute
+
+	// Bounds on the peer search behind a redirect. The probe sits inline in a
+	// user request, so the whole search has to stay well under a client's
+	// patience -- and unlike a blob, a miss here is cheap to accept.
+	waveformRedirectMaxProbes = 3
+	waveformProbeTimeout      = 2 * time.Second
 )
 
 // waveformJob is one unit of work: analyze the audio behind a CID.
@@ -493,6 +502,9 @@ func (ss *MediorumServer) serveWaveform(c echo.Context) error {
 		// CID-addressed content never changes, so the result is immutable for
 		// as long as the client cares to keep it.
 		c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=31536000, immutable")
+		if c.Request().Method == http.MethodHead {
+			return c.NoContent(http.StatusOK)
+		}
 		return c.JSON(http.StatusOK, waveformResponse{
 			CID:        row.CID,
 			Version:    row.Version,
@@ -503,17 +515,83 @@ func (ss *MediorumServer) serveWaveform(c echo.Context) error {
 		})
 	}
 
-	// On-demand analysis is only offered when the feature is switched on.
-	// Without this a disabled node would queue work nothing will ever drain.
-	if ss.Config.WaveformEnabled && ss.blobExists(ctx, cidutil.ShardCID(cid)) {
-		if ss.enqueueWaveformJob(waveformJob{cid: cid}) {
-			c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
-			c.Response().Header().Set("Retry-After", "5")
-			return c.JSON(http.StatusAccepted, map[string]string{"status": "analyzing"})
-		}
+	// localOnly is what stops a redirect chain: peer probes set it, so a node
+	// that also lacks the waveform answers 404 instead of forwarding onward.
+	// Same mechanism serveBlob uses.
+	if localOnly, _ := strconv.ParseBool(c.QueryParam("localOnly")); localOnly {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "waveform not found"})
+	}
+
+	// Deliberately no on-demand analysis here. Waveforms are computed by the
+	// transcode hook and the backfill sweep, both of which respect the
+	// archive-tier guard; enqueueing from an unauthenticated GET would bypass
+	// it, letting anyone trigger a cold-storage retrieval on a StoreAll node,
+	// with no rate limiting in front of it.
+	//
+	// Pointing at a node that already has the answer is better than promising
+	// to compute one.
+	if host := ss.findNodeToServeWaveform(ctx, cid); host != "" {
+		dest := ss.replaceHost(c, host)
+		query := dest.Query()
+		query.Add("allow_unhealthy", "true") // we confirmed the node has it
+		dest.RawQuery = query.Encode()
+		return c.Redirect(http.StatusFound, dest.String())
 	}
 
 	return c.JSON(http.StatusNotFound, map[string]string{"error": "waveform not found"})
+}
+
+// findNodeToServeWaveform picks a peer that already holds this waveform.
+//
+// Mirrors findNodeToServeBlob, with one difference that matters: holding the
+// blob does not imply holding the waveform. Waveforms are not replicated and a
+// peer may have the feature switched off entirely, so peers are probed for the
+// waveform itself rather than reusing hostHasBlob. Rendezvous order is still
+// the right search order -- those nodes are the ones that should hold the blob,
+// so they are the ones most likely to have analyzed it.
+func (ss *MediorumServer) findNodeToServeWaveform(ctx context.Context, cid string) string {
+	if host, ok := ss.waveformRedirectCache.Get(cid); ok {
+		if ss.hostHasWaveform(ctx, host, cid) {
+			return host
+		}
+		ss.waveformRedirectCache.Remove(cid)
+	}
+
+	hosts, _ := ss.rendezvousAllHosts(cid)
+	attempts := 0
+	for _, h := range hosts {
+		if h == ss.Config.Self.Host {
+			continue
+		}
+		if attempts >= waveformRedirectMaxProbes {
+			break
+		}
+		attempts++
+		if ss.hostHasWaveform(ctx, h, cid) {
+			ss.waveformRedirectCache.Set(cid, h, imcache.WithDefaultExpiration())
+			return h
+		}
+	}
+	return ""
+}
+
+// hostHasWaveform probes a peer with HEAD and localOnly set, so the peer
+// answers from its own table without forwarding the question along.
+func (ss *MediorumServer) hostHasWaveform(ctx context.Context, host, cid string) bool {
+	ctx, cancel := context.WithTimeout(ctx, waveformProbeTimeout)
+	defer cancel()
+
+	u := apiPath(host, "waveform", url.PathEscape(cid)) + "?localOnly=true"
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := ss.peerHTTPClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 // analyzeWaveformFromFile computes and stores a waveform from a file already on

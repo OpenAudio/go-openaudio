@@ -173,10 +173,14 @@ type MediorumServer struct {
 	isSeeding        bool
 	isAudiusdManaged bool
 
-	peerHealthsMutex      sync.RWMutex
-	peerHealths           map[string]*PeerHealth
-	unreachablePeers      []string
-	redirectCache         *imcache.Cache[string, string]
+	peerHealthsMutex sync.RWMutex
+	peerHealths      map[string]*PeerHealth
+	unreachablePeers []string
+	redirectCache    *imcache.Cache[string, string]
+	// Kept separate from redirectCache: a peer holding the blob says nothing
+	// about whether it holds the waveform, since waveforms are not replicated
+	// and a peer may have the feature switched off.
+	waveformRedirectCache *imcache.Cache[string, string]
 	uploadOrigCidCache    *imcache.Cache[string, string]
 	imageCache            *imcache.Cache[string, []byte]
 	trackAccessInfoCache  *imcache.Cache[string, trackAccessInfo]
@@ -450,15 +454,16 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		posChannel:      posChannel,
 		pruneTrigger:    make(chan pruneRequest, 1),
 
-		peerHealths:          map[string]*PeerHealth{},
-		redirectCache:        imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
-		uploadOrigCidCache:   imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
-		imageCache:           imcache.New(imcache.WithMaxEntriesLimitOption[string, []byte](10_000, imcache.EvictionPolicyLRU)),
-		trackAccessInfoCache: imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
-		attrCache:            imcache.New(imcache.WithMaxEntriesLimitOption[string, *blob.Attributes](10_000, imcache.EvictionPolicyLRU)),
-		knownPresent:         imcache.New(imcache.WithMaxEntriesLimitOption[string, int64](500_000, imcache.EvictionPolicyLRU)),
-		bgPullBackoff:        imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
-		replicationAttempts:  imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
+		peerHealths:           map[string]*PeerHealth{},
+		redirectCache:         imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
+		waveformRedirectCache: imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
+		uploadOrigCidCache:    imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
+		imageCache:            imcache.New(imcache.WithMaxEntriesLimitOption[string, []byte](10_000, imcache.EvictionPolicyLRU)),
+		trackAccessInfoCache:  imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
+		attrCache:             imcache.New(imcache.WithMaxEntriesLimitOption[string, *blob.Attributes](10_000, imcache.EvictionPolicyLRU)),
+		knownPresent:          imcache.New(imcache.WithMaxEntriesLimitOption[string, int64](500_000, imcache.EvictionPolicyLRU)),
+		bgPullBackoff:         imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
+		replicationAttempts:   imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
 
 		StartedAt:    time.Now().UTC(),
 		Config:       config,
@@ -514,6 +519,9 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	// waveform before playback begins, so requiring a stream signature would
 	// defeat the purpose. Delisting still applies -- a waveform is derived
 	// from the audio and must disappear with it.
+	// HEAD is what peers probe with when deciding whether to redirect here, so
+	// it has to answer without serving the body.
+	routes.HEAD("/waveform/:cid", ss.serveWaveform, ss.requireHealthy, ss.ensureNotDelisted)
 	routes.GET("/waveform/:cid", ss.serveWaveform, ss.requireHealthy, ss.ensureNotDelisted)
 	routes.HEAD("/tracks/cidstream/:cid", ss.serveBlob, ss.requireHealthy, ss.ensureNotDelisted, ss.requireRegisteredSignature)
 	routes.GET("/tracks/cidstream/:cid", ss.serveBlob, ss.requireHealthy, ss.ensureNotDelisted, ss.requireRegisteredSignature)
