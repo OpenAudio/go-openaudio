@@ -425,9 +425,15 @@ var compareTables = []compareTable{
 		},
 	},
 	{
-		Name:      "track_downloads",
-		IDCols:    []string{"parent_track_id", "track_id", "txhash"},
-		Columns:   []string{"user_id"},
+		Name: "track_downloads",
+		// NOT txhash: the migration rewrites chain provenance, so a txhash in
+		// the reference never appears on the indexed side and every row reports
+		// as missing -- a 100% false failure that hid a real created_at bug
+		// underneath it. created_at is the closest thing to a natural key here
+		// (it is not unique for ~500 of 76,960 rows, which is still vastly
+		// better than a key that cannot match at all).
+		IDCols:  []string{"parent_track_id", "track_id", "user_id", "created_at"},
+		Columns: []string{"city", "region", "country"},
 		Where:     "true",
 		SampleCol: "track_id",
 		Aggregates: []aggCheck{
