@@ -45,18 +45,28 @@ type audioAnalysisBacklogStatus struct {
 }
 
 type waveformStatus struct {
-	Enabled         bool             `json:"enabled"`
-	BackfillEnabled bool             `json:"backfill_enabled"`
-	ArchiveEnabled  bool             `json:"archive_enabled"`
-	Version         int              `json:"version"`
-	ByStatus        map[string]int64 `json:"by_status"`
-	// StaleVersion counts completed rows produced by an older algorithm, i.e.
-	// the size of the re-sweep a version bump implies.
+	Enabled         bool `json:"enabled"`
+	BackfillEnabled bool `json:"backfill_enabled"`
+	ArchiveEnabled  bool `json:"archive_enabled"`
+	// Version is a fingerprint of the algorithm version and every parameter
+	// that changes the output, so it is opaque on its own. The fields below
+	// report what produced it, which is what makes it debuggable.
+	Version          int              `json:"version"`
+	AlgorithmVersion int              `json:"algorithm_version"`
+	Buckets          int              `json:"buckets"`
+	SampleRate       int              `json:"sample_rate"`
+	ByStatus         map[string]int64 `json:"by_status"`
+	// StaleVersion counts completed rows computed under different settings —
+	// the size of the re-backfill the current version implies.
 	StaleVersion int64 `json:"stale_version"`
 	// CursorCreatedAt is how far back through history the newest-first
 	// backfill walk has reached. Empty until the first batch.
 	CursorCreatedAt string `json:"cursor_created_at,omitempty"`
 	CursorExhausted bool   `json:"cursor_exhausted"`
+	// CursorVersion is the version the current walk is running under. A
+	// mismatch with Version means a re-walk has been triggered but not yet
+	// picked up.
+	CursorVersion int `json:"cursor_version"`
 }
 
 // queryWaveformStatus reports backfill progress from the waveforms table only.
@@ -69,16 +79,22 @@ type waveformStatus struct {
 // they turn OPENAUDIO_WAVEFORM_ARCHIVE_ENABLED on.
 func (ss *MediorumServer) queryWaveformStatus(ctx context.Context) (waveformStatus, error) {
 	status := waveformStatus{
-		Enabled:         ss.Config.WaveformEnabled,
-		BackfillEnabled: ss.Config.WaveformBackfillEnabled,
-		ArchiveEnabled:  ss.Config.WaveformArchiveEnabled,
-		Version:         waveformVersion,
-		ByStatus:        map[string]int64{},
+		Enabled:          ss.Config.WaveformEnabled,
+		BackfillEnabled:  ss.Config.WaveformBackfillEnabled,
+		ArchiveEnabled:   ss.Config.WaveformArchiveEnabled,
+		Version:          waveformVersion,
+		AlgorithmVersion: waveformAlgorithmVersion,
+		Buckets:          waveformBuckets,
+		SampleRate:       waveformSampleRate,
+		ByStatus:         map[string]int64{},
 	}
 
+	// Inequality, not ordering: the version is a fingerprint and does not
+	// increase, so "older" is not a thing that can be asked. Any difference
+	// means computed under different rules.
 	rows, err := ss.pgPool.Query(ctx, `
 		select status, count(*)::bigint,
-		       count(*) filter (where status = $1 and version < $2)::bigint
+		       count(*) filter (where status = $1 and version <> $2)::bigint
 		from waveforms group by status
 	`, waveformStatusDone, waveformVersion)
 	if err != nil {
@@ -100,15 +116,19 @@ func (ss *MediorumServer) queryWaveformStatus(ctx context.Context) (waveformStat
 	}
 
 	var createdAt *time.Time
+	var cursorVersion *int
 	var exhausted bool
 	err = ss.pgPool.QueryRow(ctx,
-		`select created_at, exhausted from waveform_cursor where id = 1`,
-	).Scan(&createdAt, &exhausted)
+		`select created_at, exhausted, version from waveform_cursor where id = 1`,
+	).Scan(&createdAt, &exhausted, &cursorVersion)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return status, err
 	}
 	if createdAt != nil {
 		status.CursorCreatedAt = createdAt.UTC().Format(time.RFC3339)
+	}
+	if cursorVersion != nil {
+		status.CursorVersion = *cursorVersion
 	}
 	status.CursorExhausted = exhausted
 

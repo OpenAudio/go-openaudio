@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"math"
 	"net/http"
@@ -441,4 +442,204 @@ func TestServeWaveformMissEverywhereDoesNotQueueWork(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	require.Equal(t, before, len(ss.waveformWork), "request must not enqueue analysis")
+}
+
+// -- versioning and cursor tests -----------------------------------------
+
+func TestWaveformVersionTracksParameters(t *testing.T) {
+	// The version has to be a pure function of the things that change the
+	// output, or a parameter change leaves stale waveforms in place silently.
+	require.Equal(t, waveformVersion, computeWaveformVersion())
+	require.Positive(t, waveformVersion, "must be positive; it lands in an int column")
+
+	// Any input differing must produce a different fingerprint.
+	base := fingerprint(waveformAlgorithmVersion, waveformBuckets, waveformSampleRate, waveformInitialFrameSize, waveformMaxFrames)
+	require.Equal(t, waveformVersion, base)
+
+	for _, c := range []struct {
+		name                                string
+		alg, buckets, rate, frame, maxFrame int
+	}{
+		{"algorithm", waveformAlgorithmVersion + 1, waveformBuckets, waveformSampleRate, waveformInitialFrameSize, waveformMaxFrames},
+		{"buckets", waveformAlgorithmVersion, waveformBuckets + 1, waveformSampleRate, waveformInitialFrameSize, waveformMaxFrames},
+		{"sample rate", waveformAlgorithmVersion, waveformBuckets, waveformSampleRate * 2, waveformInitialFrameSize, waveformMaxFrames},
+		{"frame size", waveformAlgorithmVersion, waveformBuckets, waveformSampleRate, waveformInitialFrameSize * 2, waveformMaxFrames},
+		{"max frames", waveformAlgorithmVersion, waveformBuckets, waveformSampleRate, waveformInitialFrameSize, waveformMaxFrames * 2},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			require.NotEqual(t, base, fingerprint(c.alg, c.buckets, c.rate, c.frame, c.maxFrame),
+				"changing %s must invalidate stored waveforms", c.name)
+		})
+	}
+}
+
+// fingerprint mirrors computeWaveformVersion with the inputs made explicit, so
+// a test can vary one at a time.
+func fingerprint(alg, buckets, rate, frame, maxFrames int) int {
+	h := fnv.New32a()
+	fmt.Fprintf(h, "alg=%d;buckets=%d;rate=%d;frame=%d;maxframes=%d", alg, buckets, rate, frame, maxFrames)
+	return int(h.Sum32() & 0x7fffffff)
+}
+
+func clearWaveformCursor(t *testing.T, ss *MediorumServer) {
+	t.Helper()
+	_, err := ss.pgPool.Exec(context.Background(), `delete from waveform_cursor where id = 1`)
+	require.NoError(t, err)
+}
+
+func readCursor(t *testing.T, ss *MediorumServer) waveformCursor {
+	t.Helper()
+	cur, err := ss.getWaveformCursor(context.Background())
+	require.NoError(t, err)
+	return cur
+}
+
+func TestWaveformCursorFirstRunIsNotAVersionChange(t *testing.T) {
+	ss := testNetwork[0]
+	clearWaveformCursor(t, ss)
+	t.Cleanup(func() { clearWaveformCursor(t, ss) })
+
+	// An absent row must report the current version, otherwise every first run
+	// would look like a version change and log a spurious restart.
+	cur := readCursor(t, ss)
+	require.Equal(t, waveformVersion, cur.Version)
+	require.False(t, cur.Exhausted)
+}
+
+// seedAudioUpload creates an upload with a 320 result and no waveform, i.e.
+// exactly what a discovery sweep is supposed to find.
+func seedAudioUpload(t *testing.T, ss *MediorumServer, prefix string) (Upload, string) {
+	t.Helper()
+	cid := prefix + "cid320"
+	upload := Upload{
+		ID:               prefix + "upload",
+		Template:         JobTemplateAudio,
+		CreatedAt:        time.Now().UTC().Truncate(time.Second),
+		TranscodeResults: map[string]string{"320": cid},
+	}
+	require.NoError(t, ss.crud.DB.Create(&upload).Error)
+	t.Cleanup(func() {
+		ss.crud.DB.Where("id = ?", upload.ID).Delete(&Upload{})
+		deleteTestWaveform(t, ss, cid)
+	})
+	return upload, cid
+}
+
+func drainWaveformWork(ss *MediorumServer) []string {
+	cids := []string{}
+	for {
+		select {
+		case job := <-ss.waveformWork:
+			cids = append(cids, job.cid)
+		default:
+			return cids
+		}
+	}
+}
+
+func TestWaveformCursorExhaustionIsNotPermanent(t *testing.T) {
+	ss := testNetwork[0]
+	ctx := context.Background()
+	clearWaveformCursor(t, ss)
+	drainWaveformWork(ss)
+	t.Cleanup(func() { clearWaveformCursor(t, ss); drainWaveformWork(ss) })
+
+	require.NoError(t, ss.setWaveformCursorExhausted(ctx))
+	cur := readCursor(t, ss)
+	require.True(t, cur.Exhausted)
+	require.Equal(t, waveformVersion, cur.Version)
+	// updated_at is what the re-walk timer reads, so it must be stamped.
+	require.WithinDuration(t, time.Now(), cur.UpdatedAt, time.Minute)
+
+	// An upload this node learned about after the walk had already passed its
+	// position. A descending cursor never goes back for it, so latching
+	// exhausted forever left it without a waveform for good.
+	_, cid := seedAudioUpload(t, ss, fmt.Sprintf("waveform-rewalk-%d-", time.Now().UnixNano()))
+
+	// While still inside the interval, nothing should happen.
+	ss.sweepWaveformDiscovery(ctx)
+	require.Empty(t, drainWaveformWork(ss), "must not re-walk before the interval elapses")
+	require.True(t, readCursor(t, ss).Exhausted)
+
+	// Past the interval, the walk starts over and finds it.
+	_, err := ss.pgPool.Exec(ctx,
+		`update waveform_cursor set updated_at = now() - $1::interval where id = 1`,
+		fmt.Sprintf("%d seconds", int(waveformRewalkInterval.Seconds())+60))
+	require.NoError(t, err)
+
+	ss.sweepWaveformDiscovery(ctx)
+	require.Contains(t, drainWaveformWork(ss), cid, "a stale exhausted cursor must re-walk and find late arrivals")
+}
+
+func TestWaveformCursorResetsOnVersionChange(t *testing.T) {
+	ss := testNetwork[0]
+	ctx := context.Background()
+	clearWaveformCursor(t, ss)
+	drainWaveformWork(ss)
+	t.Cleanup(func() { clearWaveformCursor(t, ss); drainWaveformWork(ss) })
+
+	// Already analyzed, but under different settings.
+	_, cid := seedAudioUpload(t, ss, fmt.Sprintf("waveform-versionreset-%d-", time.Now().UnixNano()))
+	insertTestWaveform(t, ss, cid)
+	_, err := ss.pgPool.Exec(ctx, `update waveforms set version = $1 where cid = $2`, waveformVersion+1, cid)
+	require.NoError(t, err)
+
+	// A walk that finished under that older version, positioned past this
+	// upload so only a reset could reach it again.
+	_, err = ss.pgPool.Exec(ctx, `
+		insert into waveform_cursor (id, created_at, upload_id, exhausted, version, updated_at)
+		values (1, now() - interval '10 years', 'some-upload', true, $1, now())
+	`, waveformVersion+1)
+	require.NoError(t, err)
+
+	// No interval wait needed: a version change restarts the walk immediately,
+	// since every stored waveform is now computed under the wrong rules.
+	ss.sweepWaveformDiscovery(ctx)
+
+	require.Contains(t, drainWaveformWork(ss), cid, "a version change must re-enqueue stale waveforms")
+	require.Equal(t, waveformVersion, readCursor(t, ss).Version, "cursor must adopt the running version")
+}
+
+func TestWaveformDiscoveryTreatsStaleVersionAsAbsent(t *testing.T) {
+	ss := testNetwork[0]
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	prefix := fmt.Sprintf("waveform-stale-%d-", now.UnixNano())
+	cid := prefix + "cid320"
+
+	upload := Upload{
+		ID:               prefix + "upload",
+		Template:         JobTemplateAudio,
+		CreatedAt:        now,
+		TranscodeResults: map[string]string{"320": cid},
+	}
+	require.NoError(t, ss.crud.DB.Create(&upload).Error)
+	t.Cleanup(func() {
+		ss.crud.DB.Where("id = ?", upload.ID).Delete(&Upload{})
+		deleteTestWaveform(t, ss, cid)
+	})
+
+	// Current version present -> the upload is considered done.
+	insertTestWaveform(t, ss, cid)
+	batch, err := ss.nextWaveformUploadBatch(ctx, time.Time{}, "", 500)
+	require.NoError(t, err)
+	require.NotContains(t, waveformUploadIDs(batch), upload.ID)
+
+	// Same row stamped with a different version -> it must look absent, which
+	// is what makes a parameter change re-backfill without a separate sweep.
+	_, err = ss.pgPool.Exec(ctx, `update waveforms set version = $1 where cid = $2`, waveformVersion+1, cid)
+	require.NoError(t, err)
+
+	batch, err = ss.nextWaveformUploadBatch(ctx, time.Time{}, "", 500)
+	require.NoError(t, err)
+	require.Contains(t, waveformUploadIDs(batch), upload.ID, "a stale-version row must be recomputed")
+}
+
+// named apart from transcode_test.go's uploadIDs, which takes []*Upload
+func waveformUploadIDs(uploads []Upload) []string {
+	ids := make([]string, 0, len(uploads))
+	for _, u := range uploads {
+		ids = append(ids, u.ID)
+	}
+	return ids
 }

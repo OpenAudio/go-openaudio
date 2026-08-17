@@ -42,6 +42,11 @@ const (
 	waveformSweepBatchLimit = 50
 	waveformDiscoveryLimit  = 100
 
+	// How long after finishing a pass the walk starts over. Uploads arrive from
+	// peers with older timestamps than the cursor has already passed, so a
+	// finished walk is only ever finished for now.
+	waveformRewalkInterval = 6 * time.Hour
+
 	// Archive reads come from a colder, slower tier.
 	waveformJobTimeout        = 5 * time.Minute
 	waveformArchiveJobTimeout = 20 * time.Minute
@@ -262,14 +267,47 @@ func (ss *MediorumServer) sweepWaveformRetries(ctx context.Context) {
 // Newest-first matters: the recent slice is what anyone actually looks at, and
 // it lands in days rather than after a full multi-week history walk.
 func (ss *MediorumServer) sweepWaveformDiscovery(ctx context.Context) {
-	cursorTime, cursorID, exhausted, err := ss.getWaveformCursor(ctx)
+	cur, err := ss.getWaveformCursor(ctx)
 	if err != nil {
 		ss.logger.Warn("waveform cursor read failed", zap.Error(err))
 		return
 	}
-	if exhausted {
-		return
+
+	// A version change means every stored waveform was computed under different
+	// rules, so the walk starts over. nextWaveformUploadBatch only counts rows
+	// at the current version as present, so the re-walk finds them all.
+	if cur.Version != waveformVersion {
+		ss.logger.Info("waveform version changed; restarting backfill",
+			zap.Int("was", cur.Version), zap.Int("now", waveformVersion))
+		if err := ss.resetWaveformCursor(ctx); err != nil {
+			ss.logger.Warn("waveform cursor reset failed", zap.Error(err))
+			return
+		}
+		cur = waveformCursor{Version: waveformVersion}
 	}
+
+	// Reaching the end of history is not the end of the job. Uploads replicate
+	// from peers, so this node keeps learning about older ones after the walk
+	// has passed their position -- and a descending cursor never goes back for
+	// them. Latching exhausted forever left those without waveforms for good.
+	//
+	// Re-walking is cheap despite the table size: the not-exists filter means a
+	// batch skips straight to rows that still lack a waveform, so a converged
+	// backfill costs one query that returns nothing rather than a full scan per
+	// batch.
+	if cur.Exhausted {
+		if time.Since(cur.UpdatedAt) < waveformRewalkInterval {
+			return
+		}
+		ss.logger.Info("waveform backfill re-walking history for late-arriving uploads")
+		if err := ss.resetWaveformCursor(ctx); err != nil {
+			ss.logger.Warn("waveform cursor reset failed", zap.Error(err))
+			return
+		}
+		cur = waveformCursor{Version: waveformVersion}
+	}
+
+	cursorTime, cursorID := cur.CreatedAt, cur.UploadID
 
 	uploads, err := ss.nextWaveformUploadBatch(ctx, cursorTime, cursorID, waveformDiscoveryLimit)
 	if err != nil {
@@ -338,10 +376,14 @@ func (ss *MediorumServer) nextWaveformUploadBatch(ctx context.Context, cursorTim
 	q := ss.crud.DB.WithContext(ctx).
 		Where("template = ?", JobTemplateAudio).
 		Where(`coalesce(transcode_results::jsonb ->> '320', '') <> ''`).
+		// A row stamped with a different version was computed under different
+		// rules, so it counts as absent and gets recomputed. This is the whole
+		// re-backfill mechanism: no separate sweep, no table rewrite.
 		Where(`not exists (
 			select 1 from waveforms w
 			where w.cid = transcode_results::jsonb ->> '320'
-		)`)
+			  and w.version = ?
+		)`, waveformVersion)
 
 	if !cursorTime.IsZero() {
 		q = q.Where("(created_at, id) < (?, ?)", cursorTime, cursorID)
@@ -435,32 +477,61 @@ func (ss *MediorumServer) getWaveform(ctx context.Context, cid string) (*wavefor
 	return row, nil
 }
 
-func (ss *MediorumServer) getWaveformCursor(ctx context.Context) (time.Time, string, bool, error) {
+// waveformCursor is where the newest-first backfill walk has reached, and the
+// waveform version it was walking under.
+type waveformCursor struct {
+	CreatedAt time.Time
+	UploadID  string
+	Exhausted bool
+	Version   int
+	UpdatedAt time.Time
+}
+
+func (ss *MediorumServer) getWaveformCursor(ctx context.Context) (waveformCursor, error) {
 	var (
 		createdAt *time.Time
 		uploadID  *string
-		exhausted bool
+		version   *int
+		cur       waveformCursor
 	)
 	err := ss.pgPool.QueryRow(ctx,
-		`select created_at, upload_id, exhausted from waveform_cursor where id = 1`,
-	).Scan(&createdAt, &uploadID, &exhausted)
+		`select created_at, upload_id, exhausted, version, updated_at from waveform_cursor where id = 1`,
+	).Scan(&createdAt, &uploadID, &cur.Exhausted, &version, &cur.UpdatedAt)
 	if err != nil {
-		// No row yet means the walk has not started; start from the top.
+		// No row yet means the walk has not started. Report the current version
+		// so a first run is not mistaken for a version change.
 		if errors.Is(err, pgx.ErrNoRows) {
-			return time.Time{}, "", false, nil
+			return waveformCursor{Version: waveformVersion}, nil
 		}
-		return time.Time{}, "", false, err
+		return waveformCursor{}, err
 	}
 
-	t := time.Time{}
 	if createdAt != nil {
-		t = *createdAt
+		cur.CreatedAt = *createdAt
 	}
-	id := ""
 	if uploadID != nil {
-		id = *uploadID
+		cur.UploadID = *uploadID
 	}
-	return t, id, exhausted, nil
+	if version != nil {
+		cur.Version = *version
+	}
+	return cur, nil
+}
+
+// resetWaveformCursor sends the walk back to the newest upload and stamps the
+// version it is now walking under.
+func (ss *MediorumServer) resetWaveformCursor(ctx context.Context) error {
+	_, err := ss.pgPool.Exec(ctx, `
+		insert into waveform_cursor (id, created_at, upload_id, exhausted, version, updated_at)
+		values (1, null, null, false, $1, now())
+		on conflict (id) do update set
+			created_at = null,
+			upload_id = null,
+			exhausted = false,
+			version = excluded.version,
+			updated_at = now()
+	`, waveformVersion)
+	return err
 }
 
 func (ss *MediorumServer) setWaveformCursor(ctx context.Context, createdAt time.Time, uploadID string) error {
@@ -619,11 +690,16 @@ func (ss *MediorumServer) analyzeWaveformFromFile(ctx context.Context, cid, path
 	return ss.upsertWaveform(ctx, cid, result)
 }
 
+// setWaveformCursorExhausted marks a pass complete. updated_at is what the
+// re-walk timer reads, so it must be stamped here rather than left alone.
 func (ss *MediorumServer) setWaveformCursorExhausted(ctx context.Context) error {
 	_, err := ss.pgPool.Exec(ctx, `
-		insert into waveform_cursor (id, exhausted, updated_at)
-		values (1, true, now())
-		on conflict (id) do update set exhausted = true, updated_at = now()
-	`)
+		insert into waveform_cursor (id, exhausted, version, updated_at)
+		values (1, true, $1, now())
+		on conflict (id) do update set
+			exhausted = true,
+			version = excluded.version,
+			updated_at = now()
+	`, waveformVersion)
 	return err
 }

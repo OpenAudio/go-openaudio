@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"math"
 	"os/exec"
@@ -27,10 +28,10 @@ const (
 	waveformInitialFrameSize = 32
 	waveformMaxFrames        = 48000
 
-	// waveformVersion is stamped on every row. Bump it when the algorithm
-	// changes; idx_waveforms_version then makes re-analysis a cheap sweep of
-	// the stale rows instead of a table rewrite.
-	waveformVersion = 1
+	// waveformAlgorithmVersion covers changes the constants below cannot
+	// describe -- a different accumulation strategy, a different normalization,
+	// a second array in the payload. Bump it by hand for those.
+	waveformAlgorithmVersion = 1
 
 	// waveformMaxDecodeSeconds is a poison-pill guard against a blob that
 	// decodes to something absurd. It sits alongside the per-job context
@@ -41,6 +42,35 @@ const (
 	// The error string lands in a database column, so it must be bounded.
 	waveformMaxStderrBytes = 8 * 1024
 )
+
+// waveformVersion is stamped on every row and is what a re-backfill keys off:
+// a row whose version differs from this one is treated as absent, so the
+// discovery sweep picks it up and recomputes it.
+//
+// It is derived rather than hand-maintained because the parameters above change
+// the output just as surely as the algorithm does. Deriving it means changing
+// waveformBuckets or waveformSampleRate cannot silently leave a network full of
+// waveforms computed under the old settings, which is exactly the mistake a
+// hand-bumped constant invites.
+//
+// The consequence is that the number is a fingerprint, not a sequence -- it
+// does not increase, and comparisons must be equality, never ordering. The
+// status endpoint reports the inputs alongside it so it is still debuggable.
+var waveformVersion = computeWaveformVersion()
+
+func computeWaveformVersion() int {
+	h := fnv.New32a()
+	fmt.Fprintf(h, "alg=%d;buckets=%d;rate=%d;frame=%d;maxframes=%d",
+		waveformAlgorithmVersion,
+		waveformBuckets,
+		waveformSampleRate,
+		waveformInitialFrameSize,
+		waveformMaxFrames,
+	)
+	// Clear the sign bit: this lands in an int column and a negative version
+	// would read as corruption.
+	return int(h.Sum32() & 0x7fffffff)
+}
 
 // waveformResult is the output of a single analysis.
 type waveformResult struct {

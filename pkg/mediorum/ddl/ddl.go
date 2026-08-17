@@ -158,12 +158,16 @@ WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 	// Single-row cursor for the newest-first backfill walk over uploads.
 	// Newest-first so the recent slice operators actually care about lands in
 	// days rather than after a full multi-week history walk.
+	// version records which waveform version the walk was performed under. When
+	// the running version differs, the cursor resets and history is walked
+	// again -- that is what makes an algorithm or parameter change re-backfill.
 	runMigration(db, `
 	create table if not exists waveform_cursor (
 		"id" int primary key default 1,
 		"created_at" timestamptz,
 		"upload_id" text,
 		"exhausted" boolean not null default false,
+		"version" int,
 		"updated_at" timestamptz not null default now()
 	)`)
 
