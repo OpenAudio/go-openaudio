@@ -370,3 +370,67 @@ func TestTrackCreate_RejectsSignerMismatch(t *testing.T) {
 	params := buildParams(t, pool, EntityTypeTrack, ActionCreate, uid, tid, "0xWrong", meta)
 	mustReject(t, TrackCreate(), params, "signer")
 }
+
+// TestTrackCreate_PersistsDdexRightsMetadata pins the create path to the same
+// DDEX fields the update path already merges. A genesis-migration track arrives
+// complete in a single Create and is never updated, so a field the INSERT omits
+// is a field the migration loses outright. On the 2026-08-07 snapshot that was
+// 1,447 artists, 1,404 rights_controller, 1,459 producer_copyright_line and
+// 1,459 parental_warning_type rows arriving and landing as NULL.
+//
+// The metadata is shaped as genesis-writer emits it (cmd/genesis-writer/
+// entities_track.go), so the two sides stay pinned together.
+func TestTrackCreate_PersistsDdexRightsMetadata(t *testing.T) {
+	pool := setupTestDB(t)
+	uid := int64(UserIDOffset + 1)
+	tid := int64(TrackIDOffset + 91)
+	seedUser(t, pool, uid, "0xddexowner", "ddexowner")
+
+	meta := `{"owner_id":3000001,"title":"Rights","genre":"Electronic",` +
+		`"artists":[{"name":"A One","roles":["MainArtist"]}],` +
+		`"resource_contributors":[{"name":"R One","roles":["Producer"]}],` +
+		`"indirect_resource_contributors":[{"name":"I One","roles":["Composer"]}],` +
+		`"rights_controller":{"name":"Michael Kumar","roles":["RightsController"]},` +
+		`"copyright_line":{"text":"2024 Label","year":"2024"},` +
+		`"producer_copyright_line":{"text":"2024 Producer","year":"2024"},` +
+		`"parental_warning_type":"Explicit","is_original_available":true}`
+	params := buildParams(t, pool, EntityTypeTrack, ActionCreate, uid, tid, "0xDdexOwner", meta)
+	mustHandle(t, TrackCreate(), params)
+
+	var artists, resContrib, indirect, rights, copyright, prodCopyright *string
+	var warning *string
+	var isOriginalAvailable bool
+	err := pool.QueryRow(context.Background(), `
+		SELECT artists::text, resource_contributors::text,
+		       indirect_resource_contributors::text, rights_controller::text,
+		       copyright_line::text, producer_copyright_line::text,
+		       parental_warning_type, is_original_available
+		FROM tracks WHERE track_id = $1 AND is_current = true`, tid).
+		Scan(&artists, &resContrib, &indirect, &rights, &copyright, &prodCopyright,
+			&warning, &isOriginalAvailable)
+	if err != nil {
+		t.Fatalf("query track: %v", err)
+	}
+
+	for name, got := range map[string]*string{
+		"artists":                        artists,
+		"resource_contributors":          resContrib,
+		"indirect_resource_contributors": indirect,
+		"rights_controller":              rights,
+		"copyright_line":                 copyright,
+		"producer_copyright_line":        prodCopyright,
+	} {
+		if got == nil || *got == "" || *got == "null" {
+			t.Errorf("%s is empty; the create INSERT dropped it", name)
+		}
+	}
+	if rights != nil && !strings.Contains(*rights, "Michael Kumar") {
+		t.Errorf("rights_controller = %q, want it to carry the source value", *rights)
+	}
+	if warning == nil || *warning != "Explicit" {
+		t.Errorf("parental_warning_type = %v, want %q", warning, "Explicit")
+	}
+	if !isOriginalAvailable {
+		t.Error("is_original_available = false, want true")
+	}
+}
