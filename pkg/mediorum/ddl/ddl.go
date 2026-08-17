@@ -158,6 +158,14 @@ WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 		"next_attempt_at" timestamptz
 	)`)
 	runMigration(db, `create index if not exists idx_waveforms_retry on waveforms (next_attempt_at) where status <> 'done'`)
+
+	// Supports the backfill's keyset walk, which pages newest-first over
+	// (created_at, id) and filters to audio. Without it the walk falls back to
+	// uploads_ts_idx, whose second column is transcoded_at, and a caught-up
+	// re-walk -- which reads to the end of history to prove nothing is left --
+	// sorts a large slice of a wide jsonb table every time.
+	runMigration(db, `create index if not exists idx_uploads_waveform_scan
+on uploads (created_at desc, id desc) where template = 'audio'`)
 	runMigration(db, `create index if not exists idx_waveforms_version on waveforms (version) where status = 'done'`)
 
 	// Single-row cursor for the newest-first backfill walk over uploads.

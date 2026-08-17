@@ -746,3 +746,63 @@ func TestAnalyzeWaveformRefusesArchiveTierAtTheRead(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, waveformStatusNotLocal, row.Status)
 }
+
+func TestDiscoveryCursorStopsAtAFullQueue(t *testing.T) {
+	// The cursor may only advance over uploads actually dealt with. Advancing
+	// to the end of the batch regardless means anything a full queue rejected
+	// is skipped until the next re-walk hours later -- silently, since the
+	// enqueue result was discarded.
+	ss := testNetwork[0]
+	ctx := context.Background()
+	clearWaveformCursor(t, ss)
+	drainWaveformWork(ss)
+	t.Cleanup(func() { clearWaveformCursor(t, ss); drainWaveformWork(ss) })
+
+	// Dated into the future so the newest-first walk reaches these before
+	// anything else in the table, making the assertions deterministic.
+	prefix := fmt.Sprintf("waveform-backpressure-%d-", time.Now().UnixNano())
+	base := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	const seeded = 5
+	cids := make([]string, seeded)
+	for i := 0; i < seeded; i++ {
+		cid := fmt.Sprintf("%scid%d", prefix, i)
+		cids[i] = cid
+		upload := Upload{
+			ID:               fmt.Sprintf("%supload%d", prefix, i),
+			Template:         JobTemplateAudio,
+			CreatedAt:        base.Add(-time.Duration(i) * time.Minute), // descending
+			TranscodeResults: map[string]string{"320": cid},
+		}
+		require.NoError(t, ss.crud.DB.Create(&upload).Error)
+		t.Cleanup(func() {
+			ss.crud.DB.Where("id = ?", upload.ID).Delete(&Upload{})
+			deleteTestWaveform(t, ss, cid)
+		})
+	}
+
+	// Start the walk immediately above the seeded rows. Relying on them simply
+	// being the newest in the table would make this depend on whatever else
+	// the suite has left lying around.
+	require.NoError(t, ss.setWaveformCursor(ctx, base.Add(time.Second), "~"))
+
+	// Leave room for exactly two before the queue is full.
+	const free = 2
+	filler := cap(ss.waveformWork) - free
+	for i := 0; i < filler; i++ {
+		require.True(t, ss.enqueueWaveformJob(waveformJob{cid: fmt.Sprintf("filler-%d", i)}))
+	}
+
+	require.True(t, ss.sweepWaveformDiscovery(ctx), "work remains, so the sweep must say so")
+
+	queued := drainWaveformWork(ss)
+	require.Len(t, queued, cap(ss.waveformWork), "queue should be full")
+	accepted := queued[filler:]
+	require.Equal(t, []string{cids[0], cids[1]}, accepted,
+		"only the jobs that fit should have been queued")
+
+	// The cursor must sit on the last accepted upload, so the next sweep
+	// resumes at the third rather than past all five.
+	cur := readCursor(t, ss)
+	require.Equal(t, fmt.Sprintf("%supload1", prefix), cur.UploadID,
+		"cursor must not advance past work the queue rejected")
+}

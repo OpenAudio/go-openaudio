@@ -111,6 +111,11 @@ func computeWaveform(ctx context.Context, r io.Reader, expectedBytes int64) (*wa
 		"-f", "s16le",
 		"-c:a", "pcm_s16le",
 		"-t", fmt.Sprintf("%d", waveformMaxDecodeSeconds),
+		// Backfill runs alongside transcoding, which caps itself at two threads
+		// per worker for the same reason. Decoding to PCM is essentially
+		// single-threaded anyway, so pinning this costs nothing and keeps a
+		// pool of workers from competing with the node's real work.
+		"-threads", "1",
 		"pipe:1",
 	)
 

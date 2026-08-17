@@ -42,6 +42,22 @@ const (
 	waveformSweepBatchLimit = 50
 	waveformDiscoveryLimit  = 100
 
+	// Batches pulled per sweep before returning to re-check context and
+	// version. The queue filling usually stops a sweep well before this; it
+	// exists so a fast-draining pool cannot keep one sweep running for hours.
+	waveformMaxBatchesPerSweep = 20
+
+	// Short while there is a backlog, long once caught up. The short interval
+	// only has to beat the rate the workers drain the queue, since the sweep
+	// stops as soon as the queue is full.
+	waveformSweepIntervalActive = 5 * time.Second
+	waveformSweepIntervalIdle   = 5 * time.Minute
+
+	// Bounds a single sweep. A caught-up re-walk scans to the end of history to
+	// prove nothing is left, which is the one query here that grows with the
+	// catalog.
+	waveformSweepTimeout = 2 * time.Minute
+
 	// How long after finishing a pass the walk starts over. Uploads arrive from
 	// peers with older timestamps than the cursor has already passed, so a
 	// finished walk is only ever finished for now.
@@ -87,26 +103,48 @@ func (ss *MediorumServer) startWaveformAnalyzer(ctx context.Context) error {
 		ss.startWaveformWorker(i)
 	}
 
-	// Workers stay up even without backfill so the route can still service
-	// on-demand analysis; only the historical walk is switched off here.
+	// Workers stay up even without backfill so the live path keeps working;
+	// only the historical walk is switched off here.
 	if !ss.Config.WaveformBackfillEnabled {
-		ss.logger.Info("waveform backfill disabled; live path and on-demand only")
+		ss.logger.Info("waveform backfill disabled; live path only")
 		<-ctx.Done()
 		return ctx.Err()
 	}
 
-	ticker := time.NewTicker(1 * time.Minute)
+	// The sweep refills the queue and the workers set the pace, so throughput
+	// is bounded by OPENAUDIO_WAVEFORM_WORKERS rather than by how often this
+	// fires. Sweeping on a fixed drip instead would leave the workers idle most
+	// of the time and stretch a large catalog over months.
+	//
+	// Two intervals: a short one while there is a backlog, a long one once the
+	// walk is caught up, so an idle node is not querying every few seconds.
+	ticker := time.NewTicker(waveformSweepIntervalActive)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			ticker.Reset(5 * time.Minute) // lengthen after the first pass
-			ss.sweepWaveformRetries(ctx)
-			ss.sweepWaveformDiscovery(ctx)
+			busy := ss.runWaveformSweeps(ctx)
+			if busy {
+				ticker.Reset(waveformSweepIntervalActive)
+			} else {
+				ticker.Reset(waveformSweepIntervalIdle)
+			}
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+// runWaveformSweeps runs one pass of both sweeps and reports whether work
+// remains. The timeout bounds the discovery scan: a caught-up re-walk reads to
+// the end of history to prove there is nothing left, and that must not be able
+// to sit on a connection indefinitely.
+func (ss *MediorumServer) runWaveformSweeps(ctx context.Context) bool {
+	ctx, cancel := context.WithTimeout(ctx, waveformSweepTimeout)
+	defer cancel()
+
+	busy := ss.sweepWaveformRetries(ctx)
+	return ss.sweepWaveformDiscovery(ctx) || busy
 }
 
 func (ss *MediorumServer) startWaveformWorker(workerId int) {
@@ -243,7 +281,9 @@ func (ss *MediorumServer) recordWaveformReadFailure(ctx context.Context, cid str
 //
 // The archive pre-filter is intentionally not applied here: a row that reached
 // not_local or error was already judged worth attempting.
-func (ss *MediorumServer) sweepWaveformRetries(ctx context.Context) {
+// Returns whether it queued anything, which keeps the sweep interval short
+// while a backlog is draining.
+func (ss *MediorumServer) sweepWaveformRetries(ctx context.Context) bool {
 	rows, err := ss.pgPool.Query(ctx, `
 		select cid from waveforms
 		where status <> $1
@@ -256,7 +296,7 @@ func (ss *MediorumServer) sweepWaveformRetries(ctx context.Context) {
 	`, waveformStatusDone, waveformStatusArchiveSkipped, ss.Config.WaveformArchiveEnabled, waveformMaxTries, waveformSweepBatchLimit)
 	if err != nil {
 		ss.logger.Warn("waveform retry sweep failed", zap.Error(err))
-		return
+		return false
 	}
 	defer rows.Close()
 
@@ -265,33 +305,43 @@ func (ss *MediorumServer) sweepWaveformRetries(ctx context.Context) {
 		var cid string
 		if err := rows.Scan(&cid); err != nil {
 			ss.logger.Warn("waveform retry scan failed", zap.Error(err))
-			return
+			return false
 		}
 		cids = append(cids, cid)
 	}
 	if err := rows.Err(); err != nil {
 		ss.logger.Warn("waveform retry sweep failed", zap.Error(err))
-		return
+		return false
 	}
 
+	queued := 0
 	for _, cid := range cids {
 		if ctx.Err() != nil {
-			return
+			break
 		}
-		ss.enqueueWaveformJob(waveformJob{cid: cid})
+		// A full queue is not a problem here: these rows carry their own
+		// next_attempt_at, so whatever does not fit is simply picked up again.
+		if !ss.enqueueWaveformJob(waveformJob{cid: cid}) {
+			break
+		}
+		queued++
 	}
+	return queued > 0
 }
 
 // sweepWaveformDiscovery walks uploads newest-first looking for 320s that have
 // no waveforms row yet.
 //
 // Newest-first matters: the recent slice is what anyone actually looks at, and
-// it lands in days rather than after a full multi-week history walk.
-func (ss *MediorumServer) sweepWaveformDiscovery(ctx context.Context) {
+// it lands early rather than after the whole catalog.
+//
+// Returns whether work remains, which the caller uses to keep sweeping often
+// while a backlog drains.
+func (ss *MediorumServer) sweepWaveformDiscovery(ctx context.Context) bool {
 	cur, err := ss.getWaveformCursor(ctx)
 	if err != nil {
 		ss.logger.Warn("waveform cursor read failed", zap.Error(err))
-		return
+		return false
 	}
 
 	// A version change means every stored waveform was computed under different
@@ -302,7 +352,7 @@ func (ss *MediorumServer) sweepWaveformDiscovery(ctx context.Context) {
 			zap.Int("was", cur.Version), zap.Int("now", waveformVersion))
 		if err := ss.resetWaveformCursor(ctx); err != nil {
 			ss.logger.Warn("waveform cursor reset failed", zap.Error(err))
-			return
+			return false
 		}
 		cur = waveformCursor{Version: waveformVersion}
 	}
@@ -311,77 +361,105 @@ func (ss *MediorumServer) sweepWaveformDiscovery(ctx context.Context) {
 	// from peers, so this node keeps learning about older ones after the walk
 	// has passed their position -- and a descending cursor never goes back for
 	// them. Latching exhausted forever left those without waveforms for good.
-	//
-	// Re-walking is cheap despite the table size: the not-exists filter means a
-	// batch skips straight to rows that still lack a waveform, so a converged
-	// backfill costs one query that returns nothing rather than a full scan per
-	// batch.
 	if cur.Exhausted {
 		if time.Since(cur.UpdatedAt) < waveformRewalkInterval {
-			return
+			return false
 		}
 		ss.logger.Info("waveform backfill re-walking history for late-arriving uploads")
 		if err := ss.resetWaveformCursor(ctx); err != nil {
 			ss.logger.Warn("waveform cursor reset failed", zap.Error(err))
-			return
+			return false
 		}
 		cur = waveformCursor{Version: waveformVersion}
 	}
 
 	cursorTime, cursorID := cur.CreatedAt, cur.UploadID
+	queued, skippedArchive := 0, 0
 
-	uploads, err := ss.nextWaveformUploadBatch(ctx, cursorTime, cursorID, waveformDiscoveryLimit)
-	if err != nil {
-		ss.logger.Warn("waveform discovery query failed", zap.Error(err))
-		return
-	}
-	if len(uploads) == 0 {
-		if err := ss.setWaveformCursorExhausted(ctx); err != nil {
-			ss.logger.Warn("waveform cursor update failed", zap.Error(err))
-		}
-		ss.logger.Info("waveform backfill reached end of history")
-		return
-	}
-
-	skippedArchive := 0
-	for _, upload := range uploads {
+	// Keep pulling until the queue is full. The workers then set the pace,
+	// which is what makes OPENAUDIO_WAVEFORM_WORKERS the throughput knob rather
+	// than the sweep interval.
+	for batch := 0; batch < waveformMaxBatchesPerSweep; batch++ {
 		if ctx.Err() != nil {
-			return
-		}
-		cid, ok := upload.TranscodeResults["320"]
-		if !ok || cid == "" {
-			continue
+			return true
 		}
 
-		// An optimization, not the guarantee -- analyzeWaveform re-checks
-		// immediately before its first bucket call, since a cid's tier can
-		// change between being queued and being read. Filtering here just
-		// keeps work that would be skipped anyway out of the queue.
-		//
-		// Recorded rather than silently skipped: the status doubles as the
-		// re-sweep predicate if the operator later opts in, and it makes the
-		// held-back population visible in the status endpoint before they
-		// commit to paying for it.
-		if !ss.Config.WaveformArchiveEnabled && ss.isArchiveCID(cid, upload.PlacementHosts) {
-			if err := ss.markWaveformStatus(ctx, cid, waveformStatusArchiveSkipped, nil, waveformRetryBackoffNotLocal); err != nil {
-				ss.logger.Warn("failed to record archive skip", zap.String("cid", cid), zap.Error(err))
+		uploads, err := ss.nextWaveformUploadBatch(ctx, cursorTime, cursorID, waveformDiscoveryLimit)
+		if err != nil {
+			ss.logger.Warn("waveform discovery query failed", zap.Error(err))
+			return queued > 0
+		}
+		if len(uploads) == 0 {
+			if err := ss.setWaveformCursorExhausted(ctx); err != nil {
+				ss.logger.Warn("waveform cursor update failed", zap.Error(err))
 			}
-			skippedArchive++
-			continue
+			ss.logger.Info("waveform backfill reached end of history",
+				zap.Int("queued_this_sweep", queued))
+			return queued > 0
 		}
 
-		ss.enqueueWaveformJob(waveformJob{cid: cid, placementHosts: upload.PlacementHosts})
+		// The cursor may only advance over uploads actually dealt with. An
+		// earlier version advanced to the end of the batch regardless, so
+		// anything dropped by a full queue was silently skipped until the next
+		// re-walk hours later.
+		var advanceTo *Upload
+		full := false
+
+		for i := range uploads {
+			upload := uploads[i]
+			if ctx.Err() != nil {
+				break
+			}
+
+			cid, ok := upload.TranscodeResults["320"]
+			if !ok || cid == "" {
+				advanceTo = &upload
+				continue
+			}
+
+			// An optimization, not the guarantee -- analyzeWaveform re-checks
+			// immediately before its first bucket call, since a cid's tier can
+			// change between being queued and being read. Filtering here just
+			// keeps work that would be skipped anyway out of the queue.
+			//
+			// Recorded rather than silently skipped: the status doubles as the
+			// re-sweep predicate if the operator later opts in, and it makes
+			// the held-back population visible in the status endpoint before
+			// they commit to paying for it.
+			if !ss.Config.WaveformArchiveEnabled && ss.isArchiveCID(cid, upload.PlacementHosts) {
+				if err := ss.markWaveformStatus(ctx, cid, waveformStatusArchiveSkipped, nil, waveformRetryBackoffNotLocal); err != nil {
+					ss.logger.Warn("failed to record archive skip", zap.String("cid", cid), zap.Error(err))
+				}
+				skippedArchive++
+				advanceTo = &upload
+				continue
+			}
+
+			if !ss.enqueueWaveformJob(waveformJob{cid: cid, placementHosts: upload.PlacementHosts}) {
+				full = true
+				break
+			}
+			queued++
+			advanceTo = &upload
+		}
+
+		if advanceTo != nil {
+			cursorTime, cursorID = advanceTo.CreatedAt, advanceTo.ID
+			if err := ss.setWaveformCursor(ctx, cursorTime, cursorID); err != nil {
+				ss.logger.Warn("waveform cursor update failed", zap.Error(err))
+				return true
+			}
+		}
+		if full {
+			break
+		}
 	}
 
-	last := uploads[len(uploads)-1]
-	if err := ss.setWaveformCursor(ctx, last.CreatedAt, last.ID); err != nil {
-		ss.logger.Warn("waveform cursor update failed", zap.Error(err))
-	}
 	if skippedArchive > 0 {
 		ss.logger.Info("waveform discovery skipped archive-tier cids",
-			zap.Int("skipped", skippedArchive),
-			zap.Int("batch", len(uploads)))
+			zap.Int("skipped", skippedArchive))
 	}
+	return true
 }
 
 // nextWaveformUploadBatch pages backwards through uploads by (created_at, id).
