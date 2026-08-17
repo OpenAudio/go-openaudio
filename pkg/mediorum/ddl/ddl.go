@@ -142,7 +142,12 @@ WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 		"cid" text primary key,
 		"peaks" bytea,
 		"buckets" int not null default 750,
-		"version" int not null default 1,
+		-- No default on purpose. Every write stamps the running version, and
+		-- discovery decides an upload is outstanding by the absence of a row at
+		-- that version -- so a write that forgot it would quietly make the row
+		-- invisible to discovery forever. Without a default that mistake is a
+		-- not-null violation instead of a silent one.
+		"version" int not null,
 		"sample_rate" int,
 		"sample_count" bigint,
 		"duration_ms" bigint,

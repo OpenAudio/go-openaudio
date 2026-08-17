@@ -643,3 +643,56 @@ func waveformUploadIDs(uploads []Upload) []string {
 	}
 	return ids
 }
+
+func TestNonTerminalRowsAreStampedAndHiddenFromDiscovery(t *testing.T) {
+	// A blob missing during one pass and replicated later must still get a
+	// waveform, but the retry sweep alone should schedule that. If these rows
+	// carry no version, discovery treats the upload as outstanding forever and
+	// re-enqueues it on every re-walk, bypassing the backoff entirely.
+	ss := testNetwork[0]
+	ctx := context.Background()
+	drainWaveformWork(ss)
+	t.Cleanup(func() { drainWaveformWork(ss) })
+
+	upload, cid := seedAudioUpload(t, ss, fmt.Sprintf("waveform-notlocal-%d-", time.Now().UnixNano()))
+
+	// Discovery sees it while nothing is recorded.
+	batch, err := ss.nextWaveformUploadBatch(ctx, time.Time{}, "", 500)
+	require.NoError(t, err)
+	require.Contains(t, waveformUploadIDs(batch), upload.ID)
+
+	// The blob is not on this node.
+	require.NoError(t, ss.markWaveformStatus(ctx, cid, waveformStatusNotLocal, nil, waveformRetryBackoffNotLocal))
+
+	row, err := ss.getWaveform(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, waveformStatusNotLocal, row.Status)
+	require.Equal(t, waveformVersion, row.Version, "non-terminal rows must carry the running version")
+
+	batch, err = ss.nextWaveformUploadBatch(ctx, time.Time{}, "", 500)
+	require.NoError(t, err)
+	require.NotContains(t, waveformUploadIDs(batch), upload.ID,
+		"discovery must leave scheduling to the retry sweep")
+
+	// The retry sweep still owns it, and not_local never spends the retry
+	// budget, so it keeps coming back until the blob turns up.
+	var errCount int
+	var nextAttempt *time.Time
+	require.NoError(t, ss.pgPool.QueryRow(ctx,
+		`select error_count, next_attempt_at from waveforms where cid = $1`, cid,
+	).Scan(&errCount, &nextAttempt))
+	require.Zero(t, errCount, "not_local must not spend the retry budget")
+	require.NotNil(t, nextAttempt, "must be scheduled for another attempt")
+
+	// Once the blob replicates in and analysis succeeds, it becomes servable.
+	require.NoError(t, ss.upsertWaveform(ctx, cid, &waveformResult{
+		Peaks:       make([]byte, waveformBuckets),
+		SampleRate:  waveformSampleRate,
+		SampleCount: int64(waveformSampleRate),
+		DurationMs:  1000,
+	}))
+	row, err = ss.getWaveform(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, waveformStatusDone, row.Status)
+	require.Equal(t, waveformVersion, row.Version)
+}

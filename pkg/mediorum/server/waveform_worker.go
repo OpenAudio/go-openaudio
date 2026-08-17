@@ -426,39 +426,52 @@ func (ss *MediorumServer) upsertWaveform(ctx context.Context, cid string, result
 // markWaveformStatus records a non-terminal outcome without touching
 // error_count. Used for not_local, unavailable and archive_skipped, none of
 // which are evidence about the content.
+//
+// The version is stamped even though there are no peaks to describe. Discovery
+// treats an upload as outstanding when it has no row at the current version, so
+// leaving this unset would make these rows invisible to it forever and every
+// re-walk would re-enqueue them, bypassing the backoff below. Stamping it hands
+// scheduling to the retry sweep alone, which keys off status and ignores
+// version, so a version change still recomputes them once they succeed.
 func (ss *MediorumServer) markWaveformStatus(ctx context.Context, cid, status string, cause error, backoff time.Duration) error {
 	msg := ""
 	if cause != nil {
 		msg = cause.Error()
 	}
 	_, err := ss.pgPool.Exec(ctx, `
-		insert into waveforms (cid, status, error, error_count, analyzed_at, next_attempt_at)
-		values ($1, $2, $3, 0, now(), now() + $4::interval)
+		insert into waveforms (cid, status, error, error_count, version, analyzed_at, next_attempt_at)
+		values ($1, $2, $3, 0, $4, now(), now() + $5::interval)
 		on conflict (cid) do update set
 			status = excluded.status,
 			error = excluded.error,
+			version = excluded.version,
 			analyzed_at = now(),
 			next_attempt_at = excluded.next_attempt_at
-	`, cid, status, msg, fmt.Sprintf("%d seconds", int(backoff.Seconds())))
+	`, cid, status, msg, waveformVersion, fmt.Sprintf("%d seconds", int(backoff.Seconds())))
 	return err
 }
 
 // markWaveformError records a decode failure and advances the retry counter.
+// Stamped with the current version for the same reason as markWaveformStatus:
+// otherwise discovery re-enqueues the row on every re-walk and the backoff
+// never applies. A row at the retry cap then stays put rather than being
+// retried forever by the back door.
 func (ss *MediorumServer) markWaveformError(ctx context.Context, cid string, cause error) error {
 	msg := ""
 	if cause != nil {
 		msg = cause.Error()
 	}
 	_, err := ss.pgPool.Exec(ctx, `
-		insert into waveforms (cid, status, error, error_count, analyzed_at, next_attempt_at)
-		values ($1, $2, $3, 1, now(), now() + $4::interval)
+		insert into waveforms (cid, status, error, error_count, version, analyzed_at, next_attempt_at)
+		values ($1, $2, $3, 1, $4, now(), now() + $5::interval)
 		on conflict (cid) do update set
 			status = excluded.status,
 			error = excluded.error,
 			error_count = coalesce(waveforms.error_count, 0) + 1,
+			version = excluded.version,
 			analyzed_at = now(),
 			next_attempt_at = excluded.next_attempt_at
-	`, cid, waveformStatusError, msg, fmt.Sprintf("%d seconds", int(waveformRetryBackoffError.Seconds())))
+	`, cid, waveformStatusError, msg, waveformVersion, fmt.Sprintf("%d seconds", int(waveformRetryBackoffError.Seconds())))
 	return err
 }
 
