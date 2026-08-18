@@ -154,9 +154,22 @@ WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 		"status" text not null,
 		"error" text not null default '',
 		"error_count" int not null default 0,
+		-- Which upload this blob came from, when one is known.
+		--
+		-- Nullable and deliberately not the key. The relationship is not 1:1:
+		-- an upload yields both a 320 and, when one is selected, a preview, so
+		-- two rows share an upload_id. Legacy Qm content has no upload row at
+		-- all and carries null. The cid stays the key because that is what the
+		-- route, the peer probe and the redirect cache all address.
+		--
+		-- It exists so discovery can anti-join on indexed text instead of
+		-- extracting jsonb from both sides, which was the expensive part of
+		-- the sweep and the reason an "unanalyzed" count was unaffordable.
+		"upload_id" text,
 		"analyzed_at" timestamptz not null default now(),
 		"next_attempt_at" timestamptz
 	)`)
+	runMigration(db, `create index if not exists idx_waveforms_upload_id on waveforms (upload_id, version) where upload_id is not null`)
 	runMigration(db, `create index if not exists idx_waveforms_retry on waveforms (next_attempt_at) where status <> 'done'`)
 
 	// Supports the backfill's keyset walk, which pages newest-first over

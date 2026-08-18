@@ -325,17 +325,21 @@ func TestComputeWaveformRejectsNonAudio(t *testing.T) {
 // These run against the real test network, so they exercise the middleware
 // chain and the cross-node probe rather than the handler in isolation.
 
-func insertTestWaveform(t *testing.T, ss *MediorumServer, cid string) {
+// uploadID may be empty for rows that stand in for legacy Qm content, which has
+// no upload row. Discovery correlates on upload_id, so a row seeded without one
+// does not count against its upload.
+func insertTestWaveform(t *testing.T, ss *MediorumServer, cid, uploadID string) {
 	t.Helper()
 	peaks := make([]byte, waveformBuckets)
 	for i := range peaks {
 		peaks[i] = uint8(i % 256)
 	}
 	_, err := ss.pgPool.Exec(context.Background(), `
-		insert into waveforms (cid, peaks, buckets, version, sample_rate, sample_count, duration_ms, status, analyzed_at)
-		values ($1, $2, $3, $4, $5, $6, $7, 'done', now())
-		on conflict (cid) do update set peaks = excluded.peaks, status = 'done'
-	`, cid, peaks, waveformBuckets, waveformVersion, waveformSampleRate, int64(waveformSampleRate*10), int64(10000))
+		insert into waveforms (cid, peaks, buckets, version, sample_rate, sample_count, duration_ms, status, upload_id, analyzed_at)
+		values ($1, $2, $3, $4, $5, $6, $7, 'done', $8, now())
+		on conflict (cid) do update set peaks = excluded.peaks, status = 'done', upload_id = excluded.upload_id
+	`, cid, peaks, waveformBuckets, waveformVersion, waveformSampleRate, int64(waveformSampleRate*10), int64(10000),
+		nullableUploadID(uploadID))
 	require.NoError(t, err)
 }
 
@@ -355,7 +359,7 @@ func noRedirectClient() *http.Client {
 func TestServeWaveformReturnsStoredPeaks(t *testing.T) {
 	ss := testNetwork[0]
 	cid := fmt.Sprintf("waveform-serve-%d", time.Now().UnixNano())
-	insertTestWaveform(t, ss, cid)
+	insertTestWaveform(t, ss, cid, "")
 	t.Cleanup(func() { deleteTestWaveform(t, ss, cid) })
 
 	resp, err := noRedirectClient().Get(ss.Config.Self.Host + "/waveform/" + cid)
@@ -373,7 +377,7 @@ func TestServeWaveformReturnsStoredPeaks(t *testing.T) {
 func TestServeWaveformHeadOmitsBody(t *testing.T) {
 	ss := testNetwork[0]
 	cid := fmt.Sprintf("waveform-head-%d", time.Now().UnixNano())
-	insertTestWaveform(t, ss, cid)
+	insertTestWaveform(t, ss, cid, "")
 	t.Cleanup(func() { deleteTestWaveform(t, ss, cid) })
 
 	// This is the shape peers probe with, so it must answer without paying to
@@ -396,7 +400,7 @@ func TestServeWaveformLocalOnlyDoesNotRedirect(t *testing.T) {
 	holder := testNetwork[0]
 	asked := testNetwork[1]
 	cid := fmt.Sprintf("waveform-localonly-%d", time.Now().UnixNano())
-	insertTestWaveform(t, holder, cid)
+	insertTestWaveform(t, holder, cid, "")
 	t.Cleanup(func() { deleteTestWaveform(t, holder, cid) })
 
 	resp, err := noRedirectClient().Get(asked.Config.Self.Host + "/waveform/" + cid + "?localOnly=true")
@@ -415,7 +419,7 @@ func TestServeWaveformRedirectsToPeerThatHasIt(t *testing.T) {
 		if i == 1 {
 			continue
 		}
-		insertTestWaveform(t, ss, cid)
+		insertTestWaveform(t, ss, cid, "")
 		t.Cleanup(func() { deleteTestWaveform(t, ss, cid) })
 	}
 
@@ -580,8 +584,8 @@ func TestWaveformCursorResetsOnVersionChange(t *testing.T) {
 	t.Cleanup(func() { clearWaveformCursor(t, ss); drainWaveformWork(ss) })
 
 	// Already analyzed, but under different settings.
-	_, cid := seedAudioUpload(t, ss, fmt.Sprintf("waveform-versionreset-%d-", time.Now().UnixNano()))
-	insertTestWaveform(t, ss, cid)
+	upload, cid := seedAudioUpload(t, ss, fmt.Sprintf("waveform-versionreset-%d-", time.Now().UnixNano()))
+	insertTestWaveform(t, ss, cid, upload.ID)
 	_, err := ss.pgPool.Exec(ctx, `update waveforms set version = $1 where cid = $2`, waveformVersion+1, cid)
 	require.NoError(t, err)
 
@@ -621,7 +625,7 @@ func TestWaveformDiscoveryTreatsStaleVersionAsAbsent(t *testing.T) {
 	})
 
 	// Current version present -> the upload is considered done.
-	insertTestWaveform(t, ss, cid)
+	insertTestWaveform(t, ss, cid, upload.ID)
 	batch, err := ss.nextWaveformUploadBatch(ctx, time.Time{}, "", 500)
 	require.NoError(t, err)
 	require.NotContains(t, waveformUploadIDs(batch), upload.ID)
@@ -663,7 +667,7 @@ func TestNonTerminalRowsAreStampedAndHiddenFromDiscovery(t *testing.T) {
 	require.Contains(t, waveformUploadIDs(batch), upload.ID)
 
 	// The blob is not on this node.
-	require.NoError(t, ss.markWaveformStatus(ctx, cid, waveformStatusNotLocal, nil, waveformRetryBackoffNotLocal))
+	require.NoError(t, ss.markWaveformStatus(ctx, cid, upload.ID, waveformStatusNotLocal, nil, waveformRetryBackoffNotLocal))
 
 	row, err := ss.getWaveform(ctx, cid)
 	require.NoError(t, err)
@@ -686,7 +690,7 @@ func TestNonTerminalRowsAreStampedAndHiddenFromDiscovery(t *testing.T) {
 	require.NotNil(t, nextAttempt, "must be scheduled for another attempt")
 
 	// Once the blob replicates in and analysis succeeds, it becomes servable.
-	require.NoError(t, ss.upsertWaveform(ctx, cid, &waveformResult{
+	require.NoError(t, ss.upsertWaveform(ctx, cid, "", &waveformResult{
 		Peaks:       make([]byte, waveformBuckets),
 		SampleRate:  waveformSampleRate,
 		SampleCount: int64(waveformSampleRate),
@@ -805,4 +809,34 @@ func TestDiscoveryCursorStopsAtAFullQueue(t *testing.T) {
 	cur := readCursor(t, ss)
 	require.Equal(t, fmt.Sprintf("%supload1", prefix), cur.UploadID,
 		"cursor must not advance past work the queue rejected")
+}
+
+// With backfill off the loop must still run. Returning early would strand the
+// retry sweep, so a transient failure from the live transcode hook -- written
+// with a next_attempt_at nobody reads -- would never be re-attempted, and the
+// outstanding count would sit at zero while nothing had been looked at.
+func TestSweepsRunWithBackfillDisabled(t *testing.T) {
+	ss := testNetwork[0]
+	ctx := context.Background()
+	drainWaveformWork(ss)
+	clearWaveformCursor(t, ss)
+	t.Cleanup(func() { drainWaveformWork(ss); clearWaveformCursor(t, ss) })
+
+	origBackfill := ss.Config.WaveformBackfillEnabled
+	ss.Config.WaveformBackfillEnabled = false
+	t.Cleanup(func() { ss.Config.WaveformBackfillEnabled = origBackfill })
+
+	// A row the live hook could have written and failed on, already due.
+	cid := fmt.Sprintf("waveform-liveonly-%d", time.Now().UnixNano())
+	t.Cleanup(func() { deleteTestWaveform(t, ss, cid) })
+	require.NoError(t, ss.markWaveformStatus(ctx, cid, "", waveformStatusUnavailable, nil, -time.Minute))
+
+	ss.runWaveformSweeps(ctx)
+
+	require.Contains(t, drainWaveformWork(ss), cid,
+		"retries must run even when history is not being walked")
+
+	// And the walk itself stays put, which is what backfill-off means.
+	cur := readCursor(t, ss)
+	require.True(t, cur.CreatedAt.IsZero(), "history must not be walked")
 }

@@ -136,3 +136,28 @@ func TestWaveformRequestTilesSurviveMissingStats(t *testing.T) {
 		t.Fatalf("request tiles must render without stats:\n%s", html)
 	}
 }
+
+// The one figure describing rows absent from the table, so it is sampled on a
+// sweep. The tile must say how stale that sample is rather than imply it is live.
+func TestWaveformUnanalyzedTileReportsSampleAge(t *testing.T) {
+	html := renderWaveforms(t, &storagev1.WaveformStatus{
+		Enabled: true, BackfillEnabled: true,
+		Outstanding: 151600, OutstandingAgeNs: int64(90 * time.Second),
+	})
+	if !strings.Contains(html, "Unanalyzed") || !strings.Contains(html, "151600") {
+		t.Fatalf("outstanding work must be shown:\n%s", html)
+	}
+	if !strings.Contains(html, "as of") {
+		t.Fatalf("must disclose the sample age:\n%s", html)
+	}
+}
+
+func TestWaveformUnanalyzedTileBeforeFirstSample(t *testing.T) {
+	html := renderWaveforms(t, &storagev1.WaveformStatus{Enabled: true})
+	if !strings.Contains(html, "not yet reached") {
+		t.Fatalf("must render before any sample exists:\n%s", html)
+	}
+	if strings.Contains(html, "as of") {
+		t.Fatalf("must not claim an age it does not have:\n%s", html)
+	}
+}

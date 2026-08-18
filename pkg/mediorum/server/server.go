@@ -145,6 +145,13 @@ type MediorumServer struct {
 	// parsed connection config below, since the DSN can't change at runtime.
 	isDbLocalhost bool
 
+	// Outstanding waveform work, refreshed on a sweep. It is an anti-join over
+	// the catalog, so the console reads this cached value rather than paying
+	// for the count on every page load.
+	waveformOutstandingMu sync.Mutex
+	waveformOutstanding   int64
+	waveformOutstandingAt time.Time
+
 	// stats
 	statsMutex         sync.RWMutex
 	transcodeStats     *TranscodeStats

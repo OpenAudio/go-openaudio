@@ -365,6 +365,15 @@ func waveformUnavailableSub(w *storagev1.WaveformStatus) string {
 	return "no storage errors"
 }
 
+// The outstanding count is sampled on a sweep rather than counted per render,
+// so the tile says how old the sample is instead of implying it is live.
+func waveformOutstandingSub(w *storagev1.WaveformStatus) string {
+	if w.OutstandingAgeNs <= 0 {
+		return "not yet reached"
+	}
+	return "not yet reached, as of " + formatDuration(w.OutstandingAgeNs) + " ago"
+}
+
 func waveformRequests(w *storagev1.WaveformStatus) *storagev1.WaveformRequestStats {
 	if w.Requests == nil {
 		return &storagev1.WaveformRequestStats{}
@@ -383,8 +392,9 @@ templ waveformSection(d *storagev1.GetStorageDiagnosticsResponse) {
 				@waveformAnalysisCard(d.Waveforms)
 				@waveformBackfillCard(d.Waveforms)
 			</div>
-			<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4">
-				@statCard("Analyzed", waveformCount(d.Waveforms, "done"), "stored on this node")
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+				@statCard("Analyzed", waveformCount(d.Waveforms, "done"), "at the current version")
+				@statCard("Unanalyzed", fmt.Sprintf("%d", d.Waveforms.Outstanding), waveformOutstandingSub(d.Waveforms))
 				@statCard("Not Local", waveformCount(d.Waveforms, "not_local"), "blob not held here")
 				@statCard("Archive Held Back", waveformCount(d.Waveforms, "archive_skipped"), "cost of enabling archive")
 				@statCard("Unavailable", waveformCount(d.Waveforms, "unavailable"), waveformUnavailableSub(d.Waveforms))

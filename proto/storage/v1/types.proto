@@ -223,6 +223,13 @@ message WaveformStatus {
 
   WaveformRun run = 10;
   WaveformRequestStats requests = 11;
+
+  // Blobs the walk has not reached yet -- the only figure here that describes
+  // rows absent from the table rather than present in it, which is why it is
+  // sampled on a sweep instead of counted per request. outstanding_age_ns says
+  // how stale the sample is.
+  int64 outstanding = 12;
+  int64 outstanding_age_ns = 13;
 }
 
 // WaveformRequestStats counts what /waveform/:cid actually did, since process
