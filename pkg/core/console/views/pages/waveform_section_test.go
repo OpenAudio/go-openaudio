@@ -13,8 +13,13 @@ import (
 
 func renderWaveforms(t *testing.T, w *storagev1.WaveformStatus) string {
 	t.Helper()
+	return renderWaveformsArchive(t, w, false)
+}
+
+func renderWaveformsArchive(t *testing.T, w *storagev1.WaveformStatus, archiveConfigured bool) string {
+	t.Helper()
 	var buf bytes.Buffer
-	d := &storagev1.GetStorageDiagnosticsResponse{Waveforms: w}
+	d := &storagev1.GetStorageDiagnosticsResponse{Waveforms: w, ArchiveConfigured: archiveConfigured}
 	if err := waveformSection(d).Render(context.Background(), &buf); err != nil {
 		t.Fatal(err)
 	}
@@ -86,13 +91,13 @@ func TestWaveformBackfillCardFlagsPendingReBackfill(t *testing.T) {
 }
 
 func TestWaveformStatTilesCoverEveryStatus(t *testing.T) {
-	html := renderWaveforms(t, &storagev1.WaveformStatus{
+	html := renderWaveformsArchive(t, &storagev1.WaveformStatus{
 		Enabled: true, BackfillEnabled: true, StaleVersion: 5000,
 		ByStatus: map[string]int64{
 			"done": 1200, "not_local": 300, "archive_skipped": 2293395,
 			"unavailable": 914, "error": 37,
 		},
-	})
+	}, true)
 	for _, want := range []string{"1200", "300", "2293395", "914", "37", "5000"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("expected count %q in the stat tiles:\n%s", want, html)
@@ -159,5 +164,24 @@ func TestWaveformUnanalyzedTileBeforeFirstSample(t *testing.T) {
 	}
 	if strings.Contains(html, "as of") {
 		t.Fatalf("must not claim an age it does not have:\n%s", html)
+	}
+}
+
+// Without an archive bucket nothing can ever be routed to archive, so the tile
+// would report a permanent zero and only add noise.
+func TestSkippedArchiveTileHiddenWithoutArchiveStorage(t *testing.T) {
+	w := &storagev1.WaveformStatus{
+		Enabled:  true,
+		ByStatus: map[string]int64{"archive_skipped": 2293395},
+	}
+	if html := renderWaveformsArchive(t, w, false); strings.Contains(html, "Skipped Archive") {
+		t.Fatalf("tile must be hidden without archive storage:\n%s", html)
+	}
+	html := renderWaveformsArchive(t, w, true)
+	if !strings.Contains(html, "Skipped Archive") || !strings.Contains(html, "2293395") {
+		t.Fatalf("tile must show once archive storage exists:\n%s", html)
+	}
+	if !strings.Contains(html, "blobs skipped due to being in archive storage") {
+		t.Fatalf("sublabel must say why they were skipped:\n%s", html)
 	}
 }

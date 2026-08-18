@@ -396,7 +396,12 @@ templ waveformSection(d *storagev1.GetStorageDiagnosticsResponse) {
 				@statCard("Analyzed", waveformCount(d.Waveforms, "done"), "at the current version")
 				@statCard("Unanalyzed", fmt.Sprintf("%d", d.Waveforms.Outstanding), waveformOutstandingSub(d.Waveforms))
 				@statCard("Not Local", waveformCount(d.Waveforms, "not_local"), "blob not held here")
-				@statCard("Archive Held Back", waveformCount(d.Waveforms, "archive_skipped"), "cost of enabling archive")
+				// Only meaningful on a node that has archive storage at all --
+				// without an archive bucket nothing can ever be routed there, so
+				// the tile would report a permanent zero.
+				if d.ArchiveConfigured {
+					@statCard("Skipped Archive", waveformCount(d.Waveforms, "archive_skipped"), "blobs skipped due to being in archive storage")
+				}
 				@statCard("Unavailable", waveformCount(d.Waveforms, "unavailable"), waveformUnavailableSub(d.Waveforms))
 				@statCard("Failed", waveformCount(d.Waveforms, "error"), "could not be decoded")
 				@statCard("To Recompute", fmt.Sprintf("%d", d.Waveforms.StaleVersion), "computed under old settings")
