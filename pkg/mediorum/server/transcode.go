@@ -387,23 +387,16 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 	// if a start time is set, also transcode an audio preview from the full 320kbps downsample
 	if upload.SelectedPreview.Valid {
 		// Attested below with the rest of the upload's cids.
-		previewCID, err := ss.generateAudioPreviewForUpload(ctx, upload)
+		_, err := ss.generateAudioPreviewForUpload(ctx, upload)
 		if err != nil {
 			return onError(err, upload.Status, "generateAudioPreview")
 		}
 
-		// A preview is its own blob with its own cid, so it needs its own
-		// waveform -- slicing the track's would be wrong, since the preview is
-		// peak-normalized independently and 30s of a long track occupies too few
-		// buckets to stretch across a player.
-		//
-		// Queued rather than analyzed inline: the preview file has already been
-		// replicated and removed by this point, and a 30s clip is cheap enough
-		// to read back. Nil placement, matching how the preview was replicated
-		// -- see analyzeWaveform on why the upload's hosts must not be used.
-		if ss.Config.WaveformEnabled && previewCID != "" {
-			ss.enqueueWaveformJob(waveformJob{cid: previewCID, uploadID: upload.ID})
-		}
+		// The preview's own waveform is queued inside generateAudioPreview,
+		// which still has the file on disk and hands it over -- slicing the
+		// track's would be wrong anyway, since a preview is peak-normalized
+		// independently and 30s of a long track occupies too few buckets to
+		// stretch across a player.
 	}
 
 	return nil

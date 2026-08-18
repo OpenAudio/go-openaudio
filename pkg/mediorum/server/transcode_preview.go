@@ -24,7 +24,7 @@ func (ss *MediorumServer) generateAudioPreviewForUpload(ctx context.Context, upl
 		splitPreview := strings.Split(upload.SelectedPreview.String, "|")
 		previewStart := splitPreview[1]
 
-		audioPreview, err := ss.generateAudioPreview(ctx, upload.TranscodeResults["320"], previewStart)
+		audioPreview, err := ss.generateAudioPreview(ctx, upload.TranscodeResults["320"], previewStart, upload.ID)
 		if err != nil {
 			return "", err
 		}
@@ -46,7 +46,9 @@ func (ss *MediorumServer) generateAudioPreviewForUpload(ctx context.Context, upl
 // no upload row to draw placement from (especially for legacy Qm CIDs);
 // rather than thread placement only through the upload-driven path and
 // leave the HTTP path inconsistent, both go through rendezvous.
-func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash string, previewStartSeconds string) (*AudioPreview, error) {
+// uploadID is empty from the bare-CID HTTP path, which has no upload row to
+// name; linkOrphanWaveforms fills it in from audio_previews on the next sweep.
+func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash string, previewStartSeconds string, uploadID string) (*AudioPreview, error) {
 
 	if !ss.haveInMyBucket(fileHash) {
 		_, err := ss.findAndPullBlob(ctx, fileHash, nil)
@@ -87,7 +89,16 @@ func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash str
 		return nil, err
 	}
 	defer dest.Close()
-	defer os.Remove(destPath)
+
+	// destPath is handed to the waveform worker below rather than deleted here,
+	// so whoever ends up owning it is the one that removes it. Until that
+	// transfer is taken, this covers every failure between here and there.
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			os.Remove(destPath)
+		}
+	}()
 
 	previewCid, err := cidutil.ComputeFileCID(dest)
 	if err != nil {
@@ -113,6 +124,32 @@ func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash str
 
 	if _, err = ss.replicateFileParallel(ctx, previewCid, destPath, nil); err != nil {
 		return nil, err
+	}
+
+	// Analyze from the file we still have rather than reading the blob back.
+	//
+	// This is not merely the cheaper path, it is the only one that works here.
+	// Previews are rendezvous-routed with no placement, so on a StoreAll node
+	// bucketForCID sends them to the archive tier whenever this node's rank for
+	// the preview cid is >= ReplicationFactor -- which is most of them, since
+	// that cid ranks independently of the track's and of who created it. A job
+	// without a local path would then be refused by the archive guard and
+	// recorded archive_skipped, so previews would go unanalyzed on exactly the
+	// nodes this feature is for.
+	//
+	// Handing over the file sidesteps that honestly: the guard exists to stop
+	// cold-storage retrievals, and there is no retrieval when the bytes are
+	// already on local disk. The transcode hook and the replication handoff
+	// make the same judgment.
+	if ss.Config.WaveformEnabled {
+		if ss.enqueueWaveformJob(waveformJob{
+			cid:       previewCid,
+			uploadID:  uploadID,
+			localPath: destPath,
+			// nil placement, matching how the preview was replicated above.
+		}) {
+			handedOff = true
+		}
 	}
 
 	return audioPreview, nil

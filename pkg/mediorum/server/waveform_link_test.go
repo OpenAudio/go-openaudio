@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/persistence"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -303,4 +304,106 @@ func TestPulledBlobWithoutFlagFallsBackToResolution(t *testing.T) {
 	if jobs[0].localPath != "" {
 		_ = os.Remove(jobs[0].localPath)
 	}
+}
+
+// A preview handed to the worker with its local file must be analyzed even
+// when the cid ranks into the archive tier.
+//
+// This is the case that made previews inert on the nodes the feature targets.
+// Previews are rendezvous-routed with no placement, so on a StoreAll node most
+// of them route to archive -- the preview cid ranks independently of the
+// track's and of who created it. Queued without a local path they are refused
+// by the archive guard and recorded archive_skipped, so a node running the
+// recommended default never analyzes a preview at all.
+func TestArchiveTierPreviewIsAnalyzedFromItsLocalFile(t *testing.T) {
+	ss := testNetwork[0]
+	ctx := context.Background()
+
+	archive, err := persistence.Open("file://" + t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { archive.Close() })
+
+	origBucket, origStoreAll, origFlag := ss.archiveBucket, ss.Config.StoreAll, ss.Config.WaveformArchiveEnabled
+	ss.archiveBucket, ss.Config.StoreAll, ss.Config.WaveformArchiveEnabled = archive, true, false
+	t.Cleanup(func() {
+		ss.archiveBucket, ss.Config.StoreAll, ss.Config.WaveformArchiveEnabled = origBucket, origStoreAll, origFlag
+	})
+
+	// A cid this node holds only because StoreAll, i.e. archive-tier.
+	var cid string
+	for i := 0; i < 500 && cid == ""; i++ {
+		candidate := fmt.Sprintf("waveform-preview-archive-%d-%d", time.Now().UnixNano(), i)
+		if ss.isArchiveCID(candidate, nil) {
+			cid = candidate
+		}
+	}
+	require.NotEmpty(t, cid, "expected some cid to rank into the archive tier")
+	t.Cleanup(func() { deleteTestWaveform(t, ss, cid) })
+
+	// Queued without the file, as it was before: refused before any read.
+	require.NoError(t, ss.analyzeWaveform(ctx, waveformJob{cid: cid}))
+	row, err := ss.getWaveform(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, waveformStatusArchiveSkipped, row.Status,
+		"without a local file the guard declines it, which is what broke previews")
+
+	// Handed the file, it is analyzed: the guard exists to prevent cold-storage
+	// retrievals, and there is no retrieval when the bytes are already here.
+	local := synthAudioFile(t, "sine=frequency=440", 2)
+
+	require.NoError(t, ss.analyzeWaveform(ctx, waveformJob{cid: cid, localPath: local}))
+	row, err = ss.getWaveform(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, waveformStatusDone, row.Status,
+		"an archive-tier preview must still be analyzed from its own local file")
+	require.Len(t, row.Peaks, waveformBuckets)
+	require.Positive(t, row.DurationMs)
+}
+
+// The wiring the fix turns on: the preview is queued with the file still on
+// disk. Queued without it, the archive guard decides the outcome and previews
+// go unanalyzed on any StoreAll node running the default archive setting.
+func TestGeneratePreviewHandsOverItsLocalFile(t *testing.T) {
+	requireFFmpeg(t)
+
+	ss := testNetwork[0]
+	withWaveformEnabled(t, ss)
+	drainWaveformJobs(ss)
+
+	// A real 320 in the bucket for the preview to be cut from.
+	srcPath := synthAudioFile(t, "sine=frequency=440", 3)
+	f, err := os.Open(srcPath)
+	require.NoError(t, err)
+	defer f.Close()
+	srcCID, err := cidutil.ComputeFileCID(f)
+	require.NoError(t, err)
+	_, err = f.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	require.NoError(t, ss.replicateToMyBucket(context.Background(), srcCID, f, nil))
+	t.Cleanup(func() {
+		_ = ss.dropFromMyBucket(srcCID)
+		drainWaveformJobs(ss)
+	})
+
+	preview, err := ss.generateAudioPreview(context.Background(), srcCID, "0", "upload-for-preview")
+	require.NoError(t, err)
+	require.NotEmpty(t, preview.CID)
+	t.Cleanup(func() {
+		ss.crud.DB.Where("cid = ?", preview.CID).Delete(&AudioPreview{})
+		_ = ss.dropFromMyBucket(preview.CID)
+		deleteTestWaveform(t, ss, preview.CID)
+	})
+
+	jobs := drainWaveformJobs(ss)
+	require.Len(t, jobs, 1)
+	require.Equal(t, preview.CID, jobs[0].cid)
+	require.Equal(t, "upload-for-preview", jobs[0].uploadID)
+	require.NotEmpty(t, jobs[0].localPath,
+		"without the file the archive guard decides, and most previews lose")
+	require.FileExists(t, jobs[0].localPath,
+		"ownership transferred to the job, so it must not have been deleted yet")
+	require.Empty(t, jobs[0].placementHosts,
+		"nil placement, matching how the preview was replicated")
+
+	_ = os.Remove(jobs[0].localPath)
 }
