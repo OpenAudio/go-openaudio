@@ -148,9 +148,9 @@ type MediorumServer struct {
 	// Outstanding waveform work, refreshed on a sweep. It is an anti-join over
 	// the catalog, so the console reads this cached value rather than paying
 	// for the count on every page load.
-	waveformOutstandingMu sync.Mutex
-	waveformOutstanding   int64
-	waveformOutstandingAt time.Time
+	waveformRollupMu sync.Mutex
+	waveformRollup   waveformRollup
+	waveformRollupAt time.Time
 
 	// stats
 	statsMutex         sync.RWMutex

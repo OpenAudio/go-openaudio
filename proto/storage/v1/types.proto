@@ -215,21 +215,31 @@ message WaveformStatus {
   int32 buckets = 6;
   int32 sample_rate = 7;
 
-  // Row counts by status: done, not_local, unavailable, error, archive_skipped.
-  map<string, int64> by_status = 8;
-  // Completed rows computed under different settings, i.e. the size of the
-  // re-backfill the current version implies.
-  int64 stale_version = 9;
+  // Uploads by state, one bucket each, so these sum to the analyzable
+  // catalog: analyzed, partial, to_recompute, failed, unavailable, not_local,
+  // archive_skipped, never_analyzed.
+  //
+  // Counted per upload rather than per blob. An upload yields a 320 and
+  // sometimes a preview, so blob counts and upload counts are different units
+  // and could not be compared with each other. Where an upload's blobs
+  // disagree -- a finished 320 beside a failed preview -- the worse state
+  // wins, since that is the one an operator would want to act on.
+  map<string, int64> by_upload_state = 8;
+  // Waveform rows that resolved no upload, excluding legacy content which has
+  // none by definition. Every other figure here is upload-keyed and therefore
+  // blind to these, so this is the number that says the rest is incomplete.
+  // Expected to be zero; anything else means linking is failing.
+  int64 orphan_rows = 9;
 
   WaveformRun run = 10;
   WaveformRequestStats requests = 11;
 
-  // Blobs the walk has not reached yet -- the only figure here that describes
-  // rows absent from the table rather than present in it, which is why it is
-  // sampled on a sweep instead of counted per request. outstanding_age_ns says
-  // how stale the sample is.
-  int64 outstanding = 12;
-  int64 outstanding_age_ns = 13;
+  reserved 12;
+  // Age of the sample the counts above were taken from. They come from one
+  // pass over the catalog rather than a query per tile, which is what lets
+  // them reconcile with each other -- at the cost of describing a moment
+  // slightly in the past rather than right now.
+  int64 sampled_age_ns = 13;
 }
 
 // WaveformRequestStats counts what /waveform/:cid actually did, since process

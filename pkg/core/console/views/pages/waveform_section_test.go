@@ -90,15 +90,16 @@ func TestWaveformBackfillCardFlagsPendingReBackfill(t *testing.T) {
 	}
 }
 
-func TestWaveformStatTilesCoverEveryStatus(t *testing.T) {
+func TestWaveformStatTilesCoverEveryState(t *testing.T) {
 	html := renderWaveformsArchive(t, &storagev1.WaveformStatus{
-		Enabled: true, BackfillEnabled: true, StaleVersion: 5000,
-		ByStatus: map[string]int64{
-			"done": 1200, "not_local": 300, "archive_skipped": 2293395,
-			"unavailable": 914, "error": 37,
+		Enabled: true, BackfillEnabled: true,
+		ByUploadState: map[string]int64{
+			"analyzed": 1200, "not_local": 300, "archive_skipped": 2293395,
+			"unavailable": 914, "failed": 37, "to_recompute": 5000,
+			"partial": 12, "never_analyzed": 8800,
 		},
 	}, true)
-	for _, want := range []string{"1200", "300", "2293395", "914", "37", "5000"} {
+	for _, want := range []string{"1200", "300", "2293395", "914", "37", "5000", "12", "8800"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("expected count %q in the stat tiles:\n%s", want, html)
 		}
@@ -111,7 +112,7 @@ func TestWaveformStatTilesCoverEveryStatus(t *testing.T) {
 
 func TestWaveformStatTilesReadCleanWithNoStorageErrors(t *testing.T) {
 	html := renderWaveforms(t, &storagev1.WaveformStatus{
-		Enabled: true, ByStatus: map[string]int64{"done": 10},
+		Enabled: true, ByUploadState: map[string]int64{"analyzed": 10},
 	})
 	if !strings.Contains(html, "no storage errors") {
 		t.Fatalf("a healthy node should say so:\n%s", html)
@@ -142,14 +143,15 @@ func TestWaveformRequestTilesSurviveMissingStats(t *testing.T) {
 	}
 }
 
-// The one figure describing rows absent from the table, so it is sampled on a
-// sweep. The tile must say how stale that sample is rather than imply it is live.
-func TestWaveformUnanalyzedTileReportsSampleAge(t *testing.T) {
+// The counts come from one periodic pass, so the tiles an operator watches for
+// movement must say how stale that pass is rather than imply they are live.
+func TestWaveformTilesReportSampleAge(t *testing.T) {
 	html := renderWaveforms(t, &storagev1.WaveformStatus{
 		Enabled: true, BackfillEnabled: true,
-		Outstanding: 151600, OutstandingAgeNs: int64(90 * time.Second),
+		ByUploadState: map[string]int64{"never_analyzed": 151600},
+		SampledAgeNs:  int64(90 * time.Second),
 	})
-	if !strings.Contains(html, "Unanalyzed") || !strings.Contains(html, "151600") {
+	if !strings.Contains(html, "Never Analyzed") || !strings.Contains(html, "151600") {
 		t.Fatalf("outstanding work must be shown:\n%s", html)
 	}
 	if !strings.Contains(html, "as of") {
@@ -157,7 +159,7 @@ func TestWaveformUnanalyzedTileReportsSampleAge(t *testing.T) {
 	}
 }
 
-func TestWaveformUnanalyzedTileBeforeFirstSample(t *testing.T) {
+func TestWaveformTilesBeforeFirstSample(t *testing.T) {
 	html := renderWaveforms(t, &storagev1.WaveformStatus{Enabled: true})
 	if !strings.Contains(html, "not yet reached") {
 		t.Fatalf("must render before any sample exists:\n%s", html)
@@ -171,8 +173,8 @@ func TestWaveformUnanalyzedTileBeforeFirstSample(t *testing.T) {
 // would report a permanent zero and only add noise.
 func TestSkippedArchiveTileHiddenWithoutArchiveStorage(t *testing.T) {
 	w := &storagev1.WaveformStatus{
-		Enabled:  true,
-		ByStatus: map[string]int64{"archive_skipped": 2293395},
+		Enabled:       true,
+		ByUploadState: map[string]int64{"archive_skipped": 2293395},
 	}
 	if html := renderWaveformsArchive(t, w, false); strings.Contains(html, "Skipped Archive") {
 		t.Fatalf("tile must be hidden without archive storage:\n%s", html)
@@ -183,5 +185,26 @@ func TestSkippedArchiveTileHiddenWithoutArchiveStorage(t *testing.T) {
 	}
 	if !strings.Contains(html, "blobs skipped due to being in archive storage") {
 		t.Fatalf("sublabel must say why they were skipped:\n%s", html)
+	}
+}
+
+// Unlinked rows are not upload-keyed, so no tile above can account for them.
+// They are the signal that the rest of the section is describing a subset.
+func TestUnlinkedRowsTileAppearsOnlyWhenNonZero(t *testing.T) {
+	clean := renderWaveforms(t, &storagev1.WaveformStatus{
+		Enabled: true, ByUploadState: map[string]int64{"analyzed": 10},
+	})
+	if strings.Contains(clean, "Unlinked Rows") {
+		t.Fatalf("a healthy node must not carry a permanent zero tile:\n%s", clean)
+	}
+
+	broken := renderWaveforms(t, &storagev1.WaveformStatus{
+		Enabled: true, OrphanRows: 417,
+	})
+	if !strings.Contains(broken, "Unlinked Rows") || !strings.Contains(broken, "417") {
+		t.Fatalf("unlinked rows must surface when they exist:\n%s", broken)
+	}
+	if !strings.Contains(broken, "waveforms matching no upload") {
+		t.Fatalf("the tile must say what it counts:\n%s", broken)
 	}
 }

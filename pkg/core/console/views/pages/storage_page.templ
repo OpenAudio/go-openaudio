@@ -318,15 +318,15 @@ func waveformModeLabel(w *storagev1.WaveformStatus) string {
 	return "live uploads only"
 }
 
-func waveformStatusCount(w *storagev1.WaveformStatus, key string) int64 {
-	if w.ByStatus == nil {
+func waveformStateCount(w *storagev1.WaveformStatus, state string) int64 {
+	if w.ByUploadState == nil {
 		return 0
 	}
-	return w.ByStatus[key]
+	return w.ByUploadState[state]
 }
 
-func waveformCount(w *storagev1.WaveformStatus, key string) string {
-	return fmt.Sprintf("%d", waveformStatusCount(w, key))
+func waveformCount(w *storagev1.WaveformStatus, state string) string {
+	return fmt.Sprintf("%d", waveformStateCount(w, state))
 }
 
 func waveformRunLabel(r *storagev1.WaveformRun) string {
@@ -359,7 +359,7 @@ func waveformProgressLine(r *storagev1.WaveformRun) string {
 // unavailable means a bucket is erroring rather than audio being missing, so
 // the sublabel says which problem the operator is actually looking at.
 func waveformUnavailableSub(w *storagev1.WaveformStatus) string {
-	if waveformStatusCount(w, "unavailable") > 0 {
+	if waveformStateCount(w, "unavailable") > 0 {
 		return "storage erroring, not missing"
 	}
 	return "no storage errors"
@@ -367,11 +367,14 @@ func waveformUnavailableSub(w *storagev1.WaveformStatus) string {
 
 // The outstanding count is sampled on a sweep rather than counted per render,
 // so the tile says how old the sample is instead of implying it is live.
-func waveformOutstandingSub(w *storagev1.WaveformStatus) string {
-	if w.OutstandingAgeNs <= 0 {
-		return "not yet reached"
+// The counts come from one periodic pass, so the age belongs beside the two
+// tiles an operator watches for movement -- otherwise a figure that has not
+// changed reads as stalled work rather than a stale sample.
+func waveformSampleSub(w *storagev1.WaveformStatus, label string) string {
+	if w.SampledAgeNs <= 0 {
+		return label
 	}
-	return "not yet reached, as of " + formatDuration(w.OutstandingAgeNs) + " ago"
+	return label + ", as of " + formatDuration(w.SampledAgeNs) + " ago"
 }
 
 func waveformRequests(w *storagev1.WaveformStatus) *storagev1.WaveformRequestStats {
@@ -392,9 +395,13 @@ templ waveformSection(d *storagev1.GetStorageDiagnosticsResponse) {
 				@waveformAnalysisCard(d.Waveforms)
 				@waveformBackfillCard(d.Waveforms)
 			</div>
+			// Every tile below counts uploads, and each upload appears in
+			// exactly one -- so they sum to the analyzable catalog. An upload
+			// whose blobs disagree is filed under the worse of them.
 			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-				@statCard("Analyzed", waveformCount(d.Waveforms, "done"), "at the current version")
-				@statCard("Unanalyzed", fmt.Sprintf("%d", d.Waveforms.Outstanding), waveformOutstandingSub(d.Waveforms))
+				@statCard("Analyzed", waveformCount(d.Waveforms, "analyzed"), waveformSampleSub(d.Waveforms, "every blob current"))
+				@statCard("Never Analyzed", waveformCount(d.Waveforms, "never_analyzed"), waveformSampleSub(d.Waveforms, "not yet reached"))
+				@statCard("Partial", waveformCount(d.Waveforms, "partial"), "some blobs still missing")
 				@statCard("Not Local", waveformCount(d.Waveforms, "not_local"), "blob not held here")
 				// Only meaningful on a node that has archive storage at all --
 				// without an archive bucket nothing can ever be routed there, so
@@ -403,8 +410,14 @@ templ waveformSection(d *storagev1.GetStorageDiagnosticsResponse) {
 					@statCard("Skipped Archive", waveformCount(d.Waveforms, "archive_skipped"), "blobs skipped due to being in archive storage")
 				}
 				@statCard("Unavailable", waveformCount(d.Waveforms, "unavailable"), waveformUnavailableSub(d.Waveforms))
-				@statCard("Failed", waveformCount(d.Waveforms, "error"), "could not be decoded")
-				@statCard("To Recompute", fmt.Sprintf("%d", d.Waveforms.StaleVersion), "computed under old settings")
+				@statCard("Failed", waveformCount(d.Waveforms, "failed"), "could not be decoded")
+				@statCard("To Recompute", waveformCount(d.Waveforms, "to_recompute"), "computed under old settings")
+				// Not upload-keyed, so it is absent from every tile above
+				// rather than merely small. Shown only when non-zero: on a
+				// healthy node it is always zero and would be noise.
+				if d.Waveforms.OrphanRows > 0 {
+					@statCard("Unlinked Rows", fmt.Sprintf("%d", d.Waveforms.OrphanRows), "waveforms matching no upload")
+				}
 			</div>
 			<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 				@statCard("Requests Served", fmt.Sprintf("%d", waveformRequests(d.Waveforms).Served), "answered from this node")

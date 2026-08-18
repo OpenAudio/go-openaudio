@@ -51,14 +51,23 @@ type waveformStatus struct {
 	// Version is a fingerprint of the algorithm version and every parameter
 	// that changes the output, so it is opaque on its own. The fields below
 	// report what produced it, which is what makes it debuggable.
-	Version          int              `json:"version"`
-	AlgorithmVersion int              `json:"algorithm_version"`
-	Buckets          int              `json:"buckets"`
-	SampleRate       int              `json:"sample_rate"`
-	ByStatus         map[string]int64 `json:"by_status"`
-	// StaleVersion counts completed rows computed under different settings —
-	// the size of the re-backfill the current version implies.
-	StaleVersion int64 `json:"stale_version"`
+	Version          int `json:"version"`
+	AlgorithmVersion int `json:"algorithm_version"`
+	Buckets          int `json:"buckets"`
+	SampleRate       int `json:"sample_rate"`
+	// ByUploadState buckets each analyzable upload once, so these sum to the
+	// analyzable catalog. Counting per upload rather than per blob is what
+	// lets them be compared: an upload yields a 320 and sometimes a preview,
+	// so a blob count and an upload count were never the same unit.
+	ByUploadState map[string]int64 `json:"by_upload_state"`
+	// OrphanRows counts waveform rows that resolved no upload, excluding
+	// legacy content which has none. Every other figure is upload-keyed and
+	// blind to them, so this is what says the rest is incomplete.
+	OrphanRows int64 `json:"orphan_rows"`
+	// SampledAgeNs is the age of the pass the counts came from. One pass for
+	// all of them is what lets them reconcile, at the cost of describing a
+	// moment slightly past.
+	SampledAgeNs int64 `json:"sampled_age_ns"`
 	// CursorCreatedAt is how far back through history the newest-first
 	// backfill walk has reached. Empty until the first batch.
 	CursorCreatedAt string `json:"cursor_created_at,omitempty"`
@@ -69,14 +78,12 @@ type waveformStatus struct {
 	CursorVersion int `json:"cursor_version"`
 }
 
-// queryWaveformStatus reports backfill progress from the waveforms table only.
+// queryWaveformStatus reports backfill progress from the sampled rollup.
 //
-// The tempting query is an anti-join against uploads to show "how many are
-// left", but that full-scans a wide jsonb table on every poll and is at its
-// most expensive precisely when the backfill is complete and the answer is
-// zero. Counting the rows we did write is indexed and bounded, and the
-// archive_skipped bucket is what tells an operator the size of the bill before
-// they turn OPENAUDIO_WAVEFORM_ARCHIVE_ENABLED on.
+// It reads the same snapshot the console does rather than issuing its own
+// counts. The rollup joins uploads to waveforms, which is affordable on a
+// sweep and not on a poll, and sharing one sample is also what keeps this
+// endpoint and the console from disagreeing with each other.
 func (ss *MediorumServer) queryWaveformStatus(ctx context.Context) (waveformStatus, error) {
 	status := waveformStatus{
 		Enabled:          ss.Config.WaveformEnabled,
@@ -86,39 +93,23 @@ func (ss *MediorumServer) queryWaveformStatus(ctx context.Context) (waveformStat
 		AlgorithmVersion: waveformAlgorithmVersion,
 		Buckets:          waveformBuckets,
 		SampleRate:       waveformSampleRate,
-		ByStatus:         map[string]int64{},
+		ByUploadState:    map[string]int64{},
 	}
 
-	// Inequality, not ordering: the version is a fingerprint and does not
-	// increase, so "older" is not a thing that can be asked. Any difference
-	// means computed under different rules.
-	rows, err := ss.pgPool.Query(ctx, `
-		select status, count(*)::bigint,
-		       count(*) filter (where status = $1 and version <> $2)::bigint
-		from waveforms group by status
-	`, waveformStatusDone, waveformVersion)
-	if err != nil {
-		return status, err
+	ss.waveformRollupMu.Lock()
+	for state, count := range ss.waveformRollup.byState {
+		status.ByUploadState[state] = count
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var name string
-		var count, stale int64
-		if err := rows.Scan(&name, &count, &stale); err != nil {
-			return status, err
-		}
-		status.ByStatus[name] = count
-		status.StaleVersion += stale
+	status.OrphanRows = ss.waveformRollup.orphanRows
+	if !ss.waveformRollupAt.IsZero() {
+		status.SampledAgeNs = int64(time.Since(ss.waveformRollupAt))
 	}
-	if err := rows.Err(); err != nil {
-		return status, err
-	}
+	ss.waveformRollupMu.Unlock()
 
 	var createdAt *time.Time
 	var cursorVersion *int
 	var exhausted bool
-	err = ss.pgPool.QueryRow(ctx,
+	err := ss.pgPool.QueryRow(ctx,
 		`select created_at, exhausted, version from waveform_cursor where id = 1`,
 	).Scan(&createdAt, &exhausted, &cursorVersion)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {

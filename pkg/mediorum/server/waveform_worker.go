@@ -81,7 +81,7 @@ const (
 	// sweep rather than on a page load: the count is an anti-join across the
 	// whole catalog, which is fine occasionally in the background and not fine
 	// on every console render.
-	waveformOutstandingTTL = 2 * time.Minute
+	waveformRollupTTL = 2 * time.Minute
 )
 
 // waveformJob is one unit of work: analyze the audio behind a CID.
@@ -174,7 +174,7 @@ func (ss *MediorumServer) runWaveformSweeps(ctx context.Context) bool {
 	// cannot repair. Discovery correlates on upload_id, so a row missing it is
 	// invisible there -- and on a live-only node discovery never runs at all.
 	ss.linkOrphanWaveforms(ctx)
-	ss.refreshWaveformOutstanding(ctx)
+	ss.refreshWaveformRollup(ctx)
 	return busy
 }
 
@@ -232,39 +232,130 @@ func (ss *MediorumServer) linkOrphanWaveforms(ctx context.Context) {
 	}
 }
 
-// refreshWaveformOutstanding counts the blobs the walk has not reached yet.
+// Upload states. Every analyzable upload lands in exactly one, so the counts
+// reconcile with each other and with the catalog -- which per-blob counts of
+// the waveforms table never could, since an upload yields one or two blobs.
+const (
+	waveformStateAnalyzed       = "analyzed"
+	waveformStatePartial        = "partial"
+	waveformStateToRecompute    = "to_recompute"
+	waveformStateFailed         = "failed"
+	waveformStateUnavailable    = "unavailable"
+	waveformStateNotLocal       = "not_local"
+	waveformStateArchiveSkipped = "archive_skipped"
+	waveformStateNeverAnalyzed  = "never_analyzed"
+)
+
+type waveformRollup struct {
+	byState    map[string]int64
+	orphanRows int64
+}
+
+// refreshWaveformRollup samples every reported figure in a single pass.
 //
-// This is the one figure that cannot be derived from the waveforms table, since
-// it is about rows that are absent from it. That makes it an anti-join over the
-// catalog, which is affordable on a sweep and not on a page load -- so the
-// console reads a cached value and the age is reported alongside it.
-func (ss *MediorumServer) refreshWaveformOutstanding(ctx context.Context) {
-	ss.waveformOutstandingMu.Lock()
-	fresh := time.Since(ss.waveformOutstandingAt) < waveformOutstandingTTL
-	ss.waveformOutstandingMu.Unlock()
+// One query rather than one per tile is what makes the numbers add up. Counting
+// present rows from the waveforms table and absent ones from uploads meant two
+// units and two moments: an upload carrying a stale row was reported as
+// analyzed, as awaiting recompute, and as outstanding at the same time, and no
+// arithmetic over the tiles recovered the size of the catalog.
+//
+// Where an upload's blobs disagree the worse state wins. A finished 320 beside
+// a failed preview is a failure an operator should see, and counting it under
+// both headings is what produced the double counting in the first place.
+//
+// It stays a sample rather than a per-request count because the anti-join half
+// is proportional to the catalog and cannot be indexed away -- the preview key
+// is extracted dynamically from jsonb. Taking it all from one pass is what buys
+// consistency; the console reports the age alongside.
+//
+// expected mirrors waveformTargets exactly, including its requirement that a
+// selected preview actually resolve to a blob. Deriving it any other way lets
+// an upload expect a row that can never be written, leaving it permanently
+// short of its own expected count.
+func (ss *MediorumServer) refreshWaveformRollup(ctx context.Context) {
+	ss.waveformRollupMu.Lock()
+	fresh := time.Since(ss.waveformRollupAt) < waveformRollupTTL
+	ss.waveformRollupMu.Unlock()
 	if fresh {
 		return
 	}
 
-	var outstanding int64
-	err := ss.crud.DB.WithContext(ctx).Model(&Upload{}).
-		Where("template = ?", JobTemplateAudio).
-		Where(`coalesce(transcode_results::jsonb ->> '320', '') <> ''`).
-		Where(`(
-			select count(*) from waveforms w
-			where w.upload_id = uploads.id and w.version = ?
-		) < (case when selected_preview is not null and selected_preview <> '' then 2 else 1 end)`,
-			waveformVersion).
-		Count(&outstanding).Error
+	rollup := waveformRollup{byState: map[string]int64{}}
+
+	rows, err := ss.pgPool.Query(ctx, `
+		with per_upload as (
+			select u.id,
+			       count(w.cid) filter (where w.version = $1 and w.status = $3) as done,
+			       count(w.cid) filter (where w.version = $1 and w.status = $4) as failed,
+			       count(w.cid) filter (where w.version = $1 and w.status = $5) as unavailable,
+			       count(w.cid) filter (where w.version = $1 and w.status = $6) as not_local,
+			       count(w.cid) filter (where w.version = $1 and w.status = $7) as archive_skipped,
+			       count(w.cid) filter (where w.version <> $1)                  as stale,
+			       (case when coalesce(u.transcode_results::jsonb ->> '320', '') <> ''
+			             then 1 else 0 end)
+			     + (case when coalesce(u.selected_preview, '') <> ''
+			              and coalesce(u.transcode_results::jsonb ->> u.selected_preview, '') <> ''
+			             then 1 else 0 end) as expected
+			from uploads u
+			left join waveforms w on w.upload_id = u.id
+			where u.template = $2
+			group by u.id
+		)
+		select case
+		         when failed          > 0 then $8
+		         when unavailable     > 0 then $9
+		         when not_local       > 0 then $10
+		         when archive_skipped > 0 then $11
+		         when stale           > 0 then $12
+		         when done >= expected    then $13
+		         when done > 0            then $14
+		         else $15
+		       end as state,
+		       count(*)::bigint
+		from per_upload
+		where expected > 0
+		group by 1
+	`,
+		waveformVersion, JobTemplateAudio,
+		waveformStatusDone, waveformStatusError, waveformStatusUnavailable,
+		waveformStatusNotLocal, waveformStatusArchiveSkipped,
+		waveformStateFailed, waveformStateUnavailable, waveformStateNotLocal,
+		waveformStateArchiveSkipped, waveformStateToRecompute, waveformStateAnalyzed,
+		waveformStatePartial, waveformStateNeverAnalyzed,
+	)
 	if err != nil {
-		ss.logger.Warn("waveform outstanding count failed", zap.Error(err))
+		ss.logger.Warn("waveform rollup query failed", zap.Error(err))
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var state string
+		var count int64
+		if err := rows.Scan(&state, &count); err != nil {
+			ss.logger.Warn("waveform rollup scan failed", zap.Error(err))
+			return
+		}
+		rollup.byState[state] = count
+	}
+	if err := rows.Err(); err != nil {
+		ss.logger.Warn("waveform rollup query failed", zap.Error(err))
 		return
 	}
 
-	ss.waveformOutstandingMu.Lock()
-	ss.waveformOutstanding = outstanding
-	ss.waveformOutstandingAt = time.Now()
-	ss.waveformOutstandingMu.Unlock()
+	// Counted apart because it is the one population the rollup structurally
+	// cannot see: that query is keyed by upload, and these rows have none.
+	if err := ss.pgPool.QueryRow(ctx, `
+		select count(*)::bigint from waveforms
+		where upload_id is null and cid not like 'Qm%'
+	`).Scan(&rollup.orphanRows); err != nil {
+		ss.logger.Warn("waveform orphan count failed", zap.Error(err))
+		return
+	}
+
+	ss.waveformRollupMu.Lock()
+	ss.waveformRollup = rollup
+	ss.waveformRollupAt = time.Now()
+	ss.waveformRollupMu.Unlock()
 }
 
 func (ss *MediorumServer) startWaveformWorker(workerId int) {
@@ -1036,7 +1127,7 @@ func (ss *MediorumServer) waveformStatusProto(ctx context.Context) *v1.WaveformS
 		AlgorithmVersion: int32(waveformAlgorithmVersion),
 		Buckets:          int32(waveformBuckets),
 		SampleRate:       int32(waveformSampleRate),
-		ByStatus:         map[string]int64{},
+		ByUploadState:    map[string]int64{},
 	}
 	// Nothing has been written and no run exists, so skip the queries wholesale
 	// rather than reporting zeros that look like a stalled backfill. The console
@@ -1045,12 +1136,15 @@ func (ss *MediorumServer) waveformStatusProto(ctx context.Context) *v1.WaveformS
 		return status
 	}
 
-	ss.waveformOutstandingMu.Lock()
-	status.Outstanding = ss.waveformOutstanding
-	if !ss.waveformOutstandingAt.IsZero() {
-		status.OutstandingAgeNs = int64(time.Since(ss.waveformOutstandingAt))
+	ss.waveformRollupMu.Lock()
+	for state, count := range ss.waveformRollup.byState {
+		status.ByUploadState[state] = count
 	}
-	ss.waveformOutstandingMu.Unlock()
+	status.OrphanRows = ss.waveformRollup.orphanRows
+	if !ss.waveformRollupAt.IsZero() {
+		status.SampledAgeNs = int64(time.Since(ss.waveformRollupAt))
+	}
+	ss.waveformRollupMu.Unlock()
 
 	if ss.metrics != nil {
 		status.Requests = &v1.WaveformRequestStats{
@@ -1058,34 +1152,6 @@ func (ss *MediorumServer) waveformStatusProto(ctx context.Context) *v1.WaveformS
 			Misses:     ss.metrics.waveformMisses.Load(),
 			Redirected: ss.metrics.waveformRedirected.Load(),
 		}
-	}
-
-	// Counted at the current version so a stale row is not reported as both
-	// analyzed and awaiting recompute; stale_version reports it separately.
-	rows, err := ss.pgPool.Query(ctx, `
-		select status,
-		       count(*) filter (where version = $2)::bigint,
-		       count(*) filter (where status = $1 and version <> $2)::bigint
-		from waveforms group by status
-	`, waveformStatusDone, waveformVersion)
-	if err != nil {
-		ss.logger.Warn("waveform status query failed", zap.Error(err))
-		return status
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var name string
-		var count, stale int64
-		if err := rows.Scan(&name, &count, &stale); err != nil {
-			ss.logger.Warn("waveform status scan failed", zap.Error(err))
-			return status
-		}
-		status.ByStatus[name] = count
-		status.StaleVersion += stale
-	}
-	if err := rows.Err(); err != nil {
-		ss.logger.Warn("waveform status query failed", zap.Error(err))
-		return status
 	}
 
 	cur, err := ss.getWaveformCursor(ctx)
