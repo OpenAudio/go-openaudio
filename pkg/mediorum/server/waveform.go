@@ -94,6 +94,19 @@ var errWaveformNoAudio = errors.New("waveform: decoded zero audio samples")
 // expectedBytes, when positive, is checked against the number of bytes we
 // managed to feed ffmpeg, so a source that ends early without reporting an
 // error cannot be silently analyzed as a shorter track.
+// errWaveformSourceTooLong marks a source longer than we are willing to decode.
+// It is terminal rather than a failure: nothing about the blob is wrong, and no
+// number of retries makes it shorter. Reported apart from decode errors so a
+// handful of very long uploads cannot read as a decoding problem.
+var errWaveformSourceTooLong = errors.New("waveform: source longer than the decode limit")
+
+// decodeStoppedAtCap reports whether the decode ended because it reached
+// waveformMaxDecodeSeconds rather than because the source ran out. ffmpeg
+// stops on its own -t, so the byte counts look identical to a truncated read.
+func decodeStoppedAtCap(sampleCount int64) bool {
+	return sampleCount >= int64(waveformMaxDecodeSeconds)*int64(waveformSampleRate)
+}
+
 func computeWaveform(ctx context.Context, r io.Reader, expectedBytes int64) (*waveformResult, error) {
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-hide_banner",
@@ -166,15 +179,25 @@ func computeWaveform(ctx context.Context, r io.Reader, expectedBytes int64) (*wa
 	if readErr != nil {
 		return nil, fmt.Errorf("waveform: read pcm: %w", readErr)
 	}
-	// A source that stopped early without erroring would otherwise yield a
-	// plausible-looking waveform for a fraction of the track.
-	if expectedBytes > 0 && src.n != expectedBytes {
-		return nil, fmt.Errorf("waveform: short read from source: got %d bytes, expected %d", src.n, expectedBytes)
-	}
-
 	peaks, sampleCount, err := acc.finalize()
 	if err != nil {
 		return nil, err
+	}
+
+	// A source that stopped early without erroring would otherwise yield a
+	// plausible-looking waveform for a fraction of the track.
+	//
+	// Except when we are the ones who stopped it. ffmpeg is given -t
+	// waveformMaxDecodeSeconds, so on a longer source it exits at the cap and
+	// the copier stops with the source unread -- indistinguishable here from a
+	// truncated blob by byte count alone. The sample count tells them apart,
+	// and conflating them reports a deliberate limit as a corrupt file and
+	// retries a multi-hour decode against a source that will never fit.
+	if expectedBytes > 0 && src.n != expectedBytes {
+		if decodeStoppedAtCap(sampleCount) {
+			return nil, errWaveformSourceTooLong
+		}
+		return nil, fmt.Errorf("waveform: short read from source: got %d bytes, expected %d", src.n, expectedBytes)
 	}
 
 	return &waveformResult{

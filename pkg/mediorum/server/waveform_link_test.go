@@ -24,6 +24,7 @@ func drainWaveformJobs(ss *MediorumServer) []waveformJob {
 	for {
 		select {
 		case job := <-ss.waveformWork:
+			ss.releaseWaveformCID(job.cid)
 			jobs = append(jobs, job)
 		default:
 			return jobs
@@ -406,4 +407,75 @@ func TestGeneratePreviewHandsOverItsLocalFile(t *testing.T) {
 		"nil placement, matching how the preview was replicated")
 
 	_ = os.Remove(jobs[0].localPath)
+}
+
+// The retry backoff only moves next_attempt_at when an attempt finishes, so a
+// cid stays selectable for as long as its attempt runs. On a multi-hour source
+// that is hours, during which every sweep tick would re-enqueue the same cid --
+// which is how error_count climbs past waveformMaxTries, worst for the longest
+// sources. The in-flight set is what bounds it to one attempt at a time.
+func TestWaveformJobIsNotEnqueuedTwiceWhileInFlight(t *testing.T) {
+	ss := testNetwork[0]
+	drainWaveformJobs(ss)
+	t.Cleanup(func() { drainWaveformJobs(ss) })
+
+	cid := fmt.Sprintf("waveform-inflight-%d", time.Now().UnixNano())
+	t.Cleanup(func() { ss.releaseWaveformCID(cid) })
+
+	require.True(t, ss.enqueueWaveformJob(waveformJob{cid: cid}))
+	require.False(t, ss.enqueueWaveformJob(waveformJob{cid: cid}),
+		"a sweep tick during a running attempt must not queue it again")
+
+	// A different cid is unaffected.
+	other := cid + "-other"
+	require.True(t, ss.enqueueWaveformJob(waveformJob{cid: other}))
+	t.Cleanup(func() { ss.releaseWaveformCID(other) })
+
+	// Once the attempt finishes the cid is eligible again, which is what lets
+	// the backoff schedule a genuine second try.
+	ss.releaseWaveformCID(cid)
+	require.True(t, ss.enqueueWaveformJob(waveformJob{cid: cid}))
+}
+
+// A cid dropped by a full queue was never queued, so it must not stay marked
+// busy -- that would retire it until the process restarts.
+func TestFullQueueDoesNotStrandTheCID(t *testing.T) {
+	ss := testNetwork[0]
+	drainWaveformJobs(ss)
+	t.Cleanup(func() { drainWaveformJobs(ss) })
+
+	cid := fmt.Sprintf("waveform-fullqueue-%d", time.Now().UnixNano())
+	t.Cleanup(func() { ss.releaseWaveformCID(cid) })
+
+	// Fill the queue so the send cannot proceed.
+	filled := 0
+	for ss.enqueueWaveformJob(waveformJob{cid: fmt.Sprintf("%s-filler-%d", cid, filled)}) {
+		filled++
+		if filled > cap(ss.waveformWork)+2 {
+			break
+		}
+	}
+	require.False(t, ss.enqueueWaveformJob(waveformJob{cid: cid}), "queue should be full")
+
+	ss.waveformInFlightMu.Lock()
+	_, busy := ss.waveformInFlight[cid]
+	ss.waveformInFlightMu.Unlock()
+	require.False(t, busy, "a cid that was never queued must not be left marked in flight")
+
+	drainWaveformJobs(ss)
+	require.True(t, ss.enqueueWaveformJob(waveformJob{cid: cid}),
+		"and it must be queueable once there is room")
+}
+
+// The decode cap and a truncated source produce identical byte counts, so the
+// sample count is the only thing that separates "we stopped it" from "the blob
+// ended early".
+func TestDecodeStoppedAtCapDistinguishesTheLimitFromTruncation(t *testing.T) {
+	capSamples := int64(waveformMaxDecodeSeconds) * int64(waveformSampleRate)
+
+	require.True(t, decodeStoppedAtCap(capSamples), "exactly at the cap is the cap")
+	require.True(t, decodeStoppedAtCap(capSamples+waveformSampleRate))
+	require.False(t, decodeStoppedAtCap(capSamples-waveformSampleRate),
+		"a second short of the cap is a genuinely truncated source")
+	require.False(t, decodeStoppedAtCap(0))
 }

@@ -530,11 +530,15 @@ func seedAudioUpload(t *testing.T, ss *MediorumServer, prefix string) (Upload, s
 	return upload, cid
 }
 
+// Draining stands in for a worker consuming the job, so it releases the
+// in-flight mark the same way processWaveformJob does. Without that a drained
+// cid stays marked busy and can never be enqueued again.
 func drainWaveformWork(ss *MediorumServer) []string {
 	cids := []string{}
 	for {
 		select {
 		case job := <-ss.waveformWork:
+			ss.releaseWaveformCID(job.cid)
 			cids = append(cids, job.cid)
 		default:
 			return cids
