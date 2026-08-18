@@ -103,12 +103,31 @@ type sourceGrant struct {
 
 func (w *Writer) writeGrants(ctx context.Context) error {
 	return processBatched(ctx, w, "grants",
-		`SELECT count(*) FROM grants WHERE is_current = true`,
-		`SELECT g.grantee_address, g.user_id, COALESCE(LOWER(u.wallet), ''), g.created_at, g.is_revoked, g.is_approved
+		`SELECT count(*) FROM (
+			SELECT DISTINCT ON (g.user_id, lower(g.grantee_address)) 1
+			FROM grants g WHERE g.is_current = true
+			ORDER BY g.user_id, lower(g.grantee_address), g.created_at DESC) d`,
+		// DISTINCT ON, not just an ORDER BY. A grant that was granted, revoked,
+		// then re-granted leaves TWO is_current rows for one
+		// (user_id, grantee_address) -- one revoked, one not. Emitting both puts
+		// two Grant/Create transactions in flight for the same authorization,
+		// and the auth projection takes the first and declines the rest, so
+		// whichever one lands first decides whether the manager keeps access.
+		//
+		// Ordering alone cannot fix that: processBatched emits each batch from
+		// NumCPU goroutines, so emission order is a race no query can constrain.
+		// Collapsing to the newest row per pair removes the dependency instead
+		// of trying to sequence it -- and newest-created is the current
+		// authorization whether the latest action was a grant or a revoke.
+		//
+		// On the 2026-08-16 snapshot this was 2 of 4,330 current grants. It
+		// landed correctly by luck; the other outcome silently revokes them.
+		`SELECT DISTINCT ON (g.user_id, lower(g.grantee_address))
+			g.grantee_address, g.user_id, COALESCE(LOWER(u.wallet), ''), g.created_at, g.is_revoked, g.is_approved
 		FROM grants g
 		JOIN users u ON u.user_id = g.user_id AND u.is_current = true AND u.wallet IS NOT NULL AND u.wallet <> ''
 		WHERE g.is_current = true
-		ORDER BY g.user_id, g.grantee_address`,
+		ORDER BY g.user_id, lower(g.grantee_address), g.created_at DESC`,
 		func(rows pgx.Rows) (sourceGrant, error) {
 			var g sourceGrant
 			err := rows.Scan(&g.GranteeAddress, &g.UserID, &g.GrantorWallet, &g.CreatedAt, &g.IsRevoked, &g.IsApproved)
