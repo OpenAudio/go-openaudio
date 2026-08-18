@@ -262,8 +262,9 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 	return <-errChan
 }
 
-// replicateStoredFileToHost asks capable peers to pull directly from this
-// node's blob storage. Older peers fall back to the multipart push path.
+// replicateStoredFileToHost asks the peer to pull the blob from this node.
+// Peers too old to serve the pull endpoint fall back to the multipart push
+// path.
 func (ss *MediorumServer) replicateStoredFileToHost(
 	ctx context.Context,
 	peer string,
@@ -276,20 +277,31 @@ func (ss *MediorumServer) replicateStoredFileToHost(
 		return nil
 	}
 
-	if ss.Config.BlobStorageStreaming {
-		err := ss.requestPeerPull(ctx, peer, fileName, placementHosts)
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, errPeerPullUnsupported) && !errors.Is(err, errPeerPullFailed) {
-			return err
-		}
-		ss.logger.Debug("falling back to multipart blob replication",
-			zap.String("host", peer),
-			zap.String("cid", fileName),
-			zap.Error(err),
-		)
+	// Pull first, always. The receiver decides before any payload moves: it
+	// answers already_present for a blob it holds and refuses one it has no
+	// room for, where the push path buffers the whole body first and has no
+	// already-present check at all, so a re-replication re-sends bytes the
+	// peer will only rewrite.
+	//
+	// BlobStorageStreaming governs how the bytes travel, not who asks. The
+	// peer's GET redirects to a presigned URL when this node has an object
+	// store, so the payload goes storage-to-peer and never through this
+	// process; otherwise the same endpoint proxies the stream. Either way it
+	// is serveInternalBlobGET's call to make, not this one's.
+	err := ss.requestPeerPull(ctx, peer, fileName, placementHosts)
+	if err == nil {
+		return nil
 	}
+	if !errors.Is(err, errPeerPullUnsupported) && !errors.Is(err, errPeerPullFailed) {
+		return err
+	}
+	// Only a peer too old to serve the endpoint, or one that could not pull,
+	// falls through to the push path.
+	ss.logger.Debug("falling back to multipart blob replication",
+		zap.String("host", peer),
+		zap.String("cid", fileName),
+		zap.Error(err),
+	)
 
 	reader, err := sourceBucket.NewReader(ctx, sourceKey, nil)
 	if err != nil {
