@@ -170,8 +170,66 @@ func (ss *MediorumServer) runWaveformSweeps(ctx context.Context) bool {
 	if ss.Config.WaveformBackfillEnabled {
 		busy = ss.sweepWaveformDiscovery(ctx) || busy
 	}
+	// Also unconditional: an unlinked row is the one failure the other sweeps
+	// cannot repair. Discovery correlates on upload_id, so a row missing it is
+	// invisible there -- and on a live-only node discovery never runs at all.
+	ss.linkOrphanWaveforms(ctx)
 	ss.refreshWaveformOutstanding(ctx)
 	return busy
+}
+
+// linkOrphanWaveforms fills in upload_id on rows that were written without one.
+//
+// The replication handoff knows only a cid. It now prefers the upload id the
+// sending peer supplies, but a sender that predates that field -- or one with
+// no upload context -- still leaves the puller resolving against its own
+// uploads table, which the sender publishes through consensus. That row can
+// arrive after the blob does, and nothing revisits the waveform afterwards:
+// discovery correlates on upload_id, so an unlinked row makes its upload look
+// permanently outstanding and every re-walk recomputes a waveform that is
+// already correct.
+//
+// This repairs the link in place rather than recomputing. Legacy Qm content is
+// excluded because it has no upload at all -- for those rows a null upload_id
+// is the right answer, not a miss, and retrying them every sweep would be
+// wasted work that never converges.
+func (ss *MediorumServer) linkOrphanWaveforms(ctx context.Context) {
+	if !ss.Config.WaveformEnabled {
+		return
+	}
+
+	tag, err := ss.pgPool.Exec(ctx, `
+		update waveforms w set upload_id = u.id
+		from uploads u
+		where w.upload_id is null
+		  and w.cid not like 'Qm%'
+		  and u.transcode_results::jsonb ->> '320' = w.cid
+	`)
+	if err != nil {
+		ss.logger.Warn("waveform orphan link failed", zap.Error(err))
+		return
+	}
+	linked := tag.RowsAffected()
+
+	// Previews reach their upload through audio_previews, which carries the
+	// source 320 rather than the upload id.
+	tag, err = ss.pgPool.Exec(ctx, `
+		update waveforms w set upload_id = u.id
+		from audio_previews p
+		join uploads u on u.transcode_results::jsonb ->> '320' = p.source_c_id
+		where w.upload_id is null
+		  and w.cid not like 'Qm%'
+		  and p.cid = w.cid
+	`)
+	if err != nil {
+		ss.logger.Warn("waveform preview orphan link failed", zap.Error(err))
+		return
+	}
+	linked += tag.RowsAffected()
+
+	if linked > 0 {
+		ss.logger.Info("linked orphaned waveforms", zap.Int64("count", linked))
+	}
 }
 
 // refreshWaveformOutstanding counts the blobs the walk has not reached yet.
@@ -280,16 +338,21 @@ func (ss *MediorumServer) resolveWaveformUploadID(ctx context.Context, cid strin
 		return ""
 	}
 
+	// source_c_id, not source_cid: gorm derives the column from AudioPreview's
+	// SourceCID field and splits the acronym. Getting this wrong does not fail
+	// loudly -- the query errors, the error is not ErrNoRows, and the caller
+	// treats an empty return as "legacy content with no upload" -- so it looks
+	// exactly like a preview that legitimately has no owner.
 	err = ss.pgPool.QueryRow(ctx, `
 		select u.id
 		from audio_previews p
-		join uploads u on u.transcode_results::jsonb ->> '320' = p.source_cid
+		join uploads u on u.transcode_results::jsonb ->> '320' = p.source_c_id
 		where p.cid = $1
 		limit 1
 	`, cid).Scan(&uploadID)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
-			ss.logger.Debug("waveform preview lookup failed", zap.String("cid", cid), zap.Error(err))
+			ss.logger.Warn("waveform preview lookup failed", zap.String("cid", cid), zap.Error(err))
 		}
 		return ""
 	}

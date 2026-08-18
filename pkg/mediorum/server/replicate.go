@@ -261,13 +261,14 @@ func (ss *MediorumServer) replicateStoredFileToHost(
 	sourceBucket *blob.Bucket,
 	sourceKey string,
 	placementHosts []string,
+	uploadID string,
 ) error {
 	if peer == ss.Config.Self.Host {
 		return nil
 	}
 
 	if ss.Config.BlobStorageStreaming {
-		err := ss.requestPeerPull(ctx, peer, fileName, placementHosts)
+		err := ss.requestPeerPull(ctx, peer, fileName, placementHosts, uploadID)
 		if err == nil {
 			return nil
 		}
@@ -290,10 +291,11 @@ func (ss *MediorumServer) replicateStoredFileToHost(
 	return ss.replicateFileToHost(ctx, peer, fileName, reader, placementHosts)
 }
 
-func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string, placementHosts []string) error {
+func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string, placementHosts []string, uploadID string) error {
 	payload, err := json.Marshal(internalBlobPullRequest{
 		CID:            cid,
 		PlacementHosts: placementHosts,
+		UploadID:       uploadID,
 	})
 	if err != nil {
 		return err
@@ -372,7 +374,7 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 	return ss.replicateToMyBucket(ctx, cid, body, placementHosts)
 }
 
-func (ss *MediorumServer) pullFileFromHostValidated(ctx context.Context, host, cid string, placementHosts []string) error {
+func (ss *MediorumServer) pullFileFromHostValidated(ctx context.Context, host, cid string, placementHosts []string, uploadID string) error {
 	body, err := ss.openBlobFromHost(ctx, host, cid)
 	if err != nil {
 		return err
@@ -420,9 +422,16 @@ func (ss *MediorumServer) pullFileFromHostValidated(ctx context.Context, host, c
 	// S3-backed node -- and the work itself happens on the worker pool, so the
 	// peer waiting on this request is not held for a decode.
 	if ss.Config.WaveformEnabled {
+		// Prefer what the sender told us. It read the upload row directly,
+		// whereas resolving here means querying a table the sender publishes
+		// through consensus -- which may not have reached us yet, since this
+		// request did not have to wait for a block.
+		if uploadID == "" {
+			uploadID = ss.resolveWaveformUploadID(ctx, cid)
+		}
 		job := waveformJob{
 			cid:            cid,
-			uploadID:       ss.resolveWaveformUploadID(ctx, cid),
+			uploadID:       uploadID,
 			placementHosts: placementHosts,
 			localPath:      tmpName,
 		}

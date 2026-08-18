@@ -94,12 +94,12 @@ func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash str
 		return nil, err
 	}
 
-	_, err = ss.replicateFileParallel(ctx, previewCid, destPath, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// save preview cid to some previews table
+	// Record the preview before handing the blob to peers. The row is what
+	// makes the cid attributable -- it is the only link from a preview cid
+	// back to its upload -- so publishing the blob first leaves a window where
+	// a peer holds a preview that nothing on the network can account for.
+	// Creating it first does not close that window on its own, since the row
+	// still has to clear consensus, but it stops us widening it deliberately.
 	audioPreview := &AudioPreview{
 		CID:                 previewCid,
 		SourceCID:           fileHash,
@@ -107,8 +107,11 @@ func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash str
 		CreatedBy:           ss.Config.Self.Host,
 		CreatedAt:           time.Now(),
 	}
-	err = ss.crud.Create(audioPreview)
-	if err != nil {
+	if err := ss.crud.Create(audioPreview); err != nil {
+		return nil, err
+	}
+
+	if _, err = ss.replicateFileParallel(ctx, previewCid, destPath, nil); err != nil {
 		return nil, err
 	}
 
