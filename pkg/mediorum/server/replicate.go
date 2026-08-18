@@ -384,8 +384,19 @@ func (ss *MediorumServer) pullFileFromHostValidated(ctx context.Context, host, c
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
 	defer tmp.Close()
+
+	// We own this file until a waveform job accepts it. enqueueWaveformJob
+	// reports that definitively -- a non-blocking send either placed the job or
+	// it did not -- so the flag is the ownership transfer, and this deferred
+	// cleanup still covers every path where the send never happened or failed:
+	// a copy error, a cid mismatch, a failed bucket write, or a full queue.
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			os.Remove(tmpName)
+		}
+	}()
 
 	if _, err := io.Copy(tmp, body); err != nil {
 		return err
@@ -400,7 +411,26 @@ func (ss *MediorumServer) pullFileFromHostValidated(ctx context.Context, host, c
 		return err
 	}
 
-	return ss.replicateToMyBucket(ctx, cid, tmp, placementHosts)
+	if err := ss.replicateToMyBucket(ctx, cid, tmp, placementHosts); err != nil {
+		return err
+	}
+
+	// Only after the bucket write has committed. Handing the analysis this
+	// local copy avoids reading back what we just stored -- a billed GET on an
+	// S3-backed node -- and the work itself happens on the worker pool, so the
+	// peer waiting on this request is not held for a decode.
+	if ss.Config.WaveformEnabled {
+		job := waveformJob{
+			cid:            cid,
+			uploadID:       ss.resolveWaveformUploadID(ctx, cid),
+			placementHosts: placementHosts,
+			localPath:      tmpName,
+		}
+		if ss.enqueueWaveformJob(job) {
+			handedOff = true
+		}
+	}
+	return nil
 }
 
 func (ss *MediorumServer) openBlobFromHost(ctx context.Context, host, cid string) (io.ReadCloser, error) {

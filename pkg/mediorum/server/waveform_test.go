@@ -840,3 +840,67 @@ func TestSweepsRunWithBackfillDisabled(t *testing.T) {
 	cur := readCursor(t, ss)
 	require.True(t, cur.CreatedAt.IsZero(), "history must not be walked")
 }
+
+// -- replication handoff --------------------------------------------------
+//
+// The temp file has exactly one owner at a time. enqueueWaveformJob reports
+// the transfer definitively, so these pin both sides of it: the worker releases
+// what it accepted, and the enqueue site releases what it could not hand over.
+
+func TestWorkerReleasesHandedOverFile(t *testing.T) {
+	ss := testNetwork[0]
+	ctx := context.Background()
+	drainWaveformWork(ss)
+	t.Cleanup(func() { drainWaveformWork(ss) })
+
+	tmp, err := os.CreateTemp("", "waveform-handoff-*")
+	require.NoError(t, err)
+	path := tmp.Name()
+	// Not audio, so analysis fails -- the file must still be released.
+	_, err = tmp.WriteString("not audio")
+	require.NoError(t, err)
+	require.NoError(t, tmp.Close())
+
+	cid := fmt.Sprintf("waveform-handoff-%d", time.Now().UnixNano())
+	t.Cleanup(func() { deleteTestWaveform(t, ss, cid); os.Remove(path) })
+
+	ss.processWaveformJob(ctx, waveformJob{cid: cid, localPath: path})
+
+	_, statErr := os.Stat(path)
+	require.True(t, os.IsNotExist(statErr),
+		"the worker owns the file once it accepts the job and must release it even when analysis fails")
+}
+
+func TestFullQueueLeavesNoOrphanedFile(t *testing.T) {
+	ss := testNetwork[0]
+	drainWaveformWork(ss)
+	t.Cleanup(func() { drainWaveformWork(ss) })
+
+	// Fill the queue so the handoff cannot succeed.
+	for i := 0; i < cap(ss.waveformWork); i++ {
+		require.True(t, ss.enqueueWaveformJob(waveformJob{cid: fmt.Sprintf("filler-%d", i)}))
+	}
+
+	tmp, err := os.CreateTemp("", "waveform-drop-*")
+	require.NoError(t, err)
+	path := tmp.Name()
+	require.NoError(t, tmp.Close())
+	t.Cleanup(func() { os.Remove(path) })
+
+	// Mirrors the replication path: ownership is kept unless the send succeeds.
+	handedOff := false
+	func() {
+		defer func() {
+			if !handedOff {
+				os.Remove(path)
+			}
+		}()
+		if ss.enqueueWaveformJob(waveformJob{cid: "dropped", localPath: path}) {
+			handedOff = true
+		}
+	}()
+
+	require.False(t, handedOff, "a full queue must report the drop rather than silently accept")
+	_, statErr := os.Stat(path)
+	require.True(t, os.IsNotExist(statErr), "a dropped job must not leak its file")
+}

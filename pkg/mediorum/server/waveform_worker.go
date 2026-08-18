@@ -93,6 +93,11 @@ type waveformJob struct {
 	// placementHosts feeds isArchiveCID, which needs it to tell "this node
 	// holds the CID only because StoreAll" from an explicit placement.
 	placementHosts []string
+	// localPath is a copy of the blob that already exists on disk, handed over
+	// by a replication path that had it in a temp file. Ownership transfers
+	// with the job: whoever holds it deletes it, so a worker that accepts this
+	// job is responsible for removing the file.
+	localPath string
 }
 
 // waveformRow is a stored analysis result.
@@ -251,6 +256,46 @@ func waveformTargets(upload Upload) []waveformJob {
 	return targets
 }
 
+// resolveWaveformUploadID finds which upload a replicated cid belongs to.
+//
+// Replication paths know only a cid, but a row written without an upload_id is
+// invisible to discovery -- it correlates on upload_id -- so that upload would
+// stay outstanding forever and every re-walk would analyze it again. Resolving
+// once here avoids that.
+//
+// Both lookups are index-backed: the 320 by idx_uploads_transcode_cid_320, and
+// a preview by its own primary key in audio_previews, which yields the source
+// 320 and from there the upload. Returns empty for legacy Qm content, which has
+// no upload at all -- that is a legitimate null, not a failure.
+func (ss *MediorumServer) resolveWaveformUploadID(ctx context.Context, cid string) string {
+	var uploadID string
+	err := ss.pgPool.QueryRow(ctx, `
+		select id from uploads where transcode_results::jsonb ->> '320' = $1 limit 1
+	`, cid).Scan(&uploadID)
+	if err == nil {
+		return uploadID
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		ss.logger.Debug("waveform upload lookup failed", zap.String("cid", cid), zap.Error(err))
+		return ""
+	}
+
+	err = ss.pgPool.QueryRow(ctx, `
+		select u.id
+		from audio_previews p
+		join uploads u on u.transcode_results::jsonb ->> '320' = p.source_cid
+		where p.cid = $1
+		limit 1
+	`, cid).Scan(&uploadID)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			ss.logger.Debug("waveform preview lookup failed", zap.String("cid", cid), zap.Error(err))
+		}
+		return ""
+	}
+	return uploadID
+}
+
 // enqueueWaveformJob offers work to the pool without blocking. A full queue
 // means the sweep will find the CID again next pass, so dropping is safe and
 // preferable to stalling a sweep or an HTTP handler.
@@ -265,6 +310,13 @@ func (ss *MediorumServer) enqueueWaveformJob(job waveformJob) bool {
 
 func (ss *MediorumServer) processWaveformJob(ctx context.Context, job waveformJob) {
 	logger := ss.logger.With(zap.String("cid", job.cid))
+
+	// This job owns the handed-over file now. Deferred so it is released on
+	// success, failure and panic alike -- the enqueue site only stops owning it
+	// once the send succeeded, so nothing else will remove it.
+	if job.localPath != "" {
+		defer os.Remove(job.localPath)
+	}
 
 	timeout := waveformJobTimeout
 	if ss.isArchiveCID(job.cid, job.placementHosts) {
@@ -285,6 +337,17 @@ func (ss *MediorumServer) processWaveformJob(ctx context.Context, job waveformJo
 // envelope. It never fetches from a peer -- avoiding that egress is the whole
 // point of doing this on the node.
 func (ss *MediorumServer) analyzeWaveform(ctx context.Context, job waveformJob) error {
+	// A replication path already had these bytes on disk and handed them over,
+	// so read them rather than fetching back what we just wrote.
+	//
+	// The archive guard is deliberately skipped on this path. It exists to stop
+	// the backfill pulling blobs out of cold storage, and there is no bucket
+	// read here at all -- so an archive-tier blob that arrives by replication is
+	// analyzed for free rather than deferred.
+	if job.localPath != "" {
+		return ss.analyzeWaveformFromFile(ctx, job.cid, job.uploadID, job.localPath)
+	}
+
 	// The archive guard belongs here, immediately before the first bucket call,
 	// rather than only where jobs are queued.
 	//
