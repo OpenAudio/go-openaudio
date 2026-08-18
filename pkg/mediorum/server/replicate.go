@@ -194,6 +194,12 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 		return ss.replicateToMyBucket(ctx, fileName, file, placementHosts)
 	}
 
+	// Bounded by progress rather than a whole-request deadline. Writes into
+	// the pipe complete only as the transport drains it, so they measure the
+	// wire and not the local read.
+	guard := newTransferGuard(ctx, blobTransferStallTimeout, blobTransferMaxDuration)
+	defer guard.release()
+
 	r, w := io.Pipe()
 	m := multipart.NewWriter(w)
 	errChan := make(chan error, 1)
@@ -205,7 +211,7 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 			errChan <- err
 			return
 		}
-		if _, err = io.Copy(part, file); err != nil {
+		if _, err = io.Copy(guard.writer(part), file); err != nil {
 			_ = w.CloseWithError(err)
 			errChan <- err
 			return
@@ -215,6 +221,10 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 			errChan <- err
 			return
 		}
+		// The payload is on the wire. What follows is the peer validating the
+		// cid and committing the blob to its own bucket before it answers,
+		// which for a large blob can outlast the stall window.
+		guard.settle()
 		errChan <- w.Close()
 	}()
 
@@ -224,7 +234,7 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 	}
 
 	req, err := signature.SignedPost(
-		ctx,
+		guard.ctx,
 		peer+"/internal/blobs",
 		m.FormDataContentType(),
 		r,
@@ -239,7 +249,7 @@ func (ss *MediorumServer) replicateFileToHost(ctx context.Context, peer string, 
 	}
 
 	// send it
-	resp, err := ss.peerHTTPClient.Do(req)
+	resp, err := ss.blobHTTPClient.Do(req)
 	if err != nil {
 		return closeBodyWithError(err)
 	}
@@ -291,6 +301,11 @@ func (ss *MediorumServer) replicateStoredFileToHost(
 }
 
 func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string, placementHosts []string) error {
+	// The peer answers only once it has run the whole transfer, so there is no
+	// progress to watch from here -- a ceiling is the only bound available.
+	ctx, cancel := context.WithTimeout(ctx, peerPullMaxDuration)
+	defer cancel()
+
 	payload, err := json.Marshal(internalBlobPullRequest{
 		CID:            cid,
 		PlacementHosts: placementHosts,
@@ -311,7 +326,7 @@ func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string,
 		return err
 	}
 
-	resp, err := ss.peerHTTPClient.Do(req)
+	resp, err := ss.blobHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -409,25 +424,34 @@ func (ss *MediorumServer) openBlobFromHost(ctx context.Context, host, cid string
 	}
 	u := apiPath(host, "internal/blobs", url.PathEscape(cid))
 
-	req, err := signature.SignedGet(ctx, u, ss.Config.privateKey, ss.Config.Self.Host)
+	// Bounded by progress, not by a whole-request deadline, so that a long
+	// blob transfers to completion while a peer that goes quiet is dropped.
+	// The guard outlives this function: it is released when the caller closes
+	// the body it returns.
+	guard := newTransferGuard(ctx, blobTransferStallTimeout, blobTransferMaxDuration)
+
+	req, err := signature.SignedGet(guard.ctx, u, ss.Config.privateKey, ss.Config.Self.Host)
 	if err != nil {
+		guard.release()
 		return nil, err
 	}
 	// The peer's GET endpoint uses hot-first-then-archive fallback, so it
 	// finds the blob without placement context. Placement only governs the
 	// receiver's local write after this stream is validated.
 
-	resp, err := ss.peerHTTPClient.Do(req)
+	resp, err := ss.blobHTTPClient.Do(req)
 	if err != nil {
+		guard.release()
 		return nil, err
 	}
 
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
+		guard.release()
 		return nil, fmt.Errorf("pull blob: bad status: %d cid: %s host: %s", resp.StatusCode, cid, host)
 	}
 
-	return resp.Body, nil
+	return &guardedBody{Reader: guard.reader(resp.Body), body: resp.Body, guard: guard}, nil
 }
 
 // diskWarnInterval caps how often each dsnHasSpace warn is emitted per DSN.

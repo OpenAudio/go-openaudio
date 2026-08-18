@@ -121,7 +121,8 @@ type MediorumServer struct {
 	quit             chan error
 	trustedNotifier  *ethcontracts.NotifierInfo
 	reqClient        *req.Client
-	peerHTTPClient   *http.Client // for outbound peer requests (replication, blob pull); uses InsecureSkipVerify in dev+self-signed
+	peerHTTPClient   *http.Client // for outbound peer control-plane requests; uses InsecureSkipVerify in dev+self-signed
+	blobHTTPClient   *http.Client // for outbound blob payload transfer; bounded per request by a transferGuard, not by a client timeout
 	rendezvousHasher *common.RendezvousHasher
 	transcodeWork    chan *Upload
 	replicationWork  chan *Upload
@@ -357,7 +358,15 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 
 	peerHTTPClient := &http.Client{
 		Transport: peerTransport,
-		Timeout:   3 * time.Minute, // covers blob replication and pull
+		Timeout:   3 * time.Minute, // control-plane peer calls; blob payloads use blobHTTPClient
+	}
+
+	// Blob payload transfer carries no client-wide timeout: a whole-request
+	// deadline cannot tell a long transfer from a stalled one, and at three
+	// minutes it made long-form audio permanently unreplicable. Each transfer
+	// is bounded instead by its own progress -- see blob_transfer.go.
+	blobHTTPClient := &http.Client{
+		Transport: peerTransport,
 	}
 
 	// mediorum operation log
@@ -419,6 +428,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		pgPool:           pgPool,
 		reqClient:        reqClient,
 		peerHTTPClient:   peerHTTPClient,
+		blobHTTPClient:   blobHTTPClient,
 		logger:           logger,
 		quit:             make(chan error, 1),
 		ethService:       ethService,
