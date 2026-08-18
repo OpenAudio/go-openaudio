@@ -21,110 +21,118 @@ func renderWaveforms(t *testing.T, w *storagev1.WaveformStatus) string {
 	return buf.String()
 }
 
-// A node that has never enabled the feature still renders the storage page.
-func TestWaveformSectionAbsentWhenNotReported(t *testing.T) {
-	var buf bytes.Buffer
-	d := &storagev1.GetStorageDiagnosticsResponse{}
-	if err := waveformSection(d).Render(context.Background(), &buf); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(buf.String(), "Waveforms") {
-		t.Fatalf("nothing to report should render nothing:\n%s", buf.String())
-	}
-}
-
-// Disabled is worth stating rather than hiding -- it is how an operator learns
-// the capability exists -- but it must not imply a stalled backfill by showing
-// a run with zeroes.
-func TestWaveformSectionDisabledStaysMinimal(t *testing.T) {
-	html := renderWaveforms(t, &storagev1.WaveformStatus{Enabled: false})
-	if !strings.Contains(html, "disabled") {
-		t.Fatalf("disabled state must be stated:\n%s", html)
-	}
-	if strings.Contains(html, "Backfill Run") {
-		t.Fatalf("disabled node must not render run cards:\n%s", html)
-	}
-}
-
-// The state operators actually get stuck in: the master switch is on, so it
-// looks enabled, but history is never walked because backfill is off.
-func TestWaveformSectionDistinguishesLiveOnlyFromBackfill(t *testing.T) {
-	html := renderWaveforms(t, &storagev1.WaveformStatus{
-		Enabled: true, Version: 42, AlgorithmVersion: 1, Buckets: 750, SampleRate: 44100,
-	})
-	if !strings.Contains(html, "live uploads only") {
-		t.Fatalf("must distinguish live-only from backfilling:\n%s", html)
-	}
-	if !strings.Contains(html, "backfill not enabled") {
-		t.Fatalf("run card must explain the absent run:\n%s", html)
-	}
-	// The fingerprint is meaningless without the inputs beside it.
-	if !strings.Contains(html, "750 buckets") || !strings.Contains(html, "44100 Hz") {
-		t.Fatalf("version must be shown with its parameters:\n%s", html)
-	}
-}
-
-func TestWaveformSectionShowsRunProgressAndHeldBackArchive(t *testing.T) {
-	html := renderWaveforms(t, &storagev1.WaveformStatus{
-		Enabled: true, BackfillEnabled: true, Version: 42, AlgorithmVersion: 1,
-		Buckets: 750, SampleRate: 44100,
-		ByStatus: map[string]int64{
-			"done": 1200, "not_local": 300, "archive_skipped": 2000000, "error": 4,
-		},
-		Run: &storagev1.WaveformRun{
-			StartedAt:       timestamppb.New(time.Now().Add(-2 * time.Hour)),
-			UpdatedAt:       timestamppb.New(time.Now().Add(-30 * time.Second)),
-			CursorCreatedAt: timestamppb.New(time.Now().Add(-90 * 24 * time.Hour)),
-			Queued:          1500,
-			Fraction:        0.25,
-			RemainingNs:     int64(6 * time.Hour),
-			Version:         42,
-		},
-	})
-
-	for _, want := range []string{
-		"walking history",
-		"progress",
-		"remaining",
-		"last checkpoint",
-		"2000000", // the cost of enabling the archive tier, before committing
-		"1200",
-	} {
-		if !strings.Contains(html, want) {
-			t.Fatalf("expected %q in run section:\n%s", want, html)
+// Off is the default on nearly every node, and an empty section on all of them
+// is noise. Matches Archive Storage, which only appears once configured.
+func TestWaveformSectionHiddenWhenDisabled(t *testing.T) {
+	for _, w := range []*storagev1.WaveformStatus{nil, {Enabled: false}} {
+		html := renderWaveforms(t, w)
+		if strings.Contains(html, "Waveforms") {
+			t.Fatalf("disabled node must render nothing:\n%s", html)
 		}
 	}
 }
 
-// A version bump is only visible as a pending re-backfill until the sweep picks
-// it up, and that gap is exactly when an operator wonders why nothing changed.
-func TestWaveformSectionFlagsPendingReBackfill(t *testing.T) {
+// The settings describe the output, so they belong in a tile rather than
+// floating under the heading as prose.
+func TestWaveformAnalysisCardCarriesSettings(t *testing.T) {
+	html := renderWaveforms(t, &storagev1.WaveformStatus{
+		Enabled: true, Version: 39204091, AlgorithmVersion: 1, Buckets: 750, SampleRate: 44100,
+	})
+	for _, want := range []string{"Analysis", "live uploads only", "750 buckets", "44100 Hz", "algorithm 1", "v39204091"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("expected %q in the analysis tile:\n%s", want, html)
+		}
+	}
+}
+
+// Enabled-with-backfill-off is the state operators mistake for working, so the
+// backfill tile has to say so on its own.
+func TestWaveformBackfillCardDistinguishesOffFromIdle(t *testing.T) {
+	html := renderWaveforms(t, &storagev1.WaveformStatus{Enabled: true, Buckets: 750})
+	if !strings.Contains(html, "history not walked") {
+		t.Fatalf("backfill-off must be explicit:\n%s", html)
+	}
+	if !strings.Contains(html, "new uploads are still analyzed") {
+		t.Fatalf("must say the live path still runs:\n%s", html)
+	}
+}
+
+func TestWaveformBackfillCardShowsRunProgress(t *testing.T) {
+	html := renderWaveforms(t, &storagev1.WaveformStatus{
+		Enabled: true, BackfillEnabled: true, Version: 7,
+		Run: &storagev1.WaveformRun{
+			StartedAt:       timestamppb.New(time.Now().Add(-2 * time.Hour)),
+			UpdatedAt:       timestamppb.New(time.Now().Add(-30 * time.Second)),
+			CursorCreatedAt: timestamppb.New(time.Now().Add(-90 * 24 * time.Hour)),
+			Queued:          1500, Fraction: 0.25, RemainingNs: int64(6 * time.Hour), Version: 7,
+		},
+	})
+	for _, want := range []string{"walking history", "25.0% walked", "left (rough)", "last checkpoint", "queued this pass: 1500"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("expected %q in the backfill tile:\n%s", want, html)
+		}
+	}
+}
+
+// Between a version bump and the sweep noticing, nothing else changes visibly.
+func TestWaveformBackfillCardFlagsPendingReBackfill(t *testing.T) {
 	html := renderWaveforms(t, &storagev1.WaveformStatus{
 		Enabled: true, BackfillEnabled: true, Version: 99,
-		StaleVersion: 5000,
-		Run:          &storagev1.WaveformRun{Version: 42, Exhausted: true},
+		Run: &storagev1.WaveformRun{Version: 42, Exhausted: true},
 	})
 	if !strings.Contains(html, "re-backfill pending") {
 		t.Fatalf("a cursor behind the running version must be called out:\n%s", html)
 	}
-	if !strings.Contains(html, "5000") {
-		t.Fatalf("must show how much needs recomputing:\n%s", html)
+}
+
+func TestWaveformStatTilesCoverEveryStatus(t *testing.T) {
+	html := renderWaveforms(t, &storagev1.WaveformStatus{
+		Enabled: true, BackfillEnabled: true, StaleVersion: 5000,
+		ByStatus: map[string]int64{
+			"done": 1200, "not_local": 300, "archive_skipped": 2293395,
+			"unavailable": 914, "error": 37,
+		},
+	})
+	for _, want := range []string{"1200", "300", "2293395", "914", "37", "5000"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("expected count %q in the stat tiles:\n%s", want, html)
+		}
+	}
+	// unavailable is a storage problem, not unanalyzable audio.
+	if !strings.Contains(html, "storage erroring, not missing") {
+		t.Fatalf("unavailable must be distinguished from missing blobs:\n%s", html)
 	}
 }
 
-// An erroring bucket is a storage problem surfacing through this feature, not a
-// waveform problem, and the card should say so rather than bury it with decode
-// failures.
-func TestWaveformSectionSeparatesStorageErrorsFromDecodeFailures(t *testing.T) {
+func TestWaveformStatTilesReadCleanWithNoStorageErrors(t *testing.T) {
 	html := renderWaveforms(t, &storagev1.WaveformStatus{
-		Enabled: true, BackfillEnabled: true,
-		ByStatus: map[string]int64{"error": 7, "unavailable": 900},
-		Run:      &storagev1.WaveformRun{},
+		Enabled: true, ByStatus: map[string]int64{"done": 10},
 	})
-	if !strings.Contains(html, "storage unavailable") {
-		t.Fatalf("bucket errors must be surfaced distinctly:\n%s", html)
+	if !strings.Contains(html, "no storage errors") {
+		t.Fatalf("a healthy node should say so:\n%s", html)
 	}
-	if !strings.Contains(html, "not just missing blobs") {
-		t.Fatalf("must explain what unavailable means:\n%s", html)
+}
+
+// Nothing else reports whether the waveforms are being consumed, and the
+// redirect count is the only read on how evenly they are spread network-wide.
+func TestWaveformRequestTilesRender(t *testing.T) {
+	html := renderWaveforms(t, &storagev1.WaveformStatus{
+		Enabled: true,
+		Requests: &storagev1.WaveformRequestStats{
+			Served: 8123, Misses: 44, Redirected: 271,
+		},
+	})
+	for _, want := range []string{"Requests Served", "8123", "Request Misses", "44", "Requests Redirected", "271"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("expected %q in the request tiles:\n%s", want, html)
+		}
+	}
+}
+
+// A node that has served nothing yet still renders, rather than nil-panicking.
+func TestWaveformRequestTilesSurviveMissingStats(t *testing.T) {
+	html := renderWaveforms(t, &storagev1.WaveformStatus{Enabled: true})
+	if !strings.Contains(html, "Requests Served") {
+		t.Fatalf("request tiles must render without stats:\n%s", html)
 	}
 }

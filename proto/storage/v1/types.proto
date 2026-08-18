@@ -222,6 +222,19 @@ message WaveformStatus {
   int64 stale_version = 9;
 
   WaveformRun run = 10;
+  WaveformRequestStats requests = 11;
+}
+
+// WaveformRequestStats counts what /waveform/:cid actually did, since process
+// start. Peer probes carry localOnly and answer without being counted as
+// misses, so these describe client-facing traffic.
+message WaveformRequestStats {
+  int64 served = 1;
+  int64 misses = 2;
+  // Answered by pointing at a peer that had it. Waveforms are computed per
+  // node rather than replicated, so this is the closest thing to a measure of
+  // how evenly they are spread across the network.
+  int64 redirected = 3;
 }
 
 // WaveformRun is one pass of the backfill walk. The walk descends through

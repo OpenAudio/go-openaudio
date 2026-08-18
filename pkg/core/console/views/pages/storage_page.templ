@@ -305,28 +305,17 @@ templ repairRunRow(r *storagev1.RepairRun) {
 	</tr>
 }
 
-// waveformFlags reads out the three nested switches. Showing only the master
-// switch would leave "on but not walking history" looking identical to "on and
-// working", which is the state operators actually get stuck on.
-func waveformFlags(w *storagev1.WaveformStatus) string {
-	if !w.Enabled {
-		return "disabled"
-	}
-	mode := "live uploads only"
+// waveformModeLabel names which of the three nested switches are on. Reporting
+// only the master switch would leave "on but not walking history" looking
+// identical to "on and working", which is the state operators get stuck in.
+func waveformModeLabel(w *storagev1.WaveformStatus) string {
 	if w.BackfillEnabled {
-		mode = "live + backfill"
 		if w.ArchiveEnabled {
-			mode = "live + backfill + archive tier"
+			return "live + backfill + archive tier"
 		}
+		return "live + backfill"
 	}
-	return mode
-}
-
-// waveformParams keeps the version fingerprint readable. On its own it is an
-// opaque number, so it never appears without the inputs that produced it.
-func waveformParams(w *storagev1.WaveformStatus) string {
-	return fmt.Sprintf("v%d · alg %d · %d buckets · %d Hz",
-		w.Version, w.AlgorithmVersion, w.Buckets, w.SampleRate)
+	return "live uploads only"
 }
 
 func waveformStatusCount(w *storagev1.WaveformStatus, key string) int64 {
@@ -334,6 +323,10 @@ func waveformStatusCount(w *storagev1.WaveformStatus, key string) int64 {
 		return 0
 	}
 	return w.ByStatus[key]
+}
+
+func waveformCount(w *storagev1.WaveformStatus, key string) string {
+	return fmt.Sprintf("%d", waveformStatusCount(w, key))
 }
 
 func waveformRunLabel(r *storagev1.WaveformRun) string {
@@ -350,101 +343,110 @@ func waveformPercent(f float64) string {
 	return fmt.Sprintf("%.1f%%", f*100)
 }
 
+// unavailable means a bucket is erroring rather than audio being missing, so
+// the sublabel says which problem the operator is actually looking at.
+func waveformUnavailableSub(w *storagev1.WaveformStatus) string {
+	if waveformStatusCount(w, "unavailable") > 0 {
+		return "storage erroring, not missing"
+	}
+	return "no storage errors"
+}
+
+func waveformRequests(w *storagev1.WaveformStatus) *storagev1.WaveformRequestStats {
+	if w.Requests == nil {
+		return &storagev1.WaveformRequestStats{}
+	}
+	return w.Requests
+}
+
+// Hidden entirely when the feature is off, matching how Archive Storage only
+// appears once an archive bucket is configured. Most nodes will never run this,
+// and an empty section on every one of them is noise.
 templ waveformSection(d *storagev1.GetStorageDiagnosticsResponse) {
-	if d.Waveforms != nil {
+	if d.Waveforms != nil && d.Waveforms.Enabled {
 		<div class="bg-tertiary rounded-lg p-6">
-			<h2 class="text-xl font-semibold mb-1">Waveforms</h2>
-			<div class="text-sm text-secondary mb-4">
-				{ waveformFlags(d.Waveforms) }
-				if d.Waveforms.Enabled {
-					{ " · " + waveformParams(d.Waveforms) }
-				}
+			<h2 class="text-xl font-semibold mb-4">Waveforms</h2>
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+				@waveformAnalysisCard(d.Waveforms)
+				@waveformBackfillCard(d.Waveforms)
 			</div>
-			if d.Waveforms.Enabled {
-				<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-					@waveformRunCard(d.Waveforms)
-					@waveformCountsCard(d.Waveforms)
-					@waveformAttentionCard(d.Waveforms)
-				</div>
-			}
+			<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4">
+				@statCard("Analyzed", waveformCount(d.Waveforms, "done"), "stored on this node")
+				@statCard("Not Local", waveformCount(d.Waveforms, "not_local"), "blob not held here")
+				@statCard("Archive Held Back", waveformCount(d.Waveforms, "archive_skipped"), "cost of enabling archive")
+				@statCard("Unavailable", waveformCount(d.Waveforms, "unavailable"), waveformUnavailableSub(d.Waveforms))
+				@statCard("Failed", waveformCount(d.Waveforms, "error"), "could not be decoded")
+				@statCard("To Recompute", fmt.Sprintf("%d", d.Waveforms.StaleVersion), "computed under old settings")
+			</div>
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+				@statCard("Requests Served", fmt.Sprintf("%d", waveformRequests(d.Waveforms).Served), "answered from this node")
+				@statCard("Request Misses", fmt.Sprintf("%d", waveformRequests(d.Waveforms).Misses), "nowhere on the network")
+				@statCard("Requests Redirected", fmt.Sprintf("%d", waveformRequests(d.Waveforms).Redirected), "sent to a peer that had it")
+			</div>
 		</div>
 	}
 }
 
-templ waveformRunCard(w *storagev1.WaveformStatus) {
+templ waveformAnalysisCard(w *storagev1.WaveformStatus) {
 	<div class="bg-secondary rounded-lg p-4">
-		<div class="font-medium mb-2">Backfill Run</div>
-		if w.Run == nil {
-			<div class="text-sm text-secondary">—</div>
-			if !w.BackfillEnabled {
-				<div class="text-xs text-secondary mt-1">backfill not enabled</div>
+		<div class="flex items-center justify-between mb-2">
+			<span class="font-medium">Analysis</span>
+			@components.StatusGreenLg("Enabled")
+		</div>
+		<div class="text-sm text-secondary">{ waveformModeLabel(w) }</div>
+		<div class="text-xs text-secondary mt-1">
+			{ fmt.Sprintf("%d buckets · %d Hz", w.Buckets, w.SampleRate) }
+		</div>
+		// The version is a fingerprint of the algorithm and these parameters, so
+		// it is meaningless without them alongside.
+		<div class="text-xs text-secondary">
+			{ fmt.Sprintf("algorithm %d · fingerprint v%d", w.AlgorithmVersion, w.Version) }
+		</div>
+	</div>
+}
+
+templ waveformBackfillCard(w *storagev1.WaveformStatus) {
+	<div class="bg-secondary rounded-lg p-4">
+		<div class="flex items-center justify-between mb-2">
+			<span class="font-medium">Backfill</span>
+			if w.BackfillEnabled {
+				@components.StatusGreenLg("Enabled")
+			} else {
+				@components.StatusGrayLg("Disabled")
 			}
+		</div>
+		if !w.BackfillEnabled {
+			<div class="text-sm text-secondary">history not walked</div>
+			<div class="text-xs text-secondary mt-1">new uploads are still analyzed</div>
+		} else if w.Run == nil {
+			<div class="text-sm text-secondary">not started</div>
 		} else {
 			<div class="text-sm text-secondary">{ waveformRunLabel(w.Run) }</div>
 			if w.Run.StartedAt != nil {
 				<div class="text-xs text-secondary mt-1">started { formatRelative(w.Run.StartedAt.AsTime()) }</div>
 			}
 			if !w.Run.Exhausted {
-				<div class="text-xs text-secondary mt-1">progress: { waveformPercent(w.Run.Fraction) }</div>
-				if w.Run.RemainingNs > 0 {
-					// Estimated from cursor position, so it moves around as the
-					// walk crosses busier and quieter stretches of history.
-					<div class="text-xs text-secondary">~{ formatDuration(w.Run.RemainingNs) } remaining (rough)</div>
+				<div class="text-xs text-secondary mt-1">
+					{ waveformPercent(w.Run.Fraction) } walked
+					if w.Run.RemainingNs > 0 {
+						// Estimated from cursor position, so it drifts as the walk
+						// crosses busier and quieter stretches of history.
+						{ ", ~" + formatDuration(w.Run.RemainingNs) + " left (rough)" }
+					}
+				</div>
+				if w.Run.CursorCreatedAt != nil {
+					<div class="text-xs text-secondary">back to { formatTime(w.Run.CursorCreatedAt.AsTime()) }</div>
+				}
+				if w.Run.UpdatedAt != nil {
+					// On a long pass started_at answers nothing; checkpoint age is
+					// what separates working from wedged.
+					<div class="text-xs text-secondary">last checkpoint: { formatRelative(w.Run.UpdatedAt.AsTime()) }</div>
 				}
 			}
-			if w.Run.UpdatedAt != nil && !w.Run.Exhausted {
-				// On a long pass started_at answers nothing; the checkpoint age
-				// is what separates working from wedged.
-				<div class="text-xs text-secondary mt-1">last checkpoint: { formatRelative(w.Run.UpdatedAt.AsTime()) }</div>
-			}
-			if w.Run.CursorCreatedAt != nil && !w.Run.Exhausted {
-				<div class="text-xs text-secondary">walked back to { formatTime(w.Run.CursorCreatedAt.AsTime()) }</div>
-			}
-			<div class="text-xs text-secondary mt-1">
-				queued this pass: { fmt.Sprintf("%d", w.Run.Queued) }
-			</div>
+			<div class="text-xs text-secondary mt-1">queued this pass: { fmt.Sprintf("%d", w.Run.Queued) }</div>
 			if w.Run.Version != w.Version {
-				<div class="text-xs text-warning mt-1">re-backfill pending (pass at v{ fmt.Sprintf("%d", w.Run.Version) })</div>
+				<div class="text-xs text-warning mt-1">re-backfill pending</div>
 			}
-		}
-	</div>
-}
-
-templ waveformCountsCard(w *storagev1.WaveformStatus) {
-	<div class="bg-secondary rounded-lg p-4">
-		<div class="font-medium mb-2">Stored</div>
-		<div class="text-2xl">{ fmt.Sprintf("%d", waveformStatusCount(w, "done")) }</div>
-		<div class="text-xs text-secondary">analyzed</div>
-		<div class="text-xs text-secondary mt-2">
-			not on this node: { fmt.Sprintf("%d", waveformStatusCount(w, "not_local")) }
-		</div>
-		if waveformStatusCount(w, "archive_skipped") > 0 {
-			// The cost of turning the archive tier on, before committing to it.
-			<div class="text-xs text-secondary">
-				archive tier held back: { fmt.Sprintf("%d", waveformStatusCount(w, "archive_skipped")) }
-			</div>
-		}
-		if w.StaleVersion > 0 {
-			<div class="text-xs text-secondary">to recompute: { fmt.Sprintf("%d", w.StaleVersion) }</div>
-		}
-	</div>
-}
-
-templ waveformAttentionCard(w *storagev1.WaveformStatus) {
-	<div class="bg-secondary rounded-lg p-4">
-		<div class="font-medium mb-2">Needs Attention</div>
-		<div class="text-sm text-secondary">
-			failed: { fmt.Sprintf("%d", waveformStatusCount(w, "error")) }
-		</div>
-		if waveformStatusCount(w, "unavailable") > 0 {
-			// Not a waveform problem: it means a bucket is erroring, which is
-			// why it is tracked separately from a blob simply being absent.
-			<div class="text-sm text-warning mt-1">
-				storage unavailable: { fmt.Sprintf("%d", waveformStatusCount(w, "unavailable")) }
-			</div>
-			<div class="text-xs text-secondary mt-1">a bucket is returning errors, not just missing blobs</div>
-		} else {
-			<div class="text-xs text-secondary mt-1">no storage errors</div>
 		}
 	</div>
 }

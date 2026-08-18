@@ -23,6 +23,15 @@ type storageMetrics struct {
 	readProxied       atomic.Int64
 	readRedirected    atomic.Int64
 
+	// serve-waveform path. Kept apart from the blob counters because a waveform
+	// miss means something different: the blob may well be here and simply not
+	// analyzed yet. Redirects are also the only measure of how evenly waveforms
+	// are spread across the network, since they are computed per node rather
+	// than replicated.
+	waveformServed     atomic.Int64
+	waveformMisses     atomic.Int64
+	waveformRedirected atomic.Int64
+
 	// proof of storage
 	posAttempted atomic.Int64
 	posPassed    atomic.Int64

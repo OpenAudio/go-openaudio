@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/storage/v1"
@@ -770,9 +771,18 @@ func (ss *MediorumServer) waveformStatusProto(ctx context.Context) *v1.WaveformS
 		ByStatus:         map[string]int64{},
 	}
 	// Nothing has been written and no run exists, so skip the queries wholesale
-	// rather than reporting zeros that look like a stalled backfill.
+	// rather than reporting zeros that look like a stalled backfill. The console
+	// hides the section entirely in this case.
 	if !ss.Config.WaveformEnabled {
 		return status
+	}
+
+	if ss.metrics != nil {
+		status.Requests = &v1.WaveformRequestStats{
+			Served:     ss.metrics.waveformServed.Load(),
+			Misses:     ss.metrics.waveformMisses.Load(),
+			Redirected: ss.metrics.waveformRedirected.Load(),
+		}
 	}
 
 	rows, err := ss.pgPool.Query(ctx, `
@@ -856,6 +866,10 @@ func (ss *MediorumServer) serveWaveform(c echo.Context) error {
 	}
 
 	if row != nil && row.Status == waveformStatusDone && len(row.Peaks) > 0 {
+		// Counted before the HEAD short-circuit: a peer probing us is still a
+		// request this node answered, and treating probes as invisible would
+		// understate how much of the network leans on this node.
+		ss.countWaveformRequest(&ss.metrics.waveformServed)
 		// CID-addressed content never changes, so the result is immutable for
 		// as long as the client cares to keep it.
 		c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=31536000, immutable")
@@ -876,6 +890,9 @@ func (ss *MediorumServer) serveWaveform(c echo.Context) error {
 	// that also lacks the waveform answers 404 instead of forwarding onward.
 	// Same mechanism serveBlob uses.
 	if localOnly, _ := strconv.ParseBool(c.QueryParam("localOnly")); localOnly {
+		// A probe answering "not here" is not a client-facing miss, so it is
+		// deliberately not counted -- otherwise every peer search would inflate
+		// this node's miss rate.
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "waveform not found"})
 	}
 
@@ -888,6 +905,7 @@ func (ss *MediorumServer) serveWaveform(c echo.Context) error {
 	// Pointing at a node that already has the answer is better than promising
 	// to compute one.
 	if host := ss.findNodeToServeWaveform(ctx, cid); host != "" {
+		ss.countWaveformRequest(&ss.metrics.waveformRedirected)
 		dest := ss.replaceHost(c, host)
 		query := dest.Query()
 		query.Add("allow_unhealthy", "true") // we confirmed the node has it
@@ -895,7 +913,16 @@ func (ss *MediorumServer) serveWaveform(c echo.Context) error {
 		return c.Redirect(http.StatusFound, dest.String())
 	}
 
+	ss.countWaveformRequest(&ss.metrics.waveformMisses)
 	return c.JSON(http.StatusNotFound, map[string]string{"error": "waveform not found"})
+}
+
+// countWaveformRequest guards the nil metrics case, which tests construct.
+func (ss *MediorumServer) countWaveformRequest(counter *atomic.Int64) {
+	if ss.metrics == nil {
+		return
+	}
+	counter.Add(1)
 }
 
 // findNodeToServeWaveform picks a peer that already holds this waveform.
