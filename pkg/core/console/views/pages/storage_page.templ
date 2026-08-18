@@ -343,6 +343,19 @@ func waveformPercent(f float64) string {
 	return fmt.Sprintf("%.1f%%", f*100)
 }
 
+// Built as one string rather than adjacent template expressions, which templ
+// separates with whitespace and would leave a space before the comma.
+//
+// The estimate comes from where the cursor sits in time, so it drifts as the
+// walk crosses busier and quieter stretches of history -- hence "rough".
+func waveformProgressLine(r *storagev1.WaveformRun) string {
+	line := waveformPercent(r.Fraction) + " walked"
+	if r.RemainingNs > 0 {
+		line += ", ~" + formatDuration(r.RemainingNs) + " left (rough)"
+	}
+	return line
+}
+
 // unavailable means a bucket is erroring rather than audio being missing, so
 // the sublabel says which problem the operator is actually looking at.
 func waveformUnavailableSub(w *storagev1.WaveformStatus) string {
@@ -426,14 +439,7 @@ templ waveformBackfillCard(w *storagev1.WaveformStatus) {
 				<div class="text-xs text-secondary mt-1">started { formatRelative(w.Run.StartedAt.AsTime()) }</div>
 			}
 			if !w.Run.Exhausted {
-				<div class="text-xs text-secondary mt-1">
-					{ waveformPercent(w.Run.Fraction) } walked
-					if w.Run.RemainingNs > 0 {
-						// Estimated from cursor position, so it drifts as the walk
-						// crosses busier and quieter stretches of history.
-						{ ", ~" + formatDuration(w.Run.RemainingNs) + " left (rough)" }
-					}
-				</div>
+				<div class="text-xs text-secondary mt-1">{ waveformProgressLine(w.Run) }</div>
 				if w.Run.CursorCreatedAt != nil {
 					<div class="text-xs text-secondary">back to { formatTime(w.Run.CursorCreatedAt.AsTime()) }</div>
 				}
