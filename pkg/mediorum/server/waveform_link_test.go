@@ -65,6 +65,7 @@ func TestPeerPullRequestCarriesUploadID(t *testing.T) {
 		"unused-source-key",
 		nil,
 		"upload-abc",
+		true,
 	))
 
 	var got internalBlobPullRequest
@@ -97,7 +98,7 @@ func TestPulledBlobLinksWaveformWithoutLocalUploadRow(t *testing.T) {
 	require.Empty(t, target.resolveWaveformUploadID(context.Background(), cid))
 
 	require.NoError(t, target.pullFileFromHostValidated(
-		context.Background(), source.Config.Self.Host, cid, nil, "upload-from-sender"))
+		context.Background(), source.Config.Self.Host, cid, nil, "upload-from-sender", true))
 
 	jobs := drainWaveformJobs(target)
 	require.Len(t, jobs, 1)
@@ -223,4 +224,83 @@ func TestResolveWaveformUploadIDFindsPreviewSource(t *testing.T) {
 
 	require.Empty(t, ss.resolveWaveformUploadID(ctx, prefix+"unknown"),
 		"an unknown cid is still an empty result, not an error")
+}
+
+// Originals and images travel the same replication path as the 320. Decoding
+// them costs an ffmpeg subprocess each and produces a waveform for a cid
+// nothing asks about -- and once such a row carries an upload_id it stops
+// showing up as unlinked, so the waste goes quiet.
+//
+// It can also mislead: with expected = 1, a done row from the original alone
+// satisfies the upload's count, reporting it analyzed while the blob clients
+// actually request has no waveform.
+func TestPulledOriginalIsNotAnalyzed(t *testing.T) {
+	source := testNetwork[0]
+	target := testNetwork[1]
+	withWaveformEnabled(t, target)
+	drainWaveformJobs(target)
+
+	content := fmt.Sprintf("original file, not a target %d", time.Now().UnixNano())
+	cid, err := cidutil.ComputeFileCID(bytes.NewReader([]byte(content)))
+	require.NoError(t, err)
+	putInternalBlobTestObject(t, context.Background(), source.bucket, cid, content)
+	t.Cleanup(func() {
+		_ = source.dropFromMyBucket(cid)
+		_ = target.dropFromMyBucket(cid)
+		deleteTestWaveform(t, target, cid)
+		drainWaveformJobs(target)
+	})
+
+	// transcoded=false, and no uploads row matches it as a 320 or preview.
+	require.NoError(t, target.pullFileFromHostValidated(
+		context.Background(), source.Config.Self.Host, cid, nil, "", false))
+
+	require.Empty(t, drainWaveformJobs(target),
+		"a blob that is not an analysis target must not be decoded")
+
+	// The blob still replicated; only the analysis was declined.
+	reader, _, err := target.readBlob(context.Background(), cidutil.ShardCID(cid))
+	require.NoError(t, err)
+	defer reader.Close()
+}
+
+// A peer that predates the transcoded flag still gets its 320s analyzed: a
+// successful resolve is itself proof the blob is a target, since that lookup
+// matches only a 320 or a selected preview.
+func TestPulledBlobWithoutFlagFallsBackToResolution(t *testing.T) {
+	source := testNetwork[0]
+	target := testNetwork[1]
+	withWaveformEnabled(t, target)
+	drainWaveformJobs(target)
+
+	now := time.Now()
+	content := fmt.Sprintf("older peer 320 %d", now.UnixNano())
+	cid, err := cidutil.ComputeFileCID(bytes.NewReader([]byte(content)))
+	require.NoError(t, err)
+	putInternalBlobTestObject(t, context.Background(), source.bucket, cid, content)
+
+	upload := Upload{
+		ID:               fmt.Sprintf("older-peer-%d", now.UnixNano()),
+		Template:         JobTemplateAudio,
+		CreatedAt:        now.UTC().Truncate(time.Second),
+		TranscodeResults: map[string]string{"320": cid},
+	}
+	require.NoError(t, target.crud.DB.Create(&upload).Error)
+	t.Cleanup(func() {
+		target.crud.DB.Where("id = ?", upload.ID).Delete(&Upload{})
+		_ = source.dropFromMyBucket(cid)
+		_ = target.dropFromMyBucket(cid)
+		deleteTestWaveform(t, target, cid)
+		drainWaveformJobs(target)
+	})
+
+	require.NoError(t, target.pullFileFromHostValidated(
+		context.Background(), source.Config.Self.Host, cid, nil, "", false))
+
+	jobs := drainWaveformJobs(target)
+	require.Len(t, jobs, 1)
+	require.Equal(t, upload.ID, jobs[0].uploadID)
+	if jobs[0].localPath != "" {
+		_ = os.Remove(jobs[0].localPath)
+	}
 }

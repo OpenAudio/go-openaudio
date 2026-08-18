@@ -157,7 +157,7 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 		go func(targetHost string) {
 			defer wg.Done()
 
-			err := ss.replicateStoredFileToHost(ctx, targetHost, cid, srcBucket, shardedCid, upload.PlacementHosts, upload.ID)
+			err := ss.replicateStoredFileToHost(ctx, targetHost, cid, srcBucket, shardedCid, upload.PlacementHosts, upload.ID, isTranscoded)
 			resultsChan <- replicationResult{host: targetHost, err: err}
 		}(host)
 	}
