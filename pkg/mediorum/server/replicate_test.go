@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"runtime"
@@ -159,8 +160,7 @@ func TestRequestPeerPullRejectsCIDMismatch(t *testing.T) {
 func TestReplicateStoredFileToHostUsesPullWithoutReadingSourceBucket(t *testing.T) {
 	ss := &MediorumServer{
 		Config: MediorumConfig{
-			Self:                 testNetwork[0].Config.Self,
-			BlobStorageStreaming: true,
+			Self: testNetwork[0].Config.Self,
 		},
 		logger: zap.NewNop(),
 		peerHTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -192,8 +192,7 @@ func TestReplicateStoredFileToHostFallsBackForOlderPeer(t *testing.T) {
 	requests := 0
 	ss := &MediorumServer{
 		Config: MediorumConfig{
-			Self:                 testNetwork[0].Config.Self,
-			BlobStorageStreaming: true,
+			Self: testNetwork[0].Config.Self,
 		},
 		logger: zap.NewNop(),
 		peerHTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -239,8 +238,7 @@ func TestReplicateStoredFileToHostDoesNotFallbackOnValidationFailure(t *testing.
 	requests := 0
 	ss := &MediorumServer{
 		Config: MediorumConfig{
-			Self:                 testNetwork[0].Config.Self,
-			BlobStorageStreaming: true,
+			Self: testNetwork[0].Config.Self,
 		},
 		logger: zap.NewNop(),
 		peerHTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -262,6 +260,42 @@ func TestReplicateStoredFileToHostDoesNotFallbackOnValidationFailure(t *testing.
 	)
 	require.Error(t, err)
 	require.Equal(t, 1, requests)
+}
+
+// Replication asks the peer to pull whatever this node's storage backend is.
+// BlobStorageStreaming decides how the bytes travel once the peer asks -- a
+// presigned redirect or a proxied stream, chosen by serveInternalBlobGET -- and
+// no longer decides whether the pull is attempted at all.
+func TestReplicateStoredFileToHostPullsRegardlessOfBlobStorageStreaming(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("streaming=%v", streaming), func(t *testing.T) {
+			paths := []string{}
+			ss := &MediorumServer{
+				Config: MediorumConfig{
+					Self:                 testNetwork[0].Config.Self,
+					BlobStorageStreaming: streaming,
+				},
+				logger: zap.NewNop(),
+				peerHTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					paths = append(paths, req.URL.Path)
+					return testHTTPResponse(req, http.StatusOK), nil
+				})},
+			}
+
+			require.NoError(t, ss.replicateStoredFileToHost(
+				context.Background(),
+				"http://pull-peer.test",
+				"streaming-agnostic-cid",
+				nil, // a push would need this bucket, so a nil bucket also proves it was not taken
+				"unused-source-key",
+				nil,
+				"",
+				true,
+				0,
+			))
+			require.Equal(t, []string{"/internal/blobs/pull"}, paths)
+		})
+	}
 }
 
 func testHTTPResponse(req *http.Request, statusCode int) *http.Response {
