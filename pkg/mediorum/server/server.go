@@ -148,11 +148,6 @@ type MediorumServer struct {
 	// Outstanding waveform work, refreshed on a sweep. It is an anti-join over
 	// the catalog, so the console reads this cached value rather than paying
 	// for the count on every page load.
-	// cids currently queued or being analyzed, so a slow job is not re-queued
-	// by every sweep tick while it runs.
-	waveformInFlightMu sync.Mutex
-	waveformInFlight   map[string]struct{}
-
 	waveformRollupMu sync.Mutex
 	waveformRollup   waveformRollup
 	waveformRollupAt time.Time
@@ -461,11 +456,10 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		// Buffered, unlike the audio-analysis channel: the sweeps must not
 		// block on a full queue, and the route enqueues opportunistically and
 		// gives up rather than waiting.
-		waveformWork:     make(chan waveformJob, 256),
-		waveformInFlight: map[string]struct{}{},
-		replicationWork:  make(chan *Upload, 100),
-		posChannel:       posChannel,
-		pruneTrigger:     make(chan pruneRequest, 1),
+		waveformWork:    make(chan waveformJob, 256),
+		replicationWork: make(chan *Upload, 100),
+		posChannel:      posChannel,
+		pruneTrigger:    make(chan pruneRequest, 1),
 
 		peerHealths:           map[string]*PeerHealth{},
 		redirectCache:         imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),

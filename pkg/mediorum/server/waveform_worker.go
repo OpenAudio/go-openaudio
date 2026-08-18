@@ -43,13 +43,13 @@ const (
 	// unavailable is short because it signals an unhealthy bucket rather than
 	// missing content -- a transient archive outage should not park a large
 	// slice of the catalog for a day.
-	// waveformNoRetry as a backoff records a terminal status: next_attempt_at
-	// is left null, and the retry sweep only selects rows that have one.
-	waveformNoRetry time.Duration = 0
-
-	waveformRetryBackoffError       = 6 * time.Hour
-	waveformRetryBackoffNotLocal    = 24 * time.Hour
-	waveformRetryBackoffUnavailable = 15 * time.Minute
+	waveformRetryBackoffError    = 6 * time.Hour
+	waveformRetryBackoffNotLocal = 24 * time.Hour
+	// Floored above waveformArchiveJobTimeout rather than set to the 15 minutes
+	// this backoff otherwise wants: a backoff shorter than the longest an
+	// attempt can run makes a row due again while its own attempt is still
+	// going, and the sweep re-queues it.
+	waveformRetryBackoffUnavailable = 30 * time.Minute
 
 	waveformSweepBatchLimit = 50
 	waveformDiscoveryLimit  = 100
@@ -465,46 +465,35 @@ func (ss *MediorumServer) resolveWaveformUploadID(ctx context.Context, cid strin
 // enqueueWaveformJob offers work to the pool without blocking. A full queue
 // means the sweep will find the CID again next pass, so dropping is safe and
 // preferable to stalling a sweep or an HTTP handler.
-// enqueueWaveformJob offers work to the pool, at most once per cid at a time.
-//
-// The in-flight set is what makes the retry backoff mean anything. next_attempt_at
-// only moves when an attempt finishes, so a cid stays selectable for as long as
-// its attempt runs -- and an attempt can run for hours on a multi-hour source.
-// Without this the sweep re-enqueues the same cid every tick for the whole
-// duration, which is how a row reaches an error_count well past the retry cap
-// and why the longest sources accumulated the most attempts.
 func (ss *MediorumServer) enqueueWaveformJob(job waveformJob) bool {
-	ss.waveformInFlightMu.Lock()
-	if _, busy := ss.waveformInFlight[job.cid]; busy {
-		ss.waveformInFlightMu.Unlock()
-		return false
-	}
-	ss.waveformInFlight[job.cid] = struct{}{}
-	ss.waveformInFlightMu.Unlock()
-
 	select {
 	case ss.waveformWork <- job:
 		return true
 	default:
-		// Not queued after all, so it must not look busy -- otherwise a full
-		// queue would retire the cid until the process restarts.
-		ss.releaseWaveformCID(job.cid)
 		return false
 	}
 }
 
-func (ss *MediorumServer) releaseWaveformCID(cid string) {
-	ss.waveformInFlightMu.Lock()
-	delete(ss.waveformInFlight, cid)
-	ss.waveformInFlightMu.Unlock()
+// stampWaveformAttempt records that an attempt has started, which is what takes
+// the row out of the retry sweep's reach while it runs.
+//
+// Before the analysis rather than after: the sweep derives due-ness from this
+// column, so a row whose attempt is still going would otherwise stay selectable
+// for its whole duration and be re-queued on every tick. That is how error_count
+// climbed past its own cap, worst for the sources that took longest.
+//
+// An update rather than an upsert: a cid with no row yet cannot be re-selected
+// by the retry sweep, since that only reads rows that exist. Inserting here
+// would mean inventing a status for a blob nothing has looked at.
+func (ss *MediorumServer) stampWaveformAttempt(ctx context.Context, cid string) {
+	if _, err := ss.pgPool.Exec(ctx,
+		`update waveforms set last_attempted_at = now() where cid = $1`, cid); err != nil {
+		ss.logger.Warn("failed to stamp waveform attempt", zap.String("cid", cid), zap.Error(err))
+	}
 }
 
 func (ss *MediorumServer) processWaveformJob(ctx context.Context, job waveformJob) {
 	logger := ss.logger.With(zap.String("cid", job.cid))
-
-	// Released on every exit, panic included: a cid left marked busy is never
-	// analyzed again for the life of the process.
-	defer ss.releaseWaveformCID(job.cid)
 
 	// This job owns the handed-over file now. Deferred so it is released on
 	// success, failure and panic alike -- the enqueue site only stops owning it
@@ -512,6 +501,8 @@ func (ss *MediorumServer) processWaveformJob(ctx context.Context, job waveformJo
 	if job.localPath != "" {
 		defer os.Remove(job.localPath)
 	}
+
+	ss.stampWaveformAttempt(ctx, job.cid)
 
 	timeout := waveformJobTimeout
 	if ss.isArchiveCID(job.cid, job.placementHosts) {
@@ -564,7 +555,7 @@ func (ss *MediorumServer) analyzeWaveform(ctx context.Context, job waveformJob) 
 	// upload has some. Passing the upload's hosts for a preview would report
 	// every preview as primary-tier and read it straight out of cold storage.
 	if !ss.Config.WaveformArchiveEnabled && ss.isArchiveCID(job.cid, job.placementHosts) {
-		if err := ss.markWaveformStatus(ctx, job.cid, job.uploadID, waveformStatusArchiveSkipped, nil, waveformRetryBackoffNotLocal); err != nil {
+		if err := ss.markWaveformStatus(ctx, job.cid, job.uploadID, waveformStatusArchiveSkipped, nil); err != nil {
 			return err
 		}
 		return nil
@@ -596,7 +587,7 @@ func (ss *MediorumServer) analyzeWaveform(ctx context.Context, job waveformJob) 
 		// source is longer than we decode, which no retry changes. Recording it
 		// with no next attempt is what stops a multi-hour decode being repeated
 		// against a blob that will never fit.
-		if markErr := ss.markWaveformStatus(ctx, job.cid, job.uploadID, waveformStatusTooLong, err, waveformNoRetry); markErr != nil {
+		if markErr := ss.markWaveformStatus(ctx, job.cid, job.uploadID, waveformStatusTooLong, err); markErr != nil {
 			ss.logger.Error("failed to record waveform length limit", zap.String("cid", job.cid), zap.Error(markErr))
 		}
 		return err
@@ -624,12 +615,12 @@ func (ss *MediorumServer) analyzeWaveform(ctx context.Context, job waveformJob) 
 // file.
 func (ss *MediorumServer) recordWaveformReadFailure(ctx context.Context, job waveformJob, readErr error) error {
 	if gcerrors.Code(readErr) == gcerrors.NotFound {
-		if err := ss.markWaveformStatus(ctx, job.cid, job.uploadID, waveformStatusNotLocal, readErr, waveformRetryBackoffNotLocal); err != nil {
+		if err := ss.markWaveformStatus(ctx, job.cid, job.uploadID, waveformStatusNotLocal, readErr); err != nil {
 			return err
 		}
 		return fmt.Errorf("waveform: blob not on this node: %w", readErr)
 	}
-	if err := ss.markWaveformStatus(ctx, job.cid, job.uploadID, waveformStatusUnavailable, readErr, waveformRetryBackoffUnavailable); err != nil {
+	if err := ss.markWaveformStatus(ctx, job.cid, job.uploadID, waveformStatusUnavailable, readErr); err != nil {
 		return err
 	}
 	return fmt.Errorf("waveform: storage unavailable: %w", readErr)
@@ -656,21 +647,47 @@ func (ss *MediorumServer) recordWaveformReadFailure(ctx context.Context, job wav
 //
 // Returns whether it queued anything, which keeps the sweep interval short
 // while a backlog is draining.
+// pgInterval renders a duration for an ::interval cast. Passing the backoff as
+// a parameter rather than inlining it keeps the policy in Go, so changing a
+// constant takes effect on rows already written.
+func pgInterval(d time.Duration) string {
+	return fmt.Sprintf("%d seconds", int(d.Seconds()))
+}
+
 func (ss *MediorumServer) sweepWaveformRetries(ctx context.Context) bool {
+	// One branch per status rather than a CASE over the backoff: each is an
+	// equality on status and a range on last_attempted_at, which is what the
+	// (status, last_attempted_at) index serves. A CASE would put an expression
+	// on the indexed side and turn this into a scan.
+	//
+	// Deliberately unordered. Picking a row up stamps last_attempted_at, so it
+	// leaves the candidate set for a full backoff -- eligibility clears itself,
+	// and every row is reached whatever order the batches arrive in. Reading
+	// the heap in physical order is also better locality than jumping around
+	// by timestamp.
+	//
+	// done and too_long match no branch: both are terminal, and that is carried
+	// by the status rather than by a null in a schedule column.
 	rows, err := ss.pgPool.Query(ctx, `
 		select w.cid, coalesce(w.upload_id, ''),
 		       coalesce(u.transcode_results::jsonb ->> '320', ''),
 		       coalesce(u.placement_hosts, '[]')
 		from waveforms w
 		left join uploads u on u.id = w.upload_id
-		where w.status <> $1
-		  and (w.status <> $2 or $3)
-		  and coalesce(w.error_count, 0) < $4
-		  and w.next_attempt_at is not null
-		  and w.next_attempt_at <= now()
-		order by w.next_attempt_at
-		limit $5
-	`, waveformStatusDone, waveformStatusArchiveSkipped, ss.Config.WaveformArchiveEnabled, waveformMaxTries, waveformSweepBatchLimit)
+		where (
+			   (w.status = $1 and coalesce(w.error_count, 0) < $2
+			    and w.last_attempted_at <= now() - $3::interval)
+			or (w.status = $4 and w.last_attempted_at <= now() - $5::interval)
+			or (w.status = $6 and w.last_attempted_at <= now() - $7::interval)
+			or ($8 and w.status = $9 and w.last_attempted_at <= now() - $10::interval)
+		)
+		limit $11
+	`,
+		waveformStatusError, waveformMaxTries, pgInterval(waveformRetryBackoffError),
+		waveformStatusNotLocal, pgInterval(waveformRetryBackoffNotLocal),
+		waveformStatusUnavailable, pgInterval(waveformRetryBackoffUnavailable),
+		ss.Config.WaveformArchiveEnabled, waveformStatusArchiveSkipped, pgInterval(waveformRetryBackoffNotLocal),
+		waveformSweepBatchLimit)
 	if err != nil {
 		ss.logger.Warn("waveform retry sweep failed", zap.Error(err))
 		return false
@@ -813,7 +830,7 @@ func (ss *MediorumServer) sweepWaveformDiscovery(ctx context.Context) bool {
 					// as the re-sweep predicate if the operator later opts in,
 					// and it makes the held-back population visible before they
 					// commit to paying for it.
-					if err := ss.markWaveformStatus(ctx, target.cid, upload.ID, waveformStatusArchiveSkipped, nil, waveformRetryBackoffNotLocal); err != nil {
+					if err := ss.markWaveformStatus(ctx, target.cid, upload.ID, waveformStatusArchiveSkipped, nil); err != nil {
 						ss.logger.Warn("failed to record archive skip", zap.String("cid", target.cid), zap.Error(err))
 					}
 					skippedArchive++
@@ -918,8 +935,8 @@ func (ss *MediorumServer) upsertWaveform(ctx context.Context, cid, uploadID stri
 	_, err := ss.pgPool.Exec(ctx, `
 		insert into waveforms
 			(cid, peaks, buckets, version, sample_rate, sample_count, duration_ms,
-			 status, error, error_count, upload_id, analyzed_at, next_attempt_at)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, '', 0, $9, now(), null)
+			 status, error, error_count, upload_id, analyzed_at, last_attempted_at)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, '', 0, $9, now(), now())
 		on conflict (cid) do update set
 			peaks = excluded.peaks,
 			buckets = excluded.buckets,
@@ -934,7 +951,7 @@ func (ss *MediorumServer) upsertWaveform(ctx context.Context, cid, uploadID stri
 			-- retry driven off the waveforms table alone may not.
 			upload_id = coalesce(excluded.upload_id, waveforms.upload_id),
 			analyzed_at = now(),
-			next_attempt_at = null
+			last_attempted_at = now()
 	`, cid, result.Peaks, waveformBuckets, waveformVersion,
 		result.SampleRate, result.SampleCount, result.DurationMs, waveformStatusDone,
 		nullableUploadID(uploadID))
@@ -951,29 +968,22 @@ func (ss *MediorumServer) upsertWaveform(ctx context.Context, cid, uploadID stri
 // re-walk would re-enqueue them, bypassing the backoff below. Stamping it hands
 // scheduling to the retry sweep alone, which keys off status and ignores
 // version, so a version change still recomputes them once they succeed.
-func (ss *MediorumServer) markWaveformStatus(ctx context.Context, cid, uploadID, status string, cause error, backoff time.Duration) error {
+func (ss *MediorumServer) markWaveformStatus(ctx context.Context, cid, uploadID, status string, cause error) error {
 	msg := ""
 	if cause != nil {
 		msg = cause.Error()
 	}
-	// The retry sweep requires next_attempt_at to be set, so a null is what
-	// makes a status terminal. Exactly zero means that; a negative backoff is
-	// an attempt already due, which is different and must stay schedulable.
-	var nextAttempt any
-	if backoff != waveformNoRetry {
-		nextAttempt = time.Now().Add(backoff)
-	}
 	_, err := ss.pgPool.Exec(ctx, `
-		insert into waveforms (cid, status, error, error_count, version, upload_id, analyzed_at, next_attempt_at)
-		values ($1, $2, $3, 0, $4, $5, now(), $6)
+		insert into waveforms (cid, status, error, error_count, version, upload_id, analyzed_at, last_attempted_at)
+		values ($1, $2, $3, 0, $4, $5, now(), now())
 		on conflict (cid) do update set
 			status = excluded.status,
 			error = excluded.error,
 			version = excluded.version,
 			upload_id = coalesce(excluded.upload_id, waveforms.upload_id),
 			analyzed_at = now(),
-			next_attempt_at = excluded.next_attempt_at
-	`, cid, status, msg, waveformVersion, nullableUploadID(uploadID), nextAttempt)
+			last_attempted_at = now()
+	`, cid, status, msg, waveformVersion, nullableUploadID(uploadID))
 	return err
 }
 
@@ -988,8 +998,8 @@ func (ss *MediorumServer) markWaveformError(ctx context.Context, cid, uploadID s
 		msg = cause.Error()
 	}
 	_, err := ss.pgPool.Exec(ctx, `
-		insert into waveforms (cid, status, error, error_count, version, upload_id, analyzed_at, next_attempt_at)
-		values ($1, $2, $3, 1, $4, $5, now(), now() + $6::interval)
+		insert into waveforms (cid, status, error, error_count, version, upload_id, analyzed_at, last_attempted_at)
+		values ($1, $2, $3, 1, $4, $5, now(), now())
 		on conflict (cid) do update set
 			status = excluded.status,
 			error = excluded.error,
@@ -997,9 +1007,8 @@ func (ss *MediorumServer) markWaveformError(ctx context.Context, cid, uploadID s
 			version = excluded.version,
 			upload_id = coalesce(excluded.upload_id, waveforms.upload_id),
 			analyzed_at = now(),
-			next_attempt_at = excluded.next_attempt_at
-	`, cid, waveformStatusError, msg, waveformVersion, nullableUploadID(uploadID),
-		fmt.Sprintf("%d seconds", int(waveformRetryBackoffError.Seconds())))
+			last_attempted_at = now()
+	`, cid, waveformStatusError, msg, waveformVersion, nullableUploadID(uploadID))
 	return err
 }
 
@@ -1399,7 +1408,7 @@ func (ss *MediorumServer) analyzeWaveformFromFile(ctx context.Context, cid, uplo
 
 	result, err := computeWaveform(ctx, f, info.Size())
 	if errors.Is(err, errWaveformSourceTooLong) {
-		if markErr := ss.markWaveformStatus(ctx, cid, uploadID, waveformStatusTooLong, err, waveformNoRetry); markErr != nil {
+		if markErr := ss.markWaveformStatus(ctx, cid, uploadID, waveformStatusTooLong, err); markErr != nil {
 			ss.logger.Error("failed to record waveform length limit", zap.String("cid", cid), zap.Error(markErr))
 		}
 		return err

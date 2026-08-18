@@ -530,15 +530,22 @@ func seedAudioUpload(t *testing.T, ss *MediorumServer, prefix string) (Upload, s
 	return upload, cid
 }
 
-// Draining stands in for a worker consuming the job, so it releases the
-// in-flight mark the same way processWaveformJob does. Without that a drained
-// cid stays marked busy and can never be enqueued again.
+// backdateWaveformAttempt moves a row's last attempt into the past so its
+// backoff has elapsed. Tests used to express this by stamping a negative
+// interval; with the schedule derived, the fact itself is what moves.
+func backdateWaveformAttempt(t *testing.T, ss *MediorumServer, cid string, ago time.Duration) {
+	t.Helper()
+	_, err := ss.pgPool.Exec(context.Background(),
+		`update waveforms set last_attempted_at = now() - $2::interval where cid = $1`,
+		cid, pgInterval(ago))
+	require.NoError(t, err)
+}
+
 func drainWaveformWork(ss *MediorumServer) []string {
 	cids := []string{}
 	for {
 		select {
 		case job := <-ss.waveformWork:
-			ss.releaseWaveformCID(job.cid)
 			cids = append(cids, job.cid)
 		default:
 			return cids
@@ -671,7 +678,7 @@ func TestNonTerminalRowsAreStampedAndHiddenFromDiscovery(t *testing.T) {
 	require.Contains(t, waveformUploadIDs(batch), upload.ID)
 
 	// The blob is not on this node.
-	require.NoError(t, ss.markWaveformStatus(ctx, cid, upload.ID, waveformStatusNotLocal, nil, waveformRetryBackoffNotLocal))
+	require.NoError(t, ss.markWaveformStatus(ctx, cid, upload.ID, waveformStatusNotLocal, nil))
 
 	row, err := ss.getWaveform(ctx, cid)
 	require.NoError(t, err)
@@ -686,12 +693,12 @@ func TestNonTerminalRowsAreStampedAndHiddenFromDiscovery(t *testing.T) {
 	// The retry sweep still owns it, and not_local never spends the retry
 	// budget, so it keeps coming back until the blob turns up.
 	var errCount int
-	var nextAttempt *time.Time
+	var lastAttempt *time.Time
 	require.NoError(t, ss.pgPool.QueryRow(ctx,
-		`select error_count, next_attempt_at from waveforms where cid = $1`, cid,
-	).Scan(&errCount, &nextAttempt))
+		`select error_count, last_attempted_at from waveforms where cid = $1`, cid,
+	).Scan(&errCount, &lastAttempt))
 	require.Zero(t, errCount, "not_local must not spend the retry budget")
-	require.NotNil(t, nextAttempt, "must be scheduled for another attempt")
+	require.NotNil(t, lastAttempt, "the attempt must be recorded for the backoff to run from")
 
 	// Once the blob replicates in and analysis succeeds, it becomes servable.
 	require.NoError(t, ss.upsertWaveform(ctx, cid, "", &waveformResult{
@@ -830,10 +837,13 @@ func TestSweepsRunWithBackfillDisabled(t *testing.T) {
 	ss.Config.WaveformBackfillEnabled = false
 	t.Cleanup(func() { ss.Config.WaveformBackfillEnabled = origBackfill })
 
-	// A row the live hook could have written and failed on, already due.
+	// A row the live hook could have written and failed on, its backoff spent.
+	// Backdating the attempt is the whole of "already due" now -- there is no
+	// schedule to stamp, so nothing has to encode the intent separately.
 	cid := fmt.Sprintf("waveform-liveonly-%d", time.Now().UnixNano())
 	t.Cleanup(func() { deleteTestWaveform(t, ss, cid) })
-	require.NoError(t, ss.markWaveformStatus(ctx, cid, "", waveformStatusUnavailable, nil, -time.Minute))
+	require.NoError(t, ss.markWaveformStatus(ctx, cid, "", waveformStatusUnavailable, nil))
+	backdateWaveformAttempt(t, ss, cid, waveformRetryBackoffUnavailable+time.Minute)
 
 	ss.runWaveformSweeps(ctx)
 

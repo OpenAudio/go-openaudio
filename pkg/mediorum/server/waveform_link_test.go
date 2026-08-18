@@ -24,7 +24,6 @@ func drainWaveformJobs(ss *MediorumServer) []waveformJob {
 	for {
 		select {
 		case job := <-ss.waveformWork:
-			ss.releaseWaveformCID(job.cid)
 			jobs = append(jobs, job)
 		default:
 			return jobs
@@ -409,64 +408,6 @@ func TestGeneratePreviewHandsOverItsLocalFile(t *testing.T) {
 	_ = os.Remove(jobs[0].localPath)
 }
 
-// The retry backoff only moves next_attempt_at when an attempt finishes, so a
-// cid stays selectable for as long as its attempt runs. On a multi-hour source
-// that is hours, during which every sweep tick would re-enqueue the same cid --
-// which is how error_count climbs past waveformMaxTries, worst for the longest
-// sources. The in-flight set is what bounds it to one attempt at a time.
-func TestWaveformJobIsNotEnqueuedTwiceWhileInFlight(t *testing.T) {
-	ss := testNetwork[0]
-	drainWaveformJobs(ss)
-	t.Cleanup(func() { drainWaveformJobs(ss) })
-
-	cid := fmt.Sprintf("waveform-inflight-%d", time.Now().UnixNano())
-	t.Cleanup(func() { ss.releaseWaveformCID(cid) })
-
-	require.True(t, ss.enqueueWaveformJob(waveformJob{cid: cid}))
-	require.False(t, ss.enqueueWaveformJob(waveformJob{cid: cid}),
-		"a sweep tick during a running attempt must not queue it again")
-
-	// A different cid is unaffected.
-	other := cid + "-other"
-	require.True(t, ss.enqueueWaveformJob(waveformJob{cid: other}))
-	t.Cleanup(func() { ss.releaseWaveformCID(other) })
-
-	// Once the attempt finishes the cid is eligible again, which is what lets
-	// the backoff schedule a genuine second try.
-	ss.releaseWaveformCID(cid)
-	require.True(t, ss.enqueueWaveformJob(waveformJob{cid: cid}))
-}
-
-// A cid dropped by a full queue was never queued, so it must not stay marked
-// busy -- that would retire it until the process restarts.
-func TestFullQueueDoesNotStrandTheCID(t *testing.T) {
-	ss := testNetwork[0]
-	drainWaveformJobs(ss)
-	t.Cleanup(func() { drainWaveformJobs(ss) })
-
-	cid := fmt.Sprintf("waveform-fullqueue-%d", time.Now().UnixNano())
-	t.Cleanup(func() { ss.releaseWaveformCID(cid) })
-
-	// Fill the queue so the send cannot proceed.
-	filled := 0
-	for ss.enqueueWaveformJob(waveformJob{cid: fmt.Sprintf("%s-filler-%d", cid, filled)}) {
-		filled++
-		if filled > cap(ss.waveformWork)+2 {
-			break
-		}
-	}
-	require.False(t, ss.enqueueWaveformJob(waveformJob{cid: cid}), "queue should be full")
-
-	ss.waveformInFlightMu.Lock()
-	_, busy := ss.waveformInFlight[cid]
-	ss.waveformInFlightMu.Unlock()
-	require.False(t, busy, "a cid that was never queued must not be left marked in flight")
-
-	drainWaveformJobs(ss)
-	require.True(t, ss.enqueueWaveformJob(waveformJob{cid: cid}),
-		"and it must be queueable once there is room")
-}
-
 // The decode cap and a truncated source produce identical byte counts, so the
 // sample count is the only thing that separates "we stopped it" from "the blob
 // ended early".
@@ -478,4 +419,58 @@ func TestDecodeStoppedAtCapDistinguishesTheLimitFromTruncation(t *testing.T) {
 	require.False(t, decodeStoppedAtCap(capSamples-waveformSampleRate),
 		"a second short of the cap is a genuinely truncated source")
 	require.False(t, decodeStoppedAtCap(0))
+}
+
+// Stamping the attempt before the analysis is what keeps a running job out of
+// the sweep's reach. next_attempt_at only moved once an attempt finished, so a
+// row stayed selectable for its whole attempt and every tick re-queued it --
+// which is how error_count climbed past its own cap on the slowest sources.
+func TestRunningAttemptIsNotReselected(t *testing.T) {
+	ss := testNetwork[0]
+	ctx := context.Background()
+	drainWaveformWork(ss)
+	t.Cleanup(func() { drainWaveformWork(ss) })
+
+	cid := fmt.Sprintf("waveform-running-%d", time.Now().UnixNano())
+	t.Cleanup(func() { deleteTestWaveform(t, ss, cid) })
+
+	require.NoError(t, ss.markWaveformStatus(ctx, cid, "", waveformStatusUnavailable, nil))
+	backdateWaveformAttempt(t, ss, cid, waveformRetryBackoffUnavailable+time.Minute)
+
+	ss.sweepWaveformRetries(ctx)
+	require.Contains(t, drainWaveformWork(ss), cid, "a row past its backoff is due")
+
+	// A worker picking it up stamps the attempt. The row is now inside its
+	// backoff again even though nothing has been written about the outcome.
+	ss.stampWaveformAttempt(ctx, cid)
+
+	ss.sweepWaveformRetries(ctx)
+	require.NotContains(t, drainWaveformWork(ss), cid,
+		"an attempt in progress must not be queued a second time")
+
+	// And once the backoff has elapsed again it comes back, so a job that died
+	// mid-attempt is not stranded -- which the in-flight set could not promise
+	// across a restart.
+	backdateWaveformAttempt(t, ss, cid, waveformRetryBackoffUnavailable+time.Minute)
+	ss.sweepWaveformRetries(ctx)
+	require.Contains(t, drainWaveformWork(ss), cid,
+		"a stalled attempt must become eligible again after its backoff")
+}
+
+// Terminal statuses carry no schedule at all, so they are unreachable by the
+// sweep without a sentinel value standing in for "never".
+func TestTerminalStatusesAreNeverRetried(t *testing.T) {
+	ss := testNetwork[0]
+	ctx := context.Background()
+	drainWaveformWork(ss)
+	t.Cleanup(func() { drainWaveformWork(ss) })
+
+	tooLong := fmt.Sprintf("waveform-toolong-%d", time.Now().UnixNano())
+	t.Cleanup(func() { deleteTestWaveform(t, ss, tooLong) })
+	require.NoError(t, ss.markWaveformStatus(ctx, tooLong, "", waveformStatusTooLong, errWaveformSourceTooLong))
+	backdateWaveformAttempt(t, ss, tooLong, 30*24*time.Hour)
+
+	ss.sweepWaveformRetries(ctx)
+	require.NotContains(t, drainWaveformWork(ss), tooLong,
+		"a source longer than we decode does not get shorter with age")
 }

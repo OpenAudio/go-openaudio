@@ -166,11 +166,28 @@ WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 		-- extracting jsonb from both sides, which was the expensive part of
 		-- the sweep and the reason an "unanalyzed" count was unaffordable.
 		"upload_id" text,
+		-- When this row's result was produced. Distinct from last_attempted_at
+		-- because a done row's age is about the waveform, not about when we
+		-- last touched it.
 		"analyzed_at" timestamptz not null default now(),
-		"next_attempt_at" timestamptz
+		-- When an attempt last started. The retry sweep derives due-ness from
+		-- this plus the backoff for the row's status, rather than storing a
+		-- computed next-attempt time.
+		--
+		-- Storing the fact rather than the decision is what lets a backoff
+		-- change take effect on rows already written, and it removes the need
+		-- for a sentinel to mean "never again" -- terminal is a property of the
+		-- status, which is where it belongs.
+		--
+		-- Stamped before the analysis runs, not after. next_attempt_at only
+		-- moved once an attempt finished, so a row stayed selectable for the
+		-- whole of its own attempt and every sweep tick re-queued it.
+		"last_attempted_at" timestamptz
 	)`)
 	runMigration(db, `create index if not exists idx_waveforms_upload_id on waveforms (upload_id, version) where upload_id is not null`)
-	runMigration(db, `create index if not exists idx_waveforms_retry on waveforms (next_attempt_at) where status <> 'done'`)
+	// status first: the retry sweep asks for one status at a time with a range
+	// on the attempt time, so equality then range is exactly this order.
+	runMigration(db, `create index if not exists idx_waveforms_retry on waveforms (status, last_attempted_at) where status <> 'done'`)
 
 	// Supports the backfill's keyset walk, which pages newest-first over
 	// (created_at, id) and filters to audio. Without it the walk falls back to
