@@ -530,4 +530,70 @@ var compareTables = []compareTable{
 			{"with_city", textPopulated("city")},
 		},
 	},
+
+	// The five below are derived by the indexer rather than emitted by the
+	// writer: it reads stem_of/remix_of/stream_conditions off the track and
+	// playlist entities and writes these tables itself. Nothing verified them,
+	// so a derivation that silently stopped producing rows would have shown up
+	// nowhere -- the entity tables would still be complete and every declared
+	// check would still pass. shares is deliberately absent: a user may share
+	// the same item repeatedly (92,995 rows, 33,252 distinct user/item/type),
+	// so it has no natural key to align rows on.
+	{
+		Name:          "stems",
+		IDCols:        []string{"parent_track_id", "child_track_id"},
+		Where:         "true",
+		SampleCol:     "parent_track_id",
+		NoBlockNumber: true,
+		Aggregates: []aggCheck{
+			{"distinct_parents", "count(DISTINCT parent_track_id)"},
+			{"distinct_children", "count(DISTINCT child_track_id)"},
+		},
+	},
+	{
+		Name:          "remixes",
+		IDCols:        []string{"parent_track_id", "child_track_id"},
+		Where:         "true",
+		SampleCol:     "parent_track_id",
+		NoBlockNumber: true,
+		Aggregates: []aggCheck{
+			{"distinct_parents", "count(DISTINCT parent_track_id)"},
+			{"distinct_children", "count(DISTINCT child_track_id)"},
+		},
+	},
+	{
+		Name:          "comment_threads",
+		IDCols:        []string{"comment_id", "parent_comment_id"},
+		Where:         "true",
+		SampleCol:     "comment_id",
+		NoBlockNumber: true,
+		Aggregates: []aggCheck{
+			{"distinct_parents", "count(DISTINCT parent_comment_id)"},
+		},
+	},
+	{
+		Name:      "track_price_history",
+		IDCols:    []string{"track_id", "block_timestamp"},
+		Columns:   []string{"splits", "total_price_cents", "access"},
+		Where:     "true",
+		SampleCol: "track_id",
+		CastCols:  map[string]string{"access": "access::text"},
+		Aggregates: []aggCheck{
+			{"distinct_tracks", "count(DISTINCT track_id)"},
+			{"total_cents", "coalesce(sum(total_price_cents), 0)"},
+			{"with_splits", countJSONB("splits")},
+		},
+	},
+	{
+		Name:      "album_price_history",
+		IDCols:    []string{"playlist_id", "block_timestamp"},
+		Columns:   []string{"splits", "total_price_cents"},
+		Where:     "true",
+		SampleCol: "playlist_id",
+		Aggregates: []aggCheck{
+			{"distinct_playlists", "count(DISTINCT playlist_id)"},
+			{"total_cents", "coalesce(sum(total_price_cents), 0)"},
+			{"with_splits", countJSONB("splits")},
+		},
+	},
 }
