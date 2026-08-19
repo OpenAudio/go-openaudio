@@ -659,13 +659,22 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 		}
 
 		// Create h2c-compatible server
+		// cfg.GRPCladdr is parsed from OPENAUDIO_GRPC_LADDR but was never read
+		// here, so the var was inert and two nodes could not share a host.
+		grpcAddr := cfg.GRPCladdr
+		if grpcAddr == "" {
+			grpcAddr = ":50051"
+		}
 		h2cServer := &http.Server{
-			Addr:    ":50051",
+			Addr:    grpcAddr,
 			Handler: h2c.NewHandler(grpcServer, &http2.Server{}),
 		}
 
+		// A node that cannot bind this port keeps serving Connect over HTTP/1.1
+		// on the echo port and looks healthy, while every gRPC/h2c client fails
+		// with "http2: frame too large". Fail loudly instead.
 		if err := h2cServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("grpcServer on 50051 failed", zap.Error(err))
+			logger.Error("grpc server failed", zap.String("addr", grpcAddr), zap.Error(err))
 			return
 		}
 	}()
