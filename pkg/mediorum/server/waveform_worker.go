@@ -136,7 +136,7 @@ func (ss *MediorumServer) startWaveformAnalyzer(ctx context.Context) error {
 	// The loop runs whether or not backfill is enabled, and only the history
 	// walk is gated inside it. Returning early here instead would also strand
 	// the retry sweep, so a transient failure from the live transcode hook --
-	// recorded with a next_attempt_at nobody ever reads -- would be permanent
+	// recorded with a backoff nobody ever evaluates -- would be permanent
 	// on a live-only node. It would also freeze the outstanding count at zero,
 	// which reads as "nothing left" when in truth nothing has been looked at.
 	//
@@ -720,8 +720,8 @@ func (ss *MediorumServer) sweepWaveformRetries(ctx context.Context) bool {
 		if ctx.Err() != nil {
 			break
 		}
-		// A full queue is not a problem here: these rows carry their own
-		// next_attempt_at, so whatever does not fit is simply picked up again.
+		// A full queue is not a problem here: nothing was stamped, so whatever
+		// does not fit is still due and is simply picked up next sweep.
 		if !ss.enqueueWaveformJob(job) {
 			break
 		}
