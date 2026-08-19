@@ -10,6 +10,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func testNetworkRunRepair(cleanup bool) {
@@ -42,14 +43,20 @@ func testNetworkLocateBlob(cid string) []string {
 
 func TestRepair(t *testing.T) {
 	ctx := context.Background()
-	replicationFactor := 5
+	replicationFactor := testNetwork[0].Config.ReplicationFactor
 
-	ss := testNetwork[0]
-
-	// first, write a blob only to my storage
+	// First, write a blob only to its highest-ranked storage node.
 	data := []byte("repair test")
 	cid, err := cidutil.ComputeFileCID(bytes.NewReader(data))
 	assert.NoError(t, err)
+	byHost := map[string]*MediorumServer{}
+	for _, server := range testNetwork {
+		byHost[server.Config.Self.Host] = server
+	}
+	preferred, _ := testNetwork[0].rendezvousAllHosts(cid)
+	ss := byHost[preferred[0]]
+	require.NotNil(t, ss)
+
 	err = ss.replicateToMyBucket(ctx, cid, bytes.NewReader(data), nil)
 	assert.NoError(t, err)
 
@@ -86,13 +93,10 @@ func TestRepair(t *testing.T) {
 	// tell all servers do repair
 	testNetworkRunRepair(true)
 
-	// assert it exists on R hosts
+	// Repair fills exactly the configured rendezvous replica set.
 	{
 		hosts := testNetworkLocateBlob(cid)
-
-		// cleanup will permit blob on R+2
-		// so assert upper threshold thusly
-		assert.LessOrEqual(t, len(hosts), replicationFactor+2)
+		assert.Len(t, hosts, replicationFactor)
 	}
 
 	// --------------------------
@@ -112,52 +116,91 @@ func TestRepair(t *testing.T) {
 	// tell all servers do cleanup
 	testNetworkRunRepair(true)
 
-	// assert R copies
-	if false {
+	// Fresh extra copies stay for the one-week drain period.
+	{
 		hosts := testNetworkLocateBlob(cid)
-		assert.Len(t, hosts, replicationFactor)
+		assert.Len(t, hosts, len(testNetwork))
 	}
 
-	// ----------------------
-	// now make one of the servers "lose" a file
-	if false {
-		byHost := map[string]*MediorumServer{}
-		for _, s := range testNetwork {
-			byHost[s.Config.Self.Host] = s
-		}
+	for _, server := range testNetwork {
+		markLocalBlobOld(t, server, cid, 8*24*time.Hour)
+	}
+	testNetworkRunRepair(true)
 
-		rendezvousOrder := []*MediorumServer{}
-		preferred, _ := ss.rendezvousAllHosts(cid)
-		for _, h := range preferred {
-			rendezvousOrder = append(rendezvousOrder, byHost[h])
-		}
+	// Once the drain period expires, cleanup keeps exactly R copies.
+	hosts := testNetworkLocateBlob(cid)
+	assert.Len(t, hosts, replicationFactor)
+}
 
-		// make leader lose file
-		leader := rendezvousOrder[0]
-		leader.dropFromMyBucket(cid)
+func TestRepairPrunesAtReplicationBoundaryAfterDrain(t *testing.T) {
+	const replicationFactor = 4
 
-		// normally a standby server wouldn't pull this file
-		standby := rendezvousOrder[replicationFactor+2]
-		err = standby.runRepair(ctx, &RepairTracker{StartedAt: time.Now(), CleanupMode: false, Counters: map[string]int{}})
-		assert.NoError(t, err)
-		assert.False(t, standby.hostHasBlob(standby.Config.Self.Host, cid))
+	base := testNetwork[0]
+	ss := &MediorumServer{
+		bucket:           base.bucket,
+		archiveBucket:    base.archiveBucket,
+		rendezvousHasher: base.rendezvousHasher,
+		logger:           base.logger,
+		knownPresent:     base.knownPresent,
+		Config:           base.Config,
+	}
+	ss.Config.ReplicationFactor = replicationFactor
+	// Free space no longer changes how many replicas cleanup retains.
+	ss.mediorumPathFree = 90
+	ss.mediorumPathSize = 100
 
-		// running repair in cleanup mode... standby will observe that #1 doesn't have blob so will pull it
-		err = standby.runRepair(ctx, &RepairTracker{StartedAt: time.Now(), CleanupMode: true, Counters: map[string]int{}})
-		assert.NoError(t, err)
-		assert.True(t, standby.hostHasBlob(standby.Config.Self.Host, cid))
-
-		// leader re-gets lost file when repair runs
-		err = leader.runRepair(ctx, &RepairTracker{StartedAt: time.Now(), CleanupMode: false, Counters: map[string]int{}})
-		assert.NoError(t, err)
-		assert.True(t, leader.hostHasBlob(leader.Config.Self.Host, cid))
-
-		// standby drops file after leader has it back
-		err = standby.runRepair(ctx, &RepairTracker{StartedAt: time.Now(), CleanupMode: true, Counters: map[string]int{}})
-		assert.NoError(t, err)
-		assert.False(t, standby.hostHasBlob(standby.Config.Self.Host, cid))
+	tests := []struct {
+		name     string
+		rank     int
+		age      time.Duration
+		storeAll bool
+		wantBlob bool
+	}{
+		{
+			name:     "keeps last assigned replica",
+			rank:     replicationFactor - 1,
+			age:      8 * 24 * time.Hour,
+			wantBlob: true,
+		},
+		{
+			name:     "keeps first extra replica during drain week",
+			rank:     replicationFactor,
+			age:      6 * 24 * time.Hour,
+			wantBlob: true,
+		},
+		{
+			name: "deletes first extra replica after drain week",
+			rank: replicationFactor,
+			age:  8 * 24 * time.Hour,
+		},
+		{
+			name:     "store all keeps extra replica after drain week",
+			rank:     replicationFactor,
+			age:      8 * 24 * time.Hour,
+			storeAll: true,
+			wantBlob: true,
+		},
 	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ss.Config.StoreAll = tt.storeAll
+			cid := findCIDByRank(t, ss, tt.rank)
+			require.NoError(t, ss.dropFromMyBucket(cid))
+			t.Cleanup(func() { require.NoError(t, ss.dropFromMyBucket(cid)) })
+			require.NoError(t, ss.replicateToMyBucket(context.Background(), cid, bytes.NewReader([]byte(tt.name)), nil))
+			markLocalBlobOld(t, ss, cid, tt.age)
+
+			tracker := &RepairTracker{
+				StartedAt:   time.Now(),
+				CleanupMode: true,
+				Counters:    map[string]int{},
+			}
+			policy := newRepairRetentionPolicy(ss.Config, time.Now())
+			require.NoError(t, ss.repairCidWithPolicy(context.Background(), cid, nil, tracker, nil, policy, time.Time{}))
+			assert.Equal(t, tt.wantBlob, ss.haveInMyBucket(cid))
+		})
+	}
 }
 
 func TestBuildRepairPresenceIndexIncludesLocalBlob(t *testing.T) {
