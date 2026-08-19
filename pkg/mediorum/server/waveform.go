@@ -33,11 +33,6 @@ const (
 	// a second array in the payload. Bump it by hand for those.
 	waveformAlgorithmVersion = 1
 
-	// waveformMaxDecodeSeconds is a poison-pill guard against a blob that
-	// decodes to something absurd. It sits alongside the per-job context
-	// timeout, which covers hangs rather than runaway length.
-	waveformMaxDecodeSeconds = 14400
-
 	// waveformMaxStderrBytes caps how much ffmpeg diagnostic output we retain.
 	// The error string lands in a database column, so it must be bounded.
 	waveformMaxStderrBytes = 8 * 1024
@@ -94,19 +89,6 @@ var errWaveformNoAudio = errors.New("waveform: decoded zero audio samples")
 // expectedBytes, when positive, is checked against the number of bytes we
 // managed to feed ffmpeg, so a source that ends early without reporting an
 // error cannot be silently analyzed as a shorter track.
-// errWaveformSourceTooLong marks a source longer than we are willing to decode.
-// It is terminal rather than a failure: nothing about the blob is wrong, and no
-// number of retries makes it shorter. Reported apart from decode errors so a
-// handful of very long uploads cannot read as a decoding problem.
-var errWaveformSourceTooLong = errors.New("waveform: source longer than the decode limit")
-
-// decodeStoppedAtCap reports whether the decode ended because it reached
-// waveformMaxDecodeSeconds rather than because the source ran out. ffmpeg
-// stops on its own -t, so the byte counts look identical to a truncated read.
-func decodeStoppedAtCap(sampleCount int64) bool {
-	return sampleCount >= int64(waveformMaxDecodeSeconds)*int64(waveformSampleRate)
-}
-
 func computeWaveform(ctx context.Context, r io.Reader, expectedBytes int64) (*waveformResult, error) {
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-hide_banner",
@@ -123,7 +105,6 @@ func computeWaveform(ctx context.Context, r io.Reader, expectedBytes int64) (*wa
 		"-ar", fmt.Sprintf("%d", waveformSampleRate),
 		"-f", "s16le",
 		"-c:a", "pcm_s16le",
-		"-t", fmt.Sprintf("%d", waveformMaxDecodeSeconds),
 		// Backfill runs alongside transcoding, which caps itself at two threads
 		// per worker for the same reason. Decoding to PCM is essentially
 		// single-threaded anyway, so pinning this costs nothing and keeps a
@@ -185,18 +166,15 @@ func computeWaveform(ctx context.Context, r io.Reader, expectedBytes int64) (*wa
 	}
 
 	// A source that stopped early without erroring would otherwise yield a
-	// plausible-looking waveform for a fraction of the track.
+	// plausible-looking waveform for a fraction of the track. There is no
+	// length limit to confuse this with: however long the audio is, we decode
+	// all of it, so an incomplete read means the blob itself was incomplete.
 	//
-	// Except when we are the ones who stopped it. ffmpeg is given -t
-	// waveformMaxDecodeSeconds, so on a longer source it exits at the cap and
-	// the copier stops with the source unread -- indistinguishable here from a
-	// truncated blob by byte count alone. The sample count tells them apart,
-	// and conflating them reports a deliberate limit as a corrupt file and
-	// retries a multi-hour decode against a source that will never fit.
+	// Length needs no guard of its own. The accumulator halves as it fills, so
+	// memory is fixed however long the track runs, and the per-job context
+	// timeout already bounds wall clock -- which is the thing worth bounding,
+	// rather than duration as a stand-in for it.
 	if expectedBytes > 0 && src.n != expectedBytes {
-		if decodeStoppedAtCap(sampleCount) {
-			return nil, errWaveformSourceTooLong
-		}
 		return nil, fmt.Errorf("waveform: short read from source: got %d bytes, expected %d", src.n, expectedBytes)
 	}
 

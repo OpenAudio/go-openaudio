@@ -415,11 +415,6 @@ templ waveformSection(d *storagev1.GetStorageDiagnosticsResponse) {
 				// Not upload-keyed, so it is absent from every tile above
 				// rather than merely small. Shown only when non-zero: on a
 				// healthy node it is always zero and would be noise.
-				// Terminal and rare, so it earns a tile only when it happens --
-				// on most nodes this is a permanent zero.
-				if waveformStateCount(d.Waveforms, "too_long") > 0 {
-					@statCard("Too Long", waveformCount(d.Waveforms, "too_long"), "longer than the decode limit")
-				}
 				if d.Waveforms.OrphanRows > 0 {
 					@statCard("Unlinked Rows", fmt.Sprintf("%d", d.Waveforms.OrphanRows), "waveforms matching no upload")
 				}
