@@ -781,27 +781,12 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 		}
 	}
 
-	// delete over-replicated blobs:
-	// check all healthy nodes ahead of me in the preferred order to ensure they have it.
-	// if R+1 healthy nodes in front of me have it, I can safely delete.
-	// don't delete if we replicated the blob within the past week
+	// Delete blobs outside the rendezvous replica set once they have had a week
+	// to drain. StoreAll, StoreRecent, and explicitly placed blobs are retained
+	// by their respective policies instead.
 	wasReplicatedThisWeek := attrs.ModTime.After(time.Now().Add(-24 * 7 * time.Hour))
 
-	// by default retain blob if our rank < ReplicationFactor+2
-	// but nodes with more free disk space will use a higher threshold
-	// to accomidate "spill over" from nodes that might be full or down.
-	diskPercentFree := float64(ss.mediorumPathFree) / float64(ss.mediorumPathSize)
-	rankThreshold := ss.Config.ReplicationFactor + 2
-	if !ss.diskHasSpace() {
-		rankThreshold = ss.Config.ReplicationFactor
-	} else if diskPercentFree > 0.4 {
-		rankThreshold = ss.Config.ReplicationFactor * 3
-	} else if diskPercentFree > 0.2 {
-		rankThreshold = ss.Config.ReplicationFactor * 2
-	}
-
-	if !isPlaced && !ss.Config.StoreAll && !storeRecent && tracker.CleanupMode && alreadyHave && myRank > rankThreshold && !wasReplicatedThisWeek {
-		// if i'm the first node that over-replicated, keep the file for a week as a buffer since a node ahead of me in the preferred order will likely be down temporarily at some point
+	if !isPlaced && !ss.Config.StoreAll && !storeRecent && tracker.CleanupMode && alreadyHave && myRank >= ss.Config.ReplicationFactor && !wasReplicatedThisWeek {
 		tracker.mu.Lock()
 		tracker.Counters["delete_over_replicated_needed"]++
 		tracker.mu.Unlock()
