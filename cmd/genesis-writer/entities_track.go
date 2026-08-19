@@ -223,7 +223,10 @@ func fmtReleaseDate(t *time.Time) string {
 	if t == nil {
 		return ""
 	}
-	return t.UTC().Format(time.RFC3339)
+	// RFC3339Nano, not RFC3339: the plain layout has no fractional-second
+	// component, which silently rounded 26,129 tracks whose release_date
+	// carries microseconds down to the whole second.
+	return t.UTC().Format(time.RFC3339Nano)
 }
 
 func (w *Writer) writeTracks(ctx context.Context) error {
