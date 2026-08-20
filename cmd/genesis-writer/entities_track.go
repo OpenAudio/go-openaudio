@@ -143,7 +143,7 @@ type sourceTrack struct {
 // a column the writer forgets to carry is invisible in the output otherwise.
 func buildTrackMetadata(t sourceTrack, collaborators []int64) trackMetadataInner {
 	inner := trackMetadataInner{
-		CreatedAt:       t.CreatedAt.UTC().Format(time.RFC3339),
+		CreatedAt:       t.CreatedAt.UTC().Format(time.RFC3339Nano),
 		OwnerID:         t.OwnerID,
 		Title:           deref(t.Title),
 		Description:     deref(t.Description),
@@ -223,7 +223,10 @@ func fmtReleaseDate(t *time.Time) string {
 	if t == nil {
 		return ""
 	}
-	return t.UTC().Format(time.RFC3339)
+	// RFC3339Nano, not RFC3339: the plain layout has no fractional-second
+	// component, which silently rounded 26,129 tracks whose release_date
+	// carries microseconds down to the whole second.
+	return t.UTC().Format(time.RFC3339Nano)
 }
 
 func (w *Writer) writeTracks(ctx context.Context) error {
@@ -367,7 +370,7 @@ func (w *Writer) writeTrackDownloads(ctx context.Context) error {
 				City:      deref(d.City),
 				Region:    deref(d.Region),
 				Country:   deref(d.Country),
-				CreatedAt: d.CreatedAt.UTC().Format(time.RFC3339),
+				CreatedAt: d.CreatedAt.UTC().Format(time.RFC3339Nano),
 			}
 			metaJSON, err := json.Marshal(meta)
 			if err != nil {

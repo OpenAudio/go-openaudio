@@ -74,7 +74,7 @@ func (w *Writer) writeCommentPins(ctx context.Context) error {
 		func(ctx context.Context, p sourceCommentPin) error {
 			metaJSON, err := json.Marshal(commentPinMetadata{
 				EntityID:  p.TrackID,
-				CreatedAt: p.PinnedAt.UTC().Format(time.RFC3339),
+				CreatedAt: p.PinnedAt.UTC().Format(time.RFC3339Nano),
 			})
 			if err != nil {
 				return fmt.Errorf("marshal comment pin metadata for track %d: %w", p.TrackID, err)
