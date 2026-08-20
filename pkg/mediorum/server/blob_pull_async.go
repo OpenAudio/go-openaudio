@@ -27,6 +27,21 @@ const (
 
 	// asyncPullTimeout bounds one queued transfer. The request context cannot be
 	// used: it is cancelled the moment the handler returns 202.
+	//
+	// It also bounds how long the source must keep serving the blob. A
+	// synchronous pull enforced that structurally -- the sender held the
+	// connection, so it knew when the peer was finished reading its bucket.
+	// Answering 202 gives that up, so the source's retention is now an
+	// invariant nothing checks.
+	//
+	// It holds today with room to spare. The two paths that delete a blob are
+	// guarded by wall clock, not by replication: repair only drops an
+	// over-replicated blob whose ModTime is older than a week
+	// (wasReplicatedThisWeek), and prune only drops an unpublished upload older
+	// than unpublishedUploadAge, 30 days. Either is orders of magnitude beyond
+	// this timeout. Tightening one of them below it would break replication
+	// silently, since the puller would simply see the object vanish mid
+	// transfer.
 	asyncPullTimeout = 60 * time.Minute
 )
 
