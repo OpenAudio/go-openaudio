@@ -29,6 +29,9 @@ type emailAccessGrantInline struct {
 	ReceivingUserID int64  `json:"receiving_user_id"`
 	GrantorUserID   int64  `json:"grantor_user_id"`
 	EncryptedKey    string `json:"encrypted_key"`
+	// Which key the encrypted_key is wrapped against. Clients branch on it to
+	// decrypt, so a grant that replays without it cannot be opened at all.
+	IsInitial bool `json:"is_initial,omitempty"`
 }
 
 type sourceEncryptedEmail struct {
@@ -41,7 +44,7 @@ type sourceEncryptedEmail struct {
 func (w *Writer) writeEncryptedEmails(ctx context.Context) error {
 	// Pre-load email access grants keyed by email_owner_user_id.
 	accessRows, err := w.srcDB.Query(ctx,
-		`SELECT email_owner_user_id, receiving_user_id, grantor_user_id, encrypted_key
+		`SELECT email_owner_user_id, receiving_user_id, grantor_user_id, encrypted_key, is_initial
 		FROM email_access
 		ORDER BY email_owner_user_id`)
 	if err != nil {
@@ -53,13 +56,15 @@ func (w *Writer) writeEncryptedEmails(ctx context.Context) error {
 	for accessRows.Next() {
 		var ownerID, receivingID, grantorID int64
 		var encKey string
-		if err := accessRows.Scan(&ownerID, &receivingID, &grantorID, &encKey); err != nil {
+		var isInitial bool
+		if err := accessRows.Scan(&ownerID, &receivingID, &grantorID, &encKey, &isInitial); err != nil {
 			return fmt.Errorf("scan email_access: %w", err)
 		}
 		accessByOwner[ownerID] = append(accessByOwner[ownerID], emailAccessGrantInline{
 			ReceivingUserID: receivingID,
 			GrantorUserID:   grantorID,
 			EncryptedKey:    encKey,
+			IsInitial:       isInitial,
 		})
 	}
 	if err := accessRows.Err(); err != nil {

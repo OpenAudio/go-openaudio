@@ -45,10 +45,10 @@ func (h *encryptedEmailHandler) Handle(ctx context.Context, params *Params) erro
 
 	for _, g := range grantList {
 		_, err = params.DBTX.Exec(ctx, `
-			INSERT INTO email_access (email_owner_user_id, receiving_user_id, grantor_user_id, encrypted_key)
-			VALUES ($1, $2, $3, $4)
+			INSERT INTO email_access (email_owner_user_id, receiving_user_id, grantor_user_id, encrypted_key, is_initial)
+			VALUES ($1, $2, $3, $4, $5)
 			ON CONFLICT (email_owner_user_id, receiving_user_id, grantor_user_id) DO NOTHING
-		`, ownerID, g.receivingUserID, g.grantorUserID, g.encryptedKey)
+		`, ownerID, g.receivingUserID, g.grantorUserID, g.encryptedKey, g.isInitial)
 		if err != nil {
 			return err
 		}
@@ -90,10 +90,10 @@ func (h *emailAccessHandler) Handle(ctx context.Context, params *Params) error {
 		}
 
 		_, err = params.DBTX.Exec(ctx, `
-			INSERT INTO email_access (email_owner_user_id, receiving_user_id, grantor_user_id, encrypted_key)
-			VALUES ($1, $2, $3, $4)
+			INSERT INTO email_access (email_owner_user_id, receiving_user_id, grantor_user_id, encrypted_key, is_initial)
+			VALUES ($1, $2, $3, $4, $5)
 			ON CONFLICT (email_owner_user_id, receiving_user_id, grantor_user_id) DO NOTHING
-		`, ownerID, g.receivingUserID, g.grantorUserID, g.encryptedKey)
+		`, ownerID, g.receivingUserID, g.grantorUserID, g.encryptedKey, g.isInitial)
 		if err != nil {
 			return err
 		}
@@ -106,6 +106,10 @@ type accessGrant struct {
 	receivingUserID int64
 	grantorUserID   int64
 	encryptedKey    string
+	// isInitial says which key encryptedKey is wrapped against: a shared
+	// EMAIL_ENCRYPTION_UUID when true, the email owner's user id when false.
+	// Clients branch on it to decrypt, so it has to survive a replay.
+	isInitial bool
 }
 
 // parseAccessGrants extracts and validates access_grants from metadata.
@@ -146,11 +150,15 @@ func parseAccessGrants(params *Params) ([]accessGrant, error) {
 		if !ok {
 			return nil, NewValidationError("grantor_user_id must be a number")
 		}
+		// Optional: absent means the default scheme, which is what every
+		// client-written grant uses.
+		isInitial, _ := gMap["is_initial"].(bool)
 
 		result = append(result, accessGrant{
 			receivingUserID: int64(receivingID),
 			grantorUserID:   int64(grantorID),
 			encryptedKey:    encKey,
+			isInitial:       isInitial,
 		})
 	}
 	return result, nil
