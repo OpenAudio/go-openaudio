@@ -96,20 +96,44 @@ func (ss *MediorumServer) getStorageProof(ctx context.Context, cid string, nonce
 	return proofHash[:], nil
 }
 
+// storageProofMinUploadAge is how settled an upload must be before it can be
+// selected as a proof-of-storage challenge target.
+const storageProofMinUploadAge = time.Hour
+
 func (ss *MediorumServer) getStorageProofCIDFromBlockhash(blockhash []byte) (string, error) {
 	fauxCid, err := cidutil.ComputeRawDataCID(blockhash)
 	if err != nil {
 		return "", err
 	}
+	// Only challenge uploads old enough to have replicated, and never ones that
+	// failed. Both predicates have to appear on the wrap-around query too, or it
+	// hands back exactly what the first one excluded.
+	//
+	// This does more than spare one node an unprovable challenge. Every node
+	// picks its own CID from its own uploads table by nearest neighbour, so a
+	// row that one node has and another does not changes which CID that node
+	// challenges at all -- not merely whether it holds the blob. An upload that
+	// has not reached the whole fleet yet desynchronises the challenge itself,
+	// and the prover-address tally that produces failure rows along with it.
+	//
+	// An hour, rather than the ten minutes the original TODO proposed: the bound
+	// has to cover op propagation to peers plus replication of a multi-gigabyte
+	// blob, which is deliberately unbounded. Excluding the last hour costs
+	// nothing against a corpus this size.
+	//
+	// status <> error drops rows whose orig_file_cid was assigned before the
+	// failure that stopped them being stored (see handleUploadError) -- CIDs no
+	// node ever held.
+	eligibleBefore := time.Now().UTC().Add(-storageProofMinUploadAge)
+
 	var upload Upload
-	// TODO: only use CID's at least 10 minutes old?
 	err = ss.crud.DB.
-		Where("orig_file_cid > ?", fauxCid).
+		Where("orig_file_cid > ? AND created_at < ? AND status <> ?", fauxCid, eligibleBefore, JobStatusError).
 		Order("orig_file_cid").
 		First(&upload).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		err = ss.crud.DB.
-			Where("orig_file_cid < ?", fauxCid).
+			Where("orig_file_cid < ? AND created_at < ? AND status <> ?", fauxCid, eligibleBefore, JobStatusError).
 			Order("orig_file_cid").
 			First(&upload).Error
 	}
