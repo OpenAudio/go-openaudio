@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Waveform peaks viewer</title>
+<style>
+  :root {
+    --bg: #12131a; --panel: #1b1d27; --border: #2c2f3d;
+    --text: #e6e8f0; --muted: #969ab0; --accent: #ff8b4e;
+    --ok: #4ade80; --warn: #fbbf24; --err: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; margin-bottom: 10px;
+  }
+  .controls + .controls { margin-bottom: 16px; }
+  label { color: var(--muted); font-size: 12px; }
+  input[type=text] {
+    background: #0e0f15; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 7px 9px; font: inherit; flex: 1; min-width: 240px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  }
+  input[type=file] { font-size: 12px; color: var(--muted); max-width: 260px; }
+  button {
+    background: var(--accent); color: #1a1206; border: 0; border-radius: 6px;
+    padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); font-weight: 500; }
+  button:disabled { opacity: .45; cursor: default; }
+  .or { color: var(--muted); font-size: 12px; text-align: center; margin: 0 0 10px; }
+  #status { margin-bottom: 16px; min-height: 20px; font-size: 13px; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px; margin-bottom: 14px;
+  }
+  .panel h2 { font-size: 13px; margin: 0 0 2px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .panel .note { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+  .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
+  .tag.node { background: rgba(255,139,78,.16); color: var(--accent); }
+  .tag.ref { background: rgba(148,163,184,.16); color: var(--muted); }
+  .meta { display: flex; flex-wrap: wrap; gap: 18px; font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+  .meta b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .transport { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .callout {
+    border-left: 2px solid var(--accent); background: rgba(255,139,78,.06);
+    padding: 10px 12px; border-radius: 0 6px 6px 0; color: var(--muted);
+    font-size: 12px; margin-bottom: 16px;
+  }
+  .callout b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Waveform peaks viewer</h1>
+  <p class="sub">
+    Compares a validator node's precomputed <code>/waveform/:cid</code> against wavesurfer
+    decoding the same audio.
+  </p>
+
+  <div class="controls">
+    <label for="file">Upload &amp; compare</label>
+    <input type="file" id="file" accept="audio/*">
+    <button id="upload" disabled>Upload to node</button>
+  </div>
+  <p class="or">or load a CID already on the node</p>
+  <div class="controls">
+    <label for="cid">320 CID</label>
+    <input type="text" id="cid" placeholder="baeaaaiqse..." spellcheck="false">
+    <button id="load" class="ghost">Load</button>
+  </div>
+
+  <div id="status"></div>
+
+  <div class="callout">
+    <b>Expect the two to differ in spikiness.</b>
+    The node stores per-bucket <b>RMS</b> — average energy — while wavesurfer's default rendering
+    draws per-bucket <b>peak</b>, the loudest single sample. Peak rendering is spikier and reaches
+    full height more often; RMS is flatter and smoother. The overall envelope should still track.
+    Each is normalized to its own maximum, so absolute heights are not comparable either.
+  </div>
+
+  <div class="meta" id="meta" hidden>
+    <span>version <b id="m-version">–</b></span>
+    <span>buckets <b id="m-buckets">–</b></span>
+    <span>sample rate <b id="m-rate">–</b></span>
+    <span>duration <b id="m-dur">–</b></span>
+    <span>payload <b id="m-bytes">–</b></span>
+  </div>
+
+  <div class="transport" id="transport" hidden>
+    <button id="play" class="ghost" disabled>Play</button>
+    <span class="time"><span id="cur">0:00</span> / <span id="tot">0:00</span></span>
+  </div>
+
+  <div class="panel">
+    <h2><span class="tag node">from node</span> Precomputed peaks (RMS)</h2>
+    <p class="note">Drawn from 750 bytes. No audio downloaded or decoded.</p>
+    <div id="wave-node"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="tag ref">reference</span> wavesurfer decoding the file (peak)</h2>
+    <p class="note" id="refnote">Pick or upload a file above to render this.</p>
+    <div id="wave-ref"></div>
+  </div>
+</div>
+
+<script type="module">
+import WaveSurfer from 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js'
+
+const $ = id => document.getElementById(id)
+const say = (msg, cls = '') =>
+  $('status').innerHTML = cls ? `<span class="${cls}">${msg}</span>` : msg
+
+const fmt = s => isFinite(s) && s > 0
+  ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '0:00'
+
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+let wsNode = null, wsRef = null, objectUrl = null
+
+// normalize matters: the node's peaks are already scaled to their own maximum,
+// so without it the reference panel is drawn at raw amplitude and a track
+// mastered below full scale renders as a flat line next to a full-height one --
+// a difference in gain staging, read as a difference in the waveforms.
+const common = {
+  waveColor: '#5d6377', progressColor: '#ff8b4e', cursorColor: '#e6e8f0',
+  barWidth: 2, height: 96, normalize: true,
+}
+
+// Peaks arrive base64-encoded because Go marshals []byte that way. Decode to
+// bytes, then scale 0..255 into the 0..1 wavesurfer expects.
+function decodePeaks(b64) {
+  const bin = atob(b64)
+  const out = new Float32Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) / 255
+  return out
+}
+
+// With peaks and no audio the only paint happens inside create(), so build on
+// a later turn and pass the element rather than a selector -- both were needed
+// to stop the panel coming up blank.
+//
+// The frame callback is the right moment but not a guarantee: a throttled or
+// backgrounded tab may never run it, and gating the only resolve on it leaves
+// the caller waiting forever. Whichever fires first wins.
+function createPeaksView(id, peaks, duration) {
+  return new Promise(resolve => {
+    let built = false
+    const build = () => {
+      if (built) return
+      built = true
+      resolve(WaveSurfer.create({ ...common, container: $(id), peaks: [peaks], duration }))
+    }
+    requestAnimationFrame(build)
+    setTimeout(build, 100)
+  })
+}
+
+function destroyNode() { try { wsNode?.destroy() } catch {} ; wsNode = null }
+function destroyRef() {
+  try { wsRef?.destroy() } catch {} ; wsRef = null
+  if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null }
+  $('play').disabled = true
+  $('play').textContent = 'Play'
+  $('cur').textContent = '0:00'
+}
+
+function renderLocal(file) {
+  destroyRef()
+  objectUrl = URL.createObjectURL(file)
+  wsRef = WaveSurfer.create({ ...common, container: $('wave-ref'), url: objectUrl })
+  wsRef.on('ready', () => {
+    $('play').disabled = false
+    $('transport').hidden = false
+    $('refnote').innerHTML = `Decoded <code>${file.name}</code> locally, ${fmt(wsRef.getDuration())}.`
+  })
+  wsRef.on('timeupdate', t => {
+    $('cur').textContent = fmt(t)
+    const d = wsRef.getDuration()
+    if (d && wsNode) wsNode.seekTo(Math.min(t / d, 1))
+  })
+  wsRef.on('finish', () => $('play').textContent = 'Play')
+  wsRef.on('interaction', () => {
+    const d = wsRef.getDuration()
+    if (d && wsNode) wsNode.seekTo(Math.min(wsRef.getCurrentTime() / d, 1))
+  })
+}
+
+async function fetchWaveform(cid) {
+  const res = await fetch(`/api/waveform/${encodeURIComponent(cid)}`)
+  if (res.status === 200) return { ok: true, data: await res.json() }
+  return { ok: false, status: res.status }
+}
+
+async function showWaveform(cid) {
+  const { ok, data, status } = await fetchWaveform(cid)
+  if (!ok) {
+    const msgs = {
+      202: ['warn', '202 — the node has queued analysis. Try again shortly.'],
+      403: ['err', '403 — CID is delisted, so the waveform is withheld too.'],
+      404: ['err', '404 — no waveform. The node may not hold this blob, or has waveforms disabled.'],
+      502: ['err', '502 — could not reach the node. Is the devnet up?'],
+    }
+    const [cls, msg] = msgs[status] || ['err', `HTTP ${status} from the node.`]
+    say(msg, cls)
+    return false
+  }
+
+  const peaks = decodePeaks(data.peaks)
+  const duration = data.duration_ms / 1000
+  $('m-version').textContent = data.version
+  $('m-buckets').textContent = data.buckets
+  $('m-rate').textContent = `${data.sample_rate} Hz`
+  $('m-dur').textContent = fmt(duration)
+  $('m-bytes').textContent = `${peaks.length} B`
+  $('meta').hidden = false
+  $('tot').textContent = fmt(duration)
+  $('transport').hidden = false
+
+  destroyNode()
+  wsNode = await createPeaksView('wave-node', peaks, duration)
+  return true
+}
+
+// -- upload -------------------------------------------------------------
+
+async function uploadAndCompare() {
+  const file = $('file').files?.[0]
+  if (!file) return say('Choose an audio file first.', 'warn')
+
+  $('upload').disabled = true
+  destroyNode()
+  $('meta').hidden = true
+  $('cid').value = ''
+
+  // Draw the local file straight away; the node side takes a transcode.
+  renderLocal(file)
+
+  say(`Uploading ${file.name}…`)
+  const form = new FormData()
+  form.append('files', file)
+  form.append('template', 'audio')
+
+  let up
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: form })
+    if (!res.ok) {
+      $('upload').disabled = false
+      return say(`Upload failed: HTTP ${res.status}`, 'err')
+    }
+    up = (await res.json())[0]
+  } catch (e) {
+    $('upload').disabled = false
+    return say(`Upload failed: ${e.message}`, 'err')
+  }
+  if (!up?.id) {
+    $('upload').disabled = false
+    return say('Upload returned no id.', 'err')
+  }
+
+  // Transcode, then analysis. Both are background work on the node, so this
+  // polls rather than assuming either is done.
+  say(`Uploaded as <code>${up.id}</code>. Waiting for the 320 transcode…`)
+  let cid = ''
+  for (let i = 0; i < 120 && !cid; i++) {
+    await sleep(2000)
+    const r = await fetch(`/api/upload/${encodeURIComponent(up.id)}`)
+    if (!r.ok) continue
+    const u = await r.json()
+    cid = u?.results?.['320'] || ''
+    if (!cid && u?.status === 'error') {
+      $('upload').disabled = false
+      return say(`Transcode failed: ${u.error || 'unknown error'}`, 'err')
+    }
+  }
+  if (!cid) {
+    $('upload').disabled = false
+    return say('Timed out waiting for the transcode.', 'err')
+  }
+
+  $('cid').value = cid
+  say(`Transcoded. Waiting for the waveform on <code>${cid}</code>…`)
+  for (let i = 0; i < 60; i++) {
+    if (await showWaveform(cid)) {
+      $('upload').disabled = false
+      return say('Same file both panels — node RMS above, wavesurfer peak below.', 'ok')
+    }
+    await sleep(2000)
+  }
+  $('upload').disabled = false
+  say('Timed out waiting for the waveform. The node may have waveforms disabled.', 'err')
+}
+
+// -- wiring -------------------------------------------------------------
+
+$('file').onchange = () => {
+  const f = $('file').files?.[0]
+  $('upload').disabled = !f
+  if (f) {
+    renderLocal(f)
+    say('File loaded locally. Upload it to compare against the node.', 'ok')
+  }
+}
+$('upload').onclick = uploadAndCompare
+
+$('load').onclick = async () => {
+  const cid = $('cid').value.trim()
+  if (!cid) return say('Enter a 320 CID.', 'warn')
+  say('Fetching waveform…')
+  if (await showWaveform(cid)) {
+    say($('file').files?.[0]
+      ? 'Loaded. Note the panels may be different audio unless you uploaded this file.'
+      : 'Loaded. Pick the matching file above to compare.', 'ok')
+  }
+}
+$('cid').addEventListener('keydown', e => { if (e.key === 'Enter') $('load').click() })
+
+$('play').onclick = () => {
+  if (!wsRef) return
+  wsRef.playPause()
+  $('play').textContent = wsRef.isPlaying() ? 'Pause' : 'Play'
+}
+
+const qs = new URLSearchParams(location.search)
+if (qs.get('cid')) {
+  $('cid').value = qs.get('cid')
+  const go = () => $('load').click()
+  if (document.readyState === 'complete') go()
+  else window.addEventListener('load', go, { once: true })
+}
+</script>
+</body>
+</html>
