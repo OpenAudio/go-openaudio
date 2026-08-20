@@ -1,0 +1,12 @@
+-- email_access.is_initial records which encryption scheme produced the row's
+-- encrypted_key, and clients branch on it to pick the decryption key:
+--
+--   is_initial = true  -> key is wrapped against a shared EMAIL_ENCRYPTION_UUID
+--   is_initial = false -> key is wrapped against the email owner's user id
+--
+-- It was set by a one-time backfill of pre-existing grants (see the reference
+-- schema's 0114/0116 migrations); everything written since by normal client
+-- activity takes the default. Without the column a migrated database reports
+-- false for every grant, so a client derives the wrong key and cannot decrypt
+-- the email at all -- 89% of grants on the 2026-08-16 snapshot.
+ALTER TABLE email_access ADD COLUMN IF NOT EXISTS is_initial boolean NOT NULL DEFAULT false;
