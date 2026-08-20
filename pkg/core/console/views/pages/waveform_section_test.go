@@ -208,3 +208,50 @@ func TestUnlinkedRowsTileAppearsOnlyWhenNonZero(t *testing.T) {
 		t.Fatalf("the tile must say what it counts:\n%s", broken)
 	}
 }
+
+// A converged node runs a pass that ends in seconds and then sits idle until
+// the next re-walk. Reporting only when it started makes that look like work
+// still in progress -- the state it is actually in is "finished, a while ago".
+func TestFinishedBackfillReportsWhenItEndedNotWhenItBegan(t *testing.T) {
+	started := time.Now().Add(-6 * time.Hour)
+	html := renderWaveforms(t, &storagev1.WaveformStatus{
+		Enabled: true, BackfillEnabled: true,
+		Run: &storagev1.WaveformRun{
+			Exhausted: true,
+			StartedAt: timestamppb.New(started),
+			UpdatedAt: timestamppb.New(started.Add(47 * time.Second)),
+			Queued:    13,
+		},
+	})
+	if !strings.Contains(html, "caught up") {
+		t.Fatalf("an exhausted pass is caught up:\n%s", html)
+	}
+	if !strings.Contains(html, "finished") {
+		t.Fatalf("must say when the pass ended:\n%s", html)
+	}
+	if !strings.Contains(html, "took") {
+		t.Fatalf("must say how long it took, which is what shows it is not still running:\n%s", html)
+	}
+	if strings.Contains(html, "started") {
+		t.Fatalf("a finished pass must not lead with its start time:\n%s", html)
+	}
+}
+
+// A pass still walking is the case where the start time is the useful fact.
+func TestRunningBackfillStillReportsItsStart(t *testing.T) {
+	html := renderWaveforms(t, &storagev1.WaveformStatus{
+		Enabled: true, BackfillEnabled: true,
+		Run: &storagev1.WaveformRun{
+			Exhausted: false,
+			StartedAt: timestamppb.New(time.Now().Add(-90 * time.Minute)),
+			UpdatedAt: timestamppb.New(time.Now().Add(-10 * time.Second)),
+			Fraction:  0.42,
+		},
+	})
+	if !strings.Contains(html, "started") {
+		t.Fatalf("a running pass reports when it began:\n%s", html)
+	}
+	if !strings.Contains(html, "last checkpoint") {
+		t.Fatalf("and its checkpoint age, which is what separates working from wedged:\n%s", html)
+	}
+}

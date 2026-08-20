@@ -329,6 +329,27 @@ func waveformCount(w *storagev1.WaveformStatus, state string) string {
 	return fmt.Sprintf("%d", waveformStateCount(w, state))
 }
 
+// waveformRunTiming describes a pass in the terms that matter for its state:
+// how long a running one has been going, and when a finished one ended.
+func waveformRunTiming(r *storagev1.WaveformRun) string {
+	if r.StartedAt == nil {
+		return ""
+	}
+	started := r.StartedAt.AsTime()
+	if !r.Exhausted {
+		return "started " + formatRelative(started)
+	}
+	if r.UpdatedAt == nil {
+		return "started " + formatRelative(started)
+	}
+	finished := r.UpdatedAt.AsTime()
+	line := "finished " + formatRelative(finished)
+	if took := finished.Sub(started); took > 0 {
+		line += ", took " + formatDuration(int64(took))
+	}
+	return line
+}
+
 func waveformRunLabel(r *storagev1.WaveformRun) string {
 	if r == nil {
 		return "not started"
@@ -463,9 +484,11 @@ templ waveformBackfillCard(w *storagev1.WaveformStatus) {
 			<div class="text-sm text-secondary">not started</div>
 		} else {
 			<div class="text-sm text-secondary">{ waveformRunLabel(w.Run) }</div>
-			if w.Run.StartedAt != nil {
-				<div class="text-xs text-secondary mt-1">started { formatRelative(w.Run.StartedAt.AsTime()) }</div>
-			}
+			// A finished pass wants to say when it finished and how long it
+			// took. Reporting only when it started reads as still running --
+			// especially once converged, where a pass ends in seconds and then
+			// sits for hours until the next re-walk.
+			<div class="text-xs text-secondary mt-1">{ waveformRunTiming(w.Run) }</div>
 			if !w.Run.Exhausted {
 				<div class="text-xs text-secondary mt-1">{ waveformProgressLine(w.Run) }</div>
 				if w.Run.CursorCreatedAt != nil {
