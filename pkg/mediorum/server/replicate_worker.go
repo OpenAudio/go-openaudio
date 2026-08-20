@@ -171,8 +171,10 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 
 	// Collect results
 	newSuccessHosts := []string{}
+	pullInProgress := false
 	for result := range resultsChan {
 		if errors.Is(result.err, errPeerPullInProgress) {
+			pullInProgress = true
 			// The peer owns this transfer now. Recording a mirror would be a
 			// claim we cannot back, and logging a failure would be wrong too.
 			// The next sweep asks again and gets already_present -- the peer
@@ -195,6 +197,18 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 		} else {
 			newSuccessHosts = append(newSuccessHosts, result.host)
 		}
+	}
+
+	// A handoff resolved nothing, so this attempt must not arm the
+	// under-replication backoff. findMissedReplications sets that marker when it
+	// queues an upload and its TTL is an hour, which suits an attempt that
+	// definitively failed. A transfer still running at the next five minute
+	// sweep would otherwise suppress the confirming already_present for the rest
+	// of the hour -- and the blobs that take longest to transfer are exactly the
+	// ones this path exists to carry, so that would be the common case for them
+	// rather than an edge.
+	if pullInProgress {
+		ss.replicationAttempts.Remove(upload.ID)
 	}
 
 	// No replications succeeded; skip the DB read and Core operation relay.
