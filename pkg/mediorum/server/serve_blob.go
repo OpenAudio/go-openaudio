@@ -610,7 +610,18 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 	}
 	defer blob.Close()
 
-	return c.Stream(200, blob.ContentType(), blob)
+	// ServeContent rather than c.Stream: it answers Range requests with 206 and
+	// a Content-Range, which is what lets a peer fetch this blob in bounded
+	// chunks. c.Stream ignores Range and always returns the whole body, so a
+	// backend that cannot presign -- file://, which is a supported production
+	// storage driver, not only a dev convenience -- would otherwise force the
+	// receiver back onto a single unbounded stream.
+	//
+	// Content-Type is set explicitly because ServeContent would otherwise sniff
+	// it or guess from the name, and a bare cid carries no extension.
+	c.Response().Header().Set(echo.HeaderContentType, blob.ContentType())
+	http.ServeContent(c.Response(), c.Request(), cid, blob.ModTime(), blob)
+	return nil
 }
 
 type internalBlobPullRequest struct {
@@ -628,6 +639,14 @@ type internalBlobPullRequest struct {
 	// analysis targets -- decoding them costs an ffmpeg subprocess each to
 	// produce a waveform for a cid nothing will ever ask about.
 	Transcoded bool `json:"transcoded,omitempty"`
+	// Async asks this node to accept the transfer and run it in the background,
+	// answering 202 rather than holding the sender open for its duration.
+	//
+	// Opt-in, and that is what makes a rolling deploy uneventful. A sender that
+	// predates the field sends nothing and gets the synchronous path it expects;
+	// a peer that predates it ignores the flag and also stays synchronous. The
+	// sender only stops waiting when both ends understand the handoff.
+	Async bool `json:"async,omitempty"`
 }
 
 func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
@@ -655,6 +674,23 @@ func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
 	}
 	if !ss.diskHasSpaceForCID(request.CID, request.PlacementHosts) {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "disk is too full to accept new blobs"})
+	}
+
+	if request.Async {
+		job := asyncPullJob{
+			sourceHost:     sourceHost,
+			cid:            request.CID,
+			placementHosts: request.PlacementHosts,
+			uploadID:       request.UploadID,
+			transcoded:     request.Transcoded,
+		}
+		if err := ss.enqueueAsyncPull(job); err != nil {
+			// Busy, not incapable. 503 keeps the sender off the multipart
+			// fallback, which would push the bytes at a node that just said it
+			// had no room to work.
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusAccepted, map[string]string{"status": "accepted"})
 	}
 
 	err := ss.pullFileFromHostValidated(c.Request().Context(), sourceHost, request.CID, request.PlacementHosts, request.UploadID, request.Transcoded)

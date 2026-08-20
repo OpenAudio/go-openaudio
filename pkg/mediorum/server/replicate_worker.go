@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -171,6 +172,17 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 	// Collect results
 	newSuccessHosts := []string{}
 	for result := range resultsChan {
+		if errors.Is(result.err, errPeerPullInProgress) {
+			// The peer owns this transfer now. Recording a mirror would be a
+			// claim we cannot back, and logging a failure would be wrong too.
+			// The next sweep asks again and gets already_present -- the peer
+			// reporting what is actually in its bucket, which is a better
+			// signal than anything it could have promised us here.
+			ss.logger.Debug("peer accepted blob pull; awaiting confirmation on a later sweep",
+				zap.String("host", result.host),
+				zap.String("cid", cid))
+			continue
+		}
 		if result.err != nil {
 			fileType := "file"
 			if isTranscoded {

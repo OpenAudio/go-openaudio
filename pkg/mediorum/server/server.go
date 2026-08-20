@@ -138,8 +138,14 @@ type MediorumServer struct {
 	rendezvousHasher *common.RendezvousHasher
 	transcodeWork    chan *Upload
 	replicationWork  chan *Upload
-	waveformWork     chan waveformJob
-	ethService       ethv1connect.EthServiceHandler
+
+	// Bounded queue for transfers a peer handed off with 202. The limit lives
+	// here because the sender no longer blocks for the duration.
+	asyncPullQueue    chan asyncPullJob
+	asyncPullInFlight map[string]struct{}
+	asyncPullMu       sync.Mutex
+	waveformWork      chan waveformJob
+	ethService        ethv1connect.EthServiceHandler
 
 	// isDbLocalhost is reported by the health check. Derived once from the
 	// parsed connection config below, since the DSN can't change at runtime.
@@ -456,10 +462,12 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		// Buffered, unlike the audio-analysis channel: the sweeps must not
 		// block on a full queue, and the route enqueues opportunistically and
 		// gives up rather than waiting.
-		waveformWork:    make(chan waveformJob, 256),
-		replicationWork: make(chan *Upload, 100),
-		posChannel:      posChannel,
-		pruneTrigger:    make(chan pruneRequest, 1),
+		waveformWork:      make(chan waveformJob, 256),
+		replicationWork:   make(chan *Upload, 100),
+		asyncPullQueue:    make(chan asyncPullJob, asyncPullQueueDepth),
+		asyncPullInFlight: map[string]struct{}{},
+		posChannel:        posChannel,
+		pruneTrigger:      make(chan pruneRequest, 1),
 
 		peerHealths:           map[string]*PeerHealth{},
 		redirectCache:         imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
@@ -674,6 +682,7 @@ func (ss *MediorumServer) MustStart() error {
 		ss.lc.AddManagedRoutine("waveform analyzer", ss.startWaveformAnalyzer)
 	}
 	ss.lc.AddManagedRoutine("replication workers", ss.startReplicationWorkers)
+	ss.lc.AddManagedRoutine("async blob pull workers", ss.startAsyncPullWorkers)
 
 	ss.lc.AddManagedRoutine("pruner", ss.startPruner)
 

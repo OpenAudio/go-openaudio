@@ -29,6 +29,12 @@ var (
 	errPeerPullUnsupported   = errors.New("peer does not support pull replication")
 	errPeerPullFailed        = errors.New("peer could not pull blob")
 	errPulledBlobCIDMismatch = errors.New("pulled blob CID mismatch")
+	// errPeerPullInProgress means the peer accepted the transfer and is running
+	// it in the background. Not a success -- there is no mirror yet -- and not a
+	// failure, so it must not be logged as one, and above all must not fall
+	// through to the multipart push, which would send the peer the very bytes it
+	// is already fetching.
+	errPeerPullInProgress = errors.New("peer accepted pull; transfer in progress")
 )
 
 const maxPeerErrorBytes = 8 << 10
@@ -273,7 +279,7 @@ func (ss *MediorumServer) replicateStoredFileToHost(
 		if err == nil {
 			return nil
 		}
-		if !errors.Is(err, errPeerPullUnsupported) && !errors.Is(err, errPeerPullFailed) {
+		if !isPullFallbackWorthy(err) {
 			return err
 		}
 		ss.logger.Debug("falling back to multipart blob replication",
@@ -292,12 +298,24 @@ func (ss *MediorumServer) replicateStoredFileToHost(
 	return ss.replicateFileToHost(ctx, peer, fileName, reader, placementHosts)
 }
 
+// isPullFallbackWorthy reports whether a failed pull should be retried by
+// pushing the bytes over multipart instead.
+//
+// Only two answers qualify: the peer cannot do pull at all, or it tried and
+// failed. Everything else must not be sent bytes -- a 503 means the peer is out
+// of room to work, and pushing at it is the worst possible response; a 202
+// means it is already fetching them itself.
+func isPullFallbackWorthy(err error) bool {
+	return errors.Is(err, errPeerPullUnsupported) || errors.Is(err, errPeerPullFailed)
+}
+
 func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string, placementHosts []string, uploadID string, transcoded bool) error {
 	payload, err := json.Marshal(internalBlobPullRequest{
 		CID:            cid,
 		PlacementHosts: placementHosts,
 		UploadID:       uploadID,
 		Transcoded:     transcoded,
+		Async:          true,
 	})
 	if err != nil {
 		return err
@@ -325,6 +343,8 @@ func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string,
 	case http.StatusOK:
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxPeerErrorBytes))
 		return nil
+	case http.StatusAccepted:
+		return errPeerPullInProgress
 	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxPeerErrorBytes))
 		return fmt.Errorf("%w: %s", errPeerPullUnsupported, resp.Status)
@@ -459,27 +479,25 @@ func (ss *MediorumServer) openBlobFromHost(ctx context.Context, host, cid string
 	if host == ss.Config.Self.Host {
 		return nil, errors.New("should not pull blob from self")
 	}
-	u := apiPath(host, "internal/blobs", url.PathEscape(cid))
-
-	req, err := signature.SignedGet(ctx, u, ss.Config.privateKey, ss.Config.Self.Host)
-	if err != nil {
-		return nil, err
-	}
 	// The peer's GET endpoint uses hot-first-then-archive fallback, so it
 	// finds the blob without placement context. Placement only governs the
 	// receiver's local write after this stream is validated.
-
-	resp, err := ss.peerHTTPClient.Do(req)
-	if err != nil {
+	//
+	// The body arrives as a series of ranged requests rather than one open
+	// stream, so peerHTTPClient's timeout bounds a known quantity of bytes
+	// instead of a whole transfer of unknown size. Callers see an ordinary
+	// ReadCloser either way.
+	r := &chunkedBlobReader{
+		ctx:    ctx,
+		ss:     ss,
+		cid:    cid,
+		host:   host,
+		origin: apiPath(host, "internal/blobs", url.PathEscape(cid)),
+	}
+	if err := r.start(); err != nil {
 		return nil, err
 	}
-
-	if resp.StatusCode != 200 {
-		resp.Body.Close()
-		return nil, fmt.Errorf("pull blob: bad status: %d cid: %s host: %s", resp.StatusCode, cid, host)
-	}
-
-	return resp.Body, nil
+	return r, nil
 }
 
 // diskWarnInterval caps how often each dsnHasSpace warn is emitted per DSN.
