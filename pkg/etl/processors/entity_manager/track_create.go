@@ -300,7 +300,7 @@ func insertTrackAndRouteWithState(ctx context.Context, params *Params, state tra
 	if err := updateTrackPriceHistory(ctx, params.DBTX, params.EntityID, params.BlockNumber, params.BlockTime, params.Metadata); err != nil {
 		return err
 	}
-	if err := applyAccessNormalization(ctx, params.DBTX, params.EntityID, params.Metadata); err != nil {
+	if err := applyAccessNormalization(ctx, params.DBTX, params.EntityID, params.Metadata, params.RawMetadata); err != nil {
 		return err
 	}
 
