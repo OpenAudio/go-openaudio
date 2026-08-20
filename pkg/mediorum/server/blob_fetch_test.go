@@ -70,6 +70,36 @@ func TestChunkedBlobReaderFetchesInRanges(t *testing.T) {
 	require.Greater(t, requests.Load(), int64(1), "fetched in a single request; chunking did not happen")
 }
 
+// Every chunk after the first is a fresh request, so each must carry the peer
+// signature -- the whole transfer is unauthenticated past byte one otherwise.
+// This is the file:// path: no redirect, so the target stays the peer itself and
+// signTarget must stay true. A test server that ignores Authorization would pass
+// either way, so this one rejects unsigned requests.
+func TestChunkedBlobReaderSignsEveryChunkAgainstThePeer(t *testing.T) {
+	ss := blobFetchTestServer(t)
+	body := bytes.Repeat([]byte("signed"), 4096)
+
+	var signed, unsigned atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			unsigned.Add(1)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		signed.Add(1)
+		http.ServeContent(w, r, "blob", time.Unix(0, 0), bytes.NewReader(body))
+	}))
+	defer srv.Close()
+
+	withChunkSize(t, len(body)/3)
+
+	got, err := readAllFrom(t, ss, srv.URL)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(body, got))
+	require.Zero(t, unsigned.Load(), "a chunk was fetched without the peer signature")
+	require.Greater(t, signed.Load(), int64(1), "only one request; the multi-chunk path did not run")
+}
+
 // An older peer still on c.Stream ignores Range and returns the whole body.
 // The reader must consume that rather than re-requesting ranges it won't honour.
 func TestChunkedBlobReaderFallsBackWhenRangeIgnored(t *testing.T) {

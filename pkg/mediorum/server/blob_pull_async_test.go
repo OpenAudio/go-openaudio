@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -8,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
+	"github.com/erni27/imcache"
 	"github.com/stretchr/testify/require"
 )
 
@@ -163,4 +166,46 @@ func TestQueueFullDoesNotTriggerMultipartFallback(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, isPullFallbackWorthy(err),
 		"a busy peer would be sent the bytes over multipart")
+}
+
+// findMissedReplications arms an hour-long backoff when it queues an upload,
+// which suits an attempt that definitively failed. A 202 has not failed and has
+// not succeeded, so leaving the marker set would suppress the confirming
+// already_present for the rest of the hour -- and for a blob big enough to still
+// be transferring at the next five minute sweep, which is precisely what this
+// change exists to carry, that is the ordinary case rather than an edge.
+func TestPullInProgressClearsTheReplicationBackoff(t *testing.T) {
+	ss := testNetwork[0]
+
+	// A real blob in the local bucket: replicateToHosts sources from there and
+	// returns early if it is absent, which would skip the branch under test.
+	content := "backoff regression fixture"
+	cid, err := cidutil.ComputeFileCID(bytes.NewReader([]byte(content)))
+	require.NoError(t, err)
+	putInternalBlobTestObject(t, context.Background(), ss.bucket, cid, content)
+	t.Cleanup(func() { _ = ss.dropFromMyBucket(cid) })
+
+	upload := &Upload{ID: "backoff-test-upload", OrigFileCID: cid}
+
+	// Stand in for findMissedReplications having queued this upload.
+	ss.replicationAttempts.Set(upload.ID, struct{}{}, imcache.WithDefaultExpiration())
+	t.Cleanup(func() { ss.replicationAttempts.Remove(upload.ID) })
+
+	// Pull is what produces a 202 at all; without it replicateStoredFileToHost
+	// goes straight to the multipart push.
+	originalStreaming := ss.Config.BlobStorageStreaming
+	ss.Config.BlobStorageStreaming = true
+	t.Cleanup(func() { ss.Config.BlobStorageStreaming = originalStreaming })
+
+	original := ss.peerHTTPClient
+	ss.peerHTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return testHTTPResponse(req, http.StatusAccepted), nil
+	})}
+	t.Cleanup(func() { ss.peerHTTPClient = original })
+
+	_ = ss.replicateToHosts(context.Background(), upload, cid, nil, false)
+
+	_, stillBackedOff := ss.replicationAttempts.Get(upload.ID)
+	require.False(t, stillBackedOff,
+		"an accepted-but-unfinished transfer armed the hour-long backoff; the mirror would not be recorded until it expired")
 }
