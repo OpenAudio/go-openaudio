@@ -32,8 +32,8 @@ func countReplicateFileToHostGoroutines() int {
 
 func TestReplicateFileToHostClosesPipeOnEarlyHTTPError(t *testing.T) {
 	ss := testNetwork[0]
-	originalClient := ss.peerHTTPClient
-	ss.peerHTTPClient = &http.Client{
+	originalClient := ss.blobHTTPClient
+	ss.blobHTTPClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusInternalServerError,
@@ -45,7 +45,7 @@ func TestReplicateFileToHostClosesPipeOnEarlyHTTPError(t *testing.T) {
 		}),
 	}
 	t.Cleanup(func() {
-		ss.peerHTTPClient = originalClient
+		ss.blobHTTPClient = originalClient
 	})
 
 	before := countReplicateFileToHostGoroutines()
@@ -128,7 +128,7 @@ func TestReplicateStoredFileToHostUsesPullWithoutReadingSourceBucket(t *testing.
 			BlobStorageStreaming: true,
 		},
 		logger: zap.NewNop(),
-		peerHTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		blobHTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			require.Equal(t, "/internal/blobs/pull", req.URL.Path)
 			return testHTTPResponse(req, http.StatusOK), nil
 		})},
@@ -158,7 +158,7 @@ func TestReplicateStoredFileToHostFallsBackForOlderPeer(t *testing.T) {
 			BlobStorageStreaming: true,
 		},
 		logger: zap.NewNop(),
-		peerHTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		blobHTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			requests++
 			switch req.URL.Path {
 			case "/internal/blobs/pull":
@@ -202,7 +202,7 @@ func TestReplicateStoredFileToHostDoesNotFallbackOnValidationFailure(t *testing.
 			BlobStorageStreaming: true,
 		},
 		logger: zap.NewNop(),
-		peerHTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		blobHTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			requests++
 			return testHTTPResponse(req, http.StatusUnprocessableEntity), nil
 		})},

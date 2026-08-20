@@ -50,7 +50,10 @@ func (t *tusAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func (ss *MediorumServer) startReplicationWorkers(ctx context.Context) error {
-	numWorkers := 3 // Run a 3 replication workers (arbitrary, can be tuned)
+	// Individual transfers are no longer capped at three minutes, so a single
+	// long blob can occupy a worker for far longer than before. More workers
+	// keep the queue draining while one is busy with a large upload.
+	numWorkers := 6
 
 	ss.logger.Info("starting replication workers", zap.Int("count", numWorkers))
 
