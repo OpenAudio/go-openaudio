@@ -670,9 +670,13 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 			Handler: h2c.NewHandler(grpcServer, &http2.Server{}),
 		}
 
-		// A node that cannot bind this port keeps serving Connect over HTTP/1.1
-		// on the echo port and looks healthy, while every gRPC/h2c client fails
-		// with "http2: frame too large". Fail loudly instead.
+		// Losing this bind is close to invisible. The process keeps serving
+		// Connect over HTTP/1.1 on the echo port, so health checks stay green,
+		// while every gRPC/h2c client fails with "http2: frame too large, note
+		// that the frame header looked like an HTTP/1.1 header". Log the
+		// address so the cause is at least findable; whether an unbindable
+		// port should be fatal is a separate call, since a node that exits on
+		// a port clash is its own kind of outage.
 		if err := h2cServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("grpc server failed", zap.String("addr", grpcAddr), zap.Error(err))
 			return
