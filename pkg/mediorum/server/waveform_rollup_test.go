@@ -191,3 +191,50 @@ func TestRollupCountsUnlinkedRowsSeparately(t *testing.T) {
 	require.Equal(t, before.orphanRows+1, after.orphanRows,
 		"legacy content has no upload by definition and is not a miss")
 }
+
+// A preview starting at zero on a track no longer than the preview window
+// re-encodes to identical bytes, so content addressing yields one cid for both
+// slots. waveforms is keyed by cid, so only one row can ever exist -- expecting
+// two leaves the upload permanently short, re-enqueued on every re-walk and
+// decoded again each time. Seen on a live node as a stuck Partial.
+func TestRollupCountsDistinctBlobsNotSlots(t *testing.T) {
+	ss := testNetwork[0]
+	withWaveformEnabled(t, ss)
+	ctx := context.Background()
+	p := fmt.Sprintf("rollup-samecid-%d-", time.Now().UnixNano())
+	cid := p + "shared"
+
+	base := forceWaveformRollup(t, ss)
+
+	// selected_preview resolves to the very same blob as the 320.
+	upload := Upload{
+		ID:               p + "u",
+		Template:         JobTemplateAudio,
+		CreatedAt:        time.Now().UTC().Truncate(time.Second),
+		SelectedPreview:  sql.NullString{String: "320_preview|0", Valid: true},
+		TranscodeResults: map[string]string{"320": cid, "320_preview|0": cid},
+	}
+	require.NoError(t, ss.crud.DB.Create(&upload).Error)
+	t.Cleanup(func() {
+		ss.crud.DB.Where("id = ?", upload.ID).Delete(&Upload{})
+		deleteTestWaveform(t, ss, cid)
+	})
+
+	setWaveformRow(t, ss, cid, upload.ID, waveformStatusDone, waveformVersion)
+	got := forceWaveformRollup(t, ss)
+
+	require.Equal(t, base.byState[waveformStateAnalyzed]+1, got.byState[waveformStateAnalyzed],
+		"one blob, one row, and the upload is finished")
+	require.Equal(t, base.byState[waveformStatePartial], got.byState[waveformStatePartial],
+		"counting the shared blob twice strands it in partial forever")
+
+	// And discovery must stop enumerating it, or the re-walk decodes it again.
+	batch, err := ss.nextWaveformUploadBatch(ctx, time.Time{}, "", 500)
+	require.NoError(t, err)
+	require.NotContains(t, waveformUploadIDs(batch), upload.ID)
+
+	// One job, not two, since both slots name the same blob.
+	targets := waveformTargets(upload)
+	require.Len(t, targets, 1)
+	require.Equal(t, cid, targets[0].cid)
+}

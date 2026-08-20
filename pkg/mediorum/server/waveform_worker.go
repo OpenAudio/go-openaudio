@@ -299,6 +299,8 @@ func (ss *MediorumServer) refreshWaveformRollup(ctx context.Context) {
 			             then 1 else 0 end)
 			     + (case when coalesce(u.selected_preview, '') <> ''
 			              and coalesce(u.transcode_results::jsonb ->> u.selected_preview, '') <> ''
+			              and u.transcode_results::jsonb ->> u.selected_preview
+			                  is distinct from u.transcode_results::jsonb ->> '320'
 			             then 1 else 0 end) as expected
 			from uploads u
 			left join waveforms w on w.upload_id = u.id
@@ -397,8 +399,14 @@ func waveformTargets(upload Upload) []waveformJob {
 	}
 	// The preview is stored under its own selection key rather than a fixed
 	// one, since the key encodes the start offset it was cut at.
+	//
+	// It can also name the same blob as the 320: a preview starting at zero on
+	// a track no longer than the preview window re-encodes to identical bytes,
+	// and content addressing gives one cid for both. waveforms is keyed by cid,
+	// so that is one row, and anything expecting two waits forever.
 	if upload.SelectedPreview.Valid {
-		if cid := upload.TranscodeResults[upload.SelectedPreview.String]; cid != "" {
+		if cid := upload.TranscodeResults[upload.SelectedPreview.String]; cid != "" &&
+			cid != upload.TranscodeResults["320"] {
 			targets = append(targets, waveformJob{
 				cid:      cid,
 				uploadID: upload.ID,
@@ -885,6 +893,8 @@ func (ss *MediorumServer) nextWaveformUploadBatch(ctx context.Context, cursorTim
 		) < ((case when coalesce(transcode_results::jsonb ->> '320', '') <> '' then 1 else 0 end)
 		   + (case when coalesce(selected_preview, '') <> ''
 		            and coalesce(transcode_results::jsonb ->> selected_preview, '') <> ''
+		            and transcode_results::jsonb ->> selected_preview
+		                is distinct from transcode_results::jsonb ->> '320'
 		           then 1 else 0 end))`,
 			waveformVersion)
 
