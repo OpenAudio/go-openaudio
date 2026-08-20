@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.11.0](https://github.com/OpenAudio/go-openaudio/compare/v1.10.0...v1.11.0) (2026-08-20)
+
+
+### Features
+
+* **storage:** precompute waveform peaks on the validator node ([#522](https://github.com/OpenAudio/go-openaudio/issues/522)) ([1cbc367](https://github.com/OpenAudio/go-openaudio/commit/1cbc3670d0f9504f85499ddb0531482caad9c81e))
+
+
+### Bug Fixes
+
+* **core:** honor OPENAUDIO_GRPC_LADDR instead of hardcoding :50051 ([#533](https://github.com/OpenAudio/go-openaudio/issues/533)) ([d5cef7c](https://github.com/OpenAudio/go-openaudio/commit/d5cef7c59a0b17841b802756861699a4611ea46b))
+* **etl:** carry email_access.is_initial so migrated grants stay decryptable ([#540](https://github.com/OpenAudio/go-openaudio/issues/540)) ([229cc04](https://github.com/OpenAudio/go-openaudio/commit/229cc04ff7c909808302a51cfccbb7b45a876590))
+* **etl:** don't let a deleted artist pick block every profile edit ([#510](https://github.com/OpenAudio/go-openaudio/issues/510)) ([81f4af5](https://github.com/OpenAudio/go-openaudio/commit/81f4af523801558b9a8673c010829f8f9a14304a))
+* **etl:** persist DDEX rights metadata on track create ([#517](https://github.com/OpenAudio/go-openaudio/issues/517)) ([88b83b3](https://github.com/OpenAudio/go-openaudio/commit/88b83b350bfa51d32a62b756713b8d36084c0c9a))
+* **etl:** persist track_downloads.created_at instead of defaulting to now() ([#515](https://github.com/OpenAudio/go-openaudio/issues/515)) ([c16e46a](https://github.com/OpenAudio/go-openaudio/commit/c16e46aacf45e7406880b4bef2c099cd49e0fa46))
+* **etl:** project access_authorities from the field core enforces ([#541](https://github.com/OpenAudio/go-openaudio/issues/541)) ([5e6bd39](https://github.com/OpenAudio/go-openaudio/commit/5e6bd390939a893b008cc2887121ee5414d96d75))
+* **genesis-writer:** emit allowed_api_keys so migrated tracks keep it ([#542](https://github.com/OpenAudio/go-openaudio/issues/542)) ([d3aed53](https://github.com/OpenAudio/go-openaudio/commit/d3aed53b0d27554507c3c9ff545aa2f06160767e))
+* **genesis-writer:** emit one grant per (user, grantee), newest wins ([#532](https://github.com/OpenAudio/go-openaudio/issues/532)) ([d288865](https://github.com/OpenAudio/go-openaudio/commit/d28886574460ebcaa6d9fafd7d4196ff7e5c6ed7))
+* **genesis-writer:** emit release_date as RFC3339, not Postgres text ([#519](https://github.com/OpenAudio/go-openaudio/issues/519)) ([5a8d4a4](https://github.com/OpenAudio/go-openaudio/commit/5a8d4a4ed759bbc6ec1edb12fd9060629c01cfb7))
+* **genesis-writer:** fail the step that loses transactions before flush ([#535](https://github.com/OpenAudio/go-openaudio/issues/535)) ([1187b3c](https://github.com/OpenAudio/go-openaudio/commit/1187b3cecdd1a776dd274244248fac2712c8f802))
+* **genesis-writer:** flush and drain before checkpointing a step ([#521](https://github.com/OpenAudio/go-openaudio/issues/521)) ([d8e5321](https://github.com/OpenAudio/go-openaudio/commit/d8e5321af61975378ea109ab1aeba77aa26dbb8c))
+* **genesis-writer:** keep sub-second precision on every emitted timestamp ([#534](https://github.com/OpenAudio/go-openaudio/issues/534)) ([bddde9e](https://github.com/OpenAudio/go-openaudio/commit/bddde9e0ee8dde7990e667f402b40082f023b07c))
+* **genesis-writer:** replay comments as edited when the source says they were ([#539](https://github.com/OpenAudio/go-openaudio/issues/539)) ([4baa62a](https://github.com/OpenAudio/go-openaudio/commit/4baa62a28fa1d21ce2feb3a265b3d4e5e904c153))
+* **genesis-writer:** run events before comments ([#520](https://github.com/OpenAudio/go-openaudio/issues/520)) ([43679ef](https://github.com/OpenAudio/go-openaudio/commit/43679ef45d3bb575dca1c40922115319d6c6c1b9))
+* **mediorum:** prune storage to replication factor ([#537](https://github.com/OpenAudio/go-openaudio/issues/537)) ([865fb8d](https://github.com/OpenAudio/go-openaudio/commit/865fb8d86ea84ca7c730ad936efc1c3c6ecd6a7a))
+* **parity:** compare playlists_containing_track as a set, accept duration NULL-&gt;0 ([#518](https://github.com/OpenAudio/go-openaudio/issues/518)) ([ad8a40a](https://github.com/OpenAudio/go-openaudio/commit/ad8a40a0807759eff7903a88cf5c7d5e51cc1c2a))
+* **storage:** don't challenge cids that cannot be proven yet ([#544](https://github.com/OpenAudio/go-openaudio/issues/544)) ([7a2679a](https://github.com/OpenAudio/go-openaudio/commit/7a2679a9a24be707938ce38cfddc1f8691b15199))
+* **storage:** report isDbLocalhost from the DSN host ([#525](https://github.com/OpenAudio/go-openaudio/issues/525)) ([906e5f6](https://github.com/OpenAudio/go-openaudio/commit/906e5f61533a43beb25f32e6a07e4a510629f409))
+
+
+### Code Refactoring
+
+* **storage:** remove the unused tus replication path ([#529](https://github.com/OpenAudio/go-openaudio/issues/529)) ([67aee5e](https://github.com/OpenAudio/go-openaudio/commit/67aee5e2f90535ef89f0605251899ad43eedb3fc))
+
 ## [1.10.0](https://github.com/OpenAudio/go-openaudio/compare/v1.9.0...v1.10.0) (2026-08-13)
 
 
