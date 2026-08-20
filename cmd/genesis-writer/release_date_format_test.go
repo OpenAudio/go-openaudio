@@ -58,3 +58,38 @@ func TestReleaseDateKeepsSubSecondPrecision(t *testing.T) {
 		t.Errorf("whole-second release_date = %q, want %q", got, "2026-09-06T22:06:00Z")
 	}
 }
+
+// created_at went out through the same non-fractional layout, and it is not a
+// cosmetic field: the indexer replays each migrated row as of its created_at
+// (migrationBlockTime), and parity keys track_downloads on it. A full-snapshot
+// run truncated every one of the 78,032 track_downloads rows, plus ~2.9M
+// social rows, to the whole second.
+//
+// parseMigrationTimestamp tries RFC3339Nano before RFC3339, and Go's parser
+// accepts a fractional second against a layout that lacks one, so emitting the
+// longer form is safe for every reader.
+func TestEmittedCreatedAtKeepsSubSecondPrecision(t *testing.T) {
+	src := sourceTrack{
+		TrackID:   1,
+		OwnerID:   2,
+		CreatedAt: time.Date(2024, 12, 1, 12, 30, 13, 244308000, time.UTC),
+	}
+
+	got := buildTrackMetadata(src, nil).CreatedAt
+	if got != "2024-12-01T12:30:13.244308Z" {
+		t.Errorf("created_at = %q, want %q -- microseconds were dropped", got, "2024-12-01T12:30:13.244308Z")
+	}
+
+	parsed, err := time.Parse(time.RFC3339Nano, got)
+	if err != nil {
+		t.Fatalf("indexer cannot parse %q: %v", got, err)
+	}
+	if !parsed.Equal(src.CreatedAt) {
+		t.Errorf("round-tripped to %v, want %v", parsed, src.CreatedAt)
+	}
+
+	// The stricter RFC3339 layout used by event_create.go must still accept it.
+	if _, err := time.Parse(time.RFC3339, got); err != nil {
+		t.Errorf("plain RFC3339 parse rejected %q: %v", got, err)
+	}
+}

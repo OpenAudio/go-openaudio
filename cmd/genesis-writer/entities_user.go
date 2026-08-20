@@ -125,7 +125,7 @@ func (w *Writer) writeUsers(ctx context.Context) error {
 		},
 		func(ctx context.Context, u sourceUser) error {
 			meta := userMetadata{
-				CreatedAt:           u.CreatedAt.UTC().Format(time.RFC3339),
+				CreatedAt:           u.CreatedAt.UTC().Format(time.RFC3339Nano),
 				Name:                deref(u.Name),
 				Handle:              deref(u.Handle),
 				Bio:                 deref(u.Bio),

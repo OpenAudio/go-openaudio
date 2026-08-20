@@ -87,8 +87,8 @@ func preloadRemovedPlaylistTracks(ctx context.Context, db *pgxpool.Pool) (map[in
 		if err := rows.Scan(&playlistID, &r.TrackID, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
-		r.CreatedAt = createdAt.UTC().Format(time.RFC3339)
-		r.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
+		r.CreatedAt = createdAt.UTC().Format(time.RFC3339Nano)
+		r.UpdatedAt = updatedAt.UTC().Format(time.RFC3339Nano)
 		m[playlistID] = append(m[playlistID], r)
 	}
 	return m, rows.Err()
@@ -180,7 +180,7 @@ func (w *Writer) writePlaylists(ctx context.Context) error {
 		},
 		func(ctx context.Context, p sourcePlaylist) error {
 			inner := playlistMetadataInner{
-				CreatedAt:              p.CreatedAt.UTC().Format(time.RFC3339),
+				CreatedAt:              p.CreatedAt.UTC().Format(time.RFC3339Nano),
 				PlaylistName:           deref(p.PlaylistName),
 				Description:            deref(p.Description),
 				IsAlbum:                p.IsAlbum,
