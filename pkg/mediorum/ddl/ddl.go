@@ -124,6 +124,104 @@ WHERE template = 'audio' AND audio_analysis_status IS DISTINCT FROM 'done'`)
 	)`)
 	runMigration(db, `create index if not exists idx_repair_data_loss_declared on repair_data_loss(declared_at) where recovered_at is null`)
 
+	// Precomputed waveform envelopes, keyed by CID.
+	//
+	// Local only -- deliberately not a crudr model. Mediorum rows replicate
+	// solely by riding the core chain as MediorumOperation txs, and the table
+	// allowlist those txs are validated against is consulted in FinalizeBlock,
+	// where result codes fold into the header. Registering this table would
+	// therefore make a derived rendering hint into consensus-affecting state,
+	// and commit roughly a kilobyte per track to the chain permanently. Every
+	// node recomputes its own instead; the inputs are pinned so they agree.
+	//
+	// peaks is exactly `buckets` bytes, one uint8 per bucket, and stays null
+	// until status = 'done'. version exists so an algorithm change is a
+	// re-sweep rather than a table rewrite.
+	runMigration(db, `
+	create table if not exists waveforms (
+		"cid" text primary key,
+		"peaks" bytea,
+		"buckets" int not null default 750,
+		-- No default on purpose. Every write stamps the running version, and
+		-- discovery decides an upload is outstanding by the absence of a row at
+		-- that version -- so a write that forgot it would quietly make the row
+		-- invisible to discovery forever. Without a default that mistake is a
+		-- not-null violation instead of a silent one.
+		"version" int not null,
+		"sample_rate" int,
+		"sample_count" bigint,
+		"duration_ms" bigint,
+		"status" text not null,
+		"error" text not null default '',
+		"error_count" int not null default 0,
+		-- Which upload this blob came from, when one is known.
+		--
+		-- Nullable and deliberately not the key. The relationship is not 1:1:
+		-- an upload yields both a 320 and, when one is selected, a preview, so
+		-- two rows share an upload_id. Legacy Qm content has no upload row at
+		-- all and carries null. The cid stays the key because that is what the
+		-- route, the peer probe and the redirect cache all address.
+		--
+		-- It exists so discovery can anti-join on indexed text instead of
+		-- extracting jsonb from both sides, which was the expensive part of
+		-- the sweep and the reason an "unanalyzed" count was unaffordable.
+		"upload_id" text,
+		-- When this row's result was produced. Distinct from last_attempted_at
+		-- because a done row's age is about the waveform, not about when we
+		-- last touched it.
+		"analyzed_at" timestamptz not null default now(),
+		-- When an attempt last started. The retry sweep derives due-ness from
+		-- this plus the backoff for the row's status, rather than storing a
+		-- computed next-attempt time.
+		--
+		-- Storing the fact rather than the decision is what lets a backoff
+		-- change take effect on rows already written, and it removes the need
+		-- for a sentinel to mean "never again" -- terminal is a property of the
+		-- status, which is where it belongs.
+		--
+		-- Stamped before the analysis runs, not after. next_attempt_at only
+		-- moved once an attempt finished, so a row stayed selectable for the
+		-- whole of its own attempt and every sweep tick re-queued it.
+		"last_attempted_at" timestamptz
+	)`)
+	runMigration(db, `create index if not exists idx_waveforms_upload_id on waveforms (upload_id, version) where upload_id is not null`)
+	// status first: the retry sweep asks for one status at a time with a range
+	// on the attempt time, so equality then range is exactly this order.
+	runMigration(db, `create index if not exists idx_waveforms_retry on waveforms (status, last_attempted_at) where status <> 'done'`)
+
+	// Supports the backfill's keyset walk, which pages newest-first over
+	// (created_at, id) and filters to audio. Without it the walk falls back to
+	// uploads_ts_idx, whose second column is transcoded_at, and a caught-up
+	// re-walk -- which reads to the end of history to prove nothing is left --
+	// sorts a large slice of a wide jsonb table every time.
+	runMigration(db, `create index if not exists idx_uploads_waveform_scan
+on uploads (created_at desc, id desc) where template = 'audio'`)
+	runMigration(db, `create index if not exists idx_waveforms_version on waveforms (version) where status = 'done'`)
+
+	// Single-row cursor for the newest-first backfill walk over uploads.
+	// Newest-first so the recent slice operators actually care about lands in
+	// days rather than after a full multi-week history walk.
+	// The cursor doubles as the current backfill run: where the walk has
+	// reached, when this pass began, and what it has done so far. A pass is
+	// what the console reports on, so the counters live beside the position
+	// they describe rather than in a separate history table.
+	//
+	// version records which waveform version the walk was performed under. When
+	// the running version differs, the cursor resets and history is walked
+	// again -- that is what makes an algorithm or parameter change re-backfill.
+	runMigration(db, `
+	create table if not exists waveform_cursor (
+		"id" int primary key default 1,
+		"created_at" timestamptz,
+		"upload_id" text,
+		"exhausted" boolean not null default false,
+		"version" int,
+		"started_at" timestamptz,
+		"queued" bigint not null default 0,
+		"archive_skipped" bigint not null default 0,
+		"updated_at" timestamptz not null default now()
+	)`)
+
 	runVacuumFull(db)
 }
 

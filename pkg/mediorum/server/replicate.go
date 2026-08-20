@@ -261,13 +261,15 @@ func (ss *MediorumServer) replicateStoredFileToHost(
 	sourceBucket *blob.Bucket,
 	sourceKey string,
 	placementHosts []string,
+	uploadID string,
+	transcoded bool,
 ) error {
 	if peer == ss.Config.Self.Host {
 		return nil
 	}
 
 	if ss.Config.BlobStorageStreaming {
-		err := ss.requestPeerPull(ctx, peer, fileName, placementHosts)
+		err := ss.requestPeerPull(ctx, peer, fileName, placementHosts, uploadID, transcoded)
 		if err == nil {
 			return nil
 		}
@@ -290,10 +292,12 @@ func (ss *MediorumServer) replicateStoredFileToHost(
 	return ss.replicateFileToHost(ctx, peer, fileName, reader, placementHosts)
 }
 
-func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string, placementHosts []string) error {
+func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string, placementHosts []string, uploadID string, transcoded bool) error {
 	payload, err := json.Marshal(internalBlobPullRequest{
 		CID:            cid,
 		PlacementHosts: placementHosts,
+		UploadID:       uploadID,
+		Transcoded:     transcoded,
 	})
 	if err != nil {
 		return err
@@ -372,7 +376,7 @@ func (ss *MediorumServer) pullFileFromHost(ctx context.Context, host, cid string
 	return ss.replicateToMyBucket(ctx, cid, body, placementHosts)
 }
 
-func (ss *MediorumServer) pullFileFromHostValidated(ctx context.Context, host, cid string, placementHosts []string) error {
+func (ss *MediorumServer) pullFileFromHostValidated(ctx context.Context, host, cid string, placementHosts []string, uploadID string, transcoded bool) error {
 	body, err := ss.openBlobFromHost(ctx, host, cid)
 	if err != nil {
 		return err
@@ -384,8 +388,19 @@ func (ss *MediorumServer) pullFileFromHostValidated(ctx context.Context, host, c
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
 	defer tmp.Close()
+
+	// We own this file until a waveform job accepts it. enqueueWaveformJob
+	// reports that definitively -- a non-blocking send either placed the job or
+	// it did not -- so the flag is the ownership transfer, and this deferred
+	// cleanup still covers every path where the send never happened or failed:
+	// a copy error, a cid mismatch, a failed bucket write, or a full queue.
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			os.Remove(tmpName)
+		}
+	}()
 
 	if _, err := io.Copy(tmp, body); err != nil {
 		return err
@@ -400,7 +415,44 @@ func (ss *MediorumServer) pullFileFromHostValidated(ctx context.Context, host, c
 		return err
 	}
 
-	return ss.replicateToMyBucket(ctx, cid, tmp, placementHosts)
+	if err := ss.replicateToMyBucket(ctx, cid, tmp, placementHosts); err != nil {
+		return err
+	}
+
+	// Only after the bucket write has committed. Handing the analysis this
+	// local copy avoids reading back what we just stored -- a billed GET on an
+	// S3-backed node -- and the work itself happens on the worker pool, so the
+	// peer waiting on this request is not held for a decode.
+	// Only analysis targets. Every replicated blob comes through here --
+	// originals and images included -- and decoding those costs an ffmpeg
+	// subprocess each to produce a waveform for a cid nothing will ever ask
+	// about.
+	//
+	// The sender saying so is the cheap proof, since it replicated the blob
+	// knowing which one it was. Failing that, resolveWaveformUploadID matches
+	// only a 320 or a selected preview, so a hit is itself proof the blob is a
+	// target -- and its miss is what filters the rest.
+	if ss.Config.WaveformEnabled {
+		analyze := transcoded
+		if !analyze {
+			if resolved := ss.resolveWaveformUploadID(ctx, cid); resolved != "" {
+				uploadID = resolved
+				analyze = true
+			}
+		}
+		if analyze {
+			job := waveformJob{
+				cid:            cid,
+				uploadID:       uploadID,
+				placementHosts: placementHosts,
+				localPath:      tmpName,
+			}
+			if ss.enqueueWaveformJob(job) {
+				handedOff = true
+			}
+		}
+	}
+	return nil
 }
 
 func (ss *MediorumServer) openBlobFromHost(ctx context.Context, host, cid string) (io.ReadCloser, error) {

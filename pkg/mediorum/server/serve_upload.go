@@ -96,7 +96,7 @@ func (ss *MediorumServer) generatePreview(c echo.Context) error {
 		return c.String(http.StatusUnauthorized, err.Error())
 	}
 
-	audioPreview, err := ss.generateAudioPreview(ctx, fileHash, previewStartSeconds)
+	audioPreview, err := ss.generateAudioPreview(ctx, fileHash, previewStartSeconds, "")
 	if err != nil {
 		return err
 	}

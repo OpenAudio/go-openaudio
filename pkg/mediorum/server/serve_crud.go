@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/crudr"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 )
 
@@ -17,6 +19,9 @@ var crudStatusTables = []string{
 	"qm_audio_analyses",
 	"audio_previews",
 	"cursors",
+	// Not a crudr model -- this list only drives a pg_class relname lookup for
+	// row counts, so a local-only table is fine here.
+	"waveforms",
 }
 
 // audioAnalysisStatusRetryBackoff is the cutoff this endpoint uses to decide
@@ -39,6 +44,88 @@ type audioAnalysisBacklogStatus struct {
 	RetryBackoffSeconds int64 `json:"retry_backoff_seconds"`
 }
 
+type waveformStatus struct {
+	Enabled         bool `json:"enabled"`
+	BackfillEnabled bool `json:"backfill_enabled"`
+	ArchiveEnabled  bool `json:"archive_enabled"`
+	// Version is a fingerprint of the algorithm version and every parameter
+	// that changes the output, so it is opaque on its own. The fields below
+	// report what produced it, which is what makes it debuggable.
+	Version          int `json:"version"`
+	AlgorithmVersion int `json:"algorithm_version"`
+	Buckets          int `json:"buckets"`
+	SampleRate       int `json:"sample_rate"`
+	// ByUploadState buckets each analyzable upload once, so these sum to the
+	// analyzable catalog. Counting per upload rather than per blob is what
+	// lets them be compared: an upload yields a 320 and sometimes a preview,
+	// so a blob count and an upload count were never the same unit.
+	ByUploadState map[string]int64 `json:"by_upload_state"`
+	// OrphanRows counts waveform rows that resolved no upload, excluding
+	// legacy content which has none. Every other figure is upload-keyed and
+	// blind to them, so this is what says the rest is incomplete.
+	OrphanRows int64 `json:"orphan_rows"`
+	// SampledAgeNs is the age of the pass the counts came from. One pass for
+	// all of them is what lets them reconcile, at the cost of describing a
+	// moment slightly past.
+	SampledAgeNs int64 `json:"sampled_age_ns"`
+	// CursorCreatedAt is how far back through history the newest-first
+	// backfill walk has reached. Empty until the first batch.
+	CursorCreatedAt string `json:"cursor_created_at,omitempty"`
+	CursorExhausted bool   `json:"cursor_exhausted"`
+	// CursorVersion is the version the current walk is running under. A
+	// mismatch with Version means a re-walk has been triggered but not yet
+	// picked up.
+	CursorVersion int `json:"cursor_version"`
+}
+
+// queryWaveformStatus reports backfill progress from the sampled rollup.
+//
+// It reads the same snapshot the console does rather than issuing its own
+// counts. The rollup joins uploads to waveforms, which is affordable on a
+// sweep and not on a poll, and sharing one sample is also what keeps this
+// endpoint and the console from disagreeing with each other.
+func (ss *MediorumServer) queryWaveformStatus(ctx context.Context) (waveformStatus, error) {
+	status := waveformStatus{
+		Enabled:          ss.Config.WaveformEnabled,
+		BackfillEnabled:  ss.Config.WaveformBackfillEnabled,
+		ArchiveEnabled:   ss.Config.WaveformArchiveEnabled,
+		Version:          waveformVersion,
+		AlgorithmVersion: waveformAlgorithmVersion,
+		Buckets:          waveformBuckets,
+		SampleRate:       waveformSampleRate,
+		ByUploadState:    map[string]int64{},
+	}
+
+	ss.waveformRollupMu.Lock()
+	for state, count := range ss.waveformRollup.byState {
+		status.ByUploadState[state] = count
+	}
+	status.OrphanRows = ss.waveformRollup.orphanRows
+	if !ss.waveformRollupAt.IsZero() {
+		status.SampledAgeNs = int64(time.Since(ss.waveformRollupAt))
+	}
+	ss.waveformRollupMu.Unlock()
+
+	var createdAt *time.Time
+	var cursorVersion *int
+	var exhausted bool
+	err := ss.pgPool.QueryRow(ctx,
+		`select created_at, exhausted, version from waveform_cursor where id = 1`,
+	).Scan(&createdAt, &exhausted, &cursorVersion)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return status, err
+	}
+	if createdAt != nil {
+		status.CursorCreatedAt = createdAt.UTC().Format(time.RFC3339)
+	}
+	if cursorVersion != nil {
+		status.CursorVersion = *cursorVersion
+	}
+	status.CursorExhausted = exhausted
+
+	return status, nil
+}
+
 func (ss *MediorumServer) serveCrudStatus(c echo.Context) error {
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 5*time.Second)
 	defer cancel()
@@ -53,13 +140,20 @@ func (ss *MediorumServer) serveCrudStatus(c echo.Context) error {
 		return c.String(http.StatusInternalServerError, fmt.Sprintf("Failed to query audio analysis backlog: %v", err))
 	}
 
+	waveforms, err := ss.queryWaveformStatus(ctx)
+	if err != nil {
+		return c.String(http.StatusInternalServerError, fmt.Sprintf("Failed to query waveform status: %v", err))
+	}
+
 	c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
 	return c.JSON(http.StatusOK, struct {
 		*crudr.Status
 		AudioAnalysisBacklog audioAnalysisBacklogStatus `json:"audio_analysis_backlog"`
+		Waveforms            waveformStatus             `json:"waveforms"`
 	}{
 		Status:               status,
 		AudioAnalysisBacklog: backlog,
+		Waveforms:            waveforms,
 	})
 }
 

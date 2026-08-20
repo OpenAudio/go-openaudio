@@ -87,6 +87,8 @@ func TestRequestPeerPullStoresValidatedBlob(t *testing.T) {
 		target.Config.Self.Host,
 		cid,
 		[]string{target.Config.Self.Host},
+		"",
+		true,
 	)
 	require.NoError(t, err)
 
@@ -115,6 +117,8 @@ func TestRequestPeerPullRejectsCIDMismatch(t *testing.T) {
 		target.Config.Self.Host,
 		cid,
 		[]string{target.Config.Self.Host},
+		"",
+		true,
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "422")
@@ -141,6 +145,8 @@ func TestReplicateStoredFileToHostUsesPullWithoutReadingSourceBucket(t *testing.
 		nil,
 		"unused-source-key",
 		nil,
+		"",
+		true,
 	))
 }
 
@@ -190,6 +196,8 @@ func TestReplicateStoredFileToHostFallsBackForOlderPeer(t *testing.T) {
 		bucket,
 		key,
 		nil,
+		"",
+		true,
 	))
 	require.Equal(t, 2, requests)
 }
@@ -215,6 +223,8 @@ func TestReplicateStoredFileToHostDoesNotFallbackOnValidationFailure(t *testing.
 		nil,
 		"unused-source-key",
 		nil,
+		"",
+		true,
 	)
 	require.Error(t, err)
 	require.Equal(t, 1, requests)

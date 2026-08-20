@@ -616,6 +616,18 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 type internalBlobPullRequest struct {
 	CID            string   `json:"cid"`
 	PlacementHosts []string `json:"placement_hosts,omitempty"`
+	// UploadID lets the puller link a waveform without looking the cid up in
+	// its own uploads table. The sender publishes that row through the chain,
+	// so it arrives on a block commit while this request arrives over HTTP --
+	// the puller can be asked for a blob whose upload row it has not synced
+	// yet. Empty from peers that predate this field, and from senders with no
+	// upload context; resolveWaveformUploadID still covers those.
+	UploadID string `json:"upload_id,omitempty"`
+	// Transcoded says this blob is the 320, which is what makes it worth
+	// analyzing. Originals and images travel this same path and are not
+	// analysis targets -- decoding them costs an ffmpeg subprocess each to
+	// produce a waveform for a cid nothing will ever ask about.
+	Transcoded bool `json:"transcoded,omitempty"`
 }
 
 func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
@@ -645,7 +657,7 @@ func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "disk is too full to accept new blobs"})
 	}
 
-	err := ss.pullFileFromHostValidated(c.Request().Context(), sourceHost, request.CID, request.PlacementHosts)
+	err := ss.pullFileFromHostValidated(c.Request().Context(), sourceHost, request.CID, request.PlacementHosts, request.UploadID, request.Transcoded)
 	if errors.Is(err, errPulledBlobCIDMismatch) {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 	}

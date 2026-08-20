@@ -87,6 +87,19 @@ type MediorumConfig struct {
 	RepairInterval            time.Duration `default:"1h"`
 	RepairConcurrency         int           `default:"1"`
 
+	// Waveform analysis is entirely opt-in: all three switches default to
+	// false, so a node that sets nothing behaves exactly as before.
+	//
+	// They nest deliberately, letting an operator walk the cost curve one step
+	// at a time -- nothing, then new uploads only, then recent history as
+	// well, then the archive tier. Each step is roughly an order of magnitude
+	// more expensive than the last, and the last one can mean pulling a
+	// multi-terabyte long tail out of cold storage.
+	WaveformEnabled         bool
+	WaveformBackfillEnabled bool
+	WaveformArchiveEnabled  bool
+	WaveformWorkers         int `default:"2"`
+
 	// Archive mode (OPENAUDIO_ARCHIVE) keeps all history: no core block pruning
 	// and no mediorum op-log pruning. Otherwise ops older than OpsRetention are pruned.
 	Archive          bool
@@ -125,11 +138,19 @@ type MediorumServer struct {
 	rendezvousHasher *common.RendezvousHasher
 	transcodeWork    chan *Upload
 	replicationWork  chan *Upload
+	waveformWork     chan waveformJob
 	ethService       ethv1connect.EthServiceHandler
 
 	// isDbLocalhost is reported by the health check. Derived once from the
 	// parsed connection config below, since the DSN can't change at runtime.
 	isDbLocalhost bool
+
+	// Outstanding waveform work, refreshed on a sweep. It is an anti-join over
+	// the catalog, so the console reads this cached value rather than paying
+	// for the count on every page load.
+	waveformRollupMu sync.Mutex
+	waveformRollup   waveformRollup
+	waveformRollupAt time.Time
 
 	// stats
 	statsMutex         sync.RWMutex
@@ -159,10 +180,14 @@ type MediorumServer struct {
 	isSeeding        bool
 	isAudiusdManaged bool
 
-	peerHealthsMutex      sync.RWMutex
-	peerHealths           map[string]*PeerHealth
-	unreachablePeers      []string
-	redirectCache         *imcache.Cache[string, string]
+	peerHealthsMutex sync.RWMutex
+	peerHealths      map[string]*PeerHealth
+	unreachablePeers []string
+	redirectCache    *imcache.Cache[string, string]
+	// Kept separate from redirectCache: a peer holding the blob says nothing
+	// about whether it holds the waveform, since waveforms are not replicated
+	// and a peer may have the feature switched off.
+	waveformRedirectCache *imcache.Cache[string, string]
 	uploadOrigCidCache    *imcache.Cache[string, string]
 	imageCache            *imcache.Cache[string, []byte]
 	trackAccessInfoCache  *imcache.Cache[string, trackAccessInfo]
@@ -428,19 +453,24 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		isAudiusdManaged: isAudiusdManaged,
 		rendezvousHasher: rendezvousHasher,
 		transcodeWork:    make(chan *Upload, 100),
-		replicationWork:  make(chan *Upload, 100),
-		posChannel:       posChannel,
-		pruneTrigger:     make(chan pruneRequest, 1),
+		// Buffered, unlike the audio-analysis channel: the sweeps must not
+		// block on a full queue, and the route enqueues opportunistically and
+		// gives up rather than waiting.
+		waveformWork:    make(chan waveformJob, 256),
+		replicationWork: make(chan *Upload, 100),
+		posChannel:      posChannel,
+		pruneTrigger:    make(chan pruneRequest, 1),
 
-		peerHealths:          map[string]*PeerHealth{},
-		redirectCache:        imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
-		uploadOrigCidCache:   imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
-		imageCache:           imcache.New(imcache.WithMaxEntriesLimitOption[string, []byte](10_000, imcache.EvictionPolicyLRU)),
-		trackAccessInfoCache: imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
-		attrCache:            imcache.New(imcache.WithMaxEntriesLimitOption[string, *blob.Attributes](10_000, imcache.EvictionPolicyLRU)),
-		knownPresent:         imcache.New(imcache.WithMaxEntriesLimitOption[string, int64](500_000, imcache.EvictionPolicyLRU)),
-		bgPullBackoff:        imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
-		replicationAttempts:  imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
+		peerHealths:           map[string]*PeerHealth{},
+		redirectCache:         imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
+		waveformRedirectCache: imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
+		uploadOrigCidCache:    imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
+		imageCache:            imcache.New(imcache.WithMaxEntriesLimitOption[string, []byte](10_000, imcache.EvictionPolicyLRU)),
+		trackAccessInfoCache:  imcache.New(imcache.WithMaxEntriesLimitOption[string, trackAccessInfo](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, trackAccessInfo](5*time.Minute)),
+		attrCache:             imcache.New(imcache.WithMaxEntriesLimitOption[string, *blob.Attributes](10_000, imcache.EvictionPolicyLRU)),
+		knownPresent:          imcache.New(imcache.WithMaxEntriesLimitOption[string, int64](500_000, imcache.EvictionPolicyLRU)),
+		bgPullBackoff:         imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
+		replicationAttempts:   imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
 
 		StartedAt:    time.Now().UTC(),
 		Config:       config,
@@ -490,6 +520,16 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	routes.GET("/ipfs/:cid", ss.serveBlob, ss.requireHealthy, ss.ensureNotDelisted)
 	routes.HEAD("/content/:cid", ss.serveBlob, ss.requireHealthy, ss.ensureNotDelisted)
 	routes.GET("/content/:cid", ss.serveBlob, ss.requireHealthy, ss.ensureNotDelisted)
+
+	// ensureNotDelisted, but deliberately no requireRegisteredSignature: a
+	// 750-byte amplitude envelope is not decodable audio, and clients draw the
+	// waveform before playback begins, so requiring a stream signature would
+	// defeat the purpose. Delisting still applies -- a waveform is derived
+	// from the audio and must disappear with it.
+	// HEAD is what peers probe with when deciding whether to redirect here, so
+	// it has to answer without serving the body.
+	routes.HEAD("/waveform/:cid", ss.serveWaveform, ss.requireHealthy, ss.ensureNotDelisted)
+	routes.GET("/waveform/:cid", ss.serveWaveform, ss.requireHealthy, ss.ensureNotDelisted)
 	routes.HEAD("/tracks/cidstream/:cid", ss.serveBlob, ss.requireHealthy, ss.ensureNotDelisted, ss.requireRegisteredSignature)
 	routes.GET("/tracks/cidstream/:cid", ss.serveBlob, ss.requireHealthy, ss.ensureNotDelisted, ss.requireRegisteredSignature)
 	routes.GET("/tracks/stream/:trackId", ss.serveTrack)
@@ -626,6 +666,13 @@ func (ss *MediorumServer) MustStart() error {
 	ss.lc.AddManagedRoutine("echo server", ss.startEchoServer)
 	ss.lc.AddManagedRoutine("transcoder", ss.startTranscoder)
 	ss.lc.AddManagedRoutine("audio analyzer", ss.startAudioAnalyzer)
+	// Opt-in: an unconfigured node registers no routine at all. Deliberately
+	// not behind the StoreAll guard the transcoder and audio analyzer use --
+	// waveforms are computed per node rather than replicated, so gating on
+	// StoreAll would leave most prod nodes with none.
+	if ss.Config.WaveformEnabled {
+		ss.lc.AddManagedRoutine("waveform analyzer", ss.startWaveformAnalyzer)
+	}
 	ss.lc.AddManagedRoutine("replication workers", ss.startReplicationWorkers)
 
 	ss.lc.AddManagedRoutine("pruner", ss.startPruner)

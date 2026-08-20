@@ -364,12 +364,39 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 
 	logger.Info("audio transcode done", zap.String("cid", resultHash))
 
+	// Compute the waveform while the finished 320 is still on local disk --
+	// the deferred remove at the top of this function has not run yet. Doing it
+	// here is the cheap path: the backfill sweep would otherwise read the blob
+	// back out of the bucket, which on an S3-backed node is a billed GET and on
+	// a StoreAll node may be a cold-storage retrieval.
+	//
+	// Deliberately after the mirror bookkeeping above: this decodes the whole
+	// track, and it runs inline on a path HTTP handlers call synchronously, so
+	// it must not sit between the transcode finishing and this node claiming to
+	// be a transcoded mirror.
+	//
+	// Opt-in, and strictly advisory: a waveform is a rendering hint, so failure
+	// is recorded against the waveforms row and never reaches onError. Letting
+	// it fail an upload would trade a real capability for a cosmetic one.
+	if ss.Config.WaveformEnabled {
+		if err := ss.analyzeWaveformFromFile(ctx, resultKey, upload.ID, destPath); err != nil {
+			logger.Warn("waveform analysis failed", zap.String("cid", resultKey), zap.Error(err))
+		}
+	}
+
 	// if a start time is set, also transcode an audio preview from the full 320kbps downsample
 	if upload.SelectedPreview.Valid {
 		// Attested below with the rest of the upload's cids.
-		if _, err := ss.generateAudioPreviewForUpload(ctx, upload); err != nil {
+		_, err := ss.generateAudioPreviewForUpload(ctx, upload)
+		if err != nil {
 			return onError(err, upload.Status, "generateAudioPreview")
 		}
+
+		// The preview's own waveform is queued inside generateAudioPreview,
+		// which still has the file on disk and hands it over -- slicing the
+		// track's would be wrong anyway, since a preview is peak-normalized
+		// independently and 30s of a long track occupies too few buckets to
+		// stretch across a player.
 	}
 
 	return nil
