@@ -347,7 +347,14 @@ func (h *migratedCommentCreateHandler) Handle(ctx context.Context, params *Param
 	if err := validateCommentWrite(ctx, params, true); err != nil {
 		return err
 	}
-	return insertCommentWithState(ctx, params, params.MetadataBoolOr("is_delete", false))
+	// The source row is the comment's final state, so an edited comment has to
+	// land as edited. The live indexer only sets is_edited on an Update, and a
+	// migration emits one Create per comment and no updates, so without this
+	// every edited comment replays as unedited -- 1,249 of them on the
+	// 2026-08-16 snapshot.
+	return insertCommentWithState(ctx, params,
+		params.MetadataBoolOr("is_delete", false),
+		params.MetadataBoolOr("is_edited", false))
 }
 
 func migratedCommentCreate() Handler { return &migratedCommentCreateHandler{} }

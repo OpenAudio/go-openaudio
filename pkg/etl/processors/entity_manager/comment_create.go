@@ -17,7 +17,9 @@ func (h *commentCreateHandler) Handle(ctx context.Context, params *Params) error
 	if err := validateCommentWrite(ctx, params, true); err != nil {
 		return err
 	}
-	return insertCommentWithState(ctx, params, false)
+	// A comment being created now has not been edited; only comment_update
+	// sets the flag on the live path.
+	return insertCommentWithState(ctx, params, false, false)
 }
 
 // insertCommentWithState writes a comment carrying its deleted state.
@@ -27,7 +29,7 @@ func (h *commentCreateHandler) Handle(ctx context.Context, params *Params) error
 // comment replays as one transaction rather than a Create followed by a
 // Delete. On a production clone that is 2,853 comments that were previously
 // dropped entirely.
-func insertCommentWithState(ctx context.Context, params *Params, isDelete bool) error {
+func insertCommentWithState(ctx context.Context, params *Params, isDelete, isEdited bool) error {
 
 	body := params.MetadataString("body")
 	entityID, _ := params.MetadataInt64("entity_id")
@@ -51,13 +53,13 @@ func insertCommentWithState(ctx context.Context, params *Params, isDelete bool) 
 			is_delete, is_visible, is_edited,
 			is_members_only, video_url,
 			txhash, blockhash, blocknumber
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $13, true, false, $8, $9, $10, $11, $12)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $13, true, $14, $8, $9, $10, $11, $12)
 	`, params.EntityID, body, params.UserID, entityID, entityType,
 		nullableInt(trackTimestamp, hasTimestamp),
 		params.BlockTime,
 		isMembersOnly, nullString(videoURL),
 		params.TxHash, params.BlockHash, params.BlockNumber,
-		isDelete)
+		isDelete, isEdited)
 	if err != nil {
 		return err
 	}
