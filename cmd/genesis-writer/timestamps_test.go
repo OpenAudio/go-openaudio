@@ -31,8 +31,11 @@ import (
 // worth guarding is a *new* emission site added later without .UTC(), and only
 // scanning the package catches that.
 func TestAllEmittedTimestampsAreUTC(t *testing.T) {
-	// A .Format(time.RFC3339) whose receiver does not end in .UTC().
-	unnormalized := regexp.MustCompile(`(\.UTC\(\))?\.Format\(time\.RFC3339\)`)
+	// A .Format(time.RFC3339Nano) whose receiver does not end in .UTC().
+	// RFC3339 is matched too so that reintroducing the non-fractional layout
+	// -- which silently rounded ~3M created_at values to the whole second --
+	// is still covered by the .UTC() half of this guard.
+	unnormalized := regexp.MustCompile(`(\.UTC\(\))?\.Format\(time\.RFC3339(Nano)?\)`)
 
 	entries, err := os.ReadDir(".")
 	if err != nil {

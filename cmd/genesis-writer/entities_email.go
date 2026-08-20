@@ -97,7 +97,7 @@ func (w *Writer) writeEncryptedEmails(ctx context.Context) error {
 				EmailOwnerUserID: e.EmailOwnerUserID,
 				EncryptedEmail:   e.EncryptedEmail,
 				AccessGrants:     grants,
-				CreatedAt:        e.CreatedAt.UTC().Format(time.RFC3339),
+				CreatedAt:        e.CreatedAt.UTC().Format(time.RFC3339Nano),
 			}
 			metaJSON, err := json.Marshal(meta)
 			if err != nil {
@@ -165,7 +165,7 @@ func (w *Writer) writeEmailAccess(ctx context.Context) error {
 					GrantorUserID:   ea.grantorUserID,
 					EncryptedKey:    ea.encryptedKey,
 				}},
-				CreatedAt: ea.createdAt.UTC().Format(time.RFC3339),
+				CreatedAt: ea.createdAt.UTC().Format(time.RFC3339Nano),
 			})
 			if err != nil {
 				return fmt.Errorf("marshal email access metadata: %w", err)

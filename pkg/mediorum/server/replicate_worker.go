@@ -2,52 +2,16 @@ package server
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
 	"sync"
 	"time"
 
 	"slices"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
-	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
-	"github.com/bdragon300/tusgo"
 	"github.com/erni27/imcache"
 	"go.uber.org/zap"
 )
-
-// tusAuthTransport adds authentication headers to TUS requests for replication
-type tusAuthTransport struct {
-	base       http.RoundTripper
-	privateKey *ecdsa.PrivateKey
-	selfHost   string
-}
-
-func (t *tusAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Add basic auth signature (same as non-TUS replication)
-	if t.privateKey != nil {
-		ts := fmt.Sprintf("%d", time.Now().UnixMilli())
-		sig, err := signature.Sign(ts, t.privateKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to sign request: %w", err)
-		}
-		signatureHex := fmt.Sprintf("0x%s", hex.EncodeToString(sig))
-		basic := ts + ":" + signatureHex
-		auth := "Basic " + base64.StdEncoding.EncodeToString([]byte(basic))
-		req.Header.Set("Authorization", auth)
-		req.Header.Set("User-Agent", "mediorum "+t.selfHost)
-	} else {
-		// Dev mode
-		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("dev:mode")))
-	}
-	return t.base.RoundTrip(req)
-}
 
 func (ss *MediorumServer) startReplicationWorkers(ctx context.Context) error {
 	numWorkers := 3 // Run a 3 replication workers (arbitrary, can be tuned)
@@ -194,8 +158,6 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 			defer wg.Done()
 
 			err := ss.replicateStoredFileToHost(ctx, targetHost, cid, srcBucket, shardedCid, upload.PlacementHosts)
-			// TODO: Replicate with TUSD
-			// err = ss.replicateToHost(targetHost, cid, reader, attrs.Size, placementHosts)
 			resultsChan <- replicationResult{host: targetHost, err: err}
 		}(host)
 	}
@@ -299,68 +261,6 @@ func mergeReplicationMirrors(isTranscoded bool, upload *Upload, newSuccessHosts 
 		}
 	}
 	return merged, changed
-}
-
-func (ss *MediorumServer) replicateToHost(host string, cid string, reader io.Reader, fileSize int64, placementHosts []string) error {
-	ss.logger.Info("replicating via TUSD",
-		zap.String("host", host),
-		zap.String("cid", cid),
-		zap.Int64("size", fileSize))
-
-	// TUS upload endpoint
-	tusEndpoint := host + "/files/"
-	tusBaseURL, err := url.Parse(tusEndpoint)
-	if err != nil {
-		return fmt.Errorf("failed to parse TUS endpoint URL: %w", err)
-	}
-
-	// Create authenticated HTTP client with signature transport
-	authTransport := &tusAuthTransport{
-		base:       http.DefaultTransport,
-		privateKey: ss.Config.privateKey,
-		selfHost:   ss.Config.Self.Host,
-	}
-	httpClient := &http.Client{
-		Timeout:   10 * time.Minute,
-		Transport: authTransport,
-	}
-
-	tusClient := tusgo.NewClient(httpClient, tusBaseURL)
-	tusClient.Capabilities = &tusgo.ServerCapabilities{
-		Extensions:       []string{"creation", "creation-with-upload", "termination"},
-		ProtocolVersions: []string{"1.0.0"},
-	}
-
-	// Create upload with metadata - mark as replication to skip processing
-	metadata := map[string]string{
-		"filename":       cid,
-		"filetype":       "application/octet-stream",
-		"isReplication":  "true",
-		"placementHosts": strings.Join(placementHosts, ","),
-	}
-
-	tusUpload := tusgo.Upload{}
-	_, err = tusClient.CreateUpload(&tusUpload, fileSize, false, metadata)
-	if err != nil {
-		return fmt.Errorf("failed to create TUSD upload: %w", err)
-	}
-
-	// Create upload stream and set chunk size to 100MB
-	uploadStream := tusgo.NewUploadStream(tusClient, &tusUpload)
-	uploadStream.ChunkSize = 100 * 1000 * 1000 // 100MB chunks
-
-	// Upload the file using io.Copy
-	_, err = io.Copy(uploadStream, reader)
-	if err != nil {
-		return fmt.Errorf("failed to upload file via TUSD: %w", err)
-	}
-
-	ss.logger.Info("TUSD replication completed",
-		zap.String("host", host),
-		zap.String("cid", cid),
-		zap.Int64("size", fileSize))
-
-	return nil
 }
 
 func (ss *MediorumServer) findMissedReplications() {
