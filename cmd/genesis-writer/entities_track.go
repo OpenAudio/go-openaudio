@@ -18,6 +18,7 @@ type trackMetadataWrapper struct {
 
 type trackMetadataInner struct {
 	CreatedAt           string      `json:"created_at,omitempty"`
+	AllowedAPIKeys      []string    `json:"allowed_api_keys,omitempty"`
 	Title               string      `json:"title,omitempty"`
 	OwnerID             int64       `json:"owner_id"`
 	Duration            int         `json:"duration,omitempty"`
@@ -111,6 +112,7 @@ type sourceTrack struct {
 	IsScheduledRelease  bool
 	IsPlaylistUpload    bool
 	AccessAuthorities   []string
+	AllowedAPIKeys      []string
 	OrigFileCID         *string
 	OrigFilename        *string
 	AudioUploadID       *string
@@ -144,6 +146,7 @@ type sourceTrack struct {
 func buildTrackMetadata(t sourceTrack, collaborators []int64) trackMetadataInner {
 	inner := trackMetadataInner{
 		CreatedAt:       t.CreatedAt.UTC().Format(time.RFC3339Nano),
+		AllowedAPIKeys:  t.AllowedAPIKeys,
 		OwnerID:         t.OwnerID,
 		Title:           deref(t.Title),
 		Description:     deref(t.Description),
@@ -255,7 +258,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 			t.is_stream_gated, t.stream_conditions,
 			t.is_download_gated, t.download_conditions,
 			t.is_scheduled_release, t.is_playlist_upload,
-			t.access_authorities,
+			t.access_authorities, t.allowed_api_keys,
 			t.orig_file_cid, t.orig_filename, t.audio_upload_id,
 			t.field_visibility, t.ddex_app, t.ddex_release_ids,
 			t.ai_attribution_user_id, t.preview_start_seconds,
@@ -291,7 +294,7 @@ func (w *Writer) writeTracks(ctx context.Context) error {
 				&t.IsStreamGated, &t.StreamConditions,
 				&t.IsDownloadGated, &t.DownloadConditions,
 				&t.IsScheduledRelease, &t.IsPlaylistUpload,
-				&t.AccessAuthorities,
+				&t.AccessAuthorities, &t.AllowedAPIKeys,
 				&t.OrigFileCID, &t.OrigFilename, &t.AudioUploadID,
 				&t.FieldVisibility, &t.DDEXApp, &t.DDEXReleaseIDs,
 				&t.AIAttributionUserID, &t.PreviewStartSeconds,
