@@ -110,7 +110,11 @@ type Writer struct {
 	bsDB       dbm.DB
 
 	// running totals
-	totalTxs    int64
+	totalTxs int64
+	// acceptedTxs counts transactions handed to addTx. Every one of them must
+	// end up in a flushed block, so it has to agree with totalTxs at each step
+	// boundary, where the barrier guarantees nothing is still in flight.
+	acceptedTxs int64
 	totalBlocks int64
 
 	// final block state — set after the last flushBlock
@@ -586,6 +590,21 @@ func (w *Writer) Run(ctx context.Context) error {
 		}
 		w.startBlockWriter(ctx)
 
+		// Every transaction this step handed to addTx must now be in a flushed
+		// block: the barrier above ends the step's block and drains the async
+		// writer, so there is nothing legitimately in flight at this point.
+		//
+		// Checking here rather than at the end of the run is what makes the
+		// failure recoverable. The step's checkpoint is written below, so
+		// failing first leaves it unwritten and --resume retries exactly this
+		// step. An end-of-run check cannot do that: by then every step is
+		// checkpointed, so a resume skips all of them, re-runs the same check
+		// and fails again with nothing left to redo.
+		if w.acceptedTxs != w.totalTxs {
+			return fmt.Errorf("%s: wrote %d transactions to blocks but accepted %d (%+d lost before flush)",
+				step.name, w.totalTxs, w.acceptedTxs, w.totalTxs-w.acceptedTxs)
+		}
+
 		// Record step completion for resume.
 		if _, err := w.dstDB.Exec(ctx,
 			`INSERT INTO genesis_writer_progress (step_name) VALUES ($1) ON CONFLICT DO NOTHING`,
@@ -773,6 +792,7 @@ func (w *Writer) addTx(ctx context.Context, txBytes []byte) error {
 		return fmt.Errorf("block writer: %w", *ep)
 	}
 	w.blockTxs = append(w.blockTxs, txBytes)
+	w.acceptedTxs++
 	if len(w.blockTxs) >= w.cfg.MaxTxsPerBlock {
 		return w.flushBlock(ctx)
 	}
