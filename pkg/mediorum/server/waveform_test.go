@@ -918,3 +918,52 @@ func TestFullQueueLeavesNoOrphanedFile(t *testing.T) {
 	_, statErr := os.Stat(path)
 	require.True(t, os.IsNotExist(statErr), "a dropped job must not leak its file")
 }
+
+// readSizeRecorder notes how much each Read was asked for, which is what
+// decides how much a seek yields on the storage underneath.
+type readSizeRecorder struct {
+	r     io.Reader
+	max   int
+	calls int
+}
+
+func (rr *readSizeRecorder) Read(p []byte) (int, error) {
+	if len(p) > rr.max {
+		rr.max = len(p)
+	}
+	rr.calls++
+	return rr.r.Read(p)
+}
+
+// The source must be read in large chunks, not io.Copy's default 32KB. On a
+// ZFS archive tier with recordsize=1M and primarycache=metadata, a 32KB read
+// faults in the containing record and cannot keep it, so the next read of the
+// same record pays the seek again -- and spinning disks give about 85 IOPS
+// each, which makes bytes-per-seek the number that sets throughput.
+//
+// This asserts the mechanism rather than the intent: io.Copy prefers a
+// destination's ReadFrom, and the destination here is a pipe, so the buffering
+// has to sit on the source where bufio's WriterTo drives the copy instead.
+func TestComputeWaveformReadsSourceInLargeChunks(t *testing.T) {
+	requireFFmpeg(t)
+
+	path := synthAudioFile(t, "sine=frequency=440", 8)
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer f.Close()
+	info, err := f.Stat()
+	require.NoError(t, err)
+	require.Greater(t, info.Size(), int64(256*1024), "need a file bigger than one read")
+
+	rec := &readSizeRecorder{r: f}
+	result, err := computeWaveform(context.Background(), rec, info.Size())
+	require.NoError(t, err)
+	require.Len(t, result.Peaks, waveformBuckets)
+
+	t.Logf("source %d bytes read in %d calls, largest %d bytes", info.Size(), rec.calls, rec.max)
+
+	require.GreaterOrEqual(t, rec.max, 512*1024,
+		"reads reaching the bucket must be record-sized, not io.Copy's 32KB default")
+	require.Less(t, rec.calls, int(info.Size()/(256*1024))+8,
+		"a small read size would show up as many more calls")
+}

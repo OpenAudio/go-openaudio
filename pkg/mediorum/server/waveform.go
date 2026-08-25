@@ -33,6 +33,11 @@ const (
 	// a second array in the payload. Bump it by hand for those.
 	waveformAlgorithmVersion = 1
 
+	// waveformReadBufferSize is how much of the source is pulled per read.
+	// One buffer exists per in-flight analysis, so this is bounded by the
+	// worker count.
+	waveformReadBufferSize = 1024 * 1024
+
 	// waveformMaxStderrBytes caps how much ffmpeg diagnostic output we retain.
 	// The error string lands in a database column, so it must be bounded.
 	waveformMaxStderrBytes = 8 * 1024
@@ -135,11 +140,24 @@ func computeWaveform(ctx context.Context, r io.Reader, expectedBytes int64) (*wa
 	//
 	// Read errors are a different matter, and src records them separately --
 	// a failed bucket read must not be mistaken for a short track.
+	// Read the source in large chunks rather than io.Copy's default 32KB.
+	// These blobs are whole tracks -- megabytes to hundreds of megabytes -- and
+	// 32KB is the language default rather than a size chosen for this. Asking
+	// storage for more per read is neutral on a local SSD, and worth a great
+	// deal on anything where a read costs a seek or a round trip.
+	//
+	// io.CopyBuffer only honours the buffer when neither side offers a faster
+	// path. The destination is a pipe, and *os.File implements ReaderFrom, so
+	// it would otherwise take over the copy and read 32KB at a time regardless.
+	// writerOnly hides that so the buffer is actually used. Wrapping the source
+	// in a bufio.Reader does not work either: its WriteTo hands the underlying
+	// reader straight to the destination's ReadFrom, skipping the buffer.
 	src := &countingReader{r: r}
 	copyDone := make(chan struct{})
 	go func() {
 		defer close(copyDone)
-		_, _ = io.Copy(stdin, src)
+		buf := make([]byte, waveformReadBufferSize)
+		_, _ = io.CopyBuffer(writerOnly{stdin}, src, buf)
 		stdin.Close()
 	}()
 
@@ -354,6 +372,10 @@ func (a *waveformAccumulator) finalize() ([]byte, int64, error) {
 // countingReader records the byte count and the first read error from the
 // underlying source, so a bucket failure can be told apart from ffmpeg
 // closing the pipe early.
+// writerOnly strips any ReaderFrom implementation from a writer, which is how
+// io.CopyBuffer is made to use the buffer it was given.
+type writerOnly struct{ io.Writer }
+
 type countingReader struct {
 	r   io.Reader
 	n   int64
