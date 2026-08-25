@@ -66,14 +66,14 @@ where node_type in ('content-node', 'validator');
 
 -- name: GetLatestSlaRollup :one
 select *
-from sla_rollups
+from core_sla_rollups
 order by time desc
 limit 1;
 
 -- name: GetRecentRollupsForNode :many
 with recent_rollups as (
     select *
-    from sla_rollups
+    from core_sla_rollups
     order by time desc
     limit $1 
 )
@@ -85,15 +85,15 @@ select rr.id,
     nr.address,
     nr.blocks_proposed
 from recent_rollups rr
-    left join sla_node_reports nr on rr.id = nr.sla_rollup_id
+    left join core_sla_node_reports nr on rr.id = nr.sla_rollup_id
     and nr.address = $2
 order by rr.time;
 
 -- name: GetRecentRollupsForAllNodes :many
 with recent_rollups as (
     select *
-    from sla_rollups
-    where sla_rollups.id <= $1
+    from core_sla_rollups
+    where core_sla_rollups.id <= $1
     order by time desc
     limit $2
 )
@@ -105,7 +105,7 @@ select rr.id,
     nr.address,
     nr.blocks_proposed
 from recent_rollups rr
-    left join sla_node_reports nr on rr.id = nr.sla_rollup_id
+    left join core_sla_node_reports nr on rr.id = nr.sla_rollup_id
 order by rr.time;
 
 -- name: GetRollupReportsForNodeInTimeRange :many
@@ -119,12 +119,12 @@ select
     nr.blocks_proposed,
     (
         select count(distinct address)
-        from sla_node_reports
+        from core_sla_node_reports
         where sla_rollup_id = sr.id
     ) as validator_count
 from 
-    sla_rollups sr
-left join sla_node_reports nr
+    core_sla_rollups sr
+left join core_sla_node_reports nr
     on nr.sla_rollup_id = sr.id and nr.address = $1
 where sr.time > $2 and sr.time <= $3
 order by sr.time;
@@ -143,13 +143,13 @@ select
     nr.blocks_proposed,
     (
         select count(distinct address)
-        from sla_node_reports
+        from core_sla_node_reports
         where sla_rollup_id = sr.id
     ) as validator_count
 from 
-    sla_rollups sr
+    core_sla_rollups sr
 join address_list al on true
-left join sla_node_reports nr
+left join core_sla_node_reports nr
     on nr.sla_rollup_id = sr.id 
     and nr.address = al.address
 where sr.time > $2 and sr.time <= $3
@@ -157,25 +157,25 @@ order by sr.time, al.address;
 
 -- name: GetSlaRollupWithTimestamp :one
 select *
-from sla_rollups
+from core_sla_rollups
 where time = $1;
 
 -- name: GetSlaRollupWithId :one
 select *
-from sla_rollups
+from core_sla_rollups
 where id = $1;
 
 -- name: GetSlaRollupWithBlockEnd :one
 select *
-from sla_rollups
+from core_sla_rollups
 where block_end = $1;
 
 -- name: GetPreviousSlaRollupFromId :one
 select *
-from sla_rollups
+from core_sla_rollups
 where time < (
         select time
-        from sla_rollups sr
+        from core_sla_rollups sr
         where sr.id = $1
     )
 order by time desc
@@ -183,19 +183,19 @@ limit 1;
 
 -- name: GetInProgressRollupReports :many
 select *
-from sla_node_reports
+from core_sla_node_reports
 where sla_rollup_id is null
 order by address;
 
 -- name: GetRollupReportsForId :many
 select *
-from sla_node_reports
+from core_sla_node_reports
 where sla_rollup_id = $1
 order by address;
 
 -- name: GetRollupReportForNodeAndId :one
 select *
-from sla_node_reports
+from core_sla_node_reports
 where address = $1
     and sla_rollup_id = $2;
 
@@ -221,7 +221,7 @@ where comet_address = any($1::text []);
 
 -- name: GetValidatorHistoryForID :one
 select *
-from validator_history
+from core_validator_history
 where sp_id = $1
     and service_type = $2
 order by event_time desc
@@ -284,18 +284,18 @@ where height = $1;
 
 -- name: GetStorageProofPeers :one
 select prover_addresses
-from storage_proof_peers
+from core_storage_proof_peers
 where block_height = $1;
 
 -- name: GetStorageProof :one
 select *
-from storage_proofs
+from core_storage_proofs
 where block_height = $1
     and address = $2;
 
 -- name: GetStorageProofs :many
 select *
-from storage_proofs
+from core_storage_proofs
 where block_height = $1;
 
 -- name: GetStorageProofRollups :many
@@ -304,7 +304,7 @@ select address,
         where status = 'fail'
     ) as failed_count,
     count(*) as total_count
-from storage_proofs
+from core_storage_proofs
 where block_height >= $1
     and block_height <= $2
 group by address;
@@ -315,7 +315,7 @@ select address,
         where status = 'fail'
     ) as failed_count,
     count(*) as total_count
-from storage_proofs
+from core_storage_proofs
 where address = $1
     and block_height >= $2
     and block_height <= $3
@@ -323,10 +323,10 @@ group by address;
 
 -- name: GetStorageProofsForNodeInRange :many
 select *
-from storage_proofs
+from core_storage_proofs
 where block_height in (
         select block_height
-        from storage_proofs sp
+        from core_storage_proofs sp
         where sp.block_height >= $1
             and sp.block_height <= $2
             and sp.address = $3
@@ -520,14 +520,14 @@ limit $1;
 -- name: HasAccessToTrackRelease :one
 select exists (
         select 1
-        from access_keys
+        from core_access_keys
         where track_id = $1
             and pub_key = $2
     );
 
 -- name: GetRecordingsForTrack :many
 select *
-from sound_recordings
+from core_sound_recordings
 where track_id = $1;
 
 -- name: GetDBSize :one
@@ -675,7 +675,7 @@ order by rewards_manager_pubkey;
 -- Returns ErrNoRows if none of the requested authorities is in the
 -- launchpad mapping (e.g., AUDIO rewards or test fixtures).
 select rewards_manager_pubkey
-from launchpad_authority_rm
+from core_launchpad_authority_rm
 where authority = any($1::text[])
 order by rewards_manager_pubkey, authority
 limit 1;

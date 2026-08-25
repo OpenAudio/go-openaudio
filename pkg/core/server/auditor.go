@@ -50,7 +50,7 @@ func (s *Server) createRollup(ctx context.Context, timestamp time.Time, height i
 		s.logger.Error("Error retrieving current rollup reports", zap.Error(err))
 		return rollup, err
 	}
-	reportMap := make(map[string]db.SlaNodeReport, len(reports))
+	reportMap := make(map[string]db.CoreSlaNodeReport, len(reports))
 	for _, r := range reports {
 		reportMap[r.Address] = r
 	}

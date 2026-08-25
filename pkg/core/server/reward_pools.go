@@ -192,7 +192,7 @@ func validateRewardsManagerPubkeyShape(pubkey string) error {
 //
 // First-class pools must use a real RM pubkey because senderGateForRM
 // uses the same value to bind the pool↔RM. The backfill resolves each
-// existing reward row to a real RM via the launchpad_authority_rm
+// existing reward row to a real RM via the core_launchpad_authority_rm
 // mapping, so there are no synthetic-pool identifiers in production
 // state to special-case here.
 func validateRewardsManagerPubkey(pubkey string) error {

@@ -407,7 +407,7 @@ func (s *Server) createPgDump(logger *zap.Logger, latestSnapshotDir string) erro
 
 	// You can customize this slice with the tables you want to dump
 	tables := []string{
-		"access_keys",
+		"core_access_keys",
 		"core_app_state",
 		// Consensus auth state: enforcement-active nodes validate proposals
 		// against these, so a state-synced node without them would reject
@@ -421,13 +421,13 @@ func (s *Server) createPgDump(logger *zap.Logger, latestSnapshotDir string) erro
 		"core_transactions",
 		"core_tx_stats",
 		"core_validators",
-		"management_keys",
-		"sla_node_reports",
-		"sla_rollups",
-		"sound_recordings",
-		"storage_proof_peers",
-		"storage_proofs",
-		"track_releases",
+		"core_management_keys",
+		"core_sla_node_reports",
+		"core_sla_rollups",
+		"core_sound_recordings",
+		"core_storage_proof_peers",
+		"core_storage_proofs",
+		"core_track_releases",
 		"core_ern",
 		"core_mead",
 		"core_pie",
@@ -437,9 +437,9 @@ func (s *Server) createPgDump(logger *zap.Logger, latestSnapshotDir string) erro
 		"core_deals",
 		"core_rewards",
 		"core_reward_pools",
-		"launchpad_authority_rm",
+		"core_launchpad_authority_rm",
 		"core_uploads",
-		"validator_history",
+		"core_validator_history",
 	}
 
 	// Start building the args
@@ -788,7 +788,7 @@ func (s *Server) RestoreDatabase(height int64) error {
 			args = append(args, "--section="+section)
 		}
 		// pg_dump emits COPY items in TOC order, which can place a child table
-		// (e.g. sla_node_reports) before its parent (sla_rollups). The FK trigger
+		// (e.g. core_sla_node_reports) before its parent (core_sla_rollups). The FK trigger
 		// created by pre-data then rejects the child rows during COPY, pg_restore
 		// exits 1, and the ABCI handler retries the whole snapshot — looping forever.
 		// --disable-triggers turns FK enforcement off for the data load only;

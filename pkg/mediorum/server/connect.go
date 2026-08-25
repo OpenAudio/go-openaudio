@@ -28,7 +28,7 @@ func (s *StorageService) SetMediorum(mediorum *MediorumServer) {
 	s.mediorum = mediorum
 }
 
-// InvalidateTrackAccessCacheForTrack clears cached track access info when management_keys change.
+// InvalidateTrackAccessCacheForTrack clears cached track access info when core_management_keys change.
 func (s *StorageService) InvalidateTrackAccessCacheForTrack(trackID string) {
 	if s.mediorum != nil {
 		s.mediorum.InvalidateTrackAccessCacheForTrack(trackID)
