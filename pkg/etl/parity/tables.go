@@ -494,14 +494,21 @@ var compareTables = []compareTable{
 		},
 	},
 	{
-		Name:          "email_access",
-		IDCols:        []string{"email_owner_user_id", "receiving_user_id", "grantor_user_id"},
-		Columns:       []string{"encrypted_key"},
+		Name:   "email_access",
+		IDCols: []string{"email_owner_user_id", "receiving_user_id", "grantor_user_id"},
+		// is_initial says which key encrypted_key is wrapped against -- a shared
+		// EMAIL_ENCRYPTION_UUID when true, the email owner's user id when false.
+		// Clients branch on it to pick a decryption key, so a grant that carries
+		// the wrong value cannot be decrypted at all, and 89% of the reference's
+		// grants carry true. The column only reached the ETL schema in 0040, so
+		// it was previously listed as uncomparable rather than merely unchecked.
+		Columns:       []string{"encrypted_key", "is_initial"},
 		Where:         "true",
 		SampleCol:     "email_owner_user_id",
 		NoBlockNumber: true,
 		Aggregates: []aggCheck{
 			{"with_encrypted_key", textPopulated("encrypted_key")},
+			{"is_initial", countWhere("is_initial")},
 			{"distinct_owners", "count(DISTINCT email_owner_user_id)"},
 			{"distinct_receivers", "count(DISTINCT receiving_user_id)"},
 			{"distinct_grantors", "count(DISTINCT grantor_user_id)"},
