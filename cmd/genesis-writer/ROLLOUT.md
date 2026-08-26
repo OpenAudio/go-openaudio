@@ -7,200 +7,220 @@ code. Open questions are at the end and are genuinely open.
 
 # Runbook
 
-Ordered. Steps 1–8 are reversible at low cost, 9–11 are reversible at the cost
-of a re-sync, step 12 is not reversible, and step 13 removes the last cheap
-recovery path (§9).
+Ordered. Steps 1-13 are reversible, at costs ranging from restarting a container
+to re-syncing a node. **Step 14 is the point of no return** -- after it the old
+chain is missing writes. Step 15 retires the rollback anchors, and step 16 is
+cleanup.
 
-## Phase A — build the shippable chain
+## Phase A -- build the shippable chain
 
-**1. Derive the bootstrap validator key from rickyrombo's delegate key.**
+**1. Generate the genesis artifacts.**
 
-Not an arbitrary key from a vault. `ensurePrivValidator` (`config/setup.go:231`)
-derives the CometBFT key from `OPENAUDIO_DELEGATE_PRIVATE_KEY`, so genesis must
-list *that* key or rickyrombo comes up as a non-validator and the chain never
-produces its first live block. Take the existing
-`<root>/audius-mainnet-alpha-beta/config/priv_validator_key.json`, or re-derive
-it from the delegate key.
+1. Genesis writer runs using `audius.rickyrombo.com` as the genesis bootstrap set.
+2. Verify them using the parity checker, consulting the known parity
+   differences below.
 
-Signing on both chains with this key is safe — the chain ID is inside the vote
-sign bytes, so old- and new-chain votes are not interchangeable, and
-`priv_validator_state.json` is per-chain-directory.
-
-**2. Re-run genesis-writer against prod** with
-`--priv-validator-key-file` pointing at that key. The current T7 artifact is a
-verification artifact only: the validator set is hashed into every block header,
-so swapping it means rebuilding the chain (Reference §3).
-
-Budget the runtime from a measured run rather than this document. Verification
-runs against the full prod snapshot took 3h09m and 3h36m on the T7; production
-hardware and a fresh read will differ, and step 2 is on the critical path, so
-re-derive it before it is used to size the cutover window.
-
-*The source DSN and the validator key are not sufficient inputs.* `rewards` is
-the writer's **first** step, so anything missing here fails the run in its first
-second rather than hours in:
-
-- `--core-dsn` → the **old core chain** Postgres. Reward pools and rewards are
-  rebuilt from `core_reward_pools` / `core_rewards`. Read-only, safe against a
-  running node, but it must be reachable — if it is reached over a port-forward,
-  the forward has to be up before the run starts and stay up.
-- `LAUNCHPAD_OLD_SECRET` and `LAUNCHPAD_NEW_SECRET` in the environment —
-  env only, never flags, since a flag reaches `argv`.
-- `--launchpad-mints` → the mint address file. Every launchpad key is a function
-  of `(secret, mint)`; the secrets alone derive nothing.
-- The destination database must already **exist**. `--run-migrations` applies the
-  schema but does not create the database.
-- The destination must be empty in **both** halves: an empty Postgres database
-  *and* no leftover CometBFT `core/` directory. A stale blockstore panics the
-  writer immediately with `BlockStore can only save contiguous blocks`.
-
-**3. Verify the new artifact** — replay + parity. The writer and ETL logic are
-unchanged by the key swap, so this is confirming the fresh prod read, not
-re-litigating the pipeline.
-
-**Parity does not come back clean, and it is not supposed to.** Several
-divergences are correct by design; treat these as expected and investigate only
-what is *not* on this list:
-
-| Divergence | Why it is expected |
-|---|---|
-| `playlists.metadata_multihash` | chain provenance the migration legitimately rewrites |
-| `track_price_history`, `album_price_history` | derived from current metadata, so history collapses to one row per entity. Harmless in production: the API keeps its own database and skips to the tip (§2), so it never reads these from a from-genesis replay |
-| `in_playlists_entries` | the source holds duplicate array entries; the ETL total equals the source **distinct** count |
-| `playlists_previously_containing_track` | the migration is *more* complete than the source |
-| `stems`, `remixes` | ditto — it recovers relationships the legacy Python indexer never wrote, derived from each track's own `stem_of` / `remix_of` |
-
-The last three are cases where the reference is the less accurate side. A review
-that assumes "source is truth" will flag the migration for being right, so the
-list matters as much as the parity run itself.
+> *The source DSN and the validator key are not sufficient inputs.* `rewards` is
+> the writer's **first** step, so anything missing here fails the run in its
+> first second rather than hours in:
+>
+> - `--core-dsn` -> the **old core chain** Postgres. Reward pools and rewards are
+>   rebuilt from `core_reward_pools` / `core_rewards`. Read-only, safe against a
+>   running node, but it must be reachable for the whole run -- over a
+>   port-forward, that means the forward stays up.
+> - `LAUNCHPAD_OLD_SECRET` and `LAUNCHPAD_NEW_SECRET` in the environment -- env
+>   only, never flags, since a flag reaches `argv`.
+> - `--launchpad-mints` -> the mint address file. Every launchpad key is a
+>   function of `(secret, mint)`; the secrets alone derive nothing.
+> - The destination database must already **exist**. `--run-migrations` applies
+>   the schema but does not create the database.
+> - The destination must be empty in **both** halves: an empty Postgres database
+>   *and* no leftover CometBFT `core/` directory. A stale blockstore panics the
+>   writer immediately with `BlockStore can only save contiguous blocks`.
+>
+> Budget the runtime from a measured run rather than this document, and re-derive
+> it before it is used to size the cutover window.
 
 > **Seal the artifact before pointing anything at it.** The verification node,
 > the ETL, and every other service take the chain DB as `OPENAUDIO_DB_URL`, and
 > any of them can destroy it. A node whose binary does not embed *this*
-> artifact's genesis does not fail — it takes its "generate a new genesis" path
+> artifact's genesis does not fail -- it takes its "generate a new genesis" path
 > and runs the core migrations **down**, dropping every table the writer just
 > filled. `OPENAUDIO_ENV=dev` loads the embedded `dev.json`, so a binary built
-> before the genesis was copied in looks completely normal until it wipes a
-> ten-hour write. This has happened once already, on 2026-08-25.
->
-> So do not let a connection string reach the pristine artifact at all:
+> before the genesis was copied in looks completely normal until it wipes the
+> write. This has happened once already, on 2026-08-25.
 >
 > ```sql
 > ALTER DATABASE <artifact> WITH ALLOW_CONNECTIONS false;
 > CREATE DATABASE <artifact>_serve TEMPLATE <artifact>;
 > ```
 >
-> A sealed database still works as a `TEMPLATE` — that is how `template0`
-> works — so sealing first leaves no window where it is reachable, and the copy
+> A sealed database still works as a `TEMPLATE` -- that is how `template0`
+> works -- so sealing first leaves no window where it is reachable, and the copy
 > is file-level (minutes, not a re-run). Point the node, the replay, and parity
-> at `<artifact>_serve`. If that copy is damaged, make another from the
-> template; the writer never runs twice.
+> at `<artifact>_serve`. Verify the artifact **after** the services are up: a
+> count taken before you start a node certifies a state the node may then change.
+
+> **Parity does not come back clean, and it is not supposed to.** Treat these as
+> expected and investigate only what is *not* on this list:
 >
-> Verify the artifact **after** the services are up, not before. A count taken
-> before you start a node certifies a state that the node may then change.
+> | Divergence | Why it is expected |
+> |---|---|
+> | `playlists.metadata_multihash` | chain provenance the migration legitimately rewrites |
+> | `track_price_history`, `album_price_history` | derived from current metadata, so history collapses to one row per entity. Harmless in production: the API keeps its own database and skips to the tip (Reference SS2), so it never reads these from a from-genesis replay |
+> | `in_playlists_entries` | the source holds duplicate array entries; the ETL total equals the source **distinct** count |
+> | `playlists_previously_containing_track` | the migration is *more* complete than the source |
+> | `stems`, `remixes` | ditto -- it recovers relationships the legacy Python indexer never wrote, derived from each track's own `stem_of` / `remix_of` |
+>
+> The last three are cases where the reference is the less accurate side. A
+> review that assumes "source is truth" will flag the migration for being right.
 
-**4. Build the image, pinned — do not promote to `latest stable`.** Publishing
-*is* the mass migration, since genesis is compiled in (`//go:embed prod.json`).
-The image needs:
+**2. Register a new validator to be the other state-sync RPC for the new network.**
 
-- `pkg/core/config/genesis/prod.json` ← new genesis
-- `ProdPersistentPeers` (`config.go:55`) → new bootstrap node(s)
-- `ProdStateSyncRpcs` (`config.go:85`) → the two new-chain snapshot servers.
-  rickyrombo is **not** in this list today and must be added.
+1. The new network needs two state-sync RPCs. `creatornode.audius.co` and
+   `v.monophonic.digital` are that for the current network, so they cannot move.
+2. Instead, rickyrombo registers a new validator to serve as the second
+   state-sync RPC. Call it `v.audius.rickyrombo.com` for now (endpoint TBD).
 
-## Phase B — stand up the new network
+**3. Create a new binary for the new network. Do not merge and deploy.**
 
-**5. Seed rickyrombo.**
+1. Update `pkg/core/config/genesis/prod.json` to the new genesis file.
+2. Update `ProdPersistentPeers` to the two bootstrap nodes
+   (`v.audius.rickyrombo.com` and `audius.rickyrombo.com`).
+3. Update `ProdStateSyncRpcs` to the same two.
 
-- **Back up its Postgres first.** Postgres is shared between chains and this
-  step overwrites it; the backup is the rollback.
-- Restore the writer's Postgres output over rickyrombo's database. The
-  blockstore alone is not enough — the DB must hold new-chain state.
-- Copy the writer's `data/` (blockstore, state, evidence).
-- Env: `OPENAUDIO_ARCHIVE=true`,
-  `OPENAUDIO_STATE_SYNC_SERVE_SNAPSHOTS=true`,
-  `OPENAUDIO_STATE_SYNC_ENABLE=false` (it is the source, not a consumer),
-  `OPENAUDIO_PERSISTENT_PEERS` overridden to the new set so it stops dialling
-  old-network hosts. Leave `BlockInterval` at its default.
-- Check free disk: snapshots silently skip below `SnapshotMinFreeBytes`
-  (default **80 GiB**).
+## Phase B -- stand up the new network
 
-**6. Start it and confirm it produces the block after the writer's final
-height.** Take that height from the writer's completion log line (it also prints
-the exact figure in its "next steps" output) or from the run's `BUILT_FROM.txt`
-— **do not** hardcode it here. Each writer run against fresh prod data ends at a
-different height, so a literal number in this runbook is stale by the time it is
-used, and a stale number turns a healthy chain into an apparent failure.
+**4. Run a production node with a different config and genesis but the same key
+as `audius.rickyrombo.com`.**
 
-If the node does not produce that block, the validator key does not match
-genesis — that is the dead-chain failure mode, and it looks like "waiting for
-comet to catch up" with height stuck at 0.
+1. Spin up another node with the new embedded genesis file, preseeded with the
+   core files (using a different network name and location) and a fresh database.
+2. Point its storage at the same storage as the old node so both have all the
+   blobs.
+3. Environment:
+   1. `OPENAUDIO_ARCHIVE=true` -- keep the whole chain history.
+   2. `OPENAUDIO_STATE_SYNC_SERVE_SNAPSHOTS=true` -- take snapshots.
+   3. `OPENAUDIO_STATE_SYNC_ENABLE=false` -- it is the source, not a consumer.
+   4. `OPENAUDIO_PERSISTENT_PEERS` overridden to an empty list.
+   5. `BlockInterval` set to 20,000, `Keep` left at 2. Short enough that the
+      first snapshot does not take a day, long enough that a syncing node does
+      not have its snapshot rotate out from under it, and `Keep=2` holds storage
+      down.
+4. Confirm free disk for snapshots (**80 GiB** -- below `SnapshotMinFreeBytes`
+   they silently skip).
 
-**7. Seed a second node the same way**, from the same artifact.
+**5. Deploy an API change so all plays go through `v.monophonic.digital` and
+`creatornode.audius.co` temporarily.**
 
-Ideally not one of `creatornode` / `rpc.audius.co` / `v.monophonic`, so all
-three stay as old-chain rollback anchors — but rickyrombo is the only node
-outside that list, so absent a fifth node one of the three has to move. That
-still leaves two anchors, which is the minimum and has no slack.
+1. This keeps plays from being segmented across both networks as nodes split.
+   Plays are submitted by whichever node serves the audio, never through the
+   relay, so without this every already-migrated node writes its plays to the
+   new chain while the indexer is still reading the old one.
 
-Exclude from the copy: `node_key.json` (P2P identity must be unique — it is what
-goes in `ProdPersistentPeers`), `priv_validator_key.json` and
-`priv_validator_state.json` (it derives its own from its own delegate key, which
-is not in genesis, so it runs as a full node). Copying the bootstrap's would
-mean two nodes signing as the same 100%-power validator.
+**6. Swap the old node for the new one.**
 
-Seeding by copy is what avoids block-syncing 58M transactions, and it is the
-only way to reach two nodes: state sync needs ≥2 RPC servers *and* a snapshot,
-neither of which exists yet.
+1. Switch the Caddy proxy to point `audius.rickyrombo.com` at the new-network
+   validator container.
+2. Bring down the old node.
+3. Bring up the new node with the peering port open.
 
-**8. Wait for height 100,000 (~26–37h) and verify a snapshot exists.**
+**7. Spin up the other snapshot RPC (`v.audius.rickyrombo.com`).**
 
-Check `ListSnapshots` or the `Snapshot created` log line. Do not assume —
-`snapshotHeight = latest - (latest % 100000)` silently yields 0 below 100,000,
-so producing nothing is the default outcome. This wait doubles as the
-dual-write soak.
+1. Same genesis artifacts, database, and environment as step 4, except its own
+   delegate wallet.
+2. Disable storage -- avoids mediorum churn, and storage proofs are irrelevant
+   for it.
+3. Confirm free disk for snapshots (**80 GiB**).
 
-## Phase C — cut over
+**8. Confirm blocks are being produced.**
 
-**9. Turn on flushing.** `newChainFlushEnabled=true`, `NewChainURL` → bootstrap,
-`NewChainFlushFromBlock` → the migration end height so backfill-covered rows are
-skipped rather than re-sent. Queueing is already on. Reversible: the old chain
-still has every write.
+1. Check the writer's end height in `BUILT_FROM.txt` and confirm the node
+   produces the block after it. Do **not** hardcode a height here -- each run
+   against fresh prod data ends somewhere different, and a stale number turns a
+   healthy chain into an apparent failure. If it does not produce that block,
+   the validator key does not match genesis: the dead-chain failure mode, which
+   looks like "waiting for comet to catch up" with height stuck at 0.
 
-**10. Point the API indexer at the new chain.** Two hard requirements
-(Reference §11):
+**9. Confirm snapshots get created.**
 
-- **Plumb a start height into the API indexer first — it cannot express this
-  today.** `indexer/indexer.go` never calls `SetStartingBlockHeight`, so it
-  resumes from `etl_blocks`, and that query has no `chain_id`. Pointed at the
-  new chain as-is it would resume at the old chain's ~24M height against a chain
-  at ~100,000 and wait for a block that will not exist for years — a silent
-  stall, not an error.
-- **Drain the flush queue before switching.** Writes still in flight land on the
-  new chain *above* the switch point and get indexed a second time, having
-  already been indexed from the old chain. `InsertPlay` is a bare insert with no
-  `ON CONFLICT`, so that duplicates plays rather than upserting them.
+## Phase C -- cut over
 
-Keep the old chain indexed continuously right up to the switch. Everything below
-the new chain's tip is migration blocks or already-flushed writes, all of it
-already in the API's database, so skipping it is correct.
+**10. Bring other nodes to the new network manually, by having operators set an
+explicit tag.**
 
-**11. Promote the image to stable.** The fleet pulls it, creates a fresh
-`audius-mainnet-beta` directory, and state-syncs from the two servers. Back up
-each node's Postgres before it switches. Roll out in waves if the release
-channel allows — every switched node is one whose rollback now costs a re-sync.
+1. Target friendlies with small fleets first, for redundancy before flushing
+   starts.
+2. Move **at most 10 at a time**, and wait for them to be jailed on the old
+   network before the next 10. A departed validator keeps its voting power until
+   jailed, and past one third of total power the old chain halts -- taking the
+   rollback anchor with it.
+3. **Do not** migrate the old network's snapshot RPCs. They are the rollback plan.
+4. Ideally make one of the migrated nodes a state-sync RPC so the pressure is not
+   all on one machine.
 
-**12. Stop writing to the old chain. Point of no return.** Until this moment
-the old chain has every write and rollback is real. After it, rollback loses
-data. Announce it; do not let it happen as a side effect.
+> Jailing stops once the old network is down to ~30 active validators: the
+> underperformance purge has a killswitch below that count, so nothing further
+> is ever jailed. From there, roughly ten more departures halt the old chain,
+> and a halted chain cannot commit the jailing transactions that would unhalt
+> it -- recovery means operators bringing nodes back. So the last stretch of the
+> fleet is a decision to let the old chain go, and belongs after step 14, not
+> inside this step.
 
-**13. Migrate the held-back anchors** once step 12 is settled and confidence is
-high. Treat this as a second gate, not cleanup: these are the two old-chain
-state-sync servers, and CometBFT refuses to state sync from fewer than two
-(§9). While they stand, a rolled-back node repairs itself by state-syncing the
-old chain. Once they move, rollback for an already-switched node means restoring
-its Postgres backup or a full re-sync — so this step ends the cheap path, and
-the backups taken at step 11 become the only one.
+**11. Flush the API's queue.**
+
+1. `newChainFlushEnabled=true`, `NewChainURL` -> bootstrap, and
+   `NewChainFlushFromBlock` set to the latest block in the snapshot used to
+   generate the genesis.
+
+**12. Switch the indexer to the new chain.**
+
+1. Set a height `L` in the future that the flusher will filter below and the
+   old-network indexer will stop indexing at. `L` must be in the future: picking
+   one at or below the current tip races the config rollout, and blocks the
+   indexer sails past get indexed from the old chain *and* flushed to the new
+   one.
+2. After reaching `L` in indexing and finishing flushing, record the new chain's
+   height `H`. "Finishing flushing" means pending rows at or below `L` reach
+   zero **and stay zero** across a settle window -- the enqueue is
+   fire-and-forget, so a straggler can appear after the queue first reads empty.
+3. Start the indexer without a ceiling on the new network at height `H + 1`.
+4. Turn flushing back on without a filter.
+
+> The filter is a *filter*, not a halt: skip rows above `L`, keep draining those
+> below. Enqueue is dispatched asynchronously, so `confirmed_block` is only
+> roughly ordered by `id`, and stopping at the first row above `L` would strand
+> one below it. `L` is inclusive -- the block is committed before the indexer
+> stops -- so the ceiling is `confirmed_block <= L`.
+
+**13. Revert the change that routes all streams through the old network.**
+
+1. This needs to happen immediately after step 12, or before it. Ideally at
+   exactly `L`, but that is a lot of coupling for the benefit.
+2. Either side of `L` loses a small number of plays; neither duplicates them.
+   Reverting **after** `L` leaves plays going to the old chain, which the
+   indexer has stopped reading. Reverting **before** puts them on the new chain
+   below `H`, which the new indexer skips. Plays have no unique key, so there is
+   no dedupe path that would turn this into duplication instead.
+3. Prefer **after**, because the window is then bounded by something you
+   control: the drain between `L` and recording `H`. Minimize it by reverting as
+   close to `L` as practical.
+
+**14. Irreversible: stop relaying to the old network.**
+
+1. Roll out a change making the new network the primary relay path and removing
+   the queue infrastructure.
+
+**15. Irreversible: roll out the new binary to the rest of the network as
+`:stable`,** including the old network's snapshot RPCs.
+
+**16. Retire `v.audius.rickyrombo.com`.**
+
+1. Ship a change making another node a state-sync RPC in its place -- ideally
+   `creatornode.audius.co` or `v.monophonic.digital`, now that they have moved.
+   CometBFT refuses to state sync from fewer than two servers, so this must ship
+   before the deregistration or new nodes cannot join.
+2. Deregister `v.audius.rickyrombo.com`.
 
 ---
 
