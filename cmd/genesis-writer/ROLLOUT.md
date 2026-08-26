@@ -8,7 +8,8 @@ code. Open questions are at the end and are genuinely open.
 # Runbook
 
 Ordered. Steps 1–8 are reversible at low cost, 9–11 are reversible at the cost
-of a re-sync, and step 12 is not reversible.
+of a re-sync, step 12 is not reversible, and step 13 removes the last cheap
+recovery path (§9).
 
 ## Phase A — build the shippable chain
 
@@ -17,7 +18,7 @@ of a re-sync, and step 12 is not reversible.
 Not an arbitrary key from a vault. `ensurePrivValidator` (`config/setup.go:231`)
 derives the CometBFT key from `OPENAUDIO_DELEGATE_PRIVATE_KEY`, so genesis must
 list *that* key or rickyrombo comes up as a non-validator and the chain never
-produces block 5,819. Take the existing
+produces its first live block. Take the existing
 `<root>/audius-mainnet-alpha-beta/config/priv_validator_key.json`, or re-derive
 it from the delegate key.
 
@@ -26,13 +27,52 @@ sign bytes, so old- and new-chain votes are not interchangeable, and
 `priv_validator_state.json` is per-chain-directory.
 
 **2. Re-run genesis-writer against prod** with
-`--priv-validator-key-file` pointing at that key. ~10h. The current T7 artifact
-is a verification artifact only: the validator set is hashed into every block
-header, so swapping it means rebuilding the chain (Reference §3).
+`--priv-validator-key-file` pointing at that key. The current T7 artifact is a
+verification artifact only: the validator set is hashed into every block header,
+so swapping it means rebuilding the chain (Reference §3).
+
+Budget the runtime from a measured run rather than this document. Verification
+runs against the full prod snapshot took 3h09m and 3h36m on the T7; production
+hardware and a fresh read will differ, and step 2 is on the critical path, so
+re-derive it before it is used to size the cutover window.
+
+*The source DSN and the validator key are not sufficient inputs.* `rewards` is
+the writer's **first** step, so anything missing here fails the run in its first
+second rather than hours in:
+
+- `--core-dsn` → the **old core chain** Postgres. Reward pools and rewards are
+  rebuilt from `core_reward_pools` / `core_rewards`. Read-only, safe against a
+  running node, but it must be reachable — if it is reached over a port-forward,
+  the forward has to be up before the run starts and stay up.
+- `LAUNCHPAD_OLD_SECRET` and `LAUNCHPAD_NEW_SECRET` in the environment —
+  env only, never flags, since a flag reaches `argv`.
+- `--launchpad-mints` → the mint address file. Every launchpad key is a function
+  of `(secret, mint)`; the secrets alone derive nothing.
+- The destination database must already **exist**. `--run-migrations` applies the
+  schema but does not create the database.
+- The destination must be empty in **both** halves: an empty Postgres database
+  *and* no leftover CometBFT `core/` directory. A stale blockstore panics the
+  writer immediately with `BlockStore can only save contiguous blocks`.
 
 **3. Verify the new artifact** — replay + parity. The writer and ETL logic are
 unchanged by the key swap, so this is confirming the fresh prod read, not
 re-litigating the pipeline.
+
+**Parity does not come back clean, and it is not supposed to.** Several
+divergences are correct by design; treat these as expected and investigate only
+what is *not* on this list:
+
+| Divergence | Why it is expected |
+|---|---|
+| `playlists.metadata_multihash` | chain provenance the migration legitimately rewrites |
+| `track_price_history`, `album_price_history` | derived from current metadata, so history collapses to one row per entity. Harmless in production: the API keeps its own database and skips to the tip (§2), so it never reads these from a from-genesis replay |
+| `in_playlists_entries` | the source holds duplicate array entries; the ETL total equals the source **distinct** count |
+| `playlists_previously_containing_track` | the migration is *more* complete than the source |
+| `stems`, `remixes` | ditto — it recovers relationships the legacy Python indexer never wrote, derived from each track's own `stem_of` / `remix_of` |
+
+The last three are cases where the reference is the less accurate side. A review
+that assumes "source is truth" will flag the migration for being right, so the
+list matters as much as the parity run itself.
 
 > **Seal the artifact before pointing anything at it.** The verification node,
 > the ETL, and every other service take the chain DB as `OPENAUDIO_DB_URL`, and
@@ -85,9 +125,16 @@ The image needs:
 - Check free disk: snapshots silently skip below `SnapshotMinFreeBytes`
   (default **80 GiB**).
 
-**6. Start it and confirm it produces block 5,819.** If it does not, the
-validator key does not match genesis — that is the dead-chain failure mode, and
-it looks like "waiting for comet to catch up" with height stuck at 0.
+**6. Start it and confirm it produces the block after the writer's final
+height.** Take that height from the writer's completion log line (it also prints
+the exact figure in its "next steps" output) or from the run's `BUILT_FROM.txt`
+— **do not** hardcode it here. Each writer run against fresh prod data ends at a
+different height, so a literal number in this runbook is stale by the time it is
+used, and a stale number turns a healthy chain into an apparent failure.
+
+If the node does not produce that block, the validator key does not match
+genesis — that is the dead-chain failure mode, and it looks like "waiting for
+comet to catch up" with height stuck at 0.
 
 **7. Seed a second node the same way**, from the same artifact.
 
@@ -148,7 +195,12 @@ the old chain has every write and rollback is real. After it, rollback loses
 data. Announce it; do not let it happen as a side effect.
 
 **13. Migrate the held-back anchors** once step 12 is settled and confidence is
-high.
+high. Treat this as a second gate, not cleanup: these are the two old-chain
+state-sync servers, and CometBFT refuses to state sync from fewer than two
+(§9). While they stand, a rolled-back node repairs itself by state-syncing the
+old chain. Once they move, rollback for an already-switched node means restoring
+its Postgres backup or a full re-sync — so this step ends the cheap path, and
+the backups taken at step 11 become the only one.
 
 ---
 
@@ -212,7 +264,8 @@ cursor and the gap would be permanent. Nothing needs carrying across by hand.
 
 `createSnapshot` only fires on `height % BlockInterval == 0`, and the catch-up
 path computes `latestHeight - (latestHeight % blockInterval)`
-(`state_sync.go:187`). The chain starts life at 5,819, so with the default
+(`state_sync.go:187`). The chain starts life at the writer's end height — a few
+thousand blocks, not zero — so with the default
 interval of 100,000 there is **no snapshot until the chain reaches 100,000** —
 94,181 blocks away.
 
@@ -256,7 +309,7 @@ power 100, so the artifact is internally consistent and block-syncs verify.
 The consequence: at height 5,818 the validator set is `{V}` with 100% voting
 power, and validator set changes only happen through the app, which requires
 blocks. **Whoever runs the bootstrap node must hold V's private key, or the
-chain cannot produce block 5,819 and is dead on arrival.**
+chain cannot produce its first live block and is dead on arrival.**
 
 This is why the dev chain produced blocks fine: there the writer output *was*
 the node's data dir, so the matching key was sitting right next to genesis. The
@@ -328,7 +381,7 @@ commit a single block. Two independent CometBFT constraints:
 2. **The signer needs >2/3 of total voting power.**
    `votingPowerNeeded = TotalVotingPower * 2 / 3`. At 9 × power 10, one
    validator holds 11% — not enough to sign history, and not enough for the one
-   node actually running to produce block 5,819 either. The chain halts at the
+   node actually running to produce the first live block either. The chain halts at the
    migration boundary.
 
 Hence one validator at power 100: 100% of voting power is the only shape where
