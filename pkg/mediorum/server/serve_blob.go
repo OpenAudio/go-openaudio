@@ -469,6 +469,45 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 	ss.logger.Info("play logged", zap.String("user_id", userId), zap.String("track_id", trackID))
 }
 
+// lookupTrackAccessInfo resolves the gating state for a cid.
+//
+// A query error is returned rather than swallowed. The zero value of
+// trackAccessInfo is indistinguishable from "this track has no access
+// authorities", so a caller that ignores the error treats a failed lookup as an
+// ungated track and hands a gated recording to any registered validator signer.
+// Callers must deny the request when this returns an error, and must not cache
+// the result.
+func (s *MediorumServer) lookupTrackAccessInfo(cid string) (trackAccessInfo, error) {
+	var info trackAccessInfo
+
+	if res := s.crud.DB.Raw("SELECT track_id FROM sound_recordings WHERE cid = ?", cid).Scan(&info.TrackID); res.Error != nil {
+		return trackAccessInfo{}, fmt.Errorf("sound_recordings lookup for cid %s: %w", cid, res.Error)
+	}
+	if info.TrackID != "" {
+		if res := s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ?", info.TrackID).Scan(&info.ManagementKeyCount); res.Error != nil {
+			return trackAccessInfo{}, fmt.Errorf("management_keys count for track %s: %w", info.TrackID, res.Error)
+		}
+	}
+
+	// Track duration only sizes the presigned URL expiry, it is not part of the
+	// access decision, so a failed lookup falls back to the default expiry
+	// instead of denying the request.
+	if s.Config.BlobStorageStreaming {
+		var ffprobeJSON string
+		if res := s.crud.DB.Raw("SELECT ff_probe FROM uploads WHERE transcode_results::jsonb ->> '320' = ? LIMIT 1", cid).Scan(&ffprobeJSON); res.Error != nil {
+			s.logger.Warn("track duration lookup failed; using default presigned URL expiry",
+				zap.String("cid", cid), zap.Error(res.Error))
+		} else if ffprobeJSON != "" {
+			var probe FFProbeResult
+			if err := json.Unmarshal([]byte(ffprobeJSON), &probe); err == nil {
+				info.DurationSeconds, _ = strconv.ParseFloat(probe.Format.Duration, 64)
+			}
+		}
+	}
+
+	return info, nil
+}
+
 // checks signature from discovery node
 // used for cidstream endpoint + gated content and audio analysis post endpoints
 // based on: https://github.com/AudiusProject/apps/blob/main/creator-node/src/middlewares/contentAccess/contentAccessMiddleware.ts
@@ -483,38 +522,36 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 				"detail": err.Error(),
 			})
 		} else {
-			var trackID string
-			var managementKeyCount int
-			var durationSeconds float64
-			if info, ok := s.trackAccessInfoCache.Get(cid); ok {
-				trackID = info.TrackID
-				managementKeyCount = info.ManagementKeyCount
-				durationSeconds = info.DurationSeconds
-			} else {
-				s.crud.DB.Raw("SELECT track_id FROM sound_recordings WHERE cid = ?", cid).Scan(&trackID)
-				if trackID != "" {
-					s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ?", trackID).Scan(&managementKeyCount)
+			info, cached := s.trackAccessInfoCache.Get(cid)
+			if !cached {
+				var err error
+				if info, err = s.lookupTrackAccessInfo(cid); err != nil {
+					// Fail closed. Falling through with a zero-valued info would
+					// look exactly like an ungated track and let any registered
+					// validator signer stream gated content.
+					s.logger.Warn("track access lookup failed; denying request", zap.String("cid", cid), zap.Error(err))
+					return c.JSON(500, map[string]string{
+						"error":  "unable to verify track access",
+						"detail": "track access lookup failed",
+					})
 				}
-				// Look up track duration from uploads table (for presigned URL expiry)
-				if s.Config.BlobStorageStreaming {
-					var ffprobeJSON string
-					s.crud.DB.Raw("SELECT ff_probe FROM uploads WHERE transcode_results::jsonb ->> '320' = ? LIMIT 1", cid).Scan(&ffprobeJSON)
-					if ffprobeJSON != "" {
-						var probe FFProbeResult
-						if err := json.Unmarshal([]byte(ffprobeJSON), &probe); err == nil {
-							durationSeconds, _ = strconv.ParseFloat(probe.Format.Duration, 64)
-						}
-					}
-				}
-				s.trackAccessInfoCache.Set(cid, trackAccessInfo{trackID, managementKeyCount, durationSeconds}, imcache.WithExpiration(5*time.Minute))
+				s.trackAccessInfoCache.Set(cid, info, imcache.WithExpiration(5*time.Minute))
 			}
-			c.Set("trackDurationSeconds", durationSeconds)
+			trackID := info.TrackID
+			c.Set("trackDurationSeconds", info.DurationSeconds)
 
 			// If track has access_authorities (management_keys), ONLY those signers may authorize - not validator keys
-			if trackID != "" && managementKeyCount > 0 {
+			if trackID != "" && info.ManagementKeyCount > 0 {
 				var count int
 				normalizedSignerWallet := strings.ToLower(sig.SignerWallet)
-				s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackID, normalizedSignerWallet).Scan(&count)
+				if res := s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackID, normalizedSignerWallet).Scan(&count); res.Error != nil {
+					s.logger.Warn("access authority lookup failed; denying request",
+						zap.String("cid", cid), zap.String("track_id", trackID), zap.Error(res.Error))
+					return c.JSON(500, map[string]string{
+						"error":  "unable to verify track access",
+						"detail": "access authority lookup failed",
+					})
+				}
 				if count == 0 {
 					s.logger.Debug("sig no match (access_authorities)", zap.String("signed by", sig.SignerWallet), zap.String("track_id", trackID))
 					return c.JSON(401, map[string]string{
@@ -760,15 +797,30 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 		})
 	}
 
+	// A failed lookup must deny rather than fall through: an empty cid is
+	// indistinguishable from "no such track", and a zero count from "not an
+	// access authority", so neither can be read off a query that errored.
 	var cid string
-	ss.crud.DB.Raw("SELECT cid FROM sound_recordings WHERE track_id = ?", trackId).Scan(&cid)
+	if res := ss.crud.DB.Raw("SELECT cid FROM sound_recordings WHERE track_id = ?", trackId).Scan(&cid); res.Error != nil {
+		ss.logger.Warn("track cid lookup failed; denying request", zap.String("track_id", trackId), zap.Error(res.Error))
+		return c.JSON(500, map[string]string{
+			"error":  "unable to verify track access",
+			"detail": "track lookup failed",
+		})
+	}
 	if cid == "" {
 		return c.JSON(404, "track not found")
 	}
 
 	var count int
 	normalizedSignerWallet := strings.ToLower(sig.SignerWallet)
-	ss.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackId, normalizedSignerWallet).Scan(&count)
+	if res := ss.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackId, normalizedSignerWallet).Scan(&count); res.Error != nil {
+		ss.logger.Warn("access authority lookup failed; denying request", zap.String("track_id", trackId), zap.Error(res.Error))
+		return c.JSON(500, map[string]string{
+			"error":  "unable to verify track access",
+			"detail": "access authority lookup failed",
+		})
+	}
 	if count == 0 {
 		ss.logger.Debug("sig no match", zap.String("signed by", sig.SignerWallet))
 		return c.JSON(401, map[string]string{
