@@ -439,10 +439,36 @@ registration flow instead.
 This does leave the bootstrap node a single point of failure until real
 validators are registered and weighted — but that is true of any shape where
 only one node is actually running, so it is not a cost of this choice.
-- **Refuse to run when genesis and the key disagree.** `ensureGenesisFiles`
-  returns early when both files exist without checking they match, which is how
-  the T7 artifact ended up with a mismatched pair. A one-line comparison would
-  turn a silent dead chain into a startup error.
+### Do not refuse to start when the key is absent from genesis
+
+An earlier draft of this document suggested exactly that -- compare the
+validator key against the genesis set at startup and refuse on a mismatch. It
+would break the entire rollout.
+
+New-chain genesis lists **one** validator. Every other node's key is
+deliberately not in it; they join through registration (Runbook step 10), which
+is the only mechanism by which the fleet ever reaches the new chain. A node that
+refused to start because its key is absent from genesis would mean no node could
+join at all.
+
+The check that matters already exists and is a different one:
+`ensurePrivValidator` (`config/setup.go:232`) compares the key file against the
+key derived from the delegate key, and refuses to start on a mismatch **only
+when there is prior signing history** -- the double-sign guard. Genesis is not
+and should not be part of that comparison. (There is no `ensureGenesisFiles`
+function; the genesis-file handling is `setup.go:114-126`, which writes the file
+when absent and otherwise logs "Found genesis file". It does not compare
+anything, and that is correct.)
+
+The T7 case that motivated the suggestion was not a bug. A node whose key is not
+in genesis block-syncs normally and does not propose -- which is right. It looked
+like a dead chain only because it was the *only* node, so nobody proposed. On a
+network with peers it would sync fine.
+
+What would have helped is a diagnostic, not a refusal: log at startup when this
+node's validator key is not in the genesis set and note that it will not propose
+until it registers. That makes a single-node test harness obvious immediately
+and costs a joining node nothing.
 
 ## 5. Bootstrap node: audius.rickyrombo.com
 
