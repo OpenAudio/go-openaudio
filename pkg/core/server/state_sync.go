@@ -400,47 +400,60 @@ func snapshotDirFreeBytes(snapshotDir string) (int64, error) {
 	return int64(stat.Bavail) * int64(stat.Bsize), nil
 }
 
+// stateSyncSnapshotTables are the tables pg_dump serializes into a state-sync
+// snapshot. A node that state-syncs restores exactly these, so anything the
+// consensus path reads and cannot rederive from the block log has to be here.
+//
+// This list is maintained by hand, which has bitten us before: migration
+// 00028_fix_missing_tables_from_state_sync.sql exists solely to recreate tables
+// that a later migration added and nobody added here. TestSnapshotTablesCoverCoreSchema
+// now fails when a core_* table is created without a decision being recorded
+// about it.
+var stateSyncSnapshotTables = []string{
+	"access_keys",
+	"core_app_state",
+	// Consensus auth state: enforcement-active nodes validate proposals
+	// against these, so a state-synced node without them would reject
+	// every valid ManageEntity transaction and split from consensus.
+	// core_auth_cids is the content-authorization half of the same state:
+	// which user may assert a given cid as a track's audio.
+	"core_auth_cids",
+	"core_auth_developer_apps",
+	"core_auth_entities",
+	"core_auth_grants",
+	"core_auth_users",
+	"core_blocks",
+	"core_db_migrations",
+	"core_transactions",
+	"core_tx_stats",
+	"core_validators",
+	"management_keys",
+	"sla_node_reports",
+	"sla_rollups",
+	"sound_recordings",
+	"storage_proof_peers",
+	"storage_proofs",
+	"track_releases",
+	"core_ern",
+	"core_mead",
+	"core_pie",
+	"core_resources",
+	"core_releases",
+	"core_parties",
+	"core_deals",
+	"core_rewards",
+	"core_reward_pools",
+	"launchpad_authority_rm",
+	"core_uploads",
+	"validator_history",
+}
+
 // createPgDump creates a pg_dump of the database and writes it to the latest snapshot directory
 func (s *Server) createPgDump(logger *zap.Logger, latestSnapshotDir string) error {
 	pgString := s.config.PSQLConn
 	dumpPath := getPgDumpPath(latestSnapshotDir)
 
-	// You can customize this slice with the tables you want to dump
-	tables := []string{
-		"access_keys",
-		"core_app_state",
-		// Consensus auth state: enforcement-active nodes validate proposals
-		// against these, so a state-synced node without them would reject
-		// every valid ManageEntity transaction and split from consensus.
-		"core_auth_developer_apps",
-		"core_auth_entities",
-		"core_auth_grants",
-		"core_auth_users",
-		"core_blocks",
-		"core_db_migrations",
-		"core_transactions",
-		"core_tx_stats",
-		"core_validators",
-		"management_keys",
-		"sla_node_reports",
-		"sla_rollups",
-		"sound_recordings",
-		"storage_proof_peers",
-		"storage_proofs",
-		"track_releases",
-		"core_ern",
-		"core_mead",
-		"core_pie",
-		"core_resources",
-		"core_releases",
-		"core_parties",
-		"core_deals",
-		"core_rewards",
-		"core_reward_pools",
-		"launchpad_authority_rm",
-		"core_uploads",
-		"validator_history",
-	}
+	tables := stateSyncSnapshotTables
 
 	// Start building the args
 	args := []string{"--dbname=" + pgString, "-Fc"}
