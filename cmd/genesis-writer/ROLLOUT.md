@@ -34,6 +34,31 @@ header, so swapping it means rebuilding the chain (Reference §3).
 unchanged by the key swap, so this is confirming the fresh prod read, not
 re-litigating the pipeline.
 
+> **Seal the artifact before pointing anything at it.** The verification node,
+> the ETL, and every other service take the chain DB as `OPENAUDIO_DB_URL`, and
+> any of them can destroy it. A node whose binary does not embed *this*
+> artifact's genesis does not fail — it takes its "generate a new genesis" path
+> and runs the core migrations **down**, dropping every table the writer just
+> filled. `OPENAUDIO_ENV=dev` loads the embedded `dev.json`, so a binary built
+> before the genesis was copied in looks completely normal until it wipes a
+> ten-hour write. This has happened once already, on 2026-08-25.
+>
+> So do not let a connection string reach the pristine artifact at all:
+>
+> ```sql
+> ALTER DATABASE <artifact> WITH ALLOW_CONNECTIONS false;
+> CREATE DATABASE <artifact>_serve TEMPLATE <artifact>;
+> ```
+>
+> A sealed database still works as a `TEMPLATE` — that is how `template0`
+> works — so sealing first leaves no window where it is reachable, and the copy
+> is file-level (minutes, not a re-run). Point the node, the replay, and parity
+> at `<artifact>_serve`. If that copy is damaged, make another from the
+> template; the writer never runs twice.
+>
+> Verify the artifact **after** the services are up, not before. A count taken
+> before you start a node certifies a state that the node may then change.
+
 **4. Build the image, pinned — do not promote to `latest stable`.** Publishing
 *is* the mass migration, since genesis is compiled in (`//go:embed prod.json`).
 The image needs:
