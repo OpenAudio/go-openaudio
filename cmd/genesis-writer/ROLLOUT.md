@@ -233,7 +233,8 @@ explicit tag.**
 | Genesis is compiled into the binary | `config/genesis/genesis.go` (`//go:embed prod.json`) | Switching chains **requires a release**. Binary ships before anything cuts over. |
 | Chain ID changes: `audius-mainnet-alpha-beta` → `audius-mainnet-beta` | `genesis/prod.json:3` | Hard network split. CometBFT compares `NodeInfo.Network` at handshake, so old and new nodes **cannot** peer even when they dial each other. |
 | Data dir is namespaced by chain ID | `config/setup.go:67` — `cometRootDir = RootDir/chainID` | New chain gets a **fresh directory**; old chain data is untouched. Rollback is "ship the old image". Cost: both chains on disk. |
-| Prod genesis has 9 validators @ power 10; new genesis has 1 @ power 100 | `prod.json`, new `genesis.json` | One validator is 100% of voting power, so the bootstrap node commits blocks alone. See §3. |
+| Prod **genesis** lists 9 validators @ power 10; new genesis lists 1 @ power 100 | `prod.json`, new `genesis.json` | One validator is 100% of voting power, so the bootstrap node commits blocks alone. See §3. |
+| The **live** validator set is far larger than genesis — 67 of 72 registered nodes at the time of writing | `/core/nodes/verbose` on any node | Validators join by registration, not by genesis. Quorum and jailing math in the Runbook is over the live set, not the 9. Read the current number rather than assuming. |
 | Two hardcoded peer lists | `config.go:55` (`ProdPersistentPeers`), `config.go:85` (`ProdStateSyncRpcs`) | Both point at old-network hosts. Both must change in the shipped image. |
 | `ServeSnapshots` defaults **false** | `config.go:240` | Nobody serves snapshots unless explicitly enabled. |
 | Snapshot interval defaults to 100,000 blocks | `config.go:243` | First snapshot at height 100,000. See §2. |
@@ -273,7 +274,16 @@ repopulated with only the core consensus tables. Per table group:
 | `core_*` (the 33 in the allowlist) | wiped, restored from the snapshot — the intended outcome |
 | `etl_*` and app tables | wiped, not restored — fine, nothing runs the ETL (§2) |
 | mediorum `blobs` | wiped, rebuilt by re-listing the bucket. No blob re-download, but a full list cycle |
+| mediorum `uploads` | wiped, refills over HTTP via `scrollUploadsFromPeers` (`upload_client.go:58`), cursor-tracked per peer. Independent of the chain, so it heals across the migration split |
+| `audio_previews` | wiped, **recomputed from audio** — `findMissedJobs` → `generateAudioPreviewForUpload` once `uploads` is back |
+| `qm_audio_analyses` | wiped, **recomputed on demand** (`serve_blob.go:732`) |
 | `delist_statuses` + `delist_status_cursor` | both wiped together, so the poller re-fetches from the trusted notifier from zero and self-heals |
+
+Nothing is permanently lost, but the last two are real CPU on every node that
+joins — and in a fleet-wide migration they all pay it at once. Either have
+operators dump and restore those tables across the switch, or land the scoping
+fix so state sync stops truncating tables no snapshot restores
+(OpenAudio/go-openaudio#551), after which this row of the table becomes moot.
 
 The delist behaviour is worth being precise about: it self-heals **only because
 the cursor is truncated alongside the data** (`delist_statuses.go:175`). Were
@@ -407,6 +417,18 @@ commit a single block. Two independent CometBFT constraints:
 Hence one validator at power 100: 100% of voting power is the only shape where
 a single signer can both write the history and continue the chain.
 
+That power does not persist once the node runs. `core_registered_nodes` starts
+empty on the new chain — the writer never seeds it — so the bootstrap node finds
+itself absent and self-registers through the registry bridge, which is permitted
+without peers precisely because it is in genesis (`registry_bridge.go:325`).
+Registration carries `ValidatorVotingPower`, **10** on mainnet
+(`config.go:90`), and registrations are rejected outright at any other value
+(`registration.go:52`). So V is rewritten from 100 to 10 by its own
+registration. Harmless while it is alone — it is still 100% of the set — and it
+is in fact how the chain reaches the normal 10-per-validator shape as others
+join. Worth knowing, because the "power 100" invariant above holds only until
+the bootstrap node's first successful registration.
+
 Pre-listing the other validators would require *both* giving bootstrap >2/3
 (e.g. bootstrap 100, others 1 each → 91.7%) *and* changing the writer to pad
 `Signatures` with `BlockIDFlagAbsent` entries. Not worth it: at power 1 the
@@ -464,9 +486,23 @@ OPENAUDIO_STATE_SYNC_SERVE_SNAPSHOTS=true    # default is false
 OPENAUDIO_STATE_SYNC_ENABLE=false            # this node is the source
 ```
 
-Leave `BlockInterval` at its default so the first snapshot lands at 100,000
-(§2). Confirm free disk first: `createSnapshot` silently skips when free space
-is below `SnapshotMinFreeBytes`, default **80 GiB** (`config.go:48`).
+Set `BlockInterval` to 20,000 rather than leaving the 100,000 default, and keep
+`Keep` at 2 (Runbook step 4). At the default the first snapshot does not exist
+until height 100,000 — the catch-up path rounds down to the interval grid, which
+yields 0 below the first boundary — so nothing can state sync onto the new chain
+for the better part of a day, which is also the window in which the fewest nodes
+are on it.
+
+It is a producer-side setting: the three uses are all in snapshot creation
+(`state_sync.go`), and consumers discover snapshots through `ListSnapshots`, so
+lowering it on the bootstrap nodes needs no agreement from anyone else. Do not
+lower it so far that snapshots rotate out from under a syncing node: retention is
+`Keep × BlockInterval`, and `pruneSnapshots` deletes by name order with no regard
+for restores in flight. Size it against a measured restore time — the allowlist
+is ~46 GB on the migrated chain, nearly all of it `core_transactions`.
+
+Confirm free disk first: `createSnapshot` silently skips when free space is below
+`SnapshotMinFreeBytes`, default **80 GiB** (`config.go:48`).
 
 ## 6. The rest of the fleet
 
@@ -532,6 +568,12 @@ queue is therefore strictly a mirror of what the old chain already accepted.
 semantics, because **the chain will be regenerated** with the real validator key
 (§3). Any write already flushed and deleted survives only on the chain that gets
 discarded.
+
+AudiusProject/api#1018 does this — it marks rows `flushed_at` instead of
+deleting them, covering all three delete paths (forwarded, backfill-trimmed, and
+corrupt), and adds a partial index so retained rows stay out of the hot path. It
+is open and needs to land **before** flushing is first enabled, since queueing is
+already on in production.
 
 Replacing the delete with a `last_flushed_id` cursor makes the queue a durable
 log: after regenerating, set `newChainFlushFromBlock` to the new backfill's end
@@ -634,6 +676,14 @@ That query has **no `chain_id`** — `etl_blocks` is `(id, proposer_address,
 block_height, block_time)`. Pointed at the new chain it therefore resumes at the
 old chain's height, roughly 24M, against a chain at ~100,000, and polls for a
 block that will not exist for years. It fails silently, as a stall.
+
+There *is* a chain-aware fallback, and it is unreachable in exactly this case.
+Only when `GetLatestIndexedBlock` returns `pgx.ErrNoRows` does the indexer fall
+through to `SELECT MAX(height) FROM core_indexed_blocks WHERE chain_id = $1`
+(`indexer.go:302`). On any database that has indexed the old chain, `etl_blocks`
+is populated, so the first query answers and the chain-aware path never runs.
+That is why the failure is a silent stall rather than an obvious error: the code
+that would have caught it is one branch away.
 
 The mechanism exists upstream and takes precedence over the resume
 (`indexer.go:290`):
