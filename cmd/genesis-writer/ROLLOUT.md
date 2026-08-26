@@ -102,7 +102,13 @@ as `audius.rickyrombo.com`.**
    1. `OPENAUDIO_ARCHIVE=true` -- keep the whole chain history.
    2. `OPENAUDIO_STATE_SYNC_SERVE_SNAPSHOTS=true` -- take snapshots.
    3. `OPENAUDIO_STATE_SYNC_ENABLE=false` -- it is the source, not a consumer.
-   4. `OPENAUDIO_PERSISTENT_PEERS` overridden to an empty list.
+   4. `OPENAUDIO_PERSISTENT_PEERS` overridden to an empty list -- **not** to
+      escape old-network peers. Step 3 already replaced `ProdPersistentPeers` in
+      this binary, so the baked list is the two new bootstrap nodes. The reason
+      is narrower: at this point only this node exists, so the list resolves to
+      itself plus `v.audius.rickyrombo.com`, which is not up until step 7. The
+      override just avoids dial churn against a host that does not exist yet,
+      and can be dropped once step 7 is running.
    5. `BlockInterval` set to 20,000, `Keep` left at 2. Short enough that the
       first snapshot does not take a day, long enough that a syncing node does
       not have its snapshot rotate out from under it, and `Keep=2` holds storage
@@ -474,15 +480,24 @@ and costs a joining node nothing.
 
 ### Will it try to connect to the old network?
 
-It will **dial** old-network hosts — `ProdPersistentPeers` is baked in and
-retried every 15s (`setup.go:181`) — but every connection is **rejected at the
-handshake** on the `NodeInfo.Network` mismatch. No blocks, no state, negligible
-bandwidth. What you get is dial churn and noisy logs in both directions, since
-old nodes have this host in their address books too.
+**Outbound, no** -- provided it runs the step 3 binary. That build replaces
+`ProdPersistentPeers` with the two new bootstrap nodes, so there are no
+old-network hosts in the baked list to dial, and the writer output's
+`addrbook.json` is empty, so nothing else seeds them. (This section previously
+said otherwise and prescribed an env-var suppression; that advice assumed the
+node would run the *existing* binary with only genesis swapped, which step 3 no
+longer does.)
 
-Suppress it on this box with `OPENAUDIO_PERSISTENT_PEERS` — env var, no release
-needed. The writer output's `addrbook.json` is empty, so nothing else seeds old
-peers.
+**Inbound, yes, and you cannot stop it.** Old-network nodes have this host in
+their own address books and will keep dialing it, retried every 15s
+(`setup.go:181`). Every one of those connections is **rejected at the handshake**
+on the `NodeInfo.Network` mismatch -- no blocks, no state, negligible bandwidth.
+What remains is dial churn and noisy logs on both sides until those address book
+entries age out. No env var on this box affects it, because the dialing is
+happening elsewhere.
+
+`OPENAUDIO_PERSISTENT_PEERS` is still worth setting empty at step 4, but for the
+narrower reason given there: the second bootstrap node does not exist yet.
 
 ### Do the bootstrap lists need code changes?
 
