@@ -3,6 +3,40 @@
 Draft. The runbook is the plan; everything under Reference is the why, cited to
 code. Open questions are at the end and are genuinely open.
 
+## TL;DR
+
+Move the network from `audius-mainnet-alpha-beta` to `audius-mainnet-beta`: a new
+chain seeded with prod state, stood up on two nodes, joined by the fleet in
+batches, then cut over.
+
+| | | |
+|---|---|---|
+| **A** | 1 | Generate + verify the genesis artifacts |
+| | 2 | Register `v.audius.rickyrombo.com` (second state-sync RPC) |
+| | 3 | Build the new binary — do not merge and deploy |
+| **B** | 4 | Run the bootstrap node on the new chain |
+| | 5 | Route plays through old-chain hosts |
+| | 6 | Swap `audius.rickyrombo.com` to the new node |
+| | 7 | Stand up the second snapshot RPC |
+| | 8–9 | Confirm blocks, then snapshots |
+| **C** | 10 | Migrate the fleet — **≤10 nodes per jail cycle** |
+| | 11 | Enable flushing |
+| | 12 | Switch the indexer at height `L` |
+| | 13 | Revert play routing |
+| | 14 | **Point of no return** — stop relaying to the old chain |
+| | 15 | **Irreversible** — roll `:stable`, retiring the rollback anchors |
+| | 16 | Retire `v.audius.rickyrombo.com` |
+
+**The three that bite.** Step 10: a departed validator keeps its voting power
+until jailed, and past ⅓ the old chain halts with no self-recovery. Step 12: `L`
+must be a height in the *future*, or the indexer sails past it and blocks get
+indexed twice. Step 5/13: plays never touch the relay queue, so without routing
+they split across both chains for days.
+
+**Before starting:** merge api#1018 (or the first flush deletes rows off a chain
+that gets regenerated), api#1028 (step 12 cannot run without it), api#1029
+(step 5), and #551 (or every state-syncing node loses its mediorum tables).
+
 ---
 
 # Runbook
