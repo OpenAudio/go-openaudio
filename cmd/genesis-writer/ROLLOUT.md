@@ -56,6 +56,49 @@ cleanup.
 2. Verify them using the parity checker, consulting the known parity
    differences below.
 
+> **Getting a source snapshot first.** The writer reads a restored Discovery
+> Provider database, and the routine backup is not directly restorable: the
+> `db-backup` job in audius-k8s builds its `pg_dump` from a `--table` allowlist,
+> which omits types and functions, so the restore fails on missing types rather
+> than on anything obvious. Take the dump with `--exclude-table-data` instead, so
+> the schema comes across whole and only the bulk rows are skipped. Verify this
+> against the current job before relying on it.
+>
+> `user_balance_history` is roughly 85 GB of a ~276 GB snapshot and the migration
+> never reads it. Excluding its data cuts the restore substantially. Confirm
+> nothing you need has started reading it before dropping it.
+>
+> **Running the verification.** Serve the artifact from a node, replay it into a
+> scratch ETL database, then compare that against the source snapshot. Point the
+> replay at the **serve copy**, never the sealed original, and point `--db` at an
+> ETL database, never the chain database -- the replay creates ETL schema and
+> drops serving indexes in whatever it is given.
+>
+> ```
+> cmd/genesis-writer/replay/replay.sh run \
+>   --rpc http://localhost:50051 \
+>   --db  postgres://.../etl_<name> \
+>   --end <writer end height> \
+>   --restart-cmd '<how to restart postgres>'
+>
+> cd pkg/etl && go run ./parity \
+>   --db      postgres://.../etl_<name> \
+>   --prod-db postgres://.../<source snapshot>
+> ```
+>
+> `replay.sh run` is idempotent and resumes, so a failure part-way can just be
+> re-run. It ends by restoring settings, recreating the serving indexes it
+> dropped, and vacuuming; parity needs that to have finished.
+>
+> **Calibration, from the 2026-08-25 verification run** (`/Volumes/T7 Shield/
+> genesis-writer-test-6-30/run-2026-08-25`, against a 276 GB prod snapshot):
+> writer 3h47m producing 5,839 blocks and 58,235,010 transactions; replay 10h00m
+> indexing 56,817,444 manage-entity rows and 28,341,822 plays with 206 rejections;
+> parity ~4 minutes over 410,043 sampled rows. Two runs from the same snapshot
+> produced identical counts, so a deviation is signal. Use these to sanity-check
+> a run in progress, not as expected values -- a fresh snapshot changes all of
+> them.
+
 > *The source DSN and the validator key are not sufficient inputs.* `rewards` is
 > the writer's **first** step, so anything missing here fails the run in its
 > first second rather than hours in:
@@ -110,6 +153,19 @@ cleanup.
 >
 > The last three are cases where the reference is the less accurate side. A
 > review that assumes "source is truth" will flag the migration for being right.
+>
+> Row-level mismatches you will also see, all pre-existing ETL behaviour rather
+> than migration defects -- they would occur identically on live indexing:
+>
+> | Mismatch | Cause |
+> |---|---|
+> | a handful of `tracks.genre`, e.g. `sn_SomeGenre` -> `Sn_somegenre` | `NormalizeGenre` re-cases on write, while `ValidateGenre` documents genre as free-form. The two disagree; the chain carries the original, so re-indexing fixes it |
+> | occasional `tracks.musical_key` -> NULL, e.g. `"G flat"` | the allowlist mirrors apps' `is_valid_musical_key` and drops anything outside it. The chain carries the value |
+> | `track_downloads` reports rows "missing" | not missing -- row counts match exactly. The migration disagrees on `parent_track_id` for downloads of tracks that have since been **deleted**: deletion clears `stem_of` and the `stems` row, so the ETL cannot recover the historical parent. Every consumer joins on the downloaded track and filters `is_delete = false`, so those rows are already excluded from both counts. Nothing reads them |
+>
+> Every "missing" row in the report should reconcile to one of these or to the
+> stems/remixes and price-history entries above. On the 2026-08-25 run all 2,980
+> did. An unexplained one is worth stopping for.
 
 **2. Register a new validator to be the other state-sync RPC for the new network.**
 
@@ -172,6 +228,21 @@ as `audius.rickyrombo.com`.**
 
 1. api#1029 adds `playRoutingHosts` for this. It keeps plays from being
    segmented across both networks as nodes split.
+
+> Plays are recorded by whichever node **serves the audio** -- `logTrackListen`
+> runs at the top of mediorum's `serveBlob`, before it 307s to storage -- and
+> they never pass through the relay, so `new_chain_queue` does not carry them.
+> A migrated node therefore writes its plays to the new chain while the indexer
+> is still reading the old one, and nobody indexes them. Over a multi-day fleet
+> migration that is a large fraction of all plays.
+>
+> Point the routing at nodes that stay on the old chain. `creatornode.audius.co`
+> and `v.monophonic.digital` are the natural choice: store-all, and held back as
+> rollback anchors anyway. Bandwidth is not a concern -- they 307 to presigned
+> storage rather than streaming bytes, so the cost is one request and a signature
+> per play. The original hosts stay behind them as fallbacks, because a freshly
+> uploaded track may not have replicated to a store-all node yet and must still
+> stream.
    Plays are submitted by whichever node serves the audio, never through the
    relay, so without this every already-migrated node writes its plays to the
    new chain while the indexer is still reading the old one.
@@ -219,6 +290,21 @@ explicit tag.**
 4. Ideally make one of the migrated nodes a state-sync RPC so the pressure is not
    all on one machine.
 
+> **Why ten, and why wait.** Every registered node runs its own warden on a
+> 60-minute ticker (`registry_bridge.go:104`), and each run jails at most one
+> validator, so fleet-wide throughput is high -- not the constraint. The
+> constraint is eligibility: a validator must propose **no blocks across 8 SLA
+> rollups**, and a rollup is 2048 blocks (~34 minutes at prod's 1s cadence), so
+> roughly **4.5 hours** of silence before it can be jailed at all. A batch
+> therefore clears in about five hours, not one. Departed-but-unjailed
+> validators keep their voting power the whole time, which is what the ⅓ ceiling
+> is measured against.
+>
+> Attestations are not the binding constraint and can be ignored when sizing
+> batches: deregistration needs 5 signatures from a rendezvous of 15, which
+> survives until roughly ⅔ of the pool is unreachable -- twice the ⅓ at which
+> the chain has already halted.
+>
 > Jailing stops once the old network is down to ~30 active validators: the
 > underperformance purge has a killswitch below that count, so nothing further
 > is ever jailed. From there, roughly ten more departures halt the old chain,
