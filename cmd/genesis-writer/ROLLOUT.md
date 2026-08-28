@@ -9,12 +9,22 @@ is why, cited to code — the steps stay terse and point here.
 
 Move the network from `audius-mainnet-alpha-beta` to `audius-mainnet-beta`.
 
-The new chain is not synced from the old one. `genesis-writer` reads a
-production Discovery Provider snapshot and writes it directly into CometBFT
-blocks as synthetic transactions, producing a chain that already contains
-history at height ~5,839. Two nodes stand that chain up. The rest of the fleet
-joins in batches. Then writes and indexing cut over, and the old chain is
-retired.
+**The point is to put the history on chain.** `audius-mainnet-alpha-beta` does
+not contain most of the network's history: the chain began part-way through the
+protocol's life, and everything before it — the majority of users, tracks,
+playlists, follows, saves, reposts and plays — exists only in the application
+database. The chain holds what happened since. Anyone reconstructing state from
+`audius-mainnet-alpha-beta` alone gets a fraction of it.
+
+So the new chain cannot be synced from the old one; syncing would carry the same
+gap forward. Instead `genesis-writer` reads a production snapshot and writes that
+history directly into CometBFT blocks as synthetic transactions, producing a
+chain that already contains it at height ~5,839 before it has ever run
+consensus. Two nodes stand that chain up. The rest of the fleet joins in batches.
+Then writes and indexing cut over, and the old chain is retired.
+
+That is also why verification is the bulk of step 1: the artifact is the history,
+and once it ships there is no second source to reconcile against.
 
 Four things make it awkward, and most of the runbook exists because of them.
 
@@ -97,7 +107,7 @@ writes. Step 15 retires the rollback anchors. Step 16 is cleanup.
 
 ### 1. Generate the genesis artifacts
 
-1. Restore a production Discovery Provider snapshot → [Appendix A](#a-source-snapshot-and-writer-inputs).
+1. Restore a production snapshot → [Appendix A](#a-source-snapshot-and-writer-inputs).
 2. Run `genesis-writer` with `--priv-validator-key-file` pointing at the
    bootstrap validator key. Inputs and preconditions → [Appendix A](#a-source-snapshot-and-writer-inputs).
 3. **Seal the artifact before anything connects to it** → [Appendix B](#b-sealing-the-artifact).
@@ -260,8 +270,8 @@ stopped, and it will halt — by design → [Appendix H](#h-fleet-migration-arit
 
 ## A. Source snapshot and writer inputs
 
-**Getting a source snapshot first.** The writer reads a restored Discovery
-Provider database, and the routine backup is not directly restorable: the
+**Getting a source snapshot first.** The writer reads a restored production
+database, and the routine backup is not directly restorable: the
 `db-backup` job in audius-k8s builds its `pg_dump` from a `--table` allowlist,
 which omits types and functions, so the restore fails on missing types rather
 than on anything obvious. Take the dump with `--exclude-table-data` instead, so
