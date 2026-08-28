@@ -36,6 +36,8 @@ they split across both chains for days.
 **Before starting:** merge api#1018 (or the first flush deletes rows off a chain
 that gets regenerated), api#1028 (step 12 cannot run without it), api#1029
 (step 5), and #551 (or every state-syncing node loses its mediorum tables).
+The binary for steps 4-10 is #553, which must **not** be merged -- run the image
+CI builds from it.
 
 ---
 
@@ -118,10 +120,21 @@ cleanup.
 
 **3. Create a new binary for the new network. Do not merge and deploy.**
 
+**#553** is this branch. Merging it and shipping it as `stable` *is* the mass
+migration, so it stays open; what you want is the image CI publishes from it,
+tagged by commit sha (`openaudio/go-openaudio:<sha>`, multi-arch).
+
 1. Update `pkg/core/config/genesis/prod.json` to the new genesis file.
 2. Update `ProdPersistentPeers` to the two bootstrap nodes
    (`v.audius.rickyrombo.com` and `audius.rickyrombo.com`).
 3. Update `ProdStateSyncRpcs` to the same two.
+
+> The node key **is** the comet key (`p2p.NodeKey{PrivKey: envConfig.CometKey}`,
+> `setup.go:105`), so a node's P2P id is its validator address. The bootstrap's
+> id is therefore its genesis validator address lowercased, derivable before it
+> ever runs. `v.audius.rickyrombo.com` cannot be listed until it exists; until
+> then the second node reaches the network by dialling the first and PEX
+> propagates. Fill it in before step 15.
 
 ## Phase B -- stand up the new network
 
@@ -130,6 +143,10 @@ as `audius.rickyrombo.com`.**
 
 1. Spin up another node with the new embedded genesis file, preseeded with the
    core files (using a different network name and location) and a fresh database.
+   **Exclude `node_key.json`.** The one in the writer output belongs to whatever
+   node last ran against that directory, and seeding it gives the bootstrap a
+   P2P identity unrelated to its delegate key -- and unrelated to the id in
+   `ProdPersistentPeers`. Delete it and let the node derive its own.
 2. Point its storage at the same storage as the old node so both have all the
    blobs.
 3. Environment:
@@ -153,7 +170,8 @@ as `audius.rickyrombo.com`.**
 **5. Deploy an API change so all plays go through `v.monophonic.digital` and
 `creatornode.audius.co` temporarily.**
 
-1. This keeps plays from being segmented across both networks as nodes split.
+1. api#1029 adds `playRoutingHosts` for this. It keeps plays from being
+   segmented across both networks as nodes split.
    Plays are submitted by whichever node serves the audio, never through the
    relay, so without this every already-migrated node writes its plays to the
    new chain while the indexer is still reading the old one.
@@ -196,6 +214,8 @@ explicit tag.**
    jailed, and past one third of total power the old chain halts -- taking the
    rollback anchor with it.
 3. **Do not** migrate the old network's snapshot RPCs. They are the rollback plan.
+   Land #551 before this step, or every node that state syncs loses its mediorum
+   tables and the whole fleet regenerates previews and analyses at once.
 4. Ideally make one of the migrated nodes a state-sync RPC so the pressure is not
    all on one machine.
 
@@ -209,11 +229,18 @@ explicit tag.**
 
 **11. Flush the API's queue.**
 
-1. `newChainFlushEnabled=true`, `NewChainURL` -> bootstrap, and
+1. api#1018 must be merged first, or the flusher deletes each row after
+   forwarding -- and the chain is regenerated with the real validator key before
+   it ships, so anything flushed-and-deleted survives only on the discarded one.
+2. `newChainFlushEnabled=true`, `NewChainURL` -> bootstrap, and
    `NewChainFlushFromBlock` set to the latest block in the snapshot used to
    generate the genesis.
 
 **12. Switch the indexer to the new chain.**
+
+api#1028 provides the three controls this step needs -- `etlStartingBlockHeight`,
+`etlEndingBlockHeight`, and the `newChainFlushToBlock` ceiling. Without them the
+step cannot be executed at all.
 
 1. Set a height `L` in the future that the flusher will filter below and the
    old-network indexer will stop indexing at. `L` must be in the future: picking
@@ -238,7 +265,8 @@ explicit tag.**
 > one below it. `L` is inclusive -- the block is committed before the indexer
 > stops -- so the ceiling is `confirmed_block <= L`.
 
-**13. Revert the change that routes all streams through the old network.**
+**13. Revert the change that routes all streams through the old network**
+(clear `playRoutingHosts`, api#1029).
 
 1. This needs to happen immediately after step 12, or before it. Ideally at
    exactly `L`, but that is a lot of coupling for the benefit.
@@ -775,7 +803,10 @@ The mechanism exists upstream and takes precedence over the resume
     }
 
 So the change is small — expose a start height in `api/config` and pass it to
-`SetStartingBlockHeight` — but it must land before the cutover.
+`SetStartingBlockHeight` — but it must land before the cutover. api#1028 does
+this, along with the matching end height and the flusher ceiling. Note that both
+bounds are one-shot: nothing consumes them, so they must be cleared afterwards
+or every restart re-indexes from the start height and duplicates plays.
 
 ### Why draining the queue first matters
 
