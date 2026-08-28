@@ -94,11 +94,11 @@ writes. Step 15 retires the rollback anchors. Step 16 is cleanup.
 
 | PR | Without it |
 |---|---|
-| api#1018 | the first flush deletes rows off a chain that gets regenerated |
-| api#1028 | step 12 cannot be executed at all |
-| api#1029 | plays split across both chains for the whole migration |
-| #551 | every node that state syncs loses its mediorum tables |
-| #553 | **not merged** — it is the binary for steps 4–10; run the image CI builds from it |
+| [api#1018](https://github.com/AudiusProject/api/pull/1018) | the first flush deletes rows off a chain that gets regenerated |
+| [api#1028](https://github.com/AudiusProject/api/pull/1028) | step 12 cannot be executed at all |
+| [api#1029](https://github.com/AudiusProject/api/pull/1029) | plays split across both chains for the whole migration |
+| [#551](https://github.com/OpenAudio/go-openaudio/pull/551) | every node that state syncs loses its mediorum tables |
+| [#553](https://github.com/OpenAudio/go-openaudio/pull/553) | **not merged** — it is the binary for steps 4–10; run the image CI builds from it |
 
 ---
 # 2. Rollout steps
@@ -125,7 +125,7 @@ The new network needs two state-sync RPCs, and `creatornode.audius.co` and
 
 ### 3. Build the new-network binary
 
-**Do not merge.** Merging and shipping as `stable` *is* the migration. #553 is
+**Do not merge.** Merging and shipping as `stable` *is* the migration. [#553](https://github.com/OpenAudio/go-openaudio/pull/553) is
 this branch; use the image CI publishes from it, tagged by commit sha
 (`openaudio/go-openaudio:<sha>`, multi-arch).
 
@@ -153,7 +153,7 @@ fresh database.
 
 ### 5. Route plays through old-chain hosts
 
-Set `playRoutingHosts` (api#1029) to `creatornode.audius.co` and
+Set `playRoutingHosts` ([api#1029](https://github.com/AudiusProject/api/pull/1029)) to `creatornode.audius.co` and
 `v.monophonic.digital`. Must be in place **before** any node migrates.
 
 Why this is necessary → [Appendix G](#g-why-plays-need-routing).
@@ -201,12 +201,12 @@ Operators set an explicit image tag.
 4. Ideally make one migrated node a state-sync RPC so the load is not on one
    machine.
 
-Land #551 before this step, or every node that state syncs loses its mediorum
+Land [#551](https://github.com/OpenAudio/go-openaudio/pull/551) before this step, or every node that state syncs loses its mediorum
 tables and the fleet regenerates previews and analyses at once.
 
 ### 11. Enable flushing
 
-Requires api#1018 merged first.
+Requires [api#1018](https://github.com/AudiusProject/api/pull/1018) merged first.
 
 1. `newChainFlushEnabled=true`
 2. `NewChainURL` → bootstrap
@@ -218,7 +218,7 @@ is serial, and step 12 depends on it draining.
 
 ### 12. Switch the indexer
 
-Requires api#1028 merged first — it provides `etlStartingBlockHeight`,
+Requires [api#1028](https://github.com/AudiusProject/api/pull/1028) merged first — it provides `etlStartingBlockHeight`,
 `etlEndingBlockHeight` and `newChainFlushToBlock`.
 
 1. Pick a height `L` **in the future**. Set it as the flusher's ceiling and the
@@ -584,7 +584,7 @@ Nothing is permanently lost, but the last two are real CPU on every node that
 joins — and in a fleet-wide migration they all pay it at once. Either have
 operators dump and restore those tables across the switch, or land the scoping
 fix so state sync stops truncating tables no snapshot restores
-(OpenAudio/go-openaudio#551), after which this row of the table becomes moot.
+([#551](https://github.com/OpenAudio/go-openaudio/pull/551)), after which this row of the table becomes moot.
 
 The delist behaviour is worth being precise about: it self-heals **only because
 the cursor is truncated alongside the data** (`delist_statuses.go:175`). Were
@@ -905,7 +905,7 @@ semantics, because **the chain will be regenerated** with the real validator key
 (§3). Any write already flushed and deleted survives only on the chain that gets
 discarded.
 
-AudiusProject/api#1018 does this — it marks rows `flushed_at` instead of
+[api#1018](https://github.com/AudiusProject/api/pull/1018) does this — it marks rows `flushed_at` instead of
 deleting them, covering all three delete paths (forwarded, backfill-trimmed, and
 corrupt), and adds a partial index so retained rows stay out of the hot path. It
 is open and needs to land **before** flushing is first enabled, since queueing is
@@ -1031,7 +1031,7 @@ The mechanism exists upstream and takes precedence over the resume
     }
 
 So the change is small — expose a start height in `api/config` and pass it to
-`SetStartingBlockHeight` — but it must land before the cutover. api#1028 does
+`SetStartingBlockHeight` — but it must land before the cutover. [api#1028](https://github.com/AudiusProject/api/pull/1028) does
 this, along with the matching end height and the flusher ceiling. Note that both
 bounds are one-shot: nothing consumes them, so they must be cleared afterwards
 or every restart re-indexes from the start height and duplicates plays.
