@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/OpenAudio/go-openaudio/pkg/core/config/genesis"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
@@ -12,9 +13,26 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
+// bootstrappingNewChain reports whether the embedded prod genesis is a chain
+// still being stood up -- one validator, i.e. nobody has registered yet.
+//
+// The peer-list guards below describe a mature network: many peers, and a
+// selection that differs per node so gossip is not funnelled through a hub.
+// Neither can hold while a chain is being born, because there is one node. The
+// guards stay in force for the established network and step aside only here.
+func bootstrappingNewChain(t *testing.T) bool {
+	t.Helper()
+	doc, err := genesis.Read("prod")
+	require.NoError(t, err)
+	return len(doc.Validators) == 1
+}
+
 // test that moduloPersistentPeers returns the expected number of persistent peers
 // and that it changes the 3 based on the provided eth address
 func TestModuloPersistentPeers(t *testing.T) {
+	if bootstrappingNewChain(t) {
+		t.Skip("single-validator genesis: one bootstrap peer, so every node selects the same one")
+	}
 	nodes := moduloPersistentPeers("0xff432F81D0eb77DA5973Cf55e24A897882fdd3E6", ProdPersistentPeers, 3)
 	selectedPersistentPeers := strings.Split(nodes, ",")
 	if len(selectedPersistentPeers) != 3 {
@@ -32,7 +50,9 @@ func TestModuloPersistentPeers(t *testing.T) {
 
 func TestProdPersistentPeersBroadAndParseable(t *testing.T) {
 	peers := strings.Split(ProdPersistentPeers, ",")
-	require.GreaterOrEqual(t, len(peers), 20, "prod should not bootstrap from a tiny hub-only peer set")
+	if !bootstrappingNewChain(t) {
+		require.GreaterOrEqual(t, len(peers), 20, "prod should not bootstrap from a tiny hub-only peer set")
+	}
 
 	seen := map[string]bool{}
 	for _, peer := range peers {
