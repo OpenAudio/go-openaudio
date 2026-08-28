@@ -192,6 +192,11 @@ explicit tag.**
    fire-and-forget, so a straggler can appear after the queue first reads empty.
 3. Start the indexer without a ceiling on the new network at height `H + 1`.
 4. Turn flushing back on without a filter.
+5. **Clear both indexer bounds.** Neither is consumed -- the ETL re-reads them
+   on every startup. A start height left set makes each restart re-index from
+   that height, and `etl_plays` has no unique key, so plays duplicate rather
+   than upsert. An end height left set stops the indexer at `L` forever. Both
+   log at warn while they are in effect.
 
 > The filter is a *filter*, not a halt: skip rows above `L`, keep draining those
 > below. Enqueue is dispatched asynchronously, so `confirmed_block` is only
