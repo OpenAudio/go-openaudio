@@ -144,6 +144,15 @@ func (ss *MediorumServer) listBucketIntoIndex(ctx context.Context, bucket *blob.
 		return err
 	}
 	if !sawEscaped {
+		if ss.presenceStoreEnabled(bucket) {
+			// Persist what the walk found so later cycles can read presence per
+			// batch instead of enumerating again. Best-effort: a failure here
+			// just means the next cycle enumerates.
+			if err := ss.savePresenceStore(ctx, bucket, index); err != nil {
+				ss.logger.Warn("failed to persist presence store",
+					zap.String("dir", dir), zap.Error(err))
+			}
+		}
 		return nil
 	}
 

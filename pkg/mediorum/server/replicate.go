@@ -148,6 +148,7 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 	}
 
 	ss.knownPresent.Set(ss.presenceCacheKey(key, bucket), n, imcache.WithNoExpiration())
+	ss.recordBlobPresent(bucket, key, n)
 
 	// Reclaim orphaned ".tmp" files sitting alongside this key. Cheap (the
 	// directory is hot from the write and holds a handful of entries) and
@@ -175,6 +176,7 @@ func (ss *MediorumServer) dropFromMyBucket(fileName string) error {
 			return
 		}
 		ss.knownPresent.Remove(ss.presenceCacheKey(key, b))
+		ss.forgetBlobPresent(b, key)
 	}
 
 	deleteFrom(ss.bucket)

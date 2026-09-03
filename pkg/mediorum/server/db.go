@@ -157,7 +157,7 @@ func dbMustDial(dbPath string) *gorm.DB {
 func dbMigrate(crud *crudr.Crudr, myHost string) {
 	// Migrate the schema
 	slog.Info("db: gorm automigrate")
-	err := crud.DB.AutoMigrate(&Upload{}, &RepairTracker{}, &UploadCursor{}, &StorageAndDbSize{}, &DailyMetrics{}, &MonthlyMetrics{}, &QmAudioAnalysis{}, &AudioPreview{})
+	err := crud.DB.AutoMigrate(&Upload{}, &RepairTracker{}, &UploadCursor{}, &StorageAndDbSize{}, &DailyMetrics{}, &MonthlyMetrics{}, &QmAudioAnalysis{}, &AudioPreview{}, &BlobPresence{}, &BlobPresenceState{})
 	if err != nil {
 		panic(err)
 	}

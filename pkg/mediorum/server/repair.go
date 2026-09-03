@@ -259,19 +259,44 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 		}
 	}
 
-	var presenceIndex *repairPresenceIndex
-	ss.logger.Info("building repair presence index from bucket listing")
-	indexStart := time.Now()
-	idx, err := ss.buildRepairPresenceIndex(ctx)
-	if err != nil {
-		ss.logger.Warn("failed to build presence index; falling back to per-key attrs", zap.Error(err))
-		tracker.Counters["qm_cids_list_index_build_fail"]++
+	// Presence is resolved one of two ways this cycle.
+	//
+	// Per batch from the durable store, when it is enabled, every bucket is
+	// file://-backed, has been fully enumerated at least once, and still looks
+	// like the disk the store describes. Cleanup never qualifies: it is the
+	// ground-truth pass, and reading a table instead of the filesystem would
+	// defeat it.
+	//
+	// Otherwise enumerate every bucket up front, exactly as before. That is
+	// also what populates the store, so it stays the fallback for every case
+	// the store cannot serve -- including, by default, all of them.
+	var cycleIndex *repairPresenceIndex
+	usePerBatchPresence := false
+	if !tracker.CleanupMode {
+		if err := ss.presenceStoreReady(ctx); err != nil {
+			ss.logger.Debug("presence store not usable this cycle; enumerating buckets",
+				zap.Error(err))
+		} else {
+			usePerBatchPresence = true
+		}
+	}
+	if usePerBatchPresence {
+		ss.logger.Info("resolving presence per batch from the durable store")
+		tracker.Counters["presence_from_store"] = 1
 	} else {
-		presenceIndex = idx
-		tracker.Counters["qm_cids_list_index_entries"] = len(idx.entries)
-		ss.logger.Info("presence index built",
-			zap.Int("entries", len(idx.entries)),
-			zap.Duration("took", time.Since(indexStart)))
+		ss.logger.Info("building repair presence index from bucket listing")
+		indexStart := time.Now()
+		idx, err := ss.buildRepairPresenceIndex(ctx)
+		if err != nil {
+			ss.logger.Warn("failed to build presence index; falling back to per-key attrs", zap.Error(err))
+			tracker.Counters["qm_cids_list_index_build_fail"]++
+		} else {
+			cycleIndex = idx
+			tracker.Counters["qm_cids_list_index_entries"] = len(idx.entries)
+			ss.logger.Info("presence index built",
+				zap.Int("entries", len(idx.entries)),
+				zap.Duration("took", time.Since(indexStart)))
+		}
 	}
 
 	// scroll uploads and repair CIDs
@@ -300,6 +325,23 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 		if len(uploads) == 0 {
 			break
 		}
+		presenceIndex, err := ss.presenceForBatch(ctx, cycleIndex, tracker, func() []string {
+			cids := make([]string, 0, len(uploads)*3)
+			for _, u := range uploads {
+				cids = append(cids, u.OrigFileCID)
+				if u.Template != JobTemplateAudio {
+					continue
+				}
+				for _, cid := range u.TranscodeResults {
+					cids = append(cids, cid)
+				}
+			}
+			return cids
+		})
+		if err != nil {
+			return err
+		}
+
 		sem := make(chan struct{}, repairConcurrency)
 		var wg sync.WaitGroup
 		for _, u := range uploads {
@@ -360,6 +402,17 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 		if len(previews) == 0 {
 			break
 		}
+		presenceIndex, err := ss.presenceForBatch(ctx, cycleIndex, tracker, func() []string {
+			cids := make([]string, 0, len(previews))
+			for _, u := range previews {
+				cids = append(cids, u.CID)
+			}
+			return cids
+		})
+		if err != nil {
+			return err
+		}
+
 		sem := make(chan struct{}, repairConcurrency)
 		var wg sync.WaitGroup
 		for _, u := range previews {
@@ -418,6 +471,11 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 		if len(cidBatch) == 0 {
 			break
 		}
+		presenceIndex, err := ss.presenceForBatch(ctx, cycleIndex, tracker, func() []string { return cidBatch })
+		if err != nil {
+			return err
+		}
+
 		sem := make(chan struct{}, repairConcurrency)
 		var wg sync.WaitGroup
 		for _, cid := range cidBatch {
@@ -622,6 +680,7 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 					tracker.SeenKeys[key] = seenKeyResult{alreadyHave: false, size: 0}
 					tracker.mu.Unlock()
 					ss.knownPresent.Remove(presenceKey)
+					ss.forgetBlobPresent(bucket, key)
 				} else {
 					tracker.mu.Lock()
 					tracker.Counters["delete_invalid_fail"]++
@@ -661,6 +720,7 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 				tracker.mu.Unlock()
 				// Variants always live in primary; only the primary cache key matters.
 				ss.knownPresent.Remove(ss.presenceCacheKey(key, ss.bucket))
+				ss.forgetBlobPresent(ss.bucket, key)
 			}
 		}
 		return nil
@@ -831,4 +891,32 @@ func (ss *MediorumServer) serveRepairLog(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, logs)
+}
+
+// presenceForBatch returns the presence index a batch should consult.
+//
+// When the cycle enumerated its buckets up front, that index is reused and
+// gatherCIDs is never called -- which is the default, and is exactly what
+// happened before the durable store existed. Otherwise presence is queried for
+// just this batch's keys.
+//
+// gatherCIDs is a closure rather than a slice so the walk over the batch is
+// skipped entirely on the reuse path.
+func (ss *MediorumServer) presenceForBatch(
+	ctx context.Context,
+	cycleIndex *repairPresenceIndex,
+	tracker *RepairTracker,
+	gatherCIDs func() []string,
+) (*repairPresenceIndex, error) {
+	if cycleIndex != nil {
+		return cycleIndex, nil
+	}
+	index, err := ss.presenceForCIDs(ctx, gatherCIDs())
+	if err != nil {
+		return nil, err
+	}
+	tracker.mu.Lock()
+	tracker.Counters["presence_batch_queries"]++
+	tracker.mu.Unlock()
+	return index, nil
 }

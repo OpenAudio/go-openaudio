@@ -141,6 +141,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	repairInterval := env.GetDuration(time.Hour, "OPENAUDIO_REPAIR_INTERVAL")
 	repairConcurrency := env.GetInt(1, "OPENAUDIO_REPAIR_CONCURRENCY")
 	presenceWalkConcurrency := env.GetInt(1, "OPENAUDIO_PRESENCE_WALK_CONCURRENCY")
+	presenceStoreEnabled := env.Get("false", "OPENAUDIO_PRESENCE_STORE_ENABLED") == "true"
 	storeRecentTTL := parseStoreRecentTTL(env.String("OPENAUDIO_STORE_RECENT_TTL"))
 
 	// Waveform analysis configuration. Every switch defaults to false so the
@@ -189,6 +190,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		RepairInterval:            repairInterval,
 		RepairConcurrency:         repairConcurrency,
 		PresenceWalkConcurrency:   presenceWalkConcurrency,
+		PresenceStoreEnabled:      presenceStoreEnabled,
 		Archive:                   archive,
 		OpsRetention:              opsRetention,
 		OpsPruneInterval:          opsPruneInterval,

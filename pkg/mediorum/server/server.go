@@ -88,6 +88,11 @@ type MediorumConfig struct {
 	RepairInterval            time.Duration `default:"1h"`
 	RepairConcurrency         int           `default:"1"`
 
+	// PresenceStoreEnabled turns on the durable blob_presence store. Off by
+	// default: with it off, every repair cycle enumerates its buckets exactly
+	// as it did before the store existed, and nothing writes to the table.
+	PresenceStoreEnabled bool
+
 	// PresenceWalkConcurrency is how many shard directories the presence index
 	// walk visits at once. 1 -- the default -- selects the original serial walk
 	// verbatim, so a node that sets nothing behaves exactly as before.
