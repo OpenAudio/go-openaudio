@@ -64,7 +64,7 @@ func TestWalkFileBucketMatchesGocloudList(t *testing.T) {
 	require.NoError(t, listIntoIndex(ctx, bucket, viaList))
 
 	viaWalk := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
-	sawEscaped, err := walkFileBucketIntoIndex(ctx, dir, bucket, viaWalk)
+	sawEscaped, err := walkFileBucketSerial(ctx, dir, bucket, viaWalk)
 	require.NoError(t, err)
 	assert.False(t, sawEscaped, "plain ShardCID keys are never hex-escaped")
 
@@ -92,7 +92,7 @@ func TestWalkFileBucketReportsEscapedPath(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "weird__0x1f_key"), []byte("x"), 0o600))
 
 	index := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
-	sawEscaped, err := walkFileBucketIntoIndex(ctx, dir, bucket, index)
+	sawEscaped, err := walkFileBucketSerial(ctx, dir, bucket, index)
 	require.NoError(t, err)
 	assert.True(t, sawEscaped, "escaped path must trigger the bucket.List fallback")
 }
@@ -104,7 +104,7 @@ func TestWalkFileBucketReportsEscapedPath(t *testing.T) {
 // repair would conclude it holds nothing and re-pull the entire corpus.
 func TestWalkFileBucketErrorsOnMissingDir(t *testing.T) {
 	index := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
-	_, err := walkFileBucketIntoIndex(context.Background(),
+	_, err := walkFileBucketSerial(context.Background(),
 		filepath.Join(t.TempDir(), "not-mounted"), nil, index)
 	assert.Error(t, err)
 	assert.Empty(t, index.entries)
@@ -174,4 +174,129 @@ func TestNextUploadBatchVisitsEveryUpload(t *testing.T) {
 		}
 	}
 	assert.Zero(t, repeated, "%d uploads visited more than once; the cursor is re-reading rows", repeated)
+}
+
+// The walk fans out across shard directories, so concurrency must not change
+// what it produces. This pins the parallel walk to both the serial walk and to
+// gocloud's List — the same invariant TestWalkFileBucketMatchesGocloudList
+// asserts, but over a tree big enough to span several ReadDir batches and to
+// actually run workers side by side. Run with -race to catch unsynchronized
+// writes into the shared index.
+func TestWalkFileBucketParallelMatchesSerialAndList(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	bucket, err := persistence.Open("file://" + dir + "?no_tmp_dir=true")
+	require.NoError(t, err)
+	defer bucket.Close()
+
+	// Several shards with several blobs each, plus keys that cidutil.ShardCID
+	// passes through unchanged and so land directly in the bucket root.
+	var keys []string
+	for shard := 0; shard < 12; shard++ {
+		for blob := 0; blob < 3; blob++ {
+			keys = append(keys, fmt.Sprintf("sh%02d/blob-%d", shard, blob))
+		}
+	}
+	keys = append(keys, "unsharded-key-a", "unsharded-key-b")
+	for i, k := range keys {
+		require.NoError(t, bucket.WriteAll(ctx, k, bytes.Repeat([]byte("x"), i+1), nil))
+	}
+
+	viaList := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
+	require.NoError(t, listIntoIndex(ctx, bucket, viaList))
+	require.Len(t, viaList.entries, len(keys), "List should see every key and no .attrs sidecars")
+
+	// batch smaller than the number of shards forces multiple ReadDir rounds.
+	serial := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
+	sawEscaped, err := walkFileBucketConcurrent(ctx, dir, bucket, serial, 1, 1)
+	require.NoError(t, err)
+	assert.False(t, sawEscaped)
+
+	parallel := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
+	sawEscaped, err = walkFileBucketConcurrent(ctx, dir, bucket, parallel, 16, 4)
+	require.NoError(t, err)
+	assert.False(t, sawEscaped)
+
+	assert.Equal(t, viaList.entries, serial.entries, "serial walk must match List")
+	assert.Equal(t, viaList.entries, parallel.entries, "parallel walk must match List")
+	assert.Equal(t, serial.entries, parallel.entries, "concurrency must not change the result")
+}
+
+// The escaped-path check runs per file, so it has to fire for a file nested in
+// a shard directory and not just one sitting in the bucket root — the fan-out
+// evaluates those on different goroutines.
+func TestWalkFileBucketReportsEscapedPathInsideShard(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	bucket, err := persistence.Open("file://" + dir + "?no_tmp_dir=true")
+	require.NoError(t, err)
+	defer bucket.Close()
+
+	require.NoError(t, bucket.WriteAll(ctx, "shard/ok-key", []byte("x"), nil))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "shard2"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "shard2", "weird__0x1f_key"), []byte("x"), 0o600))
+
+	index := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
+	sawEscaped, err := walkFileBucketSerial(ctx, dir, bucket, index)
+	require.NoError(t, err)
+	assert.True(t, sawEscaped, "escaped path inside a shard must trigger the fallback")
+}
+
+// A cancelled context must stop the walk rather than run it to completion.
+func TestWalkFileBucketHonorsContextCancellation(t *testing.T) {
+	dir := t.TempDir()
+
+	bucket, err := persistence.Open("file://" + dir + "?no_tmp_dir=true")
+	require.NoError(t, err)
+	defer bucket.Close()
+
+	for shard := 0; shard < 8; shard++ {
+		require.NoError(t, bucket.WriteAll(context.Background(),
+			fmt.Sprintf("sh%02d/blob", shard), []byte("x"), nil))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	index := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
+	_, err = walkFileBucketConcurrent(ctx, dir, bucket, index, 4, 2)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+// The concurrent walk is opt-in. At the default the selector must run the
+// serial walk, so a node that sets nothing keeps the behaviour it had before
+// the option existed — and whichever path runs, the index must be the same.
+func TestWalkFileBucketSelectorDefaultsToSerial(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	bucket, err := persistence.Open("file://" + dir + "?no_tmp_dir=true")
+	require.NoError(t, err)
+	defer bucket.Close()
+
+	for shard := 0; shard < 6; shard++ {
+		for blob := 0; blob < 3; blob++ {
+			require.NoError(t, bucket.WriteAll(ctx,
+				fmt.Sprintf("sh%02d/blob-%d", shard, blob), bytes.Repeat([]byte("x"), blob+1), nil))
+		}
+	}
+	require.NoError(t, bucket.WriteAll(ctx, "unsharded", []byte("x"), nil))
+
+	viaList := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
+	require.NoError(t, listIntoIndex(ctx, bucket, viaList))
+
+	// Config only — walkFileBucket reads nothing else off the server, and this
+	// avoids mutating the shared test network.
+	for _, concurrency := range []int{0, 1, 8} {
+		ss := &MediorumServer{Config: MediorumConfig{PresenceWalkConcurrency: concurrency}}
+		index := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
+		sawEscaped, err := ss.walkFileBucket(ctx, dir, bucket, index)
+		require.NoError(t, err, "concurrency=%d", concurrency)
+		assert.False(t, sawEscaped)
+		assert.Equal(t, viaList.entries, index.entries,
+			"concurrency=%d must produce the same index", concurrency)
+	}
 }
