@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gocloud.dev/blob"
 )
 
 // forceWaveformRollup bypasses the freshness gate. The TTL exists to keep a
@@ -237,4 +238,114 @@ func TestRollupCountsDistinctBlobsNotSlots(t *testing.T) {
 	targets := waveformTargets(upload)
 	require.Len(t, targets, 1)
 	require.Equal(t, cid, targets[0].cid)
+}
+
+func seedQmCid(t *testing.T, ss *MediorumServer, key string) {
+	t.Helper()
+	_, err := ss.pgPool.Exec(context.Background(),
+		`insert into qm_cids (key) values ($1) on conflict do nothing`, key)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ss.pgPool.Exec(context.Background(), `delete from qm_cids where key = $1`, key)
+	})
+}
+
+// Legacy content has no upload row, so the discovery walk cannot see it. That
+// left every legacy track permanently without a waveform -- which matters more
+// than the count suggests, since the all-time trending tracks are legacy cids.
+func TestLegacyWalkEnqueuesQmCidsMissingWaveforms(t *testing.T) {
+	ss := testNetwork[0]
+	withWaveformEnabled(t, ss)
+	ctx := context.Background()
+	drainWaveformWork(ss)
+	clearWaveformCursor(t, ss)
+	t.Cleanup(func() { drainWaveformWork(ss); clearWaveformCursor(t, ss) })
+
+	orig := ss.Config.WaveformBackfillEnabled
+	ss.Config.WaveformBackfillEnabled = true
+	t.Cleanup(func() { ss.Config.WaveformBackfillEnabled = orig })
+
+	// Sortable so the keyset walk reaches them in a known order.
+	prefix := fmt.Sprintf("Qmtest%d", time.Now().UnixNano())
+	pending := prefix + "a"
+	already := prefix + "b"
+	seedQmCid(t, ss, pending)
+	seedQmCid(t, ss, already)
+	insertTestWaveform(t, ss, already, "")
+	t.Cleanup(func() { deleteTestWaveform(t, ss, already) })
+
+	ss.sweepWaveformLegacy(ctx)
+
+	queued := drainWaveformWork(ss)
+	require.Contains(t, queued, pending, "a legacy cid with no waveform is work")
+	require.NotContains(t, queued, already, "one already analyzed is not")
+}
+
+// The walk must resume rather than restart, or a 6M-row table is re-read from
+// the top on every sweep and the tail is never reached.
+func TestLegacyWalkResumesFromItsCursor(t *testing.T) {
+	ss := testNetwork[0]
+	withWaveformEnabled(t, ss)
+	ctx := context.Background()
+	drainWaveformWork(ss)
+	clearWaveformCursor(t, ss)
+	t.Cleanup(func() { drainWaveformWork(ss); clearWaveformCursor(t, ss) })
+
+	prefix := fmt.Sprintf("Qmcursor%d", time.Now().UnixNano())
+	first, second := prefix+"a", prefix+"b"
+	seedQmCid(t, ss, first)
+	seedQmCid(t, ss, second)
+	t.Cleanup(func() {
+		deleteTestWaveform(t, ss, first)
+		deleteTestWaveform(t, ss, second)
+	})
+
+	require.NoError(t, ss.setWaveformLegacyCursor(ctx, first))
+	cur, err := ss.getWaveformCursor(ctx)
+	require.NoError(t, err)
+	require.Equal(t, first, cur.QmKey, "the legacy position must survive a read")
+
+	orig := ss.Config.WaveformBackfillEnabled
+	ss.Config.WaveformBackfillEnabled = true
+	t.Cleanup(func() { ss.Config.WaveformBackfillEnabled = orig })
+
+	ss.sweepWaveformLegacy(ctx)
+	queued := drainWaveformWork(ss)
+	require.NotContains(t, queued, first, "the walk must not re-read what it passed")
+	require.Contains(t, queued, second)
+}
+
+// A legacy cid is a whole track, so it counts as one unit exactly like an
+// upload -- there is no second blob for it to be partially analyzed against.
+func TestRollupCountsLegacyCidsAsSingleUnits(t *testing.T) {
+	ss := testNetwork[0]
+	withWaveformEnabled(t, ss)
+	base := forceWaveformRollup(t, ss)
+
+	prefix := fmt.Sprintf("Qmrollup%d", time.Now().UnixNano())
+	analyzed, pendingCid := prefix+"a", prefix+"b"
+	seedQmCid(t, ss, analyzed)
+	seedQmCid(t, ss, pendingCid)
+	insertTestWaveform(t, ss, analyzed, "")
+	t.Cleanup(func() { deleteTestWaveform(t, ss, analyzed) })
+
+	got := forceWaveformRollup(t, ss)
+	require.Equal(t, base.byState[waveformStateAnalyzed]+1, got.byState[waveformStateAnalyzed],
+		"an analyzed legacy cid is one analyzed unit")
+	require.Equal(t, base.byState[waveformStateNeverAnalyzed]+1, got.byState[waveformStateNeverAnalyzed],
+		"one with no row yet is one unit of outstanding work")
+}
+
+// Legacy blobs include images. Deciding from attributes costs one metadata call;
+// deciding by decoding costs a full read and an ffmpeg process, three times over.
+func TestNonAudioBlobsAreRejectedFromAttributes(t *testing.T) {
+	require.NotEmpty(t, blobNotAnalyzable(&blob.Attributes{ContentType: "image/jpeg", Size: 8 * 1024 * 1024}))
+	require.NotEmpty(t, blobNotAnalyzable(&blob.Attributes{ContentType: "video/mp4", Size: 8 * 1024 * 1024}))
+	require.NotEmpty(t, blobNotAnalyzable(&blob.Attributes{ContentType: "audio/mpeg", Size: 1024}),
+		"a kilobyte cannot be a track whatever it claims to be")
+
+	require.Empty(t, blobNotAnalyzable(&blob.Attributes{ContentType: "audio/mpeg", Size: 8 * 1024 * 1024}))
+	require.Empty(t, blobNotAnalyzable(&blob.Attributes{ContentType: "", Size: 8 * 1024 * 1024}),
+		"legacy blobs may carry no content type, and a wrong rejection is permanent")
+	require.Empty(t, blobNotAnalyzable(nil))
 }

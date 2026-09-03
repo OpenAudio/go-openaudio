@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
+	"gocloud.dev/blob"
 	"gocloud.dev/gcerrors"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -28,6 +30,11 @@ const (
 	waveformStatusNotLocal       = "not_local"
 	waveformStatusUnavailable    = "unavailable"
 	waveformStatusArchiveSkipped = "archive_skipped"
+	// Terminal. The blob is not something we can draw a waveform from -- a
+	// legacy image, say -- which no retry changes. Recorded rather than skipped
+	// so discovery stops enumerating it; a blob with no row is outstanding
+	// forever.
+	waveformStatusNotAudio = "not_audio"
 
 	// waveformMaxTries caps retries of rows that fail on bytes we actually
 	// read. not_local and unavailable deliberately do not count against it:
@@ -46,6 +53,11 @@ const (
 	// attempt can run makes a row due again while its own attempt is still
 	// going, and the sweep re-queues it.
 	waveformRetryBackoffUnavailable = 30 * time.Minute
+
+	// Below this a blob cannot be a track: a second of 320kbps audio is 40KB,
+	// so anything smaller is an image or a fragment. Checked against attributes,
+	// never by reading, so rejecting costs one metadata call.
+	waveformMinAnalyzableBytes = 64 * 1024
 
 	waveformSweepBatchLimit = 50
 	waveformDiscoveryLimit  = 100
@@ -173,6 +185,7 @@ func (ss *MediorumServer) runWaveformSweeps(ctx context.Context) bool {
 	busy := ss.sweepWaveformRetries(ctx)
 	if ss.Config.WaveformBackfillEnabled {
 		busy = ss.sweepWaveformDiscovery(ctx) || busy
+		busy = ss.sweepWaveformLegacy(ctx) || busy
 	}
 	// Also unconditional: an unlinked row is the one failure the other sweeps
 	// cannot repair. Discovery correlates on upload_id, so a row missing it is
@@ -180,6 +193,121 @@ func (ss *MediorumServer) runWaveformSweeps(ctx context.Context) bool {
 	ss.linkOrphanWaveforms(ctx)
 	ss.refreshWaveformRollup(ctx)
 	return busy
+}
+
+// sweepWaveformLegacy walks qm_cids, the blobs that predate the uploads table.
+//
+// Legacy content has no upload row, so the discovery walk cannot see it -- it
+// enumerates uploads and correlates on upload_id, and these have neither. That
+// left every legacy track permanently without a waveform, which matters more
+// than the count suggests: the all-time trending tracks are legacy cids.
+//
+// Each key counts as one unit of work, the same way an upload does, since a
+// legacy blob is a whole track rather than one of several blobs an upload
+// produced. Outstanding is therefore just the absence of a current-version row,
+// with no join: qm_cids is keyed by cid and so is waveforms, so a converged
+// walk costs an index scan that finds nothing.
+//
+// Ordered by key rather than by time. Legacy blobs carry no created_at to walk
+// backwards through, and key order is what qm_cids is already indexed on --
+// the same order repair walks it in.
+func (ss *MediorumServer) sweepWaveformLegacy(ctx context.Context) bool {
+	cur, err := ss.getWaveformCursor(ctx)
+	if err != nil {
+		ss.logger.Warn("waveform cursor read failed", zap.Error(err))
+		return false
+	}
+
+	cursorKey := cur.QmKey
+	queued := 0
+
+	for batch := 0; batch < waveformMaxBatchesPerSweep; batch++ {
+		if ctx.Err() != nil {
+			return true
+		}
+
+		var keys []string
+		rows, err := ss.pgPool.Query(ctx, `
+			select q.key
+			from qm_cids q
+			where q.key > $1
+			  and not exists (
+			      select 1 from waveforms w
+			      where w.cid = q.key and w.version = $2
+			  )
+			order by q.key
+			limit $3
+		`, cursorKey, waveformVersion, waveformDiscoveryLimit)
+		if err != nil {
+			ss.logger.Warn("waveform legacy sweep failed", zap.Error(err))
+			return queued > 0
+		}
+		for rows.Next() {
+			var k string
+			if err := rows.Scan(&k); err != nil {
+				rows.Close()
+				ss.logger.Warn("waveform legacy scan failed", zap.Error(err))
+				return queued > 0
+			}
+			keys = append(keys, k)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			ss.logger.Warn("waveform legacy sweep failed", zap.Error(err))
+			return queued > 0
+		}
+
+		// Nothing left: the walk has reached the end of legacy content. The
+		// cursor stays where it is, and a re-walk resets it along with the
+		// upload cursor.
+		if len(keys) == 0 {
+			return queued > 0
+		}
+
+		full := false
+		advanceTo := ""
+		for _, key := range keys {
+			// No placement and no upload: legacy blobs are rendezvous-routed
+			// like a preview, and carry no upload to attribute them to.
+			if !ss.enqueueWaveformJob(waveformJob{cid: key}) {
+				full = true
+				break
+			}
+			queued++
+			advanceTo = key
+		}
+
+		if advanceTo != "" {
+			cursorKey = advanceTo
+			if err := ss.setWaveformLegacyCursor(ctx, cursorKey); err != nil {
+				ss.logger.Warn("waveform legacy cursor update failed", zap.Error(err))
+				return true
+			}
+		}
+		if full {
+			// The cursor stopped at the last key actually queued, so whatever
+			// the queue rejected is found again next sweep rather than skipped.
+			break
+		}
+	}
+
+	return queued > 0
+}
+
+// setWaveformLegacyCursor checkpoints the legacy walk. Written separately from
+// the upload cursor so the two positions advance independently -- they walk
+// different tables in different orders and finish at different times.
+func (ss *MediorumServer) setWaveformLegacyCursor(ctx context.Context, key string) error {
+	_, err := ss.pgPool.Exec(ctx, `
+		insert into waveform_cursor (id, version, qm_key, started_at, updated_at)
+		values (1, $1, $2, now(), now())
+		on conflict (id) do update set
+			qm_key = excluded.qm_key,
+			version = excluded.version,
+			started_at = coalesce(waveform_cursor.started_at, now()),
+			updated_at = now()
+	`, waveformVersion, key)
+	return err
 }
 
 // linkOrphanWaveforms fills in upload_id on rows that were written without one.
@@ -248,6 +376,7 @@ const (
 	waveformStateNotLocal       = "not_local"
 	waveformStateArchiveSkipped = "archive_skipped"
 	waveformStateNeverAnalyzed  = "never_analyzed"
+	waveformStateNotAudio       = "not_audio"
 )
 
 type waveformRollup struct {
@@ -307,19 +436,41 @@ func (ss *MediorumServer) refreshWaveformRollup(ctx context.Context) {
 			where u.template = $2
 			group by u.id
 		)
-		select case
-		         when failed          > 0 then $8
-		         when unavailable     > 0 then $9
-		         when not_local       > 0 then $10
-		         when archive_skipped > 0 then $11
-		         when stale           > 0 then $12
-		         when done >= expected    then $13
-		         when done > 0            then $14
-		         else $15
-		       end as state,
-		       count(*)::bigint
-		from per_upload
-		where expected > 0
+		, per_legacy as (
+			-- A legacy cid is a whole track, so it counts as one unit exactly
+			-- like an upload -- there is no second blob for it to be partially
+			-- analyzed against. Its state is simply its row's, or never
+			-- analyzed when no row exists yet.
+			select case
+			         when w.cid is null           then $15
+			         when w.version <> $1         then $12
+			         when w.status = $3           then $13
+			         when w.status = $4           then $8
+			         when w.status = $5           then $9
+			         when w.status = $6           then $10
+			         when w.status = $7           then $11
+			         when w.status = $16          then $17
+			         else $15
+			       end as state
+			from qm_cids q
+			left join waveforms w on w.cid = q.key
+		)
+		select state, count(*)::bigint from (
+			select case
+			         when failed          > 0 then $8
+			         when unavailable     > 0 then $9
+			         when not_local       > 0 then $10
+			         when archive_skipped > 0 then $11
+			         when stale           > 0 then $12
+			         when done >= expected    then $13
+			         when done > 0            then $14
+			         else $15
+			       end as state
+			from per_upload
+			where expected > 0
+			union all
+			select state from per_legacy
+		) all_units
 		group by 1
 	`,
 		waveformVersion, JobTemplateAudio,
@@ -328,6 +479,7 @@ func (ss *MediorumServer) refreshWaveformRollup(ctx context.Context) {
 		waveformStateFailed, waveformStateUnavailable, waveformStateNotLocal,
 		waveformStateArchiveSkipped, waveformStateToRecompute, waveformStateAnalyzed,
 		waveformStatePartial, waveformStateNeverAnalyzed,
+		waveformStatusNotAudio, waveformStateNotAudio,
 	)
 	if err != nil {
 		ss.logger.Warn("waveform rollup query failed", zap.Error(err))
@@ -575,6 +727,18 @@ func (ss *MediorumServer) analyzeWaveform(ctx context.Context, job waveformJob) 
 		return ss.recordWaveformReadFailure(ctx, job, err)
 	}
 
+	// Decided from attributes, before reading a byte. The legacy walk offers
+	// every blob the node holds, including images, and decoding one to discover
+	// it is not audio costs a full read plus an ffmpeg process -- three times
+	// over, once per retry.
+	if reason := blobNotAnalyzable(attrs); reason != "" {
+		if err := ss.markWaveformStatus(ctx, job.cid, job.uploadID, waveformStatusNotAudio, errors.New(reason)); err != nil {
+			ss.logger.Error("failed to record non-audio blob", zap.String("cid", job.cid), zap.Error(err))
+			return err
+		}
+		return nil
+	}
+
 	r, _, err := ss.readBlob(ctx, key)
 	if err != nil {
 		return ss.recordWaveformReadFailure(ctx, job, err)
@@ -592,6 +756,27 @@ func (ss *MediorumServer) analyzeWaveform(ctx context.Context, job waveformJob) 
 	}
 
 	return ss.upsertWaveform(ctx, job.cid, job.uploadID, result)
+}
+
+// blobNotAnalyzable reports why a blob cannot hold audio, or "" if it might.
+//
+// It only rejects on positive evidence. Legacy blobs were written years ago by
+// a different system and may carry no content type at all, so an unknown type
+// is attempted rather than discarded -- a wrong rejection is permanent and
+// silent, while a wrong attempt merely fails once and parks at the retry cap.
+func blobNotAnalyzable(attrs *blob.Attributes) string {
+	if attrs == nil {
+		return ""
+	}
+	switch {
+	case strings.HasPrefix(attrs.ContentType, "image/"):
+		return "content type " + attrs.ContentType
+	case strings.HasPrefix(attrs.ContentType, "video/"):
+		return "content type " + attrs.ContentType
+	case attrs.Size > 0 && attrs.Size < waveformMinAnalyzableBytes:
+		return fmt.Sprintf("%d bytes is too small to be audio", attrs.Size)
+	}
+	return ""
 }
 
 // recordWaveformReadFailure separates "nobody has this blob" from "our storage
@@ -1031,6 +1216,10 @@ type waveformCursor struct {
 	Queued    int64
 	Skipped   int64
 	UpdatedAt time.Time
+	// QmKey is how far the legacy walk has read. Legacy blobs have no upload
+	// and no created_at, so they cannot share the descending upload cursor --
+	// they are walked by key instead, which is what qm_cids is ordered by.
+	QmKey string
 }
 
 func (ss *MediorumServer) getWaveformCursor(ctx context.Context) (waveformCursor, error) {
@@ -1041,12 +1230,13 @@ func (ss *MediorumServer) getWaveformCursor(ctx context.Context) (waveformCursor
 		cur       waveformCursor
 	)
 	var startedAt *time.Time
+	var qmKey *string
 	err := ss.pgPool.QueryRow(ctx, `
 		select created_at, upload_id, exhausted, version, started_at,
-		       coalesce(queued, 0), coalesce(archive_skipped, 0), updated_at
+		       coalesce(queued, 0), coalesce(archive_skipped, 0), updated_at, qm_key
 		from waveform_cursor where id = 1
 	`).Scan(&createdAt, &uploadID, &cur.Exhausted, &version, &startedAt,
-		&cur.Queued, &cur.Skipped, &cur.UpdatedAt)
+		&cur.Queued, &cur.Skipped, &cur.UpdatedAt, &qmKey)
 	if err != nil {
 		// No row yet means the walk has not started. Report the current version
 		// so a first run is not mistaken for a version change.
@@ -1068,6 +1258,9 @@ func (ss *MediorumServer) getWaveformCursor(ctx context.Context) (waveformCursor
 	if startedAt != nil {
 		cur.StartedAt = *startedAt
 	}
+	if qmKey != nil {
+		cur.QmKey = *qmKey
+	}
 	return cur, nil
 }
 
@@ -1086,6 +1279,7 @@ func (ss *MediorumServer) resetWaveformCursor(ctx context.Context) error {
 			started_at = now(),
 			queued = 0,
 			archive_skipped = 0,
+			qm_key = null,
 			updated_at = now()
 	`, waveformVersion)
 	return err

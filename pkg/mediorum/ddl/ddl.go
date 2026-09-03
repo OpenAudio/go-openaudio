@@ -222,6 +222,13 @@ on uploads (created_at desc, id desc) where template = 'audio'`)
 		"updated_at" timestamptz not null default now()
 	)`)
 
+	// Position of the legacy walk. An ALTER rather than a column folded into
+	// the create above, because that table has already shipped: editing the
+	// create would change its hash, re-run it as a no-op against the existing
+	// table, and leave this column silently absent. It must also come after
+	// the create, or a fresh database alters a table that does not exist yet.
+	runMigration(db, `alter table waveform_cursor add column if not exists qm_key text`)
+
 	runVacuumFull(db)
 }
 

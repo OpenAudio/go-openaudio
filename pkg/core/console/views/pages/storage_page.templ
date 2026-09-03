@@ -433,6 +433,13 @@ templ waveformSection(d *storagev1.GetStorageDiagnosticsResponse) {
 				@statCard("Unavailable", waveformCount(d.Waveforms, "unavailable"), waveformUnavailableSub(d.Waveforms))
 				@statCard("Failed", waveformCount(d.Waveforms, "failed"), "could not be decoded")
 				@statCard("To Recompute", waveformCount(d.Waveforms, "to_recompute"), "computed under old settings")
+				// Legacy blobs are walked alongside uploads, and some of them
+				// are images rather than tracks. Shown only when the walk has
+				// actually met one, so nodes with no legacy content are not
+				// given a permanent zero.
+				if waveformStateCount(d.Waveforms, "not_audio") > 0 {
+					@statCard("Not Audio", waveformCount(d.Waveforms, "not_audio"), "blob holds no audio to draw")
+				}
 				// Not upload-keyed, so it is absent from every tile above
 				// rather than merely small. Shown only when non-zero: on a
 				// healthy node it is always zero and would be noise.
