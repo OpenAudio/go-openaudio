@@ -1004,6 +1004,12 @@ func waveformSection(d *storagev1.GetStorageDiagnosticsResponse) templ.Component
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+			if waveformStateCount(d.Waveforms, "not_audio") > 0 {
+				templ_7745c5c3_Err = statCard("Not Audio", waveformCount(d.Waveforms, "not_audio"), "blob holds no audio to draw").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
 			if d.Waveforms.OrphanRows > 0 {
 				templ_7745c5c3_Err = statCard("Unlinked Rows", fmt.Sprintf("%d", d.Waveforms.OrphanRows), "waveforms matching no upload").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
@@ -1071,7 +1077,7 @@ func waveformAnalysisCard(w *storagev1.WaveformStatus) templ.Component {
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(waveformModeLabel(w))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 458, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 465, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 		if templ_7745c5c3_Err != nil {
@@ -1084,7 +1090,7 @@ func waveformAnalysisCard(w *storagev1.WaveformStatus) templ.Component {
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d buckets · %d Hz", w.Buckets, w.SampleRate))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 460, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 467, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -1097,7 +1103,7 @@ func waveformAnalysisCard(w *storagev1.WaveformStatus) templ.Component {
 		var templ_7745c5c3_Var31 string
 		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("algorithm %d · fingerprint v%d", w.AlgorithmVersion, w.Version))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 465, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 472, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 		if templ_7745c5c3_Err != nil {
@@ -1169,7 +1175,7 @@ func waveformBackfillCard(w *storagev1.WaveformStatus) templ.Component {
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(waveformRunLabel(w.Run))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 486, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 493, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 			if templ_7745c5c3_Err != nil {
@@ -1182,7 +1188,7 @@ func waveformBackfillCard(w *storagev1.WaveformStatus) templ.Component {
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(waveformRunTiming(w.Run))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 491, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 498, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -1200,7 +1206,7 @@ func waveformBackfillCard(w *storagev1.WaveformStatus) templ.Component {
 				var templ_7745c5c3_Var35 string
 				templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(waveformProgressLine(w.Run))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 493, Col: 74}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 500, Col: 74}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 				if templ_7745c5c3_Err != nil {
@@ -1218,7 +1224,7 @@ func waveformBackfillCard(w *storagev1.WaveformStatus) templ.Component {
 					var templ_7745c5c3_Var36 string
 					templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(formatTime(w.Run.CursorCreatedAt.AsTime()))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 495, Col: 93}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 502, Col: 93}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 					if templ_7745c5c3_Err != nil {
@@ -1241,7 +1247,7 @@ func waveformBackfillCard(w *storagev1.WaveformStatus) templ.Component {
 					var templ_7745c5c3_Var37 string
 					templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(formatRelative(w.Run.UpdatedAt.AsTime()))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 500, Col: 100}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 507, Col: 100}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 					if templ_7745c5c3_Err != nil {
@@ -1260,7 +1266,7 @@ func waveformBackfillCard(w *storagev1.WaveformStatus) templ.Component {
 			var templ_7745c5c3_Var38 string
 			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", w.Run.Queued))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 503, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 510, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 			if templ_7745c5c3_Err != nil {
@@ -1313,7 +1319,7 @@ func repairRunCard(label string, r *storagev1.RepairRun) templ.Component {
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 513, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 520, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 		if templ_7745c5c3_Err != nil {
@@ -1336,7 +1342,7 @@ func repairRunCard(label string, r *storagev1.RepairRun) templ.Component {
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(formatTime(r.StartedAt.AsTime()))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 517, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 524, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -1349,7 +1355,7 @@ func repairRunCard(label string, r *storagev1.RepairRun) templ.Component {
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(formatRelative(r.StartedAt.AsTime()))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 518, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 525, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -1362,7 +1368,7 @@ func repairRunCard(label string, r *storagev1.RepairRun) templ.Component {
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(repairKindLabel(r))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 519, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 526, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -1375,7 +1381,7 @@ func repairRunCard(label string, r *storagev1.RepairRun) templ.Component {
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(repairStatusLabel(r))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 520, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 527, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -1415,7 +1421,7 @@ func repairRunCard(label string, r *storagev1.RepairRun) templ.Component {
 				var templ_7745c5c3_Var47 string
 				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(formatRelative(r.UpdatedAt.AsTime()))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 526, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 533, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 				if templ_7745c5c3_Err != nil {
@@ -1438,7 +1444,7 @@ func repairRunCard(label string, r *storagev1.RepairRun) templ.Component {
 				var templ_7745c5c3_Var48 string
 				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(formatDuration(r.DurationNs))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 530, Col: 80}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 537, Col: 80}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 				if templ_7745c5c3_Err != nil {
@@ -1461,7 +1467,7 @@ func repairRunCard(label string, r *storagev1.RepairRun) templ.Component {
 				var templ_7745c5c3_Var49 string
 				templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(formatBytes(r.ContentSizeBytes))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 533, Col: 87}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 540, Col: 87}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 				if templ_7745c5c3_Err != nil {
@@ -1484,7 +1490,7 @@ func repairRunCard(label string, r *storagev1.RepairRun) templ.Component {
 				var templ_7745c5c3_Var50 string
 				templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(r.Counters)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 537, Col: 106}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 544, Col: 106}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 				if templ_7745c5c3_Err != nil {
@@ -1502,7 +1508,7 @@ func repairRunCard(label string, r *storagev1.RepairRun) templ.Component {
 					var templ_7745c5c3_Var51 string
 					templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(k)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 541, Col: 40}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 548, Col: 40}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 					if templ_7745c5c3_Err != nil {
@@ -1515,7 +1521,7 @@ func repairRunCard(label string, r *storagev1.RepairRun) templ.Component {
 					var templ_7745c5c3_Var52 string
 					templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", r.Counters[k]))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 542, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 549, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 					if templ_7745c5c3_Err != nil {
@@ -1568,7 +1574,7 @@ func peersSection(d *storagev1.GetStorageDiagnosticsResponse) templ.Component {
 		var templ_7745c5c3_Var54 string
 		templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(d.Peers)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 554, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 561, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 		if templ_7745c5c3_Err != nil {
@@ -1618,7 +1624,7 @@ func peersSection(d *storagev1.GetStorageDiagnosticsResponse) templ.Component {
 				var templ_7745c5c3_Var55 string
 				templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(d.Peers)-5))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 579, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 586, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 				if templ_7745c5c3_Err != nil {
@@ -1713,7 +1719,7 @@ func peerRow(p *storagev1.PeerStatus) templ.Component {
 		var templ_7745c5c3_Var58 string
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(p.Host)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 607, Col: 36}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 614, Col: 36}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 		if templ_7745c5c3_Err != nil {
@@ -1727,7 +1733,7 @@ func peerRow(p *storagev1.PeerStatus) templ.Component {
 			var templ_7745c5c3_Var59 string
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(formatRelative(p.LastReachable.AsTime()))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 610, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 617, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 			if templ_7745c5c3_Err != nil {
@@ -1747,7 +1753,7 @@ func peerRow(p *storagev1.PeerStatus) templ.Component {
 			var templ_7745c5c3_Var60 string
 			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(formatRelative(p.LastHealthy.AsTime()))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 617, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 624, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
@@ -1766,7 +1772,7 @@ func peerRow(p *storagev1.PeerStatus) templ.Component {
 		var templ_7745c5c3_Var61 string
 		templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", p.ReachablePeerCount))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 622, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 629, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 		if templ_7745c5c3_Err != nil {
@@ -1846,7 +1852,7 @@ func servedSection(d *storagev1.GetStorageDiagnosticsResponse) templ.Component {
 				var templ_7745c5c3_Var63 string
 				templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(ordered)-5))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 653, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 660, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 				if templ_7745c5c3_Err != nil {
@@ -1942,7 +1948,7 @@ func servedRow(m *storagev1.DailyServedCount) templ.Component {
 			var templ_7745c5c3_Var66 string
 			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(m.Day.AsTime().UTC().Format("2006-01-02"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 682, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 689, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 			if templ_7745c5c3_Err != nil {
@@ -1956,7 +1962,7 @@ func servedRow(m *storagev1.DailyServedCount) templ.Component {
 		var templ_7745c5c3_Var67 string
 		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(m.Action)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 685, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 692, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 		if templ_7745c5c3_Err != nil {
@@ -1969,7 +1975,7 @@ func servedRow(m *storagev1.DailyServedCount) templ.Component {
 		var templ_7745c5c3_Var68 string
 		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", m.Count))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 686, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 693, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 		if templ_7745c5c3_Err != nil {
@@ -2019,7 +2025,7 @@ func placeholderSection(title, note string) templ.Component {
 		var templ_7745c5c3_Var70 string
 		templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 700, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 707, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 		if templ_7745c5c3_Err != nil {
@@ -2032,7 +2038,7 @@ func placeholderSection(title, note string) templ.Component {
 		var templ_7745c5c3_Var71 string
 		templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(note)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 701, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 708, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 		if templ_7745c5c3_Err != nil {
@@ -2074,7 +2080,7 @@ func statCard(label, value, sub string) templ.Component {
 		var templ_7745c5c3_Var73 string
 		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 707, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 714, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 		if templ_7745c5c3_Err != nil {
@@ -2087,7 +2093,7 @@ func statCard(label, value, sub string) templ.Component {
 		var templ_7745c5c3_Var74 string
 		templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(value)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 708, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 715, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 		if templ_7745c5c3_Err != nil {
@@ -2105,7 +2111,7 @@ func statCard(label, value, sub string) templ.Component {
 			var templ_7745c5c3_Var75 string
 			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(sub)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 710, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 717, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 			if templ_7745c5c3_Err != nil {
@@ -2291,7 +2297,7 @@ func posSection(d *storagev1.GetStorageDiagnosticsResponse) templ.Component {
 				var templ_7745c5c3_Var78 string
 				templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(d.RecentPosChallenges)-5))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 776, Col: 114}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 783, Col: 114}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 				if templ_7745c5c3_Err != nil {
@@ -2393,7 +2399,7 @@ func posRow(p *storagev1.PoSChallenge) templ.Component {
 			var templ_7745c5c3_Var81 string
 			templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(formatRelative(p.At.AsTime()))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 809, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 816, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 			if templ_7745c5c3_Err != nil {
@@ -2407,7 +2413,7 @@ func posRow(p *storagev1.PoSChallenge) templ.Component {
 		var templ_7745c5c3_Var82 string
 		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(p.Cid)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 812, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 819, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 		if templ_7745c5c3_Err != nil {
@@ -2435,7 +2441,7 @@ func posRow(p *storagev1.PoSChallenge) templ.Component {
 		var templ_7745c5c3_Var83 string
 		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(p.Error)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 820, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 827, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 		if templ_7745c5c3_Err != nil {
@@ -2615,7 +2621,7 @@ func recentServedSection(d *storagev1.GetStorageDiagnosticsResponse) templ.Compo
 				var templ_7745c5c3_Var86 string
 				templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(ordered)-5))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 906, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 913, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 				if templ_7745c5c3_Err != nil {
@@ -2711,7 +2717,7 @@ func recentServedRow(s *storagev1.ServedEvent) templ.Component {
 			var templ_7745c5c3_Var89 string
 			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(formatRelative(s.At.AsTime()))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 935, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 942, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 			if templ_7745c5c3_Err != nil {
@@ -2725,7 +2731,7 @@ func recentServedRow(s *storagev1.ServedEvent) templ.Component {
 		var templ_7745c5c3_Var90 string
 		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(s.Action)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 938, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 945, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 		if templ_7745c5c3_Err != nil {
@@ -2738,7 +2744,7 @@ func recentServedRow(s *storagev1.ServedEvent) templ.Component {
 		var templ_7745c5c3_Var91 string
 		templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(s.Cid)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 939, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/pages/storage_page.templ`, Line: 946, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 		if templ_7745c5c3_Err != nil {
