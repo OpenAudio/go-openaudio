@@ -194,6 +194,25 @@ message GetStorageDiagnosticsResponse {
   bool store_all = 26;
 
   WaveformStatus waveforms = 27;
+
+  // Set only while a presence index walk is running. The walk happens inside
+  // runRepair before its first checkpoint, so in_progress_repair (#11) is
+  // either a stale resumed row or absent entirely for its whole duration --
+  // which on a large file:// bucket is hours. This is what tells the console a
+  // run is alive during that window.
+  PresenceWalk presence_walk = 28;
+}
+
+// PresenceWalk reports an in-flight enumeration of a blob bucket, used to build
+// the presence index a repair cycle checks blobs against.
+message PresenceWalk {
+  // "primary" or "archive".
+  string bucket = 1;
+  string dir = 2;
+  int64 files = 3;
+  int64 shards = 4;
+  google.protobuf.Timestamp started_at = 5;
+  double files_per_sec = 6;
 }
 
 // WaveformStatus reports the state of precomputed waveform analysis: whether it
