@@ -64,7 +64,7 @@ func TestWalkFileBucketMatchesGocloudList(t *testing.T) {
 	require.NoError(t, listIntoIndex(ctx, bucket, viaList))
 
 	viaWalk := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
-	sawEscaped, err := walkFileBucketSerial(ctx, dir, bucket, viaWalk)
+	sawEscaped, err := walkFileBucketSerial(ctx, dir, bucket, viaWalk, nil)
 	require.NoError(t, err)
 	assert.False(t, sawEscaped, "plain ShardCID keys are never hex-escaped")
 
@@ -92,7 +92,7 @@ func TestWalkFileBucketReportsEscapedPath(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "weird__0x1f_key"), []byte("x"), 0o600))
 
 	index := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
-	sawEscaped, err := walkFileBucketSerial(ctx, dir, bucket, index)
+	sawEscaped, err := walkFileBucketSerial(ctx, dir, bucket, index, nil)
 	require.NoError(t, err)
 	assert.True(t, sawEscaped, "escaped path must trigger the bucket.List fallback")
 }
@@ -105,7 +105,7 @@ func TestWalkFileBucketReportsEscapedPath(t *testing.T) {
 func TestWalkFileBucketErrorsOnMissingDir(t *testing.T) {
 	index := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
 	_, err := walkFileBucketSerial(context.Background(),
-		filepath.Join(t.TempDir(), "not-mounted"), nil, index)
+		filepath.Join(t.TempDir(), "not-mounted"), nil, index, nil)
 	assert.Error(t, err)
 	assert.Empty(t, index.entries)
 }
@@ -209,12 +209,12 @@ func TestWalkFileBucketParallelMatchesSerialAndList(t *testing.T) {
 
 	// batch smaller than the number of shards forces multiple ReadDir rounds.
 	serial := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
-	sawEscaped, err := walkFileBucketConcurrent(ctx, dir, bucket, serial, 1, 1)
+	sawEscaped, err := walkFileBucketConcurrent(ctx, dir, bucket, serial, nil, 1, 1)
 	require.NoError(t, err)
 	assert.False(t, sawEscaped)
 
 	parallel := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
-	sawEscaped, err = walkFileBucketConcurrent(ctx, dir, bucket, parallel, 16, 4)
+	sawEscaped, err = walkFileBucketConcurrent(ctx, dir, bucket, parallel, nil, 16, 4)
 	require.NoError(t, err)
 	assert.False(t, sawEscaped)
 
@@ -240,7 +240,7 @@ func TestWalkFileBucketReportsEscapedPathInsideShard(t *testing.T) {
 		filepath.Join(dir, "shard2", "weird__0x1f_key"), []byte("x"), 0o600))
 
 	index := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
-	sawEscaped, err := walkFileBucketSerial(ctx, dir, bucket, index)
+	sawEscaped, err := walkFileBucketSerial(ctx, dir, bucket, index, nil)
 	require.NoError(t, err)
 	assert.True(t, sawEscaped, "escaped path inside a shard must trigger the fallback")
 }
@@ -262,7 +262,7 @@ func TestWalkFileBucketHonorsContextCancellation(t *testing.T) {
 	cancel()
 
 	index := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
-	_, err = walkFileBucketConcurrent(ctx, dir, bucket, index, 4, 2)
+	_, err = walkFileBucketConcurrent(ctx, dir, bucket, index, nil, 4, 2)
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
@@ -293,7 +293,7 @@ func TestWalkFileBucketSelectorDefaultsToSerial(t *testing.T) {
 	for _, concurrency := range []int{0, 1, 8} {
 		ss := &MediorumServer{Config: MediorumConfig{PresenceWalkConcurrency: concurrency}}
 		index := &repairPresenceIndex{entries: map[indexKey]presenceEntry{}}
-		sawEscaped, err := ss.walkFileBucket(ctx, dir, bucket, index)
+		sawEscaped, err := ss.walkFileBucket(ctx, dir, bucket, index, nil)
 		require.NoError(t, err, "concurrency=%d", concurrency)
 		assert.False(t, sawEscaped)
 		assert.Equal(t, viaList.entries, index.entries,
