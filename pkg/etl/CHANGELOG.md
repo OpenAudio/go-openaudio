@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.7.1](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.7.0...pkg/etl/v1.7.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **etl:** carry email_access.is_initial so migrated grants stay decryptable ([#540](https://github.com/OpenAudio/go-openaudio/issues/540)) ([229cc04](https://github.com/OpenAudio/go-openaudio/commit/229cc04ff7c909808302a51cfccbb7b45a876590))
+* **etl:** don't let a deleted artist pick block every profile edit ([#510](https://github.com/OpenAudio/go-openaudio/issues/510)) ([81f4af5](https://github.com/OpenAudio/go-openaudio/commit/81f4af523801558b9a8673c010829f8f9a14304a))
+* **etl:** exit bounded runs instead of hanging in Wait() ([#512](https://github.com/OpenAudio/go-openaudio/issues/512)) ([570b44f](https://github.com/OpenAudio/go-openaudio/commit/570b44fefe23e609933a28ef451f723d055a8fcd))
+* **etl:** persist DDEX rights metadata on track create ([#517](https://github.com/OpenAudio/go-openaudio/issues/517)) ([88b83b3](https://github.com/OpenAudio/go-openaudio/commit/88b83b350bfa51d32a62b756713b8d36084c0c9a))
+* **etl:** persist track_downloads.created_at instead of defaulting to now() ([#515](https://github.com/OpenAudio/go-openaudio/issues/515)) ([c16e46a](https://github.com/OpenAudio/go-openaudio/commit/c16e46aacf45e7406880b4bef2c099cd49e0fa46))
+* **etl:** project access_authorities from the field core enforces ([#541](https://github.com/OpenAudio/go-openaudio/issues/541)) ([5e6bd39](https://github.com/OpenAudio/go-openaudio/commit/5e6bd390939a893b008cc2887121ee5414d96d75))
+* **etl:** resume from MAX(block_height) and honor --start ([#513](https://github.com/OpenAudio/go-openaudio/issues/513)) ([6a2724b](https://github.com/OpenAudio/go-openaudio/commit/6a2724b653184509ed6bf93c7bfbf19f6904db53))
+* **genesis-writer:** replay comments as edited when the source says they were ([#539](https://github.com/OpenAudio/go-openaudio/issues/539)) ([4baa62a](https://github.com/OpenAudio/go-openaudio/commit/4baa62a28fa1d21ce2feb3a265b3d4e5e904c153))
+* **parity:** compare playlists_containing_track as a set, accept duration NULL-&gt;0 ([#518](https://github.com/OpenAudio/go-openaudio/issues/518)) ([ad8a40a](https://github.com/OpenAudio/go-openaudio/commit/ad8a40a0807759eff7903a88cf5c7d5e51cc1c2a))
+* **parity:** stop keying track_downloads on txhash ([#516](https://github.com/OpenAudio/go-openaudio/issues/516)) ([6e7253e](https://github.com/OpenAudio/go-openaudio/commit/6e7253ebd368511c05ae7642129810c75c9b918b))
+
 ## [1.7.0](https://github.com/OpenAudio/go-openaudio/compare/pkg/etl/v1.6.4...pkg/etl/v1.7.0) (2026-08-10)
 
 
