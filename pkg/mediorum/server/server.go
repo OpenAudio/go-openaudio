@@ -160,6 +160,13 @@ type MediorumServer struct {
 	mediorumPathFree   uint64
 	storageExpectation uint64
 
+	// legacyCorpusBytes is the estimated size of the pre-mediorum Qm corpus,
+	// which no query over `uploads` can see. Computed once: qm_cids is filled
+	// by a one-time migration and never appended to, so the counts it is
+	// derived from do not move. See getLegacyCorpusBytes.
+	legacyCorpusBytes    int64
+	legacyCorpusComputed bool
+
 	// archive bucket stats (only populated when ArchiveBlobStoreDSN is set)
 	archivePathUsed uint64
 	archivePathSize uint64
