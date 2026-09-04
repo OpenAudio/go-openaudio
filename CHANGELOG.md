@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.12.0](https://github.com/OpenAudio/go-openaudio/compare/v1.11.0...v1.12.0) (2026-09-04)
+
+
+### Features
+
+* **storage:** analyze legacy Qm blobs alongside uploads ([#558](https://github.com/OpenAudio/go-openaudio/issues/558)) ([ad91e54](https://github.com/OpenAudio/go-openaudio/commit/ad91e544a20f1018790e02e0e8a9d26887d3641c))
+
+
+### Bug Fixes
+
+* **core:** include core_auth_cids in state sync snapshots ([#499](https://github.com/OpenAudio/go-openaudio/issues/499)) ([cda94b8](https://github.com/OpenAudio/go-openaudio/commit/cda94b8e1320798c4c1a2bab96dd19a24627f382))
+* **genesis-writer:** emit playlist release_date in a layout the indexer parses ([#548](https://github.com/OpenAudio/go-openaudio/issues/548)) ([98656e1](https://github.com/OpenAudio/go-openaudio/commit/98656e11015ae9adafd46e2cfade5bf0d4b71e4e))
+* **storage:** reclaim duplicate primary copies on archive nodes ([#560](https://github.com/OpenAudio/go-openaudio/issues/560)) ([8b64389](https://github.com/OpenAudio/go-openaudio/commit/8b64389e87c5f451a9173431f086053fd175c871))
+* **storage:** size the storage expectation from measured corpus ([#561](https://github.com/OpenAudio/go-openaudio/issues/561)) ([bf4047b](https://github.com/OpenAudio/go-openaudio/commit/bf4047b1b6f3895d17b9aa2b7ace12bf0e926c2b))
+
+
+### Performance Improvements
+
+* **storage:** read blobs for analysis in 1MB chunks, not 32KB ([#546](https://github.com/OpenAudio/go-openaudio/issues/546)) ([8572622](https://github.com/OpenAudio/go-openaudio/commit/85726228c1af7c4ab9db2ddadc6f65bb51c7ebff))
+
 ## [1.11.0](https://github.com/OpenAudio/go-openaudio/compare/v1.10.0...v1.11.0) (2026-08-20)
 
 
