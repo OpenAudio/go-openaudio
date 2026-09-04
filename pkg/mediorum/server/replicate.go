@@ -184,6 +184,64 @@ func (ss *MediorumServer) dropFromMyBucket(fileName string) error {
 	return nil
 }
 
+// dropFromBucket removes the blob from a single bucket (NotFound is benign).
+// Unlike dropFromMyBucket it leaves the other bucket alone, which is exactly
+// what archive eviction needs: the point there is to keep the archive copy and
+// reclaim the redundant primary one.
+func (ss *MediorumServer) dropFromBucket(ctx context.Context, b *blob.Bucket, key string) error {
+	if err := b.Delete(ctx, key); err != nil && gcerrors.Code(err) != gcerrors.NotFound {
+		return err
+	}
+	ss.knownPresent.Remove(ss.presenceCacheKey(key, b))
+	return nil
+}
+
+// relocateBetweenBuckets streams a blob from src to dst and removes the source
+// once the destination write is committed.
+//
+// It exists because bucketForCID can select a bucket other than the one holding
+// the blob: after a rank flip, or on a StoreAll node whose primary filled up
+// before an archive was configured. Repair resolves presence per bucket, so in
+// that state the blob reads as missing and gets pulled across the network even
+// though the bytes are already on local disk.
+//
+// The delete is deliberately last and conditional on a clean Close. The two
+// buckets are normally different filesystems, so this is a copy rather than a
+// rename, and dropping the source any earlier opens a window where a failed
+// write loses the only copy this node has.
+func (ss *MediorumServer) relocateBetweenBuckets(ctx context.Context, key string, dst, src *blob.Bucket) (int64, error) {
+	r, err := src.NewReader(ctx, key, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer r.Close()
+
+	w, err := dst.NewWriter(ctx, key, nil)
+	if err != nil {
+		return 0, err
+	}
+	n, err := io.Copy(w, r)
+	if err != nil {
+		// Best-effort close so we do not leak a temp file / abandoned
+		// multipart upload. The copy error is the one that matters.
+		_ = w.Close()
+		return 0, err
+	}
+	if err := w.Close(); err != nil {
+		return 0, err
+	}
+
+	ss.knownPresent.Set(ss.presenceCacheKey(key, dst), n, imcache.WithNoExpiration())
+
+	if err := ss.dropFromBucket(ctx, src, key); err != nil {
+		// The copy landed, so the blob is safe. A surviving source copy only
+		// costs space, and the next cleanup cycle finds it again.
+		ss.logger.Warn("relocate: source delete failed",
+			zap.String("key", key), zap.Error(err))
+	}
+	return n, nil
+}
+
 func (ss *MediorumServer) haveInMyBucket(fileName string) bool {
 	return ss.blobExists(context.Background(), cidutil.ShardCID(fileName))
 }

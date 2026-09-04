@@ -67,6 +67,18 @@ func (ss *MediorumServer) bucketForCID(cid string, placementHosts []string) *blo
 	return ss.archiveBucket
 }
 
+// otherBucket returns the bucket that is not b. It reports nil when no archive
+// is configured, since then there is nowhere else on this node a blob could be.
+func (ss *MediorumServer) otherBucket(b *blob.Bucket) *blob.Bucket {
+	if ss.archiveBucket == nil {
+		return nil
+	}
+	if b == ss.archiveBucket {
+		return ss.bucket
+	}
+	return ss.archiveBucket
+}
+
 // isArchiveCID reports whether the given CID would be routed to the archive bucket
 // on this node. Used by callers that need to branch on archive-ness without
 // taking the bucket itself (e.g. repair counters, disk-space gating).
