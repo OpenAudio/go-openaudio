@@ -57,6 +57,25 @@ func (idx *repairPresenceIndex) Lookup(key string, wantBucket *blob.Bucket) (pre
 	return entry, ok
 }
 
+// blobPresentIn reports whether key exists in b, preferring the presence index
+// over a per-key existence check. The index already listed both buckets on a
+// StoreAll node with an archive (see buildRepairPresenceIndex), so the common
+// case costs a map lookup.
+//
+// A nil bucket reports false: callers use this to ask about "the other bucket",
+// which does not exist when no archive is configured.
+func (ss *MediorumServer) blobPresentIn(ctx context.Context, idx *repairPresenceIndex, b *blob.Bucket, key string) bool {
+	if b == nil {
+		return false
+	}
+	if idx != nil {
+		_, ok := idx.Lookup(key, b)
+		return ok
+	}
+	ok, err := b.Exists(ctx, key)
+	return err == nil && ok
+}
+
 func (ss *MediorumServer) buildRepairPresenceIndex(ctx context.Context) (*repairPresenceIndex, error) {
 	index := &repairPresenceIndex{
 		entries: make(map[indexKey]presenceEntry),

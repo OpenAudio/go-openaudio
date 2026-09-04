@@ -676,8 +676,63 @@ func (ss *MediorumServer) repairCidWithPolicy(ctx context.Context, cid string, p
 		tracker.mu.Unlock()
 	}
 
+	// A StoreAll node with an archive can end up holding the same blob twice.
+	// bucketForCID sends rank >= ReplicationFactor CIDs to archive, but a
+	// primary copy written before the archive existed -- or before a rank flip
+	// moved the CID across that boundary -- has no removal path: the
+	// over-replication cleanup below is gated off for StoreAll, and
+	// dropFromMyBucket deletes from both buckets, which would take the archive
+	// copy with it. Reclaim the redundant primary copy once archive is
+	// confirmed to hold the blob.
+	//
+	// Cleanup mode only. For CIDv1 the validation block above has just
+	// re-hashed the archive copy, so what gets dropped here is a duplicate of
+	// bytes verified moments ago. ContentSize is deliberately untouched: it
+	// counted the archive copy, never this one.
+	if tracker.CleanupMode && alreadyHave && isArchive &&
+		ss.blobPresentIn(ctx, presenceIndex, ss.bucket, key) {
+		tracker.mu.Lock()
+		tracker.Counters["archive_primary_duplicate_needed"]++
+		tracker.mu.Unlock()
+		if err := ss.dropFromBucket(ctx, ss.bucket, key); err != nil {
+			tracker.mu.Lock()
+			tracker.Counters["archive_primary_duplicate_fail"]++
+			tracker.mu.Unlock()
+			logger.Error("failed to drop redundant primary copy", zap.Error(err))
+		} else {
+			tracker.mu.Lock()
+			tracker.Counters["archive_primary_duplicate_dropped"]++
+			tracker.mu.Unlock()
+			logger.Debug("dropped redundant primary copy")
+		}
+	}
+
 	// get blobs that I should have (regardless of health of other nodes)
 	if isMine && !alreadyHave && ss.diskHasSpaceForCID(cid, placementHosts) {
+		// The bytes may already be on this node, in the other bucket: presence
+		// is resolved per bucket, so a rank flip (or an archive configured
+		// after the primary filled) reads as missing here. Moving locally
+		// beats a network pull, and is the only thing that ever removes the
+		// stale copy -- a pull would leave both. diskHasSpaceForCID above
+		// already gated on the destination bucket's free space.
+		if src := ss.otherBucket(bucket); ss.blobPresentIn(ctx, presenceIndex, src, key) {
+			if n, err := ss.relocateBetweenBuckets(ctx, key, bucket, src); err == nil {
+				tracker.mu.Lock()
+				tracker.Counters["relocated_between_buckets"]++
+				tracker.ContentSize += n
+				tracker.SeenKeys[key] = seenKeyResult{alreadyHave: true, size: n}
+				tracker.mu.Unlock()
+				logger.Debug("relocated blob between local buckets")
+				return nil
+			} else {
+				tracker.mu.Lock()
+				tracker.Counters["relocate_between_buckets_fail"]++
+				tracker.mu.Unlock()
+				logger.Warn("local bucket relocate failed; falling back to network pull",
+					zap.Error(err))
+			}
+		}
+
 		tracker.mu.Lock()
 		tracker.Counters["pull_mine_needed"]++
 		tracker.mu.Unlock()
