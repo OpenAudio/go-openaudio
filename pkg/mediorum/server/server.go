@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "embed"
@@ -217,6 +218,11 @@ type MediorumServer struct {
 	bgPullBackoff         *imcache.Cache[string, struct{}]
 	replicationAttempts   *imcache.Cache[string, struct{}]
 	failsPeerReachability bool
+
+	// presenceWalk is the in-flight presence index walk, or nil. Published so
+	// the health endpoint can show progress: the walk runs before repair's
+	// first checkpoint, so nothing else reports it while it is happening.
+	presenceWalk atomic.Pointer[presenceWalkCounter]
 
 	StartedAt time.Time
 	Config    MediorumConfig
