@@ -87,6 +87,20 @@ type MediorumConfig struct {
 	RepairInterval            time.Duration `default:"1h"`
 	RepairConcurrency         int           `default:"1"`
 
+	// PresenceWalkConcurrency is how many shard directories the presence index
+	// walk visits at once. 1 -- the default -- selects the original serial walk
+	// verbatim, so a node that sets nothing behaves exactly as before.
+	//
+	// Raising it is only worth doing on a bucket large enough for the walk to
+	// dominate a repair cycle. The work is one opendir plus one lstat per blob,
+	// so it is metadata-latency bound: a serial walk leaves the device at queue
+	// depth 1 no matter how many spindles are underneath. 16 is a reasonable
+	// setting there. On a raidz vdev every logical read needs all data members,
+	// so random-read IOPS is roughly that of a single disk and deeper queues
+	// stop helping; on network- or passthrough-backed storage the win is larger
+	// but the ceiling is the server's own concurrency.
+	PresenceWalkConcurrency int `default:"1"`
+
 	// Waveform analysis is entirely opt-in: all three switches default to
 	// false, so a node that sets nothing behaves exactly as before.
 	//
