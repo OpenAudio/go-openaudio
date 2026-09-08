@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -109,12 +110,12 @@ func TestStagingHasSpace(t *testing.T) {
 		ss.Config.Env = "prod"
 		ss.Config.PullStagingDir = t.TempDir()
 
-		original := stagingBytesPerWorker
-		stagingBytesPerWorker = 1 << 60
-		t.Cleanup(func() { stagingBytesPerWorker = original })
+		original := pullStagingMinFreeBytes
+		pullStagingMinFreeBytes = math.MaxUint64
+		t.Cleanup(func() { pullStagingMinFreeBytes = original })
 
 		require.False(t, ss.stagingHasSpace(),
-			"no filesystem has an exabyte free, so this must refuse")
+			"no filesystem has MaxUint64 bytes free, so this must refuse")
 	})
 }
 
@@ -131,13 +132,13 @@ func TestServeInternalBlobPullRefusesWhenStagingIsFull(t *testing.T) {
 	ss.Config.Env = "prod"
 	ss.Config.BlobStoreDSN = "s3://not-a-file-dsn"
 	ss.Config.ArchiveBlobStoreDSN = "s3://not-a-file-dsn"
-	originalPerWorker := stagingBytesPerWorker
-	stagingBytesPerWorker = 1 << 60
+	originalThreshold := pullStagingMinFreeBytes
+	pullStagingMinFreeBytes = math.MaxUint64
 	t.Cleanup(func() {
 		ss.Config.Env = originalEnv
 		ss.Config.BlobStoreDSN = originalDSN
 		ss.Config.ArchiveBlobStoreDSN = originalArchiveDSN
-		stagingBytesPerWorker = originalPerWorker
+		pullStagingMinFreeBytes = originalThreshold
 	})
 
 	rec := postInternalBlobPull(t, ss, testNetwork[1].Config.Self.Host, internalBlobPullRequest{
@@ -151,27 +152,23 @@ func TestServeInternalBlobPullRefusesWhenStagingIsFull(t *testing.T) {
 	require.Len(t, ss.asyncPullQueue, 0, "queued a transfer it has nowhere to stage")
 }
 
-// The threshold and the worker count are one decision: every worker can be
-// staging a whole blob at once, so raising the count without raising the
-// headroom would let a node accept work it has nowhere to put.
-func TestPullStagingMinFreeScalesWithWorkers(t *testing.T) {
+// Admission must not charge one transfer for the concurrency setting. statfs is
+// live, so in-flight transfers already show up as a smaller disk; making the
+// threshold scale with the worker count would additionally reserve for
+// transfers that have not started, and turning concurrency up would start
+// refusing pulls for a reason the refusal never names.
+func TestPullStagingThresholdDoesNotScaleWithWorkers(t *testing.T) {
 	ss := blobFetchTestServer(t)
+	ss.Config.Env = "prod"
+	ss.Config.PullStagingDir = t.TempDir()
 
-	ss.Config.AsyncPullWorkers = 3
-	atThree := ss.pullStagingMinFree()
-	ss.Config.AsyncPullWorkers = 12
-	atTwelve := ss.pullStagingMinFree()
+	ss.Config.AsyncPullWorkers = 1
+	atOne := ss.stagingHasSpace()
+	ss.Config.AsyncPullWorkers = maxAsyncPullWorkers
+	atMax := ss.stagingHasSpace()
 
-	require.Greater(t, atTwelve, atThree, "more workers must demand more headroom")
-	require.Equal(t, atThree+9*stagingBytesPerWorker, atTwelve)
-
-	// The default configuration must ask for exactly what the fixed threshold
-	// this replaced asked for. Otherwise the derivation quietly raises the bar
-	// and a node with headroom that was sufficient yesterday starts refusing
-	// every pull, with replication stopping rather than anything crashing.
-	ss.Config.AsyncPullWorkers = 0
-	require.Equal(t, uint64(10<<30), ss.pullStagingMinFree(),
-		"the default no longer matches the 10GiB threshold it replaced")
+	require.Equal(t, atOne, atMax,
+		"raising worker count changed whether a pull is admitted; the threshold is coupled to it again")
 }
 
 func TestAsyncPullTunablesFallBackToDefaults(t *testing.T) {

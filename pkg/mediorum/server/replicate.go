@@ -592,42 +592,36 @@ func (ss *MediorumServer) openBlobFromHost(ctx context.Context, host, cid string
 	return r, nil
 }
 
-// Staging headroom is derived from the worker count rather than fixed, because
-// they are one decision: admission is per request, so every worker can be
-// mid-transfer against the same filesystem at once, each holding a whole blob.
-// A fixed threshold would let an operator raise AsyncPullWorkers past what the
-// staging disk can back and never hear about it until the disk filled.
+// pullStagingMinFreeBytes is the headroom the staging directory must have
+// before this node accepts a pull.
 //
-// This is a heuristic, not a bound. Blob sizes are not known at admission and
-// vary by three orders of magnitude, so nothing here can guarantee the disk
-// survives a pathological set of concurrent transfers -- the aim is to make
-// running out unlikely, and to make raising concurrency raise the bar with it.
+// Flat, not multiplied by the worker count. The tempting reasoning is that
+// every worker can be staging a whole blob at once, so admission should demand
+// room for all of them -- but statfs reports live free space, and a transfer's
+// bytes land as they are written. A pull admitted while others are in flight
+// already sees a disk that has shrunk by whatever they have staged so far, so
+// concurrency throttles itself: the further along the in-flight transfers are,
+// the sooner the next admission is refused. Reserving for the worst case on
+// top of that asks a small transfer to prove there is room for five others it
+// knows nothing about, which is an overprovisioning requirement with no visible
+// cause -- an operator sees a refusal naming a threshold, not the concurrency
+// setting that produced it.
 //
-// Vars only so tests can force the refusal branch; nothing reassigns them at
+// What the live reading misses is the unwritten remainder of transfers that
+// just started. This margin absorbs that, along with the other users of the
+// directory: by default it is also the OS temp dir, shared with tusd uploads,
+// transcode temps and audio analysis temps.
+//
+// 10GiB matches the blob-store threshold in dsnHasSpace. Running many workers
+// against a small staging disk is a real way to fill it, but the answer is
+// sizing the disk for the concurrency -- see MediorumConfig.AsyncPullWorkers --
+// not making every transfer pay for it up front. The failure it guards is also
+// transient: staging runs out, io.Copy fails, the temp file is cleaned up and
+// the disk recovers.
+//
+// A var only so tests can force the refusal branch; nothing reassigns it at
 // runtime.
-var (
-	// stagingBytesPerWorker is what one in-flight transfer typically occupies.
-	// A 320 is single-digit MB and the largest originals are ~1.9GB, so this
-	// sits well above the common case and below the tail; stagingSharedMargin
-	// is what absorbs the tail.
-	stagingBytesPerWorker uint64 = 1 << 30
-
-	// stagingSharedMargin is not ours to spend: by default the staging
-	// directory is also the OS temp dir, shared with tusd uploads, transcode
-	// temps and audio analysis temps.
-	stagingSharedMargin uint64 = 4 << 30
-)
-
-// pullStagingMinFree is the headroom the staging directory must have before
-// this node accepts a pull.
-//
-// At the default worker count this comes to 10GiB, which is both the fixed
-// value this derivation replaces and the threshold dsnHasSpace applies to the
-// blob store -- so a node that was accepting pulls before still is. What
-// changes is that turning concurrency up now asks for the disk to back it.
-func (ss *MediorumServer) pullStagingMinFree() uint64 {
-	return uint64(ss.asyncPullWorkers())*stagingBytesPerWorker + stagingSharedMargin
-}
+var pullStagingMinFreeBytes uint64 = 10 << 30
 
 // pullStagingDir is where a pull buffers a blob before it is validated and
 // committed to the bucket.
@@ -670,14 +664,12 @@ func (ss *MediorumServer) stagingHasSpace() bool {
 		return true
 	}
 
-	required := ss.pullStagingMinFree()
-	if free <= required {
+	if free <= pullStagingMinFreeBytes {
 		if ss.diskWarnThrottle.allow("staging-below-threshold:"+dir, diskWarnInterval) {
 			ss.logger.Warn("pull staging disk space below threshold; refusing pulls",
 				zap.String("stagingDir", dir),
 				zap.Uint64("freeGB", free/uint64(1e9)),
-				zap.Uint64("thresholdGB", required/uint64(1e9)),
-				zap.Int("asyncPullWorkers", ss.asyncPullWorkers()))
+				zap.Uint64("thresholdGB", pullStagingMinFreeBytes/uint64(1e9)))
 		}
 		return false
 	}

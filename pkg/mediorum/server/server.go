@@ -93,9 +93,11 @@ type MediorumConfig struct {
 	// a property of the node -- its bandwidth, its staging disk, and whether it
 	// is absorbing a backfill -- so it is tunable rather than fixed.
 	//
-	// It also sets the staging headroom this node demands: each worker holds a
-	// whole blob while it transfers, so raising this raises what
-	// pullStagingMinFree requires before a pull is accepted.
+	// Each concurrent transfer stages a whole blob under PullStagingDir before
+	// it is validated, so raising this raises the peak that directory has to
+	// hold. That is a sizing consideration for the operator turning it up, not
+	// something admission charges every transfer for in advance -- see
+	// pullStagingMinFreeBytes.
 	AsyncPullWorkers int `default:"6"`
 	// AsyncPullTimeout bounds one queued transfer, and with it how long a
 	// source must keep serving a blob after answering 202 -- raising it loosens
