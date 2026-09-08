@@ -151,7 +151,14 @@ func (ss *MediorumServer) listBucketIntoIndex(ctx context.Context, bucket *blob.
 		return listIntoIndex(ctx, bucket, index)
 	}
 
-	sawEscaped, err := ss.walkFileBucket(ctx, dir, bucket, index)
+	label := "primary"
+	if ss.archiveBucket != nil && bucket == ss.archiveBucket {
+		label = "archive"
+	}
+	prog := newPresenceWalkCounter(label, dir)
+	stopTracking := ss.trackPresenceWalk(ctx, prog)
+	sawEscaped, err := ss.walkFileBucket(ctx, dir, bucket, index, prog)
+	stopTracking()
 	if err != nil {
 		return err
 	}
@@ -202,11 +209,11 @@ func fileBucketDir(dsn string) (string, bool) {
 //
 // Above 1 it opts into walkFileBucketConcurrent, which is worth doing only on a
 // bucket large enough for the walk to dominate a repair cycle.
-func (ss *MediorumServer) walkFileBucket(ctx context.Context, dir string, bucket *blob.Bucket, index *repairPresenceIndex) (bool, error) {
+func (ss *MediorumServer) walkFileBucket(ctx context.Context, dir string, bucket *blob.Bucket, index *repairPresenceIndex, prog *presenceWalkCounter) (bool, error) {
 	if ss.Config.PresenceWalkConcurrency <= 1 {
-		return walkFileBucketSerial(ctx, dir, bucket, index)
+		return walkFileBucketSerial(ctx, dir, bucket, index, prog)
 	}
-	return walkFileBucketConcurrent(ctx, dir, bucket, index,
+	return walkFileBucketConcurrent(ctx, dir, bucket, index, prog,
 		ss.Config.PresenceWalkConcurrency, presenceWalkBatch)
 }
 
@@ -218,7 +225,7 @@ func (ss *MediorumServer) walkFileBucket(ctx context.Context, dir string, bucket
 // shard because filepath.WalkDir stats its own root. None of those differences
 // matter for correctness, but "the default changes nothing" is only true if the
 // default runs this code.
-func walkFileBucketSerial(ctx context.Context, dir string, bucket *blob.Bucket, index *repairPresenceIndex) (bool, error) {
+func walkFileBucketSerial(ctx context.Context, dir string, bucket *blob.Bucket, index *repairPresenceIndex, prog *presenceWalkCounter) (bool, error) {
 	// Verify the root before walking. filepath.WalkDir reports a missing or
 	// unmounted root through the callback's err argument, and we deliberately
 	// skip per-entry errors below — without this check an unmounted archive
@@ -260,6 +267,7 @@ func walkFileBucketSerial(ctx context.Context, dir string, bucket *blob.Bucket, 
 			return nil
 		}
 		index.add(key, bucket, presenceEntry{Size: info.Size(), ModTime: info.ModTime()})
+		prog.addFile()
 		return nil
 	})
 	if err != nil {
@@ -268,7 +276,7 @@ func walkFileBucketSerial(ctx context.Context, dir string, bucket *blob.Bucket, 
 	return sawEscaped, nil
 }
 
-func walkFileBucketConcurrent(ctx context.Context, dir string, bucket *blob.Bucket, index *repairPresenceIndex, concurrency, batch int) (bool, error) {
+func walkFileBucketConcurrent(ctx context.Context, dir string, bucket *blob.Bucket, index *repairPresenceIndex, prog *presenceWalkCounter, concurrency, batch int) (bool, error) {
 	// Verify the root before walking. filepath.WalkDir reports a missing or
 	// unmounted root through the callback's err argument, and we deliberately
 	// skip per-entry errors below — without this check an unmounted archive
@@ -300,7 +308,7 @@ func walkFileBucketConcurrent(ctx context.Context, dir string, bucket *blob.Buck
 			if !ent.IsDir() {
 				// A key with no shard prefix (cidutil.ShardCID passes some CIDs
 				// through unchanged) lands directly in the root.
-				if err := indexFileEntry(dir, filepath.Join(dir, ent.Name()), ent, bucket, index); err != nil {
+				if err := indexFileEntry(dir, filepath.Join(dir, ent.Name()), ent, bucket, index, prog); err != nil {
 					// Let the workers already running settle before reporting.
 					_ = g.Wait()
 					return walkOutcome(err)
@@ -308,7 +316,8 @@ func walkFileBucketConcurrent(ctx context.Context, dir string, bucket *blob.Buck
 				continue
 			}
 			shard := filepath.Join(dir, ent.Name())
-			g.Go(func() error { return walkShardIntoIndex(gctx, dir, shard, bucket, index) })
+			prog.addShard()
+			g.Go(func() error { return walkShardIntoIndex(gctx, dir, shard, bucket, index, prog) })
 		}
 		if readErr != nil {
 			if readErr == io.EOF {
@@ -336,7 +345,7 @@ func walkFileBucketConcurrent(ctx context.Context, dir string, bucket *blob.Buck
 }
 
 // walkShardIntoIndex indexes every blob under one shard directory.
-func walkShardIntoIndex(ctx context.Context, root, shard string, bucket *blob.Bucket, index *repairPresenceIndex) error {
+func walkShardIntoIndex(ctx context.Context, root, shard string, bucket *blob.Bucket, index *repairPresenceIndex, prog *presenceWalkCounter) error {
 	return filepath.WalkDir(shard, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// Couldn't read this entry; fileblob's own List skips these rather
@@ -349,13 +358,13 @@ func walkShardIntoIndex(ctx context.Context, root, shard string, bucket *blob.Bu
 		if d.IsDir() {
 			return nil
 		}
-		return indexFileEntry(root, path, d, bucket, index)
+		return indexFileEntry(root, path, d, bucket, index, prog)
 	})
 }
 
 // indexFileEntry adds one file to the index, or reports errEscapedPath if its
 // key cannot be derived from its path.
-func indexFileEntry(root, path string, d fs.DirEntry, bucket *blob.Bucket, index *repairPresenceIndex) error {
+func indexFileEntry(root, path string, d fs.DirEntry, bucket *blob.Bucket, index *repairPresenceIndex, prog *presenceWalkCounter) error {
 	if strings.HasSuffix(path, fileblobAttrsExt) {
 		return nil
 	}
@@ -373,6 +382,7 @@ func indexFileEntry(root, path string, d fs.DirEntry, bucket *blob.Bucket, index
 		return nil
 	}
 	index.add(key, bucket, presenceEntry{Size: info.Size(), ModTime: info.ModTime()})
+	prog.addFile()
 	return nil
 }
 

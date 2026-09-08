@@ -237,7 +237,7 @@ templ repairSection(d *storagev1.GetStorageDiagnosticsResponse) {
 		<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
 			@repairRunCard("Last Successful Repair", d.LastSuccessfulRepair)
 			@repairRunCard("Last Successful Cleanup", d.LastSuccessfulCleanup)
-			@repairRunCard("In Progress", d.InProgressRepair)
+			@inProgressCard(d.InProgressRepair, d.PresenceWalk)
 		</div>
 		<h3 class="text-lg font-semibold mb-2">Recent Runs</h3>
 		if len(d.RecentRepairRuns) == 0 {
@@ -553,6 +553,73 @@ templ repairRunCard(label string, r *storagev1.RepairRun) {
 				</details>
 			}
 		}
+	</div>
+}
+
+// inProgressCard describes the cycle that is running now.
+//
+// It has two sources because a running cycle is not always a row. The presence
+// index walk happens inside runRepair before its first saveTracker, so for the
+// whole of it -- hours on a large file:// bucket -- in_progress_repair is
+// either absent (a fresh cycle has written no row yet) or a stale resumed row
+// whose checkpoint age keeps climbing. Reading either one alone says the node
+// is idle or wedged when it is neither.
+templ inProgressCard(r *storagev1.RepairRun, walk *storagev1.PresenceWalk) {
+	<div class="bg-secondary rounded-lg p-4">
+		<div class="font-medium mb-2">In Progress</div>
+		if r == nil && walk == nil {
+			<div class="text-sm text-secondary">—</div>
+		} else {
+			if r != nil {
+				<div class="text-sm text-secondary">{ formatTime(r.StartedAt.AsTime()) }</div>
+				<div class="text-xs text-secondary mt-1">{ formatRelative(r.StartedAt.AsTime()) }</div>
+				<div class="text-xs text-secondary mt-1">kind: { repairKindLabel(r) }</div>
+				<div class="text-xs text-secondary">status: { repairStatusLabel(r) }</div>
+				if r.FinishedAt == nil && r.UpdatedAt != nil {
+					<div class={ "text-xs mt-1 " + repairCheckpointClass(r) }>
+						last checkpoint: { formatRelative(r.UpdatedAt.AsTime()) }
+					</div>
+				}
+				if r.DurationNs > 0 {
+					<div class="text-xs text-secondary">duration: { formatDuration(r.DurationNs) }</div>
+				}
+				if r.ContentSizeBytes > 0 {
+					<div class="text-xs text-secondary">content size: { formatBytes(r.ContentSizeBytes) }</div>
+				}
+			} else {
+				<div class="text-sm text-secondary">{ formatTime(walk.StartedAt.AsTime()) }</div>
+				<div class="text-xs text-secondary mt-1">{ formatRelative(walk.StartedAt.AsTime()) }</div>
+			}
+			if walk != nil {
+				@presenceWalkLines(walk)
+			}
+			if r != nil && len(r.Counters) > 0 {
+				<details class="mt-2">
+					<summary class="text-xs text-secondary cursor-pointer">counters ({ fmt.Sprintf("%d", len(r.Counters)) })</summary>
+					<div class="text-xs mt-2 font-mono space-y-0.5">
+						for _, k := range sortedCounters(r.Counters) {
+							<div class="flex justify-between gap-4">
+								<span class="text-secondary">{ k }</span>
+								<span>{ fmt.Sprintf("%d", r.Counters[k]) }</span>
+							</div>
+						}
+					</div>
+				</details>
+			}
+		}
+	</div>
+}
+
+// presenceWalkLines explains a stale or missing checkpoint: the cycle is
+// enumerating a bucket and has not reached its first batch yet.
+templ presenceWalkLines(walk *storagev1.PresenceWalk) {
+	<div class="mt-2 pt-2 border-t border-primary">
+		<div class="text-xs font-medium">building presence index</div>
+		<div class="text-xs text-secondary mt-1">bucket: { walk.Bucket }</div>
+		<div class="text-xs text-secondary">files: { fmt.Sprintf("%d", walk.Files) }</div>
+		<div class="text-xs text-secondary">shards: { fmt.Sprintf("%d", walk.Shards) }</div>
+		<div class="text-xs text-secondary">rate: { fmt.Sprintf("%.0f/s", walk.FilesPerSec) }</div>
+		<div class="text-xs text-secondary">walking for: { formatDuration(int64(time.Since(walk.StartedAt.AsTime()))) }</div>
 	</div>
 }
 

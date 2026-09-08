@@ -309,6 +309,7 @@ func (s *StorageService) GetStorageDiagnostics(ctx context.Context, _ *connect.R
 		LastSuccessfulRepair:    repairRunToProto(st.lastSuccessfulRepair),
 		LastSuccessfulCleanup:   repairRunToProto(st.lastSuccessfulCleanup),
 		Waveforms:               ss.waveformStatusProto(ctx),
+		PresenceWalk:            ss.presenceWalkProto(),
 	}
 
 	// recent repair runs + in-progress run

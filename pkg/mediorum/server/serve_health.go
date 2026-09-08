@@ -65,6 +65,11 @@ type HealthData struct {
 	IsDiscoveryListensEnabled bool                       `json:"isDiscoveryListensEnabled"`
 	TranscodeQueueLength      int                        `json:"transcodeQueueLength"`
 	TranscodeStats            *TranscodeStats            `json:"transcodeStats"`
+	// PresenceWalk is non-nil only while a presence index walk is running. It
+	// is the only external signal that one is in progress: the walk precedes
+	// repair's first checkpoint, so /internal/logs/repair still shows the
+	// previous run as the latest and has no row for the current one.
+	PresenceWalk *PresenceWalkProgress `json:"presenceWalk"`
 }
 
 func (ss *MediorumServer) getHealth() HealthData {
@@ -137,6 +142,7 @@ func (ss *MediorumServer) getHealth() HealthData {
 		ArchiveDiskHasSpace:       ss.archiveBucket != nil && ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, st.archivePathFree),
 		TranscodeQueueLength:      len(ss.transcodeWork),
 		TranscodeStats:            ss.getTranscodeStats(),
+		PresenceWalk:              ss.presenceWalkProgress(),
 	}
 }
 
