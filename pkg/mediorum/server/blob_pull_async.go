@@ -50,6 +50,37 @@ const (
 // to pushing the bytes at a node that just said it was busy.
 var errAsyncPullQueueFull = errors.New("pull queue is full")
 
+// The two things a 202 can mean. The distinction is the sender's only way to
+// tell a transfer that is still running from one that ended without producing
+// the blob: a peer that already holds it answers 200 already_present, and a
+// peer that is still working answers in_progress, so a second accepted for a
+// cid we handed off earlier says the earlier attempt is over and the blob is
+// not there. That is a failure signal derived from the peer's own state, which
+// is the same evidence already_present rests on -- no callback, and nothing the
+// peer has to promise.
+const (
+	asyncPullStatusAccepted   = "accepted"
+	asyncPullStatusInProgress = "in_progress"
+)
+
+// asyncPullAdmission says which of those two an enqueue produced.
+type asyncPullAdmission int
+
+const (
+	// asyncPullQueued: this node took the transfer on just now.
+	asyncPullQueued asyncPullAdmission = iota
+	// asyncPullRunning: a transfer for this cid was already under way, so the
+	// request was folded into it rather than queued again.
+	asyncPullRunning
+)
+
+func (a asyncPullAdmission) status() string {
+	if a == asyncPullRunning {
+		return asyncPullStatusInProgress
+	}
+	return asyncPullStatusAccepted
+}
+
 type asyncPullJob struct {
 	sourceHost     string
 	cid            string
@@ -77,20 +108,20 @@ type asyncPullJob struct {
 // Holding the lock across the send is safe because the send cannot block: the
 // default arm makes it a constant-time try, so a worker calling
 // releaseAsyncPull can always take the lock.
-func (ss *MediorumServer) enqueueAsyncPull(job asyncPullJob) error {
+func (ss *MediorumServer) enqueueAsyncPull(job asyncPullJob) (asyncPullAdmission, error) {
 	ss.asyncPullMu.Lock()
 	defer ss.asyncPullMu.Unlock()
 
 	if _, running := ss.asyncPullInFlight[job.cid]; running {
-		return nil
+		return asyncPullRunning, nil
 	}
 
 	select {
 	case ss.asyncPullQueue <- job:
 		ss.asyncPullInFlight[job.cid] = struct{}{}
-		return nil
+		return asyncPullQueued, nil
 	default:
-		return errAsyncPullQueueFull
+		return asyncPullQueued, errAsyncPullQueueFull
 	}
 }
 

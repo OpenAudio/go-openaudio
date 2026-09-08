@@ -236,6 +236,12 @@ type MediorumServer struct {
 	knownPresent          *imcache.Cache[string, int64]
 	bgPullBackoff         *imcache.Cache[string, struct{}]
 	replicationAttempts   *imcache.Cache[string, struct{}]
+	// pullHandoffs remembers, per peer and cid, that we handed a transfer off
+	// and have not seen it confirmed. A peer accepting the same blob again
+	// while an entry stands is how a failed background pull is detected: see
+	// notePullHandoff. TTL matches replicationAttempts so a blob that is backed
+	// off and a handoff that is outstanding lapse together.
+	pullHandoffs          *imcache.Cache[string, struct{}]
 	failsPeerReachability bool
 
 	// presenceWalk is the in-flight presence index walk, or nil. Published so
@@ -519,6 +525,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		knownPresent:          imcache.New(imcache.WithMaxEntriesLimitOption[string, int64](500_000, imcache.EvictionPolicyLRU)),
 		bgPullBackoff:         imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
 		replicationAttempts:   imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
+		pullHandoffs:          imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
 
 		StartedAt:    time.Now().UTC(),
 		Config:       config,

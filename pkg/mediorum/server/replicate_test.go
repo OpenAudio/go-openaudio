@@ -110,8 +110,8 @@ func TestRequestPeerPullStoresValidatedBlob(t *testing.T) {
 		"",
 		true,
 	)
-	// Accepted, not complete: the bytes have not moved yet.
-	require.ErrorIs(t, err, errPeerPullInProgress)
+	// A first acceptance, not a completion: the bytes have not moved yet.
+	require.ErrorIs(t, err, errPeerPullAccepted)
 
 	waitForAsyncPull(t, target, cid)
 
@@ -148,7 +148,7 @@ func TestRequestPeerPullRejectsCIDMismatch(t *testing.T) {
 		"",
 		true,
 	)
-	require.ErrorIs(t, err, errPeerPullInProgress)
+	require.ErrorIs(t, err, errPeerPullAccepted)
 
 	waitForAsyncPull(t, target, cid)
 	require.False(t, target.haveInMyBucket(cid), "stored a blob that failed CID validation")

@@ -747,13 +747,18 @@ func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
 			uploadID:       request.UploadID,
 			transcoded:     request.Transcoded,
 		}
-		if err := ss.enqueueAsyncPull(job); err != nil {
+		admission, err := ss.enqueueAsyncPull(job)
+		if err != nil {
 			// Busy, not incapable. 503 keeps the sender off the multipart
 			// fallback, which would push the bytes at a node that just said it
 			// had no room to work.
 			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 		}
-		return c.JSON(http.StatusAccepted, map[string]string{"status": "accepted"})
+		// accepted vs in_progress: the sender cannot otherwise tell a transfer
+		// still running from one that ended without producing the blob, since
+		// both would be a bare 202. Reporting which it is costs a word and is
+		// read straight off this node's in-flight set.
+		return c.JSON(http.StatusAccepted, map[string]string{"status": admission.status()})
 	}
 
 	err := ss.pullFileFromHostValidated(c.Request().Context(), sourceHost, request.CID, request.PlacementHosts, request.UploadID, request.Transcoded)

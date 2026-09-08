@@ -29,12 +29,16 @@ var (
 	errPeerPullUnsupported   = errors.New("peer does not support pull replication")
 	errPeerPullFailed        = errors.New("peer could not pull blob")
 	errPulledBlobCIDMismatch = errors.New("pulled blob CID mismatch")
-	// errPeerPullInProgress means the peer accepted the transfer and is running
-	// it in the background. Not a success -- there is no mirror yet -- and not a
-	// failure, so it must not be logged as one, and above all must not fall
-	// through to the multipart push, which would send the peer the very bytes it
-	// is already fetching.
-	errPeerPullInProgress = errors.New("peer accepted pull; transfer in progress")
+	// errPeerPullAccepted means the peer has just taken the transfer on. Not a
+	// success -- there is no mirror yet -- and not a failure, so it must not be
+	// logged as one, and above all must not fall through to the multipart push,
+	// which would send the peer the very bytes it is about to fetch.
+	errPeerPullAccepted = errors.New("peer accepted pull")
+	// errPeerPullInProgress means the peer is still running a transfer it took
+	// on earlier. Distinct from errPeerPullAccepted because the pair is what
+	// tells a transfer that is still moving from one that ended without
+	// producing the blob: see notePullHandoff.
+	errPeerPullInProgress = errors.New("peer already pulling; transfer in progress")
 )
 
 const maxPeerErrorBytes = 8 << 10
@@ -363,8 +367,8 @@ func (ss *MediorumServer) replicateStoredFileToHost(
 //
 // Only two answers qualify: the peer cannot do pull at all, or it tried and
 // failed. Everything else must not be sent bytes -- a 503 means the peer is out
-// of room to work, and pushing at it is the worst possible response; a 202
-// means it is already fetching them itself.
+// of room to work, and pushing at it is the worst possible response; either
+// flavour of 202 means it is fetching them itself.
 func isPullFallbackWorthy(err error) bool {
 	return errors.Is(err, errPeerPullUnsupported) || errors.Is(err, errPeerPullFailed)
 }
@@ -404,7 +408,22 @@ func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string,
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxPeerErrorBytes))
 		return nil
 	case http.StatusAccepted:
-		return errPeerPullInProgress
+		var accepted struct {
+			Status string `json:"status"`
+		}
+		// A decode failure is not worth reporting: the status word is the only
+		// thing in this body, and the fallthrough below is the safe reading of
+		// its absence.
+		_ = json.NewDecoder(io.LimitReader(resp.Body, maxPeerErrorBytes)).Decode(&accepted)
+		if accepted.Status == asyncPullStatusInProgress {
+			return errPeerPullInProgress
+		}
+		// Anything else reads as a fresh acceptance, including a peer that
+		// predates the discriminator and sends a bare 202. That is the
+		// conservative default: a fresh acceptance leaves the under-replication
+		// backoff armed, where in_progress clears it, so guessing wrong here
+		// costs a slower retry rather than an unbounded loop.
+		return errPeerPullAccepted
 	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxPeerErrorBytes))
 		return fmt.Errorf("%w: %s", errPeerPullUnsupported, resp.Status)

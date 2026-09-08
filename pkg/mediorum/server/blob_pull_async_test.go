@@ -24,9 +24,18 @@ func asyncPullTestServer(t *testing.T, depth int) *MediorumServer {
 	return ss
 }
 
+// mustEnqueue enqueues and fails the test on error, returning the admission so
+// callers can assert on which of the two a 202 would report.
+func mustEnqueue(t *testing.T, ss *MediorumServer, cid string) asyncPullAdmission {
+	t.Helper()
+	admission, err := ss.enqueueAsyncPull(asyncPullJob{cid: cid, sourceHost: "http://peer"})
+	require.NoError(t, err)
+	return admission
+}
+
 func TestEnqueueAsyncPullAccepts(t *testing.T) {
 	ss := asyncPullTestServer(t, 4)
-	require.NoError(t, ss.enqueueAsyncPull(asyncPullJob{cid: "cid-a", sourceHost: "http://peer"}))
+	require.Equal(t, asyncPullQueued, mustEnqueue(t, ss, "cid-a"))
 	require.Len(t, ss.asyncPullQueue, 1)
 }
 
@@ -36,13 +45,15 @@ func TestEnqueueAsyncPullAccepts(t *testing.T) {
 func TestEnqueueAsyncPullDeduplicatesByCID(t *testing.T) {
 	ss := asyncPullTestServer(t, 8)
 
-	for range 5 {
-		require.NoError(t, ss.enqueueAsyncPull(asyncPullJob{cid: "same-cid", sourceHost: "http://peer"}))
+	require.Equal(t, asyncPullQueued, mustEnqueue(t, ss, "same-cid"))
+	for range 4 {
+		require.Equal(t, asyncPullRunning, mustEnqueue(t, ss, "same-cid"),
+			"a folded request reported itself as a fresh acceptance, which the sender reads as the previous transfer having failed")
 	}
 	require.Len(t, ss.asyncPullQueue, 1, "queued the same blob more than once")
 
 	// A different cid is unaffected.
-	require.NoError(t, ss.enqueueAsyncPull(asyncPullJob{cid: "other-cid", sourceHost: "http://peer"}))
+	require.Equal(t, asyncPullQueued, mustEnqueue(t, ss, "other-cid"))
 	require.Len(t, ss.asyncPullQueue, 2)
 }
 
@@ -51,8 +62,8 @@ func TestEnqueueAsyncPullDeduplicatesByCID(t *testing.T) {
 func TestEnqueueAsyncPullRejectsWhenFull(t *testing.T) {
 	ss := asyncPullTestServer(t, 1)
 
-	require.NoError(t, ss.enqueueAsyncPull(asyncPullJob{cid: "first", sourceHost: "http://peer"}))
-	err := ss.enqueueAsyncPull(asyncPullJob{cid: "second", sourceHost: "http://peer"})
+	require.Equal(t, asyncPullQueued, mustEnqueue(t, ss, "first"))
+	_, err := ss.enqueueAsyncPull(asyncPullJob{cid: "second", sourceHost: "http://peer"})
 	require.ErrorIs(t, err, errAsyncPullQueueFull)
 
 	ss.asyncPullMu.Lock()
@@ -82,7 +93,7 @@ func TestEnqueueAsyncPullNeverAcceptsOnAFullQueue(t *testing.T) {
 
 		// Occupy the single slot with an unrelated job, so every call below has
 		// to be refused: the queue is full and nothing is in flight for cid.
-		require.NoError(t, ss.enqueueAsyncPull(asyncPullJob{cid: "filler", sourceHost: "http://peer"}))
+		require.Equal(t, asyncPullQueued, mustEnqueue(t, ss, "filler"))
 
 		results := make([]error, callers)
 		var release, finished sync.WaitGroup
@@ -92,7 +103,7 @@ func TestEnqueueAsyncPullNeverAcceptsOnAFullQueue(t *testing.T) {
 			go func() {
 				defer finished.Done()
 				release.Wait()
-				results[i] = ss.enqueueAsyncPull(asyncPullJob{cid: cid, sourceHost: "http://peer"})
+				_, results[i] = ss.enqueueAsyncPull(asyncPullJob{cid: cid, sourceHost: "http://peer"})
 			}()
 		}
 		release.Done()
@@ -111,11 +122,11 @@ func TestEnqueueAsyncPullNeverAcceptsOnAFullQueue(t *testing.T) {
 // the life of the process.
 func TestAsyncPullReleasesInFlightMarker(t *testing.T) {
 	ss := asyncPullTestServer(t, 2)
-	require.NoError(t, ss.enqueueAsyncPull(asyncPullJob{cid: "cid-x", sourceHost: "http://peer"}))
+	require.Equal(t, asyncPullQueued, mustEnqueue(t, ss, "cid-x"))
 
 	ss.releaseAsyncPull("cid-x")
 
-	require.NoError(t, ss.enqueueAsyncPull(asyncPullJob{cid: "cid-x", sourceHost: "http://peer"}),
+	require.Equal(t, asyncPullQueued, mustEnqueue(t, ss, "cid-x"),
 		"cid could not be re-queued after release")
 	require.Len(t, ss.asyncPullQueue, 2)
 }
@@ -161,14 +172,17 @@ func TestAsyncPullDoesNotInheritACancelledRequestContext(t *testing.T) {
 // that is busy or already fetching must never be sent the bytes.
 func TestRequestPeerPullStatusHandling(t *testing.T) {
 	cases := []struct {
-		name          string
-		status        int
-		wantErr       error
-		wantFallback  bool
-		wantInProress bool
+		name         string
+		status       int
+		wantErr      error
+		wantFallback bool
+		wantHandoff  bool
 	}{
 		{name: "already present", status: http.StatusOK},
-		{name: "accepted for async pull", status: http.StatusAccepted, wantErr: errPeerPullInProgress, wantInProress: true},
+		// A bare 202 carries no status word, which reads as a fresh acceptance.
+		// Which of the two it is gets its own test; here what matters is that
+		// either one counts as a handoff and stays off the push path.
+		{name: "accepted for async pull", status: http.StatusAccepted, wantErr: errPeerPullAccepted, wantHandoff: true},
 		{name: "queue full", status: http.StatusServiceUnavailable},
 		{name: "endpoint absent", status: http.StatusNotFound, wantErr: errPeerPullUnsupported, wantFallback: true},
 		{name: "not implemented", status: http.StatusNotImplemented, wantErr: errPeerPullUnsupported, wantFallback: true},
@@ -195,7 +209,8 @@ func TestRequestPeerPullStatusHandling(t *testing.T) {
 			}
 			require.Equal(t, tc.wantFallback, isPullFallbackWorthy(err),
 				"wrong fallback decision for %d: pushing bytes at a peer that did not ask for them", tc.status)
-			require.Equal(t, tc.wantInProress, errors.Is(err, errPeerPullInProgress))
+			isHandoff := errors.Is(err, errPeerPullAccepted) || errors.Is(err, errPeerPullInProgress)
+			require.Equal(t, tc.wantHandoff, isHandoff)
 		})
 	}
 }
@@ -256,4 +271,115 @@ func TestPullInProgressClearsTheReplicationBackoff(t *testing.T) {
 	_, stillBackedOff := ss.replicationAttempts.Get(upload.ID)
 	require.False(t, stillBackedOff,
 		"an accepted-but-unfinished transfer armed the hour-long backoff; the mirror would not be recorded until it expired")
+}
+
+// The whole failure-detection scheme rests on the sender being able to read the
+// two 202s apart, and on a bare 202 -- a peer predating the discriminator --
+// falling to the conservative side, which is the one that keeps the backoff
+// armed.
+func TestRequestPeerPullReadsTheAcceptedStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want error
+	}{
+		{"fresh acceptance", `{"status":"accepted"}`, errPeerPullAccepted},
+		{"transfer already running", `{"status":"in_progress"}`, errPeerPullInProgress},
+		{"peer predating the discriminator", ``, errPeerPullAccepted},
+		{"unparseable body", `not json`, errPeerPullAccepted},
+		{"unknown status word", `{"status":"whatever"}`, errPeerPullAccepted},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer peer.Close()
+
+			ss := blobFetchTestServer(t)
+			err := ss.requestPeerPull(context.Background(), peer.URL, "cid-1", nil, "", false)
+			require.ErrorIs(t, err, tc.want)
+
+			// Neither flavour may reach the multipart push: the peer is already
+			// fetching these bytes, or about to.
+			require.False(t, isPullFallbackWorthy(err), "a 202 routed into the multipart fallback")
+		})
+	}
+}
+
+// notePullHandoff is where a background pull's failure becomes visible at all.
+// Nothing waits on the transfer and the peer only logs its own error, so a
+// second acceptance for a blob we already handed over is the sender's one
+// chance to notice.
+func TestNotePullHandoffDetectsAFailedTransfer(t *testing.T) {
+	ss := handoffTestServer(t)
+	const host, cid = "http://peer-a", "cid-1"
+
+	// First sweep: the peer takes it on. Nothing is known to be wrong.
+	require.Equal(t, pullHandoffFresh, ss.notePullHandoff(host, cid, errPeerPullAccepted))
+
+	// Still working at the next sweep -- the case the backoff must not block.
+	require.Equal(t, pullHandoffRunning, ss.notePullHandoff(host, cid, errPeerPullInProgress))
+
+	// Then it accepts the same blob afresh: its in-flight set is empty and its
+	// bucket does not hold the blob, so the transfer it took on is over and
+	// produced nothing.
+	require.Equal(t, pullHandoffRepeat, ss.notePullHandoff(host, cid, errPeerPullAccepted))
+
+	// The report is consumed, so the hourly retry starts clean rather than
+	// reporting the same failure again immediately.
+	require.Equal(t, pullHandoffFresh, ss.notePullHandoff(host, cid, errPeerPullAccepted))
+}
+
+// A fresh acceptance from one peer must not read as a repeat for another, or a
+// single sweep across three targets would manufacture failures.
+func TestNotePullHandoffIsPerHostAndCID(t *testing.T) {
+	ss := handoffTestServer(t)
+	const cid = "cid-1"
+
+	require.Equal(t, pullHandoffFresh, ss.notePullHandoff("http://peer-a", cid, errPeerPullAccepted))
+	require.Equal(t, pullHandoffFresh, ss.notePullHandoff("http://peer-b", cid, errPeerPullAccepted))
+	require.Equal(t, pullHandoffFresh, ss.notePullHandoff("http://peer-a", "cid-2", errPeerPullAccepted))
+
+	// Only peer-a/cid-1 has an outstanding handoff to repeat.
+	require.Equal(t, pullHandoffRepeat, ss.notePullHandoff("http://peer-a", cid, errPeerPullAccepted))
+	require.Equal(t, pullHandoffRepeat, ss.notePullHandoff("http://peer-b", cid, errPeerPullAccepted))
+}
+
+// already_present settles the handoff. Without this a blob that transferred
+// successfully would still be holding a marker, and a later unrelated handoff
+// to the same peer would be misread as a failure.
+func TestNotePullHandoffClearedByConfirmedPresence(t *testing.T) {
+	ss := handoffTestServer(t)
+	const host, cid = "http://peer-a", "cid-1"
+
+	require.Equal(t, pullHandoffFresh, ss.notePullHandoff(host, cid, errPeerPullAccepted))
+	require.Equal(t, pullHandoffNone, ss.notePullHandoff(host, cid, nil), "a confirmed mirror is not a handoff")
+	require.Equal(t, pullHandoffFresh, ss.notePullHandoff(host, cid, errPeerPullAccepted),
+		"a settled handoff was still counted against the next one")
+}
+
+// Ordinary failures -- 503, an unreachable peer -- are not handoffs and must
+// leave the outstanding marker alone, or a busy peer would erase the record of
+// a transfer another peer is still running.
+func TestNotePullHandoffIgnoresOrdinaryFailures(t *testing.T) {
+	ss := handoffTestServer(t)
+	const host, cid = "http://peer-a", "cid-1"
+
+	require.Equal(t, pullHandoffFresh, ss.notePullHandoff(host, cid, errPeerPullAccepted))
+	require.Equal(t, pullHandoffNone, ss.notePullHandoff(host, cid, errors.New("503 service unavailable")))
+	require.Equal(t, pullHandoffRepeat, ss.notePullHandoff(host, cid, errPeerPullAccepted),
+		"an unrelated failure discarded the outstanding handoff")
+}
+
+func handoffTestServer(t *testing.T) *MediorumServer {
+	t.Helper()
+	ss := blobFetchTestServer(t)
+	ss.pullHandoffs = imcache.New(
+		imcache.WithMaxEntriesLimitOption[string, struct{}](1000, imcache.EvictionPolicyLRU),
+		imcache.WithDefaultExpirationOption[string, struct{}](time.Hour),
+	)
+	return ss
 }
