@@ -2,14 +2,85 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/crudr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestTranscodeCompletionRestoresWorkerAfterStaleMirrorWrite(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	id := fmt.Sprintf("transcode-attribution-%d", time.Now().UnixNano())
+	f, err := os.Open("testdata/beep.wav")
+	require.NoError(t, err)
+	defer f.Close()
+	cid, err := cidutil.ComputeFileCID(f)
+	require.NoError(t, err)
+	_, err = f.Seek(0, 0)
+	require.NoError(t, err)
+	require.NoError(t, ss.replicateToMyBucket(ctx, cid, f, []string{ss.Config.Self.Host}))
+	upload := Upload{
+		ID: id, Template: JobTemplateAudio, OrigFileCID: cid,
+		OrigFileName: "beep.wav", CreatedBy: ss.Config.Self.Host,
+		CreatedAt: time.Now().UTC(), Status: JobStatusNew,
+		PlacementHosts:   []string{ss.Config.Self.Host},
+		TranscodeResults: map[string]string{},
+	}
+	require.NoError(t, ss.crud.Create(&upload))
+	t.Cleanup(func() {
+		ss.crud.DB.Delete(&Upload{}, "id = ?", id)
+		ss.crud.DB.Where("\"table\" = ? AND data->0->>'id' = ?", "uploads", id).Delete(&crudr.Op{})
+	})
+
+	// A mirror worker can read the initial row before the transcode claims
+	// it, then write that snapshot after the busy operation. Force this order
+	// instead of relying on goroutine timing.
+	stale := upload
+	stale.Mirrors = []string{ss.Config.Self.Host}
+	var injected atomic.Bool
+	ss.crud.AddOpCallback(func(op *crudr.Op, _ interface{}) {
+		if op.Table != "uploads" || op.Action != crudr.ActionUpdate {
+			return
+		}
+		var rows []Upload
+		if json.Unmarshal(op.Data, &rows) != nil || len(rows) != 1 || rows[0].ID != id || rows[0].Status != JobStatusBusy {
+			return
+		}
+		if injected.CompareAndSwap(false, true) {
+			require.NoError(t, ss.crud.Update(&stale))
+		}
+	})
+
+	require.NoError(t, ss.transcode(ctx, &upload))
+	require.True(t, injected.Load())
+	var saved Upload
+	require.NoError(t, ss.crud.DB.First(&saved, "id = ?", id).Error)
+	require.Equal(t, JobStatusDone, saved.Status)
+	require.NotEmpty(t, saved.TranscodeResults["320"])
+	require.Equal(t, ss.Config.Self.Host, saved.TranscodedBy)
+
+	var ops []crudr.Op
+	require.NoError(t, ss.crud.DB.Where("\"table\" = ? AND data->0->>'id' = ?", "uploads", id).Find(&ops).Error)
+	for _, op := range ops {
+		var rows []Upload
+		require.NoError(t, json.Unmarshal(op.Data, &rows))
+		for _, row := range rows {
+			if row.Status == JobStatusDone {
+				require.NotEmpty(t, row.TranscodeResults["320"])
+				require.Equal(t, ss.Config.Self.Host, row.TranscodedBy)
+			}
+		}
+	}
+}
 
 func TestTruncateUploadError(t *testing.T) {
 	short := "short error"
