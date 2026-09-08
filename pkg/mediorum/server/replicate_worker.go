@@ -263,16 +263,69 @@ func mergeReplicationMirrors(isTranscoded bool, upload *Upload, newSuccessHosts 
 	return merged, changed
 }
 
+// underReplicatedUploadsSQL selects this node's uploads that still owe a copy
+// to somebody, matching what replicationWorker will actually attempt.
+//
+// The transcode arm is guarded on the 320 existing because the two mirror
+// lists do not describe the same population. Image uploads record
+// transcode_results->>'original.jpg' and never populate transcoded_mirrors at
+// all, so an unguarded length check would match every image ever uploaded, on
+// every pass, forever -- and the worker would drop each one right back on the
+// floor, since it makes the same 320 check before doing anything.
+//
+// NULLIF keeps the length check total. jsonb_array_length raises on a scalar,
+// and a JSON null survives COALESCE (it is a value, not SQL NULL), so a single
+// legacy row storing 'null' rather than '[]' would take the error path for the
+// whole query -- which is silent, because this scan feeds a background sweep
+// with nobody to return an error to. Rows written by this code cannot be in
+// that shape; rows arriving through crudr from other node versions are not
+// ours to assume about.
+const underReplicatedUploadsSQL = `created_by = ?
+	AND orig_file_cid IS NOT NULL
+	AND orig_file_cid != ''
+	AND status != ?
+	AND (
+		jsonb_array_length(COALESCE(NULLIF(mirrors, 'null')::jsonb, '[]'::jsonb)) < ?
+		OR (
+			COALESCE(transcode_results::jsonb ->> '320', '') != ''
+			AND jsonb_array_length(COALESCE(NULLIF(transcoded_mirrors, 'null')::jsonb, '[]'::jsonb)) < ?
+		)
+	)`
+
+// uploadNeedsReplication reports whether either blob this upload owns is still
+// short of replicas. It is the in-process twin of underReplicatedUploadsSQL and
+// of the two conditions replicationWorker branches on, kept as a free function
+// so the agreement between the three is directly testable.
+//
+// Deliberately reads replicationFactor rather than len(PlacementHosts), which
+// is what the worker targets for an explicitly placed upload. That disagreement
+// predates this function and is left alone here: closing it would queue a
+// different population, which is a separate change from making the transcode
+// shortfall visible at all.
+func uploadNeedsReplication(upload *Upload, replicationFactor int) bool {
+	if len(upload.Mirrors) < replicationFactor {
+		return true
+	}
+	cid := upload.TranscodeResults["320"]
+	return cid != "" && len(upload.TranscodedMirrors) < replicationFactor
+}
+
 func (ss *MediorumServer) findMissedReplications() {
 	// Find uploads that don't have enough replicas
 	uploads := []*Upload{}
-	ss.crud.DB.Where(
-		"created_by = ? AND orig_file_cid IS NOT NULL AND orig_file_cid != '' AND status != ? AND jsonb_array_length(COALESCE(mirrors::jsonb, '[]'::jsonb)) < ?",
-		ss.Config.Self.Host, JobStatusBusy, ss.Config.ReplicationFactor,
-	).Find(&uploads)
+	if err := ss.crud.DB.Where(
+		underReplicatedUploadsSQL,
+		ss.Config.Self.Host, JobStatusBusy, ss.Config.ReplicationFactor, ss.Config.ReplicationFactor,
+	).Find(&uploads).Error; err != nil {
+		// Worth a line of its own: a failure here is indistinguishable from a
+		// fully replicated node, so without it the sweep can be dead for weeks
+		// and look healthy the whole time.
+		ss.logger.Error("failed to scan for under-replicated uploads", zap.Error(err))
+		return
+	}
 
 	for _, upload := range uploads {
-		if len(upload.Mirrors) < ss.Config.ReplicationFactor {
+		if uploadNeedsReplication(upload, ss.Config.ReplicationFactor) {
 			// Backoff so we don't re-queue the same upload every cycle while
 			// it stays under-replicated (e.g. its source blob is gone or
 			// peers keep rejecting it). After the cache TTL we'll try again.
