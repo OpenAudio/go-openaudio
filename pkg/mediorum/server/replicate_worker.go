@@ -53,10 +53,7 @@ func (ss *MediorumServer) replicationWorker(ctx context.Context, workerID int) e
 			logger.Debug("replicating upload", zap.String("uploadID", upload.ID), zap.String("cid", upload.OrigFileCID))
 
 			// Determine target replication count based on placement hosts
-			targetReplicationCount := ss.Config.ReplicationFactor
-			if len(upload.PlacementHosts) > 0 {
-				targetReplicationCount = len(upload.PlacementHosts)
-			}
+			targetReplicationCount := replicationTargetFor(upload, ss.Config.ReplicationFactor)
 
 			// Replicate transcoded file if it exists and needs replication
 			if _, hasTranscoded := upload.TranscodeResults["320"]; hasTranscoded && len(upload.TranscodedMirrors) < targetReplicationCount {
@@ -285,29 +282,52 @@ const underReplicatedUploadsSQL = `created_by = ?
 	AND orig_file_cid != ''
 	AND status != ?
 	AND (
-		jsonb_array_length(COALESCE(NULLIF(mirrors, 'null')::jsonb, '[]'::jsonb)) < ?
+		jsonb_array_length(COALESCE(NULLIF(mirrors, 'null')::jsonb, '[]'::jsonb)) < ` + replicationTargetSQL + `
 		OR (
 			COALESCE(transcode_results::jsonb ->> '320', '') != ''
-			AND jsonb_array_length(COALESCE(NULLIF(transcoded_mirrors, 'null')::jsonb, '[]'::jsonb)) < ?
+			AND jsonb_array_length(COALESCE(NULLIF(transcoded_mirrors, 'null')::jsonb, '[]'::jsonb)) < ` + replicationTargetSQL + `
 		)
+	)`
+
+// replicationTargetSQL is how many copies a row wants, in SQL: the number of
+// hosts it was explicitly placed on, or the bound parameter when it was not.
+//
+// NULLIF(..., 0) is what makes the fallback work -- an absent or empty
+// placement list has length 0, which becomes NULL and lets COALESCE reach the
+// parameter. The inner guards mirror the ones above for the same reason: a
+// legacy row storing the text 'null' would otherwise raise for the whole scan.
+const replicationTargetSQL = `COALESCE(
+		NULLIF(jsonb_array_length(COALESCE(NULLIF(placement_hosts, 'null')::jsonb, '[]'::jsonb)), 0),
+		?
 	)`
 
 // uploadNeedsReplication reports whether either blob this upload owns is still
 // short of replicas. It is the in-process twin of underReplicatedUploadsSQL and
 // of the two conditions replicationWorker branches on, kept as a free function
 // so the agreement between the three is directly testable.
-//
-// Deliberately reads replicationFactor rather than len(PlacementHosts), which
-// is what the worker targets for an explicitly placed upload. That disagreement
-// predates this function and is left alone here: closing it would queue a
-// different population, which is a separate change from making the transcode
-// shortfall visible at all.
 func uploadNeedsReplication(upload *Upload, replicationFactor int) bool {
-	if len(upload.Mirrors) < replicationFactor {
+	target := replicationTargetFor(upload, replicationFactor)
+	if len(upload.Mirrors) < target {
 		return true
 	}
 	cid := upload.TranscodeResults["320"]
-	return cid != "" && len(upload.TranscodedMirrors) < replicationFactor
+	return cid != "" && len(upload.TranscodedMirrors) < target
+}
+
+// replicationTargetFor is how many copies an upload wants.
+//
+// Placement is an instruction, not a hint: an upload placed on two hosts is
+// fully replicated at two, and asking for ReplicationFactor copies of it would
+// mean putting it somewhere it was told not to go. replicationWorker has always
+// read it this way; the query and check that decide what to hand the worker did
+// not, so every placed upload with fewer hosts than the replication factor was
+// selected on every sweep, queued, and then dropped by the worker for the life
+// of the row.
+func replicationTargetFor(upload *Upload, replicationFactor int) int {
+	if placed := len(upload.PlacementHosts); placed > 0 {
+		return placed
+	}
+	return replicationFactor
 }
 
 func (ss *MediorumServer) findMissedReplications() {
