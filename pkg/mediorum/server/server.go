@@ -152,27 +152,23 @@ type MediorumServer struct {
 	waveformRollup   waveformRollup
 	waveformRollupAt time.Time
 
-	// stats
-	statsMutex         sync.RWMutex
+	// Node status, published by background pollers (monitorMetrics, the bucket
+	// write canary, the repairer) and read by request handlers -- health
+	// checks, blob reads, the diagnostics RPC. Every field down to
+	// bucketWriteErr is guarded by statusMutex; read them through status(),
+	// dbHealthy() or diskFree() rather than directly, since a poller can be
+	// rewriting the block while a request reads it. See status.go.
+	statusMutex        sync.RWMutex
 	transcodeStats     *TranscodeStats
 	mediorumPathUsed   uint64
 	mediorumPathSize   uint64
 	mediorumPathFree   uint64
 	storageExpectation uint64
 
-	// legacyCorpusBytes is the estimated size of the pre-mediorum Qm corpus,
-	// which no query over `uploads` can see. Computed once: qm_cids is filled
-	// by a one-time migration and never appended to, so the counts it is
-	// derived from do not move. See getLegacyCorpusBytes.
-	legacyCorpusBytes    int64
-	legacyCorpusComputed bool
-
 	// archive bucket stats (only populated when ArchiveBlobStoreDSN is set)
 	archivePathUsed uint64
 	archivePathSize uint64
 	archivePathFree uint64
-
-	diskWarnThrottle logThrottle
 
 	databaseSize          uint64
 	dbSizeErr             string
@@ -183,6 +179,18 @@ type MediorumServer struct {
 	uploadsCountErr string
 
 	bucketWriteErr string
+
+	// legacyCorpusBytes is the estimated size of the pre-mediorum Qm corpus,
+	// which no query over `uploads` can see. Computed once: qm_cids is filled
+	// by a one-time migration and never appended to, so the counts it is
+	// derived from do not move. See getLegacyCorpusBytes.
+	//
+	// Outside statusMutex: only the monitorMetrics goroutine touches these,
+	// and nothing reports them.
+	legacyCorpusBytes    int64
+	legacyCorpusComputed bool
+
+	diskWarnThrottle logThrottle
 
 	isSeeding        bool
 	isAudiusdManaged bool
@@ -697,7 +705,6 @@ func (ss *MediorumServer) MustStart() error {
 	if err != nil {
 		lastSuccessfulRepair = RepairTracker{Counters: map[string]int{}}
 	}
-	ss.lastSuccessfulRepair = lastSuccessfulRepair
 
 	var lastSuccessfulCleanup RepairTracker
 	err = ss.crud.DB.
@@ -707,7 +714,13 @@ func (ss *MediorumServer) MustStart() error {
 	if err != nil {
 		lastSuccessfulCleanup = RepairTracker{Counters: map[string]int{}}
 	}
+
+	// The echo server is already accepting health checks by this point, so
+	// publish these the same way the repairer does.
+	ss.statusMutex.Lock()
+	ss.lastSuccessfulRepair = lastSuccessfulRepair
 	ss.lastSuccessfulCleanup = lastSuccessfulCleanup
+	ss.statusMutex.Unlock()
 
 	// for any background task that make authenticated peer requests
 	// only start if we have a valid registered wallet

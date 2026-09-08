@@ -49,16 +49,17 @@ func (ss *MediorumServer) recordStorageAndDbSize(ctx context.Context) error {
 		if !foundBlobStore {
 			blobStorePrefix = ""
 		}
+		st := ss.status()
 		status := StorageAndDbSize{
 			LoggedAt:           time.Now(),
 			Host:               ss.Config.Self.Host,
 			StorageBackend:     blobStorePrefix,
-			DbUsed:             ss.databaseSize,
-			MediorumDiskUsed:   ss.mediorumPathUsed,
-			MediorumDiskSize:   ss.mediorumPathSize,
-			StorageExpectation: ss.storageExpectation,
-			LastRepairSize:     ss.lastSuccessfulRepair.ContentSize,
-			LastCleanupSize:    ss.lastSuccessfulCleanup.ContentSize,
+			DbUsed:             st.databaseSize,
+			MediorumDiskUsed:   st.mediorumPathUsed,
+			MediorumDiskSize:   st.mediorumPathSize,
+			StorageExpectation: st.storageExpectation,
+			LastRepairSize:     st.lastSuccessfulRepair.ContentSize,
+			LastCleanupSize:    st.lastSuccessfulCleanup.ContentSize,
 		}
 
 		err = ss.crud.Create(&status)
@@ -116,12 +117,15 @@ func (ss *MediorumServer) runBucketWriteCanary(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	writeErr := ""
 	if err := ss.bucket.WriteAll(ctx, "__healthcheck__/canary", []byte("ok"), nil); err != nil {
-		ss.bucketWriteErr = err.Error()
+		writeErr = err.Error()
 		slog.Error("bucket write canary failed", "err", err)
-		return
 	}
-	ss.bucketWriteErr = ""
+
+	ss.statusMutex.Lock()
+	ss.bucketWriteErr = writeErr
+	ss.statusMutex.Unlock()
 }
 
 func (ss *MediorumServer) monitorPeerReachability(ctx context.Context) error {
@@ -129,8 +133,11 @@ func (ss *MediorumServer) monitorPeerReachability(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			// find unreachable nodes in the last 2 minutes
+			// find unreachable nodes in the last 2 minutes. The poller mutates
+			// these in place, so read them under the lock -- and drop it
+			// before canMajorityReachHost below, which takes it itself.
 			var unreachablePeers []string
+			ss.peerHealthsMutex.RLock()
 			for _, peer := range ss.Config.Peers {
 				if peer.Host == ss.Config.Self.Host {
 					continue
@@ -143,11 +150,13 @@ func (ss *MediorumServer) monitorPeerReachability(ctx context.Context) error {
 					unreachablePeers = append(unreachablePeers, peer.Host)
 				}
 			}
+			previouslyUnreachable := slices.Clone(ss.unreachablePeers)
+			ss.peerHealthsMutex.RUnlock()
 
 			// check if each unreachable node was also unreachable last time we checked (so we ignore temporary downtime from restarts/updates)
 			failsPeerReachability := false
 			for _, unreachable := range unreachablePeers {
-				if slices.Contains(ss.unreachablePeers, unreachable) {
+				if slices.Contains(previouslyUnreachable, unreachable) {
 					// we can't reach this peer. self-mark unhealthy if >50% of other nodes can
 					if ss.canMajorityReachHost(unreachable) {
 						// TODO: we can self-mark unhealthy if we want to enforce peer reachability
@@ -184,14 +193,22 @@ func (ss *MediorumServer) canMajorityReachHost(host string) bool {
 	return numTotal < 5 || numCanReach > numTotal/2
 }
 
+// updateDiskAndDbStatus refreshes the status block. Each measurement is
+// published as soon as it is taken, as it was before these fields were put
+// under statusMutex: the database status gates node health, and the disk and
+// expectation queries after it can take tens of seconds.
 func (ss *MediorumServer) updateDiskAndDbStatus(ctx context.Context) {
-	dbSize, errStr := getDatabaseSize(ctx, ss.pgPool)
+	dbSize, dbSizeErr := getDatabaseSize(ctx, ss.pgPool)
+	ss.statusMutex.Lock()
 	ss.databaseSize = dbSize
-	ss.dbSizeErr = errStr
+	ss.dbSizeErr = dbSizeErr
+	ss.statusMutex.Unlock()
 
-	uploadsCount, errStr := getUploadsCount(ctx, ss.crud.DB)
+	uploadsCount, uploadsCountErr := getUploadsCount(ctx, ss.crud.DB)
+	ss.statusMutex.Lock()
 	ss.uploadsCount = uploadsCount
-	ss.uploadsCountErr = errStr
+	ss.uploadsCountErr = uploadsCountErr
+	ss.statusMutex.Unlock()
 
 	// Determine which path to check for disk status
 	// If using file storage, check the actual blob storage path, not Config.Dir
@@ -208,9 +225,11 @@ func (ss *MediorumServer) updateDiskAndDbStatus(ctx context.Context) {
 
 	mediorumTotal, mediorumFree, err := getDiskStatus(diskPath)
 	if err == nil {
+		ss.statusMutex.Lock()
 		ss.mediorumPathFree = mediorumFree
 		ss.mediorumPathUsed = mediorumTotal - mediorumFree
 		ss.mediorumPathSize = mediorumTotal
+		ss.statusMutex.Unlock()
 	} else {
 		slog.Error("Error getting mediorum disk status", "err", err, "path", diskPath)
 	}
@@ -222,9 +241,11 @@ func (ss *MediorumServer) updateDiskAndDbStatus(ctx context.Context) {
 			archivePath := strings.Split(uri, "?")[0]
 			archiveTotal, archiveFree, archiveErr := getDiskStatus(archivePath)
 			if archiveErr == nil {
+				ss.statusMutex.Lock()
 				ss.archivePathFree = archiveFree
 				ss.archivePathUsed = archiveTotal - archiveFree
 				ss.archivePathSize = archiveTotal
+				ss.statusMutex.Unlock()
 			} else {
 				slog.Error("Error getting archive disk status", "err", archiveErr, "path", archivePath)
 			}
@@ -232,7 +253,8 @@ func (ss *MediorumServer) updateDiskAndDbStatus(ctx context.Context) {
 	}
 
 	// The legacy term is derived from qm_cids, which a one-time migration fills
-	// and nothing appends to, so this only has to succeed once.
+	// and nothing appends to, so this only has to succeed once. Only this
+	// goroutine touches these two fields, so they stay outside statusMutex.
 	if !ss.legacyCorpusComputed {
 		if legacy, legacyErr := getLegacyCorpusBytes(ctx, ss.pgPool); legacyErr != nil {
 			slog.Error("Error getting legacy corpus size", "err", legacyErr.Error())
@@ -243,8 +265,11 @@ func (ss *MediorumServer) updateDiskAndDbStatus(ctx context.Context) {
 		}
 	}
 
-	ss.storageExpectation, err = getStorageExpectation(ctx, ss.pgPool, ss.Config.ReplicationFactor, ss.legacyCorpusBytes)
-	slog.Info("Storage expectation", "size", ss.storageExpectation)
+	storageExpectation, err := getStorageExpectation(ctx, ss.pgPool, ss.Config.ReplicationFactor, ss.legacyCorpusBytes)
+	ss.statusMutex.Lock()
+	ss.storageExpectation = storageExpectation
+	ss.statusMutex.Unlock()
+	slog.Info("Storage expectation", "size", storageExpectation)
 	slog.Info("Replication factor", "replicationFactor", ss.Config.ReplicationFactor)
 	if err != nil {
 		slog.Error("Error getting storage expectation", "err", err.Error())

@@ -598,14 +598,15 @@ func (ss *MediorumServer) diskHasSpace() bool {
 	if ss.Config.Env != "prod" {
 		return true
 	}
-	if !ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree) {
+	primaryFree, archiveFree := ss.diskFree()
+	if !ss.dsnHasSpace(ss.Config.BlobStoreDSN, primaryFree) {
 		return false
 	}
 	// Archive only routes when archiveBucket is open AND StoreAll is on. If
 	// the DSN is set but StoreAll is false, archive is logged as "unused" at
 	// startup and no CID will ever land there — don't gate writes on it.
 	if ss.archiveBucket != nil && ss.Config.StoreAll {
-		if !ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree) {
+		if !ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, archiveFree) {
 			return false
 		}
 	}
@@ -619,8 +620,9 @@ func (ss *MediorumServer) diskHasSpaceForCID(cid string, placementHosts []string
 	if ss.Config.Env != "prod" {
 		return true
 	}
+	primaryFree, archiveFree := ss.diskFree()
 	if ss.archiveBucket != nil && ss.bucketForCID(cid, placementHosts) == ss.archiveBucket {
-		return ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree)
+		return ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, archiveFree)
 	}
-	return ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree)
+	return ss.dsnHasSpace(ss.Config.BlobStoreDSN, primaryFree)
 }

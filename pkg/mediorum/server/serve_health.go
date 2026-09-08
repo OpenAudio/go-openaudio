@@ -68,7 +68,8 @@ type HealthData struct {
 }
 
 func (ss *MediorumServer) getHealth() HealthData {
-	healthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == "" && ss.bucketWriteErr == ""
+	st := ss.status()
+	healthy := st.databaseSize > 0 && st.dbSizeErr == "" && st.uploadsCountErr == "" && st.bucketWriteErr == ""
 
 	blobStorePrefix, _, foundBlobStore := strings.Cut(ss.Config.BlobStoreDSN, "://")
 	if !foundBlobStore {
@@ -83,9 +84,9 @@ func (ss *MediorumServer) getHealth() HealthData {
 		archiveStoragePrefix = ""
 	}
 
-	// since we're using peerHealth
-	ss.peerHealthsMutex.RLock()
-	defer ss.peerHealthsMutex.RUnlock()
+	// Copied rather than referenced: this data is marshalled by the caller,
+	// long after any lock taken here would be released.
+	peerHealths, unreachablePeers, failsPeerReachability := ss.peerHealthSnapshot()
 
 	return HealthData{
 		Healthy:                   healthy,
@@ -99,16 +100,16 @@ func (ss *MediorumServer) getHealth() HealthData {
 		SPOwnerWallet:             ss.Config.SPOwnerWallet,
 		Git:                       ss.Config.GitSHA,
 		AudiusDockerCompose:       ss.Config.AudiusDockerCompose,
-		MediorumPathUsed:          ss.mediorumPathUsed,
-		MediorumPathSize:          ss.mediorumPathSize,
-		StorageExpectation:        ss.storageExpectation,
-		DatabaseSize:              ss.databaseSize,
-		DbSizeErr:                 ss.dbSizeErr,
-		LastSuccessfulRepair:      ss.lastSuccessfulRepair,
-		LastSuccessfulCleanup:     ss.lastSuccessfulCleanup,
-		UploadsCount:              ss.uploadsCount,
-		UploadsCountErr:           ss.uploadsCountErr,
-		BucketWriteErr:            ss.bucketWriteErr,
+		MediorumPathUsed:          st.mediorumPathUsed,
+		MediorumPathSize:          st.mediorumPathSize,
+		StorageExpectation:        st.storageExpectation,
+		DatabaseSize:              st.databaseSize,
+		DbSizeErr:                 st.dbSizeErr,
+		LastSuccessfulRepair:      st.lastSuccessfulRepair,
+		LastSuccessfulCleanup:     st.lastSuccessfulCleanup,
+		UploadsCount:              st.uploadsCount,
+		UploadsCountErr:           st.uploadsCountErr,
+		BucketWriteErr:            st.bucketWriteErr,
 		AutoUpgradeEnabled:        ss.Config.AutoUpgradeEnabled,
 		TrustedNotifier:           ss.trustedNotifier,
 		Dir:                       ss.Config.Dir,
@@ -116,24 +117,24 @@ func (ss *MediorumServer) getHealth() HealthData {
 		MoveFromBlobStorePrefix:   blobStoreMoveFromPrefix,
 		ArchiveStorageConfigured:  ss.archiveBucket != nil,
 		ArchiveStoragePrefix:      archiveStoragePrefix,
-		ArchivePathUsed:           ss.archivePathUsed,
-		ArchivePathSize:           ss.archivePathSize,
+		ArchivePathUsed:           st.archivePathUsed,
+		ArchivePathSize:           st.archivePathSize,
 		ListenPort:                ss.Config.ListenPort,
 		ReplicationFactor:         ss.Config.ReplicationFactor,
 		Env:                       ss.Config.Env,
 		Self:                      ss.Config.Self,
 		WalletIsRegistered:        ss.Config.WalletIsRegistered,
 		TrustedNotifierID:         ss.Config.TrustedNotifierID,
-		PeerHealths:               ss.peerHealths,
-		UnreachablePeers:          ss.unreachablePeers,
-		FailsPeerReachability:     ss.failsPeerReachability,
+		PeerHealths:               peerHealths,
+		UnreachablePeers:          unreachablePeers,
+		FailsPeerReachability:     failsPeerReachability,
 		Signers:                   ss.Config.Signers,
 		StoreAll:                  ss.Config.StoreAll,
 		IsDbLocalhost:             ss.isDbLocalhost,
 		IsDiscoveryListensEnabled: ss.Config.discoveryListensEnabled(),
 		DiskHasSpace:              ss.diskHasSpace(),
-		PrimaryDiskHasSpace:       ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree),
-		ArchiveDiskHasSpace:       ss.archiveBucket != nil && ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree),
+		PrimaryDiskHasSpace:       ss.dsnHasSpace(ss.Config.BlobStoreDSN, st.mediorumPathFree),
+		ArchiveDiskHasSpace:       ss.archiveBucket != nil && ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, st.archivePathFree),
 		TranscodeQueueLength:      len(ss.transcodeWork),
 		TranscodeStats:            ss.getTranscodeStats(),
 	}
@@ -269,8 +270,7 @@ func (ss *MediorumServer) requireHealthy(next echo.HandlerFunc) echo.HandlerFunc
 				"error": "wallet not registered for provided endpoint",
 			})
 		}
-		dbHealthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == ""
-		if !dbHealthy {
+		if !ss.dbHealthy() {
 			return c.JSON(503, "database not healthy")
 		}
 
