@@ -73,12 +73,18 @@ func TestUploadNeedsReplication(t *testing.T) {
 // serializer, and it is the shape that would take the whole scan down.
 func insertFinderUpload(t *testing.T, ss *MediorumServer, host, id, status, mirrors, transcodedMirrors, transcodeResults string) {
 	t.Helper()
+	insertFinderUploadPlaced(t, ss, host, id, status, mirrors, transcodedMirrors, transcodeResults, "[]")
+}
+
+// insertFinderUploadPlaced is the same, with an explicit placement list.
+func insertFinderUploadPlaced(t *testing.T, ss *MediorumServer, host, id, status, mirrors, transcodedMirrors, transcodeResults, placementHosts string) {
+	t.Helper()
 	err := ss.crud.DB.Exec(`
 		insert into uploads
 			(id, template, orig_file_cid, status, mirrors, transcoded_mirrors,
-			 transcode_results, created_by, created_at, updated_at)
-		values (?, 'audio', ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, "baeaaaiqse"+id, status, mirrors, transcodedMirrors, transcodeResults,
+			 transcode_results, placement_hosts, created_by, created_at, updated_at)
+		values (?, 'audio', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, "baeaaaiqse"+id, status, mirrors, transcodedMirrors, transcodeResults, placementHosts,
 		host, time.Now().UTC(), time.Now().UTC(),
 	).Error
 	require.NoError(t, err)
@@ -169,5 +175,98 @@ func TestUnderReplicatedUploadsSQLAgreesWithGoCheck(t *testing.T) {
 	for _, u := range uploads {
 		assert.True(t, uploadNeedsReplication(u, rf),
 			"row %s passed the SQL but the Go check drops it", u.ID)
+	}
+}
+
+// An upload placed on two hosts is fully replicated at two. The worker has
+// always read it that way; before this fix the query and the Go check read
+// ReplicationFactor instead, so a placed upload was selected on every sweep,
+// queued, and dropped again by the worker -- for the life of the row.
+func TestPlacedUploadIsFullyReplicatedAtItsPlacementCount(t *testing.T) {
+	full := []string{"h1", "h2", "h3", "h4"}
+	placed := []string{"h1", "h2"}
+
+	t.Run("placed and satisfied is not selected", func(t *testing.T) {
+		u := &Upload{
+			Mirrors:           placed,
+			TranscodedMirrors: placed,
+			PlacementHosts:    placed,
+			TranscodeResults:  map[string]string{"320": "baeaaaiqse320"},
+		}
+		require.False(t, uploadNeedsReplication(u, 4),
+			"a placed upload holding every host it was placed on still looked under-replicated")
+	})
+
+	t.Run("placed and genuinely short is still selected", func(t *testing.T) {
+		u := &Upload{
+			Mirrors:           []string{"h1"},
+			TranscodedMirrors: placed,
+			PlacementHosts:    placed,
+			TranscodeResults:  map[string]string{"320": "baeaaaiqse320"},
+		}
+		require.True(t, uploadNeedsReplication(u, 4))
+	})
+
+	t.Run("placed and short on the transcode only", func(t *testing.T) {
+		u := &Upload{
+			Mirrors:           placed,
+			TranscodedMirrors: []string{"h1"},
+			PlacementHosts:    placed,
+			TranscodeResults:  map[string]string{"320": "baeaaaiqse320"},
+		}
+		require.True(t, uploadNeedsReplication(u, 4))
+	})
+
+	t.Run("unplaced still measures against the replication factor", func(t *testing.T) {
+		u := &Upload{Mirrors: placed, TranscodedMirrors: full}
+		require.True(t, uploadNeedsReplication(u, 4),
+			"an upload with no placement must still want ReplicationFactor copies")
+	})
+
+	t.Run("placement larger than the factor is honoured too", func(t *testing.T) {
+		six := []string{"h1", "h2", "h3", "h4", "h5", "h6"}
+		u := &Upload{Mirrors: full, TranscodedMirrors: six, PlacementHosts: six}
+		require.True(t, uploadNeedsReplication(u, 4),
+			"placement is the target in both directions, not a ceiling of ReplicationFactor")
+	})
+}
+
+// The SQL has to agree, or the fix only moves the waste from the queue to the
+// scan: the rows would still come back from the database on every sweep.
+func TestUnderReplicatedUploadsSQLHonoursPlacement(t *testing.T) {
+	ss := testNetwork[0]
+	const rf = 4
+	host := fmt.Sprintf("http://finder-placement-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() {
+		ss.crud.DB.Exec(`delete from uploads where created_by = ?`, host)
+	})
+
+	full := `["h1","h2","h3","h4"]`
+	placed := `["h1","h2"]`
+	audio := `{"320":"baeaaaiqse320"}`
+
+	insertFinderUploadPlaced(t, ss, host, "placed-satisfied", JobStatusDone, placed, placed, audio, placed)
+	insertFinderUploadPlaced(t, ss, host, "placed-short", JobStatusDone, `["h1"]`, placed, audio, placed)
+	insertFinderUploadPlaced(t, ss, host, "unplaced-short", JobStatusDone, placed, full, audio, `[]`)
+	// A legacy row whose placement column holds the text 'null' rather than an
+	// empty array: the same shape that would raise for the whole scan.
+	insertFinderUploadPlaced(t, ss, host, "placement-null-text", JobStatusDone, placed, full, audio, "null")
+
+	var uploads []*Upload
+	require.NoError(t, ss.crud.DB.Where(underReplicatedUploadsSQL, host, JobStatusBusy, rf, rf).Find(&uploads).Error,
+		"the scan must not raise; a raised error here is silent in production")
+
+	ids := []string{}
+	for _, u := range uploads {
+		ids = append(ids, u.ID)
+	}
+	assert.ElementsMatch(t, []string{"placed-short", "unplaced-short", "placement-null-text"}, ids,
+		"placed-satisfied is the regression: it owes nothing and must not be selected")
+
+	// And the Go check must reach the same verdict on whatever the SQL returned,
+	// or the scan is handing the worker rows it will drop.
+	for _, u := range uploads {
+		assert.True(t, uploadNeedsReplication(u, rf),
+			"SQL selected %s but the Go check disagrees", u.ID)
 	}
 }
