@@ -217,6 +217,21 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 		}
 	}
 
+	// Before MultipartForm, which is what starts spilling the body to disk.
+	//
+	// Roughly twice the body is needed: the multipart parser stages anything
+	// past its in-memory threshold under the OS temp dir, and
+	// copyUploadToTempFile then copies each part into a second temp file. A
+	// ContentLength of -1 (chunked) leaves nothing to check but the reserve.
+	if c.Request().ContentLength > 0 {
+		need := 2 * uint64(c.Request().ContentLength)
+		if !ss.tempDirHasSpaceFor(need) {
+			return c.String(http.StatusInsufficientStorage, "not enough local disk to accept this upload")
+		}
+	} else if !ss.tempDirHasSpaceFor(0) {
+		return c.String(http.StatusInsufficientStorage, "not enough local disk to accept this upload")
+	}
+
 	// Multipart form
 	form, err := c.MultipartForm()
 	if err != nil {
