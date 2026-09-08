@@ -120,8 +120,8 @@ func TestAsyncPullTunablesFallBackToDefaults(t *testing.T) {
 	ss := blobFetchTestServer(t)
 
 	// Unset (zero) means default, so mediorum.go does not have to restate it.
-	require.Equal(t, defaultAsyncPullWorkers, ss.asyncPullWorkers())
-	require.Equal(t, defaultAsyncPullTimeout, ss.asyncPullTimeout())
+	require.Equal(t, DefaultAsyncPullWorkers, ss.asyncPullWorkers())
+	require.Equal(t, DefaultAsyncPullTimeout, ss.asyncPullTimeout())
 
 	ss.Config.AsyncPullWorkers = 12
 	ss.Config.AsyncPullTimeout = 90 * time.Minute
@@ -134,7 +134,7 @@ func TestAsyncPullTunablesFallBackToDefaults(t *testing.T) {
 	require.Equal(t, maxAsyncPullWorkers, ss.asyncPullWorkers())
 
 	ss.Config.AsyncPullWorkers = -1
-	require.Equal(t, defaultAsyncPullWorkers, ss.asyncPullWorkers())
+	require.Equal(t, DefaultAsyncPullWorkers, ss.asyncPullWorkers())
 }
 
 // The point of unifying on localDirHasSpaceFor is that the pull path stops

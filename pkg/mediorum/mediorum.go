@@ -142,6 +142,8 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	repairConcurrency := env.GetInt(1, "OPENAUDIO_REPAIR_CONCURRENCY")
 	presenceWalkConcurrency := env.GetInt(1, "OPENAUDIO_PRESENCE_WALK_CONCURRENCY")
 	presenceStoreEnabled := env.Get("false", "OPENAUDIO_PRESENCE_STORE_ENABLED") == "true"
+	asyncPullWorkers := env.GetInt(server.DefaultAsyncPullWorkers, "OPENAUDIO_ASYNC_PULL_WORKERS")
+	asyncPullTimeout := env.GetDuration(server.DefaultAsyncPullTimeout, "OPENAUDIO_ASYNC_PULL_TIMEOUT")
 	storeRecentTTL := parseStoreRecentTTL(env.String("OPENAUDIO_STORE_RECENT_TTL"))
 
 	// Waveform analysis configuration. Every switch defaults to false so the
@@ -187,23 +189,21 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		LogLevel:                  env.Get("info", "OPENAUDIO_LOG_LEVEL"),
 		DeadHosts:                 []string{},
 		PullStagingDir:            env.String("OPENAUDIO_PULL_STAGING_DIR"),
-		// Zero means unset: the defaults live with the code that uses them
-		// (asyncPullWorkers, asyncPullTimeout) rather than being restated here.
-		AsyncPullWorkers:        env.GetInt(0, "OPENAUDIO_ASYNC_PULL_WORKERS"),
-		AsyncPullTimeout:        env.GetDuration(0, "OPENAUDIO_ASYNC_PULL_TIMEOUT"),
-		RepairEnabled:           repairEnabled,
-		RepairInterval:          repairInterval,
-		RepairConcurrency:       repairConcurrency,
-		PresenceWalkConcurrency: presenceWalkConcurrency,
-		PresenceStoreEnabled:    presenceStoreEnabled,
-		Archive:                 archive,
-		OpsRetention:            opsRetention,
-		OpsPruneInterval:        opsPruneInterval,
-		BlobStorageStreaming:    env.Bool("OPENAUDIO_BLOB_STORAGE_STREAMING"),
-		WaveformEnabled:         waveformEnabled,
-		WaveformBackfillEnabled: waveformBackfillEnabled,
-		WaveformArchiveEnabled:  waveformArchiveEnabled,
-		WaveformWorkers:         waveformWorkers,
+		AsyncPullWorkers:          asyncPullWorkers,
+		AsyncPullTimeout:          asyncPullTimeout,
+		RepairEnabled:             repairEnabled,
+		RepairInterval:            repairInterval,
+		RepairConcurrency:         repairConcurrency,
+		PresenceWalkConcurrency:   presenceWalkConcurrency,
+		PresenceStoreEnabled:      presenceStoreEnabled,
+		Archive:                   archive,
+		OpsRetention:              opsRetention,
+		OpsPruneInterval:          opsPruneInterval,
+		BlobStorageStreaming:      env.Bool("OPENAUDIO_BLOB_STORAGE_STREAMING"),
+		WaveformEnabled:           waveformEnabled,
+		WaveformBackfillEnabled:   waveformBackfillEnabled,
+		WaveformArchiveEnabled:    waveformArchiveEnabled,
+		WaveformWorkers:           waveformWorkers,
 	}
 
 	ss, err := server.New(lc, logger, config, posChannel, core, ethService)

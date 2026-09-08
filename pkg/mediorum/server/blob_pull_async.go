@@ -10,7 +10,9 @@ import (
 )
 
 const (
-	// defaultAsyncPullWorkers bounds how many transfers this node runs at once.
+	// DefaultAsyncPullWorkers bounds how many transfers this node runs at once.
+	// Exported because mediorum.go reads it as the env fallback, the way
+	// DefaultOpsRetention already is.
 	//
 	// This is the backpressure that a synchronous pull used to provide by
 	// accident: the sender held one of its own workers for the duration, so no
@@ -24,7 +26,7 @@ const (
 	// per request with no ceiling at all, so a number chosen to match the
 	// sender is a much sharper cut than it looks. Operators tune it with
 	// OPENAUDIO_ASYNC_PULL_WORKERS; see MediorumConfig.AsyncPullWorkers.
-	defaultAsyncPullWorkers = 6
+	DefaultAsyncPullWorkers = 6
 
 	// maxAsyncPullWorkers caps what an operator can ask for. Each worker holds
 	// a whole blob in staging, so an unbounded value would demand staging
@@ -38,7 +40,7 @@ const (
 	// sweep instead, when the picture may have changed.
 	asyncPullQueueDepth = 32
 
-	// defaultAsyncPullTimeout bounds one queued transfer. The request context
+	// DefaultAsyncPullTimeout bounds one queued transfer. The request context
 	// cannot be used: it is cancelled the moment the handler returns 202.
 	//
 	// It also bounds how long the source must keep serving the blob. A
@@ -55,7 +57,7 @@ const (
 	// this timeout. Tightening one of them below it would break replication
 	// silently, since the puller would simply see the object vanish mid
 	// transfer.
-	defaultAsyncPullTimeout = 60 * time.Minute
+	DefaultAsyncPullTimeout = 60 * time.Minute
 )
 
 // asyncPullWorkers is the configured worker count, clamped to something a
@@ -63,14 +65,14 @@ const (
 func (ss *MediorumServer) asyncPullWorkers() int {
 	n := ss.Config.AsyncPullWorkers
 	if n <= 0 {
-		return defaultAsyncPullWorkers
+		return DefaultAsyncPullWorkers
 	}
 	return min(n, maxAsyncPullWorkers)
 }
 
 func (ss *MediorumServer) asyncPullTimeout() time.Duration {
 	if ss.Config.AsyncPullTimeout <= 0 {
-		return defaultAsyncPullTimeout
+		return DefaultAsyncPullTimeout
 	}
 	return ss.Config.AsyncPullTimeout
 }
