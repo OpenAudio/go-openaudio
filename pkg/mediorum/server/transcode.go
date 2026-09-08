@@ -523,6 +523,10 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 
 	dbUpload.TranscodeProgress = 1
 	dbUpload.TranscodedAt = time.Now().UTC()
+	// A concurrent mirror update may have restored a snapshot from before
+	// this worker's busy write. Completion owns the result and its attribution;
+	// do not inherit a missing or stale worker identity from that snapshot.
+	dbUpload.TranscodedBy = ss.Config.Self.Host
 	dbUpload.Status = JobStatusDone
 	dbUpload.Error = ""
 	dbUpload.TranscodeResults = upload.TranscodeResults
