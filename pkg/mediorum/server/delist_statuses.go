@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
-	"go.uber.org/zap"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
@@ -285,7 +284,13 @@ func (ss *MediorumServer) insertDelistStatuses(ctx context.Context, dss []Delist
 	return nil
 }
 
-func (ss *MediorumServer) isCidBlacklisted(ctx context.Context, cid string) bool {
+// isCidBlacklisted reports whether cid is delisted on this node.
+//
+// A query error is returned rather than folded into the bool. false means "the
+// lookup completed and this cid is not delisted"; a caller that cannot tell
+// that apart from a lookup that never ran serves delisted content for as long
+// as the database is unreachable. Callers must deny the request on error.
+func (ss *MediorumServer) isCidBlacklisted(ctx context.Context, cid string) (bool, error) {
 	blacklisted := false
 	sql := `SELECT COALESCE(
 	                (SELECT "delisted"
@@ -294,9 +299,8 @@ func (ss *MediorumServer) isCidBlacklisted(ctx context.Context, cid string) bool
 	                 ORDER BY "createdAt" DESC
 	                 LIMIT 1),
 	            false)`
-	err := ss.pgPool.QueryRow(ctx, sql, cid).Scan(&blacklisted)
-	if err != nil {
-		ss.logger.Error("isCidBlacklisted error", zap.Error(err), zap.String("cid", cid))
+	if err := ss.pgPool.QueryRow(ctx, sql, cid).Scan(&blacklisted); err != nil {
+		return false, fmt.Errorf("delist status lookup for cid %s: %w", cid, err)
 	}
-	return blacklisted
+	return blacklisted, nil
 }
