@@ -3,12 +3,14 @@ package server
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/crudr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -98,6 +100,21 @@ func TestUploadFile(t *testing.T) {
 	assert.Equal(t, u2.TranscodeProgress, 1.0)
 	assert.Len(t, u2.TranscodedMirrors, s1.Config.ReplicationFactor)
 	assert.Equal(t, u2.TranscodedBy, s1.Config.Self.Host)
+
+	// Every completion snapshot must be playable, including intermediate ops
+	// a peer may serve before it receives the final transcode update.
+	var uploadOps []crudr.Op
+	require.NoError(t, s1.crud.DB.Where("\"table\" = ? AND data->0->>'id' = ?", "uploads", uploadId).Find(&uploadOps).Error)
+	require.NotEmpty(t, uploadOps)
+	for _, op := range uploadOps {
+		var snapshots []Upload
+		require.NoError(t, json.Unmarshal(op.Data, &snapshots))
+		for _, snapshot := range snapshots {
+			if snapshot.Status == JobStatusDone {
+				require.NotEmpty(t, snapshot.TranscodeResults["320"], "completion op %s has no audio CID", op.ULID)
+			}
+		}
+	}
 
 	// check transcode stats
 	{

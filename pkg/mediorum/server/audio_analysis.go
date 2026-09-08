@@ -161,22 +161,12 @@ func (ss *MediorumServer) startAudioAnalysisWorker(workerId int, work chan *Uplo
 }
 
 func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, deadline time.Duration) error {
-	upload.AudioAnalyzedAt = time.Now().UTC()
-	upload.AudioAnalyzedBy = ss.Config.Self.Host
-	upload.Status = JobStatusBusyAudioAnalysis
-
 	ctx, cancel := context.WithTimeout(ctx, deadline)
 	g, ctx := errgroup.WithContext(ctx)
 	defer cancel()
 
 	onError := func(err error) error {
-		upload.AudioAnalysisError = err.Error()
-		upload.AudioAnalysisErrorCount = upload.AudioAnalysisErrorCount + 1
-		upload.AudioAnalyzedAt = time.Now().UTC()
-		upload.AudioAnalysisStatus = JobStatusError
-		// failed analyses do not block uploads
-		upload.Status = JobStatusDone
-		if updateErr := ss.crud.Update(upload); updateErr != nil {
+		if updateErr := ss.saveAudioAnalysis(upload.ID, nil, err); updateErr != nil {
 			ss.logger.Error("failed to update audio analysis error status", zap.String("id", upload.ID), zap.Error(updateErr))
 		}
 		return err
@@ -271,19 +261,30 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 		return onError(err)
 	}
 
-	// all analyses complete
-	// Before updating, refresh from DB to get latest mirrors
+	return ss.saveAudioAnalysis(upload.ID, &AudioAnalysisResult{BPM: bpm, Key: musicalKey}, nil)
+}
+
+// Analysis must not complete the upload: during inline analysis the transcode
+// results exist only in memory, and transcode still needs to attest and persist
+// them. Refresh on both success and failure so analysis retries also preserve
+// the persisted upload status, results, and mirrors.
+func (ss *MediorumServer) saveAudioAnalysis(uploadID string, result *AudioAnalysisResult, analysisErr error) error {
 	var dbUpload Upload
-	if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
+	if err := ss.crud.DB.Where("id = ?", uploadID).First(&dbUpload).Error; err != nil {
 		return err
 	}
 
-	// Update only the fields we modified
-	dbUpload.AudioAnalysisResults = &AudioAnalysisResult{BPM: bpm, Key: musicalKey}
+	dbUpload.AudioAnalyzedBy = ss.Config.Self.Host
 	dbUpload.AudioAnalysisError = ""
 	dbUpload.AudioAnalyzedAt = time.Now().UTC()
 	dbUpload.AudioAnalysisStatus = JobStatusDone
-	dbUpload.Status = JobStatusDone
+	if analysisErr != nil {
+		dbUpload.AudioAnalysisError = analysisErr.Error()
+		dbUpload.AudioAnalysisErrorCount++
+		dbUpload.AudioAnalysisStatus = JobStatusError
+	} else {
+		dbUpload.AudioAnalysisResults = result
+	}
 	if err := ss.crud.Update(&dbUpload); err != nil {
 		ss.logger.Error("failed to update audio analysis completion status", zap.String("id", dbUpload.ID), zap.Error(err))
 		return err
