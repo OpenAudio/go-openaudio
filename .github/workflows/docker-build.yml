@@ -107,12 +107,26 @@ jobs:
           make test-unit
 
       - name: Run integration tests
+        id: integration-tests
         run: |
           OPENAUDIO_CI=true \
           OPENAUDIO_IMAGE=openaudio/go-openaudio:${{ inputs.tag }}-test \
           OPENAUDIO_TEST_HARNESS_IMAGE=openaudio/go-openaudio:${{ inputs.tag }}-harness \
           TTY_FLAG="--no-TTY" \
           make test-integration
+
+      - name: Diagnose integration failure
+        if: failure() && steps.integration-tests.outcome == 'failure'
+        timeout-minutes: 2
+        continue-on-error: true
+        run: |
+          compose=(docker compose --file=dev/docker-compose.yml --project-name=test --project-directory=.)
+          "${compose[@]}" ps --all
+          docker stats --no-stream
+          for container in $("${compose[@]}" ps --all --quiet); do
+            docker inspect --format '{{.Name}} status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}}' "$container"
+          done
+          "${compose[@]}" logs --no-color --tail=500
 
       - name: Shutdown
         if: always()
