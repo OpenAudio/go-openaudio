@@ -8,12 +8,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/erni27/imcache"
 	"github.com/stretchr/testify/require"
+	"gocloud.dev/blob"
+	_ "gocloud.dev/blob/memblob"
 )
 
 func asyncPullTestServer(t *testing.T, depth int) *MediorumServer {
@@ -21,6 +24,14 @@ func asyncPullTestServer(t *testing.T, depth int) *MediorumServer {
 	ss := blobFetchTestServer(t)
 	ss.asyncPullQueue = make(chan asyncPullJob, depth)
 	ss.asyncPullInFlight = map[string]struct{}{}
+	// runAsyncPull checks presence before transferring, so the fixture needs
+	// somewhere for that to look. Empty, so the check passes and the pull is
+	// attempted -- which is what these tests are about.
+	bucket, err := blob.OpenBucket(context.Background(), "mem://")
+	require.NoError(t, err)
+	t.Cleanup(func() { bucket.Close() })
+	ss.bucket = bucket
+	ss.knownPresent = imcache.New[string, int64]()
 	return ss
 }
 
@@ -476,4 +487,44 @@ func TestPeerBusyTakesAShortBackoffNotTheFullOne(t *testing.T) {
 	_, stillBackedOff := ss.replicationAttempts.Get(upload.ID)
 	require.False(t, stillBackedOff,
 		"the busy backoff kept the hour-long failure TTL; a saturated peer would not be retried for an hour")
+}
+
+// The presence check runAsyncPull makes before transferring. It matters most
+// for store-all intake, which enqueues without checking at all: its callback runs
+// inside the chain op sync loop, where a bucket round trip per op is not
+// affordable, so this is the only thing standing between a re-announced upload
+// row and re-downloading blobs the node already holds.
+func TestRunAsyncPullSkipsABlobAlreadyHeld(t *testing.T) {
+	ss := asyncPullTestServer(t, 1)
+
+	var requests atomic.Int64
+	source := rangeServer([]byte("blob"), &requests)
+	defer source.Close()
+
+	cid := "baeaaaiqseallreadyhere"
+	require.NoError(t, ss.bucket.WriteAll(context.Background(), cidutil.ShardCID(cid), []byte("blob"), nil))
+
+	ss.runAsyncPull(context.Background(), asyncPullJob{cid: cid, sourceHost: source.URL})
+
+	require.Zero(t, requests.Load(),
+		"a blob already in the bucket must not be fetched again")
+
+	ss.asyncPullMu.Lock()
+	_, stillMarked := ss.asyncPullInFlight[cid]
+	ss.asyncPullMu.Unlock()
+	require.False(t, stillMarked, "the skip path must still release the in-flight marker")
+}
+
+// The counterpart: without the blob, the same call does go to the source. Without
+// this, the test above would pass on a runAsyncPull that never pulls anything.
+func TestRunAsyncPullFetchesABlobNotHeld(t *testing.T) {
+	ss := asyncPullTestServer(t, 1)
+
+	var requests atomic.Int64
+	source := rangeServer([]byte("blob"), &requests)
+	defer source.Close()
+
+	ss.runAsyncPull(context.Background(), asyncPullJob{cid: "baeaaaiqsenotherequet", sourceHost: source.URL})
+
+	require.NotZero(t, requests.Load(), "a missing blob must be fetched")
 }
