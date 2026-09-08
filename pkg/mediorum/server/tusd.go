@@ -3,12 +3,12 @@ package server
 import (
 	"context"
 	"database/sql"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/OpenAudio/go-openaudio/pkg/env"
 	"github.com/tus/tusd/v2/pkg/filestore"
 	"github.com/tus/tusd/v2/pkg/handler"
 	"go.uber.org/zap"
@@ -17,7 +17,7 @@ import (
 
 func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
 	// Create upload directory if it doesn't exist
-	uploadDir := env.Get("/tmp/tusd-uploads", "OPENAUDIO_TUSD_UPLOAD_DIR", "TUSD_UPLOAD_DIR")
+	uploadDir := tusdUploadDir()
 
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		return nil, err
@@ -98,6 +98,28 @@ func (ss *MediorumServer) setupTusdHandler() (*handler.Handler, error) {
 }
 
 func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent) (handler.HTTPResponse, handler.FileInfoChanges, error) {
+	// Before create, because tus declares Upload-Length up front: this is the
+	// one place in the upload path that can compare the exact size against the
+	// exact filesystem the bytes will land on, and reject before the client
+	// sends any of them. handleTusdUploadCreated's diskHasSpace check runs
+	// after creation, and measures the blob store -- which on an object-store
+	// node returns true unconditionally.
+	//
+	// A deferred length leaves Size at zero; the reserve alone still refuses a
+	// disk that is already full.
+	var declared uint64
+	if !event.Upload.SizeIsDeferred && event.Upload.Size > 0 {
+		declared = uint64(event.Upload.Size)
+	}
+	if !ss.localDirHasSpaceFor(tusdUploadDir(), declared) {
+		ss.logger.Warn("rejecting upload: local disk cannot take it",
+			zap.String("id", event.Upload.ID),
+			zap.Int64("size", event.Upload.Size))
+		return handler.HTTPResponse{
+			StatusCode: http.StatusInsufficientStorage,
+			Body:       "not enough local disk to accept this upload",
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
 
 	if placementHostsStr, ok := event.Upload.MetaData["placementHosts"]; ok && placementHostsStr != "" {
 		placementHosts := strings.Split(placementHostsStr, ",")
