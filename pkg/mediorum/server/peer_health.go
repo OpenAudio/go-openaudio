@@ -71,45 +71,46 @@ func (ss *MediorumServer) startHealthPoller(ctx context.Context) error {
 					}
 
 					// Extract peer health information
-					if peerHealthsMap, ok := healthData["peerHealths"].(map[string]interface{}); ok {
-						// set node as reachable
-						ss.peerHealthsMutex.Lock()
-						defer ss.peerHealthsMutex.Unlock()
-						if _, ok := ss.peerHealths[peer.Host]; !ok {
-							ss.peerHealths[peer.Host] = &PeerHealth{}
-						}
-						ss.peerHealths[peer.Host].LastReachable = time.Now()
+					peerHealthsMap, ok := healthData["peerHealths"].(map[string]interface{})
+					if !ok {
+						return
+					}
 
-						if v, ok := healthData["version"].(string); ok {
-							ss.peerHealths[peer.Host].Version = v
-						}
+					// Decode the peer's view of who it can reach before taking
+					// the lock.
+					reachablePeers := parseReachablePeers(peerHealthsMap)
 
-						// Track store-all peers so repair can fall back to
-						// them: they hold the whole corpus, so they are far
-						// likelier to serve a blob than an arbitrary host
-						// further down the rendezvous ranking.
-						if v, ok := healthData["storeAll"].(bool); ok {
-							ss.peerHealths[peer.Host].StoreAll = v
-						}
+					// set node as reachable
+					ss.peerHealthsMutex.Lock()
+					defer ss.peerHealthsMutex.Unlock()
+					if _, ok := ss.peerHealths[peer.Host]; !ok {
+						// ReachablePeers is initialized here so it is never nil
+						// for any entry in the map: writing to a nil map panics.
+						ss.peerHealths[peer.Host] = &PeerHealth{ReachablePeers: map[string]time.Time{}}
+					}
+					ss.peerHealths[peer.Host].LastReachable = time.Now()
 
-						// set node's reachable peers
-						for host, hostPeerHealths := range peerHealthsMap {
-							if peerHealth, ok := hostPeerHealths.(map[string]interface{}); ok {
-								if lastReachable, ok := peerHealth["LastReachable"].(string); ok {
-									if t, err := time.Parse(time.RFC3339Nano, lastReachable); err == nil {
-										ss.peerHealths[peer.Host].ReachablePeers[host] = t
-									}
-								}
-							}
-						}
+					if v, ok := healthData["version"].(string); ok {
+						ss.peerHealths[peer.Host].Version = v
+					}
 
-						// set node as healthy
-						if resp.StatusCode == 200 {
-							// node isn't healthy if there's any other node that is reachable by >50% of other nodes but not by this node
-							unreachablePeers := ss.getReachableByMajorityButNotByHost(peer.Host)
-							if len(unreachablePeers) == 0 || true { // TODO: we can remove the "|| true" if we want to enforce peer reachability
-								ss.peerHealths[peer.Host].LastHealthy = time.Now()
-							}
+					// Track store-all peers so repair can fall back to
+					// them: they hold the whole corpus, so they are far
+					// likelier to serve a blob than an arbitrary host
+					// further down the rendezvous ranking.
+					if v, ok := healthData["storeAll"].(bool); ok {
+						ss.peerHealths[peer.Host].StoreAll = v
+					}
+
+					// set node's reachable peers
+					ss.peerHealths[peer.Host].ReachablePeers = reachablePeers
+
+					// set node as healthy
+					if resp.StatusCode == 200 {
+						// node isn't healthy if there's any other node that is reachable by >50% of other nodes but not by this node
+						unreachablePeers := ss.getReachableByMajorityButNotByHost(peer.Host)
+						if len(unreachablePeers) == 0 || true { // TODO: we can remove the "|| true" if we want to enforce peer reachability
+							ss.peerHealths[peer.Host].LastHealthy = time.Now()
 						}
 					}
 
@@ -147,6 +148,34 @@ func (ss *MediorumServer) peerHealthSnapshot() (peerHealths map[string]*PeerHeal
 	}
 
 	return peerHealths, slices.Clone(ss.unreachablePeers), ss.failsPeerReachability
+}
+
+// parseReachablePeers reads a peer's reported peerHealths section into the set
+// of hosts that peer can reach, keyed by host with the time it last reached it.
+//
+// The key read here must stay in step with how PeerHealth marshals
+// LastReachable (see server.go). A mismatch yields an empty set rather than an
+// error, which is how the two silently diverged once already.
+//
+// The caller rebuilds this set from scratch each poll rather than merging into
+// what it already holds, so hosts a peer has stopped reporting don't linger and
+// inflate its reachable count forever.
+func parseReachablePeers(peerHealthsMap map[string]interface{}) map[string]time.Time {
+	reachablePeers := make(map[string]time.Time, len(peerHealthsMap))
+	for host, hostPeerHealth := range peerHealthsMap {
+		peerHealth, ok := hostPeerHealth.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		lastReachable, ok := peerHealth["lastReachable"].(string)
+		if !ok {
+			continue
+		}
+		if t, err := time.Parse(time.RFC3339Nano, lastReachable); err == nil {
+			reachablePeers[host] = t
+		}
+	}
+	return reachablePeers
 }
 
 func (ss *MediorumServer) getPeerHealth(peer string) *PeerHealth {
@@ -199,7 +228,15 @@ func (ss *MediorumServer) getReachableByMajorityButNotByHost(host string) []stri
 	for peer, reachableBy := range numReachableBy {
 		if reachableBy > totalReachableHosts/2 {
 			// more than half of nodes can reach the peer
-			if lastReachable, ok := ss.peerHealths[peer].ReachablePeers[host]; !ok || lastReachable.Before(twoMinAgo) {
+			peerHealth, ok := ss.peerHealths[peer]
+			if !ok || peerHealth == nil {
+				// Peers report this host but we've never polled it ourselves
+				// (it is us, or we've never reached it), so we hold no record
+				// of whether the host in question reached it. That is a gap in
+				// our data, not evidence against the host.
+				continue
+			}
+			if lastReachable, ok := peerHealth.ReachablePeers[host]; !ok || lastReachable.Before(twoMinAgo) {
 				// but the host in question can't reach the peer
 				unreachableByHost = append(unreachableByHost, peer)
 			}
