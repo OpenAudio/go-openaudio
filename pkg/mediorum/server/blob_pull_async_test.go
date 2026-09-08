@@ -390,3 +390,90 @@ func handoffTestServer(t *testing.T) *MediorumServer {
 	)
 	return ss
 }
+
+// Busy and out-of-room shared 503 until now, which made them indistinguishable
+// to the sender even though they want opposite retries: a queue turns over in
+// minutes, a full disk does not.
+func TestRequestPeerPullTellsBusyFromOutOfRoom(t *testing.T) {
+	cases := []struct {
+		name    string
+		status  int
+		wantErr error
+	}{
+		{"queue full", http.StatusServiceUnavailable, errPeerPullBusy},
+		{"disk full", http.StatusInsufficientStorage, errPeerPullNoRoom},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+			}))
+			defer peer.Close()
+
+			ss := blobFetchTestServer(t)
+			err := ss.requestPeerPull(context.Background(), peer.URL, "cid-1", nil, "", false)
+			require.ErrorIs(t, err, tc.wantErr)
+
+			// Neither may be answered by pushing the bytes: one peer has no
+			// room to work and the other none to store them.
+			require.False(t, isPullFallbackWorthy(err))
+
+			// Nor may either be mistaken for a handoff -- nothing was accepted.
+			require.NotEqual(t, pullHandoffFresh, ss.notePullHandoff(peer.URL, "cid-1", err))
+			require.NotEqual(t, pullHandoffRunning, ss.notePullHandoff(peer.URL, "cid-1", err))
+		})
+	}
+}
+
+// A busy peer must be retried sooner than a failed one, but not every sweep:
+// re-asking a saturated node every five minutes for every queued upload is
+// load on the node that is already behind.
+func TestPeerBusyTakesAShortBackoffNotTheFullOne(t *testing.T) {
+	ss := testNetwork[0]
+
+	content := "busy backoff fixture"
+	cid, err := cidutil.ComputeFileCID(bytes.NewReader([]byte(content)))
+	require.NoError(t, err)
+	putInternalBlobTestObject(t, context.Background(), ss.bucket, cid, content)
+	t.Cleanup(func() { _ = ss.dropFromMyBucket(cid) })
+
+	upload := &Upload{ID: "busy-backoff-upload", OrigFileCID: cid}
+	t.Cleanup(func() { ss.replicationAttempts.Remove(upload.ID) })
+
+	ss.pullHandoffs.RemoveAll()
+	t.Cleanup(func() { ss.pullHandoffs.RemoveAll() })
+
+	originalStreaming := ss.Config.BlobStorageStreaming
+	ss.Config.BlobStorageStreaming = true
+	t.Cleanup(func() { ss.Config.BlobStorageStreaming = originalStreaming })
+
+	original := ss.peerHTTPClient
+	ss.peerHTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return testHTTPResponse(req, http.StatusServiceUnavailable), nil
+	})}
+	t.Cleanup(func() { ss.peerHTTPClient = original })
+
+	// Shrunk so the TTL itself is observable. Asserting only that an entry
+	// exists would pass just as well if the busy branch left the hour-long one
+	// findMissedReplications sets, which is the bug this guards.
+	originalBusy := peerBusyBackoff
+	peerBusyBackoff = 50 * time.Millisecond
+	t.Cleanup(func() { peerBusyBackoff = originalBusy })
+
+	// Stand in for findMissedReplications: an hour-long marker that the busy
+	// branch has to overwrite rather than leave alone.
+	ss.replicationAttempts.Set(upload.ID, struct{}{}, imcache.WithDefaultExpiration())
+	_ = ss.replicateToHosts(context.Background(), upload, cid, nil, false)
+
+	// Armed, unlike a handoff that is progressing -- a busy peer is not moving
+	// this blob and re-asking on the next sweep would just repeat the refusal.
+	_, backedOff := ss.replicationAttempts.Get(upload.ID)
+	require.True(t, backedOff, "a busy peer left the upload with no backoff at all")
+
+	// And on the short clock, not the hour it was set with above.
+	time.Sleep(5 * peerBusyBackoff)
+	_, stillBackedOff := ss.replicationAttempts.Get(upload.ID)
+	require.False(t, stillBackedOff,
+		"the busy backoff kept the hour-long failure TTL; a saturated peer would not be retried for an hour")
+}

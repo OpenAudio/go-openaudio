@@ -121,6 +121,18 @@ const (
 
 func pullHandoffKey(host, cid string) string { return host + "|" + cid }
 
+// peerBusyBackoff is how long an upload waits after every reachable peer said
+// its pull queue was full.
+//
+// Short, because queue-full is transient: a shallow queue drained by several
+// workers turns over in minutes, and the shallow queue only makes sense paired
+// with a soon retry -- refusing work you cannot start promptly is the point.
+// But not zero: clearing the backoff outright would re-ask a saturated peer
+// every five-minute sweep for every queued upload, which is load on the node
+// that is already the one behind.
+// A var only so tests can shrink it; nothing reassigns it at runtime.
+var peerBusyBackoff = 15 * time.Minute
+
 // notePullHandoff records what a peer answered and classifies it. Keyed per
 // host and cid, because peers answer independently and a fresh acceptance from
 // one must not read as a repeat for another in the same sweep.
@@ -220,7 +232,18 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 	// Collect results
 	newSuccessHosts := []string{}
 	handoffProgressing := false
+	anyPeerBusy := false
 	for result := range resultsChan {
+		if errors.Is(result.err, errPeerPullBusy) {
+			anyPeerBusy = true
+			// Not a failure worth a warn: the peer is working, just not on
+			// this. It said so before any bytes moved, which is the shallow
+			// queue behaving as designed.
+			ss.logger.Debug("peer pull queue full; retrying sooner than a failure would",
+				zap.String("host", result.host),
+				zap.String("cid", cid))
+			continue
+		}
 		switch ss.notePullHandoff(result.host, cid, result.err) {
 		case pullHandoffFresh, pullHandoffRunning:
 			handoffProgressing = true
@@ -271,8 +294,18 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 	// no terminal state at all -- the peer accepted, failed and was asked again
 	// five minutes later, indefinitely and with nothing on the sender to show
 	// for it.
-	if handoffProgressing {
+	//
+	// A peer that was merely busy is neither: it never looked at the blob, so
+	// there is nothing to conclude about it, but the shallow queue it refused
+	// from turns over in minutes and the hour a failure earns would be far too
+	// long. It gets its own short backoff instead. Progress wins over busy when
+	// both are present -- another peer is already moving, so the next sweep has
+	// something to confirm.
+	switch {
+	case handoffProgressing:
 		ss.replicationAttempts.Remove(upload.ID)
+	case anyPeerBusy:
+		ss.replicationAttempts.Set(upload.ID, struct{}{}, imcache.WithExpiration(peerBusyBackoff))
 	}
 
 	// No replications succeeded; skip the DB read and Core operation relay.

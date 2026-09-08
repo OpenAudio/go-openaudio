@@ -735,8 +735,11 @@ func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
 	if ss.haveInMyBucket(request.CID) {
 		return c.JSON(http.StatusOK, map[string]string{"status": "already_present"})
 	}
+	// 507, not 503. Both used to be 503, which left the sender unable to tell
+	// "no room" from "busy right now" -- and those want opposite retries: one
+	// is a standing condition, the other clears in minutes. See requestPeerPull.
 	if !ss.diskHasSpaceForCID(request.CID, request.PlacementHosts) {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "disk is too full to accept new blobs"})
+		return c.JSON(http.StatusInsufficientStorage, map[string]string{"error": "disk is too full to accept new blobs"})
 	}
 	// A separate filesystem from the one above, and the one a pull fills first:
 	// the whole blob is staged locally before it is validated or written to the
@@ -744,7 +747,7 @@ func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
 	// nowhere to stage, and the first thing to fail would be everything else
 	// sharing that directory rather than this transfer.
 	if !ss.stagingHasSpace() {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "pull staging disk is too full to accept new blobs"})
+		return c.JSON(http.StatusInsufficientStorage, map[string]string{"error": "pull staging disk is too full to accept new blobs"})
 	}
 
 	if request.Async {
@@ -812,7 +815,9 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 
 		// Per-CID disk check: only the bucket this CID will write to matters.
 		if !ss.diskHasSpaceForCID(cid, placementHosts) {
-			return c.String(http.StatusServiceUnavailable, "disk is too full to accept new blobs")
+			// 507 here too, so "no room" means the same thing on both inbound
+			// blob endpoints.
+			return c.String(http.StatusInsufficientStorage, "disk is too full to accept new blobs")
 		}
 
 		inp, err := upload.Open()

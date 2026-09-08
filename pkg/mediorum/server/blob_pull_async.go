@@ -10,14 +10,27 @@ import (
 )
 
 const (
-	// asyncPullWorkers bounds how many transfers this node runs at once.
+	// defaultAsyncPullWorkers bounds how many transfers this node runs at once.
 	//
 	// This is the backpressure that a synchronous pull used to provide by
 	// accident: the sender held one of its own workers for the duration, so no
 	// node could have more transfers in flight than the sender had workers. A
 	// sender that returns immediately can queue as fast as it enumerates, so the
 	// limit has to live here, on the side actually moving the bytes.
-	asyncPullWorkers = 3
+	//
+	// Six rather than the sender's three. Mirroring the sender's worker count
+	// was the wrong reference once the limit moved: the receiver is the
+	// bottleneck now, and the synchronous handler it replaced ran one goroutine
+	// per request with no ceiling at all, so a number chosen to match the
+	// sender is a much sharper cut than it looks. Operators tune it with
+	// OPENAUDIO_ASYNC_PULL_WORKERS; see MediorumConfig.AsyncPullWorkers.
+	defaultAsyncPullWorkers = 6
+
+	// maxAsyncPullWorkers caps what an operator can ask for. Each worker holds
+	// a whole blob in staging, so an unbounded value would demand staging
+	// headroom no disk can satisfy and refuse every pull -- and it would
+	// overflow the multiplication in pullStagingMinFree.
+	maxAsyncPullWorkers = 64
 
 	// asyncPullQueueDepth is deliberately shallow. A deep queue would accept
 	// work this node cannot start for a long time, and the sender would have
@@ -25,8 +38,8 @@ const (
 	// sweep instead, when the picture may have changed.
 	asyncPullQueueDepth = 32
 
-	// asyncPullTimeout bounds one queued transfer. The request context cannot be
-	// used: it is cancelled the moment the handler returns 202.
+	// defaultAsyncPullTimeout bounds one queued transfer. The request context
+	// cannot be used: it is cancelled the moment the handler returns 202.
 	//
 	// It also bounds how long the source must keep serving the blob. A
 	// synchronous pull enforced that structurally -- the sender held the
@@ -42,8 +55,25 @@ const (
 	// this timeout. Tightening one of them below it would break replication
 	// silently, since the puller would simply see the object vanish mid
 	// transfer.
-	asyncPullTimeout = 60 * time.Minute
+	defaultAsyncPullTimeout = 60 * time.Minute
 )
+
+// asyncPullWorkers is the configured worker count, clamped to something a
+// staging disk can actually back.
+func (ss *MediorumServer) asyncPullWorkers() int {
+	n := ss.Config.AsyncPullWorkers
+	if n <= 0 {
+		return defaultAsyncPullWorkers
+	}
+	return min(n, maxAsyncPullWorkers)
+}
+
+func (ss *MediorumServer) asyncPullTimeout() time.Duration {
+	if ss.Config.AsyncPullTimeout <= 0 {
+		return defaultAsyncPullTimeout
+	}
+	return ss.Config.AsyncPullTimeout
+}
 
 // errAsyncPullQueueFull is answered with 503, which senders treat as a plain
 // failure. It must not look like "pull unsupported", or the sender falls back
@@ -132,10 +162,11 @@ func (ss *MediorumServer) releaseAsyncPull(cid string) {
 }
 
 func (ss *MediorumServer) startAsyncPullWorkers(ctx context.Context) error {
-	ss.logger.Info("starting async blob pull workers", zap.Int("count", asyncPullWorkers))
+	workers := ss.asyncPullWorkers()
+	ss.logger.Info("starting async blob pull workers", zap.Int("count", workers))
 
 	var wg sync.WaitGroup
-	for range asyncPullWorkers {
+	for range workers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -163,7 +194,7 @@ func (ss *MediorumServer) runAsyncPull(parent context.Context, job asyncPullJob)
 	// Deliberately not the request context, which died with the 202 response.
 	// Parented to the server's lifecycle so shutdown still cancels in-flight
 	// transfers rather than leaking them.
-	ctx, cancel := context.WithTimeout(parent, asyncPullTimeout)
+	ctx, cancel := context.WithTimeout(parent, ss.asyncPullTimeout())
 	defer cancel()
 
 	err := ss.pullFileFromHostValidated(ctx, job.sourceHost, job.cid, job.placementHosts, job.uploadID, job.transcoded)

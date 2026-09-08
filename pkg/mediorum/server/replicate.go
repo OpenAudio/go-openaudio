@@ -39,6 +39,15 @@ var (
 	// tells a transfer that is still moving from one that ended without
 	// producing the blob: see notePullHandoff.
 	errPeerPullInProgress = errors.New("peer already pulling; transfer in progress")
+	// errPeerPullBusy means the peer's pull queue was full. Transient by
+	// construction -- a shallow queue drained by several workers turns over in
+	// minutes -- so it earns a short retry rather than the hour a failure gets.
+	errPeerPullBusy = errors.New("peer pull queue is full")
+	// errPeerPullNoRoom means the peer has no disk for the blob. The opposite
+	// of busy despite having shared a status code with it until now: this is a
+	// standing condition, and asking again in five minutes just adds load to a
+	// node that is already stuck.
+	errPeerPullNoRoom = errors.New("peer has no room for blob")
 )
 
 const maxPeerErrorBytes = 8 << 10
@@ -366,9 +375,9 @@ func (ss *MediorumServer) replicateStoredFileToHost(
 // pushing the bytes over multipart instead.
 //
 // Only two answers qualify: the peer cannot do pull at all, or it tried and
-// failed. Everything else must not be sent bytes -- a 503 means the peer is out
-// of room to work, and pushing at it is the worst possible response; either
-// flavour of 202 means it is fetching them itself.
+// failed. Everything else must not be sent bytes -- a 503 means the peer has no
+// room to work and a 507 none to store, and pushing at either is the worst
+// possible response; either flavour of 202 means it is fetching them itself.
 func isPullFallbackWorthy(err error) bool {
 	return errors.Is(err, errPeerPullUnsupported) || errors.Is(err, errPeerPullFailed)
 }
@@ -424,6 +433,10 @@ func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string,
 		// backoff armed, where in_progress clears it, so guessing wrong here
 		// costs a slower retry rather than an unbounded loop.
 		return errPeerPullAccepted
+	case http.StatusServiceUnavailable:
+		return fmt.Errorf("%w: %s", errPeerPullBusy, peerResponseError(resp))
+	case http.StatusInsufficientStorage:
+		return fmt.Errorf("%w: %s", errPeerPullNoRoom, peerResponseError(resp))
 	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxPeerErrorBytes))
 		return fmt.Errorf("%w: %s", errPeerPullUnsupported, resp.Status)
@@ -579,22 +592,42 @@ func (ss *MediorumServer) openBlobFromHost(ctx context.Context, host, cid string
 	return r, nil
 }
 
-// pullStagingMinFreeBytes is the headroom the staging directory must have
-// before this node accepts a pull.
+// Staging headroom is derived from the worker count rather than fixed, because
+// they are one decision: admission is per request, so every worker can be
+// mid-transfer against the same filesystem at once, each holding a whole blob.
+// A fixed threshold would let an operator raise AsyncPullWorkers past what the
+// staging disk can back and never hear about it until the disk filled.
 //
-// It has to cover asyncPullWorkers concurrent stages, not one: admission is
-// per request and all the workers can be mid-transfer against the same
-// filesystem, each holding a whole blob. It also shares that filesystem with
-// tusd uploads, transcode temps and audio analysis temps by default, so the
-// margin is not all ours to spend.
+// This is a heuristic, not a bound. Blob sizes are not known at admission and
+// vary by three orders of magnitude, so nothing here can guarantee the disk
+// survives a pathological set of concurrent transfers -- the aim is to make
+// running out unlikely, and to make raising concurrency raise the bar with it.
 //
-// 10GB matches the blob-store threshold in dsnHasSpace. At three workers that
-// covers three of the largest originals seen in production (~1.9GB) with room
-// left for the other users of the directory.
+// Vars only so tests can force the refusal branch; nothing reassigns them at
+// runtime.
+var (
+	// stagingBytesPerWorker is what one in-flight transfer typically occupies.
+	// A 320 is single-digit MB and the largest originals are ~1.9GB, so this
+	// sits well above the common case and below the tail; stagingSharedMargin
+	// is what absorbs the tail.
+	stagingBytesPerWorker uint64 = 1 << 30
+
+	// stagingSharedMargin is not ours to spend: by default the staging
+	// directory is also the OS temp dir, shared with tusd uploads, transcode
+	// temps and audio analysis temps.
+	stagingSharedMargin uint64 = 4 << 30
+)
+
+// pullStagingMinFree is the headroom the staging directory must have before
+// this node accepts a pull.
 //
-// A var only so tests can raise it to force the refusal branch; nothing
-// reassigns it at runtime.
-var pullStagingMinFreeBytes uint64 = 10 * 1e9
+// At the default worker count this comes to 10GiB, which is both the fixed
+// value this derivation replaces and the threshold dsnHasSpace applies to the
+// blob store -- so a node that was accepting pulls before still is. What
+// changes is that turning concurrency up now asks for the disk to back it.
+func (ss *MediorumServer) pullStagingMinFree() uint64 {
+	return uint64(ss.asyncPullWorkers())*stagingBytesPerWorker + stagingSharedMargin
+}
 
 // pullStagingDir is where a pull buffers a blob before it is validated and
 // committed to the bucket.
@@ -637,12 +670,14 @@ func (ss *MediorumServer) stagingHasSpace() bool {
 		return true
 	}
 
-	if free <= pullStagingMinFreeBytes {
+	required := ss.pullStagingMinFree()
+	if free <= required {
 		if ss.diskWarnThrottle.allow("staging-below-threshold:"+dir, diskWarnInterval) {
 			ss.logger.Warn("pull staging disk space below threshold; refusing pulls",
 				zap.String("stagingDir", dir),
 				zap.Uint64("freeGB", free/uint64(1e9)),
-				zap.Uint64("thresholdGB", pullStagingMinFreeBytes/uint64(1e9)))
+				zap.Uint64("thresholdGB", required/uint64(1e9)),
+				zap.Int("asyncPullWorkers", ss.asyncPullWorkers()))
 		}
 		return false
 	}

@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/labstack/echo/v4"
@@ -109,12 +109,12 @@ func TestStagingHasSpace(t *testing.T) {
 		ss.Config.Env = "prod"
 		ss.Config.PullStagingDir = t.TempDir()
 
-		originalThreshold := pullStagingMinFreeBytes
-		pullStagingMinFreeBytes = math.MaxUint64
-		t.Cleanup(func() { pullStagingMinFreeBytes = originalThreshold })
+		original := stagingBytesPerWorker
+		stagingBytesPerWorker = 1 << 60
+		t.Cleanup(func() { stagingBytesPerWorker = original })
 
 		require.False(t, ss.stagingHasSpace(),
-			"no filesystem has MaxUint64 bytes free, so this must refuse")
+			"no filesystem has an exabyte free, so this must refuse")
 	})
 }
 
@@ -131,13 +131,13 @@ func TestServeInternalBlobPullRefusesWhenStagingIsFull(t *testing.T) {
 	ss.Config.Env = "prod"
 	ss.Config.BlobStoreDSN = "s3://not-a-file-dsn"
 	ss.Config.ArchiveBlobStoreDSN = "s3://not-a-file-dsn"
-	originalThreshold := pullStagingMinFreeBytes
-	pullStagingMinFreeBytes = math.MaxUint64
+	originalPerWorker := stagingBytesPerWorker
+	stagingBytesPerWorker = 1 << 60
 	t.Cleanup(func() {
 		ss.Config.Env = originalEnv
 		ss.Config.BlobStoreDSN = originalDSN
 		ss.Config.ArchiveBlobStoreDSN = originalArchiveDSN
-		pullStagingMinFreeBytes = originalThreshold
+		stagingBytesPerWorker = originalPerWorker
 	})
 
 	rec := postInternalBlobPull(t, ss, testNetwork[1].Config.Self.Host, internalBlobPullRequest{
@@ -145,7 +145,52 @@ func TestServeInternalBlobPullRefusesWhenStagingIsFull(t *testing.T) {
 		Async: true,
 	})
 
-	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Equal(t, http.StatusInsufficientStorage, rec.Code,
+		"no room must not look like busy; they earn opposite retries")
 	require.Contains(t, rec.Body.String(), "staging")
 	require.Len(t, ss.asyncPullQueue, 0, "queued a transfer it has nowhere to stage")
+}
+
+// The threshold and the worker count are one decision: every worker can be
+// staging a whole blob at once, so raising the count without raising the
+// headroom would let a node accept work it has nowhere to put.
+func TestPullStagingMinFreeScalesWithWorkers(t *testing.T) {
+	ss := blobFetchTestServer(t)
+
+	ss.Config.AsyncPullWorkers = 3
+	atThree := ss.pullStagingMinFree()
+	ss.Config.AsyncPullWorkers = 12
+	atTwelve := ss.pullStagingMinFree()
+
+	require.Greater(t, atTwelve, atThree, "more workers must demand more headroom")
+	require.Equal(t, atThree+9*stagingBytesPerWorker, atTwelve)
+
+	// The default configuration must ask for exactly what the fixed threshold
+	// this replaced asked for. Otherwise the derivation quietly raises the bar
+	// and a node with headroom that was sufficient yesterday starts refusing
+	// every pull, with replication stopping rather than anything crashing.
+	ss.Config.AsyncPullWorkers = 0
+	require.Equal(t, uint64(10<<30), ss.pullStagingMinFree(),
+		"the default no longer matches the 10GiB threshold it replaced")
+}
+
+func TestAsyncPullTunablesFallBackToDefaults(t *testing.T) {
+	ss := blobFetchTestServer(t)
+
+	// Unset (zero) means default, so mediorum.go does not have to restate it.
+	require.Equal(t, defaultAsyncPullWorkers, ss.asyncPullWorkers())
+	require.Equal(t, defaultAsyncPullTimeout, ss.asyncPullTimeout())
+
+	ss.Config.AsyncPullWorkers = 12
+	ss.Config.AsyncPullTimeout = 90 * time.Minute
+	require.Equal(t, 12, ss.asyncPullWorkers())
+	require.Equal(t, 90*time.Minute, ss.asyncPullTimeout())
+
+	// Clamped: each worker demands staging headroom, so an unbounded value
+	// would refuse every pull -- and overflow pullStagingMinFree.
+	ss.Config.AsyncPullWorkers = 1_000_000
+	require.Equal(t, maxAsyncPullWorkers, ss.asyncPullWorkers())
+
+	ss.Config.AsyncPullWorkers = -1
+	require.Equal(t, defaultAsyncPullWorkers, ss.asyncPullWorkers())
 }

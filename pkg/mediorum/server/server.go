@@ -87,7 +87,20 @@ type MediorumConfig struct {
 	// PullStagingDir is where an inbound pull buffers a blob before it is
 	// validated and committed. Empty means the OS temp dir. Set it when that
 	// lives on a smaller filesystem than the blob store -- see pullStagingDir.
-	PullStagingDir    string
+	PullStagingDir string
+	// AsyncPullWorkers bounds how many inbound transfers this node runs at
+	// once. This is the node's replication ingest rate, and the right value is
+	// a property of the node -- its bandwidth, its staging disk, and whether it
+	// is absorbing a backfill -- so it is tunable rather than fixed.
+	//
+	// It also sets the staging headroom this node demands: each worker holds a
+	// whole blob while it transfers, so raising this raises what
+	// pullStagingMinFree requires before a pull is accepted.
+	AsyncPullWorkers int `default:"6"`
+	// AsyncPullTimeout bounds one queued transfer, and with it how long a
+	// source must keep serving a blob after answering 202 -- raising it loosens
+	// an invariant nothing else checks. See asyncPullTimeout.
+	AsyncPullTimeout  time.Duration `default:"60m"`
 	RepairEnabled     bool          `default:"true"`
 	RepairInterval    time.Duration `default:"1h"`
 	RepairConcurrency int           `default:"1"`
