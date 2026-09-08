@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,7 +47,7 @@ func TestEnqueueAsyncPullDeduplicatesByCID(t *testing.T) {
 }
 
 // A full queue must report busy rather than accept work it cannot start, and
-// must release the in-flight marker so a later sweep can retry.
+// must leave no in-flight marker behind, or that cid could never be retried.
 func TestEnqueueAsyncPullRejectsWhenFull(t *testing.T) {
 	ss := asyncPullTestServer(t, 1)
 
@@ -57,6 +59,52 @@ func TestEnqueueAsyncPullRejectsWhenFull(t *testing.T) {
 	_, stillMarked := ss.asyncPullInFlight["second"]
 	ss.asyncPullMu.Unlock()
 	require.False(t, stillMarked, "a rejected job stayed marked in flight and could never be retried")
+}
+
+// Marking in flight before the queue send was known to succeed left a window: a
+// second caller arriving inside it read the marker, was answered nil -- 202, the
+// transfer is under way -- and then the first caller found the queue full and
+// took the marker back down. Nothing was ever queued, and the answer 202 has no
+// way to say so.
+//
+// With a full queue and nothing running, no caller may be told the blob is being
+// fetched. The contention is what exercises the window, so this runs the callers
+// against a barrier over many rounds.
+func TestEnqueueAsyncPullNeverAcceptsOnAFullQueue(t *testing.T) {
+	const (
+		rounds  = 200
+		callers = 8
+	)
+
+	for round := range rounds {
+		ss := asyncPullTestServer(t, 1)
+		cid := fmt.Sprintf("contended-cid-%d", round)
+
+		// Occupy the single slot with an unrelated job, so every call below has
+		// to be refused: the queue is full and nothing is in flight for cid.
+		require.NoError(t, ss.enqueueAsyncPull(asyncPullJob{cid: "filler", sourceHost: "http://peer"}))
+
+		results := make([]error, callers)
+		var release, finished sync.WaitGroup
+		release.Add(1)
+		for i := range callers {
+			finished.Add(1)
+			go func() {
+				defer finished.Done()
+				release.Wait()
+				results[i] = ss.enqueueAsyncPull(asyncPullJob{cid: cid, sourceHost: "http://peer"})
+			}()
+		}
+		release.Done()
+		finished.Wait()
+
+		for i, err := range results {
+			require.ErrorIsf(t, err, errAsyncPullQueueFull,
+				"round %d caller %d was told the pull was accepted, but the queue was full and no job was queued",
+				round, i)
+		}
+		require.Lenf(t, ss.asyncPullQueue, 1, "round %d queued a job past the queue's capacity", round)
+	}
 }
 
 // Completion must clear the marker, or that cid can never be pulled again for

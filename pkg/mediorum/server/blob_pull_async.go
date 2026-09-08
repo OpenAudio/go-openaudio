@@ -66,20 +66,30 @@ type asyncPullJob struct {
 // combination of haveInMyBucket and a blocked caller kept that to one transfer
 // at a time. Nothing blocks now, so the in-flight set is what prevents the same
 // blob being fetched several times over.
+//
+// The marker is published only for a job that actually reached the queue, and
+// the lock is held across the send to keep those two the same event. Marking
+// first and unmarking on a full queue leaves a window where a second caller
+// reads the marker, is told the transfer is under way, and goes on waiting for
+// one that was never queued -- and 202 is the only thing that answer can be, so
+// a caller has no way to find out otherwise until its next sweep.
+//
+// Holding the lock across the send is safe because the send cannot block: the
+// default arm makes it a constant-time try, so a worker calling
+// releaseAsyncPull can always take the lock.
 func (ss *MediorumServer) enqueueAsyncPull(job asyncPullJob) error {
 	ss.asyncPullMu.Lock()
+	defer ss.asyncPullMu.Unlock()
+
 	if _, running := ss.asyncPullInFlight[job.cid]; running {
-		ss.asyncPullMu.Unlock()
 		return nil
 	}
-	ss.asyncPullInFlight[job.cid] = struct{}{}
-	ss.asyncPullMu.Unlock()
 
 	select {
 	case ss.asyncPullQueue <- job:
+		ss.asyncPullInFlight[job.cid] = struct{}{}
 		return nil
 	default:
-		ss.releaseAsyncPull(job.cid)
 		return errAsyncPullQueueFull
 	}
 }
