@@ -136,7 +136,7 @@ func mergePlaylistFromMetadata(p *Params, base *playlistRow) *playlistRow {
 	// of whether the SDK sent the legacy dict or the new bare-array shape so
 	// downstream readers see one schema.
 	if _, ok := p.Metadata["playlist_contents"]; ok {
-		out.PlaylistContents = normalizePlaylistContentsJSON(p.Metadata)
+		out.PlaylistContents = normalizePlaylistContentsJSON(p.Metadata, p.BlockTime, base.PlaylistContents)
 	}
 	if v, ok := p.MetadataJSON("stream_conditions"); ok {
 		out.StreamConditions = marshalJSONOrNil(v)
@@ -298,7 +298,8 @@ func metadataPlaylistContentsJSON(p *Params) []byte {
 	if _, ok := p.Metadata["playlist_contents"]; !ok {
 		return []byte(`{"track_ids":[]}`)
 	}
-	return normalizePlaylistContentsJSON(p.Metadata)
+	// No prior row on create, so an omitted timestamp floors to block time.
+	return normalizePlaylistContentsJSON(p.Metadata, p.BlockTime, nil)
 }
 
 // normalizePlaylistContentsJSON returns the JSONB payload to persist to
@@ -318,7 +319,12 @@ func metadataPlaylistContentsJSON(p *Params) []byte {
 // Track IDs that arrive as hashid strings are decoded to integers.
 // The dedupe + junction-table logic lives at the junction-table layer
 // (updatePlaylistTracks).
-func normalizePlaylistContentsJSON(metadata map[string]any) []byte {
+//
+// blockTime is the floor for an entry whose add-timestamp the client did not
+// send; prior is the playlist's currently stored playlist_contents (nil on
+// create) so an existing entry keeps the time it already had. See
+// canonicalizePlaylistEntry.
+func normalizePlaylistContentsJSON(metadata map[string]any, blockTime time.Time, prior []byte) []byte {
 	raw, ok := metadata["playlist_contents"]
 	if !ok || raw == nil {
 		return []byte(`{"track_ids":[]}`)
@@ -334,13 +340,14 @@ func normalizePlaylistContentsJSON(metadata map[string]any) []byte {
 			}
 		}
 	}
+	priorTimes := playlistContentsTimes(prior)
 	canonical := make([]any, 0, len(entries))
 	for _, e := range entries {
 		obj, ok := e.(map[string]any)
 		if !ok {
 			continue
 		}
-		if entry, ok := canonicalizePlaylistEntry(obj); ok {
+		if entry, ok := canonicalizePlaylistEntry(obj, blockTime, priorTimes); ok {
 			canonical = append(canonical, entry)
 		}
 	}
@@ -354,22 +361,66 @@ func normalizePlaylistContentsJSON(metadata map[string]any) []byte {
 // canonicalizePlaylistEntry maps a single playlist_contents entry onto the
 // canonical `{track, time, metadata_time}` schema. Returns false when no
 // usable track id can be extracted. `track` is always an integer (hashid
-// strings are decoded via pickPlaylistTrackID). `time` / `metadata_time` are
-// only emitted when present, accepting the legacy `timestamp` /
-// `metadata_timestamp` aliases.
-func canonicalizePlaylistEntry(entry map[string]any) (map[string]any, bool) {
+// strings are decoded via pickPlaylistTrackID). The legacy `timestamp` /
+// `metadata_timestamp` aliases are accepted for both time fields.
+//
+// `time` is the track's add-time and is always emitted, in precedence order:
+//
+//  1. the client-sent value, when positive;
+//  2. the time this entry already carries in the stored row, so an update
+//     whose client drops the field does not restamp an existing add;
+//  3. blockTime.
+//
+// Without (3) an omitted or zero timestamp persisted as no key at all, which
+// the api serializes back as `timestamp: 0` and clients render as 12/31/69.
+// A zero is treated as absent rather than honored: unix 0 is never a real
+// add-time, and the write paths that produce it are ones that never set the
+// field. blockTime is only skipped when it is itself unset, where emitting
+// nothing beats stamping year 1.
+func canonicalizePlaylistEntry(entry map[string]any, blockTime time.Time, priorTimes map[int64]int64) (map[string]any, bool) {
 	id, ok := pickPlaylistTrackID(entry)
 	if !ok {
 		return nil, false
 	}
 	out := map[string]any{"track": id}
-	if t, ok := pickJSONInt(entry, "time", "timestamp"); ok {
+	if t, ok := pickJSONInt(entry, "time", "timestamp"); ok && t > 0 {
 		out["time"] = t
+	} else if t, ok := priorTimes[id]; ok {
+		out["time"] = t
+	} else if !blockTime.IsZero() {
+		out["time"] = blockTime.Unix()
 	}
 	if mt, ok := pickJSONInt(entry, "metadata_time", "metadata_timestamp"); ok {
 		out["metadata_time"] = mt
 	}
 	return out, true
+}
+
+// playlistContentsTimes maps track id -> stored `time` for a persisted
+// playlist_contents blob. Only positive times are kept, so a row already
+// damaged by this bug falls through to the block-time floor rather than
+// carrying its zero forward.
+func playlistContentsTimes(raw []byte) map[int64]int64 {
+	if len(raw) == 0 {
+		return nil
+	}
+	var stored struct {
+		TrackIDs []map[string]any `json:"track_ids"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return nil
+	}
+	out := make(map[int64]int64, len(stored.TrackIDs))
+	for _, e := range stored.TrackIDs {
+		id, ok := pickPlaylistTrackID(e)
+		if !ok {
+			continue
+		}
+		if t, ok := pickJSONInt(e, "time", "timestamp"); ok && t > 0 {
+			out[id] = t
+		}
+	}
+	return out
 }
 
 // pickJSONInt returns the first of keys that holds a JSON number, coerced to
