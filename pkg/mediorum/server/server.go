@@ -84,9 +84,28 @@ type MediorumConfig struct {
 	DiscoveryListensEndpoints []string
 	LogLevel                  string
 	DeadHosts                 []string
-	RepairEnabled             bool          `default:"true"`
-	RepairInterval            time.Duration `default:"1h"`
-	RepairConcurrency         int           `default:"1"`
+	// PullStagingDir is where an inbound pull buffers a blob before it is
+	// validated and committed. Empty means the OS temp dir. Set it when that
+	// lives on a smaller filesystem than the blob store -- see pullStagingDir.
+	PullStagingDir string
+	// AsyncPullWorkers bounds how many inbound transfers this node runs at
+	// once. This is the node's replication ingest rate, and the right value is
+	// a property of the node -- its bandwidth, its staging disk, and whether it
+	// is absorbing a backfill -- so it is tunable rather than fixed.
+	//
+	// Each concurrent transfer stages a whole blob under PullStagingDir before
+	// it is validated, so raising this raises the peak that directory has to
+	// hold. That is a sizing consideration for the operator turning it up, not
+	// something admission charges every transfer for in advance -- see
+	// localDiskReserveBytes.
+	AsyncPullWorkers int `default:"6"`
+	// AsyncPullTimeout bounds one queued transfer, and with it how long a
+	// source must keep serving a blob after answering 202 -- raising it loosens
+	// an invariant nothing else checks. See asyncPullTimeout.
+	AsyncPullTimeout  time.Duration `default:"60m"`
+	RepairEnabled     bool          `default:"true"`
+	RepairInterval    time.Duration `default:"1h"`
+	RepairConcurrency int           `default:"1"`
 
 	// PresenceStoreEnabled turns on the durable blob_presence store. Off by
 	// default: with it off, every repair cycle enumerates its buckets exactly
@@ -158,8 +177,14 @@ type MediorumServer struct {
 	rendezvousHasher *common.RendezvousHasher
 	transcodeWork    chan *Upload
 	replicationWork  chan *Upload
-	waveformWork     chan waveformJob
-	ethService       ethv1connect.EthServiceHandler
+
+	// Bounded queue for transfers a peer handed off with 202. The limit lives
+	// here because the sender no longer blocks for the duration.
+	asyncPullQueue    chan asyncPullJob
+	asyncPullInFlight map[string]struct{}
+	asyncPullMu       sync.Mutex
+	waveformWork      chan waveformJob
+	ethService        ethv1connect.EthServiceHandler
 
 	// isDbLocalhost is reported by the health check. Derived once from the
 	// parsed connection config below, since the DSN can't change at runtime.
@@ -230,6 +255,12 @@ type MediorumServer struct {
 	knownPresent          *imcache.Cache[string, int64]
 	bgPullBackoff         *imcache.Cache[string, struct{}]
 	replicationAttempts   *imcache.Cache[string, struct{}]
+	// pullHandoffs remembers, per peer and cid, that we handed a transfer off
+	// and have not seen it confirmed. A peer accepting the same blob again
+	// while an entry stands is how a failed background pull is detected: see
+	// notePullHandoff. TTL matches replicationAttempts so a blob that is backed
+	// off and a handoff that is outstanding lapse together.
+	pullHandoffs          *imcache.Cache[string, struct{}]
 	failsPeerReachability bool
 
 	// presenceWalk is the in-flight presence index walk, or nil. Published so
@@ -496,10 +527,12 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		// Buffered, unlike the audio-analysis channel: the sweeps must not
 		// block on a full queue, and the route enqueues opportunistically and
 		// gives up rather than waiting.
-		waveformWork:    make(chan waveformJob, 256),
-		replicationWork: make(chan *Upload, 100),
-		posChannel:      posChannel,
-		pruneTrigger:    make(chan pruneRequest, 1),
+		waveformWork:      make(chan waveformJob, 256),
+		replicationWork:   make(chan *Upload, 100),
+		asyncPullQueue:    make(chan asyncPullJob, asyncPullQueueDepth),
+		asyncPullInFlight: map[string]struct{}{},
+		posChannel:        posChannel,
+		pruneTrigger:      make(chan pruneRequest, 1),
 
 		peerHealths:           map[string]*PeerHealth{},
 		redirectCache:         imcache.New(imcache.WithMaxEntriesLimitOption[string, string](50_000, imcache.EvictionPolicyLRU)),
@@ -511,6 +544,7 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		knownPresent:          imcache.New(imcache.WithMaxEntriesLimitOption[string, int64](500_000, imcache.EvictionPolicyLRU)),
 		bgPullBackoff:         imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
 		replicationAttempts:   imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
+		pullHandoffs:          imcache.New(imcache.WithMaxEntriesLimitOption[string, struct{}](50_000, imcache.EvictionPolicyLRU), imcache.WithDefaultExpirationOption[string, struct{}](time.Hour)),
 
 		StartedAt:    time.Now().UTC(),
 		Config:       config,
@@ -714,6 +748,7 @@ func (ss *MediorumServer) MustStart() error {
 		ss.lc.AddManagedRoutine("waveform analyzer", ss.startWaveformAnalyzer)
 	}
 	ss.lc.AddManagedRoutine("replication workers", ss.startReplicationWorkers)
+	ss.lc.AddManagedRoutine("async blob pull workers", ss.startAsyncPullWorkers)
 
 	ss.lc.AddManagedRoutine("pruner", ss.startPruner)
 

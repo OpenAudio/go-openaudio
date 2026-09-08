@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -97,14 +98,83 @@ func (ss *MediorumServer) replicateTranscode(ctx context.Context, upload *Upload
 	return ss.replicateToHosts(ctx, upload, transcodedCID, upload.TranscodedMirrors, true)
 }
 
+// pullHandoffOutcome is what one peer's answer to a pull request says about a
+// transfer we handed it.
+type pullHandoffOutcome int
+
+const (
+	// pullHandoffNone: not a handoff answer at all.
+	pullHandoffNone pullHandoffOutcome = iota
+	// pullHandoffFresh: the peer has just taken the transfer on, and we had no
+	// outstanding handoff with it for this blob.
+	pullHandoffFresh
+	// pullHandoffRunning: the peer is still working on one it took earlier.
+	pullHandoffRunning
+	// pullHandoffRepeat: the peer took the transfer on again while we still had
+	// an outstanding handoff with it. Its in-flight set is empty and its bucket
+	// does not hold the blob, so the earlier attempt is over and produced
+	// nothing. This is the only failure report a handoff ever generates: the
+	// peer logs the error on its own side and nothing is waiting on the result,
+	// so without this the sender would never learn.
+	pullHandoffRepeat
+)
+
+func pullHandoffKey(host, cid string) string { return host + "|" + cid }
+
+// peerBusyBackoff is how long an upload waits after every reachable peer said
+// its pull queue was full.
+//
+// Short, because queue-full is transient: a shallow queue drained by several
+// workers turns over in minutes, and the shallow queue only makes sense paired
+// with a soon retry -- refusing work you cannot start promptly is the point.
+// But not zero: clearing the backoff outright would re-ask a saturated peer
+// every five-minute sweep for every queued upload, which is load on the node
+// that is already the one behind.
+// A var only so tests can shrink it; nothing reassigns it at runtime.
+var peerBusyBackoff = 15 * time.Minute
+
+// notePullHandoff records what a peer answered and classifies it. Keyed per
+// host and cid, because peers answer independently and a fresh acceptance from
+// one must not read as a repeat for another in the same sweep.
+//
+// The marker is cleared as soon as it has been acted on -- a repeat arms the
+// backoff, and the next attempt an hour later should start from a clean slate
+// rather than reporting failure again immediately.
+func (ss *MediorumServer) notePullHandoff(host, cid string, err error) pullHandoffOutcome {
+	key := pullHandoffKey(host, cid)
+	switch {
+	case errors.Is(err, errPeerPullInProgress):
+		return pullHandoffRunning
+	case errors.Is(err, errPeerPullAccepted):
+		if _, outstanding := ss.pullHandoffs.Get(key); outstanding {
+			ss.pullHandoffs.Remove(key)
+			return pullHandoffRepeat
+		}
+		ss.pullHandoffs.Set(key, struct{}{}, imcache.WithDefaultExpiration())
+		return pullHandoffFresh
+	case err == nil:
+		// Confirmed present on the peer. Whatever we handed it is settled.
+		ss.pullHandoffs.Remove(key)
+		return pullHandoffNone
+	default:
+		return pullHandoffNone
+	}
+}
+
 // replicateFile is the shared implementation for replicating files to all necessary mirrors in parallel
 func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, cid string, existingMirrors []string, isTranscoded bool) error {
 	// Get the file from our bucket — hot first, archive fallback so we
 	// source from wherever the blob actually lives on this node.
 	shardedCid := cidutil.ShardCID(cid)
-	_, srcBucket, err := ss.blobAttrs(ctx, shardedCid)
+	srcAttrs, srcBucket, err := ss.blobAttrs(ctx, shardedCid)
 	if err != nil {
 		return fmt.Errorf("failed to get file attributes: %w", err)
+	}
+	// Already read to pick the source bucket; the size rides along to the peer
+	// so it can check its staging disk against the real number.
+	var srcSize int64
+	if srcAttrs != nil {
+		srcSize = srcAttrs.Size
 	}
 
 	// Determine placement hosts
@@ -154,7 +224,7 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 		go func(targetHost string) {
 			defer wg.Done()
 
-			err := ss.replicateStoredFileToHost(ctx, targetHost, cid, srcBucket, shardedCid, upload.PlacementHosts, upload.ID, isTranscoded)
+			err := ss.replicateStoredFileToHost(ctx, targetHost, cid, srcBucket, shardedCid, upload.PlacementHosts, upload.ID, isTranscoded, srcSize)
 			resultsChan <- replicationResult{host: targetHost, err: err}
 		}(host)
 	}
@@ -167,7 +237,40 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 
 	// Collect results
 	newSuccessHosts := []string{}
+	handoffProgressing := false
+	anyPeerBusy := false
 	for result := range resultsChan {
+		if errors.Is(result.err, errPeerPullBusy) {
+			anyPeerBusy = true
+			// Not a failure worth a warn: the peer is working, just not on
+			// this. It said so before any bytes moved, which is the shallow
+			// queue behaving as designed.
+			ss.logger.Debug("peer pull queue full; retrying sooner than a failure would",
+				zap.String("host", result.host),
+				zap.String("cid", cid))
+			continue
+		}
+		switch ss.notePullHandoff(result.host, cid, result.err) {
+		case pullHandoffFresh, pullHandoffRunning:
+			handoffProgressing = true
+			// The peer owns this transfer. Recording a mirror would be a claim
+			// we cannot back, and logging a failure would be wrong too. A later
+			// sweep gets already_present -- the peer reporting what is actually
+			// in its bucket, which is a better signal than anything it could
+			// have promised us here.
+			ss.logger.Debug("peer is pulling blob; awaiting confirmation on a later sweep",
+				zap.String("host", result.host),
+				zap.String("cid", cid))
+			continue
+		case pullHandoffRepeat:
+			// The peer took this on before and has neither the blob nor a
+			// transfer running, so that attempt failed. Nothing was waiting on
+			// it, so this is the only place the failure surfaces.
+			ss.logger.Warn("peer re-accepted blob pull; its previous transfer produced nothing",
+				zap.String("host", result.host),
+				zap.String("cid", cid))
+			continue
+		}
 		if result.err != nil {
 			fileType := "file"
 			if isTranscoded {
@@ -180,6 +283,35 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 		} else {
 			newSuccessHosts = append(newSuccessHosts, result.host)
 		}
+	}
+
+	// A handoff that is getting somewhere must not arm the under-replication
+	// backoff. findMissedReplications sets that marker when it queues an upload
+	// and its TTL is an hour, which suits an attempt that definitively failed. A
+	// transfer still running at the next five minute sweep would otherwise
+	// suppress the confirming already_present for the rest of the hour -- and
+	// the blobs that take longest to transfer are exactly the ones this path
+	// exists to carry, so that would be the common case for them rather than an
+	// edge.
+	//
+	// Only fresh and running qualify. A repeat acceptance is the opposite: it
+	// says the last transfer ended without producing the blob, so it must leave
+	// the backoff armed. Clearing on every 202 gave a permanently failing pull
+	// no terminal state at all -- the peer accepted, failed and was asked again
+	// five minutes later, indefinitely and with nothing on the sender to show
+	// for it.
+	//
+	// A peer that was merely busy is neither: it never looked at the blob, so
+	// there is nothing to conclude about it, but the shallow queue it refused
+	// from turns over in minutes and the hour a failure earns would be far too
+	// long. It gets its own short backoff instead. Progress wins over busy when
+	// both are present -- another peer is already moving, so the next sweep has
+	// something to confirm.
+	switch {
+	case handoffProgressing:
+		ss.replicationAttempts.Remove(upload.ID)
+	case anyPeerBusy:
+		ss.replicationAttempts.Set(upload.ID, struct{}{}, imcache.WithExpiration(peerBusyBackoff))
 	}
 
 	// No replications succeeded; skip the DB read and Core operation relay.

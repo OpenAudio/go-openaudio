@@ -142,6 +142,8 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 	repairConcurrency := env.GetInt(1, "OPENAUDIO_REPAIR_CONCURRENCY")
 	presenceWalkConcurrency := env.GetInt(1, "OPENAUDIO_PRESENCE_WALK_CONCURRENCY")
 	presenceStoreEnabled := env.Get("false", "OPENAUDIO_PRESENCE_STORE_ENABLED") == "true"
+	asyncPullWorkers := env.GetInt(server.DefaultAsyncPullWorkers, "OPENAUDIO_ASYNC_PULL_WORKERS")
+	asyncPullTimeout := env.GetDuration(server.DefaultAsyncPullTimeout, "OPENAUDIO_ASYNC_PULL_TIMEOUT")
 	storeRecentTTL := parseStoreRecentTTL(env.String("OPENAUDIO_STORE_RECENT_TTL"))
 
 	// Waveform analysis configuration. Every switch defaults to false so the
@@ -186,6 +188,9 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		DiscoveryListensEndpoints: discoveryListensEndpoints(),
 		LogLevel:                  env.Get("info", "OPENAUDIO_LOG_LEVEL"),
 		DeadHosts:                 []string{},
+		PullStagingDir:            env.String("OPENAUDIO_PULL_STAGING_DIR"),
+		AsyncPullWorkers:          asyncPullWorkers,
+		AsyncPullTimeout:          asyncPullTimeout,
 		RepairEnabled:             repairEnabled,
 		RepairInterval:            repairInterval,
 		RepairConcurrency:         repairConcurrency,

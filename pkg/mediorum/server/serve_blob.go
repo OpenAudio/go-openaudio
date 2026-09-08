@@ -673,7 +673,18 @@ func (ss *MediorumServer) serveInternalBlobGET(c echo.Context) error {
 	}
 	defer blob.Close()
 
-	return c.Stream(200, blob.ContentType(), blob)
+	// ServeContent rather than c.Stream: it answers Range requests with 206 and
+	// a Content-Range, which is what lets a peer fetch this blob in bounded
+	// chunks. c.Stream ignores Range and always returns the whole body, so a
+	// backend that cannot presign -- file://, which is a supported production
+	// storage driver, not only a dev convenience -- would otherwise force the
+	// receiver back onto a single unbounded stream.
+	//
+	// Content-Type is set explicitly because ServeContent would otherwise sniff
+	// it or guess from the name, and a bare cid carries no extension.
+	c.Response().Header().Set(echo.HeaderContentType, blob.ContentType())
+	http.ServeContent(c.Response(), c.Request(), cid, blob.ModTime(), blob)
+	return nil
 }
 
 type internalBlobPullRequest struct {
@@ -691,6 +702,26 @@ type internalBlobPullRequest struct {
 	// analysis targets -- decoding them costs an ffmpeg subprocess each to
 	// produce a waveform for a cid nothing will ever ask about.
 	Transcoded bool `json:"transcoded,omitempty"`
+	// Size is the blob's length, so the receiver can check its staging disk
+	// against the actual bytes rather than a threshold -- the same size-aware
+	// check the upload path makes with a declared Upload-Length. The sender
+	// already read the blob's attributes to pick a source bucket, so this costs
+	// it nothing and saves the receiver a round trip asking.
+	//
+	// An assertion, not proof, like UploadID and Transcoded above. A peer that
+	// under-declared could get a transfer admitted that should not have been --
+	// but it is the same peer that would otherwise simply send the blob, so
+	// there is nothing here it could not already do. Absent (zero) from senders
+	// that predate the field, which falls back to the reserve alone.
+	Size int64 `json:"size,omitempty"`
+	// Async asks this node to accept the transfer and run it in the background,
+	// answering 202 rather than holding the sender open for its duration.
+	//
+	// Opt-in, and that is what makes a rolling deploy uneventful. A sender that
+	// predates the field sends nothing and gets the synchronous path it expects;
+	// a peer that predates it ignores the flag and also stays synchronous. The
+	// sender only stops waiting when both ends understand the handoff.
+	Async bool `json:"async,omitempty"`
 }
 
 func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
@@ -716,8 +747,50 @@ func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
 	if ss.haveInMyBucket(request.CID) {
 		return c.JSON(http.StatusOK, map[string]string{"status": "already_present"})
 	}
+	// 507, not 503. Both used to be 503, which left the sender unable to tell
+	// "no room" from "busy right now" -- and those want opposite retries: one
+	// is a standing condition, the other clears in minutes. See requestPeerPull.
 	if !ss.diskHasSpaceForCID(request.CID, request.PlacementHosts) {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "disk is too full to accept new blobs"})
+		return c.JSON(http.StatusInsufficientStorage, map[string]string{"error": "disk is too full to accept new blobs"})
+	}
+	// A separate filesystem from the one above, and the one a pull fills first:
+	// the whole blob is staged locally before it is validated or written to the
+	// bucket. Checking only blob-store headroom would admit transfers there is
+	// nowhere to stage, and the first thing to fail would be everything else
+	// sharing that directory rather than this transfer.
+	//
+	// Same helper the upload paths use, and for the same reason: when the size
+	// is known the question is exact -- does this blob fit -- rather than a
+	// threshold standing in for one. A sender that predates Size sends zero,
+	// which still catches a disk that is already full.
+	var declared uint64
+	if request.Size > 0 {
+		declared = uint64(request.Size)
+	}
+	if !ss.localDirHasSpaceFor(ss.pullStagingDir(), declared) {
+		return c.JSON(http.StatusInsufficientStorage, map[string]string{"error": "not enough local disk to stage this blob"})
+	}
+
+	if request.Async {
+		job := asyncPullJob{
+			sourceHost:     sourceHost,
+			cid:            request.CID,
+			placementHosts: request.PlacementHosts,
+			uploadID:       request.UploadID,
+			transcoded:     request.Transcoded,
+		}
+		admission, err := ss.enqueueAsyncPull(job)
+		if err != nil {
+			// Busy, not incapable. 503 keeps the sender off the multipart
+			// fallback, which would push the bytes at a node that just said it
+			// had no room to work.
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		}
+		// accepted vs in_progress: the sender cannot otherwise tell a transfer
+		// still running from one that ended without producing the blob, since
+		// both would be a bare 202. Reporting which it is costs a word and is
+		// read straight off this node's in-flight set.
+		return c.JSON(http.StatusAccepted, map[string]string{"status": admission.status()})
 	}
 
 	err := ss.pullFileFromHostValidated(c.Request().Context(), sourceHost, request.CID, request.PlacementHosts, request.UploadID, request.Transcoded)
@@ -763,7 +836,9 @@ func (ss *MediorumServer) serveInternalBlobPOST(c echo.Context) error {
 
 		// Per-CID disk check: only the bucket this CID will write to matters.
 		if !ss.diskHasSpaceForCID(cid, placementHosts) {
-			return c.String(http.StatusServiceUnavailable, "disk is too full to accept new blobs")
+			// 507 here too, so "no room" means the same thing on both inbound
+			// blob endpoints.
+			return c.String(http.StatusInsufficientStorage, "disk is too full to accept new blobs")
 		}
 
 		inp, err := upload.Open()

@@ -54,6 +54,23 @@ func tusdUploadDir() string {
 	return env.Get("/tmp/tusd-uploads", "OPENAUDIO_TUSD_UPLOAD_DIR", "TUSD_UPLOAD_DIR")
 }
 
+// pullStagingDir is where an inbound pull buffers a blob before it is validated
+// and committed to the bucket -- the same class of local staging as the two
+// above, and gated by the same helper.
+//
+// Defaults to the OS temp dir, which on a container deployment is the image's
+// root filesystem rather than the blob volume -- see ensureNoTmpDir, which
+// exists because those are routinely different mount points. Operators whose
+// root filesystem is small can point this at the volume that actually has the
+// room; on a file:// node, pointing it at the blob store means the existing
+// diskHasSpaceForCID check covers staging too.
+func (ss *MediorumServer) pullStagingDir() string {
+	if ss.Config.PullStagingDir != "" {
+		return ss.Config.PullStagingDir
+	}
+	return os.TempDir()
+}
+
 // localDirHasSpaceFor reports whether dir's filesystem can take needBytes and
 // still leave localDiskReserveBytes behind.
 //

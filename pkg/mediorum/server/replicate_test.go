@@ -69,6 +69,26 @@ func TestReplicateFileToHostClosesPipeOnEarlyHTTPError(t *testing.T) {
 	assert.LessOrEqual(t, countReplicateFileToHostGoroutines(), before)
 }
 
+// The sender now hands the transfer off and returns immediately, so both of
+// these assert against the receiver's settled state rather than the sender's
+// error. waitForAsyncPull makes that deterministic: the in-flight marker is set
+// before the handler answers 202 and cleared when the job finishes, so there is
+// no window where the test could observe an unstarted transfer.
+func waitForAsyncPull(t *testing.T, ss *MediorumServer, cid string) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		ss.asyncPullMu.Lock()
+		_, running := ss.asyncPullInFlight[cid]
+		ss.asyncPullMu.Unlock()
+		if !running {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("async pull of %s did not finish", cid)
+}
+
 func TestRequestPeerPullStoresValidatedBlob(t *testing.T) {
 	source := testNetwork[0]
 	target := testNetwork[1]
@@ -89,8 +109,12 @@ func TestRequestPeerPullStoresValidatedBlob(t *testing.T) {
 		[]string{target.Config.Self.Host},
 		"",
 		true,
+		0,
 	)
-	require.NoError(t, err)
+	// A first acceptance, not a completion: the bytes have not moved yet.
+	require.ErrorIs(t, err, errPeerPullAccepted)
+
+	waitForAsyncPull(t, target, cid)
 
 	reader, _, err := target.readBlob(context.Background(), cidutil.ShardCID(cid))
 	require.NoError(t, err)
@@ -100,6 +124,11 @@ func TestRequestPeerPullStoresValidatedBlob(t *testing.T) {
 	require.Equal(t, content, string(stored))
 }
 
+// Validation still happens on the receiver; what changed is that its verdict is
+// no longer reported to the sender. The guarantee that matters -- a blob whose
+// content does not match its CID is never stored -- is unaffected, and the
+// sender learns of the failure by the peer not answering already_present on the
+// next sweep.
 func TestRequestPeerPullRejectsCIDMismatch(t *testing.T) {
 	source := testNetwork[0]
 	target := testNetwork[1]
@@ -119,10 +148,12 @@ func TestRequestPeerPullRejectsCIDMismatch(t *testing.T) {
 		[]string{target.Config.Self.Host},
 		"",
 		true,
+		0,
 	)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "422")
-	require.False(t, target.haveInMyBucket(cid))
+	require.ErrorIs(t, err, errPeerPullAccepted)
+
+	waitForAsyncPull(t, target, cid)
+	require.False(t, target.haveInMyBucket(cid), "stored a blob that failed CID validation")
 }
 
 func TestReplicateStoredFileToHostUsesPullWithoutReadingSourceBucket(t *testing.T) {
@@ -147,6 +178,7 @@ func TestReplicateStoredFileToHostUsesPullWithoutReadingSourceBucket(t *testing.
 		nil,
 		"",
 		true,
+		0,
 	))
 }
 
@@ -198,6 +230,7 @@ func TestReplicateStoredFileToHostFallsBackForOlderPeer(t *testing.T) {
 		nil,
 		"",
 		true,
+		0,
 	))
 	require.Equal(t, 2, requests)
 }
@@ -225,6 +258,7 @@ func TestReplicateStoredFileToHostDoesNotFallbackOnValidationFailure(t *testing.
 		nil,
 		"",
 		true,
+		0,
 	)
 	require.Error(t, err)
 	require.Equal(t, 1, requests)
