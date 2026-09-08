@@ -254,6 +254,13 @@ func TestPullInProgressClearsTheReplicationBackoff(t *testing.T) {
 	ss.replicationAttempts.Set(upload.ID, struct{}{}, imcache.WithDefaultExpiration())
 	t.Cleanup(func() { ss.replicationAttempts.Remove(upload.ID) })
 
+	// testNetwork is shared, and notePullHandoff writes to it: a handoff left
+	// over from an earlier run would read this one as a repeat -- the failure
+	// case -- and the assertion below would flip. Start and finish clean so the
+	// test means the same thing on every run.
+	ss.pullHandoffs.RemoveAll()
+	t.Cleanup(func() { ss.pullHandoffs.RemoveAll() })
+
 	// Pull is what produces a 202 at all; without it replicateStoredFileToHost
 	// goes straight to the multipart push.
 	originalStreaming := ss.Config.BlobStorageStreaming
