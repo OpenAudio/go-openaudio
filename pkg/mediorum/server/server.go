@@ -676,6 +676,12 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 	internalApi.GET("/logs/storageAndDb", ss.serveStorageAndDbLogs)
 	internalApi.GET("/logs/pg-upgrade", ss.getPgUpgradeLog)
 
+	// StoreAll nodes are never a target of upload-time replication, so without
+	// this they learn about new content only when a repair sweep reaches it.
+	if ss.Config.StoreAll {
+		crud.AddOpCallback(ss.storeAllIntakeFromOp)
+	}
+
 	go ss.loadGeoIPDatabase()
 
 	return ss, nil

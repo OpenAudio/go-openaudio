@@ -199,6 +199,14 @@ func (ss *MediorumServer) runAsyncPull(parent context.Context, job asyncPullJob)
 	ctx, cancel := context.WithTimeout(parent, ss.asyncPullTimeout())
 	defer cancel()
 
+	// Checked here rather than only at admission. A job can sit in the queue
+	// while another path stores the same blob, and store-all intake enqueues
+	// without checking at all -- its callback runs inside the chain op sync
+	// loop, where a live bucket Exists per op is not affordable.
+	if ss.haveInMyBucket(job.cid) {
+		return
+	}
+
 	err := ss.pullFileFromHostValidated(ctx, job.sourceHost, job.cid, job.placementHosts, job.uploadID, job.transcoded)
 	if err != nil {
 		// Nothing is waiting on this, so a log is the only report. The sender
