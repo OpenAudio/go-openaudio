@@ -738,6 +738,14 @@ func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
 	if !ss.diskHasSpaceForCID(request.CID, request.PlacementHosts) {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "disk is too full to accept new blobs"})
 	}
+	// A separate filesystem from the one above, and the one a pull fills first:
+	// the whole blob is staged locally before it is validated or written to the
+	// bucket. Checking only blob-store headroom would admit transfers there is
+	// nowhere to stage, and the first thing to fail would be everything else
+	// sharing that directory rather than this transfer.
+	if !ss.stagingHasSpace() {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "pull staging disk is too full to accept new blobs"})
+	}
 
 	if request.Async {
 		job := asyncPullJob{

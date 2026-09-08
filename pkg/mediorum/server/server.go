@@ -84,9 +84,13 @@ type MediorumConfig struct {
 	DiscoveryListensEndpoints []string
 	LogLevel                  string
 	DeadHosts                 []string
-	RepairEnabled             bool          `default:"true"`
-	RepairInterval            time.Duration `default:"1h"`
-	RepairConcurrency         int           `default:"1"`
+	// PullStagingDir is where an inbound pull buffers a blob before it is
+	// validated and committed. Empty means the OS temp dir. Set it when that
+	// lives on a smaller filesystem than the blob store -- see pullStagingDir.
+	PullStagingDir    string
+	RepairEnabled     bool          `default:"true"`
+	RepairInterval    time.Duration `default:"1h"`
+	RepairConcurrency int           `default:"1"`
 
 	// PresenceStoreEnabled turns on the durable blob_presence store. Off by
 	// default: with it off, every repair cycle enumerates its buckets exactly

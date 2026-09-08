@@ -186,6 +186,7 @@ func runMediorum(lc *lifecycle.Lifecycle, logger *zap.Logger, mediorumEnv string
 		DiscoveryListensEndpoints: discoveryListensEndpoints(),
 		LogLevel:                  env.Get("info", "OPENAUDIO_LOG_LEVEL"),
 		DeadHosts:                 []string{},
+		PullStagingDir:            env.String("OPENAUDIO_PULL_STAGING_DIR"),
 		RepairEnabled:             repairEnabled,
 		RepairInterval:            repairInterval,
 		RepairConcurrency:         repairConcurrency,

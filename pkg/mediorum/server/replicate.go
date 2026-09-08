@@ -482,7 +482,7 @@ func (ss *MediorumServer) pullFileFromHostValidated(ctx context.Context, host, c
 	}
 	defer body.Close()
 
-	tmp, err := os.CreateTemp("", "mediorum-pull-*")
+	tmp, err := os.CreateTemp(ss.pullStagingDir(), "mediorum-pull-*")
 	if err != nil {
 		return err
 	}
@@ -577,6 +577,76 @@ func (ss *MediorumServer) openBlobFromHost(ctx context.Context, host, cid string
 		return nil, err
 	}
 	return r, nil
+}
+
+// pullStagingMinFreeBytes is the headroom the staging directory must have
+// before this node accepts a pull.
+//
+// It has to cover asyncPullWorkers concurrent stages, not one: admission is
+// per request and all the workers can be mid-transfer against the same
+// filesystem, each holding a whole blob. It also shares that filesystem with
+// tusd uploads, transcode temps and audio analysis temps by default, so the
+// margin is not all ours to spend.
+//
+// 10GB matches the blob-store threshold in dsnHasSpace. At three workers that
+// covers three of the largest originals seen in production (~1.9GB) with room
+// left for the other users of the directory.
+//
+// A var only so tests can raise it to force the refusal branch; nothing
+// reassigns it at runtime.
+var pullStagingMinFreeBytes uint64 = 10 * 1e9
+
+// pullStagingDir is where a pull buffers a blob before it is validated and
+// committed to the bucket.
+//
+// Defaults to the OS temp dir, which on a container deployment is the image's
+// root filesystem rather than the blob volume -- see ensureNoTmpDir, which
+// exists because those are routinely different mount points. Operators whose
+// root filesystem is small can point this at the volume that actually has the
+// room; on a file:// node, pointing it at the blob store means the existing
+// diskHasSpaceForCID check covers staging too.
+func (ss *MediorumServer) pullStagingDir() string {
+	if ss.Config.PullStagingDir != "" {
+		return ss.Config.PullStagingDir
+	}
+	return os.TempDir()
+}
+
+// stagingHasSpace reports whether the staging directory can take another blob.
+//
+// This is a different filesystem from the one diskHasSpaceForCID measures, and
+// it is the one a pull fills first: pullFileFromHostValidated writes the entire
+// blob here before ValidateCID runs and before a single byte reaches the
+// bucket. Admitting a pull on blob-store headroom alone says nothing about
+// whether there is anywhere to stage it.
+func (ss *MediorumServer) stagingHasSpace() bool {
+	if ss.Config.Env != "prod" {
+		return true
+	}
+
+	dir := ss.pullStagingDir()
+	_, free, err := getDiskStatus(dir)
+	if err != nil {
+		// Can't measure it, so don't refuse on a guess -- the same posture
+		// dsnHasSpace takes when statfs fails.
+		if ss.diskWarnThrottle.allow("staging-statfs-failed:"+dir, diskWarnInterval) {
+			ss.logger.Warn("failed to check pull staging disk space; accepting pulls unchecked",
+				zap.String("stagingDir", dir),
+				zap.Error(err))
+		}
+		return true
+	}
+
+	if free <= pullStagingMinFreeBytes {
+		if ss.diskWarnThrottle.allow("staging-below-threshold:"+dir, diskWarnInterval) {
+			ss.logger.Warn("pull staging disk space below threshold; refusing pulls",
+				zap.String("stagingDir", dir),
+				zap.Uint64("freeGB", free/uint64(1e9)),
+				zap.Uint64("thresholdGB", pullStagingMinFreeBytes/uint64(1e9)))
+		}
+		return false
+	}
+	return true
 }
 
 // diskWarnInterval caps how often each dsnHasSpace warn is emitted per DSN.
