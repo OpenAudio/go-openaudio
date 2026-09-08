@@ -23,6 +23,7 @@ import (
 	v1 "github.com/cometbft/cometbft/api/cometbft/abci/v1"
 	"github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/cometbft/cometbft/types"
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 )
 
@@ -446,6 +447,41 @@ var stateSyncSnapshotTables = []string{
 	"launchpad_authority_rm",
 	"core_uploads",
 	"validator_history",
+}
+
+// truncateSnapshotTablesStmt builds the statement that clears the tables COPY is
+// about to load, given the tables that actually exist in `public`.
+//
+// Scope is the whole point. Only stateSyncSnapshotTables is dumped, so
+// truncating anything else cannot prevent a COPY conflict -- nothing will COPY
+// into it -- and only destroys data. This path used to truncate every table in
+// `public`, which wiped mediorum's uploads, blobs, audio_previews and
+// qm_audio_analyses on any node that state synced, along with every other table
+// outside core's migrations.
+//
+// The intersection matters because pgRestore("pre-data") deliberately tolerates
+// schema drift, so a listed table may not exist locally yet.
+//
+// One statement, and no CASCADE: truncating the set together satisfies foreign
+// keys among its members, while CASCADE would follow a key OUTWARD to a table
+// outside the snapshot and silently truncate that too -- the same bug through a
+// different door. If something outside the set references something inside it,
+// this fails loudly instead, which is the outcome we want.
+func truncateSnapshotTablesStmt(existing []string) string {
+	inSnapshot := make(map[string]bool, len(stateSyncSnapshotTables))
+	for _, t := range stateSyncSnapshotTables {
+		inSnapshot[t] = true
+	}
+	quoted := make([]string, 0, len(stateSyncSnapshotTables))
+	for _, t := range existing {
+		if inSnapshot[t] {
+			quoted = append(quoted, pgx.Identifier{t}.Sanitize())
+		}
+	}
+	if len(quoted) == 0 {
+		return ""
+	}
+	return "TRUNCATE TABLE " + strings.Join(quoted, ", ")
 }
 
 // createPgDump creates a pg_dump of the database and writes it to the latest snapshot directory
@@ -887,27 +923,29 @@ func (s *Server) RestoreDatabase(height int64) error {
 	// pre-data errors (missing tables from schema drift) are non-fatal
 	_ = pgRestore("pre-data")
 
-	// Truncate all tables before loading dump data. Migrations pre-populate some tables
-	// (e.g. core_db_migrations) which cause COPY to fail with duplicate key errors.
+	// Clear the tables COPY is about to load: migrations pre-populate some of them
+	// (e.g. core_db_migrations), which makes COPY fail on duplicate keys.
 	// Collect names first so the connection isn't held open (busy) during TRUNCATE.
 	s.RunningProcessWithMetadata(ProcessStateRestore, "truncating tables")
-	s.logger.Info("pg_restore: truncating tables to clear migration-created data")
+	s.logger.Info("pg_restore: truncating snapshot tables to clear migration-created data")
 	if db, err := s.pool.Acquire(context.Background()); err == nil {
 		rows, err := db.Query(context.Background(),
 			"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
-		var tables []string
+		var existing []string
 		if err == nil {
 			for rows.Next() {
 				var t string
 				if rows.Scan(&t) == nil {
-					tables = append(tables, t)
+					existing = append(existing, t)
 				}
 			}
 			rows.Close()
 		}
-		for _, t := range tables {
-			if _, err := db.Exec(context.Background(), "TRUNCATE TABLE "+t+" CASCADE"); err != nil {
-				s.logger.Warn("pg_restore: failed to truncate table", zap.String("table", t), zap.Error(err))
+		if stmt := truncateSnapshotTablesStmt(existing); stmt != "" {
+			if _, err := db.Exec(context.Background(), stmt); err != nil {
+				s.logger.Warn("pg_restore: failed to truncate snapshot tables", zap.Error(err))
+			} else {
+				s.logger.Info("pg_restore: truncated snapshot tables")
 			}
 		}
 		db.Release()
