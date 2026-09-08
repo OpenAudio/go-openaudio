@@ -342,13 +342,14 @@ func (ss *MediorumServer) replicateStoredFileToHost(
 	placementHosts []string,
 	uploadID string,
 	transcoded bool,
+	size int64,
 ) error {
 	if peer == ss.Config.Self.Host {
 		return nil
 	}
 
 	if ss.Config.BlobStorageStreaming {
-		err := ss.requestPeerPull(ctx, peer, fileName, placementHosts, uploadID, transcoded)
+		err := ss.requestPeerPull(ctx, peer, fileName, placementHosts, uploadID, transcoded, size)
 		if err == nil {
 			return nil
 		}
@@ -382,12 +383,13 @@ func isPullFallbackWorthy(err error) bool {
 	return errors.Is(err, errPeerPullUnsupported) || errors.Is(err, errPeerPullFailed)
 }
 
-func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string, placementHosts []string, uploadID string, transcoded bool) error {
+func (ss *MediorumServer) requestPeerPull(ctx context.Context, peer, cid string, placementHosts []string, uploadID string, transcoded bool, size int64) error {
 	payload, err := json.Marshal(internalBlobPullRequest{
 		CID:            cid,
 		PlacementHosts: placementHosts,
 		UploadID:       uploadID,
 		Transcoded:     transcoded,
+		Size:           size,
 		Async:          true,
 	})
 	if err != nil {
@@ -590,90 +592,6 @@ func (ss *MediorumServer) openBlobFromHost(ctx context.Context, host, cid string
 		return nil, err
 	}
 	return r, nil
-}
-
-// pullStagingMinFreeBytes is the headroom the staging directory must have
-// before this node accepts a pull.
-//
-// Flat, not multiplied by the worker count. The tempting reasoning is that
-// every worker can be staging a whole blob at once, so admission should demand
-// room for all of them -- but statfs reports live free space, and a transfer's
-// bytes land as they are written. A pull admitted while others are in flight
-// already sees a disk that has shrunk by whatever they have staged so far, so
-// concurrency throttles itself: the further along the in-flight transfers are,
-// the sooner the next admission is refused. Reserving for the worst case on
-// top of that asks a small transfer to prove there is room for five others it
-// knows nothing about, which is an overprovisioning requirement with no visible
-// cause -- an operator sees a refusal naming a threshold, not the concurrency
-// setting that produced it.
-//
-// What the live reading misses is the unwritten remainder of transfers that
-// just started. This margin absorbs that, along with the other users of the
-// directory: by default it is also the OS temp dir, shared with tusd uploads,
-// transcode temps and audio analysis temps.
-//
-// 10GiB matches the blob-store threshold in dsnHasSpace. Running many workers
-// against a small staging disk is a real way to fill it, but the answer is
-// sizing the disk for the concurrency -- see MediorumConfig.AsyncPullWorkers --
-// not making every transfer pay for it up front. The failure it guards is also
-// transient: staging runs out, io.Copy fails, the temp file is cleaned up and
-// the disk recovers.
-//
-// A var only so tests can force the refusal branch; nothing reassigns it at
-// runtime.
-var pullStagingMinFreeBytes uint64 = 10 << 30
-
-// pullStagingDir is where a pull buffers a blob before it is validated and
-// committed to the bucket.
-//
-// Defaults to the OS temp dir, which on a container deployment is the image's
-// root filesystem rather than the blob volume -- see ensureNoTmpDir, which
-// exists because those are routinely different mount points. Operators whose
-// root filesystem is small can point this at the volume that actually has the
-// room; on a file:// node, pointing it at the blob store means the existing
-// diskHasSpaceForCID check covers staging too.
-func (ss *MediorumServer) pullStagingDir() string {
-	if ss.Config.PullStagingDir != "" {
-		return ss.Config.PullStagingDir
-	}
-	return os.TempDir()
-}
-
-// stagingHasSpace reports whether the staging directory can take another blob.
-//
-// This is a different filesystem from the one diskHasSpaceForCID measures, and
-// it is the one a pull fills first: pullFileFromHostValidated writes the entire
-// blob here before ValidateCID runs and before a single byte reaches the
-// bucket. Admitting a pull on blob-store headroom alone says nothing about
-// whether there is anywhere to stage it.
-func (ss *MediorumServer) stagingHasSpace() bool {
-	if ss.Config.Env != "prod" {
-		return true
-	}
-
-	dir := ss.pullStagingDir()
-	_, free, err := getDiskStatus(dir)
-	if err != nil {
-		// Can't measure it, so don't refuse on a guess -- the same posture
-		// dsnHasSpace takes when statfs fails.
-		if ss.diskWarnThrottle.allow("staging-statfs-failed:"+dir, diskWarnInterval) {
-			ss.logger.Warn("failed to check pull staging disk space; accepting pulls unchecked",
-				zap.String("stagingDir", dir),
-				zap.Error(err))
-		}
-		return true
-	}
-
-	if free <= pullStagingMinFreeBytes {
-		if ss.diskWarnThrottle.allow("staging-below-threshold:"+dir, diskWarnInterval) {
-			ss.logger.Warn("pull staging disk space below threshold; refusing pulls",
-				zap.String("stagingDir", dir),
-				zap.Uint64("freeGB", free/uint64(1e9)),
-				zap.Uint64("thresholdGB", pullStagingMinFreeBytes/uint64(1e9)))
-		}
-		return false
-	}
-	return true
 }
 
 // diskWarnInterval caps how often each dsnHasSpace warn is emitted per DSN.

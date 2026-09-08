@@ -109,6 +109,7 @@ func TestRequestPeerPullStoresValidatedBlob(t *testing.T) {
 		[]string{target.Config.Self.Host},
 		"",
 		true,
+		0,
 	)
 	// A first acceptance, not a completion: the bytes have not moved yet.
 	require.ErrorIs(t, err, errPeerPullAccepted)
@@ -147,6 +148,7 @@ func TestRequestPeerPullRejectsCIDMismatch(t *testing.T) {
 		[]string{target.Config.Self.Host},
 		"",
 		true,
+		0,
 	)
 	require.ErrorIs(t, err, errPeerPullAccepted)
 
@@ -176,6 +178,7 @@ func TestReplicateStoredFileToHostUsesPullWithoutReadingSourceBucket(t *testing.
 		nil,
 		"",
 		true,
+		0,
 	))
 }
 
@@ -227,6 +230,7 @@ func TestReplicateStoredFileToHostFallsBackForOlderPeer(t *testing.T) {
 		nil,
 		"",
 		true,
+		0,
 	))
 	require.Equal(t, 2, requests)
 }
@@ -254,6 +258,7 @@ func TestReplicateStoredFileToHostDoesNotFallbackOnValidationFailure(t *testing.
 		nil,
 		"",
 		true,
+		0,
 	)
 	require.Error(t, err)
 	require.Equal(t, 1, requests)

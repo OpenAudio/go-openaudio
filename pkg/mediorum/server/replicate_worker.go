@@ -166,9 +166,15 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 	// Get the file from our bucket — hot first, archive fallback so we
 	// source from wherever the blob actually lives on this node.
 	shardedCid := cidutil.ShardCID(cid)
-	_, srcBucket, err := ss.blobAttrs(ctx, shardedCid)
+	srcAttrs, srcBucket, err := ss.blobAttrs(ctx, shardedCid)
 	if err != nil {
 		return fmt.Errorf("failed to get file attributes: %w", err)
+	}
+	// Already read to pick the source bucket; the size rides along to the peer
+	// so it can check its staging disk against the real number.
+	var srcSize int64
+	if srcAttrs != nil {
+		srcSize = srcAttrs.Size
 	}
 
 	// Determine placement hosts
@@ -218,7 +224,7 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 		go func(targetHost string) {
 			defer wg.Done()
 
-			err := ss.replicateStoredFileToHost(ctx, targetHost, cid, srcBucket, shardedCid, upload.PlacementHosts, upload.ID, isTranscoded)
+			err := ss.replicateStoredFileToHost(ctx, targetHost, cid, srcBucket, shardedCid, upload.PlacementHosts, upload.ID, isTranscoded, srcSize)
 			resultsChan <- replicationResult{host: targetHost, err: err}
 		}(host)
 	}

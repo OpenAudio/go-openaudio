@@ -67,6 +67,7 @@ func TestPeerPullRequestCarriesUploadID(t *testing.T) {
 		nil,
 		"upload-abc",
 		true,
+		0,
 	))
 
 	var got internalBlobPullRequest

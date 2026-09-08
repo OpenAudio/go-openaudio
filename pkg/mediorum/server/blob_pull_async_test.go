@@ -197,7 +197,7 @@ func TestRequestPeerPullStatusHandling(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			err := ss.requestPeerPull(context.Background(), srv.URL, "cid", nil, "", false)
+			err := ss.requestPeerPull(context.Background(), srv.URL, "cid", nil, "", false, 0)
 
 			if tc.status == http.StatusOK {
 				require.NoError(t, err)
@@ -225,7 +225,7 @@ func TestQueueFullDoesNotTriggerMultipartFallback(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := ss.requestPeerPull(context.Background(), srv.URL, "cid", nil, "", false)
+	err := ss.requestPeerPull(context.Background(), srv.URL, "cid", nil, "", false, 0)
 	require.Error(t, err)
 	require.False(t, isPullFallbackWorthy(err),
 		"a busy peer would be sent the bytes over multipart")
@@ -306,7 +306,7 @@ func TestRequestPeerPullReadsTheAcceptedStatus(t *testing.T) {
 			defer peer.Close()
 
 			ss := blobFetchTestServer(t)
-			err := ss.requestPeerPull(context.Background(), peer.URL, "cid-1", nil, "", false)
+			err := ss.requestPeerPull(context.Background(), peer.URL, "cid-1", nil, "", false, 0)
 			require.ErrorIs(t, err, tc.want)
 
 			// Neither flavour may reach the multipart push: the peer is already
@@ -412,7 +412,7 @@ func TestRequestPeerPullTellsBusyFromOutOfRoom(t *testing.T) {
 			defer peer.Close()
 
 			ss := blobFetchTestServer(t)
-			err := ss.requestPeerPull(context.Background(), peer.URL, "cid-1", nil, "", false)
+			err := ss.requestPeerPull(context.Background(), peer.URL, "cid-1", nil, "", false, 0)
 			require.ErrorIs(t, err, tc.wantErr)
 
 			// Neither may be answered by pushing the bytes: one peer has no

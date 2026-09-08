@@ -702,6 +702,18 @@ type internalBlobPullRequest struct {
 	// analysis targets -- decoding them costs an ffmpeg subprocess each to
 	// produce a waveform for a cid nothing will ever ask about.
 	Transcoded bool `json:"transcoded,omitempty"`
+	// Size is the blob's length, so the receiver can check its staging disk
+	// against the actual bytes rather than a threshold -- the same size-aware
+	// check the upload path makes with a declared Upload-Length. The sender
+	// already read the blob's attributes to pick a source bucket, so this costs
+	// it nothing and saves the receiver a round trip asking.
+	//
+	// An assertion, not proof, like UploadID and Transcoded above. A peer that
+	// under-declared could get a transfer admitted that should not have been --
+	// but it is the same peer that would otherwise simply send the blob, so
+	// there is nothing here it could not already do. Absent (zero) from senders
+	// that predate the field, which falls back to the reserve alone.
+	Size int64 `json:"size,omitempty"`
 	// Async asks this node to accept the transfer and run it in the background,
 	// answering 202 rather than holding the sender open for its duration.
 	//
@@ -746,8 +758,17 @@ func (ss *MediorumServer) serveInternalBlobPull(c echo.Context) error {
 	// bucket. Checking only blob-store headroom would admit transfers there is
 	// nowhere to stage, and the first thing to fail would be everything else
 	// sharing that directory rather than this transfer.
-	if !ss.stagingHasSpace() {
-		return c.JSON(http.StatusInsufficientStorage, map[string]string{"error": "pull staging disk is too full to accept new blobs"})
+	//
+	// Same helper the upload paths use, and for the same reason: when the size
+	// is known the question is exact -- does this blob fit -- rather than a
+	// threshold standing in for one. A sender that predates Size sends zero,
+	// which still catches a disk that is already full.
+	var declared uint64
+	if request.Size > 0 {
+		declared = uint64(request.Size)
+	}
+	if !ss.localDirHasSpaceFor(ss.pullStagingDir(), declared) {
+		return c.JSON(http.StatusInsufficientStorage, map[string]string{"error": "not enough local disk to stage this blob"})
 	}
 
 	if request.Async {

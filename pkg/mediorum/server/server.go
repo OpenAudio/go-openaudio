@@ -97,7 +97,7 @@ type MediorumConfig struct {
 	// it is validated, so raising this raises the peak that directory has to
 	// hold. That is a sizing consideration for the operator turning it up, not
 	// something admission charges every transfer for in advance -- see
-	// pullStagingMinFreeBytes.
+	// localDiskReserveBytes.
 	AsyncPullWorkers int `default:"6"`
 	// AsyncPullTimeout bounds one queued transfer, and with it how long a
 	// source must keep serving a blob after answering 202 -- raising it loosens

@@ -83,42 +83,6 @@ func TestPullStagesIntoTheConfiguredDirectory(t *testing.T) {
 	require.Empty(t, strays, "pull staged in the OS temp dir despite PullStagingDir being set")
 }
 
-func TestStagingHasSpace(t *testing.T) {
-	t.Run("non-prod is never gated", func(t *testing.T) {
-		ss := blobFetchTestServer(t)
-		ss.Config.Env = "dev"
-		ss.Config.PullStagingDir = "/definitely/not/a/real/path"
-		require.True(t, ss.stagingHasSpace())
-	})
-
-	t.Run("an unmeasurable directory is allowed, not refused", func(t *testing.T) {
-		ss := blobFetchTestServer(t)
-		ss.Config.Env = "prod"
-		ss.Config.PullStagingDir = "/definitely/not/a/real/path"
-		require.True(t, ss.stagingHasSpace(), "a failed statfs must not stop replication outright")
-	})
-
-	t.Run("a real directory with room is allowed", func(t *testing.T) {
-		ss := blobFetchTestServer(t)
-		ss.Config.Env = "prod"
-		ss.Config.PullStagingDir = t.TempDir()
-		require.True(t, ss.stagingHasSpace())
-	})
-
-	t.Run("below threshold is refused", func(t *testing.T) {
-		ss := blobFetchTestServer(t)
-		ss.Config.Env = "prod"
-		ss.Config.PullStagingDir = t.TempDir()
-
-		original := pullStagingMinFreeBytes
-		pullStagingMinFreeBytes = math.MaxUint64
-		t.Cleanup(func() { pullStagingMinFreeBytes = original })
-
-		require.False(t, ss.stagingHasSpace(),
-			"no filesystem has MaxUint64 bytes free, so this must refuse")
-	})
-}
-
 // The point of the check is that the sender hears about it. A pull admitted on
 // blob-store headroom alone would return 202 and then fail on a filesystem the
 // sender never had visibility into.
@@ -132,13 +96,13 @@ func TestServeInternalBlobPullRefusesWhenStagingIsFull(t *testing.T) {
 	ss.Config.Env = "prod"
 	ss.Config.BlobStoreDSN = "s3://not-a-file-dsn"
 	ss.Config.ArchiveBlobStoreDSN = "s3://not-a-file-dsn"
-	originalThreshold := pullStagingMinFreeBytes
-	pullStagingMinFreeBytes = math.MaxUint64
+	originalReserve := localDiskReserveBytes
+	localDiskReserveBytes = math.MaxUint64 - 1
 	t.Cleanup(func() {
 		ss.Config.Env = originalEnv
 		ss.Config.BlobStoreDSN = originalDSN
 		ss.Config.ArchiveBlobStoreDSN = originalArchiveDSN
-		pullStagingMinFreeBytes = originalThreshold
+		localDiskReserveBytes = originalReserve
 	})
 
 	rec := postInternalBlobPull(t, ss, testNetwork[1].Config.Self.Host, internalBlobPullRequest{
@@ -148,27 +112,8 @@ func TestServeInternalBlobPullRefusesWhenStagingIsFull(t *testing.T) {
 
 	require.Equal(t, http.StatusInsufficientStorage, rec.Code,
 		"no room must not look like busy; they earn opposite retries")
-	require.Contains(t, rec.Body.String(), "staging")
+	require.Contains(t, rec.Body.String(), "stage")
 	require.Len(t, ss.asyncPullQueue, 0, "queued a transfer it has nowhere to stage")
-}
-
-// Admission must not charge one transfer for the concurrency setting. statfs is
-// live, so in-flight transfers already show up as a smaller disk; making the
-// threshold scale with the worker count would additionally reserve for
-// transfers that have not started, and turning concurrency up would start
-// refusing pulls for a reason the refusal never names.
-func TestPullStagingThresholdDoesNotScaleWithWorkers(t *testing.T) {
-	ss := blobFetchTestServer(t)
-	ss.Config.Env = "prod"
-	ss.Config.PullStagingDir = t.TempDir()
-
-	ss.Config.AsyncPullWorkers = 1
-	atOne := ss.stagingHasSpace()
-	ss.Config.AsyncPullWorkers = maxAsyncPullWorkers
-	atMax := ss.stagingHasSpace()
-
-	require.Equal(t, atOne, atMax,
-		"raising worker count changed whether a pull is admitted; the threshold is coupled to it again")
 }
 
 func TestAsyncPullTunablesFallBackToDefaults(t *testing.T) {
@@ -190,4 +135,44 @@ func TestAsyncPullTunablesFallBackToDefaults(t *testing.T) {
 
 	ss.Config.AsyncPullWorkers = -1
 	require.Equal(t, defaultAsyncPullWorkers, ss.asyncPullWorkers())
+}
+
+// The point of unifying on localDirHasSpaceFor is that the pull path stops
+// guessing: the sender already read the blob's attributes to choose a source
+// bucket, so the receiver can ask whether this blob fits rather than whether
+// some threshold is clear.
+func TestServeInternalBlobPullChecksTheDeclaredSize(t *testing.T) {
+	ss := testNetwork[0]
+
+	originalEnv, originalDSN, originalArchiveDSN := ss.Config.Env, ss.Config.BlobStoreDSN, ss.Config.ArchiveBlobStoreDSN
+	ss.Config.Env = "prod"
+	ss.Config.BlobStoreDSN = "s3://not-a-file-dsn"
+	ss.Config.ArchiveBlobStoreDSN = "s3://not-a-file-dsn"
+	ss.Config.PullStagingDir = t.TempDir()
+	t.Cleanup(func() {
+		ss.Config.Env = originalEnv
+		ss.Config.BlobStoreDSN = originalDSN
+		ss.Config.ArchiveBlobStoreDSN = originalArchiveDSN
+		ss.Config.PullStagingDir = ""
+	})
+
+	// A blob larger than any disk is refused on its size alone -- the reserve
+	// is untouched, so nothing but the declared number can be doing the work.
+	rec := postInternalBlobPull(t, ss, testNetwork[1].Config.Self.Host, internalBlobPullRequest{
+		CID:   "QmDeclaredTooLargeCid",
+		Size:  math.MaxInt64,
+		Async: true,
+	})
+	require.Equal(t, http.StatusInsufficientStorage, rec.Code,
+		"a blob bigger than the disk was admitted; the declared size is being ignored")
+
+	// The same request without a size -- an older sender -- gets through,
+	// which is what makes the check above attributable to Size and not to the
+	// disk being full.
+	rec = postInternalBlobPull(t, ss, testNetwork[1].Config.Self.Host, internalBlobPullRequest{
+		CID:   "QmDeclaredNoSizeCid",
+		Async: true,
+	})
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	ss.releaseAsyncPull("QmDeclaredNoSizeCid")
 }
