@@ -38,7 +38,7 @@ var (
 func (ss *MediorumServer) getMetrics(c echo.Context) error {
 	m := Metrics{}
 	m.Host = ss.Config.Self.Host
-	m.Uploads = ss.uploadsCount
+	m.Uploads = ss.status().uploadsCount
 	m.RedirectCacheSize = ss.redirectCache.Len()
 
 	return c.JSON(200, m)

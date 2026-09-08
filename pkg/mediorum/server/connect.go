@@ -261,7 +261,7 @@ func (s *StorageService) GetIPData(ctx context.Context, req *connect.Request[v1.
 func (s *StorageService) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
 	storageExpectation := int64(0)
 	if s.mediorum != nil {
-		storageExpectation = int64(s.mediorum.storageExpectation)
+		storageExpectation = int64(s.mediorum.status().storageExpectation)
 	}
 	return connect.NewResponse(&v1.GetStatusResponse{
 		StorageExpectation: storageExpectation,
@@ -288,25 +288,26 @@ func (s *StorageService) GetStorageDiagnostics(ctx context.Context, _ *connect.R
 	blobStorePrefix, _, _ := strings.Cut(ss.Config.BlobStoreDSN, "://")
 	archiveBlobStorePrefix, _, _ := strings.Cut(ss.Config.ArchiveBlobStoreDSN, "://")
 	archiveConfigured := ss.archiveBucket != nil
+	st := ss.status()
 
 	resp := &v1.GetStorageDiagnosticsResponse{
 		SelfHost:                ss.Config.Self.Host,
-		DiskUsedBytes:           int64(ss.mediorumPathUsed),
-		DiskTotalBytes:          int64(ss.mediorumPathSize),
-		StorageExpectationBytes: int64(ss.storageExpectation),
+		DiskUsedBytes:           int64(st.mediorumPathUsed),
+		DiskTotalBytes:          int64(st.mediorumPathSize),
+		StorageExpectationBytes: int64(st.storageExpectation),
 		DiskHasSpace:            ss.diskHasSpace(),
-		PrimaryDiskHasSpace:     ss.dsnHasSpace(ss.Config.BlobStoreDSN, ss.mediorumPathFree),
+		PrimaryDiskHasSpace:     ss.dsnHasSpace(ss.Config.BlobStoreDSN, st.mediorumPathFree),
 		ReplicationFactor:       int32(ss.Config.ReplicationFactor),
-		UploadsCount:            ss.uploadsCount,
+		UploadsCount:            st.uploadsCount,
 		BlobStorePrefix:         blobStorePrefix,
 		ArchiveConfigured:       archiveConfigured,
-		ArchiveDiskUsedBytes:    int64(ss.archivePathUsed),
-		ArchiveDiskTotalBytes:   int64(ss.archivePathSize),
+		ArchiveDiskUsedBytes:    int64(st.archivePathUsed),
+		ArchiveDiskTotalBytes:   int64(st.archivePathSize),
 		ArchiveBlobStorePrefix:  archiveBlobStorePrefix,
-		ArchiveDiskHasSpace:     archiveConfigured && ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, ss.archivePathFree),
+		ArchiveDiskHasSpace:     archiveConfigured && ss.dsnHasSpace(ss.Config.ArchiveBlobStoreDSN, st.archivePathFree),
 		StoreAll:                ss.Config.StoreAll,
-		LastSuccessfulRepair:    repairRunToProto(ss.lastSuccessfulRepair),
-		LastSuccessfulCleanup:   repairRunToProto(ss.lastSuccessfulCleanup),
+		LastSuccessfulRepair:    repairRunToProto(st.lastSuccessfulRepair),
+		LastSuccessfulCleanup:   repairRunToProto(st.lastSuccessfulCleanup),
 		Waveforms:               ss.waveformStatusProto(ctx),
 	}
 

@@ -42,15 +42,15 @@ func (ss *MediorumServer) updateTranscodeStats(_ context.Context) *TranscodeStat
 	}
 
 	// set pointer
-	ss.statsMutex.Lock()
+	ss.statusMutex.Lock()
 	ss.transcodeStats = stats
-	ss.statsMutex.Unlock()
+	ss.statusMutex.Unlock()
 
 	return stats
 }
 
 func (ss *MediorumServer) getTranscodeStats() *TranscodeStats {
-	ss.statsMutex.RLock()
-	defer ss.statsMutex.RUnlock()
+	ss.statusMutex.RLock()
+	defer ss.statusMutex.RUnlock()
 	return ss.transcodeStats
 }

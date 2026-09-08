@@ -92,8 +92,7 @@ func (ss *MediorumServer) serveBlobInfo(c echo.Context) error {
 	// DB health check on every request including cache hits.
 	// A node with a broken DB cannot check delist status, so peers
 	// must not redirect users here regardless of blob presence.
-	dbHealthy := ss.databaseSize > 0 && ss.dbSizeErr == "" && ss.uploadsCountErr == ""
-	if !dbHealthy {
+	if !ss.dbHealthy() {
 		return c.String(500, "database connection issue")
 	}
 

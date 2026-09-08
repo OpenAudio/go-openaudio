@@ -125,6 +125,30 @@ func (ss *MediorumServer) startHealthPoller(ctx context.Context) error {
 	}
 }
 
+// peerHealthSnapshot deep-copies the peer reachability state.
+//
+// The map values are pointers that the health poller keeps mutating in place,
+// so handing the live map to a caller is a data race even though the map
+// itself is guarded: getHealth's result outlives the lock and every health
+// endpoint marshals it after the fact. The copy is proportional to what those
+// endpoints already serialize.
+func (ss *MediorumServer) peerHealthSnapshot() (peerHealths map[string]*PeerHealth, unreachablePeers []string, failsPeerReachability bool) {
+	ss.peerHealthsMutex.RLock()
+	defer ss.peerHealthsMutex.RUnlock()
+
+	peerHealths = make(map[string]*PeerHealth, len(ss.peerHealths))
+	for host, peerHealth := range ss.peerHealths {
+		if peerHealth == nil {
+			continue
+		}
+		copied := *peerHealth
+		copied.ReachablePeers = maps.Clone(peerHealth.ReachablePeers)
+		peerHealths[host] = &copied
+	}
+
+	return peerHealths, slices.Clone(ss.unreachablePeers), ss.failsPeerReachability
+}
+
 func (ss *MediorumServer) getPeerHealth(peer string) *PeerHealth {
 	ss.peerHealthsMutex.Lock()
 	defer ss.peerHealthsMutex.Unlock()

@@ -211,10 +211,12 @@ func (ss *MediorumServer) startRepairer(ctx context.Context) error {
 			} else {
 				tracker.FinishedAt = time.Now()
 				logger.Info("repair OK", zap.Duration("took", tracker.Duration), zap.Int("known_present_size", ss.knownPresent.Len()))
+				ss.statusMutex.Lock()
 				ss.lastSuccessfulRepair = tracker
 				if tracker.CleanupMode {
 					ss.lastSuccessfulCleanup = tracker
 				}
+				ss.statusMutex.Unlock()
 			}
 			saveTracker()
 		case <-ctx.Done():
