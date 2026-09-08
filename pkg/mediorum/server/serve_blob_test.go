@@ -274,7 +274,7 @@ func TestRequireRegisteredSignatureDeniesWhenTrackLookupFails(t *testing.T) {
 
 	rec := serveAccessAuthorityRequest(t, ss)
 
-	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	body := rec.Body.String()
 	assert.Contains(t, body, "unable to verify track access")
 	assert.Contains(t, body, "track access lookup failed")
@@ -294,7 +294,7 @@ func TestRequireRegisteredSignatureDeniesWhenManagementKeyCountFails(t *testing.
 
 	rec := serveAccessAuthorityRequest(t, ss)
 
-	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	assert.Contains(t, rec.Body.String(), "track access lookup failed")
 }
 
@@ -313,7 +313,7 @@ func TestRequireRegisteredSignatureDeniesWhenAccessAuthorityLookupFails(t *testi
 
 	rec := serveAccessAuthorityRequest(t, ss)
 
-	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	assert.Contains(t, rec.Body.String(), "access authority lookup failed")
 }
 
@@ -326,7 +326,7 @@ func TestRequireRegisteredSignatureDoesNotCacheFailedLookup(t *testing.T) {
 
 	restore := failEveryQuery(t, ss)
 	rec := serveAccessAuthorityRequest(t, ss)
-	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	restore()
 
 	_, cached := ss.trackAccessInfoCache.Get(testSigCid)
@@ -381,7 +381,7 @@ func TestServeTrackDeniesWhenCidLookupFails(t *testing.T) {
 
 	rec := serveTrackRequest(t, ss)
 
-	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	body := rec.Body.String()
 	assert.Contains(t, body, "unable to verify track access")
 	assert.Contains(t, body, "track lookup failed")
@@ -397,7 +397,7 @@ func TestServeTrackDeniesWhenAccessAuthorityLookupFails(t *testing.T) {
 
 	rec := serveTrackRequest(t, ss)
 
-	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	body := rec.Body.String()
 	assert.Contains(t, body, "access authority lookup failed")
 	assert.NotContains(t, body, "signer not authorized to access")
@@ -441,7 +441,7 @@ func TestStreamTrackGRPCDeniesWhenCidLookupFails(t *testing.T) {
 	err := streamTrackGRPCRequest(t, ss)
 
 	require.Error(t, err)
-	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err), "a failed lookup must not read as CodeNotFound")
+	assert.Equal(t, connect.CodeUnavailable, connect.CodeOf(err), "a failed lookup must not read as CodeNotFound")
 	assert.Contains(t, err.Error(), "unable to verify track access")
 }
 
@@ -454,6 +454,6 @@ func TestStreamTrackGRPCDeniesWhenAccessAuthorityLookupFails(t *testing.T) {
 	err := streamTrackGRPCRequest(t, ss)
 
 	require.Error(t, err)
-	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err), "a failed lookup must not read as CodePermissionDenied")
+	assert.Equal(t, connect.CodeUnavailable, connect.CodeOf(err), "a failed lookup must not read as CodePermissionDenied")
 	assert.Contains(t, err.Error(), "unable to verify track access")
 }

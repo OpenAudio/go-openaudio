@@ -529,8 +529,16 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 					// Fail closed. Falling through with a zero-valued info would
 					// look exactly like an ungated track and let any registered
 					// validator signer stream gated content.
+					//
+					// 503, not 500: the request is denied because this node
+					// cannot reach its database, which is the same condition
+					// requireHealthy already answers 503 for one middleware
+					// earlier. It is retryable, and it is what tells a load
+					// balancer and the client to try a different node rather
+					// than treat the track as broken. Every deny below is 503
+					// for the same reason.
 					s.logger.Warn("track access lookup failed; denying request", zap.String("cid", cid), zap.Error(err))
-					return c.JSON(500, map[string]string{
+					return c.JSON(503, map[string]string{
 						"error":  "unable to verify track access",
 						"detail": "track access lookup failed",
 					})
@@ -547,7 +555,7 @@ func (s *MediorumServer) requireRegisteredSignature(next echo.HandlerFunc) echo.
 				if res := s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackID, normalizedSignerWallet).Scan(&count); res.Error != nil {
 					s.logger.Warn("access authority lookup failed; denying request",
 						zap.String("cid", cid), zap.String("track_id", trackID), zap.Error(res.Error))
-					return c.JSON(500, map[string]string{
+					return c.JSON(503, map[string]string{
 						"error":  "unable to verify track access",
 						"detail": "access authority lookup failed",
 					})
@@ -791,7 +799,7 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 	var cid string
 	if res := ss.crud.DB.Raw("SELECT cid FROM sound_recordings WHERE track_id = ?", trackId).Scan(&cid); res.Error != nil {
 		ss.logger.Warn("track cid lookup failed; denying request", zap.String("track_id", trackId), zap.Error(res.Error))
-		return c.JSON(500, map[string]string{
+		return c.JSON(503, map[string]string{
 			"error":  "unable to verify track access",
 			"detail": "track lookup failed",
 		})
@@ -804,7 +812,7 @@ func (ss *MediorumServer) serveTrack(c echo.Context) error {
 	normalizedSignerWallet := strings.ToLower(sig.SignerWallet)
 	if res := ss.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackId, normalizedSignerWallet).Scan(&count); res.Error != nil {
 		ss.logger.Warn("access authority lookup failed; denying request", zap.String("track_id", trackId), zap.Error(res.Error))
-		return c.JSON(500, map[string]string{
+		return c.JSON(503, map[string]string{
 			"error":  "unable to verify track access",
 			"detail": "access authority lookup failed",
 		})

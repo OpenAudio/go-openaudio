@@ -41,10 +41,14 @@ func (s *MediorumServer) streamTrackGRPC(ctx context.Context, req *v1storage.Str
 	// A failed lookup must deny rather than fall through: an empty cid is
 	// indistinguishable from "no such track", and a zero count from "not an
 	// access authority", so neither can be read off a query that errored.
+	//
+	// CodeUnavailable rather than CodeInternal: the denial means this node
+	// cannot reach its database, so the call is retryable against another node.
+	// CodeInternal reads as "this request will never work".
 	var cid string
 	if res := s.crud.DB.Raw("SELECT cid FROM sound_recordings WHERE track_id = ?", trackId).Scan(&cid); res.Error != nil {
 		s.logger.Warn("track cid lookup failed; denying request", zap.String("track_id", trackId), zap.Error(res.Error))
-		return connect.NewError(connect.CodeInternal, errors.New("unable to verify track access"))
+		return connect.NewError(connect.CodeUnavailable, errors.New("unable to verify track access"))
 	}
 	if cid == "" {
 		return connect.NewError(connect.CodeNotFound, errors.New("track not found"))
@@ -54,7 +58,7 @@ func (s *MediorumServer) streamTrackGRPC(ctx context.Context, req *v1storage.Str
 	normalizedEthAddress := strings.ToLower(ethAddress)
 	if res := s.crud.DB.Raw("SELECT COUNT(*) FROM management_keys WHERE track_id = ? AND address = ?", trackId, normalizedEthAddress).Scan(&count); res.Error != nil {
 		s.logger.Warn("access authority lookup failed; denying request", zap.String("track_id", trackId), zap.Error(res.Error))
-		return connect.NewError(connect.CodeInternal, errors.New("unable to verify track access"))
+		return connect.NewError(connect.CodeUnavailable, errors.New("unable to verify track access"))
 	}
 	if count == 0 {
 		s.logger.Debug("sig no match", zap.String("signed by", ethAddress))
