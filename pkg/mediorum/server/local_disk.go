@@ -25,18 +25,29 @@ import (
 // nothing consults it. These checks are what consult it.
 
 // localDiskReserveBytes is what must remain free after the upload being
-// admitted. It stands in for everything else sharing the filesystem -- other
-// uploads mid-flight, transcode and analysis temps, and the operating system
-// itself.
+// admitted.
 //
-// Deliberately modest. Nothing checks local disk today, so any reserve can only
-// reject uploads that would previously have been accepted, and a large one
-// would refuse work on a small node that was coping. This bites only when the
-// disk is genuinely nearly full.
+// Its one job is to stop us handing out the last of the disk. With an exact
+// size check and no reserve, "it fits" and "it fills the volume to zero" are
+// the same admission, and zero is qualitatively worse than a rejected upload:
+// postgres on the same volume goes read-only, logging stops, and metadata
+// operations start failing across everything else sharing it.
+//
+// It is explicitly not concurrency protection, which is the reading a bigger
+// number would invite. Transfers already writing show up in statfs on their
+// own; two admitted in the same instant do not, and no reserve fixes that --
+// on 8GB free, two 5GB uploads arriving together both pass whatever margin is
+// set, because neither has written yet. Only reservation accounting would, and
+// for tus that means expiring the reservations of abandoned uploads.
+//
+// So it is sized for "leave the machine working", which is roughly the job
+// ext4's own 5% root reserve does. Worth noting getDiskStatus reads Bfree
+// rather than Bavail, so that filesystem reserve is currently counted as free
+// space here; reading Bavail would let this shrink further or go away.
 //
 // A var only so tests can force the refusal branch; nothing reassigns it at
 // runtime.
-var localDiskReserveBytes uint64 = 2 << 30
+var localDiskReserveBytes uint64 = 1 << 30
 
 // tusdUploadDir is where tusd stores in-progress uploads.
 func tusdUploadDir() string {
