@@ -128,7 +128,26 @@ func (ss *MediorumServer) ensureNotDelisted(next echo.HandlerFunc) echo.HandlerF
 		ctx := c.Request().Context()
 		key := c.Param("cid")
 
-		if ss.isCidBlacklisted(ctx, key) {
+		blacklisted, err := ss.isCidBlacklisted(ctx, key)
+		if err != nil {
+			// Fail closed. A failed lookup reads exactly like "not delisted",
+			// so serving anyway means every delisted cid on this node becomes
+			// available for as long as the database is unreachable.
+			//
+			// A cancelled request context is the client hanging up mid-request,
+			// which is routine on ranged audio requests, so it is not logged as
+			// a node fault. The denial still stands; there is nobody left to
+			// read it either way.
+			if ctx.Err() == nil {
+				ss.logger.Error("delist status lookup failed; denying request", zap.String("cid", key), zap.Error(err))
+			}
+			// 503, not 500: the node cannot reach its database, the same
+			// condition requireHealthy answers 503 for one middleware earlier.
+			// It is retryable, and it tells the client to try another node
+			// rather than treat the cid as broken.
+			return c.String(503, "unable to verify delist status")
+		}
+		if blacklisted {
 			ss.logger.Debug("cid is blacklisted", zap.String("cid", key))
 			return c.String(403, "cid is blacklisted by this node")
 		}
