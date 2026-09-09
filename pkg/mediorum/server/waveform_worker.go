@@ -211,6 +211,17 @@ func (ss *MediorumServer) runWaveformSweeps(ctx context.Context) bool {
 // Ordered by key rather than by time. Legacy blobs carry no created_at to walk
 // backwards through, and key order is what qm_cids is already indexed on --
 // the same order repair walks it in.
+//
+// Only bare keys are offered. qm_cids holds every key shape the old system
+// wrote, and audio was always stored as the bare cid; anything with a path
+// suffix is artwork. The original is present but rejected from its content
+// type, which costs a metadata call per key to reach a terminal row. The
+// resized variants are worse: repair deletes them on sight and regenerates them
+// on demand, so they are present on no node, and a blob that is absent has no
+// attributes to reject it from. Each one came back not_local -- a status the
+// retry sweep re-attempts every day, forever -- and they outnumber the audio
+// three to one. Filtering by shape here is what keeps the walk, and the retry
+// sweep behind it, proportional to the audio rather than to the catalog.
 func (ss *MediorumServer) sweepWaveformLegacy(ctx context.Context) bool {
 	cur, err := ss.getWaveformCursor(ctx)
 	if err != nil {
@@ -231,6 +242,7 @@ func (ss *MediorumServer) sweepWaveformLegacy(ctx context.Context) bool {
 			select q.key
 			from qm_cids q
 			where q.key > $1
+			  and q.key not like '%/%'
 			  and not exists (
 			      select 1 from waveforms w
 			      where w.cid = q.key and w.version = $2
@@ -441,6 +453,9 @@ func (ss *MediorumServer) refreshWaveformRollup(ctx context.Context) {
 			-- like an upload -- there is no second blob for it to be partially
 			-- analyzed against. Its state is simply its row's, or never
 			-- analyzed when no row exists yet.
+			--
+			-- Bare keys only, mirroring the walk: a suffixed key is artwork,
+			-- which is never analyzable and so is not outstanding work.
 			select case
 			         when w.cid is null           then $15
 			         when w.version <> $1         then $12
@@ -454,6 +469,7 @@ func (ss *MediorumServer) refreshWaveformRollup(ctx context.Context) {
 			       end as state
 			from qm_cids q
 			left join waveforms w on w.cid = q.key
+			where q.key not like '%/%'
 		)
 		select state, count(*)::bigint from (
 			select case
