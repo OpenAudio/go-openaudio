@@ -52,7 +52,8 @@ counted twice in between. Step 12 is that handoff.
 
 Steps 1–13 are reversible, at costs from restarting a container to re-syncing a
 node. **Step 14 is the point of no return** — after it the old chain is missing
-writes. Step 15 retires the rollback anchors. Step 16 is cleanup.
+writes. Step 15 retires the rollback anchors. Step 16 is cleanup. Step 17 is the
+work the migration unblocks, and is only safe once step 15 is done.
 
 ## Contents
 
@@ -74,6 +75,7 @@ writes. Step 15 retires the rollback anchors. Step 16 is cleanup.
 | | [14. Stop relaying to the old chain](#14-stop-relaying-to-the-old-chain) | **irreversible** |
 | | [15. Roll the fleet to `:stable`](#15-roll-the-fleet-to-stable) | **irreversible** |
 | | [16. Retire the temporary RPC](#16-retire-the-temporary-rpc) | |
+| **D** | [17. Follow-ons](#17-follow-ons) | after 15 |
 
 **Appendix**
 
@@ -98,6 +100,7 @@ writes. Step 15 retires the rollback anchors. Step 16 is cleanup.
 | [api#1028](https://github.com/AudiusProject/api/pull/1028) | step 12 cannot be executed at all |
 | [api#1029](https://github.com/AudiusProject/api/pull/1029) | plays split across both chains for the whole migration |
 | [#551](https://github.com/OpenAudio/go-openaudio/pull/551) | every node that state syncs loses its mediorum tables |
+| [#572](https://github.com/OpenAudio/go-openaudio/pull/572) | the new chain runs with no upgrade schedule: no signer enforcement, no track-cid authorization, and mediorum never attests → [step 17](#17-follow-ons) |
 | [#553](https://github.com/OpenAudio/go-openaudio/pull/553) | **not merged** — it is the binary for steps 4–10; run the image CI builds from it |
 
 ---
@@ -264,6 +267,53 @@ stopped, and it will halt — by design → [Appendix H](#h-fleet-migration-arit
    `v.monophonic.digital`, now that they have moved. CometBFT refuses to state
    sync from fewer than two, so this must ship **before** the deregistration.
 2. Deregister `v.audius.rickyrombo.com`.
+
+## Phase D — follow-ons
+
+### 17. Follow-ons
+
+Two pieces of work were designed around this migration and are not part of the
+cutover itself. Neither is in the "merge these first" table by accident: one
+must land before the bootstrap, the other must not land until after step 15.
+
+**Track-cid authorization is on from block 1 — verify it.** Before this chain,
+a track's `track_cid` / `orig_file_cid` / `preview_cid` were unchecked client
+metadata: anyone could read a gated track's cid off the public API, name it on
+a decoy track they own, and stream it. [#477](https://github.com/OpenAudio/go-openaudio/pull/477) and [#476](https://github.com/OpenAudio/go-openaudio/pull/476)
+close that by making possession the entitlement — `core_auth_cids` records
+which user may assert a cid, populated by validator attestations at upload —
+but it could never be enforced on `audius-mainnet-alpha-beta`, whose tracks
+predate the projection. The genesis replay seeds a claim for every migrated
+track, which is what makes the new chain the activation point.
+
+[#572](https://github.com/OpenAudio/go-openaudio/pull/572) schedules both `AuthEnforcementHeight` and
+`ContentAuthEnforcementHeight` at height 1 for `audius-mainnet-beta` (content
+auth is checked inside the signer check, so it needs both) and makes mediorum
+attest exactly on chains that have the gate. It is keyed on the chain ID in the
+embedded genesis, so it is inert on `main` until #553's `prod.json` swaps in and
+needs no separate flag flip. Merge it before the step 3 build.
+
+Once step 12 has moved the indexer, confirm on the new chain:
+
+1. An audio upload through a migrated node reaches `done` and the node logs
+   `attested upload cids`; the track create that follows lands.
+2. A track create naming another user's `track_cid` is rejected at the
+   mempool (`manage entity rejected: ... cid`), and never reaches the ETL.
+3. A metadata-only edit on a migrated track still lands — enforcement checks
+   only the cids present in the transaction.
+
+If uploads fail at transcode completion with "content attestations are not
+accepted before content auth is active", mediorum is attesting on a chain whose
+schedule has no gate: the genesis and the schedule disagree.
+
+**Remove the legacy reward wire-compat layer — after step 15.**
+[#232](https://github.com/OpenAudio/go-openaudio/pull/232) deletes the pre-pool `LegacyRewardMessage` decode path,
+the sha256 legacy signing scheme, and the `launchpad_authority_rm` table, all
+of which exist only to replay `audius-mainnet-alpha-beta`'s historical reward
+bytes at block-sync time. `audius-mainnet-beta` was written from table state
+and carries only pool-shaped reward transactions, so on it the layer is dead
+code. It is not dead on the old chain: any node still block-syncing there needs
+it. Merge once every node has moved (step 15), and not before.
 
 ---
 # 3. Appendix
@@ -655,7 +705,7 @@ validator set. It just cannot be destroyed at write time.
 #### V is not free to choose — it is derived from the delegate key
 
 `ensurePrivValidator` (`config/setup.go:231`) derives the CometBFT key from
-`OPENAUDIO_DELEGATE_PRIVATE_KEY`:
+`OPENAUDIO_DELE572IVATE_KEY`:
 
 - file missing → generated from the derived key
 - present and matching → loaded
