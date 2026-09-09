@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +71,9 @@ func (s *StorageServiceClientWithTUS) UploadFilesTus(ctx context.Context, req *c
 	}
 	if req.Msg.PreviewStart != "" {
 		uploadMeta["previewStartSeconds"] = req.Msg.PreviewStart
+	}
+	if req.Msg.UserId > 0 {
+		uploadMeta["userId"] = strconv.FormatInt(req.Msg.UserId, 10)
 	}
 	if len(req.Msg.PlacementHosts) > 0 {
 		uploadMeta["placementHosts"] = strings.Join(req.Msg.PlacementHosts, ",")
@@ -141,4 +145,3 @@ func (s *StorageServiceClientWithTUS) UploadFilesTus(ctx context.Context, req *c
 		}
 	}
 }
-

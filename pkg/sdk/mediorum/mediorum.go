@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"time"
 
 	"connectrpc.com/connect"
@@ -85,9 +86,14 @@ type UploadOptions struct {
 	PreviewStartSeconds string
 	PlacementHosts      string
 	Signature           string
-	WaitForTranscode    bool
-	WaitForFileUpload   bool
-	OriginalCID         string // Set internally after CID computation
+	// UserID is the user the audio is uploaded for. The node attests the
+	// produced cids to this user, which is what lets them name the cids on a
+	// track. Required in practice on networks that enforce content
+	// authorization; ignored for images.
+	UserID            int64
+	WaitForTranscode  bool
+	WaitForFileUpload bool
+	OriginalCID       string // Set internally after CID computation
 }
 
 func (m *Mediorum) UploadFile(ctx context.Context, file io.Reader, filename string, opts *UploadOptions) ([]*Upload, error) {
@@ -117,6 +123,11 @@ func (m *Mediorum) UploadFile(ctx context.Context, file io.Reader, filename stri
 		if opts.PlacementHosts != "" {
 			if err := writer.WriteField("placement_hosts", opts.PlacementHosts); err != nil {
 				return nil, fmt.Errorf("failed to write placement_hosts field: %w", err)
+			}
+		}
+		if opts.UserID > 0 {
+			if err := writer.WriteField("userId", strconv.FormatInt(opts.UserID, 10)); err != nil {
+				return nil, fmt.Errorf("failed to write userId field: %w", err)
 			}
 		}
 	}

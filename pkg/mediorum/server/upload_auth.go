@@ -77,6 +77,28 @@ func (ss *MediorumServer) resolveUploadUserID(template JobTemplate, metadata map
 	return userID, nil
 }
 
+// resolveOptionalUploadUserID is resolveUploadUserID for the multipart and
+// gRPC upload paths, where the user id is optional even under enforcement.
+//
+// Those paths serve programmable distribution: a DDEX release names parties,
+// not users, and creates its tracks through Release transactions that content
+// auth never gates, so requiring a user id there would break deliveries for
+// nothing. A caller that does name a user — the Go SDK, or a client creating
+// tracks through ManageEntity — is attributed and attested exactly as on tus,
+// and a malformed id is still rejected so a bad assertion cannot pass as none.
+// What an unattributed audio upload gives up is the claim: its cids can never
+// be named on a ManageEntity track.
+func (ss *MediorumServer) resolveOptionalUploadUserID(template JobTemplate, raw string) (int64, error) {
+	if template != JobTemplateAudio || raw == "" {
+		return 0, nil
+	}
+	userID, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || userID <= 0 {
+		return 0, fmt.Errorf("upload carries an unusable user id %q", raw)
+	}
+	return userID, nil
+}
+
 // contentAttestationFor builds the unsigned attestation these cids warrant, or
 // nil when this upload can never earn one: content auth is off, there is
 // nothing to attest, or no user was asserted.

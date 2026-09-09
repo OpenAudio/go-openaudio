@@ -23,6 +23,11 @@ message UploadFilesRequest {
   string preview_start = 4;
   repeated string placement_hosts = 5;
   repeated File files = 6;
+  // The user the audio is uploaded for. The node attests the produced cids to
+  // this user on chain, which is what lets them name the cids on a track;
+  // audio uploaded without it can never be used on a ManageEntity track on a
+  // network that enforces content authorization. Ignored for images.
+  int64 user_id = 7;
 }
 
 message File {

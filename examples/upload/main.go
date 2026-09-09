@@ -58,6 +58,7 @@ func main() {
 
 	uploadOpts := &mediorum.UploadOptions{
 		Template:          "audio",
+		UserID:            1, // the user the track below is created for
 		Signature:         uploadSignature,
 		WaitForTranscode:  true,
 		WaitForFileUpload: true,
