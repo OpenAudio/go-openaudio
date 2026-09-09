@@ -24,6 +24,7 @@ import (
 	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
+	coreConfig "github.com/OpenAudio/go-openaudio/pkg/core/config"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/dbpool"
 	"github.com/OpenAudio/go-openaudio/pkg/env"
@@ -148,12 +149,15 @@ type MediorumConfig struct {
 	ProgrammableDistributionEnabled bool
 	BlobStorageStreaming            bool
 
-	// ContentAuthEnabled turns on upload-signature verification and on-chain
-	// cid attestation. Deliberately separate from
-	// ProgrammableDistributionEnabled: that flag governs the DDEX subsystem,
-	// and content authorization protects the ordinary track-upload path, so
-	// tying them together would make closing the cid-claim bypass conditional
-	// on enabling an unrelated feature.
+	// ContentAuthEnabled requires audio uploads to name the user they are for
+	// and attests their cids on chain. Follows the core upgrade schedule for
+	// the chain this node runs on (config.ContentAuthScheduled), not the
+	// environment: attestations are refused before the chain's gate, so
+	// attesting on a chain without one fails every upload. Deliberately
+	// separate from ProgrammableDistributionEnabled: that flag governs the
+	// DDEX subsystem, and content authorization protects the ordinary
+	// track-upload path, so tying them together would make closing the
+	// cid-claim bypass conditional on enabling an unrelated feature.
 	ContentAuthEnabled bool
 
 	// should have a basedir type of thing
@@ -309,7 +313,11 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		config.Env = v
 	}
 	config.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(config.Env)
-	config.ContentAuthEnabled = common.IsContentAuthEnabled(config.Env)
+	contentAuth, err := coreConfig.ContentAuthScheduled(config.Env)
+	if err != nil {
+		return nil, fmt.Errorf("resolving content auth for %q: %w", config.Env, err)
+	}
+	config.ContentAuthEnabled = contentAuth
 	if config.StoreRecentTTL <= 0 {
 		config.StoreRecentTTL = DefaultStoreRecentTTL
 	}

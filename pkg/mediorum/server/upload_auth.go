@@ -39,8 +39,8 @@ import (
 // authentication first.
 
 // contentAuthEnabled reports whether this node requires upload attribution and
-// attests cids. Deliberately independent of ProgrammableDistributionEnabled —
-// see IsContentAuthEnabled.
+// attests cids. Follows the core upgrade schedule for this node's chain — see
+// MediorumConfig.ContentAuthEnabled.
 func (ss *MediorumServer) contentAuthEnabled() bool {
 	return ss.Config.ContentAuthEnabled
 }
