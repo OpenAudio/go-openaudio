@@ -91,6 +91,13 @@ type authTx struct {
 	Action     string
 	Signer     string
 	Migration  bool
+	// ClaimUnattested lets a live track write take the claim on a cid nobody
+	// holds yet (content_auth_state.go projectAssertedTrackCids). Set by the
+	// callers that know the ruleset, and only under Rules.ContentAuthEnforced:
+	// before the gate a chain must accumulate no claims from live traffic, or
+	// activating enforcement later would trust state built from unverified
+	// assertions.
+	ClaimUnattested bool
 
 	meta map[string]any
 }
@@ -310,7 +317,21 @@ func applyAuthProjection(ctx context.Context, st authStore, tx authTx) error {
 		// and cids left unseeded there make enforcement unactivatable. Runs
 		// only after the entity itself projects: a track that was skipped must
 		// not leave claims behind.
-		return projectMigratedTrackCids(ctx, st, tx)
+		if err := projectMigratedTrackCids(ctx, st, tx); err != nil {
+			return err
+		}
+		return projectAssertedTrackCids(ctx, st, tx)
+	case entityType == authEntityTypeTrack && action == authActionUpdate:
+		// Track updates are otherwise untracked (ownership on update is the
+		// ETL's rule); the only projection is the first-assertion claim, and
+		// it requires the same signer authority a create does.
+		if !tx.ClaimUnattested || tx.Migration {
+			return nil
+		}
+		if err := validateAuthSigner(ctx, st, tx.UserID, tx.Signer); err != nil {
+			return err
+		}
+		return projectAssertedTrackCids(ctx, st, tx)
 	case (entityType == authEntityTypeTrack || entityType == authEntityTypePlaylist) && action == authActionDelete:
 		return projectEntityDelete(ctx, st, tx, entityType)
 	case entityType == authEntityTypeGrant && action == authActionCreate:
