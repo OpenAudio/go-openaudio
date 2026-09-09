@@ -238,7 +238,7 @@ func (ss *MediorumServer) handleUploadError(upload *Upload, err error, shouldCre
 	return err
 }
 
-func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalletHeader string, ftemplate string, previewStart string, fPlacementHosts string, files []*multipart.FileHeader) ([]*Upload, error) {
+func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalletHeader string, ftemplate string, previewStart string, fPlacementHosts string, fUserID string, files []*multipart.FileHeader) ([]*Upload, error) {
 	if !ss.diskHasSpace() {
 		ss.logger.Warn("disk is too full to accept new uploads")
 		return nil, ErrDiskFull
@@ -268,6 +268,11 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 	template := JobTemplate(ftemplate)
 
 	if err := validateJobTemplate(template); err != nil {
+		return nil, err
+	}
+
+	userID, err := ss.resolveOptionalUploadUserID(template, fUserID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -304,6 +309,7 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 			upload := &Upload{
 				ID:               ulid.Make().String(),
 				UserWallet:       userWallet,
+				UserID:           nullInt64(userID),
 				Status:           JobStatusNew,
 				Template:         template,
 				SelectedPreview:  selectedPreview,
