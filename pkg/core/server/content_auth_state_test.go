@@ -140,13 +140,92 @@ func TestContentAuthRejectsClaimingAnotherUsersCid(t *testing.T) {
 	mustRejectContentAuth(t, st, decoy, "was not uploaded for user 2")
 }
 
-// A cid nobody has attested cannot be asserted at all.
-func TestContentAuthRejectsUnattestedCid(t *testing.T) {
+// A cid nobody holds goes to whoever names it first: the write passes and the
+// projection records the writer as claimant, after which it is theirs alone.
+// This is what lets audio that reached storage without an attestation — an
+// upload to a node before it ran the gate, or a multipart upload naming no
+// user — still be published by its creator.
+func TestContentAuthUnattestedCidGoesToFirstAsserter(t *testing.T) {
+	ctx := context.Background()
+	st := newMemAuthStore()
+	mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
+	mustProject(t, st, userCreateTx(2, "0xthief", "thief"))
+
+	first := trackCidTx(1, 2_000_001, "0xartist", "Create", map[string]any{"track_cid": "nobody-attested-this"})
+	first.ClaimUnattested = true
+	mustContentAuth(t, st, first)
+	mustProject(t, st, first)
+	if ok, _ := st.IsCidClaimedByUser(ctx, "nobody-attested-this", 1); !ok {
+		t.Fatal("the first asserter must hold the claim")
+	}
+
+	second := trackCidTx(2, 2_000_002, "0xthief", "Create", map[string]any{"track_cid": "nobody-attested-this"})
+	second.ClaimUnattested = true
+	mustRejectContentAuth(t, st, second, "was not uploaded for user 2")
+
+	edit := trackCidTx(1, 2_000_001, "0xartist", "Update", map[string]any{"track_cid": "nobody-attested-this"})
+	edit.ClaimUnattested = true
+	mustContentAuth(t, st, edit)
+}
+
+// The projection never hands out a claim someone already holds, so a block
+// built by a proposer without the gate cannot transfer a cid by naming it.
+func TestAssertedClaimNeverOverridesAnExistingOne(t *testing.T) {
+	ctx := context.Background()
+	st := newMemAuthStore()
+	mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
+	mustProject(t, st, userCreateTx(2, "0xthief", "thief"))
+	if err := projectContentAttestationCids(ctx, st, attestationFor(1, "0xv1", "victim-320"), "tx1"); err != nil {
+		t.Fatal(err)
+	}
+
+	decoy := trackCidTx(2, 2_000_002, "0xthief", "Create", map[string]any{"track_cid": "victim-320"})
+	decoy.ClaimUnattested = true
+	mustRejectContentAuth(t, st, decoy, "was not uploaded for user 2")
+	mustProject(t, st, decoy) // as finalize would apply it from an ungated proposer
+	if ok, _ := st.IsCidClaimedByUser(ctx, "victim-320", 2); ok {
+		t.Fatal("naming a held cid must not grant a claim")
+	}
+}
+
+// Before the gate a chain must accumulate no claims from live traffic, or
+// activating enforcement later would trust state built from unverified
+// assertions. ClaimUnattested is how the caller says the gate is active.
+func TestPreGateLiveTrackClaimsNothing(t *testing.T) {
 	st := newMemAuthStore()
 	mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
 
-	tx := trackCidTx(1, 2_000_001, "0xartist", "Create", map[string]any{"track_cid": "nobody-attested-this"})
-	mustRejectContentAuth(t, st, tx, "is not attested to any uploader")
+	create := trackCidTx(1, 2_000_001, "0xartist", "Create", map[string]any{"track_cid": "pre-gate"})
+	mustProject(t, st, create)
+	update := trackCidTx(1, 2_000_001, "0xartist", "Update", map[string]any{"track_cid": "pre-gate-edit"})
+	mustProject(t, st, update)
+	if len(st.cids) != 0 {
+		t.Fatalf("live writes before the gate must claim nothing, got %v", st.cids)
+	}
+}
+
+// An update claims on the same terms as a create: only when the signer is
+// authorized for the track's user, so a stranger's update cannot claim.
+func TestUpdateClaimsUnattestedCidOnlyForAuthorizedSigner(t *testing.T) {
+	ctx := context.Background()
+	st := newMemAuthStore()
+	mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
+
+	stranger := trackCidTx(1, 2_000_001, "0xstranger", "Update", map[string]any{"track_cid": "new-audio"})
+	stranger.ClaimUnattested = true
+	if err := applyAuthProjection(ctx, st, stranger); err == nil || !isAuthValidationError(err) {
+		t.Fatalf("expected a signer rejection, got %v", err)
+	}
+	if ok, _ := st.IsCidClaimedByUser(ctx, "new-audio", 1); ok {
+		t.Fatal("an unauthorized update must not claim")
+	}
+
+	owner := trackCidTx(1, 2_000_001, "0xartist", "Update", map[string]any{"track_cid": "new-audio"})
+	owner.ClaimUnattested = true
+	mustProject(t, st, owner)
+	if ok, _ := st.IsCidClaimedByUser(ctx, "new-audio", 1); !ok {
+		t.Fatal("the owner's update must claim the cid")
+	}
 }
 
 // orig_file_cid is the download path — the lossless master — so it is checked
@@ -404,11 +483,14 @@ func TestProjectContentAttestationCidsAccumulateAcrossAttestations(t *testing.T)
 	if err := projectContentAttestationCids(ctx, st, attestation("0xval", "origcid", "320cid"), "tx1"); err != nil {
 		t.Fatal(err)
 	}
-	tx := trackCidTx(1, 10, "0xup", "Create", map[string]any{"track_cid": "320cid", "preview_cid": "latepreview"})
-	mustRejectContentAuth(t, st, tx, "not attested to any uploader")
-
 	if err := projectContentAttestationCids(ctx, st, attestation("0xval", "latepreview"), "tx2"); err != nil {
 		t.Fatal(err)
 	}
-	mustContentAuth(t, st, tx)
+	if ok, _ := st.IsCidClaimedByUser(ctx, "320cid", 1); !ok {
+		t.Fatal("the earlier attestation's claim must survive the later one")
+	}
+	// Both attestations credit user 1, so the late preview is theirs to name
+	// and nobody else's.
+	mustContentAuth(t, st, trackCidTx(1, 10, "0xup", "Create", map[string]any{"track_cid": "320cid", "preview_cid": "latepreview"}))
+	mustRejectContentAuth(t, st, trackCidTx(2, 11, "0xother", "Create", map[string]any{"preview_cid": "latepreview"}), "was not uploaded for user 2")
 }

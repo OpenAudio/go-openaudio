@@ -91,8 +91,18 @@ func projectMigratedTrackCids(ctx context.Context, st authStore, tx authTx) erro
 }
 
 // validateTrackContentAuth is the enforcement check, active only under
-// Rules.ContentAuthEnforced: every cid the transaction asserts must be recorded
-// to a wallet authorized to act for the writing user.
+// Rules.ContentAuthEnforced: no cid the transaction asserts may be held by a
+// user other than the writing user.
+//
+// A cid nobody holds passes, and the projection then records it to the writer
+// (projectAssertedTrackCids): first assertion wins. The attack this closes is
+// naming a cid that belongs to someone else, and every cid that can belong to
+// someone else is already claimed — migrated tracks are seeded by the replay
+// and uploads to an enforcing node are attested before the upload reads done.
+// What an unclaimed cid can be is audio that reached storage without an
+// attestation: uploads made to nodes before they ran the gate, and multipart
+// uploads that named no user. Refusing those would strand every such track,
+// and the write that names them first is, in practice, its creator's.
 //
 // Only cids present in this transaction are checked, so metadata-only edits on
 // a track whose audio predates the projection keep working, and an audio
@@ -131,9 +141,41 @@ func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx) err
 			return err
 		}
 		if !known {
-			return authValidationErrorf("%s %q is not attested to any uploader", key, cid)
+			continue
 		}
 		return authValidationErrorf("%s %q was not uploaded for user %d", key, cid, tx.UserID)
+	}
+	return nil
+}
+
+// projectAssertedTrackCids records the writing user as claimant of every cid
+// the transaction names that nobody holds yet — the projection half of
+// first-assertion-wins (see validateTrackContentAuth). A cid someone already
+// holds is left alone: at proposal time validation has rejected the write,
+// and at finalize a block from a proposer without the gate must not hand a
+// claim to whoever named the cid.
+//
+// Runs only for live writes on a chain where enforcement is active
+// (tx.ClaimUnattested); migration rows are seeded by projectMigratedTrackCids.
+func projectAssertedTrackCids(ctx context.Context, st authStore, tx authTx) error {
+	if !tx.ClaimUnattested || tx.Migration || tx.EntityType != authEntityTypeTrack {
+		return nil
+	}
+	for _, key := range trackCidMetadataKeys {
+		cid := tx.metaString(key)
+		if cid == "" {
+			continue
+		}
+		known, err := st.CidIsClaimed(ctx, cid)
+		if err != nil {
+			return err
+		}
+		if known {
+			continue
+		}
+		if err := st.InsertCid(ctx, cid, tx.UserID, ""); err != nil {
+			return err
+		}
 	}
 	return nil
 }

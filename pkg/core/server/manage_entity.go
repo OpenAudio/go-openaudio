@@ -62,7 +62,7 @@ type trackMetadata struct {
 	} `json:"data"`
 }
 
-func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransaction) (proto.Message, error) {
+func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransaction, blockHeight int64) (proto.Message, error) {
 	tx, err := s.validateManageEntity(ctx, stx)
 	if err != nil {
 		return nil, fmt.Errorf("invalid manage entity: %v", err)
@@ -81,7 +81,9 @@ func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransac
 		}
 	}
 
-	s.projectManageEntityAuthState(ctx, authTxFromManageEntity(manageEntity))
+	auth := authTxFromManageEntity(manageEntity)
+	auth.ClaimUnattested = s.config.Upgrades.RulesetAt(blockHeight).ContentAuthEnforced
+	s.projectManageEntityAuthState(ctx, auth)
 
 	return manageEntity, nil
 }
