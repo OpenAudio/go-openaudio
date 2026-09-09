@@ -1332,7 +1332,7 @@ func (s *Server) finalizeTransaction(ctx context.Context, req *abcitypes.Finaliz
 	case *v1.SignedTransaction_Plays:
 		return s.finalizePlayTransaction(ctx, msg)
 	case *v1.SignedTransaction_ManageEntity:
-		return s.finalizeManageEntity(ctx, msg)
+		return s.finalizeManageEntity(ctx, msg, blockHeight)
 	case *v1.SignedTransaction_ManageEntityMigration:
 		return s.finalizeManageEntityMigration(ctx, msg)
 	case *v1.SignedTransaction_Attestation:
