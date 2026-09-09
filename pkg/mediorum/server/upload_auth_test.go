@@ -149,3 +149,38 @@ func TestContentAttestationForSkipsWhenNoClaimIsPossible(t *testing.T) {
 		})
 	}
 }
+
+// The multipart and gRPC paths serve programmable distribution, whose
+// releases name no user and create tracks outside content auth, so there an
+// absent user id is allowed even under enforcement.
+func TestResolveOptionalUploadUserIDAllowsAbsentWhenEnforcing(t *testing.T) {
+	ss := &MediorumServer{}
+	ss.Config.ContentAuthEnabled = true
+
+	got, err := ss.resolveOptionalUploadUserID(JobTemplateAudio, "")
+	if err != nil {
+		t.Fatalf("absent user id must be allowed on the optional path: %v", err)
+	}
+	if got != 0 {
+		t.Fatalf("absent user id resolved to %d", got)
+	}
+}
+
+// A present user id is honored exactly as on tus, and a malformed one is
+// still rejected: a bad assertion must not pass as no assertion.
+func TestResolveOptionalUploadUserIDParsesAndRejectsMalformed(t *testing.T) {
+	ss := &MediorumServer{}
+
+	got, err := ss.resolveOptionalUploadUserID(JobTemplateAudio, "42")
+	if err != nil || got != 42 {
+		t.Fatalf("want 42, got %d (%v)", got, err)
+	}
+	for _, raw := range []string{"abc", "0", "-1", "1.5"} {
+		if _, err := ss.resolveOptionalUploadUserID(JobTemplateAudio, raw); err == nil {
+			t.Fatalf("user id %q should be rejected", raw)
+		}
+	}
+	if got, err := ss.resolveOptionalUploadUserID(JobTemplateImgSquare, "abc"); err != nil || got != 0 {
+		t.Fatalf("images carry no attribution: got %d (%v)", got, err)
+	}
+}
