@@ -1,7 +1,10 @@
 {
-  "genesis_time": "2025-03-14T00:00:00.0000Z",
-  "chain_id": "audius-mainnet-alpha-beta",
-  "initial_height": "0",
+  "app_hash": "",
+  "app_state": {
+    "genesis_migration_address": "0x5A51f056874D8FF28da25106A185D823806aFC06",
+    "genesis_migration_end_height": 5839
+  },
+  "chain_id": "audius-mainnet-beta",
   "consensus_params": {
     "block": {
       "max_bytes": "15728640",
@@ -21,96 +24,25 @@
       "app": "0"
     },
     "synchrony": {
-      "precision": "100000000",
-      "message_delay": "500000000"
+      "precision": "0",
+      "message_delay": "0"
     },
     "feature": {
       "vote_extensions_enable_height": "0",
       "pbts_enable_height": "0"
     }
   },
+  "genesis_time": "2026-08-26T02:06:35.613043Z",
+  "initial_height": "1",
   "validators": [
     {
-      "address": "EDF0B62F900C6319FDB482B0379B91B8A3C0D773",
+      "address": "C24B483EFF203CF384BE9E9ABE6EFA6C78DD8777",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "YzD1UEgstZcMiiSI8Xpj714KjsvLWQr8ZRkqjNAmfiM="
+        "value": "Yg2bWRBJe9cl9tHacemUkCeLKA6h967W1/E/4UCHiEw="
       },
-      "power": "10",
-      "name": "foundation-creator-2"
-    },
-    {
-      "address": "53A2506DCF34B267C3E04BB63E0EE4F563C7850D",
-      "pub_key": {
-        "type": "tendermint/PubKeyEd25519",
-        "value": "CK87eOR29T/VVMkFeDVfRWDv3RnnmFnwL+2wM0PA9C8="
-      },
-      "power": "10",
-      "name": "foundation-discovery-2"
-    },
-    {
-      "address": "F0D79CE5EB91847DB0A1B9AD4C8A15824710F9C3",
-      "pub_key": {
-        "type": "tendermint/PubKeyEd25519",
-        "value": "v6WoA95Rd5ieFkw45W+HQPpQyk054U2txnu+MS2kNGc="
-      },
-      "power": "10",
-      "name": "foundation-discovery-3"
-    },
-    {
-      "address": "35207ECB279B19AB53E0172F0E3AE47AC930D147",
-      "pub_key": {
-        "type": "tendermint/PubKeyEd25519",
-        "value": "nXbWXsfQaVG4o3vbLgcHMj91BXSwtzip3jnseHp9p28="
-      },
-      "power": "10",
-      "name": "foundation-creator-3"
-    },
-    {
-      "address": "BC6662EB1CFF8C214FDD2147CEF52CE6ABC0B441",
-      "pub_key": {
-        "type": "tendermint/PubKeyEd25519",
-        "value": "GZuTdtj3w7oe/aoUgxekkrblRdvx/lY+t5dbn8kWEGc="
-      },
-      "power": "10",
-      "name": "cn0.mainnet.audiusindex.org"
-    },
-    {
-      "address": "2C47B1ABA8E89CAEE91AC00C856B551A3035ACAD",
-      "pub_key": {
-        "type": "tendermint/PubKeyEd25519",
-        "value": "WlkiT37NtNDozO7BbXySp0U2h30C3CFVwgUqFsYuTyo="
-      },
-      "power": "10",
-      "name": "cn1.mainnet.audiusindex.org"
-    },
-    {
-      "address": "3AFB27BAB2CC0CEA09FC65A9C33FFA8592A2EAF1",
-      "pub_key": {
-        "type": "tendermint/PubKeyEd25519",
-        "value": "dxHAdxtrfv0qZIbkCtgSF+LKRI6pRlkeI/DqQM5Wgb0="
-      },
-      "power": "10",
-      "name": "dn1.monophonic.digital"
-    },
-    {
-      "address": "25A80EB8F8755D73AB9B4E0E5CF31DCC0B757AAB",
-      "pub_key": {
-        "type": "tendermint/PubKeyEd25519",
-        "value": "QVs6XaJzIhDyizD4fLLFmOMzXO/m0ER9DpI9dwiuUkY="
-      },
-      "power": "10",
-      "name": "audius-cn1.tikilabs.com"
-    },
-    {
-      "address": "2C176C34A2FA881B72ACFEDC1E3815710C4F1BD5",
-      "pub_key": {
-        "type": "tendermint/PubKeyEd25519",
-        "value": "Jj5c4uWxl1j9F+vYVllaJwLeLqqeDHEbwDFoE4sQO2k="
-      },
-      "power": "10",
-      "name": "audius-dn1.tikilabs.com"
+      "power": "100",
+      "name": "bootstrap"
     }
-  ],
-  "app_hash": ""
+  ]
 }
