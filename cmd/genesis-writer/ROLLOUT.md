@@ -101,6 +101,7 @@ cleanup the migration unblocks, and must wait for step 15.
 | [api#1029](https://github.com/AudiusProject/api/pull/1029) | plays split across both chains for the whole migration |
 | [#551](https://github.com/OpenAudio/go-openaudio/pull/551) | every node that state syncs loses its mediorum tables |
 | [#572](https://github.com/OpenAudio/go-openaudio/pull/572) | the new chain runs with no upgrade schedule — no signer enforcement, no track-cid authorization, and mediorum never attests; #553 must be rebased onto it before the step 3 build |
+| [#577](https://github.com/OpenAudio/go-openaudio/pull/577) | the flusher stalls at the first post-snapshot track create, whose cids nobody attested (step 11) |
 | [#553](https://github.com/OpenAudio/go-openaudio/pull/553) | **not merged** — it is the binary for steps 4–10; run the image CI builds from it |
 
 ---
@@ -137,8 +138,8 @@ this branch; use the image CI publishes from it, tagged by commit sha
 3. `ProdStateSyncRpcs` ← the same two hosts.
 4. `pkg/core/config/upgrades.go` has an `audius-mainnet-beta` entry with both
    `AuthEnforcementHeight` and `ContentAuthEnforcementHeight` at 1. That entry
-   comes from [#572](https://github.com/OpenAudio/go-openaudio/pull/572) on `main`; **rebase #553 onto `main` after #572 merges**
-   and check the file before building. The schedule is compiled in like the
+   comes from [#572](https://github.com/OpenAudio/go-openaudio/pull/572) on `main`; **rebase #553 onto `main` after #572 and
+   [#577](https://github.com/OpenAudio/go-openaudio/pull/577) merge** and check the file before building. The schedule is compiled in like the
    genesis and keyed on its chain ID, so a build without the entry runs the
    new chain with no enforcement and mediorum never attests, silently.
 
@@ -259,18 +260,15 @@ Requires [api#1018](https://github.com/AudiusProject/api/pull/1018) merged first
 Confirm the flusher keeps up with the relay's write rate before continuing; it
 is serial, and step 12 depends on it draining.
 
-**Unresolved — decide before this step.** The flusher resubmits queued
+**Why the flusher does not stall on content auth.** It resubmits queued
 `ManageEntity` transactions through `ForwardTransaction`, which validates them
 like any live write, and it does not advance past a row the chain refuses. A
-track created on the old chain after the snapshot names cids that were
-uploaded to a node that did not attest — old-chain mediorum never does — and
-the replay only seeded the snapshot's tracks, so the new chain refuses it as
-`not attested to any uploader`. The queue stalls at that row and step 12 never
-becomes reachable. Candidate mitigations, none chosen yet: a one-time
-attestation backfill on migrated nodes from `uploads.user_id`, which prod
-mediorum already stores when the client sends it; a flusher dead-letter for
-deterministic refusals; or a later `ContentAuthEnforcementHeight`, which
-reopens the window described in step 3.
+track created on the old chain after the snapshot names cids nobody attested —
+old-chain mediorum never does, and the replay only seeded the snapshot's
+tracks. [#577](https://github.com/OpenAudio/go-openaudio/pull/577) makes the first assertion of an unclaimed cid take
+the claim, so each flushed create claims its own cids as it lands and a later
+decoy naming them is refused. Without #577 in the bootstrap build the queue
+stalls at the first such row and step 12 is unreachable.
 
 ### 12. Switch the indexer
 
@@ -1077,8 +1075,6 @@ the step to announce and gate — not the flush.
   holding the validator key raise a custody concern worth designing around?
 - Does anything besides the delist tables count as operator state that the
   migration does not reconstruct?
-- How do post-snapshot track creates get through the flusher under content
-  auth (step 11)? Backfill attestations, dead-letter, or a later height.
 
 ### 11. The API indexer is the same ETL, and that is the problem
 
