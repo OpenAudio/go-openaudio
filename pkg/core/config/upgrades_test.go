@@ -80,4 +80,15 @@ func TestContentAuthScheduledFollowsEmbeddedGenesis(t *testing.T) {
 			t.Fatalf("%s (%s): ContentAuthScheduled = %v, want %v", env, genDoc.ChainID, got, want)
 		}
 	}
+	// genesis.Read defaults unknown names to devnet; an unset or test-only
+	// environment must not inherit devnet's gate through that fallback.
+	for _, env := range []string{"", "test"} {
+		got, err := ContentAuthScheduled(env)
+		if err != nil {
+			t.Fatalf("%q: %v", env, err)
+		}
+		if got {
+			t.Fatalf("%q: content auth must not be scheduled for an unnamed environment", env)
+		}
+	}
 }

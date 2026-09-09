@@ -136,7 +136,19 @@ func ScheduleForChainID(chainID string) *UpgradeSchedule {
 // Every scheduled activation is at height 1, so "scheduled" and "active" are
 // the same question. If a persistent chain ever schedules a later height,
 // mediorum should resolve RulesetAt for the next block instead.
+//
+// Only a named network resolves to a genesis. genesis.Read falls back to the
+// devnet genesis for anything it does not recognize, which would turn content
+// auth on for an unset or test-only environment; those get no gate.
 func ContentAuthScheduled(environment string) (bool, error) {
+	switch environment {
+	case "prod", "production", "mainnet",
+		"stage", "staging", "testnet",
+		"sandbox",
+		"dev", "development", "devnet", "local":
+	default:
+		return false, nil
+	}
 	genDoc, err := genesis.Read(environment)
 	if err != nil {
 		return false, fmt.Errorf("reading genesis for %q: %w", environment, err)
