@@ -1,5 +1,47 @@
 # Changelog
 
+## [1.12.0](https://github.com/OpenAudio/go-openaudio/compare/v1.11.0...v1.12.0) (2026-09-10)
+
+
+### Features
+
+* **storage:** analyze legacy Qm blobs alongside uploads ([#558](https://github.com/OpenAudio/go-openaudio/issues/558)) ([ad91e54](https://github.com/OpenAudio/go-openaudio/commit/ad91e544a20f1018790e02e0e8a9d26887d3641c))
+* **storage:** let store-all nodes fetch new content when the op lands ([#568](https://github.com/OpenAudio/go-openaudio/issues/568)) ([11185b0](https://github.com/OpenAudio/go-openaudio/commit/11185b0734cbb5aa96e3ec67f2f8fb4b4d03a13f))
+* **storage:** optional durable presence store, resolved per batch ([#557](https://github.com/OpenAudio/go-openaudio/issues/557)) ([d6a2fe8](https://github.com/OpenAudio/go-openaudio/commit/d6a2fe8ee5b553c3c6a882038ef4ab1d0d4c116d))
+* **storage:** surface presence index walk progress ([#556](https://github.com/OpenAudio/go-openaudio/issues/556)) ([29bb178](https://github.com/OpenAudio/go-openaudio/commit/29bb178e4bf2c6c0b342b558c4f7abbc6e81e15c))
+
+
+### Bug Fixes
+
+* **core:** include core_auth_cids in state sync snapshots ([#499](https://github.com/OpenAudio/go-openaudio/issues/499)) ([cda94b8](https://github.com/OpenAudio/go-openaudio/commit/cda94b8e1320798c4c1a2bab96dd19a24627f382))
+* **core:** scope the state-sync truncate to the tables the snapshot restores ([#551](https://github.com/OpenAudio/go-openaudio/issues/551)) ([dfdd3ba](https://github.com/OpenAudio/go-openaudio/commit/dfdd3bad81de590a9ed1ebf5c5f0e8b834badadc))
+* **etl:** default playlist_contents add-time to block time ([#554](https://github.com/OpenAudio/go-openaudio/issues/554)) ([f6f860d](https://github.com/OpenAudio/go-openaudio/commit/f6f860db52e58b41469d29dcbc736bd3092aa374))
+* **genesis-writer:** emit playlist release_date in a layout the indexer parses ([#548](https://github.com/OpenAudio/go-openaudio/issues/548)) ([98656e1](https://github.com/OpenAudio/go-openaudio/commit/98656e11015ae9adafd46e2cfade5bf0d4b71e4e))
+* **mediorum:** fail closed when the cidstream access lookup errors ([#503](https://github.com/OpenAudio/go-openaudio/issues/503)) ([d5043dc](https://github.com/OpenAudio/go-openaudio/commit/d5043dcea8a296ee2c7203def911c9f045c91c2b))
+* **mediorum:** keep audio analysis from completing uploads ([#570](https://github.com/OpenAudio/go-openaudio/issues/570)) ([88de83c](https://github.com/OpenAudio/go-openaudio/commit/88de83c955aadece087b62d8fd78b5b202b26cce))
+* **mediorum:** propagate the delist status lookup error ([#565](https://github.com/OpenAudio/go-openaudio/issues/565)) ([679211c](https://github.com/OpenAudio/go-openaudio/commit/679211c6553a93898cafefd8fc6e08a15be8cdc8))
+* **storage:** check local disk before accepting an upload ([#567](https://github.com/OpenAudio/go-openaudio/issues/567)) ([26de6f9](https://github.com/OpenAudio/go-openaudio/commit/26de6f92171f8b035a450d196d335c005b0901eb))
+* **storage:** measure placed uploads against their placement count ([#569](https://github.com/OpenAudio/go-openaudio/issues/569)) ([a9ac695](https://github.com/OpenAudio/go-openaudio/commit/a9ac6959c7752abab371ca25664c830243774369))
+* **storage:** qualify presence store lookups by bucket so the primary key serves them ([#579](https://github.com/OpenAudio/go-openaudio/issues/579)) ([3456c3f](https://github.com/OpenAudio/go-openaudio/commit/3456c3f4e27a8897b3fe00b3be7654b61bf1d234))
+* **storage:** re-queue uploads whose transcode is under-replicated ([#566](https://github.com/OpenAudio/go-openaudio/issues/566)) ([5f63e24](https://github.com/OpenAudio/go-openaudio/commit/5f63e24f95fbf75952724145792729f781e07cbc))
+* **storage:** read the key peers actually report for reachability ([#563](https://github.com/OpenAudio/go-openaudio/issues/563)) ([1fc3562](https://github.com/OpenAudio/go-openaudio/commit/1fc3562df30fd5a2c024cc4f784ac39a829ffd78))
+* **storage:** reclaim duplicate primary copies on archive nodes ([#560](https://github.com/OpenAudio/go-openaudio/issues/560)) ([8b64389](https://github.com/OpenAudio/go-openaudio/commit/8b64389e87c5f451a9173431f086053fd175c871))
+* **storage:** replicate long blobs in bounded chunks, off the sender's worker ([#530](https://github.com/OpenAudio/go-openaudio/issues/530)) ([a22f6c3](https://github.com/OpenAudio/go-openaudio/commit/a22f6c353a7b4d922003675164d37fade530e76d))
+* **storage:** size the storage expectation from measured corpus ([#561](https://github.com/OpenAudio/go-openaudio/issues/561)) ([bf4047b](https://github.com/OpenAudio/go-openaudio/commit/bf4047b1b6f3895d17b9aa2b7ace12bf0e926c2b))
+* **storage:** synchronize the node status the health check reads ([#562](https://github.com/OpenAudio/go-openaudio/issues/562)) ([aa5f70d](https://github.com/OpenAudio/go-openaudio/commit/aa5f70da3ec3476662b493d018dedd5deac23b4c))
+* **storage:** walk only bare Qm keys for legacy waveform analysis ([#578](https://github.com/OpenAudio/go-openaudio/issues/578)) ([a107834](https://github.com/OpenAudio/go-openaudio/commit/a107834f30d2848541ae11dc04729ac367d5e2c7))
+
+
+### Performance Improvements
+
+* **storage:** optional concurrent walk for the presence index ([#555](https://github.com/OpenAudio/go-openaudio/issues/555)) ([c8a4878](https://github.com/OpenAudio/go-openaudio/commit/c8a487811fbbe161c7eda244ba411363a8bb3fcc))
+* **storage:** read blobs for analysis in 1MB chunks, not 32KB ([#546](https://github.com/OpenAudio/go-openaudio/issues/546)) ([8572622](https://github.com/OpenAudio/go-openaudio/commit/85726228c1af7c4ab9db2ddadc6f65bb51c7ebff))
+
+
+### Code Refactoring
+
+* **storage:** ask peers to pull whatever the storage backend is ([#531](https://github.com/OpenAudio/go-openaudio/issues/531)) ([ca9490b](https://github.com/OpenAudio/go-openaudio/commit/ca9490bb68b50368586f7cfb1bfbbf4683cd9734))
+
 ## [1.11.0](https://github.com/OpenAudio/go-openaudio/compare/v1.10.0...v1.11.0) (2026-08-20)
 
 
