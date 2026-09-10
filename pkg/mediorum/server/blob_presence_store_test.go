@@ -10,6 +10,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gocloud.dev/blob/memblob"
 )
 
 // enablePresenceStore turns the store on for one test and restores the default
@@ -77,6 +78,46 @@ func TestPresenceForCIDsResolvesBatchKeys(t *testing.T) {
 	assert.False(t, ok, "an unrecorded blob must resolve as missing")
 
 	assert.Len(t, index.entries, 1, "duplicate and empty CIDs must not add entries")
+}
+
+// One query serves both buckets. The predicate names every bucket label so
+// the (bucket, key) primary key can answer it; a label left out of that list
+// would silently read as "missing" for every blob in that bucket.
+func TestPresenceForCIDsCoversEveryBucketLabel(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	enablePresenceStore(t, ss)
+
+	archive := memblob.OpenBucket(nil)
+	t.Cleanup(func() { archive.Close() })
+	prev := ss.archiveBucket
+	prevDSN := ss.Config.ArchiveBlobStoreDSN
+	ss.archiveBucket = archive
+	// The store only backs file:// buckets; the bucket itself can be anything.
+	ss.Config.ArchiveBlobStoreDSN = "file://" + t.TempDir()
+	t.Cleanup(func() {
+		ss.archiveBucket = prev
+		ss.Config.ArchiveBlobStoreDSN = prevDSN
+	})
+
+	inPrimary := "QmY7Yh4UquoXHLPFo2XbhXkhBvFoPwmQUSa92pxnxjQuPU"
+	inArchive := "QmZZzzXyvAKjGp1uN7oeBSCv1G958kZ6naoMSZPt68vtjf"
+	ss.recordBlobPresent(ss.bucket, cidutil.ShardCID(inPrimary), 1)
+	ss.recordBlobPresent(archive, cidutil.ShardCID(inArchive), 2)
+
+	index, err := ss.presenceForCIDs(ctx, []string{inPrimary, inArchive})
+	require.NoError(t, err)
+
+	entry, ok := index.Lookup(cidutil.ShardCID(inPrimary), ss.bucket)
+	require.True(t, ok, "primary row must resolve")
+	assert.Equal(t, int64(1), entry.Size)
+
+	entry, ok = index.Lookup(cidutil.ShardCID(inArchive), archive)
+	require.True(t, ok, "archive row must resolve")
+	assert.Equal(t, int64(2), entry.Size)
+
+	_, ok = index.Lookup(cidutil.ShardCID(inArchive), ss.bucket)
+	assert.False(t, ok, "a blob held only in the archive is missing from primary")
 }
 
 // A cycle that enumerated its buckets reuses that index for every batch and
