@@ -52,7 +52,8 @@ counted twice in between. Step 12 is that handoff.
 
 Steps 1–13 are reversible, at costs from restarting a container to re-syncing a
 node. **Step 14 is the point of no return** — after it the old chain is missing
-writes. Step 15 retires the rollback anchors. Step 16 is cleanup.
+writes. Step 15 retires the rollback anchors. Step 16 is cleanup. Step 17 is
+cleanup the migration unblocks, and must wait for step 15.
 
 ## Contents
 
@@ -74,6 +75,7 @@ writes. Step 15 retires the rollback anchors. Step 16 is cleanup.
 | | [14. Stop relaying to the old chain](#14-stop-relaying-to-the-old-chain) | **irreversible** |
 | | [15. Roll the fleet to `:stable`](#15-roll-the-fleet-to-stable) | **irreversible** |
 | | [16. Retire the temporary RPC](#16-retire-the-temporary-rpc) | |
+| **D** | [17. Follow-ons](#17-follow-ons) | after 15 |
 
 **Appendix**
 
@@ -98,6 +100,8 @@ writes. Step 15 retires the rollback anchors. Step 16 is cleanup.
 | [api#1028](https://github.com/AudiusProject/api/pull/1028) | step 12 cannot be executed at all |
 | [api#1029](https://github.com/AudiusProject/api/pull/1029) | plays split across both chains for the whole migration |
 | [#551](https://github.com/OpenAudio/go-openaudio/pull/551) | every node that state syncs loses its mediorum tables |
+| [#572](https://github.com/OpenAudio/go-openaudio/pull/572) | the new chain runs with no upgrade schedule — no signer enforcement, no track-cid authorization, and mediorum never attests; #553 must be rebased onto it before the step 3 build |
+| [#577](https://github.com/OpenAudio/go-openaudio/pull/577) | the flusher stalls at the first post-snapshot track create, whose cids nobody attested (step 11) |
 | [#553](https://github.com/OpenAudio/go-openaudio/pull/553) | **not merged** — it is the binary for steps 4–10; run the image CI builds from it |
 
 ---
@@ -132,6 +136,23 @@ this branch; use the image CI publishes from it, tagged by commit sha
 1. `pkg/core/config/genesis/prod.json` ← the new genesis file.
 2. `ProdPersistentPeers` ← the bootstrap nodes → [Appendix E](#e-node-identity-and-the-peer-lists).
 3. `ProdStateSyncRpcs` ← the same two hosts.
+4. `pkg/core/config/upgrades.go` has an `audius-mainnet-beta` entry with both
+   `AuthEnforcementHeight` and `ContentAuthEnforcementHeight` at 1. That entry
+   comes from [#572](https://github.com/OpenAudio/go-openaudio/pull/572) on `main`; **rebase #553 onto `main` after #572 and
+   [#577](https://github.com/OpenAudio/go-openaudio/pull/577) merge** and check the file before building. The schedule is compiled in like the
+   genesis and keyed on its chain ID, so a build without the entry runs the
+   new chain with no enforcement and mediorum never attests, silently.
+
+Why both heights, and why block 1: track-cid authorization ([#477](https://github.com/OpenAudio/go-openaudio/pull/477), [#476](https://github.com/OpenAudio/go-openaudio/pull/476))
+makes possession the entitlement — `core_auth_cids` records which user may
+assert a cid — and it is checked inside the signer check, so it needs both
+gates. It could never be enforced on `audius-mainnet-alpha-beta`, whose tracks
+predate the projection; the genesis replay seeds a claim for every migrated
+track's cids, which is what makes this chain the activation point, and
+activating later would leave every track uploaded in between with unclaimed
+cids. Mediorum attests exactly on chains whose embedded genesis has the gate,
+so nothing else needs flipping. Coverage of the seeding is verified in
+[Appendix C](#c-verifying-replay-parity-calibration).
 
 ## Phase B — stand up the new network
 
@@ -204,6 +225,29 @@ Operators set an explicit image tag.
 Land [#551](https://github.com/OpenAudio/go-openaudio/pull/551) before this step, or every node that state syncs loses its mediorum
 tables and the fleet regenerates previews and analyses at once.
 
+**On the first migrated node, before the second batch**, confirm enforcement is
+live. These are chain-level checks and need no indexer; a schedule mistake
+makes every audio upload on a migrated node fail at transcode completion, and
+this is the earliest point it can be seen.
+
+1. An audio upload through the node reaches `done` and the node logs
+   `attested upload cids`; a track create naming the resulting cids lands.
+2. A track create naming another user's `track_cid`, submitted through the
+   same API path, is refused with `manage entity rejected: track_cid ... was
+   not uploaded for user`. The refusal is the API error response from
+   `SendTransaction`; it is not logged, and a transaction pushed straight into
+   the CometBFT RPC is never built into a block either way, so that is not a
+   test.
+3. An edit to a **migrated** track from the app lands. The app resends every
+   cid field on an edit, so this passes because the replay seeded claims for
+   those cids — a failure here means seeding, not the presence rule.
+
+If uploads on a migrated node fail at transcode completion with `could not send
+content attestation ...: tx waiting timeout`, the attestation is being dropped
+by proposers whose image predates the schedule entry (they log `invalid tx made
+it into prepare`). That is image skew across the fleet: check which sha the
+proposing nodes run.
+
 ### 11. Enable flushing
 
 Requires [api#1018](https://github.com/AudiusProject/api/pull/1018) merged first.
@@ -216,7 +260,20 @@ Requires [api#1018](https://github.com/AudiusProject/api/pull/1018) merged first
 Confirm the flusher keeps up with the relay's write rate before continuing; it
 is serial, and step 12 depends on it draining.
 
+**Why the flusher does not stall on content auth.** It resubmits queued
+`ManageEntity` transactions through `ForwardTransaction`, which validates them
+like any live write, and it does not advance past a row the chain refuses. A
+track created on the old chain after the snapshot names cids nobody attested —
+old-chain mediorum never does, and the replay only seeded the snapshot's
+tracks. [#577](https://github.com/OpenAudio/go-openaudio/pull/577) makes the first assertion of an unclaimed cid take
+the claim, so each flushed create claims its own cids as it lands and a later
+decoy naming them is refused. Without #577 in the bootstrap build the queue
+stalls at the first such row and step 12 is unreachable.
+
 ### 12. Switch the indexer
+
+After the switch, confirm that the decoy create from step 10's check 2 never
+appears in the ETL.
 
 Requires [api#1028](https://github.com/AudiusProject/api/pull/1028) merged first — it provides `etlStartingBlockHeight`,
 `etlEndingBlockHeight` and `newChainFlushToBlock`.
@@ -264,6 +321,21 @@ stopped, and it will halt — by design → [Appendix H](#h-fleet-migration-arit
    `v.monophonic.digital`, now that they have moved. CometBFT refuses to state
    sync from fewer than two, so this must ship **before** the deregistration.
 2. Deregister `v.audius.rickyrombo.com`.
+
+## Phase D — follow-ons
+
+### 17. Follow-ons
+
+**Remove the legacy reward wire-compat layer.**
+[#232](https://github.com/OpenAudio/go-openaudio/pull/232) deletes the pre-pool `LegacyRewardMessage` decode path,
+the sha256 legacy signing scheme, and the `launchpad_authority_rm` table, all
+of which exist only to replay `audius-mainnet-alpha-beta`'s historical reward
+bytes at block-sync time. `audius-mainnet-beta` was written from table state
+and carries only pool-shaped reward transactions, so on it the layer is dead
+code. It is not dead on the old chain: any node still block-syncing there needs
+it, and `main` ships to the old chain as `:stable` until step 15. Merge once
+every node has moved, and not before. It is deliberately absent from the
+"merge these first" table.
 
 ---
 # 3. Appendix
@@ -345,6 +417,15 @@ cd pkg/etl && go run ./parity \
   --db      postgres://.../etl_<name> \
   --prod-db postgres://.../<source snapshot>
 ```
+
+**Claim coverage.** Parity compares the ETL to the source and never reads
+`core_auth_cids`, so check the seeding separately, against the serve copy:
+the count of current, non-deleted tracks whose `track_cid`, `orig_file_cid`
+or `preview_cid` has no `(cid, owner_id)` row in `core_auth_cids`, and the
+count of track owners with no `core_auth_users` row. Both must be 0 (they were
+on the 2026-08-25 artifact). The projection skips rows it cannot attribute
+rather than failing, so a partial seed replays clean and only shows up as
+unwritable tracks once enforcement is live.
 
 `replay.sh run` is idempotent and resumes, so a failure part-way can just be
 re-run. It ends by restoring settings, recreating the serving indexes it
