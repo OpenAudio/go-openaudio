@@ -70,6 +70,10 @@ type HealthData struct {
 	// repair's first checkpoint, so /internal/logs/repair still shows the
 	// previous run as the latest and has no row for the current one.
 	PresenceWalk *PresenceWalkProgress `json:"presenceWalk"`
+	// PresenceStore is the last cycle's decision about whether presence came
+	// from the durable store, with the reason when it did not. Nil until the
+	// first repair cycle of this process has decided.
+	PresenceStore *PresenceStoreStatus `json:"presenceStore"`
 }
 
 func (ss *MediorumServer) getHealth() HealthData {
@@ -143,6 +147,7 @@ func (ss *MediorumServer) getHealth() HealthData {
 		TranscodeQueueLength:      len(ss.transcodeWork),
 		TranscodeStats:            ss.getTranscodeStats(),
 		PresenceWalk:              ss.presenceWalkProgress(),
+		PresenceStore:             ss.presenceStoreStatus(),
 	}
 }
 

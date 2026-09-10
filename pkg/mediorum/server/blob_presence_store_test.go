@@ -226,3 +226,67 @@ func TestVerifyPresenceStoreLivenessRejectsMissingDir(t *testing.T) {
 		ss.verifyPresenceStoreLiveness(ctx, ss.bucket, filepath.Join(t.TempDir(), "not-mounted")),
 		errPresenceStoreNotReady)
 }
+
+// The rows survive restarts; the decision to read them is remade every cycle.
+// From outside, a node that walked looks the same whatever gate failed, so the
+// decision publishes its reason -- and warns only when the operator turned the
+// store on, since with it off enumerating is simply the expected path.
+func TestPresenceSourceForCycleReportsWhyItWalked(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	enablePresenceStore(t, ss)
+
+	ss.Config.PresenceStoreEnabled = false
+	assert.False(t, ss.presenceSourceForCycle(ctx, false))
+	st := ss.presenceStoreStatus()
+	require.NotNil(t, st)
+	assert.False(t, st.Enabled)
+	assert.False(t, st.Used)
+	assert.Contains(t, st.Reason, "disabled")
+	ss.Config.PresenceStoreEnabled = true
+
+	assert.False(t, ss.presenceSourceForCycle(ctx, true), "cleanup never reads the store")
+	st = ss.presenceStoreStatus()
+	assert.True(t, st.Enabled)
+	assert.False(t, st.Used)
+	assert.Contains(t, st.Reason, "cleanup")
+
+	assert.False(t, ss.presenceSourceForCycle(ctx, false))
+	st = ss.presenceStoreStatus()
+	assert.False(t, st.Used)
+	assert.Contains(t, st.Reason, "never been walked")
+
+	_, err := ss.buildRepairPresenceIndex(ctx)
+	require.NoError(t, err)
+	assert.True(t, ss.presenceSourceForCycle(ctx, false),
+		"a completed enumeration should make the store readable")
+	st = ss.presenceStoreStatus()
+	assert.True(t, st.Used)
+	assert.Empty(t, st.Reason)
+	assert.False(t, st.CheckedAt.IsZero())
+}
+
+// Archive eviction and relocation delete through dropFromBucket. A row left
+// behind for a blob that is gone is exactly the drift the liveness sample
+// exists to catch, so enough of them would send every later cycle back to a
+// full walk.
+func TestDropFromBucketForgetsPresence(t *testing.T) {
+	ctx := context.Background()
+	ss := testNetwork[0]
+	enablePresenceStore(t, ss)
+
+	const key = "zzz/dropped-key"
+	ss.recordBlobPresent(ss.bucket, key, 7)
+	index, err := ss.presenceForCIDs(ctx, []string{key})
+	require.NoError(t, err)
+	_, ok := index.Lookup(key, ss.bucket)
+	require.True(t, ok)
+
+	// The blob itself was never written; NotFound is benign for the delete.
+	require.NoError(t, ss.dropFromBucket(ctx, ss.bucket, key))
+
+	index, err = ss.presenceForCIDs(ctx, []string{key})
+	require.NoError(t, err)
+	_, ok = index.Lookup(key, ss.bucket)
+	assert.False(t, ok, "a bucket-scoped delete must forget presence")
+}

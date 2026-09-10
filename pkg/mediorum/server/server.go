@@ -268,6 +268,10 @@ type MediorumServer struct {
 	// first checkpoint, so nothing else reports it while it is happening.
 	presenceWalk atomic.Pointer[presenceWalkCounter]
 
+	// presenceStore is the last per-cycle decision about whether presence is
+	// read from the durable store, or nil before the first cycle decides.
+	presenceStore atomic.Pointer[PresenceStoreStatus]
+
 	StartedAt time.Time
 	Config    MediorumConfig
 
