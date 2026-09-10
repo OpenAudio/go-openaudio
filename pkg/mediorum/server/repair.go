@@ -273,15 +273,7 @@ func (ss *MediorumServer) runRepair(ctx context.Context, tracker *RepairTracker)
 	// also what populates the store, so it stays the fallback for every case
 	// the store cannot serve -- including, by default, all of them.
 	var cycleIndex *repairPresenceIndex
-	usePerBatchPresence := false
-	if !tracker.CleanupMode {
-		if err := ss.presenceStoreReady(ctx); err != nil {
-			ss.logger.Debug("presence store not usable this cycle; enumerating buckets",
-				zap.Error(err))
-		} else {
-			usePerBatchPresence = true
-		}
-	}
+	usePerBatchPresence := ss.presenceSourceForCycle(ctx, tracker.CleanupMode)
 	if usePerBatchPresence {
 		ss.logger.Info("resolving presence per batch from the durable store")
 		tracker.Counters["presence_from_store"] = 1

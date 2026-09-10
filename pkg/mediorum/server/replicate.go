@@ -214,6 +214,7 @@ func (ss *MediorumServer) dropFromBucket(ctx context.Context, b *blob.Bucket, ke
 		return err
 	}
 	ss.knownPresent.Remove(ss.presenceCacheKey(key, b))
+	ss.forgetBlobPresent(b, key)
 	return nil
 }
 

@@ -276,6 +276,69 @@ func (ss *MediorumServer) savePresenceStore(ctx context.Context, bucket *blob.Bu
 // caller must enumerate the bucket instead.
 var errPresenceStoreNotReady = errors.New("presence store not ready")
 
+// PresenceStoreStatus is the outcome of the last per-cycle decision about
+// where presence comes from, published for the health endpoint.
+//
+// The rows in blob_presence survive restarts; what does not is the decision to
+// read them. Every cycle re-runs presenceStoreReady, and a failed gate falls
+// back to a full walk with the reason logged once at cycle start -- so from
+// outside, a node that walked looks identical whether the store is disabled,
+// was never fully enumerated, or failed its liveness sample. This is the
+// answer to "why is it walking again".
+type PresenceStoreStatus struct {
+	// Enabled is the operator setting (OPENAUDIO_PRESENCE_STORE_ENABLED).
+	Enabled bool `json:"enabled"`
+	// Used reports whether the current (or most recent) cycle resolves
+	// presence per batch from the store rather than enumerating buckets.
+	Used bool `json:"used"`
+	// Reason says why Used is false. Empty when the store is in use.
+	Reason    string    `json:"reason"`
+	CheckedAt time.Time `json:"checkedAt"`
+}
+
+func (ss *MediorumServer) publishPresenceStoreStatus(used bool, reason string) {
+	ss.presenceStore.Store(&PresenceStoreStatus{
+		Enabled:   ss.Config.PresenceStoreEnabled,
+		Used:      used,
+		Reason:    reason,
+		CheckedAt: time.Now().UTC(),
+	})
+}
+
+// presenceStoreStatus returns the last published status, or nil before the
+// first repair cycle of this process has decided.
+func (ss *MediorumServer) presenceStoreStatus() *PresenceStoreStatus {
+	return ss.presenceStore.Load()
+}
+
+// presenceSourceForCycle decides whether a repair cycle reads presence per
+// batch from the durable store, and records that decision where an operator
+// can see it. Cleanup never qualifies: it is the ground-truth pass, and
+// reading a table instead of the filesystem would defeat it.
+//
+// The fallback is logged at Warn only when the operator turned the store on.
+// With it off -- the default -- enumerating is the expected path and a Warn
+// every cycle would be noise.
+func (ss *MediorumServer) presenceSourceForCycle(ctx context.Context, cleanupMode bool) bool {
+	if cleanupMode {
+		ss.publishPresenceStoreStatus(false, "cleanup cycle always enumerates its buckets")
+		return false
+	}
+	if err := ss.presenceStoreReady(ctx); err != nil {
+		if ss.Config.PresenceStoreEnabled {
+			ss.logger.Warn("presence store enabled but not usable this cycle; enumerating buckets",
+				zap.Error(err))
+		} else {
+			ss.logger.Debug("presence store not usable this cycle; enumerating buckets",
+				zap.Error(err))
+		}
+		ss.publishPresenceStoreStatus(false, err.Error())
+		return false
+	}
+	ss.publishPresenceStoreStatus(true, "")
+	return true
+}
+
 // presenceStoreReady reports whether every bucket this cycle will consult can
 // be served from the store. It is all-or-nothing on purpose: a mixed
 // file://-plus-cloud node falls back to enumerating everything, which is what
