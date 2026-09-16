@@ -323,7 +323,7 @@ func applyAuthProjection(ctx context.Context, st authStore, tx authTx, rules con
 		// Track updates are otherwise untracked (ownership on update is the
 		// ETL's rule); the only projection is the first-assertion claim, and
 		// it requires the same signer authority a create does.
-		if tx.Migration || !firstAssertionOpen(rules) {
+		if tx.Migration || !rules.ContentAuthEnforced || rules.ContentAuthStrict {
 			return nil
 		}
 		if err := validateAuthSigner(ctx, st, tx.UserID, tx.Signer); err != nil {

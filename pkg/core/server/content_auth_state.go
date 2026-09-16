@@ -91,22 +91,12 @@ func projectMigratedTrackCids(ctx context.Context, st authStore, tx authTx) erro
 	return nil
 }
 
-// firstAssertionOpen reports whether, under these rules, a live track write
-// may name — and take the claim on — a cid nobody holds: content auth is
-// enforced but not yet strict. Before the enforcement gate a chain must
-// accumulate no claims from live traffic, or activating enforcement later
-// would trust state built from unverified assertions; under strict an
-// unclaimed cid is refused outright, so there is nothing to claim.
-func firstAssertionOpen(rules config.Rules) bool {
-	return rules.ContentAuthEnforced && !rules.ContentAuthStrict
-}
-
 // validateTrackContentAuth is the enforcement check, active only under
 // Rules.ContentAuthEnforced: no cid the transaction asserts may be held by a
 // user other than the writing user, and once Rules.ContentAuthStrict is
 // active every cid must be held by the writing user.
 //
-// Between the two heights (firstAssertionOpen) a cid nobody holds passes, and
+// Between the two heights a cid nobody holds passes, and
 // the projection then records it to the writer (projectAssertedTrackCids):
 // first assertion wins. That window exists for the genesis migration, whose
 // API flusher replays old-chain track writes naming cids nobody attested and
@@ -157,7 +147,8 @@ func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx, rul
 		if known {
 			return authValidationErrorf("%s %q was not uploaded for user %d", key, cid, tx.UserID)
 		}
-		if !firstAssertionOpen(rules) {
+		// Only reached under ContentAuthEnforced, so strict alone decides.
+		if rules.ContentAuthStrict {
 			return authValidationErrorf("%s %q is not attested to any uploader", key, cid)
 		}
 	}
@@ -171,11 +162,15 @@ func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx, rul
 // and at finalize a block from a proposer without the gate must not hand a
 // claim to whoever named the cid.
 //
-// Runs only for live writes inside the first-assertion window
-// (firstAssertionOpen); migration rows are seeded by projectMigratedTrackCids,
-// and under strict there is nothing unclaimed to record.
+// Runs only for live writes inside the first-assertion window: content auth
+// enforced but not yet strict. Unlike validation this runs for every live
+// write, so the enforced check is explicit — before the gate a chain must
+// accumulate no claims from live traffic, or activating enforcement later
+// would trust state built from unverified assertions. Under strict there is
+// nothing unclaimed to record. Migration rows are seeded by
+// projectMigratedTrackCids.
 func projectAssertedTrackCids(ctx context.Context, st authStore, tx authTx, rules config.Rules) error {
-	if tx.Migration || !firstAssertionOpen(rules) || tx.EntityType != authEntityTypeTrack {
+	if tx.Migration || !rules.ContentAuthEnforced || rules.ContentAuthStrict || tx.EntityType != authEntityTypeTrack {
 		return nil
 	}
 	for _, key := range trackCidMetadataKeys {
