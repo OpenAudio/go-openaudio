@@ -349,3 +349,54 @@ func TestNonAudioBlobsAreRejectedFromAttributes(t *testing.T) {
 		"legacy blobs may carry no content type, and a wrong rejection is permanent")
 	require.Empty(t, blobNotAnalyzable(nil))
 }
+
+// qm_cids holds artwork keys beside the audio: the original, which is present
+// but not audio, and the resized variants, which repair deletes on sight and no
+// node holds. Offering them costs a metadata call per original and a permanent,
+// daily-retried not_local row per variant -- three per image, outnumbering the
+// audio. Shape is the only thing that separates them, so the walk selects on it.
+func TestLegacyWalkOffersOnlyBareKeys(t *testing.T) {
+	ss := testNetwork[0]
+	withWaveformEnabled(t, ss)
+	ctx := context.Background()
+	drainWaveformWork(ss)
+	clearWaveformCursor(t, ss)
+	t.Cleanup(func() { drainWaveformWork(ss); clearWaveformCursor(t, ss) })
+
+	orig := ss.Config.WaveformBackfillEnabled
+	ss.Config.WaveformBackfillEnabled = true
+	t.Cleanup(func() { ss.Config.WaveformBackfillEnabled = orig })
+
+	prefix := fmt.Sprintf("Qmshape%d", time.Now().UnixNano())
+	audio := prefix + "a"
+	original := prefix + "b/original.jpg"
+	resized := prefix + "c/150x150.jpg"
+	for _, key := range []string{audio, original, resized} {
+		seedQmCid(t, ss, key)
+	}
+	t.Cleanup(func() { deleteTestWaveform(t, ss, audio) })
+
+	ss.sweepWaveformLegacy(ctx)
+
+	queued := drainWaveformWork(ss)
+	require.Contains(t, queued, audio, "a bare key is audio and is work")
+	require.NotContains(t, queued, original, "an original is artwork, never analyzable")
+	require.NotContains(t, queued, resized, "a resized variant is held by no node")
+}
+
+// The rollup must count the same population the walk offers, or the artwork
+// reads as outstanding work the walk will never reach.
+func TestRollupIgnoresLegacyArtworkKeys(t *testing.T) {
+	ss := testNetwork[0]
+	withWaveformEnabled(t, ss)
+	base := forceWaveformRollup(t, ss)
+
+	prefix := fmt.Sprintf("Qmartwork%d", time.Now().UnixNano())
+	seedQmCid(t, ss, prefix+"a")
+	seedQmCid(t, ss, prefix+"b/original.jpg")
+	seedQmCid(t, ss, prefix+"c/480x480.jpg")
+
+	got := forceWaveformRollup(t, ss)
+	require.Equal(t, base.byState[waveformStateNeverAnalyzed]+1, got.byState[waveformStateNeverAnalyzed],
+		"only the bare key is outstanding work")
+}

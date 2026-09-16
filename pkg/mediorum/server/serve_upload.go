@@ -245,6 +245,14 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 		return c.String(400, err.Error())
 	}
 
+	// The user this audio is uploaded for, so the node can attest its cids to
+	// them at transcode completion. Optional here; see
+	// resolveOptionalUploadUserID for why this path differs from tus.
+	userID, err := ss.resolveOptionalUploadUserID(template, c.FormValue("userId"))
+	if err != nil {
+		return c.String(http.StatusBadRequest, "upload attribution failed: "+err.Error())
+	}
+
 	var placementHosts []string = nil
 	if v := c.FormValue("placement_hosts"); v != "" {
 		placementHosts = strings.Split(v, ",")
@@ -299,6 +307,7 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 			upload := &Upload{
 				ID:               ulid.Make().String(),
 				UserWallet:       userWallet,
+				UserID:           nullInt64(userID),
 				Status:           JobStatusNew,
 				Template:         template,
 				SelectedPreview:  selectedPreview,

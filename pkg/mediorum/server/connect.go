@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"strconv"
 	"strings"
 	"time"
 
@@ -128,7 +129,11 @@ func (s *StorageService) UploadFiles(ctx context.Context, req *connect.Request[v
 		files[i] = formFile
 	}
 
-	uploads, err := s.mediorum.uploadFile(ctx, req.Msg.Signature, req.Msg.UserWallet, req.Msg.Template, req.Msg.PreviewStart, placeHosts, files)
+	userID := ""
+	if req.Msg.UserId != 0 {
+		userID = strconv.FormatInt(req.Msg.UserId, 10)
+	}
+	uploads, err := s.mediorum.uploadFile(ctx, req.Msg.Signature, req.Msg.UserWallet, req.Msg.Template, req.Msg.PreviewStart, placeHosts, userID, files)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to upload file: %w", err))
 	}

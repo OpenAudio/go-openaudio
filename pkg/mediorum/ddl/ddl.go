@@ -229,6 +229,15 @@ on uploads (created_at desc, id desc) where template = 'audio'`)
 	// the create, or a fresh database alters a table that does not exist yet.
 	runMigration(db, `alter table waveform_cursor add column if not exists qm_key text`)
 
+	// The legacy walk once offered every qm_cids key, artwork included. The
+	// originals were rejected as not_audio; the resized variants, which repair
+	// deletes on sight and no node holds, came back not_local -- a status the
+	// retry sweep re-attempts daily, forever. The walk now skips suffixed keys,
+	// and this removes the rows it already wrote so the retry sweep stops
+	// chasing them. Nothing reads these rows: the rollup no longer counts
+	// suffixed keys, and the serve path is only ever asked for audio.
+	runMigration(db, `delete from waveforms where cid like 'Qm%/%'`)
+
 	runVacuumFull(db)
 }
 

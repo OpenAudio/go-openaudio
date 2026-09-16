@@ -183,11 +183,22 @@ func (ss *MediorumServer) presenceForCIDs(ctx context.Context, cids []string) (*
 	// Fetch both buckets' rows and let Lookup pick. A CID can legitimately live
 	// in either bucket (a rank-flip orphan), and Lookup already reports
 	// "missing" when the key is only in the bucket the caller did not ask for.
-	// Filtering by bucket in SQL would lose that distinction, and the routing
-	// decision itself stays in Go because it depends on rendezvous rank,
-	// StoreAll and placement.
+	// Narrowing to one bucket in SQL would lose that distinction, and the
+	// routing decision itself stays in Go because it depends on rendezvous
+	// rank, StoreAll and placement.
+	//
+	// The bucket predicate is still spelled out, naming every label, because
+	// the primary key is (bucket, key): with only the key constrained the
+	// planner cannot use it and reads the whole table once per batch. That
+	// is a few million rows on a store-all node, and it is a CPU-bound filter
+	// against the key array rather than an I/O cost, so it does not shrink as
+	// the table warms. With both columns constrained it is a handful of index
+	// probes.
 	rows, err := ss.pgPool.Query(ctx,
-		`select bucket, key, size, mod_time from blob_presence where key = any($1)`, keys)
+		`select bucket, key, size, mod_time
+		 from blob_presence
+		 where bucket = any($1) and key = any($2)`,
+		[]string{presenceBucketPrimary, presenceBucketArchive}, keys)
 	if err != nil {
 		return nil, err
 	}
