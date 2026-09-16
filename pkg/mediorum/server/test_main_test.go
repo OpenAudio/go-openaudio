@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"github.com/OpenAudio/go-openaudio/pkg/pos"
 	"github.com/OpenAudio/go-openaudio/pkg/registrar"
@@ -80,7 +79,11 @@ func setupTestNetwork(replicationFactor, serverCount int) []*MediorumServer {
 			},
 		}
 		posChannel := make(chan pos.PoSRequest)
-		server, err := New(lc, serverLogger, config, posChannel, &coreServer.CoreService{}, nil)
+		// No core: the code treats a nil core as "no core wired" and skips
+		// everything that needs one. A CoreService that never registers would
+		// instead look like a core that is forever starting, and the
+		// transcoder would wait for it.
+		server, err := New(lc, serverLogger, config, posChannel, nil, nil)
 		if err != nil {
 			panic(err)
 		}

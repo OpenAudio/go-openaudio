@@ -55,9 +55,11 @@ func TestRulesetAtNilSchedule(t *testing.T) {
 	}
 }
 
-// Ephemeral networks activate everything at height 1; persistent networks
-// activate nothing until an explicit height is scheduled; unknown chain IDs
-// must never inherit another network's activations.
+// Ephemeral networks activate everything at height 1; audius-mainnet-beta
+// activates both enforcements at height 1 but leaves the first-assertion
+// window open until a follow-up release schedules strict; persistent
+// networks activate nothing until an explicit height is scheduled; unknown
+// chain IDs must never inherit another network's activations.
 func TestScheduleForChainID(t *testing.T) {
 	for _, chainID := range []string{"openaudio-devnet", "audius-devnet"} {
 		r := ScheduleForChainID(chainID).RulesetAt(1)
@@ -68,9 +70,30 @@ func TestScheduleForChainID(t *testing.T) {
 			t.Fatalf("%s: content auth should be strict from height 1, got %+v", chainID, r)
 		}
 	}
+	if r := ScheduleForChainID("audius-mainnet-beta").RulesetAt(1); !r.AuthEnforced || !r.ContentAuthEnforced {
+		t.Fatalf("audius-mainnet-beta: both enforcements should be active from height 1, got %+v", r)
+	}
+	if ScheduleForChainID("audius-mainnet-beta").RulesetAt(1 << 40).ContentAuthStrict {
+		t.Fatal("audius-mainnet-beta: strict must stay unscheduled until the migration flusher has drained")
+	}
 	for _, chainID := range []string{"audius-testnet-alpha", "audius-mainnet-alpha-beta", "some-future-chain"} {
 		if ScheduleForChainID(chainID).RulesetAt(1<<40) != (Rules{}) {
 			t.Fatalf("%s: no upgrades should be active", chainID)
+		}
+	}
+}
+
+// The track-cid check runs inside the manage-entity auth check, so a schedule
+// that activates content auth before (or without) signer auth would leave that
+// check dormant while still admitting attestations.
+func TestContentAuthNeverPrecedesAuth(t *testing.T) {
+	for chainID, u := range upgradeSchedules {
+		if u.ContentAuthEnforcementHeight == 0 {
+			continue
+		}
+		if u.AuthEnforcementHeight == 0 || u.AuthEnforcementHeight > u.ContentAuthEnforcementHeight {
+			t.Fatalf("%s: content auth at %d needs auth enforcement at or before it, got %d",
+				chainID, u.ContentAuthEnforcementHeight, u.AuthEnforcementHeight)
 		}
 	}
 }

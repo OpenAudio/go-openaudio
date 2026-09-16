@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"go.uber.org/zap"
@@ -17,7 +18,7 @@ func TestResolveUploadUserIDSkipsImageTemplates(t *testing.T) {
 	ss.Config.ContentAuthEnabled = true
 
 	for _, tmpl := range []JobTemplate{JobTemplateImgSquare, JobTemplateImgBackdrop} {
-		got, err := ss.resolveUploadUserID(tmpl, map[string]string{})
+		got, err := ss.resolveUploadUserID(context.Background(), tmpl, map[string]string{})
 		if err != nil {
 			t.Fatalf("%s should not require a user id: %v", tmpl, err)
 		}
@@ -33,7 +34,7 @@ func TestResolveUploadUserIDRequiresUserIDWhenEnforcing(t *testing.T) {
 	ss := &MediorumServer{}
 	ss.Config.ContentAuthEnabled = true
 
-	if _, err := ss.resolveUploadUserID(JobTemplateAudio, map[string]string{}); err == nil {
+	if _, err := ss.resolveUploadUserID(context.Background(), JobTemplateAudio, map[string]string{}); err == nil {
 		t.Fatal("expected unattributed audio to be rejected when enforcing")
 	}
 }
@@ -44,7 +45,7 @@ func TestResolveUploadUserIDAllowsMissingUserIDWhenNotEnforcing(t *testing.T) {
 	ss := &MediorumServer{}
 	ss.Config.ContentAuthEnabled = false
 
-	got, err := ss.resolveUploadUserID(JobTemplateAudio, map[string]string{})
+	got, err := ss.resolveUploadUserID(context.Background(), JobTemplateAudio, map[string]string{})
 	if err != nil {
 		t.Fatalf("expected unattributed audio to be allowed: %v", err)
 	}
@@ -62,7 +63,7 @@ func TestResolveUploadUserIDRejectsMalformedUserID(t *testing.T) {
 			ss.Config.ContentAuthEnabled = enforcing
 
 			meta := map[string]string{"userId": raw}
-			if _, err := ss.resolveUploadUserID(JobTemplateAudio, meta); err == nil {
+			if _, err := ss.resolveUploadUserID(context.Background(), JobTemplateAudio, meta); err == nil {
 				t.Fatalf("expected user id %q to be rejected (enforcing=%v)", raw, enforcing)
 			}
 		}
@@ -73,7 +74,7 @@ func TestResolveUploadUserIDParsesAssertedUser(t *testing.T) {
 	ss := &MediorumServer{}
 	ss.Config.ContentAuthEnabled = true
 
-	got, err := ss.resolveUploadUserID(JobTemplateAudio, map[string]string{"userId": "4242"})
+	got, err := ss.resolveUploadUserID(context.Background(), JobTemplateAudio, map[string]string{"userId": "4242"})
 	if err != nil {
 		t.Fatalf("expected the asserted user to resolve: %v", err)
 	}
@@ -89,8 +90,9 @@ func TestContentAuthIsIndependentOfProgrammableDistribution(t *testing.T) {
 	ss.Config.ProgrammableDistributionEnabled = false
 	ss.Config.ContentAuthEnabled = true
 
-	if !ss.contentAuthEnabled() {
-		t.Fatal("content auth must not depend on the programmable-distribution flag")
+	on, err := ss.contentAuthEnabled(context.Background())
+	if err != nil || !on {
+		t.Fatalf("content auth must not depend on the programmable-distribution flag: on=%v err=%v", on, err)
 	}
 }
 
@@ -108,7 +110,10 @@ func TestContentAttestationForCoversEveryCid(t *testing.T) {
 	ss := &MediorumServer{logger: zap.NewNop()}
 	ss.Config.ContentAuthEnabled = true
 
-	ca := ss.contentAttestationFor(attributedUpload(), []string{"orig", "", "320", "preview"})
+	ca, err := ss.contentAttestationFor(context.Background(), attributedUpload(), []string{"orig", "", "320", "preview"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ca == nil {
 		t.Fatal("expected an attestation")
 	}
@@ -142,7 +147,7 @@ func TestContentAttestationForSkipsWhenNoClaimIsPossible(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ss := &MediorumServer{logger: zap.NewNop()}
 			ss.Config.ContentAuthEnabled = tc.enabled
-			if ca := ss.contentAttestationFor(tc.upload, tc.cids); ca != nil {
+			if ca, err := ss.contentAttestationFor(context.Background(), tc.upload, tc.cids); err != nil || ca != nil {
 				t.Fatalf("expected no attestation, got %v", ca.Cids)
 			}
 			if err := ss.attestUploadCids(context.Background(), tc.upload, tc.cids...); err != nil {
@@ -187,63 +192,31 @@ func TestResolveOptionalUploadUserIDParsesAndRejectsMalformed(t *testing.T) {
 	}
 }
 
-// A wired core that has not registered itself yet is the boot window: content
-// auth is on but no attestation can be sent. Only uploads that would need one
-// are turned away.
-func TestCheckCanAttestDuringCoreBoot(t *testing.T) {
-	ss := &MediorumServer{core: coreServer.NewCoreService()}
+// Every rule consult waits for core rather than defaulting. With no core
+// wired the config override answers at once; with a core that has not
+// registered, the wait holds until the caller's context ends and reports
+// that, so nothing downstream can mistake "not yet" for "no rule".
+func TestChainRulesWaitsForCore(t *testing.T) {
+	ss := &MediorumServer{}
 	ss.Config.ContentAuthEnabled = true
-
-	if err := ss.checkCanAttest(JobTemplateAudio, 42); !errors.Is(err, errCoreNotReady) {
-		t.Fatalf("attributed audio during boot: want errCoreNotReady, got %v", err)
-	}
-	if err := ss.checkCanAttest(JobTemplateAudio, 0); err != nil {
-		t.Fatalf("unattributed audio never attests, got %v", err)
-	}
-	if err := ss.checkCanAttest(JobTemplateImgSquare, 42); err != nil {
-		t.Fatalf("images never attest, got %v", err)
+	rules, err := ss.chainRules(context.Background())
+	if err != nil || !rules.ContentAuthEnforced {
+		t.Fatalf("nil core: want override, got %+v %v", rules, err)
 	}
 
-	ss.Config.ContentAuthEnabled = false
-	if err := ss.checkCanAttest(JobTemplateAudio, 42); err != nil {
-		t.Fatalf("content auth off: nothing waits on core, got %v", err)
-	}
-
-	// No core at all is the unit-test shape, not a boot window.
-	ss = &MediorumServer{}
-	ss.Config.ContentAuthEnabled = true
-	if err := ss.checkCanAttest(JobTemplateAudio, 42); err != nil {
-		t.Fatalf("nil core: want nil, got %v", err)
-	}
-}
-
-// The sender is the last line: a re-transcode or a job queued across a
-// restart reaches it with no create-time gate in front, and it must fail
-// cleanly so the missed-job sweep retries once core is up.
-func TestSendContentAttestationDuringCoreBootFails(t *testing.T) {
-	ss := &MediorumServer{core: coreServer.NewCoreService()}
-	ss.Config.ContentAuthEnabled = true
-
-	err := ss.sendContentAttestation(context.Background(), contentAttestation(42, "QmX", "0xabc"))
-	if !errors.Is(err, errCoreNotReady) {
-		t.Fatalf("want errCoreNotReady, got %v", err)
-	}
-}
-
-func TestWaitForCore(t *testing.T) {
-	// Nothing to wait for: returns at once.
-	ss := &MediorumServer{logger: zap.NewNop()}
-	ss.Config.ContentAuthEnabled = true
-	if err := ss.waitForCore(context.Background()); err != nil {
-		t.Fatalf("nil core: want nil, got %v", err)
-	}
-
-	// Core wired but not registered: blocks until the context ends.
 	ss = &MediorumServer{core: coreServer.NewCoreService(), logger: zap.NewNop()}
-	ss.Config.ContentAuthEnabled = true
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := ss.waitForCore(ctx); !errors.Is(err, context.Canceled) {
-		t.Fatalf("want context.Canceled, got %v", err)
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	defer cancel()
+	if _, err := ss.chainRules(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("unregistered core: want DeadlineExceeded, got %v", err)
+	}
+	if _, err := ss.resolveUploadUserID(ctx, JobTemplateAudio, map[string]string{}); err == nil {
+		t.Fatal("attribution must not decide while the rules are unknown")
+	}
+	if _, err := ss.contentAttestationFor(ctx, attributedUpload(), []string{"orig"}); err == nil {
+		t.Fatal("attestation must not decide while the rules are unknown")
+	}
+	if _, err := ss.previewClaimant(ctx, "src", 7); !errors.Is(err, errPreviewUnverifiable) {
+		t.Fatalf("preview must report unverifiable while the rules are unknown, got %v", err)
 	}
 }

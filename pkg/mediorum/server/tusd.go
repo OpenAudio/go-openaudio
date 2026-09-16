@@ -145,8 +145,7 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	if t, ok := event.Upload.MetaData["template"]; ok {
 		template = JobTemplate(t)
 	}
-	userID, err := ss.resolveUploadUserID(template, event.Upload.MetaData)
-	if err != nil {
+	if _, err := ss.resolveUploadUserID(event.Context, template, event.Upload.MetaData); err != nil {
 		ss.logger.Warn("rejecting unattributed upload",
 			zap.String("id", event.Upload.ID),
 			zap.String("template", string(template)),
@@ -156,16 +155,6 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 			Body:       "upload attribution failed: " + err.Error(),
 		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
 	}
-	// Same reasoning, different fault: while core is still starting this node
-	// cannot attest, so the bytes would sit unclaimable. 503 sends the client
-	// to another node.
-	if err := ss.checkCanAttest(template, userID); err != nil {
-		return handler.HTTPResponse{
-			StatusCode: http.StatusServiceUnavailable,
-			Body:       err.Error(),
-		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
-	}
-
 	return handler.HTTPResponse{}, handler.FileInfoChanges{}, nil
 }
 
@@ -257,8 +246,11 @@ func (ss *MediorumServer) handleTusdUploadCreated(event handler.HookEvent) {
 
 	// Re-read rather than carry the value over from the pre-create hook: the
 	// parse is cheap, and it keeps the user id written to the row derived from
-	// metadata this function saw for itself.
-	userID, err := ss.resolveUploadUserID(template, event.Upload.MetaData)
+	// metadata this function saw for itself. Parse only: the pre-create hook
+	// already decided whether an absent id is allowed, and this hook runs off
+	// a channel with a context that expires shortly after the request, so it
+	// must not wait on the chain.
+	userID, err := ss.resolveOptionalUploadUserID(template, event.Upload.MetaData["userId"])
 	if err != nil {
 		ss.logger.Error("upload attribution failed after create", zap.String("id", event.Upload.ID), zap.Error(err))
 		now := time.Now().UTC()

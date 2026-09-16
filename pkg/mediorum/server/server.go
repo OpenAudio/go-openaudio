@@ -148,12 +148,10 @@ type MediorumConfig struct {
 	ProgrammableDistributionEnabled bool
 	BlobStorageStreaming            bool
 
-	// ContentAuthEnabled turns on upload-signature verification and on-chain
-	// cid attestation. Deliberately separate from
-	// ProgrammableDistributionEnabled: that flag governs the DDEX subsystem,
-	// and content authorization protects the ordinary track-upload path, so
-	// tying them together would make closing the cid-claim bypass conditional
-	// on enabling an unrelated feature.
+	// ContentAuthEnabled is the test override for content authorization when
+	// no core is wired. A running node asks core for the rule governing the
+	// next block (contentAuthEnabled), so there is no per-node switch to keep
+	// in step with the chain.
 	ContentAuthEnabled bool
 
 	// should have a basedir type of thing
@@ -312,7 +310,6 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		config.Env = v
 	}
 	config.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(config.Env)
-	config.ContentAuthEnabled = common.IsContentAuthEnabled(config.Env)
 	if config.StoreRecentTTL <= 0 {
 		config.StoreRecentTTL = DefaultStoreRecentTTL
 	}

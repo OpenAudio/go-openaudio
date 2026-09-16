@@ -43,7 +43,11 @@ var errPreviewUnverifiable = errors.New("cannot authorize a preview while core i
 // Returns 0 with no error when content auth is off, meaning generate a preview
 // as before and attest nothing.
 func (ss *MediorumServer) previewClaimant(ctx context.Context, sourceCID string, userID int64) (int64, error) {
-	if !ss.contentAuthEnabled() {
+	enforced, err := ss.contentAuthEnabled(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %w", errPreviewUnverifiable, err)
+	}
+	if !enforced {
 		return 0, nil
 	}
 

@@ -216,3 +216,12 @@ func TestHealthAndPingWorkBeforeCoreRegisters(t *testing.T) {
 		t.Fatalf("Ping: got %q", res.Msg.Message)
 	}
 }
+
+// Mediorum asks core for the rules before every attestation decision. Before
+// core registers there is no chain to ask, and the answer must be an error,
+// never a default that a caller could mistake for "no rule here".
+func TestNextBlockRulesBeforeCoreRegistersErrors(t *testing.T) {
+	if _, err := NewCoreService().NextBlockRules(); err == nil {
+		t.Fatal("rules must be unavailable before core registers")
+	}
+}

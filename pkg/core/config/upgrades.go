@@ -111,8 +111,24 @@ var upgradeSchedules = map[string]*UpgradeSchedule{
 	},
 	// stage
 	"audius-testnet-alpha": {},
-	// prod
+	// prod, audius-mainnet-alpha-beta: unscheduled, and must stay so. Its
+	// tracks and grants predate the auth projections, so enforcing there
+	// would make existing entities unwritable.
 	"audius-mainnet-alpha-beta": {},
+	// prod, audius-mainnet-beta: the genesis rollover. genesis-writer replays
+	// the whole history as migration transactions, and the replay projects
+	// auth state and a cid claim for every migrated track, so both
+	// enforcements can be active from the first block. Height 1 also means
+	// no live block is ever produced under the relaxed rules, so there is no
+	// pre-enforcement window in which unverified state can accumulate.
+	// ContentAuthStrictHeight is deliberately unset: the API's new-chain
+	// flusher replays post-snapshot track writes naming cids nobody attested,
+	// and stalls on the first refused row. Schedule strict in a follow-up
+	// release once the flusher has drained.
+	"audius-mainnet-beta": {
+		AuthEnforcementHeight:        1,
+		ContentAuthEnforcementHeight: 1,
+	},
 }
 
 // ScheduleForChainID returns the upgrade schedule for a chain ID. Unknown
