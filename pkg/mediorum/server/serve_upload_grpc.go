@@ -216,7 +216,7 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 			zap.String("cid", formFileCID),
 			zap.String("template", string(upload.Template)))
 		select {
-		case ss.transcodeWork <- upload:
+		case ss.transcodeWork <- cloneUpload(upload):
 		default:
 			ss.logger.Warn("transcode queue full, will be picked up by periodic job", zap.String("uploadID", upload.ID))
 		}

@@ -325,33 +325,37 @@ func (ss *MediorumServer) replicateToHosts(ctx context.Context, upload *Upload, 
 	}
 
 	// Update upload record with successful mirrors using the operation log.
-	var dbUpload Upload
-	if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
-		return fmt.Errorf("failed to get upload from DB: %w", err)
+	// Under the row's lock: the transcode worker claims this same row in the
+	// same instant a new upload's original is replicated, and an unserialized
+	// rewrite here carried the pre-claim row back over it.
+	var merged []string
+	changed := false
+	if _, err := ss.updateUploadRow(upload.ID, func(u *Upload) error {
+		// Start with existing mirrors and merge in successful hosts.
+		merged, changed = mergeReplicationMirrors(isTranscoded, u, newSuccessHosts)
+		if !changed {
+			// A concurrent worker has already recorded every host we just
+			// replicated to. The merged list equals what's already in the DB,
+			// so emitting a Core operation now would relay a row with byte-
+			// identical content to every node for no semantic gain.
+			return errUploadRowUnchanged
+		}
+		if isTranscoded {
+			u.TranscodedMirrors = merged
+		} else {
+			u.Mirrors = merged
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to update mirrors: %w", err)
 	}
-
-	// Start with existing mirrors and merge in successful hosts.
-	merged, changed := mergeReplicationMirrors(isTranscoded, &dbUpload, newSuccessHosts)
 	if !changed {
-		// A concurrent worker has already recorded every host we just
-		// replicated to. The merged list equals what's already in the DB,
-		// so emitting a Core operation now would relay a row with byte-
-		// identical content to every node for no semantic gain.
 		ss.logger.Debug("replication produced no new mirrors; suppressing core operation",
 			zap.String("uploadID", upload.ID),
 			zap.String("cid", cid),
 			zap.Strings("newSuccessHosts", newSuccessHosts),
 		)
 		return nil
-	}
-	if isTranscoded {
-		dbUpload.TranscodedMirrors = merged
-	} else {
-		dbUpload.Mirrors = merged
-	}
-
-	if err := ss.crud.Update(&dbUpload); err != nil {
-		return fmt.Errorf("failed to update mirrors: %w", err)
 	}
 
 	fieldName := "mirrors"

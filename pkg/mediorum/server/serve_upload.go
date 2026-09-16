@@ -398,7 +398,7 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 
 			if template == JobTemplateAudio {
 				select {
-				case ss.transcodeWork <- upload:
+				case ss.transcodeWork <- cloneUpload(upload):
 				default:
 					ss.logger.Warn("transcode queue full, will be picked up by periodic job", zap.String("uploadID", upload.ID))
 				}

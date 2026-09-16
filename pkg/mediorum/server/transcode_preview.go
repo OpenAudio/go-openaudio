@@ -30,7 +30,19 @@ func (ss *MediorumServer) generateAudioPreviewForUpload(ctx context.Context, upl
 		}
 
 		upload.TranscodeResults[upload.SelectedPreview.String] = audioPreview.CID
-		if err := ss.crud.Update(upload); err != nil {
+		// Record it on the row by read-modify-write rather than publishing the
+		// caller's copy whole. From the transcode worker that copy is the row
+		// as it was handed off, before any mirror was recorded, and writing it
+		// back erased every mirror since. The selected preview travels with
+		// the cid because the edit path is the one caller that changes it.
+		if _, err := ss.updateUploadRow(upload.ID, func(u *Upload) error {
+			u.SelectedPreview = upload.SelectedPreview
+			if u.TranscodeResults == nil {
+				u.TranscodeResults = map[string]string{}
+			}
+			u.TranscodeResults[upload.SelectedPreview.String] = audioPreview.CID
+			return nil
+		}); err != nil {
 			return "", err
 		}
 		return audioPreview.CID, nil
