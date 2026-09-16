@@ -27,6 +27,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/integration_tests/utils"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
+	mediorumsdk "github.com/OpenAudio/go-openaudio/pkg/sdk/mediorum"
 )
 
 // Content authorization end to end, on a devnet where both AuthEnforcement
@@ -112,6 +113,50 @@ func TestContentAuth(t *testing.T) {
 		_, err := sendManageEntity(ctx, chainNode, owner, "Track", trackID, "Update",
 			trackMetadata(owner, "Anxiety Upgrade (no cids)", nil))
 		require.NoError(t, err, "only cids present in the transaction are checked")
+	})
+
+	// The two Go SDK upload paths must produce claimable uploads too: the
+	// multipart POST /uploads and the SDK's tus helper both carry the user id
+	// now, so a track naming their cids passes the same check.
+	t.Run("GoSDKMultipartUploadIsClaimable", func(t *testing.T) {
+		f, err := os.Open("./assets/anxiety-upgrade.mp3")
+		require.NoError(t, err)
+		defer f.Close()
+		uploads, err := storageNode.Mediorum.UploadFile(ctx, f, "anxiety-upgrade-multipart.mp3", &mediorumsdk.UploadOptions{
+			Template:         "audio",
+			UserID:           owner.id,
+			WaitForTranscode: true,
+		})
+		require.NoError(t, err)
+		require.Len(t, uploads, 1)
+		cid := uploads[0].TranscodeResults["320"]
+		require.NotEmpty(t, cid)
+		// Reaching done means the attestation committed; a fresh row read
+		// confirms the status rather than trusting the poll's early exit.
+		waitForUploadDone(t, ctx, storageNode, uploads[0].ID)
+
+		_, err = sendManageEntity(ctx, chainNode, owner, "Track", nextTrackID(), "Create",
+			trackMetadata(owner, "Multipart upload", map[string]any{"track_cid": cid, "orig_file_cid": uploads[0].OrigFileCID}))
+		require.NoError(t, err)
+	})
+
+	t.Run("GoSDKTusUploadIsClaimable", func(t *testing.T) {
+		data, err := os.ReadFile("./assets/anxiety-upgrade.mp3")
+		require.NoError(t, err)
+		resp, err := storageNode.Storage.UploadFilesTus(ctx, connect.NewRequest(&storagev1.UploadFilesRequest{
+			Template: "audio",
+			UserId:   owner.id,
+			Files:    []*storagev1.File{{Filename: "anxiety-upgrade-sdk-tus.mp3", Data: data}},
+		}))
+		require.NoError(t, err)
+		require.Len(t, resp.Msg.Uploads, 1)
+		upload := waitForUploadDone(t, ctx, storageNode, resp.Msg.Uploads[0].Id)
+		cid := upload.TranscodeResults["320"]
+		require.NotEmpty(t, cid)
+
+		_, err = sendManageEntity(ctx, chainNode, owner, "Track", nextTrackID(), "Create",
+			trackMetadata(owner, "SDK tus upload", map[string]any{"track_cid": cid, "orig_file_cid": upload.OrigFileCid}))
+		require.NoError(t, err)
 	})
 }
 
