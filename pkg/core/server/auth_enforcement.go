@@ -43,7 +43,7 @@ func (s *Server) validateManageEntityAuth(ctx context.Context, rules config.Rule
 	// cid it has no claim to is rejected without leaving the entity behind in
 	// the overlay for later transactions in the proposal to build on.
 	if rules.ContentAuthEnforced {
-		tx.ClaimUnattested = true
+		tx.ClaimUnattested = !rules.ContentAuthStrict
 		if err := validateTrackContentAuth(ctx, overlay, tx); err != nil {
 			if isAuthValidationError(err) {
 				return &authRejectionError{reason: err.Error()}

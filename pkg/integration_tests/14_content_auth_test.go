@@ -90,19 +90,16 @@ func TestContentAuth(t *testing.T) {
 		require.Contains(t, err.Error(), "was not uploaded for user")
 	})
 
-	t.Run("UnattestedCidGoesToFirstAsserter", func(t *testing.T) {
-		// Audio that reached storage without an attestation (an upload before
-		// the node ran the gate) is publishable by whoever names it first, and
-		// theirs alone from then on.
-		unattested := map[string]any{"track_cid": "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"}
+	t.Run("UnattestedCidIsRejected", func(t *testing.T) {
+		// The devnet schedules strict content auth from height 1, so the
+		// first-assertion window the genesis migration relies on is never
+		// open here; pkg/core/server's unit tests cover it.
 		_, err := sendManageEntity(ctx, chainNode, owner, "Track", nextTrackID(), "Create",
-			trackMetadata(owner, "Never attested", unattested))
-		require.NoError(t, err)
-
-		_, err = sendManageEntity(ctx, chainNode, thief, "Track", nextTrackID(), "Create",
-			trackMetadata(thief, "Decoy of never attested", unattested))
+			trackMetadata(owner, "Never uploaded", map[string]any{
+				"track_cid": "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+			}))
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "was not uploaded for user")
+		require.Contains(t, err.Error(), "is not attested to any uploader")
 	})
 
 	// Track updates are not projected at consensus (ownership on update is the

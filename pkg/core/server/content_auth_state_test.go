@@ -168,6 +168,22 @@ func TestContentAuthUnattestedCidGoesToFirstAsserter(t *testing.T) {
 	mustContentAuth(t, st, edit)
 }
 
+// Under strict content auth the window is closed: a cid nobody holds is
+// refused, and a write naming one leaves no claim behind. Callers signal
+// strict by leaving ClaimUnattested unset.
+func TestStrictContentAuthRejectsUnattestedCid(t *testing.T) {
+	ctx := context.Background()
+	st := newMemAuthStore()
+	mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
+
+	tx := trackCidTx(1, 2_000_001, "0xartist", "Create", map[string]any{"track_cid": "nobody-attested-this"})
+	mustRejectContentAuth(t, st, tx, "is not attested to any uploader")
+	mustProject(t, st, tx) // finalize projects the entity; the claim must not follow
+	if ok, _ := st.CidIsClaimed(ctx, "nobody-attested-this"); ok {
+		t.Fatal("a strict-mode write must not leave a claim behind")
+	}
+}
+
 // The projection never hands out a claim someone already holds, so a block
 // built by a proposer without the gate cannot transfer a cid by naming it.
 func TestAssertedClaimNeverOverridesAnExistingOne(t *testing.T) {

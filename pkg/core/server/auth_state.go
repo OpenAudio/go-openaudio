@@ -91,12 +91,13 @@ type authTx struct {
 	Action     string
 	Signer     string
 	Migration  bool
-	// ClaimUnattested lets a live track write take the claim on a cid nobody
-	// holds yet (content_auth_state.go projectAssertedTrackCids). Set by the
-	// callers that know the ruleset, and only under Rules.ContentAuthEnforced:
-	// before the gate a chain must accumulate no claims from live traffic, or
+	// ClaimUnattested lets a live track write name, and take the claim on, a
+	// cid nobody holds yet (content_auth_state.go validateTrackContentAuth and
+	// projectAssertedTrackCids). Set by the callers that know the ruleset, and
+	// only under Rules.ContentAuthEnforced before Rules.ContentAuthStrict.
+	// Before the gate a chain must accumulate no claims from live traffic, or
 	// activating enforcement later would trust state built from unverified
-	// assertions.
+	// assertions; under strict an unclaimed cid is refused outright.
 	ClaimUnattested bool
 
 	meta map[string]any

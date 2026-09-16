@@ -82,7 +82,8 @@ func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransac
 	}
 
 	auth := authTxFromManageEntity(manageEntity)
-	auth.ClaimUnattested = s.config.Upgrades.RulesetAt(blockHeight).ContentAuthEnforced
+	rules := s.config.Upgrades.RulesetAt(blockHeight)
+	auth.ClaimUnattested = rules.ContentAuthEnforced && !rules.ContentAuthStrict
 	s.projectManageEntityAuthState(ctx, auth)
 
 	return manageEntity, nil

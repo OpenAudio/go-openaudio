@@ -92,17 +92,20 @@ func projectMigratedTrackCids(ctx context.Context, st authStore, tx authTx) erro
 
 // validateTrackContentAuth is the enforcement check, active only under
 // Rules.ContentAuthEnforced: no cid the transaction asserts may be held by a
-// user other than the writing user.
+// user other than the writing user, and once Rules.ContentAuthStrict is
+// active every cid must be held by the writing user.
 //
-// A cid nobody holds passes, and the projection then records it to the writer
-// (projectAssertedTrackCids): first assertion wins. The attack this closes is
-// naming a cid that belongs to someone else, and every cid that can belong to
-// someone else is already claimed — migrated tracks are seeded by the replay
-// and uploads to an enforcing node are attested before the upload reads done.
-// What an unclaimed cid can be is audio that reached storage without an
-// attestation: uploads made to nodes before they ran the gate, and multipart
-// uploads that named no user. Refusing those would strand every such track,
-// and the write that names them first is, in practice, its creator's.
+// Between the two heights (tx.ClaimUnattested) a cid nobody holds passes, and
+// the projection then records it to the writer (projectAssertedTrackCids):
+// first assertion wins. That window exists for the genesis migration, whose
+// API flusher replays old-chain track writes naming cids nobody attested and
+// stalls on the first refused row. It is not safe to leave open: the upload
+// row is public while it transcodes and the attestation is visible in the
+// mempool before it lands, so whoever reads a cid there can take the claim by
+// naming it first. Strict closes it once the flusher drains, and from then on
+// every cid a track may legitimately name is already claimed — migrated
+// tracks are seeded by the replay and uploads to an enforcing node are
+// attested before the upload reads done.
 //
 // Only cids present in this transaction are checked, so metadata-only edits on
 // a track whose audio predates the projection keep working, and an audio
@@ -140,10 +143,12 @@ func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx) err
 		if err != nil {
 			return err
 		}
-		if !known {
-			continue
+		if known {
+			return authValidationErrorf("%s %q was not uploaded for user %d", key, cid, tx.UserID)
 		}
-		return authValidationErrorf("%s %q was not uploaded for user %d", key, cid, tx.UserID)
+		if !tx.ClaimUnattested {
+			return authValidationErrorf("%s %q is not attested to any uploader", key, cid)
+		}
 	}
 	return nil
 }
@@ -155,8 +160,9 @@ func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx) err
 // and at finalize a block from a proposer without the gate must not hand a
 // claim to whoever named the cid.
 //
-// Runs only for live writes on a chain where enforcement is active
-// (tx.ClaimUnattested); migration rows are seeded by projectMigratedTrackCids.
+// Runs only for live writes inside the first-assertion window
+// (tx.ClaimUnattested); migration rows are seeded by projectMigratedTrackCids,
+// and under strict there is nothing unclaimed to record.
 func projectAssertedTrackCids(ctx context.Context, st authStore, tx authTx) error {
 	if !tx.ClaimUnattested || tx.Migration || tx.EntityType != authEntityTypeTrack {
 		return nil
