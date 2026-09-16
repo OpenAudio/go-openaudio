@@ -50,11 +50,18 @@ func (l *uploadRowLocks) lock(id string) *sync.Mutex {
 // everything keyed on that column -- transcode stats, store-all intake, the
 // boot-time reset of stuck jobs -- misreads the upload from then on.
 //
-// The lock is per node, not per network. Peers apply this node's ops in the
-// order it wrote them and never write rows they did not create, so serializing
-// the writers here is what makes those ops a consistent history. mutate runs
-// under the lock: it must not do I/O or update another uploads row, since a
-// nested update on the same stripe would deadlock.
+// The lock is per node, not per network. A row's routine writers all live on
+// the node that created it, and peers apply that node's ops in the order it
+// wrote them -- the op's ulid is minted inside the lock, so ulid order is
+// commit order -- which is what makes those ops a consistent history. It does
+// not cover a row another node rewrites: ops from peers are applied whole
+// outside this lock, and the missed-transcode sweep on store-all nodes claims
+// rows it did not create (see startTranscoder). That is an older hazard this
+// lock leaves as it was. Nor does it cover the raw transcode_progress column
+// update, which touches one column and cannot erase anyone's fields.
+//
+// mutate runs under the lock: it must not do I/O or update another uploads
+// row, since a nested update on the same stripe would deadlock.
 func (ss *MediorumServer) updateUploadRow(id string, mutate func(u *Upload) error) (*Upload, error) {
 	mu := ss.uploadRowLocks.lock(id)
 	mu.Lock()
