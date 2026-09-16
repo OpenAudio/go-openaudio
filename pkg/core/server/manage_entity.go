@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/zap"
@@ -48,7 +49,8 @@ func (s *Server) finalizeManageEntityMigration(ctx context.Context, stx *v1.Sign
 		}
 	}
 
-	s.projectManageEntityAuthState(ctx, authTxFromManageEntityMigration(me))
+	// A migration row's projection does not branch on the ruleset.
+	s.projectManageEntityAuthState(ctx, authTxFromManageEntityMigration(me), config.Rules{})
 
 	return me, nil
 }
@@ -62,7 +64,7 @@ type trackMetadata struct {
 	} `json:"data"`
 }
 
-func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransaction) (proto.Message, error) {
+func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransaction, blockHeight int64) (proto.Message, error) {
 	tx, err := s.validateManageEntity(ctx, stx)
 	if err != nil {
 		return nil, fmt.Errorf("invalid manage entity: %v", err)
@@ -81,7 +83,7 @@ func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransac
 		}
 	}
 
-	s.projectManageEntityAuthState(ctx, authTxFromManageEntity(manageEntity))
+	s.projectManageEntityAuthState(ctx, authTxFromManageEntity(manageEntity), s.config.Upgrades.RulesetAt(blockHeight))
 
 	return manageEntity, nil
 }
@@ -92,9 +94,9 @@ func (s *Server) finalizeManageEntity(ctx context.Context, stx *v1.SignedTransac
 // expected; store errors are logged without failing the tx, matching how the
 // rest of FinalizeBlock treats db errors so a local infra hiccup cannot make
 // this node's tx results diverge from its peers'.
-func (s *Server) projectManageEntityAuthState(ctx context.Context, tx authTx) {
+func (s *Server) projectManageEntityAuthState(ctx context.Context, tx authTx, rules config.Rules) {
 	store := &dbAuthStore{q: s.getDb()}
-	err := applyAuthProjection(ctx, store, tx)
+	err := applyAuthProjection(ctx, store, tx, rules)
 	switch {
 	case err == nil:
 	case isAuthValidationError(err):

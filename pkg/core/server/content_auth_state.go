@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 )
 
 // Consensus-side content authorization (core_auth_cids): which user may
@@ -91,13 +92,26 @@ func projectMigratedTrackCids(ctx context.Context, st authStore, tx authTx) erro
 }
 
 // validateTrackContentAuth is the enforcement check, active only under
-// Rules.ContentAuthEnforced: every cid the transaction asserts must be recorded
-// to a wallet authorized to act for the writing user.
+// Rules.ContentAuthEnforced: no cid the transaction asserts may be held by a
+// user other than the writing user, and once Rules.ContentAuthStrict is
+// active every cid must be held by the writing user.
+//
+// Between the two heights a cid nobody holds passes, and
+// the projection then records it to the writer (projectAssertedTrackCids):
+// first assertion wins. That window exists for the genesis migration, whose
+// API flusher replays old-chain track writes naming cids nobody attested and
+// stalls on the first refused row. It is not safe to leave open: the upload
+// row is public while it transcodes and the attestation is visible in the
+// mempool before it lands, so whoever reads a cid there can take the claim by
+// naming it first. Strict closes it once the flusher drains, and from then on
+// every cid a track may legitimately name is already claimed — migrated
+// tracks are seeded by the replay and uploads to an enforcing node are
+// attested before the upload reads done.
 //
 // Only cids present in this transaction are checked, so metadata-only edits on
 // a track whose audio predates the projection keep working, and an audio
 // replacement is checked against the new cid alone.
-func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx) error {
+func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx, rules config.Rules) error {
 	if tx.Migration || tx.EntityType != authEntityTypeTrack {
 		return nil
 	}
@@ -130,10 +144,50 @@ func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx) err
 		if err != nil {
 			return err
 		}
-		if !known {
+		if known {
+			return authValidationErrorf("%s %q was not uploaded for user %d", key, cid, tx.UserID)
+		}
+		// Only reached under ContentAuthEnforced, so strict alone decides.
+		if rules.ContentAuthStrict {
 			return authValidationErrorf("%s %q is not attested to any uploader", key, cid)
 		}
-		return authValidationErrorf("%s %q was not uploaded for user %d", key, cid, tx.UserID)
+	}
+	return nil
+}
+
+// projectAssertedTrackCids records the writing user as claimant of every cid
+// the transaction names that nobody holds yet — the projection half of
+// first-assertion-wins (see validateTrackContentAuth). A cid someone already
+// holds is left alone: at proposal time validation has rejected the write,
+// and at finalize a block from a proposer without the gate must not hand a
+// claim to whoever named the cid.
+//
+// Runs only for live writes inside the first-assertion window: content auth
+// enforced but not yet strict. Unlike validation this runs for every live
+// write, so the enforced check is explicit — before the gate a chain must
+// accumulate no claims from live traffic, or activating enforcement later
+// would trust state built from unverified assertions. Under strict there is
+// nothing unclaimed to record. Migration rows are seeded by
+// projectMigratedTrackCids.
+func projectAssertedTrackCids(ctx context.Context, st authStore, tx authTx, rules config.Rules) error {
+	if tx.Migration || !rules.ContentAuthEnforced || rules.ContentAuthStrict || tx.EntityType != authEntityTypeTrack {
+		return nil
+	}
+	for _, key := range trackCidMetadataKeys {
+		cid := tx.metaString(key)
+		if cid == "" {
+			continue
+		}
+		known, err := st.CidIsClaimed(ctx, cid)
+		if err != nil {
+			return err
+		}
+		if known {
+			continue
+		}
+		if err := st.InsertCid(ctx, cid, tx.UserID, ""); err != nil {
+			return err
+		}
 	}
 	return nil
 }

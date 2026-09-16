@@ -91,6 +91,9 @@ func TestContentAuth(t *testing.T) {
 	})
 
 	t.Run("UnattestedCidIsRejected", func(t *testing.T) {
+		// The devnet schedules strict content auth from height 1, so the
+		// first-assertion window the genesis migration relies on is never
+		// open here; pkg/core/server's unit tests cover it.
 		_, err := sendManageEntity(ctx, chainNode, owner, "Track", nextTrackID(), "Create",
 			trackMetadata(owner, "Never uploaded", map[string]any{
 				"track_cid": "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
