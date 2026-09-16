@@ -252,6 +252,9 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 	if err != nil {
 		return c.String(http.StatusBadRequest, "upload attribution failed: "+err.Error())
 	}
+	if err := ss.checkCanAttest(template, userID); err != nil {
+		return c.String(http.StatusServiceUnavailable, err.Error())
+	}
 
 	var placementHosts []string = nil
 	if v := c.FormValue("placement_hosts"); v != "" {
@@ -395,7 +398,7 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 
 			if template == JobTemplateAudio {
 				select {
-				case ss.transcodeWork <- upload:
+				case ss.transcodeWork <- cloneUpload(upload):
 				default:
 					ss.logger.Warn("transcode queue full, will be picked up by periodic job", zap.String("uploadID", upload.ID))
 				}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"connectrpc.com/connect"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
@@ -43,6 +44,56 @@ import (
 // MediorumConfig.ContentAuthEnabled.
 func (ss *MediorumServer) contentAuthEnabled() bool {
 	return ss.Config.ContentAuthEnabled
+}
+
+// errCoreNotReady is returned while core is still starting on a node that
+// attests uploads. Upload handlers map it to 503 so the client's node
+// selection retries elsewhere instead of holding bytes this node cannot yet
+// vouch for.
+var errCoreNotReady = errors.New("core is still starting; retry on another node")
+
+// awaitingCore reports whether attesting would fail right now: content auth
+// is on, a core is wired, and it has not finished starting. Core registers
+// itself only after migrations and compaction, so this is a boot window of
+// seconds, never a steady state. A nil core means no core at all (tests), and
+// nothing is awaited.
+func (ss *MediorumServer) awaitingCore() bool {
+	return ss.contentAuthEnabled() && ss.core != nil && !ss.core.IsReady()
+}
+
+// checkCanAttest refuses an audio upload this node would have to attest while
+// it cannot. Only attributed audio ever reaches an attestation, so images and
+// unattributed uploads pass regardless.
+func (ss *MediorumServer) checkCanAttest(template JobTemplate, userID int64) error {
+	if template != JobTemplateAudio || userID == 0 {
+		return nil
+	}
+	if ss.awaitingCore() {
+		return errCoreNotReady
+	}
+	return nil
+}
+
+// waitForCore blocks until this node can attest, or ctx ends. The transcoder
+// calls it before pulling work so jobs queued across a restart wait out the
+// boot window instead of burning their retry budget on a core that is seconds
+// from ready.
+func (ss *MediorumServer) waitForCore(ctx context.Context) error {
+	if !ss.awaitingCore() {
+		return nil
+	}
+	ss.logger.Info("waiting for core before attesting uploads")
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for ss.awaitingCore() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	ss.logger.Info("core ready, attesting uploads")
+	return nil
 }
 
 // resolveUploadUserID reads the asserted uploading user from tus metadata.
@@ -183,6 +234,13 @@ func contentAttestation(userID int64, cid, validatorAddress string) *v1.ContentA
 func (ss *MediorumServer) sendContentAttestation(ctx context.Context, ca *v1.ContentAttestation) error {
 	if ss.core == nil {
 		return nil
+	}
+	// Checked here as well as at upload creation: a job can reach this point
+	// from a restart or a re-transcode with no create-time gate in front of
+	// it. Failing marks the upload errored, and the missed-job sweep retries it
+	// once core is up.
+	if !ss.core.IsReady() {
+		return errCoreNotReady
 	}
 
 	// Shared constructor, so signer and verifier cannot drift on field order or

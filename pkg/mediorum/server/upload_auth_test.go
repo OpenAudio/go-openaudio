@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"go.uber.org/zap"
 )
 
@@ -182,5 +184,66 @@ func TestResolveOptionalUploadUserIDParsesAndRejectsMalformed(t *testing.T) {
 	}
 	if got, err := ss.resolveOptionalUploadUserID(JobTemplateImgSquare, "abc"); err != nil || got != 0 {
 		t.Fatalf("images carry no attribution: got %d (%v)", got, err)
+	}
+}
+
+// A wired core that has not registered itself yet is the boot window: content
+// auth is on but no attestation can be sent. Only uploads that would need one
+// are turned away.
+func TestCheckCanAttestDuringCoreBoot(t *testing.T) {
+	ss := &MediorumServer{core: coreServer.NewCoreService()}
+	ss.Config.ContentAuthEnabled = true
+
+	if err := ss.checkCanAttest(JobTemplateAudio, 42); !errors.Is(err, errCoreNotReady) {
+		t.Fatalf("attributed audio during boot: want errCoreNotReady, got %v", err)
+	}
+	if err := ss.checkCanAttest(JobTemplateAudio, 0); err != nil {
+		t.Fatalf("unattributed audio never attests, got %v", err)
+	}
+	if err := ss.checkCanAttest(JobTemplateImgSquare, 42); err != nil {
+		t.Fatalf("images never attest, got %v", err)
+	}
+
+	ss.Config.ContentAuthEnabled = false
+	if err := ss.checkCanAttest(JobTemplateAudio, 42); err != nil {
+		t.Fatalf("content auth off: nothing waits on core, got %v", err)
+	}
+
+	// No core at all is the unit-test shape, not a boot window.
+	ss = &MediorumServer{}
+	ss.Config.ContentAuthEnabled = true
+	if err := ss.checkCanAttest(JobTemplateAudio, 42); err != nil {
+		t.Fatalf("nil core: want nil, got %v", err)
+	}
+}
+
+// The sender is the last line: a re-transcode or a job queued across a
+// restart reaches it with no create-time gate in front, and it must fail
+// cleanly so the missed-job sweep retries once core is up.
+func TestSendContentAttestationDuringCoreBootFails(t *testing.T) {
+	ss := &MediorumServer{core: coreServer.NewCoreService()}
+	ss.Config.ContentAuthEnabled = true
+
+	err := ss.sendContentAttestation(context.Background(), contentAttestation(42, "QmX", "0xabc"))
+	if !errors.Is(err, errCoreNotReady) {
+		t.Fatalf("want errCoreNotReady, got %v", err)
+	}
+}
+
+func TestWaitForCore(t *testing.T) {
+	// Nothing to wait for: returns at once.
+	ss := &MediorumServer{logger: zap.NewNop()}
+	ss.Config.ContentAuthEnabled = true
+	if err := ss.waitForCore(context.Background()); err != nil {
+		t.Fatalf("nil core: want nil, got %v", err)
+	}
+
+	// Core wired but not registered: blocks until the context ends.
+	ss = &MediorumServer{core: coreServer.NewCoreService(), logger: zap.NewNop()}
+	ss.Config.ContentAuthEnabled = true
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := ss.waitForCore(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("want context.Canceled, got %v", err)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/cidutil"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"github.com/gabriel-vasile/mimetype"
@@ -215,7 +216,7 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 			zap.String("cid", formFileCID),
 			zap.String("template", string(upload.Template)))
 		select {
-		case ss.transcodeWork <- upload:
+		case ss.transcodeWork <- cloneUpload(upload):
 		default:
 			ss.logger.Warn("transcode queue full, will be picked up by periodic job", zap.String("uploadID", upload.ID))
 		}
@@ -274,6 +275,9 @@ func (ss *MediorumServer) uploadFile(ctx context.Context, qsig string, userWalle
 	userID, err := ss.resolveOptionalUploadUserID(template, fUserID)
 	if err != nil {
 		return nil, err
+	}
+	if err := ss.checkCanAttest(template, userID); err != nil {
+		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
 
 	var placementHosts []string = nil

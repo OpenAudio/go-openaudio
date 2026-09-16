@@ -103,15 +103,27 @@ func TestUploadFile(t *testing.T) {
 
 	// Every completion snapshot must be playable, including intermediate ops
 	// a peer may serve before it receives the final transcode update.
+	//
+	// And a claim, once published, is never retracted. A later snapshot with
+	// the transcoder blanked means a writer rewrote the row from a read taken
+	// before the claim -- the replication worker recording the original's
+	// mirrors used to do exactly that -- and the completion that re-reads the
+	// row would then publish done with no transcoder.
 	var uploadOps []crudr.Op
-	require.NoError(t, s1.crud.DB.Where("\"table\" = ? AND data->0->>'id' = ?", "uploads", uploadId).Find(&uploadOps).Error)
+	require.NoError(t, s1.crud.DB.Order("ulid asc").Where("\"table\" = ? AND data->0->>'id' = ?", "uploads", uploadId).Find(&uploadOps).Error)
 	require.NotEmpty(t, uploadOps)
+	claimedBy := ""
 	for _, op := range uploadOps {
 		var snapshots []Upload
 		require.NoError(t, json.Unmarshal(op.Data, &snapshots))
 		for _, snapshot := range snapshots {
 			if snapshot.Status == JobStatusDone {
 				require.NotEmpty(t, snapshot.TranscodeResults["320"], "completion op %s has no audio CID", op.ULID)
+			}
+			if claimedBy == "" {
+				claimedBy = snapshot.TranscodedBy
+			} else {
+				require.Equal(t, claimedBy, snapshot.TranscodedBy, "op %s retracts the transcode claim", op.ULID)
 			}
 		}
 	}

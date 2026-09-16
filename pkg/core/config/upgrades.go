@@ -53,6 +53,22 @@ type UpgradeSchedule struct {
 	// activation point: the migration replay seeds a cid for every track that
 	// exists.
 	ContentAuthEnforcementHeight int64
+
+	// ContentAuthStrictHeight closes the first-assertion window that
+	// ContentAuthEnforcementHeight opens. Between the two heights a cid nobody
+	// holds goes to whoever asserts it first; from this height a Track
+	// create/update may only assert cids the content-auth state already
+	// records as the acting user's, and a cid nobody holds is refused.
+	//
+	// The window exists for the genesis migration: the API flusher replays
+	// old-chain track writes naming cids nobody attested (old-chain storage
+	// never did, and the replay seeds only the snapshot's tracks) and stalls
+	// on the first refused row. It is not safe to leave open — the upload row
+	// is public while it transcodes and the attestation is visible in the
+	// mempool before it lands, so anyone who reads a cid there can take the
+	// claim by naming it first. Schedule strict as soon as the flusher has
+	// drained; never before, or it stalls.
+	ContentAuthStrictHeight int64
 }
 
 // Rules is the resolved rule set for a single height: a flat description of
@@ -60,6 +76,8 @@ type UpgradeSchedule struct {
 type Rules struct {
 	AuthEnforced        bool
 	ContentAuthEnforced bool
+	// ContentAuthStrict only means anything with ContentAuthEnforced.
+	ContentAuthStrict bool
 }
 
 // RulesetAt resolves the rules governing the given block height. A nil
@@ -71,6 +89,7 @@ func (u *UpgradeSchedule) RulesetAt(height int64) Rules {
 	return Rules{
 		AuthEnforced:        activeAt(u.AuthEnforcementHeight, height),
 		ContentAuthEnforced: activeAt(u.ContentAuthEnforcementHeight, height),
+		ContentAuthStrict:   activeAt(u.ContentAuthStrictHeight, height),
 	}
 }
 
@@ -88,11 +107,13 @@ var upgradeSchedules = map[string]*UpgradeSchedule{
 	"openaudio-devnet": {
 		AuthEnforcementHeight:        1,
 		ContentAuthEnforcementHeight: 1,
+		ContentAuthStrictHeight:      1,
 	},
 	// sandbox
 	"audius-devnet": {
 		AuthEnforcementHeight:        1,
 		ContentAuthEnforcementHeight: 1,
+		ContentAuthStrictHeight:      1,
 	},
 	// stage
 	"audius-testnet-alpha": {},
@@ -106,6 +127,10 @@ var upgradeSchedules = map[string]*UpgradeSchedule{
 	// enforcements can be active from the first block. Height 1 also means
 	// no live block is ever produced under the relaxed rules, so there is no
 	// pre-enforcement window in which unverified state can accumulate.
+	// ContentAuthStrictHeight is deliberately unset: the API's new-chain
+	// flusher replays post-snapshot track writes naming cids nobody attested,
+	// and stalls on the first refused row. Schedule strict in a follow-up
+	// release once the flusher has drained.
 	"audius-mainnet-beta": {
 		AuthEnforcementHeight:        1,
 		ContentAuthEnforcementHeight: 1,

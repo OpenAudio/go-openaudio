@@ -73,6 +73,14 @@ func (ss *MediorumServer) startTranscoder(ctx context.Context) error {
 		}
 	}
 
+	// Nothing pulls from the queue until core can take attestations. Uploads
+	// created before the restart are already in the table, and the tus and
+	// multipart handlers fall through to the periodic sweep when the channel
+	// is full, so waiting here delays work rather than dropping it.
+	if err := ss.waitForCore(ctx); err != nil {
+		return err
+	}
+
 	// start workers
 	for i := 0; i < numWorkers; i++ {
 		ss.lc.AddManagedRoutine(
@@ -120,15 +128,18 @@ func (ss *MediorumServer) findMissedJobs(ctx context.Context, work chan *Upload,
 	}
 
 	for _, upload := range uploads {
-		upload.TranscodedBy = ss.Config.Self.Host
-		upload.TranscodedAt = now
-		upload.Status = JobStatusBusy
-		if err := ss.crud.Update(upload); err != nil {
+		claimed, err := ss.updateUploadRow(upload.ID, func(u *Upload) error {
+			u.TranscodedBy = ss.Config.Self.Host
+			u.TranscodedAt = now
+			u.Status = JobStatusBusy
+			return nil
+		})
+		if err != nil {
 			return err
 		}
 
 		select {
-		case work <- upload:
+		case work <- claimed:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -425,22 +436,28 @@ outerLoop:
 }
 
 func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
-	var dbUpload Upload
-	if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
-		return fmt.Errorf("failed to get upload from DB: %w", err)
+	// Claim the row under its lock. The replication worker was handed this
+	// same upload in the same instant and records the original's mirrors by
+	// rewriting the row too; unserialized, whichever of the two wrote second
+	// erased the other's fields.
+	claimed, err := ss.updateUploadRow(upload.ID, func(u *Upload) error {
+		if transcodeRetryLimitExceeded(*u) {
+			return errTranscodeRetryLimitExceeded
+		}
+		u.TranscodedBy = ss.Config.Self.Host
+		u.TranscodedAt = time.Now().UTC()
+		u.Status = JobStatusBusy
+		return nil
+	})
+	if errors.Is(err, errTranscodeRetryLimitExceeded) {
+		return fmt.Errorf("%w: upload=%s error_count=%d", errTranscodeRetryLimitExceeded, claimed.ID, claimed.ErrorCount)
 	}
-	if transcodeRetryLimitExceeded(dbUpload) {
-		return fmt.Errorf("%w: upload=%s error_count=%d", errTranscodeRetryLimitExceeded, dbUpload.ID, dbUpload.ErrorCount)
-	}
-	dbUpload.TranscodedBy = ss.Config.Self.Host
-	dbUpload.TranscodedAt = time.Now().UTC()
-	dbUpload.Status = JobStatusBusy
-	if err := ss.crud.Update(&dbUpload); err != nil {
-		ss.logger.Error("failed to update transcode status", zap.String("id", dbUpload.ID), zap.Error(err))
+	if err != nil {
+		ss.logger.Error("failed to update transcode status", zap.String("id", upload.ID), zap.Error(err))
 		return err
 	}
 	// Keep the caller's upload in sync with the worker that claimed it.
-	upload.TranscodedBy = dbUpload.TranscodedBy
+	upload.TranscodedBy = claimed.TranscodedBy
 
 	fileHash := upload.OrigFileCID
 
@@ -469,15 +486,13 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 		filteredError := filterErrorLines(err.Error(), errorTypes, 10)
 		errMsg := fmt.Errorf("%s %s", filteredError, strings.Join(info, " "))
 
-		var dbUpload Upload
-		if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
-			return fmt.Errorf("failed to get upload from DB: %w", err)
-		}
-		dbUpload.Error = truncateUploadError(errMsg.Error())
-		dbUpload.Status = JobStatusError
-		dbUpload.ErrorCount = dbUpload.ErrorCount + 1
-		if err := ss.crud.Update(&dbUpload); err != nil {
-			ss.logger.Error("failed to update transcode error status", zap.String("id", dbUpload.ID), zap.Error(err))
+		if _, err := ss.updateUploadRow(upload.ID, func(u *Upload) error {
+			u.Error = truncateUploadError(errMsg.Error())
+			u.Status = JobStatusError
+			u.ErrorCount = u.ErrorCount + 1
+			return nil
+		}); err != nil {
+			ss.logger.Error("failed to update transcode error status", zap.String("id", upload.ID), zap.Error(err))
 		}
 		return errMsg
 	}
@@ -505,36 +520,43 @@ func (ss *MediorumServer) transcode(ctx context.Context, upload *Upload) error {
 		return fmt.Errorf("unsupported format: %s", upload.Template)
 	}
 
-	// Get fresh upload from DB before updating to prevent stale data
-	if err := ss.crud.DB.Where("id = ?", upload.ID).First(&dbUpload).Error; err != nil {
+	// Get fresh upload from DB before attesting: attribution rides on the row.
+	var current Upload
+	if err := ss.crud.DB.Where("id = ?", upload.ID).First(&current).Error; err != nil {
 		return fmt.Errorf("failed to get upload from DB: %w", err)
 	}
 	// Attest before publishing done, not after. A client creates its track as
 	// soon as the upload reads done, and consensus rejects a track naming cids
 	// it holds no claim for, so flipping the status first would race the
 	// attestation.
-	cids := []string{dbUpload.OrigFileCID, upload.TranscodeResults["320"]}
+	cids := []string{current.OrigFileCID, upload.TranscodeResults["320"]}
 	if upload.SelectedPreview.Valid {
 		cids = append(cids, upload.TranscodeResults[upload.SelectedPreview.String])
 	}
-	if err := ss.attestUploadCids(ctx, &dbUpload, cids...); err != nil {
+	if err := ss.attestUploadCids(ctx, &current, cids...); err != nil {
 		return onError(err, upload.Status, "attesting cids")
 	}
 
-	dbUpload.TranscodeProgress = 1
-	dbUpload.TranscodedAt = time.Now().UTC()
-	dbUpload.Status = JobStatusDone
-	dbUpload.Error = ""
-	dbUpload.TranscodeResults = upload.TranscodeResults
-	dbUpload.TranscodedMirrors = upload.TranscodedMirrors
-	if err := ss.crud.Update(&dbUpload); err != nil {
-		ss.logger.Error("failed to update transcode completion status", zap.String("id", dbUpload.ID), zap.Error(err))
+	// Attestation is a network round trip, so the row is read again under the
+	// lock rather than reusing the copy above: mirrors recorded meanwhile must
+	// ride along into the completion snapshot.
+	done, err := ss.updateUploadRow(upload.ID, func(u *Upload) error {
+		u.TranscodeProgress = 1
+		u.TranscodedAt = time.Now().UTC()
+		u.Status = JobStatusDone
+		u.Error = ""
+		u.TranscodeResults = upload.TranscodeResults
+		u.TranscodedMirrors = upload.TranscodedMirrors
+		return nil
+	})
+	if err != nil {
+		ss.logger.Error("failed to update transcode completion status", zap.String("id", upload.ID), zap.Error(err))
 		return err
 	}
 
 	// Queue for async replication of transcoded file
 	select {
-	case ss.replicationWork <- &dbUpload:
+	case ss.replicationWork <- done:
 		logger.Debug("queued transcoded file for replication", zap.String("uploadID", upload.ID))
 	default:
 		logger.Warn("replication channel full, transcoded file may not replicate immediately", zap.String("uploadID", upload.ID))

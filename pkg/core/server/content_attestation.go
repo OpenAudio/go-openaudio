@@ -138,10 +138,9 @@ func (s *Server) finalizeContentAttestation(ctx context.Context, tx *v1.SignedTr
 // caller retries, and a stale positive produces an attestation that grants
 // nothing it should not.
 func (c *CoreService) IsCidClaimedByUser(ctx context.Context, cid string, userID int64) (bool, error) {
-	c.coreMu.RLock()
-	defer c.coreMu.RUnlock()
-	if c.core == nil {
-		return false, errors.New("core not ready")
+	core, err := c.ready()
+	if err != nil {
+		return false, err
 	}
-	return c.core.db.IsCidClaimedByUser(ctx, db.IsCidClaimedByUserParams{Cid: cid, UserID: userID})
+	return core.db.IsCidClaimedByUser(ctx, db.IsCidClaimedByUserParams{Cid: cid, UserID: userID})
 }

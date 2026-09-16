@@ -269,28 +269,24 @@ func (ss *MediorumServer) analyzeAudio(ctx context.Context, upload *Upload, dead
 // them. Refresh on both success and failure so analysis retries also preserve
 // the persisted upload status, results, and mirrors.
 func (ss *MediorumServer) saveAudioAnalysis(uploadID string, result *AudioAnalysisResult, analysisErr error) error {
-	var dbUpload Upload
-	if err := ss.crud.DB.Where("id = ?", uploadID).First(&dbUpload).Error; err != nil {
-		return err
+	_, err := ss.updateUploadRow(uploadID, func(u *Upload) error {
+		u.AudioAnalyzedBy = ss.Config.Self.Host
+		u.AudioAnalysisError = ""
+		u.AudioAnalyzedAt = time.Now().UTC()
+		u.AudioAnalysisStatus = JobStatusDone
+		if analysisErr != nil {
+			u.AudioAnalysisError = analysisErr.Error()
+			u.AudioAnalysisErrorCount++
+			u.AudioAnalysisStatus = JobStatusError
+		} else {
+			u.AudioAnalysisResults = result
+		}
+		return nil
+	})
+	if err != nil {
+		ss.logger.Error("failed to update audio analysis completion status", zap.String("id", uploadID), zap.Error(err))
 	}
-
-	dbUpload.AudioAnalyzedBy = ss.Config.Self.Host
-	dbUpload.AudioAnalysisError = ""
-	dbUpload.AudioAnalyzedAt = time.Now().UTC()
-	dbUpload.AudioAnalysisStatus = JobStatusDone
-	if analysisErr != nil {
-		dbUpload.AudioAnalysisError = analysisErr.Error()
-		dbUpload.AudioAnalysisErrorCount++
-		dbUpload.AudioAnalysisStatus = JobStatusError
-	} else {
-		dbUpload.AudioAnalysisResults = result
-	}
-	if err := ss.crud.Update(&dbUpload); err != nil {
-		ss.logger.Error("failed to update audio analysis completion status", zap.String("id", dbUpload.ID), zap.Error(err))
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (ss *MediorumServer) analyzeKey(filename string) (string, error) {

@@ -99,31 +99,47 @@ func (c *CoreService) GetConfig() *config.Config {
 
 var _ v1connect.CoreServiceHandler = (*CoreService)(nil)
 
+// IsReady reports whether core.Run has registered the inner Server via SetCore.
 func (c *CoreService) IsReady() bool {
+	_, err := c.ready()
+	return err == nil
+}
+
+// ready returns the inner Server once core.Run has registered it, or
+// CodeUnavailable before that. Every exported method that touches the inner
+// Server must call it first, so readiness is a property of the service rather
+// than of whichever transport (POST handler, GET route, in-process pointer)
+// happened to reach the method. The inner Server is set once and never
+// cleared, so the returned pointer stays valid after the lock is released.
+func (c *CoreService) ready() (*Server, error) {
 	c.coreMu.RLock()
 	defer c.coreMu.RUnlock()
-	return c.core != nil
+	if c.core == nil {
+		// A fresh error per call: connect errors carry mutable metadata, so a
+		// shared instance could be written by concurrent handlers.
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("core service not ready"))
+	}
+	return c.core, nil
 }
 
 // GetConsensusNodeEndpoints returns the endpoints of nodes in the active CometBFT
 // validator set, cross-referenced with the core_validators DB table for endpoint info.
 func (c *CoreService) GetConsensusNodeEndpoints(ctx context.Context) ([]string, error) {
-	c.coreMu.RLock()
-	defer c.coreMu.RUnlock()
-	if c.core == nil {
-		return nil, fmt.Errorf("core not ready")
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
 	}
-	if c.core.rpc == nil {
+	if core.rpc == nil {
 		return nil, fmt.Errorf("rpc not ready")
 	}
 
 	page, perPage := 1, 100
-	validators, err := c.core.rpc.Validators(ctx, nil, &page, &perPage)
+	validators, err := core.rpc.Validators(ctx, nil, &page, &perPage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch validators: %w", err)
 	}
 
-	allNodes, err := c.core.db.GetAllRegisteredNodesIncludingJailed(ctx)
+	allNodes, err := core.db.GetAllRegisteredNodesIncludingJailed(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch registered nodes: %w", err)
 	}
@@ -146,16 +162,21 @@ func (c *CoreService) GetConsensusNodeEndpoints(ctx context.Context) ([]string, 
 
 // GetNodeInfo implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetNodeInfo(ctx context.Context, req *connect.Request[v1.GetNodeInfoRequest]) (*connect.Response[v1.GetNodeInfoResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	status, err := c.GetStatus(ctx, &connect.Request[v1.GetStatusRequest]{})
 	if err != nil {
 		return nil, err
 	}
 
 	res := &v1.GetNodeInfoResponse{
-		Chainid:       c.core.config.GenesisFile.ChainID,
+		Chainid:       core.config.GenesisFile.ChainID,
 		Synced:        status.Msg.SyncInfo.Synced,
-		CometAddress:  c.core.config.ProposerAddress,
-		EthAddress:    c.core.config.WalletAddress,
+		CometAddress:  core.config.ProposerAddress,
+		EthAddress:    core.config.WalletAddress,
 		CurrentHeight: status.Msg.ChainInfo.CurrentHeight,
 	}
 	return connect.NewResponse(res), nil
@@ -163,8 +184,13 @@ func (c *CoreService) GetNodeInfo(ctx context.Context, req *connect.Request[v1.G
 
 // ForwardTransaction implements v1connect.CoreServiceHandler.
 func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Request[v1.ForwardTransactionRequest]) (*connect.Response[v1.ForwardTransactionResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	// Check feature flag for programmable distribution features
-	if c.core.config != nil && !c.core.config.ProgrammableDistributionEnabled {
+	if core.config != nil && !core.config.ProgrammableDistributionEnabled {
 		// Check if transaction uses programmable distribution features
 		if req.Msg != nil && req.Msg.Transaction != nil && req.Msg.Transaction.GetFileUpload() != nil {
 			return nil, connect.NewError(connect.CodeUnimplemented, errors.New("programmable distribution is not enabled in this environment"))
@@ -181,7 +207,6 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 	// TODO: check signature from known node
 
 	var mempoolKey common.TxHash
-	var err error
 	var txSize int
 	// Use consistent hashing by marshaling to bytes first, matching abci.go behavior
 	if req.Msg.Transactionv2 != nil {
@@ -192,7 +217,7 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		mempoolKey = common.ToTxHashFromBytes(txBytes)
 		txSize = len(txBytes)
 
-		if err := c.core.validateV2Transaction(ctx, c.core.cache.currentHeight.Load(), req.Msg.Transactionv2); err != nil {
+		if err := core.validateV2Transaction(ctx, core.cache.currentHeight.Load(), req.Msg.Transactionv2); err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("transactionv2 validation failed: %v", err))
 		}
 	} else {
@@ -202,7 +227,7 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		}
 		em := tx.GetManageEntity()
 		if em != nil {
-			err := InjectSigner(c.core.config, em)
+			err := InjectSigner(core.config, em)
 			if err != nil {
 				return nil, connect.NewError(connect.CodeInvalidArgument, errors.Join(errors.New("signer not recoverable"), err))
 			}
@@ -219,7 +244,7 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		// mempool that SendTransaction would have refused (including
 		// unauthorized ManageEntity txs once enforcement is active), leaving
 		// PrepareProposal as the only filter.
-		if err := c.core.validateV1Transaction(ctx, c.core.cache.currentHeight.Load(), req.Msg.Transaction); err != nil {
+		if err := core.validateV1Transaction(ctx, core.cache.currentHeight.Load(), req.Msg.Transaction); err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("transaction validation failed: %v", err))
 		}
 	}
@@ -229,26 +254,26 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 	// operator raises OPENAUDIO_LOG_LEVEL without re-creating the July 2026
 	// ingest flood. The hash is the join key against mempool/finalize logs.
 	if req.Msg.Transactionv2 != nil {
-		c.core.logger.Debug("received forwarded v2 tx",
+		core.logger.Debug("received forwarded v2 tx",
 			zap.String("tx", mempoolKey),
 			zap.Int("size_bytes", txSize),
 			zap.Any("payload", req.Msg.Transactionv2))
-		if c.core.config.Environment != "dev" {
+		if core.config.Environment != "dev" {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("received forwarded v2 tx outside of dev"))
 		}
 	} else {
-		c.core.logger.Debug("received forwarded tx",
+		core.logger.Debug("received forwarded tx",
 			zap.String("tx", mempoolKey),
 			zap.String("type", txTypeName(req.Msg.Transaction)),
 			zap.Int("size_bytes", txSize),
 			zap.Any("payload", req.Msg.Transaction))
 	}
 
-	if c.core.rpc == nil {
+	if core.rpc == nil {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("local rpc not ready"))
 	}
 
-	status, err := c.core.rpc.Status(ctx)
+	status, err := core.rpc.Status(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("chain not healthy: %v", err)
 	}
@@ -269,7 +294,7 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		return nil, fmt.Errorf("no transaction provided")
 	}
 
-	err = c.core.addMempoolTransaction(mempoolKey, mempoolTx, false)
+	err = core.addMempoolTransaction(mempoolKey, mempoolTx, false)
 	if err != nil {
 		return nil, fmt.Errorf("could not add tx to mempool %v", err)
 	}
@@ -279,27 +304,32 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 
 // GetBlock implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetBlock(ctx context.Context, req *connect.Request[v1.GetBlockRequest]) (*connect.Response[v1.GetBlockResponse], error) {
-	currentHeight := c.core.cache.currentHeight.Load()
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
+	currentHeight := core.cache.currentHeight.Load()
 	if req.Msg.Height > currentHeight {
 		return connect.NewResponse(&v1.GetBlockResponse{
 			Block: &v1.Block{
-				ChainId: c.core.config.GenesisFile.ChainID,
+				ChainId: core.config.GenesisFile.ChainID,
 				Height:  -1,
 			},
 		}), nil
 	}
 
-	block, err := c.core.db.GetBlock(ctx, req.Msg.Height)
+	block, err := core.db.GetBlock(ctx, req.Msg.Height)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// fallback to rpc for now, remove after mainnet-alpha
 			return c.getBlockRpcFallback(ctx, req.Msg.Height)
 		}
-		c.core.logger.Error("error getting block", zap.Error(err))
+		core.logger.Error("error getting block", zap.Error(err))
 		return nil, err
 	}
 
-	blockTxs, err := c.core.db.GetBlockTransactions(ctx, req.Msg.Height)
+	blockTxs, err := core.db.GetBlockTransactions(ctx, req.Msg.Height)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
@@ -314,7 +344,7 @@ func (c *CoreService) GetBlock(ctx context.Context, req *connect.Request[v1.GetB
 		res := &v1.Transaction{
 			Hash:        tx.TxHash,
 			BlockHash:   block.Hash,
-			ChainId:     c.core.config.GenesisFile.ChainID,
+			ChainId:     core.config.GenesisFile.ChainID,
 			Height:      block.Height,
 			Timestamp:   timestamppb.New(block.CreatedAt.Time),
 			Transaction: &transaction,
@@ -324,23 +354,28 @@ func (c *CoreService) GetBlock(ctx context.Context, req *connect.Request[v1.GetB
 
 	res := &v1.Block{
 		Hash:         block.Hash,
-		ChainId:      c.core.config.GenesisFile.ChainID,
+		ChainId:      core.config.GenesisFile.ChainID,
 		Proposer:     block.Proposer,
 		Height:       block.Height,
 		Transactions: sortTransactionResponse(txResponses),
 		Timestamp:    timestamppb.New(block.CreatedAt.Time),
 	}
 
-	return connect.NewResponse(&v1.GetBlockResponse{Block: res, CurrentHeight: c.core.cache.currentHeight.Load()}), nil
+	return connect.NewResponse(&v1.GetBlockResponse{Block: res, CurrentHeight: core.cache.currentHeight.Load()}), nil
 }
 
 // GetBlocks implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.GetBlocksRequest]) (*connect.Response[v1.GetBlocksResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	heights := req.Msg.Height
 	if len(heights) == 0 {
 		return connect.NewResponse(&v1.GetBlocksResponse{
 			Blocks:        map[int64]*v1.Block{},
-			CurrentHeight: c.core.cache.currentHeight.Load(),
+			CurrentHeight: core.cache.currentHeight.Load(),
 		}), nil
 	}
 
@@ -349,10 +384,10 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("too many blocks requested: %d (max 500)", len(heights)))
 	}
 
-	currentHeight := c.core.cache.currentHeight.Load()
+	currentHeight := core.cache.currentHeight.Load()
 
 	// Get blocks with transactions in one efficient query
-	rows, err := c.core.db.GetBlocksWithTransactions(ctx, heights)
+	rows, err := core.db.GetBlocksWithTransactions(ctx, heights)
 	if err != nil {
 		return nil, fmt.Errorf("error getting blocks with transactions: %v", err)
 	}
@@ -365,7 +400,7 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 		if _, exists := blockMap[row.Height]; !exists {
 			blockMap[row.Height] = &v1.Block{
 				Hash:         row.BlockHash,
-				ChainId:      c.core.config.GenesisFile.ChainID,
+				ChainId:      core.config.GenesisFile.ChainID,
 				Proposer:     row.Proposer,
 				Height:       row.Height,
 				Transactions: []*v1.Transaction{},
@@ -384,7 +419,7 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 			txResponse := &v1.Transaction{
 				Hash:        row.TxHash.String,
 				BlockHash:   row.BlockHash,
-				ChainId:     c.core.config.GenesisFile.ChainID,
+				ChainId:     core.config.GenesisFile.ChainID,
 				Height:      row.Height,
 				Timestamp:   timestamppb.New(row.BlockCreatedAt.Time),
 				Transaction: &transaction,
@@ -407,12 +442,17 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 
 // GetDeregistrationAttestation implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *connect.Request[v1.GetDeregistrationAttestationRequest]) (*connect.Response[v1.GetDeregistrationAttestationResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	dereg := req.Msg.Deregistration
 	if dereg == nil {
 		return nil, errors.New("empty deregistration attestation")
 	}
 
-	node, err := c.core.db.GetRegisteredNodeByCometAddress(ctx, dereg.CometAddress)
+	node, err := core.db.GetRegisteredNodeByCometAddress(ctx, dereg.CometAddress)
 	if err != nil {
 		return nil, fmt.Errorf("could not attest deregistration for '%s': %v", dereg.CometAddress, err)
 	}
@@ -423,14 +463,14 @@ func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *con
 		return nil, fmt.Errorf("could not format eth block '%s' for node '%s'", node.EthBlock, node.Endpoint)
 	}
 
-	registered, err := c.core.IsNodeRegisteredOnEthereum(
+	registered, err := core.IsNodeRegisteredOnEthereum(
 		ctx,
 		node.Endpoint,
 		node.EthAddress,
 		ethBlock.Int64(),
 	)
 	if err != nil {
-		c.core.logger.Error("Could not attest to node eth deregistration: error checking eth registration status",
+		core.logger.Error("Could not attest to node eth deregistration: error checking eth registration status",
 			zap.String("cometAddress", dereg.CometAddress),
 			zap.String("ethAddress", node.EthAddress),
 			zap.String("endpoint", node.Endpoint),
@@ -439,9 +479,9 @@ func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *con
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not attest to node deregistration"))
 	}
 
-	shouldPurge, err := c.core.ShouldPurgeValidatorForUnderperformance(ctx, dereg.CometAddress)
+	shouldPurge, err := core.ShouldPurgeValidatorForUnderperformance(ctx, dereg.CometAddress)
 	if err != nil {
-		c.core.logger.Error("Could not attest to node eth deregistration: could not check uptime SLA history",
+		core.logger.Error("Could not attest to node eth deregistration: could not check uptime SLA history",
 			zap.String("cometAddress", dereg.CometAddress),
 			zap.String("ethAddress", node.EthAddress),
 			zap.String("endpoint", node.Endpoint),
@@ -451,7 +491,7 @@ func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *con
 	}
 
 	if registered && !shouldPurge {
-		c.core.logger.Error("Could not attest to node eth deregistration: node is still registered and not underperforming",
+		core.logger.Error("Could not attest to node eth deregistration: node is still registered and not underperforming",
 			zap.String("cometAddress", dereg.CometAddress),
 			zap.String("ethAddress", node.EthAddress),
 			zap.String("endpoint", node.Endpoint),
@@ -459,16 +499,16 @@ func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *con
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not attest to node deregistration"))
 	}
 
-	c.core.logger.Info("Attesting to deregister a validator because it is down", zap.String("validatorAddress", dereg.CometAddress))
+	core.logger.Info("Attesting to deregister a validator because it is down", zap.String("validatorAddress", dereg.CometAddress))
 
 	deregBytes, err := proto.Marshal(dereg)
 	if err != nil {
-		c.core.logger.Error("could not marshal deregistration", zap.Error(err))
+		core.logger.Error("could not marshal deregistration", zap.Error(err))
 		return nil, err
 	}
-	sig, err := common.EthSign(c.core.config.EthereumKey, deregBytes)
+	sig, err := common.EthSign(core.config.EthereumKey, deregBytes)
 	if err != nil {
-		c.core.logger.Error("could not sign deregistration", zap.Error(err))
+		core.logger.Error("could not sign deregistration", zap.Error(err))
 		return nil, err
 	}
 
@@ -485,22 +525,27 @@ func (c *CoreService) GetHealth(context.Context, *connect.Request[v1.GetHealthRe
 
 // GetRegistrationAttestation implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *connect.Request[v1.GetRegistrationAttestationRequest]) (*connect.Response[v1.GetRegistrationAttestationResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	reg := req.Msg.Registration
 	if reg == nil {
 		return nil, errors.New("empty registration attestation")
 	}
 
-	if reg.Deadline < c.core.cache.currentHeight.Load() || reg.Deadline > c.core.cache.currentHeight.Load()+maxRegistrationAttestationValidity {
-		return nil, fmt.Errorf("cannot sign registration request with deadline %d (current height is %d)", reg.Deadline, c.core.cache.currentHeight.Load())
+	if reg.Deadline < core.cache.currentHeight.Load() || reg.Deadline > core.cache.currentHeight.Load()+maxRegistrationAttestationValidity {
+		return nil, fmt.Errorf("cannot sign registration request with deadline %d (current height is %d)", reg.Deadline, core.cache.currentHeight.Load())
 	}
 
-	if registered, err := c.core.IsNodeRegisteredOnEthereum(
+	if registered, err := core.IsNodeRegisteredOnEthereum(
 		ctx,
 		reg.Endpoint,
 		reg.DelegateWallet,
 		reg.EthBlock,
 	); !registered || err != nil {
-		c.core.logger.Error(
+		core.logger.Error(
 			"Could not attest to node registration, failed to find endpoint on ethereum",
 			zap.String("delegate", reg.DelegateWallet),
 			zap.String("endpoint", reg.Endpoint),
@@ -510,8 +555,8 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("node is not registered on ethereum"))
 	}
 
-	if shouldPurge, err := c.core.ShouldPurgeValidatorForUnderperformance(ctx, reg.CometAddress); shouldPurge || err != nil {
-		c.core.logger.Error(
+	if shouldPurge, err := core.ShouldPurgeValidatorForUnderperformance(ctx, reg.CometAddress); shouldPurge || err != nil {
+		core.logger.Error(
 			"Could not attest to node eth registration, validator should stay purged",
 			zap.String("delegate", reg.DelegateWallet),
 			zap.String("endpoint", reg.Endpoint),
@@ -523,12 +568,12 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 
 	regBytes, err := proto.Marshal(reg)
 	if err != nil {
-		c.core.logger.Error("could not marshal registration", zap.Error(err))
+		core.logger.Error("could not marshal registration", zap.Error(err))
 		return nil, err
 	}
-	sig, err := common.EthSign(c.core.config.EthereumKey, regBytes)
+	sig, err := common.EthSign(core.config.EthereumKey, regBytes)
 	if err != nil {
-		c.core.logger.Error("could not sign registration", zap.Error(err))
+		core.logger.Error("could not sign registration", zap.Error(err))
 		return nil, err
 	}
 
@@ -540,16 +585,21 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 
 // GetTransaction implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetTransaction(ctx context.Context, req *connect.Request[v1.GetTransactionRequest]) (*connect.Response[v1.GetTransactionResponse], error) {
-	txhash := req.Msg.TxHash
-
-	c.core.logger.Debug("query", zap.String("txhash", txhash))
-
-	tx, err := c.core.db.GetTx(ctx, txhash)
+	core, err := c.ready()
 	if err != nil {
 		return nil, err
 	}
 
-	block, err := c.core.db.GetBlock(ctx, tx.BlockID)
+	txhash := req.Msg.TxHash
+
+	core.logger.Debug("query", zap.String("txhash", txhash))
+
+	tx, err := core.db.GetTx(ctx, txhash)
+	if err != nil {
+		return nil, err
+	}
+
+	block, err := core.db.GetBlock(ctx, tx.BlockID)
 	if err != nil {
 		return nil, err
 	}
@@ -563,7 +613,7 @@ func (c *CoreService) GetTransaction(ctx context.Context, req *connect.Request[v
 			Transaction: &v1.Transaction{
 				Hash:        txhash,
 				BlockHash:   block.Hash,
-				ChainId:     c.core.config.GenesisFile.ChainID,
+				ChainId:     core.config.GenesisFile.ChainID,
 				Height:      block.Height,
 				Timestamp:   timestamppb.New(block.CreatedAt.Time),
 				Transaction: &v1Transaction,
@@ -582,7 +632,7 @@ func (c *CoreService) GetTransaction(ctx context.Context, req *connect.Request[v
 			Transaction: &v1.Transaction{
 				Hash:          txhash,
 				BlockHash:     block.Hash,
-				ChainId:       c.core.config.GenesisFile.ChainID,
+				ChainId:       core.config.GenesisFile.ChainID,
 				Height:        block.Height,
 				Timestamp:     timestamppb.New(block.CreatedAt.Time),
 				Transaction:   &v1Transaction,
@@ -602,8 +652,13 @@ func (c *CoreService) Ping(context.Context, *connect.Request[v1.PingRequest]) (*
 
 // SendTransaction implements v1connect.CoreServiceHandler.
 func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[v1.SendTransactionRequest]) (*connect.Response[v1.SendTransactionResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	// Check feature flag for programmable distribution features
-	if !c.core.config.ProgrammableDistributionEnabled {
+	if !core.config.ProgrammableDistributionEnabled {
 		// Check if transaction uses programmable distribution features
 		if req.Msg != nil && req.Msg.Transaction != nil && req.Msg.Transaction.GetFileUpload() != nil {
 			return nil, connect.NewError(connect.CodeUnimplemented, errors.New("programmable distribution is not enabled in this environment"))
@@ -619,10 +674,9 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 
 	// TODO: do validation check
 	var txhash common.TxHash
-	var err error
 	if req.Msg.Transactionv2 != nil {
 		// add gate just for dev
-		if c.core.config.Environment != "dev" {
+		if core.config.Environment != "dev" {
 			return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tx v2 in development"))
 		}
 
@@ -633,7 +687,7 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 		}
 		txhash = common.ToTxHashFromBytes(txBytes)
 
-		err = c.core.validateV2Transaction(ctx, c.core.cache.currentHeight.Load(), req.Msg.Transactionv2)
+		err = core.validateV2Transaction(ctx, core.cache.currentHeight.Load(), req.Msg.Transactionv2)
 		if err != nil {
 			return nil, fmt.Errorf("transactionv2 validation failed: %v", err)
 		}
@@ -641,7 +695,7 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 		tx := req.Msg.Transaction
 		em := tx.GetManageEntity()
 		if em != nil {
-			err := InjectSigner(c.core.config, em)
+			err := InjectSigner(core.config, em)
 			if err != nil {
 				return nil, connect.NewError(connect.CodeInvalidArgument, errors.Join(errors.New("signer not recoverable"), err))
 			}
@@ -654,7 +708,7 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 		txhash = common.ToTxHashFromBytes(txBytes)
 
 		// Validate v1 transactions
-		err = c.core.validateV1Transaction(ctx, c.core.cache.currentHeight.Load(), req.Msg.Transaction)
+		err = core.validateV1Transaction(ctx, core.cache.currentHeight.Load(), req.Msg.Transaction)
 		if err != nil {
 			return nil, fmt.Errorf("transaction validation failed: %v", err)
 		}
@@ -662,7 +716,7 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 
 	// create mempool transaction for both v1 and v2
 	var mempoolTx *MempoolTransaction
-	deadline := c.core.cache.currentHeight.Load() + 10
+	deadline := core.cache.currentHeight.Load() + 10
 	if req.Msg.Transaction != nil {
 		mempoolTx = &MempoolTransaction{
 			Tx:       req.Msg.Transaction,
@@ -675,28 +729,28 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 		}
 	}
 
-	ps := c.core.txPubsub
+	ps := core.txPubsub
 
 	txHashCh := ps.Subscribe(txhash)
 	defer ps.Unsubscribe(txhash, txHashCh)
 
 	// add transaction to mempool with broadcast set to true
 	if mempoolTx != nil {
-		err = c.core.addMempoolTransaction(txhash, mempoolTx, true)
+		err = core.addMempoolTransaction(txhash, mempoolTx, true)
 		if err != nil {
-			c.core.logger.Error("tx could not be included in mempool", zap.String("tx", txhash), zap.Error(err))
+			core.logger.Error("tx could not be included in mempool", zap.String("tx", txhash), zap.Error(err))
 			return nil, fmt.Errorf("could not add tx to mempool %v", err)
 		}
 	}
 
 	select {
 	case <-txHashCh:
-		tx, err := c.core.db.GetTx(ctx, txhash)
+		tx, err := core.db.GetTx(ctx, txhash)
 		if err != nil {
 			return nil, err
 		}
 
-		block, err := c.core.db.GetBlock(ctx, tx.BlockID)
+		block, err := core.db.GetBlock(ctx, tx.BlockID)
 		if err != nil {
 			return nil, err
 		}
@@ -706,7 +760,7 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 		if req.Msg.Transactionv2 != nil {
 			receipt = &v1beta1.TransactionReceipt{
 				EnvelopeInfo: &v1beta1.EnvelopeReceiptInfo{
-					ChainId:      c.core.config.GenesisFile.ChainID,
+					ChainId:      core.config.GenesisFile.ChainID,
 					Expiration:   req.Msg.Transactionv2.Envelope.Header.Expiration,
 					Nonce:        req.Msg.Transactionv2.Envelope.Header.Nonce,
 					MessageCount: int32(len(req.Msg.Transactionv2.Envelope.Messages)),
@@ -715,22 +769,22 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 				Height:          block.Height,
 				Timestamp:       block.CreatedAt.Time.Unix(),
 				Sender:          "", // TODO: get sender from transaction signature
-				Responder:       c.core.config.ProposerAddress,
+				Responder:       core.config.ProposerAddress,
 				Proposer:        block.Proposer,
 				MessageReceipts: make([]*v1beta1.MessageReceipt, len(req.Msg.Transactionv2.Envelope.Messages)),
 			}
 			// get all receipts by tx hash and use index to map to the correct message
 
 			// get ERNs, MEADs, and PIES by tx hash and use index to map to the correct message
-			ernReceipts, err := c.core.db.GetERNReceipts(ctx, txhash)
+			ernReceipts, err := core.db.GetERNReceipts(ctx, txhash)
 			if err != nil {
-				c.core.logger.Error("error getting ERN receipts", zap.Error(err))
+				core.logger.Error("error getting ERN receipts", zap.Error(err))
 			} else {
 				for _, ernReceipt := range ernReceipts {
 					ernAck := &ddexv1beta1.NewReleaseMessageAck{}
 					err = proto.Unmarshal(ernReceipt.RawAcknowledgment, ernAck)
 					if err != nil {
-						c.core.logger.Error("error unmarshalling ERN receipt", zap.Error(err))
+						core.logger.Error("error unmarshalling ERN receipt", zap.Error(err))
 					}
 					receipt.MessageReceipts[ernReceipt.Index] = &v1beta1.MessageReceipt{
 						MessageIndex: int32(ernReceipt.Index),
@@ -741,15 +795,15 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 				}
 			}
 
-			meadReceipts, err := c.core.db.GetMEADReceipts(ctx, txhash)
+			meadReceipts, err := core.db.GetMEADReceipts(ctx, txhash)
 			if err != nil {
-				c.core.logger.Error("error getting MEAD receipts", zap.Error(err))
+				core.logger.Error("error getting MEAD receipts", zap.Error(err))
 			} else {
 				for _, meadReceipt := range meadReceipts {
 					meadAck := &ddexv1beta1.MeadMessageAck{}
 					err = proto.Unmarshal(meadReceipt.RawAcknowledgment, meadAck)
 					if err != nil {
-						c.core.logger.Error("error unmarshalling MEAD receipt", zap.Error(err))
+						core.logger.Error("error unmarshalling MEAD receipt", zap.Error(err))
 					}
 					receipt.MessageReceipts[meadReceipt.Index] = &v1beta1.MessageReceipt{
 						MessageIndex: int32(meadReceipt.Index),
@@ -760,15 +814,15 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 				}
 			}
 
-			pieReceipts, err := c.core.db.GetPIEReceipts(ctx, txhash)
+			pieReceipts, err := core.db.GetPIEReceipts(ctx, txhash)
 			if err != nil {
-				c.core.logger.Error("error getting PIE receipts", zap.Error(err))
+				core.logger.Error("error getting PIE receipts", zap.Error(err))
 			} else {
 				for _, pieReceipt := range pieReceipts {
 					pieAck := &ddexv1beta1.PieMessageAck{}
 					err = proto.Unmarshal(pieReceipt.RawAcknowledgment, pieAck)
 					if err != nil {
-						c.core.logger.Error("error unmarshalling PIE receipt", zap.Error(err))
+						core.logger.Error("error unmarshalling PIE receipt", zap.Error(err))
 					}
 					receipt.MessageReceipts[pieReceipt.Index] = &v1beta1.MessageReceipt{
 						MessageIndex: int32(pieReceipt.Index),
@@ -784,7 +838,7 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 			Transaction: &v1.Transaction{
 				Hash:          txhash,
 				BlockHash:     block.Hash,
-				ChainId:       c.core.config.GenesisFile.ChainID,
+				ChainId:       core.config.GenesisFile.ChainID,
 				Height:        block.Height,
 				Timestamp:     timestamppb.New(block.CreatedAt.Time),
 				Transaction:   req.Msg.Transaction,
@@ -793,7 +847,7 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 			TransactionReceipt: receipt,
 		}), nil
 	case <-time.After(30 * time.Second):
-		c.core.logger.Error("tx timeout waiting to be included", zap.String("tx", txhash))
+		core.logger.Error("tx timeout waiting to be included", zap.String("tx", txhash))
 		return nil, errors.New("tx waiting timeout")
 	}
 }
@@ -855,9 +909,14 @@ func (c *CoreService) getBlockRpcFallback(ctx context.Context, height int64) (*c
 
 // GetStoredSnapshots implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetStoredSnapshots(context.Context, *connect.Request[v1.GetStoredSnapshotsRequest]) (*connect.Response[v1.GetStoredSnapshotsResponse], error) {
-	snapshots, err := c.core.getStoredSnapshots()
+	core, err := c.ready()
 	if err != nil {
-		c.core.logger.Error("error getting stored snapshots", zap.Error(err))
+		return nil, err
+	}
+
+	snapshots, err := core.getStoredSnapshots()
+	if err != nil {
+		core.logger.Error("error getting stored snapshots", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not get stored snapshots"))
 	}
 
@@ -888,49 +947,56 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 		Ready: ready,
 	}
 
-	peerStatuses := c.core.peerStatus.Values()
+	// GetStatus is how callers learn whether the node is ready, so before core
+	// registers it answers "live, not ready" rather than refusing the call.
+	core, err := c.ready()
+	if err != nil {
+		return connect.NewResponse(res), nil
+	}
+
+	peerStatuses := core.peerStatus.Values()
 	sort.Slice(peerStatuses, func(i, j int) bool {
 		return peerStatuses[i].CometAddress < peerStatuses[j].CometAddress
 	})
 
-	nodeInfo, _ := c.core.cache.nodeInfo.Get(NodeInfoKey)
+	nodeInfo, _ := core.cache.nodeInfo.Get(NodeInfoKey)
 	peers := &v1.GetStatusResponse_PeerInfo{Peers: peerStatuses}
-	chainInfo, _ := c.core.cache.chainInfo.Get(ChainInfoKey)
-	syncInfo, _ := c.core.cache.syncInfo.Get(SyncInfoKey)
+	chainInfo, _ := core.cache.chainInfo.Get(ChainInfoKey)
+	syncInfo, _ := core.cache.syncInfo.Get(SyncInfoKey)
 	pruningInfo := &v1.GetStatusResponse_PruningInfo{}
-	resourceInfo, _ := c.core.cache.resourceInfo.Get(ResourceInfoKey)
-	mempoolInfo, _ := c.core.cache.mempoolInfo.Get(MempoolInfoKey)
-	snapshotInfo, _ := c.core.cache.snapshotInfo.Get(SnapshotInfoKey)
+	resourceInfo, _ := core.cache.resourceInfo.Get(ResourceInfoKey)
+	mempoolInfo, _ := core.cache.mempoolInfo.Get(MempoolInfoKey)
+	snapshotInfo, _ := core.cache.snapshotInfo.Get(SnapshotInfoKey)
 
-	chainInfo.TotalTxCount = c.core.cache.currentTxCount.Load()
+	chainInfo.TotalTxCount = core.cache.currentTxCount.Load()
 
 	// Retrieve process states from cache
-	abciState, _ := c.core.cache.abciState.Get(ProcessStateABCI)
-	registryBridgeState, _ := c.core.cache.registryBridgeState.Get(ProcessStateRegistryBridge)
-	echoServerState, _ := c.core.cache.echoServerState.Get(ProcessStateEchoServer)
-	syncTasksState, _ := c.core.cache.syncTasksState.Get(ProcessStateSyncTasks)
-	peerManagerState, _ := c.core.cache.peerManagerState.Get(ProcessStatePeerManager)
-	dataCompanionState, _ := c.core.cache.dataCompanionState.Get(ProcessStateDataCompanion)
-	cacheState, _ := c.core.cache.cacheState.Get(ProcessStateCache)
-	logSyncState, _ := c.core.cache.logSyncState.Get(ProcessStateLogSync)
-	snapshotCreatorState, _ := c.core.cache.snapshotCreatorState.Get(ProcessStateSnapshotCreator)
-	mempoolCacheState, _ := c.core.cache.mempoolCacheState.Get(ProcessStateMempoolCache)
-	restoreState, _ := c.core.cache.restoreState.Get(ProcessStateRestore)
+	abciState, _ := core.cache.abciState.Get(ProcessStateABCI)
+	registryBridgeState, _ := core.cache.registryBridgeState.Get(ProcessStateRegistryBridge)
+	echoServerState, _ := core.cache.echoServerState.Get(ProcessStateEchoServer)
+	syncTasksState, _ := core.cache.syncTasksState.Get(ProcessStateSyncTasks)
+	peerManagerState, _ := core.cache.peerManagerState.Get(ProcessStatePeerManager)
+	dataCompanionState, _ := core.cache.dataCompanionState.Get(ProcessStateDataCompanion)
+	cacheState, _ := core.cache.cacheState.Get(ProcessStateCache)
+	logSyncState, _ := core.cache.logSyncState.Get(ProcessStateLogSync)
+	snapshotCreatorState, _ := core.cache.snapshotCreatorState.Get(ProcessStateSnapshotCreator)
+	mempoolCacheState, _ := core.cache.mempoolCacheState.Get(ProcessStateMempoolCache)
+	restoreState, _ := core.cache.restoreState.Get(ProcessStateRestore)
 
 	// pruning state
-	pruningInfo.Enabled = !c.core.config.Archive
-	pruningInfo.RetainBlocks = c.core.config.RetainHeight
-	pruningInfo.LastSetRetainHeight = c.core.abciState.lastRetainHeight
+	pruningInfo.Enabled = !core.config.Archive
+	pruningInfo.RetainBlocks = core.config.RetainHeight
+	pruningInfo.LastSetRetainHeight = core.abciState.lastRetainHeight
 
-	if c.core.rpc != nil {
-		status, err := c.core.rpc.Status(ctx)
+	if core.rpc != nil {
+		status, err := core.rpc.Status(ctx)
 		if err == nil {
 			pruningInfo.EarliestHeight = status.SyncInfo.EarliestBlockHeight
 
 			// Calculate target retain height (what it should be)
-			if chainInfo != nil && !c.core.config.Archive {
+			if chainInfo != nil && !core.config.Archive {
 				latestHeight := chainInfo.CurrentHeight
-				retainWindow := c.core.config.RetainHeight
+				retainWindow := core.config.RetainHeight
 				if latestHeight > retainWindow {
 					pruningInfo.TargetRetainHeight = latestHeight - retainWindow
 				}
@@ -938,7 +1004,7 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 
 			// Current retain height would come from CometBFT's data companion
 			// For now, use lastSetRetainHeight as approximation
-			pruningInfo.CurrentRetainHeight = c.core.abciState.lastRetainHeight
+			pruningInfo.CurrentRetainHeight = core.abciState.lastRetainHeight
 		}
 	}
 
@@ -1166,6 +1232,11 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 // authority out via SetRewardPoolAuthorities immediately revokes their
 // ability to authenticate claim attestations.
 func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	// Trim user-supplied addresses up front. RewardClaim.Compile
 	// hex-decodes ethRecipientAddress / claimAuthority and surfaces
 	// surrounding whitespace as a confusing "failed to decode" error
@@ -1206,7 +1277,7 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount_decimals too large; max 18"))
 	}
 
-	dbReward, err := c.core.db.GetReward(ctx, rewardAddress)
+	dbReward, err := core.db.GetReward(ctx, rewardAddress)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("programmatic reward not found"))
@@ -1248,7 +1319,7 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 		Decimals:            req.Msg.AmountDecimals,
 	}
 
-	attester := rewards.NewRewardAttester(c.core.config.EthereumKey, []rewards.Reward{reward})
+	attester := rewards.NewRewardAttester(core.config.EthereumKey, []rewards.Reward{reward})
 
 	if err := attester.Validate(claim); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("claim validation failed: %w", err))
@@ -1269,6 +1340,11 @@ func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Req
 
 // GetRewards implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetRewards(ctx context.Context, req *connect.Request[v1.GetRewardsRequest]) (*connect.Response[v1.GetRewardsResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	// Stored authorities are lowercased by rewards.CanonicalAuthorities; the
 	// underlying GetRewardsByClaimAuthority does a case-sensitive @> array
 	// containment check. Normalize the caller-supplied address (which is
@@ -1280,7 +1356,7 @@ func (c *CoreService) GetRewards(ctx context.Context, req *connect.Request[v1.Ge
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority required"))
 	}
 
-	rewards, err := c.core.db.GetRewardsByClaimAuthority(ctx, claimAuthority)
+	rewards, err := core.db.GetRewardsByClaimAuthority(ctx, claimAuthority)
 	if err != nil {
 		return nil, err
 	}
@@ -1305,6 +1381,11 @@ func (c *CoreService) GetRewards(ctx context.Context, req *connect.Request[v1.Ge
 
 // GetReward implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetReward(ctx context.Context, req *connect.Request[v1.GetRewardRequest]) (*connect.Response[v1.GetRewardResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	address := req.Msg.Address
 	txhash := req.Msg.Txhash
 	if address == "" && txhash == "" {
@@ -1312,7 +1393,7 @@ func (c *CoreService) GetReward(ctx context.Context, req *connect.Request[v1.Get
 	}
 
 	if address != "" {
-		reward, err := c.core.db.GetReward(ctx, address)
+		reward, err := core.db.GetReward(ctx, address)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("reward not found for address: %s", address))
@@ -1334,7 +1415,7 @@ func (c *CoreService) GetReward(ctx context.Context, req *connect.Request[v1.Get
 	}
 
 	if txhash != "" {
-		reward, err := c.core.db.GetRewardByTxHash(ctx, txhash)
+		reward, err := core.db.GetRewardByTxHash(ctx, txhash)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("reward not found for address: %s", address))
@@ -1365,6 +1446,11 @@ func (c *CoreService) GetReward(ctx context.Context, req *connect.Request[v1.Get
 // 32-byte pubkey). There is no separate synthetic-pool surface to
 // filter out.
 func (c *CoreService) GetRewardPool(ctx context.Context, req *connect.Request[v1.GetRewardPoolRequest]) (*connect.Response[v1.GetRewardPoolResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	// Normalize and shape-validate up front so malformed input returns
 	// InvalidArgument deterministically instead of falling through to a
 	// DB lookup that returns NotFound. Use the shape-only validator
@@ -1375,7 +1461,7 @@ func (c *CoreService) GetRewardPool(ctx context.Context, req *connect.Request[v1
 	if err := validateRewardsManagerPubkeyShape(rewardsManagerPubkey); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	pool, err := c.core.db.GetRewardPool(ctx, rewardsManagerPubkey)
+	pool, err := core.db.GetRewardPool(ctx, rewardsManagerPubkey)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("pool not found for rewards_manager_pubkey: %s", rewardsManagerPubkey))
@@ -1390,12 +1476,17 @@ func (c *CoreService) GetRewardPool(ctx context.Context, req *connect.Request[v1
 
 // GetERN implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetERN(ctx context.Context, req *connect.Request[v1.GetERNRequest]) (*connect.Response[v1.GetERNResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	address := req.Msg.Address
 	if address == "" {
 		return nil, fmt.Errorf("address is required")
 	}
 
-	dbErn, err := c.core.db.GetERN(ctx, address)
+	dbErn, err := core.db.GetERN(ctx, address)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("ERN not found for address: %s", address)
@@ -1415,12 +1506,17 @@ func (c *CoreService) GetERN(ctx context.Context, req *connect.Request[v1.GetERN
 
 // GetMEAD implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetMEAD(ctx context.Context, req *connect.Request[v1.GetMEADRequest]) (*connect.Response[v1.GetMEADResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	address := req.Msg.Address
 	if address == "" {
 		return nil, fmt.Errorf("address is required")
 	}
 
-	dbMead, err := c.core.db.GetMEAD(ctx, address)
+	dbMead, err := core.db.GetMEAD(ctx, address)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("MEAD not found for address: %s", address)
@@ -1440,12 +1536,17 @@ func (c *CoreService) GetMEAD(ctx context.Context, req *connect.Request[v1.GetME
 
 // GetPIE implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetPIE(ctx context.Context, req *connect.Request[v1.GetPIERequest]) (*connect.Response[v1.GetPIEResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	address := req.Msg.Address
 	if address == "" {
 		return nil, fmt.Errorf("address is required")
 	}
 
-	dbPie, err := c.core.db.GetPIE(ctx, address)
+	dbPie, err := core.db.GetPIE(ctx, address)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("PIE not found for address: %s", address)
@@ -1465,8 +1566,13 @@ func (c *CoreService) GetPIE(ctx context.Context, req *connect.Request[v1.GetPIE
 
 // GetStreamURLs implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetStreamURLs(ctx context.Context, req *connect.Request[v1.GetStreamURLsRequest]) (*connect.Response[v1.GetStreamURLsResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	// Check feature flag
-	if !c.core.config.ProgrammableDistributionEnabled {
+	if !core.config.ProgrammableDistributionEnabled {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("programmable distribution is not enabled in this environment"))
 	}
 
@@ -1508,7 +1614,7 @@ func (c *CoreService) GetStreamURLs(ctx context.Context, req *connect.Request[v1
 
 	for _, address := range req.Msg.Addresses {
 		// First try to get it as an ERN directly
-		dbErn, err := c.core.db.GetERN(ctx, address)
+		dbErn, err := core.db.GetERN(ctx, address)
 
 		if err == nil {
 			// This is an ERN address - verify ownership
@@ -1520,7 +1626,7 @@ func (c *CoreService) GetStreamURLs(ctx context.Context, req *connect.Request[v1
 			// Unmarshal ERN to get resource details
 			var ern ddexv1beta1.NewReleaseMessage
 			if err := proto.Unmarshal(dbErn.RawMessage, &ern); err != nil {
-				c.core.logger.Error("failed to unmarshal ERN", zap.Error(err))
+				core.logger.Error("failed to unmarshal ERN", zap.Error(err))
 				continue
 			}
 
@@ -1536,10 +1642,10 @@ func (c *CoreService) GetStreamURLs(ctx context.Context, req *connect.Request[v1
 			}
 		} else if errors.Is(err, pgx.ErrNoRows) {
 			// Not an ERN address - check if it's contained in an ERN
-			result, err := c.core.db.GetERNContainingAddress(ctx, address)
+			result, err := core.db.GetERNContainingAddress(ctx, address)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
-					c.core.logger.Warn("address not found in any ERN", zap.String("address", address))
+					core.logger.Warn("address not found in any ERN", zap.String("address", address))
 					continue
 				}
 				return nil, fmt.Errorf("failed to query ERN containing address: %w", err)
@@ -1554,7 +1660,7 @@ func (c *CoreService) GetStreamURLs(ctx context.Context, req *connect.Request[v1
 			// Unmarshal ERN to get specific entity
 			var ern ddexv1beta1.NewReleaseMessage
 			if err := proto.Unmarshal(result.RawMessage, &ern); err != nil {
-				c.core.logger.Error("failed to unmarshal ERN", zap.Error(err))
+				core.logger.Error("failed to unmarshal ERN", zap.Error(err))
 				continue
 			}
 
@@ -1582,12 +1688,17 @@ func (c *CoreService) GetStreamURLs(ctx context.Context, req *connect.Request[v1
 
 // GetUploadByCID implements v1connect.CoreServiceHandler.
 func (c *CoreService) GetUploadByCID(ctx context.Context, req *connect.Request[v1.GetUploadByCIDRequest]) (*connect.Response[v1.GetUploadByCIDResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	// Check feature flag
-	if !c.core.config.ProgrammableDistributionEnabled {
+	if !core.config.ProgrammableDistributionEnabled {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("programmable distribution is not enabled in this environment"))
 	}
 
-	upload, err := c.core.db.GetCoreUpload(ctx, req.Msg.Cid)
+	upload, err := core.db.GetCoreUpload(ctx, req.Msg.Cid)
 	if err != nil {
 		// Return exists=false if not found instead of error
 		return connect.NewResponse(&v1.GetUploadByCIDResponse{
@@ -1844,18 +1955,28 @@ func (c *CoreService) generateStreamURLs(cid string) []string {
 }
 
 func (c *CoreService) GetSlashAttestation(ctx context.Context, req *connect.Request[v1.GetSlashAttestationRequest]) (*connect.Response[v1.GetSlashAttestationResponse], error) {
-	signature, err := c.core.getSlashAttestation(ctx, req.Msg.Data)
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
+	signature, err := core.getSlashAttestation(ctx, req.Msg.Data)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&v1.GetSlashAttestationResponse{
 		Signature: signature,
-		Endpoint:  c.core.config.NodeEndpoint,
+		Endpoint:  core.config.NodeEndpoint,
 	}), nil
 }
 
 func (c *CoreService) GetSlashAttestations(ctx context.Context, req *connect.Request[v1.GetSlashAttestationsRequest]) (*connect.Response[v1.GetSlashAttestationsResponse], error) {
-	attestations, err := c.core.gatherSlashAttestations(ctx, req.Msg.Request.Data)
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
+	attestations, err := core.gatherSlashAttestations(ctx, req.Msg.Request.Data)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -1952,6 +2073,11 @@ func (c *CoreService) senderGateForRM(ctx context.Context, rmPubkey string) (*db
 //   - Otherwise (no pool, not AUDIO), refuse — there is no authorization
 //     mechanism to consult.
 func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetRewardSenderAttestationRequest]) (*connect.Response[v1.GetRewardSenderAttestationResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	address := strings.TrimSpace(req.Msg.Address)
 	if address == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is required"))
@@ -1990,7 +2116,7 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 		}
 	}
 
-	owner, attestation, err := rewards.GetCreateSenderAttestation(c.core.config.EthereumKey, &rewards.CreateSenderAttestationParams{
+	owner, attestation, err := rewards.GetCreateSenderAttestation(core.config.EthereumKey, &rewards.CreateSenderAttestationParams{
 		NewSenderAddress:            address,
 		RewardsManagerAccountPubKey: rewardsManagerPubkey,
 	})
@@ -2016,6 +2142,11 @@ func (c *CoreService) GetRewardSenderAttestation(ctx context.Context, req *conne
 //   - Otherwise (no pool, not AUDIO), refuse — there is no authorization
 //     mechanism to consult.
 func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req *connect.Request[v1.GetDeleteRewardSenderAttestationRequest]) (*connect.Response[v1.GetDeleteRewardSenderAttestationResponse], error) {
+	core, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+
 	address := strings.TrimSpace(req.Msg.Address)
 	if address == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is required"))
@@ -2054,7 +2185,7 @@ func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req 
 		}
 	}
 
-	owner, attestation, err := rewards.GetDeleteSenderAttestation(c.core.config.EthereumKey, &rewards.DeleteSenderAttestationParams{
+	owner, attestation, err := rewards.GetDeleteSenderAttestation(core.config.EthereumKey, &rewards.DeleteSenderAttestationParams{
 		SenderAddress:               address,
 		RewardsManagerAccountPubKey: rewardsManagerPubkey,
 	})
@@ -2067,15 +2198,4 @@ func (c *CoreService) GetDeleteRewardSenderAttestation(ctx context.Context, req 
 		Owner:       owner,
 		Attestation: attestation,
 	}), nil
-}
-
-func ReadyCheckInterceptor(c *CoreService) connect.UnaryInterceptorFunc {
-	return func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			if !c.IsReady() {
-				return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("service not ready"))
-			}
-			return next(ctx, req)
-		}
-	}
 }

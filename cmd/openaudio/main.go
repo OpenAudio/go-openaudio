@@ -575,7 +575,7 @@ func startEchoProxy(hostUrl *url.URL, logger *zap.Logger, coreService *coreServe
 
 	rpcGroup := e.Group("")
 	rpcGroup.Use(common.CORS())
-	corePath, coreHandler := corev1connect.NewCoreServiceHandler(coreService, connectJSONOpt, connect.WithInterceptors(coreServer.ReadyCheckInterceptor(coreService)))
+	corePath, coreHandler := corev1connect.NewCoreServiceHandler(coreService, connectJSONOpt)
 	rpcGroup.POST(corePath+"*", echo.WrapHandler(coreHandler))
 
 	storagePath, storageHandler := storagev1connect.NewStorageServiceHandler(storageService, connectJSONOpt)
