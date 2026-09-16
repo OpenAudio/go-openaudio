@@ -73,10 +73,10 @@ func (ss *MediorumServer) startTranscoder(ctx context.Context) error {
 		}
 	}
 
-	// Nothing pulls from the queue until core can take attestations. Uploads
-	// created before the restart are already in the table, and the tus and
-	// multipart handlers fall through to the periodic sweep when the channel
-	// is full, so waiting here delays work rather than dropping it.
+	// Nothing pulls from the queue until core is up. Uploads are still
+	// accepted meanwhile: those created before the restart are already in the
+	// table, and the upload handlers fall through to the periodic sweep when
+	// the channel is full, so waiting here delays work rather than dropping it.
 	if err := ss.waitForCore(ctx); err != nil {
 		return err
 	}

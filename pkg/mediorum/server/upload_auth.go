@@ -46,37 +46,30 @@ func (ss *MediorumServer) contentAuthEnabled() bool {
 	return ss.Config.ContentAuthEnabled
 }
 
-// errCoreNotReady is returned while core is still starting on a node that
-// attests uploads. Upload handlers map it to 503 so the client's node
-// selection retries elsewhere instead of holding bytes this node cannot yet
-// vouch for.
-var errCoreNotReady = errors.New("core is still starting; retry on another node")
+// errCoreNotReady is returned by the attestation sender while core is still
+// starting. Transcode marks the upload errored and the missed-job sweep
+// retries it once core is up.
+//
+// Uploads themselves are accepted throughout: creation never touches core,
+// and the client's tus retries stay on one node for under a minute, so a 503
+// here would fail uploads whenever the boot window ran longer than that.
+// Waiting the transcoder is invisible to the client, whose processing poll
+// allows an hour.
+var errCoreNotReady = errors.New("core is still starting")
 
-// awaitingCore reports whether attesting would fail right now: content auth
-// is on, a core is wired, and it has not finished starting. Core registers
-// itself only after migrations and compaction, so this is a boot window of
-// seconds, never a steady state. A nil core means no core at all (tests), and
-// nothing is awaited.
+// awaitingCore reports whether a wired core has not finished starting. Core
+// registers itself only after migrations and compaction, so this is a boot
+// window of seconds, never a steady state. A nil core means no core at all
+// (tests), and nothing is awaited. Not conditioned on content auth: the
+// wait costs nothing on a chain without it, and whether the chain has it is
+// itself a question for core.
 func (ss *MediorumServer) awaitingCore() bool {
-	return ss.contentAuthEnabled() && ss.core != nil && !ss.core.IsReady()
+	return ss.core != nil && !ss.core.IsReady()
 }
 
-// checkCanAttest refuses an audio upload this node would have to attest while
-// it cannot. Only attributed audio ever reaches an attestation, so images and
-// unattributed uploads pass regardless.
-func (ss *MediorumServer) checkCanAttest(template JobTemplate, userID int64) error {
-	if template != JobTemplateAudio || userID == 0 {
-		return nil
-	}
-	if ss.awaitingCore() {
-		return errCoreNotReady
-	}
-	return nil
-}
-
-// waitForCore blocks until this node can attest, or ctx ends. The transcoder
-// calls it before pulling work so jobs queued across a restart wait out the
-// boot window instead of burning their retry budget on a core that is seconds
+// waitForCore blocks until core is up, or ctx ends. The transcoder calls it
+// before pulling work so jobs queued across a restart wait out the boot
+// window instead of burning their retry budget on a core that is seconds
 // from ready.
 func (ss *MediorumServer) waitForCore(ctx context.Context) error {
 	if !ss.awaitingCore() {
@@ -235,10 +228,9 @@ func (ss *MediorumServer) sendContentAttestation(ctx context.Context, ca *v1.Con
 	if ss.core == nil {
 		return nil
 	}
-	// Checked here as well as at upload creation: a job can reach this point
-	// from a restart or a re-transcode with no create-time gate in front of
-	// it. Failing marks the upload errored, and the missed-job sweep retries it
-	// once core is up.
+	// The transcoder waits for core before pulling work, but a re-transcode
+	// or an analysis job can reach this point directly. Failing marks the
+	// upload errored, and the missed-job sweep retries it once core is up.
 	if !ss.core.IsReady() {
 		return errCoreNotReady
 	}

@@ -187,36 +187,6 @@ func TestResolveOptionalUploadUserIDParsesAndRejectsMalformed(t *testing.T) {
 	}
 }
 
-// A wired core that has not registered itself yet is the boot window: content
-// auth is on but no attestation can be sent. Only uploads that would need one
-// are turned away.
-func TestCheckCanAttestDuringCoreBoot(t *testing.T) {
-	ss := &MediorumServer{core: coreServer.NewCoreService()}
-	ss.Config.ContentAuthEnabled = true
-
-	if err := ss.checkCanAttest(JobTemplateAudio, 42); !errors.Is(err, errCoreNotReady) {
-		t.Fatalf("attributed audio during boot: want errCoreNotReady, got %v", err)
-	}
-	if err := ss.checkCanAttest(JobTemplateAudio, 0); err != nil {
-		t.Fatalf("unattributed audio never attests, got %v", err)
-	}
-	if err := ss.checkCanAttest(JobTemplateImgSquare, 42); err != nil {
-		t.Fatalf("images never attest, got %v", err)
-	}
-
-	ss.Config.ContentAuthEnabled = false
-	if err := ss.checkCanAttest(JobTemplateAudio, 42); err != nil {
-		t.Fatalf("content auth off: nothing waits on core, got %v", err)
-	}
-
-	// No core at all is the unit-test shape, not a boot window.
-	ss = &MediorumServer{}
-	ss.Config.ContentAuthEnabled = true
-	if err := ss.checkCanAttest(JobTemplateAudio, 42); err != nil {
-		t.Fatalf("nil core: want nil, got %v", err)
-	}
-}
-
 // The sender is the last line: a re-transcode or a job queued across a
 // restart reaches it with no create-time gate in front, and it must fail
 // cleanly so the missed-job sweep retries once core is up.

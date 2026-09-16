@@ -252,9 +252,6 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 	if err != nil {
 		return c.String(http.StatusBadRequest, "upload attribution failed: "+err.Error())
 	}
-	if err := ss.checkCanAttest(template, userID); err != nil {
-		return c.String(http.StatusServiceUnavailable, err.Error())
-	}
 
 	var placementHosts []string = nil
 	if v := c.FormValue("placement_hosts"); v != "" {
@@ -417,7 +414,7 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 		// Send FileUpload transaction after transcoding completes
 		go func(c echo.Context, upload *Upload) {
 			// Skip FileUpload transaction if programmable distribution is disabled
-			if !ss.Config.ProgrammableDistributionEnabled {
+			if !ss.Config.ProgrammableDistributionEnabled || ss.core == nil {
 				return
 			}
 

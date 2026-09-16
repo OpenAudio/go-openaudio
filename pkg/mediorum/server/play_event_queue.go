@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -146,6 +147,9 @@ func (ss *MediorumServer) processPlayRecordBatch(ctx context.Context) error {
 	}
 
 	// submit to configured core node
+	if ss.core == nil {
+		return errors.New("no core wired to submit plays to")
+	}
 	var res *connect.Response[v1.SendTransactionResponse]
 	func() {
 		defer func() {
