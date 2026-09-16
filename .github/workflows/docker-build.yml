@@ -114,6 +114,14 @@ jobs:
           TTY_FLAG="--no-TTY" \
           make test-integration
 
+      # The harness leaves the devnet running on failure. Its go test output
+      # says only that a node never became ready; the reason is in the node.
+      - name: Dump devnet logs
+        if: failure()
+        run: |
+          docker compose --file dev/docker-compose.yml --project-name test ps --all || true
+          docker compose --file dev/docker-compose.yml --project-name test logs --no-color --tail 600 || true
+
       - name: Shutdown
         if: always()
         run: make test-down
