@@ -1,10 +1,6 @@
 package config
 
-import (
-	"testing"
-
-	"github.com/OpenAudio/go-openaudio/pkg/core/config/genesis"
-)
+import "testing"
 
 // The boundary is the whole contract: a rule activates at exactly its
 // activation height, never one block earlier.
@@ -44,14 +40,8 @@ func TestRulesetAtNilSchedule(t *testing.T) {
 // must never inherit another network's activations.
 func TestScheduleForChainID(t *testing.T) {
 	for _, chainID := range []string{"openaudio-devnet", "audius-devnet", "audius-mainnet-beta"} {
-		rules := ScheduleForChainID(chainID).RulesetAt(1)
-		if !rules.AuthEnforced {
+		if !ScheduleForChainID(chainID).RulesetAt(1).AuthEnforced {
 			t.Fatalf("%s: auth enforcement should be active from height 1", chainID)
-		}
-		// Content auth is checked inside the manage-entity auth check, so it
-		// only means something with both active.
-		if !rules.ContentAuthEnforced {
-			t.Fatalf("%s: content auth enforcement should be active from height 1", chainID)
 		}
 	}
 	for _, chainID := range []string{"audius-testnet-alpha", "audius-mainnet-alpha-beta", "some-future-chain"} {
@@ -61,34 +51,42 @@ func TestScheduleForChainID(t *testing.T) {
 	}
 }
 
-// Mediorum attests cids exactly on the chains where core will accept the
-// attestation. The prod answer is whatever prod.json names: false while it is
-// audius-mainnet-alpha-beta, true once the rollover build swaps in
-// audius-mainnet-beta.
-func TestContentAuthScheduledFollowsEmbeddedGenesis(t *testing.T) {
-	for _, env := range []string{"dev", "sandbox", "stage", "prod"} {
-		got, err := ContentAuthScheduled(env)
-		if err != nil {
-			t.Fatalf("%s: %v", env, err)
+// The track-cid check runs inside the manage-entity auth check, so a schedule
+// that activates content auth before (or without) signer auth would leave that
+// check dormant while still admitting attestations.
+func TestContentAuthNeverPrecedesAuth(t *testing.T) {
+	for chainID, u := range upgradeSchedules {
+		if u.ContentAuthEnforcementHeight == 0 {
+			continue
 		}
-		genDoc, err := genesis.Read(env)
-		if err != nil {
-			t.Fatalf("%s: %v", env, err)
-		}
-		want := ScheduleForChainID(genDoc.ChainID).RulesetAt(1).ContentAuthEnforced
-		if got != want {
-			t.Fatalf("%s (%s): ContentAuthScheduled = %v, want %v", env, genDoc.ChainID, got, want)
+		if u.AuthEnforcementHeight == 0 || u.AuthEnforcementHeight > u.ContentAuthEnforcementHeight {
+			t.Fatalf("%s: content auth at %d needs auth enforcement at or before it, got %d",
+				chainID, u.ContentAuthEnforcementHeight, u.AuthEnforcementHeight)
 		}
 	}
-	// genesis.Read defaults unknown names to devnet; an unset or test-only
-	// environment must not inherit devnet's gate through that fallback.
-	for _, env := range []string{"", "test"} {
+}
+
+// Mediorum attests cids exactly on the chains where core will accept the
+// attestation. prod is false while prod.json names audius-mainnet-alpha-beta;
+// the rollover build that swaps in audius-mainnet-beta flips it to true, and
+// this test is where that flip gets acknowledged. An unset or test-only
+// environment must not inherit devnet's gate through genesis.Read's fallback.
+func TestContentAuthScheduled(t *testing.T) {
+	want := map[string]bool{
+		"dev":     true,
+		"sandbox": true,
+		"stage":   false,
+		"prod":    false,
+		"":        false,
+		"test":    false,
+	}
+	for env, expected := range want {
 		got, err := ContentAuthScheduled(env)
 		if err != nil {
 			t.Fatalf("%q: %v", env, err)
 		}
-		if got {
-			t.Fatalf("%q: content auth must not be scheduled for an unnamed environment", env)
+		if got != expected {
+			t.Fatalf("%q: ContentAuthScheduled = %v, want %v", env, got, expected)
 		}
 	}
 }

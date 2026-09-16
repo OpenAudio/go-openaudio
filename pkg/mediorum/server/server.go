@@ -150,14 +150,10 @@ type MediorumConfig struct {
 	BlobStorageStreaming            bool
 
 	// ContentAuthEnabled requires audio uploads to name the user they are for
-	// and attests their cids on chain. Follows the core upgrade schedule for
-	// the chain this node runs on (config.ContentAuthScheduled), not the
-	// environment: attestations are refused before the chain's gate, so
-	// attesting on a chain without one fails every upload. Deliberately
-	// separate from ProgrammableDistributionEnabled: that flag governs the
-	// DDEX subsystem, and content authorization protects the ordinary
-	// track-upload path, so tying them together would make closing the
-	// cid-claim bypass conditional on enabling an unrelated feature.
+	// and attests their cids on chain. Resolved from the core upgrade schedule
+	// for this node's chain (see config.ContentAuthScheduled for why), and kept
+	// apart from ProgrammableDistributionEnabled, which governs the unrelated
+	// DDEX path.
 	ContentAuthEnabled bool
 
 	// should have a basedir type of thing

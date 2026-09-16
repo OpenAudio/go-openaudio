@@ -133,9 +133,8 @@ func ScheduleForChainID(chainID string) *UpgradeSchedule {
 // old chain would fail every audio upload at transcode completion. Reading the
 // genesis makes the answer flip with the genesis swap and nothing else.
 //
-// Every scheduled activation is at height 1, so "scheduled" and "active" are
-// the same question. If a persistent chain ever schedules a later height,
-// mediorum should resolve RulesetAt for the next block instead.
+// Every scheduled activation is at height 1, so scheduled and active are the
+// same question; a later-height entry would need RulesetAt for the next block.
 //
 // Only a named network resolves to a genesis. genesis.Read falls back to the
 // devnet genesis for anything it does not recognize, which would turn content
