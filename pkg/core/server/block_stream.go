@@ -19,13 +19,18 @@ import (
 // subscriber). The result is an in-order, gap-free stream from StartHeight
 // onward that a consumer can resume from its cursor on reconnect.
 func (c *CoreService) StreamBlocks(ctx context.Context, req *connect.Request[v1.StreamBlocksRequest], stream *connect.ServerStream[v1.StreamBlocksResponse]) error {
+	core, err := c.ready()
+	if err != nil {
+		return err
+	}
+
 	canon := req.Msg.Canon
 	startHeight := req.Msg.StartHeight
 
 	// Subscribe before reading the head so blocks committed during catch-up are
 	// buffered (or, if dropped, recovered by gap-fill in the live loop).
-	blockChan := c.core.blockPubsub.Subscribe(BlockPubsubTopic)
-	defer c.core.blockPubsub.Unsubscribe(BlockPubsubTopic, blockChan)
+	blockChan := core.blockPubsub.Subscribe(BlockPubsubTopic)
+	defer core.blockPubsub.Unsubscribe(BlockPubsubTopic, blockChan)
 
 	// sendLive forwards a block from the pubsub feed. The pubsub message is a
 	// shared pointer, so clone before mutating transaction order.
@@ -59,7 +64,7 @@ func (c *CoreService) StreamBlocks(ctx context.Context, req *connect.Request[v1.
 	// (catch-up and gap-fill). GetBlock returns a fresh block already ordered
 	// per canon, so no clone/re-sort is needed.
 	emitHeight := func(h int64) error {
-		block, err := c.core.GetBlock(ctx, h, canon)
+		block, err := core.GetBlock(ctx, h, canon)
 		if err != nil {
 			return connect.NewError(connect.CodeInternal, fmt.Errorf("error reading block %d: %w", h, err))
 		}
@@ -69,7 +74,7 @@ func (c *CoreService) StreamBlocks(ctx context.Context, req *connect.Request[v1.
 		return nil
 	}
 
-	head := c.core.cache.currentHeight.Load()
+	head := core.cache.currentHeight.Load()
 	return runIndexerStream(ctx, startHeight, head, blockChan, emitHeight, sendLive)
 }
 
