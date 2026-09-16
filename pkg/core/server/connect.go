@@ -602,6 +602,13 @@ func (c *CoreService) Ping(context.Context, *connect.Request[v1.PingRequest]) (*
 
 // SendTransaction implements v1connect.CoreServiceHandler.
 func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[v1.SendTransactionRequest]) (*connect.Response[v1.SendTransactionResponse], error) {
+	// In-process callers (mediorum) do not pass through ReadyCheckInterceptor,
+	// and everything below dereferences c.core, which is nil until core has
+	// registered itself. Refuse rather than panic in the caller's goroutine.
+	if !c.IsReady() {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("core service not ready"))
+	}
+
 	// Check feature flag for programmable distribution features
 	if !c.core.config.ProgrammableDistributionEnabled {
 		// Check if transaction uses programmable distribution features

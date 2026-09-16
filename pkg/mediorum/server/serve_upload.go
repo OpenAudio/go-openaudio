@@ -252,6 +252,9 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 	if err != nil {
 		return c.String(http.StatusBadRequest, "upload attribution failed: "+err.Error())
 	}
+	if err := ss.checkCanAttest(template, userID); err != nil {
+		return c.String(http.StatusServiceUnavailable, err.Error())
+	}
 
 	var placementHosts []string = nil
 	if v := c.FormValue("placement_hosts"); v != "" {

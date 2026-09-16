@@ -145,7 +145,8 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 	if t, ok := event.Upload.MetaData["template"]; ok {
 		template = JobTemplate(t)
 	}
-	if _, err := ss.resolveUploadUserID(template, event.Upload.MetaData); err != nil {
+	userID, err := ss.resolveUploadUserID(template, event.Upload.MetaData)
+	if err != nil {
 		ss.logger.Warn("rejecting unattributed upload",
 			zap.String("id", event.Upload.ID),
 			zap.String("template", string(template)),
@@ -153,6 +154,15 @@ func (ss *MediorumServer) validateTusUploadBeforeCreate(event handler.HookEvent)
 		return handler.HTTPResponse{
 			StatusCode: 400,
 			Body:       "upload attribution failed: " + err.Error(),
+		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
+	}
+	// Same reasoning, different fault: while core is still starting this node
+	// cannot attest, so the bytes would sit unclaimable. 503 sends the client
+	// to another node.
+	if err := ss.checkCanAttest(template, userID); err != nil {
+		return handler.HTTPResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       err.Error(),
 		}, handler.FileInfoChanges{}, handler.ErrUploadRejectedByServer
 	}
 
