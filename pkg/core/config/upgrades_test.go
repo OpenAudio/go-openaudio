@@ -97,28 +97,3 @@ func TestContentAuthNeverPrecedesAuth(t *testing.T) {
 		}
 	}
 }
-
-// Mediorum attests cids exactly on the chains where core will accept the
-// attestation. prod is false while prod.json names audius-mainnet-alpha-beta;
-// the rollover build that swaps in audius-mainnet-beta flips it to true, and
-// this test is where that flip gets acknowledged. An unset or test-only
-// environment must not inherit devnet's gate through genesis.Read's fallback.
-func TestContentAuthScheduled(t *testing.T) {
-	want := map[string]bool{
-		"dev":     true,
-		"sandbox": true,
-		"stage":   false,
-		"prod":    false,
-		"":        false,
-		"test":    false,
-	}
-	for env, expected := range want {
-		got, err := ContentAuthScheduled(env)
-		if err != nil {
-			t.Fatalf("%q: %v", env, err)
-		}
-		if got != expected {
-			t.Fatalf("%q: ContentAuthScheduled = %v, want %v", env, got, expected)
-		}
-	}
-}

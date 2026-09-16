@@ -1,11 +1,5 @@
 package config
 
-import (
-	"fmt"
-
-	"github.com/OpenAudio/go-openaudio/pkg/core/config/genesis"
-)
-
 // This file is the height-gated consensus ruleset engine.
 //
 // A consensus rule can never simply be replaced: a node syncing from genesis
@@ -145,37 +139,4 @@ func ScheduleForChainID(chainID string) *UpgradeSchedule {
 		return s
 	}
 	return &UpgradeSchedule{}
-}
-
-// ContentAuthScheduled reports whether the chain this environment's embedded
-// genesis names has content authorization scheduled at all. Mediorum uses it
-// to decide whether to require upload attribution and attest cids.
-//
-// Keyed on the chain rather than the environment because the same prod build
-// serves audius-mainnet-alpha-beta until the genesis rollover and
-// audius-mainnet-beta after it, and the two differ: attestations submitted
-// before the gate are refused at the mempool, so a node that attested on the
-// old chain would fail every audio upload at transcode completion. Reading the
-// genesis makes the answer flip with the genesis swap and nothing else.
-//
-// Every scheduled activation is at height 1, so scheduled and active are the
-// same question; a later-height entry would need RulesetAt for the next block.
-//
-// Only a named network resolves to a genesis. genesis.Read falls back to the
-// devnet genesis for anything it does not recognize, which would turn content
-// auth on for an unset or test-only environment; those get no gate.
-func ContentAuthScheduled(environment string) (bool, error) {
-	switch environment {
-	case "prod", "production", "mainnet",
-		"stage", "staging", "testnet",
-		"sandbox",
-		"dev", "development", "devnet", "local":
-	default:
-		return false, nil
-	}
-	genDoc, err := genesis.Read(environment)
-	if err != nil {
-		return false, fmt.Errorf("reading genesis for %q: %w", environment, err)
-	}
-	return ScheduleForChainID(genDoc.ChainID).ContentAuthEnforcementHeight != 0, nil
 }

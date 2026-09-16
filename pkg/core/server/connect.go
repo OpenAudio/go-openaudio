@@ -122,6 +122,20 @@ func (c *CoreService) ready() (*Server, error) {
 	return c.core, nil
 }
 
+// NextBlockRules resolves the rules the mempool applies to a transaction
+// submitted now: those of the next block. Errors until core registers.
+// There is no chain to ask before that, and a default would be a fabricated
+// answer that callers could not tell from a real one. For a moment after
+// registration the cached height is still zero and the rules resolve for
+// block 1; on every current schedule that is the steady-state answer.
+func (c *CoreService) NextBlockRules() (config.Rules, error) {
+	core, err := c.ready()
+	if err != nil {
+		return config.Rules{}, err
+	}
+	return core.config.Upgrades.RulesetAt(core.cache.currentHeight.Load() + 1), nil
+}
+
 // GetConsensusNodeEndpoints returns the endpoints of nodes in the active CometBFT
 // validator set, cross-referenced with the core_validators DB table for endpoint info.
 func (c *CoreService) GetConsensusNodeEndpoints(ctx context.Context) ([]string, error) {

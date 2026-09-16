@@ -24,7 +24,6 @@ import (
 	ethv1 "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1"
 	ethv1connect "github.com/OpenAudio/go-openaudio/pkg/api/eth/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
-	coreConfig "github.com/OpenAudio/go-openaudio/pkg/core/config"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"github.com/OpenAudio/go-openaudio/pkg/dbpool"
 	"github.com/OpenAudio/go-openaudio/pkg/env"
@@ -149,11 +148,10 @@ type MediorumConfig struct {
 	ProgrammableDistributionEnabled bool
 	BlobStorageStreaming            bool
 
-	// ContentAuthEnabled requires audio uploads to name the user they are for
-	// and attests their cids on chain. Resolved from the core upgrade schedule
-	// for this node's chain (see config.ContentAuthScheduled for why), and kept
-	// apart from ProgrammableDistributionEnabled, which governs the unrelated
-	// DDEX path.
+	// ContentAuthEnabled is the test override for content authorization when
+	// no core is wired. A running node asks core for the rule governing the
+	// next block (contentAuthEnabled), so there is no per-node switch to keep
+	// in step with the chain.
 	ContentAuthEnabled bool
 
 	// should have a basedir type of thing
@@ -312,11 +310,6 @@ func New(lc *lifecycle.Lifecycle, logger *zap.Logger, config MediorumConfig, pos
 		config.Env = v
 	}
 	config.ProgrammableDistributionEnabled = common.IsProgrammableDistributionEnabled(config.Env)
-	contentAuth, err := coreConfig.ContentAuthScheduled(config.Env)
-	if err != nil {
-		return nil, fmt.Errorf("resolving content auth for %q: %w", config.Env, err)
-	}
-	config.ContentAuthEnabled = contentAuth
 	if config.StoreRecentTTL <= 0 {
 		config.StoreRecentTTL = DefaultStoreRecentTTL
 	}

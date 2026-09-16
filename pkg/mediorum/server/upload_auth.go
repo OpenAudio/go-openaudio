@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
+	coreConfig "github.com/OpenAudio/go-openaudio/pkg/core/config"
 	coreServer "github.com/OpenAudio/go-openaudio/pkg/core/server"
 	"go.uber.org/zap"
 )
@@ -39,54 +40,45 @@ import (
 // no attribution UIs, no quotas, no provenance — without adding real
 // authentication first.
 
-// contentAuthEnabled reports whether this node requires upload attribution and
-// attests cids. Follows the core upgrade schedule for this node's chain — see
-// MediorumConfig.ContentAuthEnabled.
-func (ss *MediorumServer) contentAuthEnabled() bool {
-	return ss.Config.ContentAuthEnabled
-}
-
-// errCoreNotReady is returned by the attestation sender while core is still
-// starting. Transcode marks the upload errored and the missed-job sweep
-// retries it once core is up.
-//
-// Uploads themselves are accepted throughout: creation never touches core,
-// and the client's tus retries stay on one node for under a minute, so a 503
-// here would fail uploads whenever the boot window ran longer than that.
-// Waiting the transcoder is invisible to the client, whose processing poll
-// allows an hour.
-var errCoreNotReady = errors.New("core is still starting")
-
-// awaitingCore reports whether a wired core has not finished starting. Core
-// registers itself only after migrations and compaction, so this is a boot
-// window of seconds, never a steady state. A nil core means no core at all
-// (tests), and nothing is awaited. Not conditioned on content auth: the
-// wait costs nothing on a chain without it, and whether the chain has it is
-// itself a question for core.
-func (ss *MediorumServer) awaitingCore() bool {
-	return ss.core != nil && !ss.core.IsReady()
-}
-
-// waitForCore blocks until core is up, or ctx ends. The transcoder calls it
-// before pulling work so jobs queued across a restart wait out the boot
-// window instead of burning their retry budget on a core that is seconds
-// from ready.
-func (ss *MediorumServer) waitForCore(ctx context.Context) error {
-	if !ss.awaitingCore() {
-		return nil
+// chainRules returns the consensus rules for the next block, waiting for core
+// to register first. Every rule consult in mediorum goes through here, so
+// there is no value to fall back on during core's boot window and nothing
+// can fail open: a caller gets the real rules or its context ends. Background
+// workers pass the lifecycle context and wait the window out. Request
+// handlers pass the request context, so a client that gives up cancels the
+// wait; a slow response beats a refusal, because the SDK's upload retries
+// stay on one node and give up within a minute. With no core wired (tests)
+// the config override stands in.
+func (ss *MediorumServer) chainRules(ctx context.Context) (coreConfig.Rules, error) {
+	if ss.core == nil {
+		return coreConfig.Rules{ContentAuthEnforced: ss.Config.ContentAuthEnabled}, nil
 	}
-	ss.logger.Info("waiting for core before attesting uploads")
-	ticker := time.NewTicker(time.Second)
+	rules, err := ss.core.NextBlockRules()
+	if err == nil {
+		return rules, nil
+	}
+	if ss.logger != nil {
+		ss.logger.Info("waiting for core before consulting chain rules")
+	}
+	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
-	for ss.awaitingCore() {
+	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return coreConfig.Rules{}, fmt.Errorf("waiting for core: %w", ctx.Err())
 		case <-ticker.C:
 		}
+		if rules, err := ss.core.NextBlockRules(); err == nil {
+			return rules, nil
+		}
 	}
-	ss.logger.Info("core ready, attesting uploads")
-	return nil
+}
+
+// contentAuthEnabled reports whether this node requires upload attribution and
+// attests cids: whether core would admit an attestation for the next block.
+func (ss *MediorumServer) contentAuthEnabled(ctx context.Context) (bool, error) {
+	rules, err := ss.chainRules(ctx)
+	return rules.ContentAuthEnforced, err
 }
 
 // resolveUploadUserID reads the asserted uploading user from tus metadata.
@@ -101,14 +93,18 @@ func (ss *MediorumServer) waitForCore(ctx context.Context) error {
 // client sending bytes it can never use, and surfaces the misconfiguration at
 // the call site instead of at publish. A malformed userId is rejected
 // regardless: a bad assertion must not masquerade as no assertion.
-func (ss *MediorumServer) resolveUploadUserID(template JobTemplate, metadata map[string]string) (int64, error) {
+func (ss *MediorumServer) resolveUploadUserID(ctx context.Context, template JobTemplate, metadata map[string]string) (int64, error) {
 	if template != JobTemplateAudio {
 		return 0, nil
 	}
 
 	raw, ok := metadata["userId"]
 	if !ok || raw == "" {
-		if ss.contentAuthEnabled() {
+		enforced, err := ss.contentAuthEnabled(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if enforced {
 			return 0, errors.New("audio uploads must carry the uploading user's id")
 		}
 		return 0, nil
@@ -154,9 +150,13 @@ func (ss *MediorumServer) resolveOptionalUploadUserID(template JobTemplate, raw 
 // paths populate it from an unverified X-User-Wallet-Addr header, and those
 // uploads carry no user id, so they never reach an attestation. Claims key on
 // the user id alone (see content_auth_state.go on why not the wallet).
-func (ss *MediorumServer) contentAttestationFor(upload *Upload, cids []string) *v1.ContentAttestation {
-	if !ss.contentAuthEnabled() {
-		return nil
+func (ss *MediorumServer) contentAttestationFor(ctx context.Context, upload *Upload, cids []string) (*v1.ContentAttestation, error) {
+	enforced, err := ss.contentAuthEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !enforced {
+		return nil, nil
 	}
 
 	present := make([]string, 0, len(cids))
@@ -166,21 +166,21 @@ func (ss *MediorumServer) contentAttestationFor(upload *Upload, cids []string) *
 		}
 	}
 	if len(present) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// The claim is keyed on the user the upload was made for, so an attestation
 	// without one authorizes nobody.
 	if !upload.UserID.Valid || upload.UserID.Int64 == 0 {
 		ss.logger.Debug("skipping attestation: upload has no user id", zap.String("uploadID", upload.ID))
-		return nil
+		return nil, nil
 	}
 
 	return &v1.ContentAttestation{
 		UserId:           upload.UserID.Int64,
 		Cids:             present,
 		ValidatorAddress: ss.Config.Self.Wallet,
-	}
+	}, nil
 }
 
 // attestUploadCids tells the chain that these bytes were uploaded here for a
@@ -197,7 +197,10 @@ func (ss *MediorumServer) contentAttestationFor(upload *Upload, cids []string) *
 // upload reads done, and consensus rejects a track naming cids it has no claim
 // for. An error means these cids are not yet claimable.
 func (ss *MediorumServer) attestUploadCids(ctx context.Context, upload *Upload, cids ...string) error {
-	ca := ss.contentAttestationFor(upload, cids)
+	ca, err := ss.contentAttestationFor(ctx, upload, cids)
+	if err != nil {
+		return err
+	}
 	if ca == nil {
 		return nil
 	}
@@ -227,12 +230,6 @@ func contentAttestation(userID int64, cid, validatorAddress string) *v1.ContentA
 func (ss *MediorumServer) sendContentAttestation(ctx context.Context, ca *v1.ContentAttestation) error {
 	if ss.core == nil {
 		return nil
-	}
-	// The transcoder waits for core before pulling work, but a re-transcode
-	// or an analysis job can reach this point directly. Failing marks the
-	// upload errored, and the missed-job sweep retries it once core is up.
-	if !ss.core.IsReady() {
-		return errCoreNotReady
 	}
 
 	// Shared constructor, so signer and verifier cannot drift on field order or
