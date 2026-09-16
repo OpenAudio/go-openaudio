@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 )
 
 // Consensus-side content authorization (core_auth_cids): which user may
@@ -90,12 +91,22 @@ func projectMigratedTrackCids(ctx context.Context, st authStore, tx authTx) erro
 	return nil
 }
 
+// firstAssertionOpen reports whether, under these rules, a live track write
+// may name — and take the claim on — a cid nobody holds: content auth is
+// enforced but not yet strict. Before the enforcement gate a chain must
+// accumulate no claims from live traffic, or activating enforcement later
+// would trust state built from unverified assertions; under strict an
+// unclaimed cid is refused outright, so there is nothing to claim.
+func firstAssertionOpen(rules config.Rules) bool {
+	return rules.ContentAuthEnforced && !rules.ContentAuthStrict
+}
+
 // validateTrackContentAuth is the enforcement check, active only under
 // Rules.ContentAuthEnforced: no cid the transaction asserts may be held by a
 // user other than the writing user, and once Rules.ContentAuthStrict is
 // active every cid must be held by the writing user.
 //
-// Between the two heights (tx.ClaimUnattested) a cid nobody holds passes, and
+// Between the two heights (firstAssertionOpen) a cid nobody holds passes, and
 // the projection then records it to the writer (projectAssertedTrackCids):
 // first assertion wins. That window exists for the genesis migration, whose
 // API flusher replays old-chain track writes naming cids nobody attested and
@@ -110,7 +121,7 @@ func projectMigratedTrackCids(ctx context.Context, st authStore, tx authTx) erro
 // Only cids present in this transaction are checked, so metadata-only edits on
 // a track whose audio predates the projection keep working, and an audio
 // replacement is checked against the new cid alone.
-func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx) error {
+func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx, rules config.Rules) error {
 	if tx.Migration || tx.EntityType != authEntityTypeTrack {
 		return nil
 	}
@@ -146,7 +157,7 @@ func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx) err
 		if known {
 			return authValidationErrorf("%s %q was not uploaded for user %d", key, cid, tx.UserID)
 		}
-		if !tx.ClaimUnattested {
+		if !firstAssertionOpen(rules) {
 			return authValidationErrorf("%s %q is not attested to any uploader", key, cid)
 		}
 	}
@@ -161,10 +172,10 @@ func validateTrackContentAuth(ctx context.Context, st authReader, tx authTx) err
 // claim to whoever named the cid.
 //
 // Runs only for live writes inside the first-assertion window
-// (tx.ClaimUnattested); migration rows are seeded by projectMigratedTrackCids,
+// (firstAssertionOpen); migration rows are seeded by projectMigratedTrackCids,
 // and under strict there is nothing unclaimed to record.
-func projectAssertedTrackCids(ctx context.Context, st authStore, tx authTx) error {
-	if !tx.ClaimUnattested || tx.Migration || tx.EntityType != authEntityTypeTrack {
+func projectAssertedTrackCids(ctx context.Context, st authStore, tx authTx, rules config.Rules) error {
+	if tx.Migration || !firstAssertionOpen(rules) || tx.EntityType != authEntityTypeTrack {
 		return nil
 	}
 	for _, key := range trackCidMetadataKeys {

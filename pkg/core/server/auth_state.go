@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 )
 
@@ -91,14 +92,6 @@ type authTx struct {
 	Action     string
 	Signer     string
 	Migration  bool
-	// ClaimUnattested lets a live track write name, and take the claim on, a
-	// cid nobody holds yet (content_auth_state.go validateTrackContentAuth and
-	// projectAssertedTrackCids). Set by the callers that know the ruleset, and
-	// only under Rules.ContentAuthEnforced before Rules.ContentAuthStrict.
-	// Before the gate a chain must accumulate no claims from live traffic, or
-	// activating enforcement later would trust state built from unverified
-	// assertions; under strict an unclaimed cid is refused outright.
-	ClaimUnattested bool
 
 	meta map[string]any
 }
@@ -294,7 +287,11 @@ func validateAuthSigner(ctx context.Context, st authReader, userID int64, signer
 // is not auth-tracked at all — the projection has no opinion there. An
 // authValidationError is the projection mirroring an ETL rejection; any other
 // error is a store failure.
-func applyAuthProjection(ctx context.Context, st authStore, tx authTx) error {
+//
+// rules is the ruleset resolved for the height the transaction executes at.
+// The projection branches on it only for the first-assertion cid claim
+// (content_auth_state.go); migration rows ignore it.
+func applyAuthProjection(ctx context.Context, st authStore, tx authTx, rules config.Rules) error {
 	entityType, ok := canonicalAuthEntityType(tx.EntityType)
 	if !ok {
 		return nil
@@ -321,18 +318,18 @@ func applyAuthProjection(ctx context.Context, st authStore, tx authTx) error {
 		if err := projectMigratedTrackCids(ctx, st, tx); err != nil {
 			return err
 		}
-		return projectAssertedTrackCids(ctx, st, tx)
+		return projectAssertedTrackCids(ctx, st, tx, rules)
 	case entityType == authEntityTypeTrack && action == authActionUpdate:
 		// Track updates are otherwise untracked (ownership on update is the
 		// ETL's rule); the only projection is the first-assertion claim, and
 		// it requires the same signer authority a create does.
-		if !tx.ClaimUnattested || tx.Migration {
+		if tx.Migration || !firstAssertionOpen(rules) {
 			return nil
 		}
 		if err := validateAuthSigner(ctx, st, tx.UserID, tx.Signer); err != nil {
 			return err
 		}
-		return projectAssertedTrackCids(ctx, st, tx)
+		return projectAssertedTrackCids(ctx, st, tx, rules)
 	case (entityType == authEntityTypeTrack || entityType == authEntityTypePlaylist) && action == authActionDelete:
 		return projectEntityDelete(ctx, st, tx, entityType)
 	case entityType == authEntityTypeGrant && action == authActionCreate:
@@ -651,7 +648,8 @@ func projectAppDelete(ctx context.Context, st authStore, tx authTx) error {
 // it, with reason describing why. A migration replays state the source system
 // already accepted, so any skip is a defect the caller should surface.
 func ProjectMigrationAuthState(ctx context.Context, q *db.Queries, me *v1.ManageEntityLegacyMigration) (skipped bool, reason string, err error) {
-	err = applyAuthProjection(ctx, &dbAuthStore{q: q}, authTxFromManageEntityMigration(me))
+	// A migration row's projection does not branch on the ruleset.
+	err = applyAuthProjection(ctx, &dbAuthStore{q: q}, authTxFromManageEntityMigration(me), config.Rules{})
 	switch {
 	case err == nil:
 		return false, "", nil

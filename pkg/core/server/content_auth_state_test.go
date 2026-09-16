@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 )
 
 func trackCidTx(userID, trackID int64, signer, action string, cids map[string]any) authTx {
@@ -32,16 +33,28 @@ func attestationFor(userID int64, validator string, cids ...string) *v1.ContentA
 	}
 }
 
+// The default helpers check under strict rules, the steady state; the
+// first-assertion tests pass windowRules explicitly.
 func mustContentAuth(t *testing.T, st authReader, tx authTx) {
 	t.Helper()
-	if err := validateTrackContentAuth(context.Background(), st, tx); err != nil {
+	mustContentAuthUnder(t, st, tx, strictRules)
+}
+
+func mustContentAuthUnder(t *testing.T, st authReader, tx authTx, rules config.Rules) {
+	t.Helper()
+	if err := validateTrackContentAuth(context.Background(), st, tx, rules); err != nil {
 		t.Fatalf("expected content auth to pass: %v", err)
 	}
 }
 
 func mustRejectContentAuth(t *testing.T, st authReader, tx authTx, wantReason string) {
 	t.Helper()
-	err := validateTrackContentAuth(context.Background(), st, tx)
+	mustRejectContentAuthUnder(t, st, tx, strictRules, wantReason)
+}
+
+func mustRejectContentAuthUnder(t *testing.T, st authReader, tx authTx, rules config.Rules, wantReason string) {
+	t.Helper()
+	err := validateTrackContentAuth(context.Background(), st, tx, rules)
 	if err == nil {
 		t.Fatalf("expected content auth rejection (%s), but it passed", wantReason)
 	}
@@ -152,33 +165,29 @@ func TestContentAuthUnattestedCidGoesToFirstAsserter(t *testing.T) {
 	mustProject(t, st, userCreateTx(2, "0xthief", "thief"))
 
 	first := trackCidTx(1, 2_000_001, "0xartist", "Create", map[string]any{"track_cid": "nobody-attested-this"})
-	first.ClaimUnattested = true
-	mustContentAuth(t, st, first)
-	mustProject(t, st, first)
+	mustContentAuthUnder(t, st, first, windowRules)
+	mustProjectUnder(t, st, first, windowRules)
 	if ok, _ := st.IsCidClaimedByUser(ctx, "nobody-attested-this", 1); !ok {
 		t.Fatal("the first asserter must hold the claim")
 	}
 
 	second := trackCidTx(2, 2_000_002, "0xthief", "Create", map[string]any{"track_cid": "nobody-attested-this"})
-	second.ClaimUnattested = true
-	mustRejectContentAuth(t, st, second, "was not uploaded for user 2")
+	mustRejectContentAuthUnder(t, st, second, windowRules, "was not uploaded for user 2")
 
 	edit := trackCidTx(1, 2_000_001, "0xartist", "Update", map[string]any{"track_cid": "nobody-attested-this"})
-	edit.ClaimUnattested = true
-	mustContentAuth(t, st, edit)
+	mustContentAuthUnder(t, st, edit, windowRules)
 }
 
 // Under strict content auth the window is closed: a cid nobody holds is
-// refused, and a write naming one leaves no claim behind. Callers signal
-// strict by leaving ClaimUnattested unset.
+// refused, and a write naming one leaves no claim behind.
 func TestStrictContentAuthRejectsUnattestedCid(t *testing.T) {
 	ctx := context.Background()
 	st := newMemAuthStore()
 	mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
 
 	tx := trackCidTx(1, 2_000_001, "0xartist", "Create", map[string]any{"track_cid": "nobody-attested-this"})
-	mustRejectContentAuth(t, st, tx, "is not attested to any uploader")
-	mustProject(t, st, tx) // finalize projects the entity; the claim must not follow
+	mustRejectContentAuthUnder(t, st, tx, strictRules, "is not attested to any uploader")
+	mustProjectUnder(t, st, tx, strictRules) // finalize projects the entity; the claim must not follow
 	if ok, _ := st.CidIsClaimed(ctx, "nobody-attested-this"); ok {
 		t.Fatal("a strict-mode write must not leave a claim behind")
 	}
@@ -196,9 +205,8 @@ func TestAssertedClaimNeverOverridesAnExistingOne(t *testing.T) {
 	}
 
 	decoy := trackCidTx(2, 2_000_002, "0xthief", "Create", map[string]any{"track_cid": "victim-320"})
-	decoy.ClaimUnattested = true
-	mustRejectContentAuth(t, st, decoy, "was not uploaded for user 2")
-	mustProject(t, st, decoy) // as finalize would apply it from an ungated proposer
+	mustRejectContentAuthUnder(t, st, decoy, windowRules, "was not uploaded for user 2")
+	mustProjectUnder(t, st, decoy, windowRules) // as finalize would apply it from an ungated proposer
 	if ok, _ := st.IsCidClaimedByUser(ctx, "victim-320", 2); ok {
 		t.Fatal("naming a held cid must not grant a claim")
 	}
@@ -206,7 +214,7 @@ func TestAssertedClaimNeverOverridesAnExistingOne(t *testing.T) {
 
 // Before the gate a chain must accumulate no claims from live traffic, or
 // activating enforcement later would trust state built from unverified
-// assertions. ClaimUnattested is how the caller says the gate is active.
+// assertions. The zero ruleset is pre-gate.
 func TestPreGateLiveTrackClaimsNothing(t *testing.T) {
 	st := newMemAuthStore()
 	mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
@@ -228,8 +236,7 @@ func TestUpdateClaimsUnattestedCidOnlyForAuthorizedSigner(t *testing.T) {
 	mustProject(t, st, userCreateTx(1, "0xartist", "artist"))
 
 	stranger := trackCidTx(1, 2_000_001, "0xstranger", "Update", map[string]any{"track_cid": "new-audio"})
-	stranger.ClaimUnattested = true
-	if err := applyAuthProjection(ctx, st, stranger); err == nil || !isAuthValidationError(err) {
+	if err := applyAuthProjection(ctx, st, stranger, windowRules); err == nil || !isAuthValidationError(err) {
 		t.Fatalf("expected a signer rejection, got %v", err)
 	}
 	if ok, _ := st.IsCidClaimedByUser(ctx, "new-audio", 1); ok {
@@ -237,8 +244,7 @@ func TestUpdateClaimsUnattestedCidOnlyForAuthorizedSigner(t *testing.T) {
 	}
 
 	owner := trackCidTx(1, 2_000_001, "0xartist", "Update", map[string]any{"track_cid": "new-audio"})
-	owner.ClaimUnattested = true
-	mustProject(t, st, owner)
+	mustProjectUnder(t, st, owner, windowRules)
 	if ok, _ := st.IsCidClaimedByUser(ctx, "new-audio", 1); !ok {
 		t.Fatal("the owner's update must claim the cid")
 	}

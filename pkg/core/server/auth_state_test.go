@@ -6,6 +6,18 @@ import (
 	"testing"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/config"
+)
+
+// Rulesets the projection tests run under. Most tests do not care and use
+// the zero ruleset (pre-gate); the content-auth tests pick a side of the
+// first-assertion window explicitly.
+var (
+	// windowRules: content auth enforced, not yet strict — an unclaimed cid
+	// goes to the first asserter.
+	windowRules = config.Rules{AuthEnforced: true, ContentAuthEnforced: true}
+	// strictRules: the steady state — every cid must already be claimed.
+	strictRules = config.Rules{AuthEnforced: true, ContentAuthEnforced: true, ContentAuthStrict: true}
 )
 
 // memAuthStore is a map-backed authStore so projection logic tests run
@@ -186,14 +198,19 @@ func (m *memAuthStore) SetEntityDeleted(_ context.Context, entityType string, en
 
 func mustProject(t *testing.T, st authStore, tx authTx) {
 	t.Helper()
-	if err := applyAuthProjection(context.Background(), st, tx); err != nil {
+	mustProjectUnder(t, st, tx, config.Rules{})
+}
+
+func mustProjectUnder(t *testing.T, st authStore, tx authTx, rules config.Rules) {
+	t.Helper()
+	if err := applyAuthProjection(context.Background(), st, tx, rules); err != nil {
 		t.Fatalf("expected projection to apply: %v", err)
 	}
 }
 
 func mustSkip(t *testing.T, st authStore, tx authTx, wantReason string) {
 	t.Helper()
-	err := applyAuthProjection(context.Background(), st, tx)
+	err := applyAuthProjection(context.Background(), st, tx, config.Rules{})
 	if err == nil {
 		t.Fatalf("expected projection to skip (%s), but it applied", wantReason)
 	}
@@ -396,7 +413,7 @@ func TestProjectUntrackedPairIsNil(t *testing.T) {
 	st := newMemAuthStore()
 	if err := applyAuthProjection(context.Background(), st, authTx{
 		UserID: 1, EntityType: "Follow", Action: "Create", Signer: "0xw1",
-	}); err != nil {
+	}, config.Rules{}); err != nil {
 		t.Fatalf("untracked pair must project to nil, got %v", err)
 	}
 }
