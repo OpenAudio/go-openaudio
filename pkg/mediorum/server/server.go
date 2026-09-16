@@ -177,6 +177,9 @@ type MediorumServer struct {
 	rendezvousHasher *common.RendezvousHasher
 	transcodeWork    chan *Upload
 	replicationWork  chan *Upload
+	// uploadRowLocks serializes this node's writers of one uploads row; see
+	// updateUploadRow. Zero value is ready to use.
+	uploadRowLocks uploadRowLocks
 
 	// Bounded queue for transfers a peer handed off with 202. The limit lives
 	// here because the sender no longer blocks for the duration.
