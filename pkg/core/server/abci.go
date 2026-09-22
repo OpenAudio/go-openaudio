@@ -191,7 +191,7 @@ func (s *Server) startABCI(ctx context.Context) error {
 	}
 
 	s.node = node
-	s.rpc = s.monitorRPC.Wrap(local.New(s.node))
+	s.rpc = local.New(s.node)
 	close(s.awaitRpcReady)
 	s.logger.Info("rpc ready")
 

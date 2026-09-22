@@ -240,14 +240,14 @@ func (s *Server) refreshPeerData(ctx context.Context, _ *zap.Logger) error {
 
 		existing, exists := s.peerStatus.Get(addr)
 		peer := &v1.GetStatusResponse_PeerInfo_Peer{
-			Endpoint:          validator.Endpoint,
-			CometAddress:      validator.CometAddress,
-			EthAddress:        validator.EthAddress,
-			NodeType:          validator.NodeType,
-			Jailed:            validator.Jailed,
+			Endpoint:         validator.Endpoint,
+			CometAddress:     validator.CometAddress,
+			EthAddress:       validator.EthAddress,
+			NodeType:         validator.NodeType,
+			Jailed:           validator.Jailed,
 			ConnectrpcClient:  exists && existing.ConnectrpcClient,
 			ConnectrpcHealthy: exists && existing.ConnectrpcHealthy,
-			CometrpcClient:    exists && existing.CometrpcClient,
+			CometrpcClient:   exists && existing.CometrpcClient,
 			P2PConnected:      exists && existing.P2PConnected,
 		}
 		s.peerStatus.Set(addr, peer)
@@ -397,7 +397,43 @@ func (s *Server) refreshP2PConnections(ctx context.Context, logger *zap.Logger) 
 	for _, peer := range netInfo.Peers {
 		nodeID := string(peer.NodeInfo.ID())
 		if nodeID != "" {
-			connectedNodeIDs[normalizeCometNodeID(nodeID)] = true
+			connectedNodeIDs[nodeID] = true
+		}
+	}
+
+	connectedCometAddresses := make(map[string]bool)
+	cometPeers := s.cometRPCPeers.ToMap()
+	for _, cometRPC := range cometPeers {
+		queryCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		validators, err := cometRPC.Validators(queryCtx, nil, nil, nil)
+		cancel()
+
+		if err == nil && validators != nil {
+			for _, val := range validators.Validators {
+				if val != nil {
+					validatorAddr := strings.ToLower(val.Address.String())
+					connectedCometAddresses[validatorAddr] = true
+				}
+			}
+		}
+
+		statusCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		status, err := cometRPC.Status(statusCtx)
+		cancel()
+
+		if err == nil && status != nil {
+			validatorAddr := strings.ToLower(status.ValidatorInfo.Address.String())
+			if validatorAddr != "" {
+				connectedCometAddresses[validatorAddr] = true
+			}
+		}
+	}
+
+	for nodeID := range connectedNodeIDs {
+		for _, peerStatus := range s.peerStatus.Values() {
+			if strings.HasPrefix(peerStatus.CometAddress, nodeID+"@") {
+				connectedCometAddresses[peerStatus.CometAddress] = true
+			}
 		}
 	}
 
@@ -406,9 +442,18 @@ func (s *Server) refreshP2PConnections(ctx context.Context, logger *zap.Logger) 
 			continue
 		}
 
-		// A remote validator list (or a successful HTTP call) does not prove
-		// a local P2P connection. Only report IDs observed in NetInfo.
-		isConnected := connectedNodeIDs[normalizeCometNodeID(peerStatus.CometAddress)]
+		cometAddrLower := strings.ToLower(peerStatus.CometAddress)
+		isConnected := connectedCometAddresses[cometAddrLower]
+
+		if !isConnected && strings.Contains(peerStatus.CometAddress, "@") {
+			parts := strings.Split(peerStatus.CometAddress, "@")
+			if len(parts) > 0 {
+				nodeID := strings.TrimSpace(parts[0])
+				if connectedNodeIDs[nodeID] {
+					isConnected = true
+				}
+			}
+		}
 
 		peerStatus.P2PConnected = isConnected
 		if ethAddr := peerStatus.EthAddress; ethAddr != "" {
@@ -446,9 +491,4 @@ func (s *Server) isNonRoutableAddress(listenAddr string) bool {
 	}
 
 	return false
-}
-
-func normalizeCometNodeID(address string) string {
-	id, _, _ := strings.Cut(address, "@")
-	return strings.ToLower(strings.TrimSpace(id))
 }
