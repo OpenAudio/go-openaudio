@@ -10,6 +10,7 @@ import (
 	corev1connect "github.com/OpenAudio/go-openaudio/pkg/api/core/v1/v1connect"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
+	"github.com/OpenAudio/go-openaudio/pkg/core/monitorrpc"
 	"github.com/OpenAudio/go-openaudio/pkg/eth"
 	"github.com/OpenAudio/go-openaudio/pkg/lifecycle"
 	"github.com/OpenAudio/go-openaudio/pkg/pos"
@@ -18,7 +19,6 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/safemap"
 	cconfig "github.com/cometbft/cometbft/config"
 	nm "github.com/cometbft/cometbft/node"
-	"github.com/cometbft/cometbft/rpc/client/local"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
@@ -44,7 +44,7 @@ type Server struct {
 
 	db    *db.Queries
 	node  *nm.Node
-	rpc   *local.Local
+	rpc   *monitorrpc.Client
 	mempl *Mempool
 
 	connectRPCPeers  *safemap.SafeMap[EthAddress, corev1connect.CoreServiceClient]
@@ -55,8 +55,9 @@ type Server struct {
 	txPubsub    *TransactionHashPubsub
 	blockPubsub *BlockPubsub
 
-	cache     *Cache
-	abciState *ABCIState
+	monitorRPC *monitorrpc.Cache
+	cache      *Cache
+	abciState  *ABCIState
 
 	rewards *rewards.RewardAttester
 
@@ -117,6 +118,7 @@ func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.
 		peerStatus:       safemap.New[EthAddress, *v1.GetStatusResponse_PeerInfo_Peer](),
 		txPubsub:         txPubsub,
 		blockPubsub:      blockPubsub,
+		monitorRPC:       monitorrpc.New(),
 		cache:            NewCache(config),
 		abciState:        NewABCIState(0), // Start at 0, will be calculated during Commit
 
@@ -205,3 +207,6 @@ func (s *Server) Shutdown() error {
 
 	return nil
 }
+
+// MonitoringCache is shared with console RPC clients.
+func (s *Server) MonitoringCache() *monitorrpc.Cache { return s.monitorRPC }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
+	cmtjson "github.com/cometbft/cometbft/libs/json"
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
@@ -43,6 +45,7 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 
 	// Handle validation based on request method
 	var bodyToForward io.Reader = c.Request().Body
+	var rpcReq rpctypes.RPCRequest
 
 	if c.Request().Method == "POST" {
 		// Read the body to validate JSONRPC method (with size limit)
@@ -59,7 +62,6 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 		}
 
 		// Parse JSONRPC request
-		var rpcReq rpctypes.RPCRequest
 		if err := json.Unmarshal(body, &rpcReq); err != nil {
 			s.logger.Error("failed to parse JSONRPC request", zap.Error(err))
 			return respondWithError(c, http.StatusBadRequest, "invalid JSONRPC request")
@@ -82,6 +84,7 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 			basePath = basePath[:idx]
 		}
 
+		rpcReq = rpctypes.NewRPCRequest(rpctypes.JSONRPCIntID(-1), basePath, nil)
 		// Check if method is allowed
 		if _, ok := allowedMethods[basePath]; !ok {
 			s.logger.Warn("blocked unauthorized RPC method",
@@ -90,15 +93,9 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 		}
 	}
 
-	// Create HTTP client with Unix socket transport
-	httpClient := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				dialer := net.Dialer{}
-				return dialer.DialContext(ctx, "unix", config.CometRPCSocket)
-			},
-		},
+	// Serve expensive monitoring queries through the same cache as local callers.
+	if rpcReq.Method == "status" || rpcReq.Method == "validators" {
+		return s.serveCachedCometRequest(c, rpcReq)
 	}
 
 	s.logger.Info("request", zap.String("socket", config.CometRPCSocket), zap.String("method", c.Request().Method), zap.String("url", c.Request().RequestURI))
@@ -106,7 +103,7 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 	// For Unix sockets, the host is ignored, but we need to provide one
 	path := "http://localhost" + strings.TrimPrefix(c.Request().RequestURI, "/core/crpc")
 
-	req, err := http.NewRequest(c.Request().Method, path, bodyToForward)
+	req, err := http.NewRequestWithContext(c.Request().Context(), c.Request().Method, path, bodyToForward)
 	if err != nil {
 		s.logger.Error("failed to create internal comet api request", zap.Error(err))
 		return respondWithError(c, http.StatusInternalServerError, "failed to create internal comet request")
@@ -114,7 +111,7 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 
 	copyHeaders(c.Request().Header, req.Header)
 
-	resp, err := httpClient.Do(req)
+	resp, err := cometProxyClient.Do(req)
 	if err != nil {
 		s.logger.Error("failed to forward comet api request", zap.Error(err))
 		return respondWithError(c, http.StatusInternalServerError, "failed to forward request")
@@ -150,4 +147,79 @@ func copyHeaders(source http.Header, destination http.Header) {
 
 func respondWithError(c echo.Context, statusCode int, message string) error {
 	return c.JSON(statusCode, map[string]string{"error": message})
+}
+
+// Reusing the transport also bounds idle Unix-socket connections.
+var cometProxyClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns: 16, MaxIdleConnsPerHost: 16, IdleConnTimeout: 30 * time.Second,
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", config.CometRPCSocket)
+		},
+	},
+}
+
+func (s *Server) serveCachedCometRequest(c echo.Context, req rpctypes.RPCRequest) error {
+	select {
+	case <-s.awaitRpcReady:
+	default:
+		return respondWithError(c, http.StatusServiceUnavailable, "RPC not ready")
+	}
+	var result any
+	var err error
+	if req.Method == "status" {
+		result, err = s.rpc.Status(c.Request().Context())
+	} else {
+		height, page, perPage, parseErr := cometValidatorParams(c.Request(), req.Params)
+		if parseErr != nil {
+			return c.JSON(http.StatusOK, rpctypes.RPCInvalidParamsError(req.ID, parseErr))
+		}
+		result, err = s.rpc.Validators(c.Request().Context(), height, page, perPage)
+	}
+	if err != nil {
+		return c.JSON(http.StatusOK, rpctypes.RPCInternalError(req.ID, err))
+	}
+	return c.JSON(http.StatusOK, rpctypes.NewRPCSuccessResponse(req.ID, result))
+}
+
+func cometValidatorParams(req *http.Request, raw json.RawMessage) (*int64, *int, *int, error) {
+	var height *int64
+	var page, perPage *int
+	fields := []struct {
+		name  string
+		value any
+	}{{"height", &height}, {"page", &page}, {"per_page", &perPage}}
+	params := map[string]json.RawMessage{}
+	if req.Method == http.MethodGet {
+		for _, field := range fields {
+			if value := req.URL.Query().Get(field.name); value != "" {
+				params[field.name], _ = json.Marshal(value)
+			}
+		}
+	} else if len(raw) > 0 && string(raw) != "null" {
+		trimmed := bytes.TrimSpace(raw)
+		if len(trimmed) > 0 && trimmed[0] == '[' {
+			var values []json.RawMessage
+			if err := json.Unmarshal(raw, &values); err != nil {
+				return nil, nil, nil, err
+			}
+			if len(values) != len(fields) {
+				return nil, nil, nil, fmt.Errorf("expected 3 validator parameters")
+			}
+			for i, field := range fields {
+				params[field.name] = values[i]
+			}
+		} else if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	for _, field := range fields {
+		if value, ok := params[field.name]; ok {
+			if err := cmtjson.Unmarshal(value, field.value); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+	}
+	return height, page, perPage, nil
 }

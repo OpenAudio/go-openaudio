@@ -9,6 +9,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/core/console/views"
 	"github.com/OpenAudio/go-openaudio/pkg/core/console/views/layout"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
+	"github.com/OpenAudio/go-openaudio/pkg/core/monitorrpc"
 	"github.com/OpenAudio/go-openaudio/pkg/eth"
 	"github.com/cometbft/cometbft/rpc/client"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
@@ -31,7 +32,7 @@ type Console struct {
 	views   *views.Views
 }
 
-func NewConsole(config *config.Config, logger *zap.Logger, e *echo.Echo, pool *pgxpool.Pool, ethService *eth.EthService, coreService v1connect.CoreServiceHandler, storageService storagev1connect.StorageServiceHandler) (*Console, error) {
+func NewConsole(config *config.Config, logger *zap.Logger, e *echo.Echo, pool *pgxpool.Pool, ethService *eth.EthService, coreService v1connect.CoreServiceHandler, storageService storagev1connect.StorageServiceHandler, rpcCache *monitorrpc.Cache) (*Console, error) {
 	l := logger.With(zap.String("service", "console"))
 	db := db.New(pool)
 	httprpc, err := rpchttp.New(config.RPCladdr)
@@ -41,7 +42,7 @@ func NewConsole(config *config.Config, logger *zap.Logger, e *echo.Echo, pool *p
 
 	c := &Console{
 		config:  config,
-		rpc:     httprpc,
+		rpc:     rpcCache.Wrap(httprpc),
 		e:       e,
 		logger:  l,
 		eth:     ethService,
