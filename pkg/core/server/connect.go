@@ -283,16 +283,12 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 			zap.Any("payload", req.Msg.Transaction))
 	}
 
-	if core.rpc == nil {
+	if core.rpc == nil || core.node == nil {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("local rpc not ready"))
 	}
 
-	status, err := core.rpc.Status(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("chain not healthy: %v", err)
-	}
-
-	deadline := status.SyncInfo.LatestBlockHeight + 10
+	// Status reads this same height, but also reconstructs the validator set.
+	deadline := core.node.BlockStore().Height() + 10
 	var mempoolTx *MempoolTransaction
 	if req.Msg.Transaction != nil {
 		mempoolTx = &MempoolTransaction{
@@ -1002,24 +998,22 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 	pruningInfo.RetainBlocks = core.config.RetainHeight
 	pruningInfo.LastSetRetainHeight = core.abciState.lastRetainHeight
 
-	if core.rpc != nil {
-		status, err := core.rpc.Status(ctx)
-		if err == nil {
-			pruningInfo.EarliestHeight = status.SyncInfo.EarliestBlockHeight
+	if core.node != nil {
+		// Pruning metadata does not need Status's validator-set reconstruction.
+		pruningInfo.EarliestHeight = core.node.BlockStore().Base()
 
-			// Calculate target retain height (what it should be)
-			if chainInfo != nil && !core.config.Archive {
-				latestHeight := chainInfo.CurrentHeight
-				retainWindow := core.config.RetainHeight
-				if latestHeight > retainWindow {
-					pruningInfo.TargetRetainHeight = latestHeight - retainWindow
-				}
+		// Calculate target retain height (what it should be)
+		if chainInfo != nil && !core.config.Archive {
+			latestHeight := chainInfo.CurrentHeight
+			retainWindow := core.config.RetainHeight
+			if latestHeight > retainWindow {
+				pruningInfo.TargetRetainHeight = latestHeight - retainWindow
 			}
-
-			// Current retain height would come from CometBFT's data companion
-			// For now, use lastSetRetainHeight as approximation
-			pruningInfo.CurrentRetainHeight = core.abciState.lastRetainHeight
 		}
+
+		// Current retain height would come from CometBFT's data companion
+		// For now, use lastSetRetainHeight as approximation
+		pruningInfo.CurrentRetainHeight = core.abciState.lastRetainHeight
 	}
 
 	// Data companion status from process state
