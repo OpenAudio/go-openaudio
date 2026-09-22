@@ -71,8 +71,8 @@ func EthRecover(signatureStr string, data []byte) (*ecdsa.PublicKey, string, err
 
 // EthSignKeccak signs arbitrary data using Ethereum's keccak256 hash (same as Web3.keccak)
 func EthSignKeccak(pkey *ecdsa.PrivateKey, data []byte) (string, error) {
-	hash := crypto.Keccak256(data)
-	signature, err := crypto.Sign(hash, pkey)
+	hash := Keccak256Concat(data)
+	signature, err := crypto.Sign(hash[:], pkey)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign data with keccak256: %w", err)
 	}
@@ -89,8 +89,8 @@ func EthRecoverKeccak(sigHex string, data []byte) (*ecdsa.PublicKey, string, err
 		return nil, "", fmt.Errorf("invalid signature length: %d", len(sigBytes))
 	}
 
-	hash := crypto.Keccak256(data)
-	pubKey, err := crypto.SigToPub(hash, sigBytes)
+	hash := Keccak256Concat(data)
+	pubKey, err := crypto.SigToPub(hash[:], sigBytes)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to recover public key: %w", err)
 	}

@@ -50,6 +50,10 @@ bin/openaudio-native: $(BUILD_SRCS)
 	@echo "Building openaudio for local platform and architecture..."
 	@bash scripts/build-openaudio.sh $@
 
+bin/performance-snapshot-native: $(BUILD_SRCS)
+	@echo "Building performance-snapshot for local platform and architecture..."
+	@CGO_ENABLED=0 go build -o $@ ./cmd/performance-snapshot
+
 bin/openaudio-x86_64-linux: $(BUILD_SRCS)
 	@echo "Building x86 openaudio for linux..."
 	@bash scripts/build-openaudio.sh $@ amd64 linux
