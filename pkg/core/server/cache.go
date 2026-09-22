@@ -323,20 +323,18 @@ func (s *Server) refreshSyncStatus(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			if s.rpc == nil {
+			if s.node == nil {
 				return nil
 			}
 
-			status, err := s.rpc.Status(ctx)
-			if err != nil {
-				return fmt.Errorf("could not get status: %v", err)
-			}
+			// Read the same atomic flag as CometBFT Status without loading validators.
+			catchingUp := s.node.ConsensusReactor().WaitSync()
 
 			upsertCache(s.cache.syncInfo, SyncInfoKey, func(syncInfo *v1.GetStatusResponse_SyncInfo) *v1.GetStatusResponse_SyncInfo {
-				syncInfo.Synced = !status.SyncInfo.CatchingUp
+				syncInfo.Synced = !catchingUp
 
 				// Prefer state sync info when it's active; otherwise show block sync while catching up.
-				if status.SyncInfo.CatchingUp {
+				if catchingUp {
 					// Get remote head height for target height display
 					headHeight := int64(0)
 					var headSource *v1.GetStatusResponse_NodeInfo
