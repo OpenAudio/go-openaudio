@@ -55,8 +55,9 @@ type Server struct {
 	txPubsub    *TransactionHashPubsub
 	blockPubsub *BlockPubsub
 
-	cache     *Cache
-	abciState *ABCIState
+	cometProxyCache [2]cometProxyCache
+	cache           *Cache
+	abciState       *ABCIState
 
 	rewards *rewards.RewardAttester
 

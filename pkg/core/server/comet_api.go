@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
@@ -43,6 +44,8 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 
 	// Handle validation based on request method
 	var bodyToForward io.Reader = c.Request().Body
+	var rpcReq rpctypes.RPCRequest
+	var cacheKey string
 
 	if c.Request().Method == "POST" {
 		// Read the body to validate JSONRPC method (with size limit)
@@ -59,7 +62,6 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 		}
 
 		// Parse JSONRPC request
-		var rpcReq rpctypes.RPCRequest
 		if err := json.Unmarshal(body, &rpcReq); err != nil {
 			s.logger.Error("failed to parse JSONRPC request", zap.Error(err))
 			return respondWithError(c, http.StatusBadRequest, "invalid JSONRPC request")
@@ -72,6 +74,8 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 			return respondWithError(c, http.StatusForbidden, "RPC method not allowed")
 		}
 
+		cacheKey = "POST:" + c.Request().RequestURI + ":" + string(rpcReq.Params)
+
 		// Create new reader from body for forwarding
 		bodyToForward = bytes.NewReader(body)
 	} else if c.Request().Method == "GET" {
@@ -81,6 +85,9 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 		if idx := strings.Index(basePath, "?"); idx != -1 {
 			basePath = basePath[:idx]
 		}
+
+		rpcReq = rpctypes.NewRPCRequest(rpctypes.JSONRPCIntID(-1), basePath, nil)
+		cacheKey = "GET:" + c.Request().URL.Query().Encode()
 
 		// Check if method is allowed
 		if _, ok := allowedMethods[basePath]; !ok {
@@ -114,7 +121,18 @@ func (s *Server) proxyCometRequest(c echo.Context) error {
 
 	copyHeaders(c.Request().Header, req.Header)
 
-	resp, err := httpClient.Do(req)
+	// Cache only public monitoring requests. The original request is forwarded
+	// on a miss, including its parameters; CometBFT still validates them.
+	fetch := func() (*http.Response, error) { return httpClient.Do(req) }
+	var resp *http.Response
+	switch rpcReq.Method {
+	case "status":
+		resp, err = s.cometProxyCache[0].do(cacheKey, rpcReq, fetch)
+	case "validators":
+		resp, err = s.cometProxyCache[1].do(cacheKey, rpcReq, fetch)
+	default:
+		resp, err = fetch()
+	}
 	if err != nil {
 		s.logger.Error("failed to forward comet api request", zap.Error(err))
 		return respondWithError(c, http.StatusInternalServerError, "failed to forward request")
@@ -150,4 +168,46 @@ func copyHeaders(source http.Header, destination http.Header) {
 
 func respondWithError(c echo.Context, statusCode int, message string) error {
 	return c.JSON(statusCode, map[string]string{"error": message})
+}
+
+// Keep only one response per method. Including all parameters in the key keeps
+// validator heights and pages distinct without an unbounded historical cache.
+// Holding the lock during a miss coalesces identical concurrent requests.
+// The existing upstream client's timeout bounds the network operation.
+type cometProxyCache struct {
+	mu          sync.Mutex
+	key         string
+	expires     time.Time
+	result      json.RawMessage
+	contentType string
+}
+
+func (cache *cometProxyCache) do(key string, req rpctypes.RPCRequest, fetch func() (*http.Response, error)) (*http.Response, error) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if cache.key == key && time.Now().Before(cache.expires) {
+		// Cache the result, never the caller's JSON-RPC ID.
+		body, err := json.Marshal(rpctypes.RPCResponse{JSONRPC: "2.0", ID: req.ID, Result: cache.result})
+		if err != nil {
+			return nil, err
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {cache.contentType}}, Body: io.NopCloser(bytes.NewReader(body))}, nil
+	}
+	resp, err := fetch()
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return resp, err
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	var envelope rpctypes.RPCResponse
+	if json.Unmarshal(body, &envelope) == nil && envelope.Error == nil && len(envelope.Result) > 0 {
+		cache.key, cache.result = key, envelope.Result
+		cache.contentType = resp.Header.Get("Content-Type")
+		cache.expires = time.Now().Add(2 * time.Second)
+	}
+	return resp, nil
 }
