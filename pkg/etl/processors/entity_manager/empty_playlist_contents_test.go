@@ -129,12 +129,9 @@ func TestNormalizePlaylistContentsJSON(t *testing.T) {
 		{name: "mixed alias and canonical", raw: `{"playlist_contents":[{"track":1,"time":2},{"track_id":3,"timestamp":4}]}`, want: `{"track_ids":[{"time":2,"track":1},{"time":4,"track":3}]}`},
 		// Entries with no resolvable track id are dropped.
 		{name: "entry without track id dropped", raw: `{"playlist_contents":[{"time":1},{"track":2,"time":3}]}`, want: `{"track_ids":[{"time":3,"track":2}]}`},
-		// An add-time the client never sent floors to block time rather than
-		// persisting no key, which the api renders back as `timestamp: 0` and
-		// clients render as 12/31/69.
+		// Missing time defaults to block time.
 		{name: "missing time floors to block time", raw: `{"playlist_contents":[{"track":1}]}`, want: `{"track_ids":[{"time":1700000000,"track":1}]}`},
-		// The shape observed on the reported albums: metadata_timestamp set,
-		// timestamp zero. A zero is treated as absent, not honored.
+		// Zero timestamp is treated as missing.
 		{name: "zero timestamp floors to block time", raw: `{"playlist_contents":[{"track_id":1,"timestamp":0,"metadata_timestamp":9}]}`, want: `{"track_ids":[{"metadata_time":9,"time":1700000000,"track":1}]}`},
 		{name: "negative timestamp floors to block time", raw: `{"playlist_contents":[{"track":1,"time":-5}]}`, want: `{"track_ids":[{"time":1700000000,"track":1}]}`},
 	}
@@ -196,8 +193,8 @@ func TestNormalizePlaylistContentsJSONPriorTimes(t *testing.T) {
 	}
 }
 
-// TestNormalizePlaylistContentsJSONZeroBlockTime guards the floor itself: with
-// no block time to fall back on, emit no `time` rather than stamping year 1.
+// TestNormalizePlaylistContentsJSONZeroBlockTime: with no block time, `time`
+// is omitted.
 func TestNormalizePlaylistContentsJSONZeroBlockTime(t *testing.T) {
 	var meta map[string]any
 	_ = json.Unmarshal([]byte(`{"playlist_contents":[{"track":1}]}`), &meta)
