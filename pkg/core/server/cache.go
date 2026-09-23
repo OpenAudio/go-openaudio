@@ -225,7 +225,9 @@ func (s *Server) startCache(ctx context.Context) error {
 	s.cache.currentHeight.Store(status.SyncInfo.LatestBlockHeight)
 
 	cacheLifecycle := lifecycle.NewFromLifecycle(s.lc, "cache")
-	cacheLifecycle.AddManagedRoutine("block event subscriber", s.startBlockEventSubscriber)
+	cacheLifecycle.AddManagedRoutine("block event subscriber", func(ctx context.Context) error {
+		return s.startBlockEventSubscriber(ctx, s.node.EventBus())
+	})
 	cacheLifecycle.AddManagedRoutine("refresher", s.startCacheRefresh)
 	cacheLifecycle.AddManagedRoutine("sync status refresher", s.refreshSyncStatus)
 
@@ -237,11 +239,25 @@ func (s *Server) startCache(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func (s *Server) startBlockEventSubscriber(ctx context.Context) error {
-	node := s.node
-	eb := node.EventBus()
+func (s *Server) startBlockEventSubscriber(ctx context.Context, eb *types.EventBus) error {
+	// Keep the mutex across subscriptions so recovery cannot overlap block processing.
 	var blockMU sync.Mutex
+	for ctx.Err() == nil {
+		err := s.consumeBlockEvents(ctx, eb, &blockMU)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		s.logger.Warn("Restarting block event subscription", zap.Error(err))
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	return ctx.Err()
+}
 
+func (s *Server) consumeBlockEvents(ctx context.Context, eb *types.EventBus, blockMU *sync.Mutex) error {
 	if eb == nil {
 		return errors.New("event bus not ready")
 	}
@@ -252,6 +268,8 @@ func (s *Server) startBlockEventSubscriber(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to NewBlock events: %v", err)
 	}
+
+	defer eb.Unsubscribe(context.Background(), subscriberID, query)
 
 	for {
 		select {
