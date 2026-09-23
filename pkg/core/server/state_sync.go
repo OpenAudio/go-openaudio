@@ -427,6 +427,7 @@ var stateSyncSnapshotTables = []string{
 	"core_db_migrations",
 	"core_transactions",
 	"core_tx_stats",
+	"core_tx_count",
 	"core_validators",
 	"management_keys",
 	"sla_node_reports",
@@ -978,6 +979,13 @@ func (s *Server) RestoreDatabase(height int64) error {
 	s.logger.Info("pg_restore: restoring indexes and constraints (post-data)")
 	// post-data errors (duplicate indexes etc.) are non-fatal
 	_ = pgRestore("post-data")
+
+	// Older snapshots do not contain the counter table. The local migration has
+	// installed its triggers, but restore truncated its baseline. Rebuild once,
+	// before accepting the snapshot and resuming block execution.
+	if err := s.db.EnsureTransactionCount(context.Background()); err != nil {
+		return fmt.Errorf("initialize restored transaction count: %w", err)
+	}
 
 	s.CompleteProcess(ProcessStateRestore)
 	return nil

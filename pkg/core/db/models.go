@@ -311,6 +311,11 @@ type CoreTransaction struct {
 	CreatedAt   pgtype.Timestamp
 }
 
+type CoreTxCount struct {
+	Singleton bool
+	Total     int64
+}
+
 type CoreTxStat struct {
 	ID          int32
 	TxType      string
