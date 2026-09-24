@@ -371,12 +371,8 @@ func normalizePlaylistContentsJSON(metadata map[string]any, blockTime time.Time,
 //     whose client drops the field does not restamp an existing add;
 //  3. blockTime.
 //
-// Without (3) an omitted or zero timestamp persisted as no key at all, which
-// the api serializes back as `timestamp: 0` and clients render as 12/31/69.
-// A zero is treated as absent rather than honored: unix 0 is never a real
-// add-time, and the write paths that produce it are ones that never set the
-// field. blockTime is only skipped when it is itself unset, where emitting
-// nothing beats stamping year 1.
+// A zero or negative client time is treated as missing. If blockTime is zero,
+// `time` is left out.
 func canonicalizePlaylistEntry(entry map[string]any, blockTime time.Time, priorTimes map[int64]int64) (map[string]any, bool) {
 	id, ok := pickPlaylistTrackID(entry)
 	if !ok {
@@ -397,9 +393,7 @@ func canonicalizePlaylistEntry(entry map[string]any, blockTime time.Time, priorT
 }
 
 // playlistContentsTimes maps track id -> stored `time` for a persisted
-// playlist_contents blob. Only positive times are kept, so a row already
-// damaged by this bug falls through to the block-time floor rather than
-// carrying its zero forward.
+// playlist_contents blob. Only positive times are kept.
 func playlistContentsTimes(raw []byte) map[int64]int64 {
 	if len(raw) == 0 {
 		return nil
