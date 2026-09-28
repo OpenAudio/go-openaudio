@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"sort"
 	"strings"
+	"time"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/pubsub"
@@ -80,22 +81,21 @@ func (s *Server) cacheTxCount(ctx context.Context) error {
 	case <-s.awaitRpcReady:
 	}
 
-	blockChan := s.blockPubsub.Subscribe(BlockPubsubTopic)
-
+	// Poll the constant-time counter rather than relying on lossy block events.
+	// Refresh immediately after RPC startup, including on an idle chain.
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 	for {
+		totalTxs, err := s.db.TotalTransactions(ctx)
+		if err != nil {
+			s.logger.Error("could not read transaction count", zap.Error(err))
+		} else {
+			s.cache.currentTxCount.Store(totalTxs)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case block := <-blockChan:
-			// every 5 blocks, recache tx count so it looks the same across nodes
-			if block.Height%5 == 0 {
-				totalTxs, err := s.db.TotalTransactions(ctx)
-				if err != nil {
-					s.logger.Error("could not count txs in db", zap.Error(err))
-					continue
-				}
-				s.cache.currentTxCount.Store(totalTxs)
-			}
+		case <-ticker.C:
 		}
 	}
 }

@@ -244,8 +244,9 @@ select count(*)
 from core_blocks;
 
 -- name: TotalTransactions :one
-select count(*)
-from core_tx_stats;
+select total
+from core_tx_count
+where singleton;
 
 -- name: TotalTransactionsByType :one
 select count(*)

@@ -3074,15 +3074,16 @@ func (q *Queries) TotalBlocks(ctx context.Context) (int64, error) {
 }
 
 const totalTransactions = `-- name: TotalTransactions :one
-select count(*)
-from core_tx_stats
+select total
+from core_tx_count
+where singleton
 `
 
 func (q *Queries) TotalTransactions(ctx context.Context) (int64, error) {
 	row := q.db.QueryRow(ctx, totalTransactions)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+	var total int64
+	err := row.Scan(&total)
+	return total, err
 }
 
 const totalTransactionsByType = `-- name: TotalTransactionsByType :one
