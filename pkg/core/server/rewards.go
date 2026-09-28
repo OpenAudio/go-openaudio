@@ -94,30 +94,7 @@ var (
 
 func (s *Server) isValidRewardTransaction(ctx context.Context, signedTx *corev1.SignedTransaction, blockHeight int64) error {
 	envelope := signedTx.GetReward()
-	if envelope == nil {
-		return fmt.Errorf("%w: reward message is nil", ErrRewardMessageValidation)
-	}
-	if envelope.Body == nil {
-		// Legacy wire-format detected (pre-pool-rollout shape with deadline +
-		// signature embedded in CreateReward / DeleteReward at tags 1000/1001).
-		//
-		// We REJECT legacy here — at CheckTx and ProcessProposal — because
-		// legacy CreateReward is inherently permissionless: it carries no
-		// pool_address and the old signing scheme had no membership check on
-		// claim_authorities. Allowing live legacy txs through validation would
-		// reopen the exact exploit class this PR is closing (an attacker
-		// crafts legacy bytes, picks any reward_id / amount / claim_authorities,
-		// and bypasses the pool gate).
-		//
-		// The corresponding code path in finalizeRewards still APPLIES legacy
-		// txs — that's intentional, for block-sync-from-genesis replay of
-		// already-committed historical blocks. Block sync only invokes
-		// FinalizeBlock; it does not re-run CheckTx or ProcessProposal. So
-		// "reject at validate, accept at finalize" gives us correct historical
-		// replay without admitting any new legacy traffic.
-		if legacy, err := tryParseLegacyReward(envelope); err == nil && legacy != nil {
-			return fmt.Errorf("%w: legacy reward wire format is not accepted for new transactions; clients must use the body+signature envelope", ErrRewardMessageValidation)
-		}
+	if envelope == nil || envelope.Body == nil {
 		return fmt.Errorf("%w: reward message body is nil", ErrRewardMessageValidation)
 	}
 
@@ -143,10 +120,6 @@ func (s *Server) validateCreateReward(ctx context.Context, createReward *corev1.
 	// could issue rewards under any other pool's RM and inherit its
 	// attestation rights — which is exactly what the per-RM
 	// sender-attestation gate is designed to prevent.
-	//
-	// The legacy permissionless path (inline claim_authorities, no RM) is
-	// preserved only for historical replay via the wire-compat layer; new
-	// live txs must specify rewards_manager_pubkey.
 	if err := validateRewardsManagerPubkey(createReward.RewardsManagerPubkey); err != nil {
 		return err
 	}
@@ -194,19 +167,8 @@ func (s *Server) finalizeRewardTransaction(ctx context.Context, req *abcitypes.F
 }
 
 func (s *Server) finalizeRewards(ctx context.Context, req *abcitypes.FinalizeBlockRequest, txhash string, messageIndex int64, envelope *corev1.RewardMessage, sender string) error {
-	if envelope == nil {
-		return fmt.Errorf("tx: %s, message index: %d, reward message not found", txhash, messageIndex)
-	}
-	if envelope.Body == nil {
-		// Legacy wire-format path; see rewards_legacy.go.
-		legacy, err := tryParseLegacyReward(envelope)
-		if err != nil {
-			return errors.Join(ErrRewardMessageFinalization, err)
-		}
-		if legacy == nil {
-			return fmt.Errorf("tx: %s, message index: %d, reward message body not found", txhash, messageIndex)
-		}
-		return s.finalizeLegacyRewardTransaction(ctx, req, legacy, txhash, messageIndex)
+	if envelope == nil || envelope.Body == nil {
+		return fmt.Errorf("tx: %s, message index: %d, reward message body not found", txhash, messageIndex)
 	}
 
 	signer, err := s.recoverDeadlinedSigner(req.Height, envelope.Body.DeadlineBlockHeight, envelope.Body, envelope.Signature)
@@ -253,16 +215,16 @@ func (s *Server) finalizeCreateReward(ctx context.Context, req *abcitypes.Finali
 	}
 
 	if err := qtx.InsertCoreReward(ctx, db.InsertCoreRewardParams{
-		TxHash:      txhash,
-		Index:       messageIndex,
-		Address:     rewardAddress,
-		Sender:      signer,
-		RewardID:    createReward.RewardId,
-		Name:        createReward.Name,
-		Amount:      int64(createReward.Amount),
+		TxHash:               txhash,
+		Index:                messageIndex,
+		Address:              rewardAddress,
+		Sender:               signer,
+		RewardID:             createReward.RewardId,
+		Name:                 createReward.Name,
+		Amount:               int64(createReward.Amount),
 		RewardsManagerPubkey: pgtype.Text{String: createReward.RewardsManagerPubkey, Valid: true},
-		RawMessage:  rawMessage,
-		BlockHeight: req.Height,
+		RawMessage:           rawMessage,
+		BlockHeight:          req.Height,
 	}); err != nil {
 		return fmt.Errorf("failed to insert reward: %w", err)
 	}
