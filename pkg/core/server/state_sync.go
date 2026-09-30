@@ -19,11 +19,13 @@ import (
 
 	"connectrpc.com/connect"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
+	"github.com/OpenAudio/go-openaudio/pkg/core/db"
 	"github.com/OpenAudio/go-openaudio/pkg/sdk"
 	v1 "github.com/cometbft/cometbft/api/cometbft/abci/v1"
 	"github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/cometbft/cometbft/types"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
 
@@ -177,26 +179,27 @@ func (s *Server) startSnapshotCreator(ctx context.Context) error {
 	// block sync catch-up (e.g. after a node restart). This ensures other nodes
 	// can always state sync without waiting up to BlockInterval blocks.
 	//
-	// Round down to the nearest interval boundary so the snapshot height matches
-	// the expected interval grid (e.g. 24200000, 24100000) and the postgres state
-	// is guaranteed to have processed past that height.
+	// The snapshot is taken now, so it is labeled with the height postgres is
+	// at now, not with the interval boundary that was missed. Labeling it with
+	// the boundary served state from later blocks under an earlier height, and
+	// every node that restored it failed CometBFT's post-restore height check.
 	{
 		status, err := s.rpc.Status(context.Background())
 		snapshots, _ := s.getStoredSnapshots()
 		if err == nil {
 			latestHeight := status.SyncInfo.LatestBlockHeight
 			blockInterval := s.config.StateSync.BlockInterval
-			snapshotHeight := latestHeight - (latestHeight % blockInterval)
+			missedBoundary := latestHeight - (latestHeight % blockInterval)
 			newestSnapshot := int64(0)
 			if len(snapshots) > 0 {
 				newestSnapshot = int64(snapshots[len(snapshots)-1].Height)
 			}
-			if snapshotHeight > newestSnapshot {
+			if missedBoundary > newestSnapshot {
 				logger.Info("creating catch-up snapshot after block sync",
-					zap.Int64("height", snapshotHeight),
+					zap.Int64("missedBoundary", missedBoundary),
 					zap.Int64("latestHeight", latestHeight),
 					zap.Int64("lastSnapshot", newestSnapshot))
-				if err := s.createSnapshot(logger, snapshotHeight); err != nil {
+				if err := s.createSnapshot(logger, latestHeight); err != nil {
 					logger.Error("error creating catch-up snapshot", zap.Error(err))
 				}
 				if err := s.pruneSnapshots(logger); err != nil {
@@ -267,7 +270,12 @@ func (s *Server) startSnapshotCreator(ctx context.Context) error {
 	}
 }
 
-func (s *Server) createSnapshot(logger *zap.Logger, height int64) error {
+// createSnapshot dumps the snapshot tables and labels the result with the
+// block height the dump actually contains. triggerHeight is the height that
+// prompted the snapshot and is only logged: by the time pg_dump reads the
+// database, later blocks may have committed, so the label comes from the
+// dump's own view of core_app_state (see openSnapshotView).
+func (s *Server) createSnapshot(logger *zap.Logger, triggerHeight int64) error {
 	// create snapshot directory if it doesn't exist
 	snapshotDir := getSnapshotDir(s.config.RootDir, s.config.GenesisFile.ChainID)
 	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
@@ -299,17 +307,33 @@ func (s *Server) createSnapshot(logger *zap.Logger, height int64) error {
 		return nil
 	}
 
-	block, err := s.rpc.Block(context.Background(), &height)
+	view, err := openSnapshotView(context.Background(), s.config.PSQLConn)
 	if err != nil {
-		return nil
+		return fmt.Errorf("error opening snapshot view: %w", err)
 	}
+	defer view.Close()
 
-	logger.Info("Creating snapshot", zap.Int64("height", height))
+	blockHeight := view.Height
 
-	blockHeight := height
+	block, err := s.rpc.Block(context.Background(), &blockHeight)
+	if err != nil {
+		return fmt.Errorf("error getting block %d for snapshot: %w", blockHeight, err)
+	}
 	blockHash := block.BlockID.Hash
 
+	logger.Info("Creating snapshot",
+		zap.Int64("height", blockHeight),
+		zap.Int64("triggerHeight", triggerHeight),
+		zap.String("appHash", hex.EncodeToString(view.AppHash)))
+
 	latestSnapshotDir := getHeightDir(snapshotDir, blockHeight)
+	// A snapshot at this height already exists, e.g. the catch-up snapshot and
+	// an interval snapshot resolved to the same block. Leave it alone: the
+	// cleanup below would otherwise delete it if this attempt failed.
+	if _, err := os.Stat(getMetadataPath(latestSnapshotDir)); err == nil {
+		logger.Info("snapshot already exists at height, skipping", zap.Int64("height", blockHeight))
+		return nil
+	}
 	if err := os.MkdirAll(latestSnapshotDir, 0755); err != nil {
 		return fmt.Errorf("error creating latest snapshot directory: %v", err)
 	}
@@ -327,9 +351,11 @@ func (s *Server) createSnapshot(logger *zap.Logger, height int64) error {
 
 	logger.Info("Creating pg_dump", zap.Int64("height", blockHeight))
 
-	if err := s.createPgDump(logger, latestSnapshotDir); err != nil {
+	if err := s.createPgDump(logger, latestSnapshotDir, view.SnapshotID); err != nil {
 		return fmt.Errorf("error creating pg_dump: %v", err)
 	}
+	// pg_dump has finished reading, so stop holding back vacuum.
+	view.Close()
 
 	logger.Info("Chunking pg_dump", zap.Int64("height", blockHeight))
 
@@ -485,15 +511,105 @@ func truncateSnapshotTablesStmt(existing []string) string {
 	return "TRUNCATE TABLE " + strings.Join(quoted, ", ")
 }
 
-// createPgDump creates a pg_dump of the database and writes it to the latest snapshot directory
-func (s *Server) createPgDump(logger *zap.Logger, latestSnapshotDir string) error {
+// snapshotView pins the database state a snapshot is taken from. It holds a
+// read-only REPEATABLE READ transaction open on its own connection, reads
+// the latest core_app_state row inside it, and exports it with
+// pg_export_snapshot() so pg_dump --snapshot reads exactly the same state.
+//
+// Each block's writes commit in a single postgres transaction, so any view
+// sits exactly after one block, and core_app_state's latest row names it. That
+// row is also what Info reports after a restore, so a snapshot labeled with
+// Height restores to the height CometBFT expects.
+//
+// The connection is dedicated rather than taken from the core pool: the
+// transaction stays open for the whole dump, which can take hours.
+type snapshotView struct {
+	Height     int64
+	AppHash    []byte
+	SnapshotID string
+
+	conn *pgx.Conn
+	tx   pgx.Tx
+}
+
+func openSnapshotView(ctx context.Context, dsn string) (*snapshotView, error) {
+	// Parse through pgxpool so pool_* DSN params are stripped, not sent to
+	// postgres as unknown runtime parameters.
+	poolConfig, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("parse db url: %w", err)
+	}
+
+	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	conn, err := pgx.ConnectConfig(connectCtx, poolConfig.ConnConfig)
+	if err != nil {
+		return nil, fmt.Errorf("connect: %w", err)
+	}
+
+	view := &snapshotView{conn: conn}
+	if err := view.open(connectCtx); err != nil {
+		view.Close()
+		return nil, err
+	}
+	return view, nil
+}
+
+func (v *snapshotView) open(ctx context.Context) error {
+	// The session sits idle in its transaction while pg_dump runs; a
+	// server-side idle timeout would kill it and invalidate the snapshot.
+	if _, err := v.conn.Exec(ctx, "SET idle_in_transaction_session_timeout = 0"); err != nil {
+		return fmt.Errorf("disable idle transaction timeout: %w", err)
+	}
+
+	tx, err := v.conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	v.tx = tx
+
+	latest, err := db.New(tx).GetLatestAppState(ctx)
+	if err != nil {
+		return fmt.Errorf("read latest app state: %w", err)
+	}
+	if latest.BlockHeight <= 0 {
+		return fmt.Errorf("latest app state has height %d", latest.BlockHeight)
+	}
+	v.Height = latest.BlockHeight
+	v.AppHash = latest.AppHash
+
+	if err := tx.QueryRow(ctx, "SELECT pg_export_snapshot()").Scan(&v.SnapshotID); err != nil {
+		return fmt.Errorf("export snapshot: %w", err)
+	}
+	return nil
+}
+
+// Close ends the transaction, which invalidates the exported snapshot, and
+// closes the connection. It is safe to call more than once.
+func (v *snapshotView) Close() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if v.tx != nil {
+		_ = v.tx.Rollback(ctx)
+		v.tx = nil
+	}
+	if v.conn != nil {
+		_ = v.conn.Close(ctx)
+		v.conn = nil
+	}
+}
+
+// createPgDump creates a pg_dump of the database and writes it to the latest
+// snapshot directory. snapshotID is an exported postgres snapshot (see
+// snapshotView); the dump reads exactly the state it names.
+func (s *Server) createPgDump(logger *zap.Logger, latestSnapshotDir string, snapshotID string) error {
 	pgString := s.config.PSQLConn
 	dumpPath := getPgDumpPath(latestSnapshotDir)
 
 	tables := stateSyncSnapshotTables
 
 	// Start building the args
-	args := []string{"--dbname=" + pgString, "-Fc"}
+	args := []string{"--dbname=" + pgString, "-Fc", "--snapshot=" + snapshotID}
 	for _, table := range tables {
 		args = append(args, "-t", table)
 	}
