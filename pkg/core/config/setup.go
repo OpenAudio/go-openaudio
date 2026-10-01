@@ -237,6 +237,9 @@ func ensurePrivValidator(logger *zap.Logger, derivedKey crypto.PrivKey, keyFile,
 			if err := cmtjson.Unmarshal(stateJSON, &pv.LastSignState); err != nil {
 				return nil, fmt.Errorf("reading private validator signing state %s: %w", stateFile, err)
 			}
+			if pv.LastSignState.Height > 0 && !derivedKey.PubKey().VerifySignature(pv.LastSignState.SignBytes, pv.LastSignState.Signature) {
+				return nil, fmt.Errorf("cannot regenerate private validator key: signing state at height %d does not verify with the configured delegate key; restore matching key and signing state", pv.LastSignState.Height)
+			}
 		case os.IsNotExist(err):
 			pv.LastSignState.Save()
 		default:

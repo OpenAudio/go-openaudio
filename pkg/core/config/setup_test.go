@@ -97,6 +97,7 @@ func TestEnsurePrivValidator(t *testing.T) {
 		seed.Save()
 		vote := &cmtproto.Vote{Type: cmtproto.PrecommitType, Height: 42, Round: 1, Timestamp: time.Now().UTC()}
 		require.NoError(t, seed.SignVote("test-chain", vote, false))
+		priorSignature := append([]byte(nil), vote.Signature...)
 		stateBefore, err := os.ReadFile(stateFile)
 		require.NoError(t, err)
 		require.NoError(t, os.Remove(keyFile))
@@ -108,6 +109,11 @@ func TestEnsurePrivValidator(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, stateBefore, stateAfter)
 
+		vote.Signature = nil
+		require.NoError(t, pv.SignVote("test-chain", vote, false))
+		require.Equal(t, priorSignature, vote.Signature)
+		require.True(t, derivedKey.PubKey().VerifySignature(pv.LastSignState.SignBytes, vote.Signature))
+
 		vote.Height = 41
 		require.ErrorContains(t, pv.SignVote("test-chain", vote, false), "height regression")
 		vote.Height = 43
@@ -115,6 +121,53 @@ func TestEnsurePrivValidator(t *testing.T) {
 		reloaded := privval.LoadFilePV(keyFile, stateFile)
 		require.Equal(t, int64(43), reloaded.LastSignState.Height)
 		require.Equal(t, derivedKey.PubKey().Bytes(), reloaded.Key.PubKey.Bytes())
+	})
+
+	for _, tc := range []struct {
+		name   string
+		rotate bool
+		mutate func(*privval.FilePVLastSignState)
+	}{
+		{name: "rotated delegate key", rotate: true},
+		{name: "missing signature", mutate: func(s *privval.FilePVLastSignState) { s.Signature = nil }},
+		{name: "corrupt signature", mutate: func(s *privval.FilePVLastSignState) { s.Signature[0] ^= 1 }},
+		{name: "corrupt sign bytes", mutate: func(s *privval.FilePVLastSignState) { s.SignBytes[0] ^= 1 }},
+	} {
+		t.Run("refuses to regenerate key with "+tc.name, func(t *testing.T) {
+			keyFile, stateFile := paths(t)
+			seed := privval.NewFilePV(&derivedKey, keyFile, stateFile)
+			seed.Save()
+			vote := &cmtproto.Vote{Type: cmtproto.PrecommitType, Height: 42, Round: 1, Timestamp: time.Now().UTC()}
+			require.NoError(t, seed.SignVote("test-chain", vote, false))
+			if tc.mutate != nil {
+				tc.mutate(&seed.LastSignState)
+				seed.LastSignState.Save()
+			}
+			stateBefore, err := os.ReadFile(stateFile)
+			require.NoError(t, err)
+			require.NoError(t, os.Remove(keyFile))
+
+			key := &derivedKey
+			if tc.rotate {
+				key = &staleKey
+			}
+			_, err = ensurePrivValidator(logger, key, keyFile, stateFile)
+			require.ErrorContains(t, err, "does not verify with the configured delegate key")
+			require.NoFileExists(t, keyFile)
+			stateAfter, err := os.ReadFile(stateFile)
+			require.NoError(t, err)
+			require.Equal(t, stateBefore, stateAfter)
+		})
+	}
+
+	t.Run("regenerates missing key with unused signing state", func(t *testing.T) {
+		keyFile, stateFile := paths(t)
+		privval.NewFilePV(&derivedKey, keyFile, stateFile).LastSignState.Save()
+
+		pv, err := ensurePrivValidator(logger, &derivedKey, keyFile, stateFile)
+		require.NoError(t, err)
+		require.Zero(t, pv.LastSignState.Height)
+		require.FileExists(t, keyFile)
 	})
 
 	t.Run("refuses to regenerate key with invalid signing state", func(t *testing.T) {
