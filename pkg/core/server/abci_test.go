@@ -3,15 +3,50 @@ package server
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
+	cfg "github.com/cometbft/cometbft/config"
 	cometbfttypes "github.com/cometbft/cometbft/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestCheckCometDataFiles(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		appHeight int64
+		stores    []string
+		missing   string
+	}{
+		{name: "fresh node"},
+		{name: "DB only restore", appHeight: 42, missing: "state.db"},
+		{name: "missing state", appHeight: 42, stores: []string{"blockstore.db"}, missing: "state.db"},
+		{name: "missing blockstore", appHeight: 42, stores: []string{"state.db"}, missing: "blockstore.db"},
+		{name: "both stores present", appHeight: 42, stores: []string{"state.db", "blockstore.db"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cometConfig := cfg.DefaultConfig().SetRoot(t.TempDir())
+			for _, name := range tc.stores {
+				require.NoError(t, os.MkdirAll(filepath.Join(cometConfig.DBDir(), name), 0700))
+			}
+
+			err := checkCometDataFiles(cometConfig, tc.appHeight)
+			if tc.missing == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "PostgreSQL contains block 42")
+				require.ErrorContains(t, err, filepath.Join(cometConfig.DBDir(), tc.missing))
+				require.ErrorContains(t, err, "backup taken with the node stopped")
+				require.NoDirExists(t, filepath.Join(cometConfig.DBDir(), tc.missing))
+			}
+		})
+	}
+}
 
 func marshalSignedTx(t *testing.T, tx *v1.SignedTransaction) []byte {
 	t.Helper()

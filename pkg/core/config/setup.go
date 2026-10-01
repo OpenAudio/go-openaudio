@@ -14,6 +14,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/env"
 	cconfig "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto"
+	cmtjson "github.com/cometbft/cometbft/libs/json"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
 	"go.uber.org/zap"
@@ -119,8 +120,6 @@ func SetupNode(logger *zap.Logger) (*Config, *cconfig.Config, error) {
 		if err := genDoc.SaveAs(genFile); err != nil {
 			return nil, nil, fmt.Errorf("saving gen file %v", err)
 		}
-		logger.Info("generated new genesis, running down migrations to start new")
-		envConfig.RunDownMigration = true
 		logger.Info("Generated genesis file", zap.String("path", genFile))
 	}
 
@@ -219,10 +218,10 @@ func SetupNode(logger *zap.Logger) (*Config, *cconfig.Config, error) {
 
 // ensurePrivValidator returns a FilePV whose key matches the comet key derived
 // from the node's delegate private key. If priv_validator_key.json is missing,
-// it's generated. If it's present but holds a key that doesn't match the
-// derived one, it's regenerated — but only when the on-disk key has no prior
-// signing history (LastSignState.Height == 0), so we can't introduce a
-// double-sign risk.
+// it's generated without resetting existing signing state. If it's present but
+// holds a key that doesn't match the derived one, it's regenerated — but only
+// when the on-disk key has no prior signing history (LastSignState.Height == 0),
+// so we can't introduce a double-sign risk.
 //
 // The mismatch case arises when an operator rotates OPENAUDIO_DELEGATE_PRIVATE_KEY
 // without also regenerating the CometBFT key files. The node then submits
@@ -232,7 +231,21 @@ func SetupNode(logger *zap.Logger) (*Config, *cconfig.Config, error) {
 func ensurePrivValidator(logger *zap.Logger, derivedKey crypto.PrivKey, keyFile, stateFile string) (*privval.FilePV, error) {
 	if !common.FileExists(keyFile) {
 		pv := privval.NewFilePV(derivedKey, keyFile, stateFile)
-		pv.Save()
+		stateJSON, err := os.ReadFile(stateFile)
+		switch {
+		case err == nil:
+			if err := cmtjson.Unmarshal(stateJSON, &pv.LastSignState); err != nil {
+				return nil, fmt.Errorf("reading private validator signing state %s: %w", stateFile, err)
+			}
+			if pv.LastSignState.Height > 0 && !derivedKey.PubKey().VerifySignature(pv.LastSignState.SignBytes, pv.LastSignState.Signature) {
+				return nil, fmt.Errorf("cannot regenerate private validator key: signing state at height %d does not verify with the configured delegate key; restore matching key and signing state", pv.LastSignState.Height)
+			}
+		case os.IsNotExist(err):
+			pv.LastSignState.Save()
+		default:
+			return nil, fmt.Errorf("reading private validator signing state %s: %w", stateFile, err)
+		}
+		pv.Key.Save()
 		logger.Info("generated private validator", zap.String("keyFile", keyFile), zap.String("stateFile", stateFile))
 		return pv, nil
 	}

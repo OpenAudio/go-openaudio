@@ -131,7 +131,6 @@ type Config struct {
 	EthRegistryAddress string
 
 	/* System Config */
-	RunDownMigration            bool
 	SlaRollupInterval           int
 	ValidatorVotingPower        int
 	ValidatorPurgeMinValidators int
@@ -402,10 +401,6 @@ func DefaultRegistryAddress() string {
 	default:
 		return ""
 	}
-}
-
-func (c *Config) RunDownMigrations() bool {
-	return c.RunDownMigration
 }
 
 type SandboxVars struct {
