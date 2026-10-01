@@ -32,8 +32,8 @@ func run(ctx context.Context, lc *lifecycle.Lifecycle, logger *zap.Logger, posCh
 
 	logger.Info("configuration created")
 
-	// db migrations
-	if err := db.RunMigrations(logger, config.PSQLConn, config.RunDownMigrations()); err != nil {
+	// Startup migrations must not reset PostgreSQL when local chain files are missing.
+	if err := db.RunMigrations(logger, config.PSQLConn, false); err != nil {
 		return fmt.Errorf("running migrations: %v", err)
 	}
 

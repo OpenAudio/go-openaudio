@@ -1,10 +1,13 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	cmtproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
@@ -86,6 +89,55 @@ func TestEnsurePrivValidator(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, derivedKey.PubKey().Bytes(), pv.Key.PubKey.Bytes())
 		require.Equal(t, seed.GetAddress(), pv.GetAddress())
+	})
+
+	t.Run("regenerates missing key without resetting signing history", func(t *testing.T) {
+		keyFile, stateFile := paths(t)
+		seed := privval.NewFilePV(&derivedKey, keyFile, stateFile)
+		seed.Save()
+		vote := &cmtproto.Vote{Type: cmtproto.PrecommitType, Height: 42, Round: 1, Timestamp: time.Now().UTC()}
+		require.NoError(t, seed.SignVote("test-chain", vote, false))
+		stateBefore, err := os.ReadFile(stateFile)
+		require.NoError(t, err)
+		require.NoError(t, os.Remove(keyFile))
+
+		pv, err := ensurePrivValidator(logger, &derivedKey, keyFile, stateFile)
+		require.NoError(t, err)
+		require.Equal(t, seed.LastSignState, pv.LastSignState)
+		stateAfter, err := os.ReadFile(stateFile)
+		require.NoError(t, err)
+		require.Equal(t, stateBefore, stateAfter)
+
+		vote.Height = 41
+		require.ErrorContains(t, pv.SignVote("test-chain", vote, false), "height regression")
+		vote.Height = 43
+		require.NoError(t, pv.SignVote("test-chain", vote, false))
+		reloaded := privval.LoadFilePV(keyFile, stateFile)
+		require.Equal(t, int64(43), reloaded.LastSignState.Height)
+		require.Equal(t, derivedKey.PubKey().Bytes(), reloaded.Key.PubKey.Bytes())
+	})
+
+	t.Run("refuses to regenerate key with invalid signing state", func(t *testing.T) {
+		keyFile, stateFile := paths(t)
+		state := []byte("invalid signing state")
+		require.NoError(t, os.WriteFile(stateFile, state, 0600))
+
+		_, err := ensurePrivValidator(logger, &derivedKey, keyFile, stateFile)
+		require.ErrorContains(t, err, "reading private validator signing state")
+		require.NoFileExists(t, keyFile)
+		stateAfter, err := os.ReadFile(stateFile)
+		require.NoError(t, err)
+		require.Equal(t, state, stateAfter)
+	})
+
+	t.Run("refuses to regenerate key with unreadable signing state", func(t *testing.T) {
+		keyFile, stateFile := paths(t)
+		require.NoError(t, os.Mkdir(stateFile, 0700))
+
+		_, err := ensurePrivValidator(logger, &derivedKey, keyFile, stateFile)
+		require.ErrorContains(t, err, "reading private validator signing state")
+		require.NoFileExists(t, keyFile)
+		require.DirExists(t, stateFile)
 	})
 
 	t.Run("regenerates mismatched files when never signed", func(t *testing.T) {

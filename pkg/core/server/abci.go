@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -84,11 +86,15 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 	// query for existing blocks
 	alreadySynced := true
-	_, err = s.db.GetLatestBlock(context.Background())
+	latestBlock, err := s.db.GetLatestBlock(ctx)
 	if errors.Is(err, pgx.ErrNoRows) {
 		alreadySynced = false
 	} else if err != nil {
 		return fmt.Errorf("db not ready for ABCI: %v", err)
+	}
+	if err := checkCometDataFiles(cometConfig, latestBlock.Height); err != nil {
+		s.ErrorProcess(ProcessStateABCI, err.Error())
+		return err
 	}
 
 	s.logger.Info("got latest block", zap.Bool("ss_enabled", s.config.StateSync.Enable), zap.Bool("already_synced", alreadySynced), zap.Int("rpc_servers", len(s.config.StateSync.RPCServers)))
@@ -216,6 +222,23 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 	s.CompleteProcess(ProcessStateABCI)
 	return ctx.Err()
+}
+
+// Catch a DB-only restore before the handshake. CometBFT still validates the
+// contents and handles normal crash recovery when both stores are present.
+func checkCometDataFiles(cometConfig *cfg.Config, appHeight int64) error {
+	if appHeight == 0 {
+		return nil
+	}
+	for _, name := range []string{"state.db", "blockstore.db"} {
+		path := filepath.Join(cometConfig.DBDir(), name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return fmt.Errorf("PostgreSQL contains block %d but CometBFT database %q is missing; restore PostgreSQL and the full chain data directory from a consistent backup taken with the node stopped", appHeight, path)
+		} else if err != nil {
+			return fmt.Errorf("checking CometBFT database %q: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func (s *Server) Info(ctx context.Context, info *abcitypes.InfoRequest) (*abcitypes.InfoResponse, error) {
