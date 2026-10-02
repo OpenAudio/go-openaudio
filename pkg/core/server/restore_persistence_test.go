@@ -72,11 +72,41 @@ func TestSetTablesLoggedReportsWhatItCannotConvert(t *testing.T) {
 	require.Equal(t, "u", persistence(t, pool, "sla_node_reports"))
 }
 
-// The restore only touches snapshot tables; mediorum's share the schema.
-func TestEnsureSnapshotTablesLoggedLeavesOtherTablesAlone(t *testing.T) {
+// Loading UNLOGGED needs the opposite order: a table cannot become UNLOGGED
+// while a LOGGED table references it.
+func TestSetTablesUnloggedHandlesReferenceOrder(t *testing.T) {
+	pool := setupPersistenceTestDB(t)
+	require.NoError(t, setTablesLogged(context.Background(), pool, []string{"sla_rollups", "sla_node_reports"}))
+
+	failures := setTablesPersistence(context.Background(), pool, []string{"sla_rollups", "sla_node_reports"}, "UNLOGGED")
+	require.Empty(t, failures)
+
+	require.Equal(t, "u", persistence(t, pool, "sla_node_reports"))
+	require.Equal(t, "u", persistence(t, pool, "sla_rollups"))
+}
+
+func TestExistingSnapshotTablesSkipsOtherTables(t *testing.T) {
 	pool := setupPersistenceTestDB(t)
 
-	require.NoError(t, ensureSnapshotTablesLogged(context.Background(), pool))
+	tables, err := existingSnapshotTables(context.Background(), pool)
+	require.NoError(t, err)
+	require.Contains(t, tables, "sla_node_reports")
+	require.Contains(t, tables, "sla_rollups")
+	require.NotContains(t, tables, "uploads")
+}
+
+func TestCheckLoggedHeadroom(t *testing.T) {
+	table := unloggedTable{Name: "core_transactions", Bytes: 60 << 30}
+
+	require.NoError(t, checkLoggedHeadroom(table, 120<<30))
+	require.ErrorContains(t, checkLoggedHeadroom(table, 100<<30), "core_transactions")
+}
+
+// The restore only converts snapshot tables; mediorum's share the schema.
+func TestRestoreSnapshotTablesLoggedLeavesOtherTablesAlone(t *testing.T) {
+	pool := setupPersistenceTestDB(t)
+
+	require.NoError(t, restoreSnapshotTablesLogged(context.Background(), pool, zap.NewNop()))
 
 	require.Equal(t, "p", persistence(t, pool, "sla_node_reports"))
 	require.Equal(t, "p", persistence(t, pool, "sla_rollups"))

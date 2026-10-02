@@ -938,11 +938,9 @@ func (s *Server) ReassemblePgDump(height int64) error {
 
 // RestoreDatabase restores the PostgreSQL database using the reassembled pg_dump binary file,
 // in three phases: schema (pre-data), data, then indexes and constraints (post-data).
-//
-// Tables stay LOGGED throughout. Loading into UNLOGGED tables saved little or no WAL:
-// with wal_level=replica, SET LOGGED writes the whole table to WAL anyway, on
-// top of rewriting it, so it needed about twice the largest table free on disk.
-// See restore_persistence.go for what that left behind.
+// The snapshot tables are UNLOGGED during the data phase so the load writes no
+// WAL, which kept large restores from being OOM-killed, and LOGGED again before
+// indexes are built. See restore_persistence.go.
 func (s *Server) RestoreDatabase(height int64) error {
 	tmpDir := filepath.Join(s.config.RootDir, tmpReconstructionDir)
 	heightDir := getHeightDir(tmpDir, height)
@@ -1037,10 +1035,14 @@ func (s *Server) RestoreDatabase(height int64) error {
 		db.Release()
 	}
 
-	// The tables are empty now, so converting any that an earlier restore left
-	// UNLOGGED is free, and the data loaded into them survives a crash.
-	if err := ensureSnapshotTablesLogged(context.Background(), s.pool); err != nil {
-		return fmt.Errorf("make snapshot tables logged: %w", err)
+	// Load without WAL. A table that cannot be made UNLOGGED (for example one
+	// referenced by a table outside the snapshot) loads LOGGED, which is slower
+	// but safe, so failures here only warn.
+	s.logger.Info("pg_restore: setting snapshot tables to UNLOGGED for the data load")
+	if snapshotTables, err := existingSnapshotTables(context.Background(), s.pool); err != nil {
+		s.logger.Warn("pg_restore: could not list snapshot tables; loading them LOGGED", zap.Error(err))
+	} else if failures := setTablesPersistence(context.Background(), s.pool, snapshotTables, "UNLOGGED"); len(failures) > 0 {
+		s.logger.Warn("pg_restore: some snapshot tables load LOGGED", zap.Error(persistenceError("UNLOGGED", failures)))
 	}
 
 	s.RunningProcessWithMetadata(ProcessStateRestore, "data COPY: starting")
@@ -1053,6 +1055,15 @@ func (s *Server) RestoreDatabase(height int64) error {
 	stopPoll()
 	if dataErr != nil {
 		return dataErr
+	}
+
+	// An UNLOGGED table is emptied whenever postgres stops uncleanly, so the
+	// restore does not succeed while any snapshot table is still UNLOGGED.
+	s.RunningProcessWithMetadata(ProcessStateRestore, "converting tables to LOGGED")
+	s.logger.Info("pg_restore: setting snapshot tables back to LOGGED")
+	if err := restoreSnapshotTablesLogged(context.Background(), s.pool, s.logger); err != nil {
+		s.ErrorProcess(ProcessStateRestore, err.Error())
+		return fmt.Errorf("make snapshot tables logged: %w", err)
 	}
 
 	s.RunningProcessWithMetadata(ProcessStateRestore, "building indexes")
