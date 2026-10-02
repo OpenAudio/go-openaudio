@@ -135,6 +135,8 @@ func NewServer(lc *lifecycle.Lifecycle, config *config.Config, cconfig *cconfig.
 }
 
 func (s *Server) Start() error {
+	s.warnLeftoverRestoreSettings(context.Background())
+
 	s.lc.AddManagedRoutine("abci", s.startABCI)
 	s.lc.AddManagedRoutine("registry bridge", s.startRegistryBridge)
 	s.lc.AddManagedRoutine("echo server", s.startEchoServer)
