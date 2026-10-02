@@ -985,6 +985,17 @@ func (s *Server) RestoreDatabase(height int64) error {
 		return nil
 	}
 
+	// Bulk-load settings that can only be set server-wide; see restoreServerSettings.
+	if undo, err := applyRestoreServerSettings(context.Background(), s.pool); err != nil {
+		s.logger.Warn("pg_restore: could not apply bulk-load settings; restoring without them", zap.Error(err))
+	} else {
+		defer func() {
+			if err := undo(context.Background()); err != nil {
+				s.logger.Error("pg_restore: could not put postgres settings back after the restore", zap.Error(err))
+			}
+		}()
+	}
+
 	s.StartProcess(ProcessStateRestore)
 
 	s.RunningProcessWithMetadata(ProcessStateRestore, "restoring schema")
