@@ -968,6 +968,8 @@ func (s *Server) RestoreDatabase(height int64) error {
 
 		var stdout, stderr bytes.Buffer
 		cmd := exec.Command("pg_restore", args...)
+		// Bulk-load tuning for this pg_restore session only; see restoreSessionOptions.
+		cmd.Env = pgRestoreEnv(os.Environ())
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 
@@ -981,23 +983,6 @@ func (s *Server) RestoreDatabase(height int64) error {
 			return fmt.Errorf("pg_restore --%s failed: %w", section, err)
 		}
 		return nil
-	}
-
-	// Tune postgres for bulk load. These are reset automatically when postgres restarts normally.
-	if db, err := s.pool.Acquire(context.Background()); err == nil {
-		for _, sql := range []string{
-			"ALTER SYSTEM SET synchronous_commit = off",
-			"ALTER SYSTEM SET max_wal_size = '8GB'",
-			"ALTER SYSTEM SET checkpoint_timeout = '1h'",
-			"SELECT pg_reload_conf()",
-		} {
-			if _, err := db.Exec(context.Background(), sql); err != nil {
-				s.logger.Warn("pg_restore: failed to apply tuning setting", zap.String("sql", sql), zap.Error(err))
-			} else {
-				s.logger.Info("pg_restore: applied setting", zap.String("sql", sql))
-			}
-		}
-		db.Release()
 	}
 
 	s.StartProcess(ProcessStateRestore)
