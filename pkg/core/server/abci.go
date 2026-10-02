@@ -68,6 +68,9 @@ func (s *Server) startABCI(ctx context.Context) error {
 	}
 	s.logger.Info("starting abci")
 
+	// Before the node starts, so no block or restore is writing these tables.
+	s.repairUnloggedTables(ctx)
+
 	cometConfig := s.cometbftConfig
 	pv := privval.LoadFilePV(
 		cometConfig.PrivValidatorKeyFile(),

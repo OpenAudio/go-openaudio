@@ -936,9 +936,13 @@ func (s *Server) ReassemblePgDump(height int64) error {
 	return nil
 }
 
-// RestoreDatabase restores the PostgreSQL database using the reassembled pg_dump binary file.
-// It splits the restore into three phases with tables set to UNLOGGED during the data phase
-// to avoid WAL generation on large tables (e.g. core_transactions) which causes OOM.
+// RestoreDatabase restores the PostgreSQL database using the reassembled pg_dump binary file,
+// in three phases: schema (pre-data), data, then indexes and constraints (post-data).
+//
+// Tables stay LOGGED throughout. Loading into UNLOGGED tables saved little or no WAL:
+// with wal_level=replica, SET LOGGED writes the whole table to WAL anyway, on
+// top of rewriting it, so it needed about twice the largest table free on disk.
+// See restore_persistence.go for what that left behind.
 func (s *Server) RestoreDatabase(height int64) error {
 	tmpDir := filepath.Join(s.config.RootDir, tmpReconstructionDir)
 	heightDir := getHeightDir(tmpDir, height)
@@ -977,41 +981,6 @@ func (s *Server) RestoreDatabase(height int64) error {
 				zap.String("stderr", stderr.String()),
 			)
 			return fmt.Errorf("pg_restore --%s failed: %w", section, err)
-		}
-		return nil
-	}
-
-	alterPersistence := func(persistence string) error {
-		db, err := s.pool.Acquire(context.Background())
-		if err != nil {
-			return fmt.Errorf("acquire connection: %w", err)
-		}
-		defer db.Release()
-
-		rows, err := db.Query(context.Background(),
-			"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
-		if err != nil {
-			return fmt.Errorf("list tables: %w", err)
-		}
-		defer rows.Close()
-
-		var tables []string
-		for rows.Next() {
-			var t string
-			if err := rows.Scan(&t); err != nil {
-				return err
-			}
-			tables = append(tables, t)
-		}
-
-		for _, table := range tables {
-			if _, err := db.Exec(context.Background(),
-				"ALTER TABLE "+table+" SET "+persistence); err != nil {
-				s.logger.Warn("failed to alter table persistence",
-					zap.String("table", table),
-					zap.String("persistence", persistence),
-					zap.Error(err))
-			}
 		}
 		return nil
 	}
@@ -1068,9 +1037,10 @@ func (s *Server) RestoreDatabase(height int64) error {
 		db.Release()
 	}
 
-	s.logger.Info("pg_restore: setting tables to UNLOGGED to suppress WAL during data load")
-	if err := alterPersistence("UNLOGGED"); err != nil {
-		return fmt.Errorf("set unlogged: %w", err)
+	// The tables are empty now, so converting any that an earlier restore left
+	// UNLOGGED is free, and the data loaded into them survives a crash.
+	if err := ensureSnapshotTablesLogged(context.Background(), s.pool); err != nil {
+		return fmt.Errorf("make snapshot tables logged: %w", err)
 	}
 
 	s.RunningProcessWithMetadata(ProcessStateRestore, "data COPY: starting")
@@ -1083,12 +1053,6 @@ func (s *Server) RestoreDatabase(height int64) error {
 	stopPoll()
 	if dataErr != nil {
 		return dataErr
-	}
-
-	s.RunningProcessWithMetadata(ProcessStateRestore, "converting tables to LOGGED")
-	s.logger.Info("pg_restore: setting tables back to LOGGED")
-	if err := alterPersistence("LOGGED"); err != nil {
-		return fmt.Errorf("set logged: %w", err)
 	}
 
 	s.RunningProcessWithMetadata(ProcessStateRestore, "building indexes")
