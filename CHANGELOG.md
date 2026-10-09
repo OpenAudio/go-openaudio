@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.12.1](https://github.com/OpenAudio/go-openaudio/compare/v1.12.0...v1.12.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **core:** accept SLA rollups with no reports ([#596](https://github.com/OpenAudio/go-openaudio/issues/596)) ([b91e155](https://github.com/OpenAudio/go-openaudio/commit/b91e155a80fae3b1e29d4a81440be45c3476561a))
+* **core:** reset core state when the stored chain differs from genesis ([#598](https://github.com/OpenAudio/go-openaudio/issues/598)) ([2928972](https://github.com/OpenAudio/go-openaudio/commit/29289721420541e2bf8af30f72c4a46542471b11))
+
 ## [1.12.0](https://github.com/OpenAudio/go-openaudio/compare/v1.11.0...v1.12.0) (2026-10-02)
 
 
