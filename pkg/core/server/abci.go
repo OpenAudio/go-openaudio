@@ -94,6 +94,13 @@ func (s *Server) startABCI(ctx context.Context) error {
 		alreadySynced = false
 	} else if err != nil {
 		return fmt.Errorf("db not ready for ABCI: %v", err)
+	} else if isForeignChainBlock(latestBlock, s.config.GenesisFile.ChainID) {
+		if err := s.resetForeignChainState(ctx, latestBlock); err != nil {
+			s.ErrorProcess(ProcessStateABCI, err.Error())
+			return err
+		}
+		latestBlock = db.CoreBlock{}
+		alreadySynced = false
 	}
 	if err := checkCometDataFiles(cometConfig, latestBlock.Height); err != nil {
 		s.ErrorProcess(ProcessStateABCI, err.Error())
@@ -229,6 +236,74 @@ func (s *Server) startABCI(ctx context.Context) error {
 
 // Catch a DB-only restore before the handshake. CometBFT still validates the
 // contents and handles normal crash recovery when both stores are present.
+// isForeignChainBlock reports whether the latest block in PostgreSQL belongs to
+// a different chain than the one this binary's genesis names. That is what a
+// node looks like on its first start after moving to a new chain (the genesis
+// rollover): its core tables still hold the old chain's state, while CometBFT
+// starts from an empty data directory for the new chain ID.
+//
+// An empty chain_id is not treated as foreign. Only a positive identification
+// of another chain justifies discarding core state.
+func isForeignChainBlock(latest db.CoreBlock, genesisChainID string) bool {
+	return latest.ChainID != "" && latest.ChainID != genesisChainID
+}
+
+// foreignChainResetStmt clears core's consensus state so a node moving to a new
+// chain starts unsynced. It reuses the state-sync snapshot table set, which is
+// exactly the core state a node needs to come up clean: a restore loads those
+// tables, and a node that block-syncs instead must not replay the new chain on
+// top of the old chain's validators, auth state or app hash. Tables outside the
+// set -- mediorum's uploads, blob presence and the rest -- are left alone, as
+// in a restore.
+//
+// core_db_migrations is kept. Clearing it would make the next startup re-run
+// every core migration against tables that already exist.
+func foreignChainResetStmt(existing []string) string {
+	kept := make([]string, 0, len(existing))
+	for _, t := range existing {
+		if t != "core_db_migrations" {
+			kept = append(kept, t)
+		}
+	}
+	return truncateSnapshotTablesStmt(kept)
+}
+
+// resetForeignChainState clears the previous chain's core state, see
+// isForeignChainBlock and foreignChainResetStmt.
+//
+// This replaces what the genesis-generation path used to do by running core's
+// migrations down on any startup without a genesis file. That reset also fired
+// when a restore brought PostgreSQL back without its CometBFT files, so it was
+// removed, and checkCometDataFiles now refuses that case instead. A chain change
+// is told apart from a restore by the chain ID on the stored blocks: a restore
+// of this chain's state carries this chain's ID and still hits that check.
+func (s *Server) resetForeignChainState(ctx context.Context, latest db.CoreBlock) error {
+	s.logger.Warn("core tables hold another chain's state; clearing core consensus state to sync this chain",
+		zap.String("found_chain_id", latest.ChainID),
+		zap.Int64("found_height", latest.Height),
+		zap.String("chain_id", s.config.GenesisFile.ChainID))
+
+	rows, err := s.pool.Query(ctx, "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
+	if err != nil {
+		return fmt.Errorf("listing tables to reset after chain change: %w", err)
+	}
+	existing, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return fmt.Errorf("listing tables to reset after chain change: %w", err)
+	}
+
+	stmt := foreignChainResetStmt(existing)
+	if stmt == "" {
+		return errors.New("no core tables found to reset after chain change")
+	}
+	if _, err := s.pool.Exec(ctx, stmt); err != nil {
+		return fmt.Errorf("resetting core state from chain %q: %w", latest.ChainID, err)
+	}
+
+	s.logger.Info("cleared previous chain's core state", zap.String("found_chain_id", latest.ChainID))
+	return nil
+}
+
 func checkCometDataFiles(cometConfig *cfg.Config, appHeight int64) error {
 	if appHeight == 0 {
 		return nil
