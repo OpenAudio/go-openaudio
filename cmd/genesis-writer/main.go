@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -119,6 +120,37 @@ func writeCmd() *cli.Command {
 				Usage: "Apply the Core chain schema to dst-dsn before writing (for fresh databases)",
 			},
 			&cli.BoolFlag{
+				Name:    "dump",
+				Usage:   "After a successful write, pg_dump the chain database to <data-dir>/" + chainDumpDirName + " (directory format, parallel). The dump and " + manifestFileName + " are the artifact to ship; see ROLLOUT.md",
+				EnvVars: []string{"GENESIS_DUMP"},
+				Value:   true,
+			},
+			&cli.BoolFlag{
+				Name:  "no-dump",
+				Usage: "Skip the chain dump (same as --dump=false). " + manifestFileName + " is still written",
+			},
+			&cli.IntFlag{
+				Name:    "dump-jobs",
+				Usage:   "pg_dump --jobs for the chain dump (default: half the CPUs, at most 8)",
+				EnvVars: []string{"GENESIS_DUMP_JOBS"},
+			},
+			&cli.IntFlag{
+				Name:    "target-pg-major",
+				Usage:   "Postgres major version of the node that restores the dump (the node image bundles " + strconv.Itoa(nodePostgresMajor) + "). The managed postgres runs exactly this major, and a --dst-dsn server newer than it is refused",
+				EnvVars: []string{"GENESIS_TARGET_PG_MAJOR"},
+				Value:   nodePostgresMajor,
+			},
+			&cli.BoolFlag{
+				Name:  "allow-newer-postgres",
+				Usage: "Proceed even though the --dst-dsn server (or the only pg_dump found) is newer than --target-pg-major. The output then cannot be restored on a node as-is",
+			},
+			&cli.StringFlag{
+				Name:    "source-chain-id",
+				Usage:   "Old chain ID whose core_indexed_blocks rows in the source snapshot mark its last indexed block, recorded in " + manifestFileName,
+				EnvVars: []string{"GENESIS_SOURCE_CHAIN_ID"},
+				Value:   defaultSourceChainID,
+			},
+			&cli.BoolFlag{
 				Name:  "resume",
 				Usage: "Resume from the last completed step of a previous run",
 			},
@@ -189,22 +221,40 @@ func writeCmd() *cli.Command {
 				}
 			}
 
+			dump := c.Bool("dump") && !c.Bool("no-dump")
+			if dump && dataDir == "" {
+				return fmt.Errorf("--dump writes to <data-dir>/%s; set --data-dir or pass --no-dump", chainDumpDirName)
+			}
+			targetPgMajor := c.Int("target-pg-major")
+
 			// Resolve destination DSN — start a managed postgres if needed.
 			dstDSN := c.String("dst-dsn")
 			runMigrations := c.Bool("run-migrations")
 			var pg *managedPostgres
+			var pgBinHint string
 			if dstDSN == "" {
 				if dataDir == "" {
 					return fmt.Errorf("either --dst-dsn or --data-dir must be set")
 				}
-				pg, dstDSN, err = startManagedPostgres(dataDir, logger)
+				pg, dstDSN, err = startManagedPostgres(dataDir, targetPgMajor, logger)
 				if err != nil {
 					return fmt.Errorf("managed postgres: %w", err)
 				}
 				defer pg.Stop()
+				pgBinHint = pg.binDir
 				// Always run migrations for managed postgres — they're idempotent
 				// and fast, so safe on both fresh runs and resume.
 				runMigrations = true
+			}
+
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+
+			// Check versions before writing anything: an output the node
+			// cannot restore should cost seconds, not a full run.
+			pgInfo, err := checkDestinationPostgres(ctx, dstDSN, targetPgMajor, c.Bool("allow-newer-postgres"), dump, pgBinHint, logger)
+			if err != nil {
+				return err
 			}
 
 			cfg := &WriterConfig{
@@ -234,6 +284,11 @@ func writeCmd() *cli.Command {
 				SkipRewards:          c.Bool("skip-rewards"),
 				CoreDSN:              c.String("core-dsn"),
 				LaunchpadMintsFile:   c.String("launchpad-mints"),
+				ArtifactDir:          dataDir,
+				Dump:                 dump,
+				DumpJobs:             c.Int("dump-jobs"),
+				Postgres:             pgInfo,
+				SourceChainID:        c.String("source-chain-id"),
 			}
 
 			w, err := NewWriter(cfg, logger)
@@ -241,9 +296,6 @@ func writeCmd() *cli.Command {
 				return fmt.Errorf("init writer: %w", err)
 			}
 			defer w.Close()
-
-			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer cancel()
 
 			if err := w.Run(ctx); err != nil {
 				return err

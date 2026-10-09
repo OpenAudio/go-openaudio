@@ -58,6 +58,9 @@ This will:
 - Write all entities as synthetic blocks to `<data-dir>/core/<chain-id>/`
 - Write CometBFT `state.db` and `blockstore.db`
 - Update `genesis.json` with the migration address and end height
+- `pg_dump` the chain database to `<data-dir>/chain.dump` and write
+  `<data-dir>/MANIFEST.json` — the portable artifact to ship (see
+  [ROLLOUT.md Appendix B](ROLLOUT.md#b-the-artifact-chaindump-and-manifestjson))
 - Print next-steps instructions for running a node
 
 ## Usage
@@ -77,6 +80,8 @@ genesis-writer write \
   [--batch-size      1000]                             \  # default: 1000
   [--run-migrations]                                   \  # auto-enabled for managed postgres
   [--resume]                                           \  # resume interrupted run
+  [--no-dump]                                          \  # skip chain.dump (MANIFEST.json still written)
+  [--target-pg-major 15]                               \  # node's postgres major; pins managed pg + pg_dump
   [--skip-users] [--skip-wallets] [--skip-tracks] [--skip-playlists] \
   [--skip-social] [--skip-plays] [--skip-apps] [--skip-comments] \
   [--skip-emails]
@@ -99,6 +104,11 @@ genesis-writer write \
 | `--batch-size` | `GENESIS_BATCH_SIZE` | `1000` | Rows fetched from source DB per query |
 | `--run-migrations` | — | false | Apply the Core chain schema before writing (auto-enabled for managed postgres) |
 | `--resume` | — | false | Resume from the last completed step of a previous run |
+| `--dump` / `--no-dump` | `GENESIS_DUMP` | true | `pg_dump --format=directory` the chain database to `<data-dir>/chain.dump` after a successful write. Requires `--data-dir` |
+| `--dump-jobs` | `GENESIS_DUMP_JOBS` | half the CPUs, ≤ 8 | `pg_dump --jobs` |
+| `--target-pg-major` | `GENESIS_TARGET_PG_MAJOR` | `15` | Postgres major of the node that restores the dump (the node image bundles 15). The managed postgres runs exactly this major; a newer `--dst-dsn` server is refused |
+| `--allow-newer-postgres` | — | false | Proceed with a `--dst-dsn` server or `pg_dump` newer than `--target-pg-major`. The output then cannot be restored on a node as-is |
+| `--source-chain-id` | `GENESIS_SOURCE_CHAIN_ID` | `audius-mainnet-alpha-beta` | Old chain whose `core_indexed_blocks` in the source snapshot give `source_last_indexed_block` in the manifest |
 | `--skip-users` | `GENESIS_SKIP_USERS` | false | Skip user migration |
 | `--skip-wallets` | `GENESIS_SKIP_WALLETS` | false | Skip associated wallets and dashboard wallet users |
 | `--skip-tracks` | `GENESIS_SKIP_TRACKS` | false | Skip track migration |
@@ -125,14 +135,24 @@ layout as a production node:
 │           ├── blockstore.db/
 │           ├── state.db/
 │           └── priv_validator_state.json
+├── chain.dump/            # pg_dump --format=directory of the chain database
+├── MANIFEST.json          # heights, hashes, versions, files not to seed
 └── postgres/
     └── <postgres data files>
 ```
 
+`config/priv_validator_key.json` and `data/priv_validator_state.json` (and
+`node_key.json` / `addrbook.json`, if a node later runs against the directory)
+are per-node identity. `MANIFEST.json` lists them under
+`exclude_from_bootstrap`; do not seed them onto another node.
+
 ### Managed postgres
 
 When `--dst-dsn` is omitted, the genesis-writer starts its own PostgreSQL
-instance at `<data-dir>/postgres/` using the system's `pg_ctl`. It:
+instance at `<data-dir>/postgres/` using the `pg_ctl` of exactly
+`--target-pg-major` (default 15, the node's bundled version — e.g. Homebrew
+`postgresql@15`). A newer major is never picked up, because its dump could not
+be restored on a node. It:
 
 - Initializes a new cluster if none exists (`initdb`)
 - Starts an existing cluster if stopped
