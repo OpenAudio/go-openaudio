@@ -103,16 +103,29 @@ func (s *Server) isValidRollup(ctx context.Context, timestamp time.Time, height 
 		return false, err
 	}
 
-	if myRollup.Timestamp.GetSeconds() != rollup.Timestamp.GetSeconds() || myRollup.Timestamp.GetNanos() != rollup.Timestamp.GetNanos() {
-		return false, nil
-	} else if myRollup.BlockStart != rollup.BlockStart {
-		return false, nil
-	} else if myRollup.BlockEnd != rollup.BlockEnd {
-		return false, nil
-	} else if !reflect.DeepEqual(myRollup.Reports, rollup.Reports) {
-		return false, nil
+	return rollupsMatch(myRollup, rollup), nil
+}
+
+// rollupsMatch reports whether a proposed rollup equals the one this node
+// built locally. The proposed rollup has been through proto unmarshalling,
+// which decodes an empty repeated field as nil, while createRollup builds an
+// empty non-nil slice; reflect.DeepEqual treats those as different, so a
+// rollup with no reports (no registered validators, e.g. a freshly
+// bootstrapped chain) would be rejected by every node, its proposer included.
+// Non-empty reports keep the original DeepEqual comparison unchanged.
+func rollupsMatch(mine, proposed *v1.SlaRollup) bool {
+	if mine.Timestamp.GetSeconds() != proposed.Timestamp.GetSeconds() || mine.Timestamp.GetNanos() != proposed.Timestamp.GetNanos() {
+		return false
+	} else if mine.BlockStart != proposed.BlockStart {
+		return false
+	} else if mine.BlockEnd != proposed.BlockEnd {
+		return false
+	} else if len(mine.Reports) == 0 && len(proposed.Reports) == 0 {
+		return true
+	} else if !reflect.DeepEqual(mine.Reports, proposed.Reports) {
+		return false
 	}
-	return true, nil
+	return true
 }
 
 func (s *Server) shouldProposeNewRollup(ctx context.Context, height int64) bool {
