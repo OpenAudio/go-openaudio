@@ -69,6 +69,20 @@ type WriterConfig struct {
 	RunMigrations bool
 	// Resume picks up from the last completed step if a previous run was interrupted.
 	Resume bool
+
+	// ArtifactDir is the data dir that receives MANIFEST.json and, when Dump
+	// is set, chain.dump. Empty skips both (tests that only inspect the DB).
+	ArtifactDir string
+	// Dump archives the chain database to <ArtifactDir>/chain.dump.
+	Dump bool
+	// DumpJobs is pg_dump --jobs; <= 0 picks a default.
+	DumpJobs int
+	// Postgres is the destination server's version and the pg_dump resolved
+	// for it, checked before the write starts.
+	Postgres *pgTarget
+	// SourceChainID is the old chain whose core_indexed_blocks bound the
+	// source snapshot.
+	SourceChainID string
 }
 
 // Writer reads Audius DP entities, signs them, and writes real CometBFT blocks
@@ -87,6 +101,10 @@ type Writer struct {
 	// declined. Expected to be zero — a skip is a defect, see
 	// projectBlockAuthState — and reported at the end of Run.
 	authProjectionSkips int
+
+	// sourceLastIndexedBlock is the last old-chain block in the source
+	// snapshot, read at the start of Run for the manifest.
+	sourceLastIndexedBlock int64
 
 	// current block being assembled
 	height    int64
@@ -451,6 +469,19 @@ func (w *Writer) Run(ctx context.Context) error {
 		return fmt.Errorf("create progress table: %w", err)
 	}
 
+	// Read the manifest's source bound up front: a source without it should
+	// fail now, not after the write.
+	if w.cfg.ArtifactDir != "" {
+		h, err := querySourceLastIndexedBlock(ctx, w.srcDB, w.cfg.SourceChainID)
+		if err != nil {
+			return fmt.Errorf("source snapshot bound: %w", err)
+		}
+		w.sourceLastIndexedBlock = h
+		w.logger.Info("source snapshot bound",
+			zap.String("source_chain_id", w.cfg.SourceChainID),
+			zap.Int64("last_indexed_block", h))
+	}
+
 	// If resuming, load the last known chain state from the database.
 	if w.cfg.Resume {
 		var maxHeight int64
@@ -683,24 +714,33 @@ func (w *Writer) Run(ctx context.Context) error {
 		return fmt.Errorf("create indexes: %w", err)
 	}
 
+	// Dump and manifest last: the dump must carry the rebuilt indexes, and it
+	// runs before this process exits so nothing else has connected first.
+	if w.cfg.ArtifactDir != "" && w.cfg.CMTHome != "" && w.finalHeight > 0 {
+		if err := w.emitArtifact(ctx); err != nil {
+			return fmt.Errorf("emit artifact: %w", err)
+		}
+	}
+
 	// Print next-steps instructions.
 	if w.cfg.CMTHome != "" && w.finalHeight > 0 {
 		genesisPath := filepath.Join(w.cfg.CMTHome, "config", "genesis.json")
+		next := fmt.Sprintf("%d", w.finalHeight+1)
 		w.logger.Info("genesis write finished — next steps:\n\n" +
 			"  1. Copy the genesis file into the source tree and rebuild:\n" +
 			"       cp " + genesisPath + " pkg/core/config/genesis/prod.json\n" +
 			"     Then add it to pkg/core/config/genesis/genesis.go and rebuild the binary.\n\n" +
-			"  2. Start the bootstrap node with the genesis-writer output as the data dir.\n" +
-			"     In docker-compose.yml, mount it to /data:\n" +
-			"       volumes:\n" +
-			"         - " + filepath.Dir(w.cfg.CMTHome) + ":/data\n" +
-			"     The node will pick up at height " + fmt.Sprintf("%d", w.finalHeight+1) + " and begin live consensus.\n\n" +
+			"  2. Seed the bootstrap node (ROLLOUT.md step 4):\n" +
+			"       - copy " + w.cfg.CMTHome + " except the files MANIFEST.json lists\n" +
+			"         under exclude_from_bootstrap\n" +
+			"       - pg_restore " + chainDumpDirName + " into a new database on the node\n" +
+			"     The node will pick up at height " + next + " and begin live consensus.\n\n" +
 			"  3. Once the bootstrap node is running, other nodes can state-sync from it:\n" +
 			"       [statesync]\n" +
 			"       enable = true\n" +
 			"       rpc_servers = \"<bootstrap-rpc>:26657,<bootstrap-rpc>:26657\"\n" +
-			"       trust_height = " + fmt.Sprintf("%d", w.finalHeight+1) + "\n" +
-			"       trust_hash = \"<block hash at height " + fmt.Sprintf("%d", w.finalHeight+1) + ">\"\n")
+			"       trust_height = " + next + "\n" +
+			"       trust_hash = \"<block hash at height " + next + ">\"\n")
 	}
 
 	return nil
