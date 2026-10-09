@@ -52,37 +52,29 @@ const (
 	// Mainnet bootstrap peers. Keep this broad: every validator starts from this
 	// list before PEX fills the address book, so a stale or tiny list becomes a
 	// consensus-gossip availability risk.
-	ProdPersistentPeers = "326d405aba6eab9df677ddf62d1331638e99da91@34.71.91.82:26656," +
-		"edf0b62f900c6319fdb482b0379b91b8a3c0d773@104.154.119.194:26656," +
-		"0b6bade75a38b6e7468d795dfdc7b2cf9f717255@val003.open-audio-validator.com:26656," +
-		"0c196c272a34ad51ab563253234e71b664b309da@val007.open-audio-validator.com:26656," +
-		"12abeaff908616575cec416af2c79c540bee63e1@audius-creator-4.theblueprint.xyz:26656," +
-		"1375316fb25560f97bf7cf6e02cede670d840618@audius-creator-7.theblueprint.xyz:26656," +
-		"13bcf9b4c1df378f4d2de4fb8801cabfa0a01a11@audius-creator-8.theblueprint.xyz:26656," +
-		"29156c622bd3e4183c3994a435da878c0cdc9fa6@val016.open-audio-validator.com:26656," +
-		"29d7892d176fb6f6a3740fdb753a618c612b9f0b@val011.open-audio-validator.com:26656," +
-		"2ec3f5d35b751db7c38d008f965cc268a139a15d@audius-content-2.figment.io:26656," +
-		"32b088725b4b82c3604cd05dc1f5ea3c8c09c5ba@audius-creator-5.theblueprint.xyz:26656," +
-		"3317946736f9e99c01bcfeeccd44c41b0d53caee@val005.open-audio-validator.com:26656," +
-		"33623aa633af52ef4d692320de0d22d1897fbbb9@audius-figment-1-validator-19.figment.io:26656," +
-		"34df66133ab8e1e761d1e5a60c7453683dcb0ba7@audius-creator-9.theblueprint.xyz:26656," +
-		"3714f1a5753d776e628be0524897be5a962db97e@audius-creator-6.theblueprint.xyz:26656," +
-		"3bd77cde0aa19b7d0370c1b4d0d26cde8ac38aa9@audius-creator-3.theblueprint.xyz:26656," +
-		"4868de2a01f29367796063cd87ed8d93b9866d84@val010.open-audio-validator.com:26656," +
-		"4a1e3fd9a5a1c982b0c7372abb80305b5b4cceee@audius-creator-11.theblueprint.xyz:26656," +
-		"51fc74a91a1daef3834e3028e3592d03633c44ed@audius-creator-15.theblueprint.xyz:26656," +
-		"56049970fbad44d540b8bef6118800433d269049@audius-content-12.figment.io:26656," +
-		"568224b2a1957bf45d9ce6835b9bbf346d0e7424@audius-creator-14.theblueprint.xyz:26656," +
-		"59f72f7f31155f850181fea0c525073c74b93741@audius-content-3.figment.io:26656," +
-		"5cba61b158b3b23705d859ddc98150a1ccb79b1d@cn1.shakespearetech.com:26656," +
-		"61cc1a7db1c91fd0ff9c3670cf5e03939fa53a78@val002.open-audio-validator.com:26656," +
-		"6210e9689aa8b3539b2191ea44879dbca7ca6691@audius-creator-17.theblueprint.xyz:26656"
+	// NEW NETWORK (audius-mainnet-beta). The node key is the comet key
+	// (`p2p.NodeKey{PrivKey: envConfig.CometKey}`, setup.go:105), so a node's P2P
+	// id is its validator address -- the bootstrap's id is therefore its genesis
+	// validator address, lowercased.
+	//
+	// The bootstrap must NOT inherit a node_key.json from the writer output, or
+	// its P2P id will not match this entry. Delete it and let the node derive one
+	// from the delegate key.
+	//
+	// TODO before the fleet rolls (Runbook step 15): add v.audius.rickyrombo.com
+	// once it exists and its delegate key is known. Until then the second
+	// bootstrap node reaches the network by dialling the first, and PEX
+	// propagates from there.
+	ProdPersistentPeers = "c24b483eff203cf384be9e9abe6efa6c78dd8777@audius.rickyrombo.com:26656"
+
 	StagePersistentPeers = "f277f58522627a5cb890aececed8f08e7f13e097@35.193.20.31:26656,6a5d8207ed912eaa60cdfb8181fa97587d41dd1c@34.121.162.132:26656,8f27745ad44e08f449728960fa67827eb9477cf2@34.30.203.99:26656,96bba6b462e35f83866fbac271bfcee0a96d68e8@34.9.143.36:26656,1eec5742f64fb243d22594e4143e14e77a38f232@34.28.231.197:26656,2da43f6e1b5614ea8fc8b7e89909863033ca6a27@34.123.76.111:26656"
 	DevPersistentPeers   = "ffad25668e060a357bbe534c8b7e5b4e1274368b@openaudio-1:26656"
 )
 
 const (
-	ProdStateSyncRpcs  = "https://creatornode.audius.co,https://rpc.audius.co,https://v.monophonic.digital"
+	// NEW NETWORK. CometBFT refuses to state sync from fewer than two servers,
+	// so both must be serving before any node tries to join (Runbook steps 4, 7).
+	ProdStateSyncRpcs  = "https://audius.rickyrombo.com,https://v.audius.rickyrombo.com"
 	StageStateSyncRpcs = "https://creatornode11.audius.co,https://creatornode5.audius.co"
 )
 
