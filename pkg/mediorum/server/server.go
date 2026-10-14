@@ -165,6 +165,7 @@ type MediorumServer struct {
 	echo             *echo.Echo
 	bucket           *blob.Bucket
 	archiveBucket    *blob.Bucket
+	blobCORS         blobCORSCache
 	logger           *zap.Logger
 	crud             *crudr.Crudr
 	pgPool           *pgxpool.Pool
