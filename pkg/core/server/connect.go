@@ -203,6 +203,12 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		return nil, err
 	}
 
+	// Refuse another chain's gossip before doing any work on it. See
+	// config.ForwardChainIDRequired.
+	if err := checkForwardChainID(core.chainID(), req.Msg.GetChainId()); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+
 	// Check feature flag for programmable distribution features
 	if core.config != nil && !core.config.ProgrammableDistributionEnabled {
 		// Check if transaction uses programmable distribution features
