@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.13.0](https://github.com/OpenAudio/go-openaudio/compare/v1.12.1...v1.13.0) (2026-10-23)
+
+
+### Features
+
+* **genesis-writer:** emit a portable chain dump and manifest ([#595](https://github.com/OpenAudio/go-openaudio/issues/595)) ([9dce6d9](https://github.com/OpenAudio/go-openaudio/commit/9dce6d9790bd9c2d87afc5c558278c68fa0e014b))
+
+
+### Bug Fixes
+
+* **core:** refuse forwarded transactions from another chain ([#601](https://github.com/OpenAudio/go-openaudio/issues/601)) ([b3dc101](https://github.com/OpenAudio/go-openaudio/commit/b3dc1013ff3bb5c92b34dd6b03d694280d850263))
+
 ## [1.12.1](https://github.com/OpenAudio/go-openaudio/compare/v1.12.0...v1.12.1) (2026-10-23)
 
 
