@@ -213,16 +213,19 @@ func (s *Server) broadcastMempoolTransaction(key string, tx *MempoolTransaction)
 	// For v2 transactions, we don't have specific broadcast filtering yet
 	// but we can add it here later if needed
 
+	chainID := s.chainID()
 	s.connectRPCPeers.Range(func(addr EthAddress, peer corev1connect.CoreServiceClient) bool {
 		go func(addr EthAddress, logger *zap.Logger, peer corev1connect.CoreServiceClient) {
 			var err error
 			if tx.Tx != nil {
 				_, err = peer.ForwardTransaction(context.Background(), connect.NewRequest(&v1.ForwardTransactionRequest{
 					Transaction: tx.Tx,
+					ChainId:     chainID,
 				}))
 			} else if tx.Txv2 != nil {
 				_, err = peer.ForwardTransaction(context.Background(), connect.NewRequest(&v1.ForwardTransactionRequest{
 					Transactionv2: tx.Txv2,
+					ChainId:       chainID,
 				}))
 			} else {
 				logger.Error("mempool transaction has no content", zap.String("tx", key))
@@ -320,4 +323,29 @@ func (s *Server) startMempoolCache(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// chainID is the chain this node is on, as named by its genesis.
+func (s *Server) chainID() string {
+	if s.config == nil || s.config.GenesisFile == nil {
+		return ""
+	}
+	return s.config.GenesisFile.ChainID
+}
+
+// checkForwardChainID decides whether a forwarded transaction may enter this
+// node's mempool, given the chain the forwarder stamped on the request. See
+// config.ForwardChainIDRequired for why an empty value is only refused on some
+// chains.
+func checkForwardChainID(ownChainID, forwardedChainID string) error {
+	if forwardedChainID == "" {
+		if config.ForwardChainIDRequired(ownChainID) {
+			return fmt.Errorf("forwarded transaction names no chain; %s only accepts forwards from nodes on it", ownChainID)
+		}
+		return nil
+	}
+	if ownChainID != "" && forwardedChainID != ownChainID {
+		return fmt.Errorf("forwarded transaction is from chain %s; this node is on %s", forwardedChainID, ownChainID)
+	}
+	return nil
 }
