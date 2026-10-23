@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"testing"
 	"time"
@@ -96,6 +97,39 @@ func TestFinalizeBlockUnjailsMatchingCometRegistration(t *testing.T) {
 	require.False(t, node.Jailed)
 	require.Len(t, resp.ValidatorUpdates, 1)
 	requireValidatorUpdatesHaveAppRows(t, f, resp.ValidatorUpdates)
+}
+
+// legacy registration with an endpoint and comet address but no pub_key or power
+const legacyRegistrationWithoutPubKeyTx = "0a820162613339333465633462643935626434333064346437376136333462343664653565343731643732386466343465663366643532663131343661313438323735303733663761636264343362656638383137333865663762653637303532373637323662346537653438333365396436303563653133303039303463643162643030ca3e5d0a16687474703a2f2f3130372e3138312e3235322e3231341228424536443531373346343043374536393042413942433946383639363835424639373532314242431a083335303035313839220c636f6e74656e742d6e6f64652a0130"
+
+func TestFinalizeBlockSkipsValidatorUpdateForLegacyRegistrationWithoutPubKey(t *testing.T) {
+	f := newRegistrationConsensusFixture(t)
+
+	txBytes, err := hex.DecodeString(legacyRegistrationWithoutPubKeyTx)
+	require.NoError(t, err)
+	var tx v1.SignedTransaction
+	require.NoError(t, proto.Unmarshal(txBytes, &tx))
+	reg := tx.GetValidatorRegistration()
+	require.NotNil(t, reg)
+	require.Empty(t, reg.GetPubKey())
+
+	var resp *abcitypes.FinalizeBlockResponse
+	require.NotPanics(t, func() {
+		resp, err = f.server.FinalizeBlock(f.ctx, &abcitypes.FinalizeBlockRequest{
+			Height: f.blockHeight,
+			Hash:   []byte{0x01},
+			Time:   time.Unix(1, 0).UTC(),
+			Txs:    [][]byte{txBytes},
+		})
+	})
+	require.NoError(t, err)
+	require.Len(t, resp.TxResults, 1)
+	require.Equal(t, abcitypes.CodeTypeOK, resp.TxResults[0].Code)
+	require.Empty(t, resp.ValidatorUpdates)
+
+	// the registered node row is what made the validator update path reach the pubkey
+	_, err = f.server.getDb().GetRegisteredNodeByCometAddress(f.ctx, reg.GetCometAddress())
+	require.NoError(t, err)
 }
 
 type registrationConsensusFixture struct {

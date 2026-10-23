@@ -1043,6 +1043,10 @@ func (s *Server) registeredNodeValidatorUpdate(ctx context.Context, cometAddress
 	if cometAddress == "" {
 		return "", abcitypes.ValidatorUpdate{}, false
 	}
+	// legacy registrations are not shape checked, so the pubkey can be any length
+	if len(pubKey) != ed25519.PubKeySize {
+		return "", abcitypes.ValidatorUpdate{}, false
+	}
 
 	node, err := s.getDb().GetRegisteredNodeByCometAddress(ctx, cometAddress)
 	if errors.Is(err, pgx.ErrNoRows) {
