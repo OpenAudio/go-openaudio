@@ -25,6 +25,19 @@ func TestCheckTxRejectsManageEntityMigration(t *testing.T) {
 	}
 }
 
+// The legacy registration message is retired, so CheckTx must refuse it
+// along with the custom mempool.
+func TestCheckTxRejectsLegacyValidatorRegistration(t *testing.T) {
+	tx := &v1.SignedTransaction{
+		Transaction: &v1.SignedTransaction_ValidatorRegistration{
+			ValidatorRegistration: &v1.ValidatorRegistrationLegacy{Endpoint: "https://node.example.com"},
+		},
+	}
+	if err := validateSignedTransactionForCheckTx(tx); err == nil {
+		t.Fatal("expected CheckTx to reject a legacy validator registration, got nil")
+	}
+}
+
 // The non-migration entity path must stay acceptable.
 func TestCheckTxAcceptsManageEntity(t *testing.T) {
 	tx := &v1.SignedTransaction{

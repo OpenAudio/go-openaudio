@@ -132,6 +132,34 @@ func TestFinalizeBlockSkipsValidatorUpdateForLegacyRegistrationWithoutPubKey(t *
 	require.NoError(t, err)
 }
 
+func TestProposalRejectsLegacyRegistration(t *testing.T) {
+	f := newRegistrationConsensusFixture(t)
+
+	cometKey := ed25519.GenPrivKey()
+	reg := &v1.ValidatorRegistrationLegacy{
+		Endpoint:     "https://new-validator.example.com",
+		CometAddress: cometKey.PubKey().Address().String(),
+		EthBlock:     "200",
+		NodeType:     "validator",
+		SpId:         "999",
+		PubKey:       cometKey.PubKey().Bytes(),
+		Power:        10,
+	}
+	regBytes, err := proto.Marshal(reg)
+	require.NoError(t, err)
+	sig, err := common.EthSign(f.delegateKey, regBytes)
+	require.NoError(t, err)
+	txBytes, err := proto.Marshal(&v1.SignedTransaction{
+		Signature:   sig,
+		Transaction: &v1.SignedTransaction_ValidatorRegistration{ValidatorRegistration: reg},
+	})
+	require.NoError(t, err)
+
+	valid, err := f.server.validateBlockTxs(f.ctx, time.Unix(1, 0).UTC(), f.blockHeight, nil, [][]byte{txBytes})
+	require.NoError(t, err)
+	require.False(t, valid)
+}
+
 type registrationConsensusFixture struct {
 	ctx             context.Context
 	q               *db.Queries

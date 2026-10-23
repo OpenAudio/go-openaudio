@@ -1204,6 +1204,8 @@ func validateSignedTransactionForCheckTx(msg *v1.SignedTransaction) error {
 		// touching FinalizeBlock, which is how the genesis blocks themselves are
 		// replayed.
 		return fmt.Errorf("manage entity migration transactions cannot be submitted")
+	case *v1.SignedTransaction_ValidatorRegistration:
+		return fmt.Errorf("legacy validator registrations cannot be submitted")
 	case *v1.SignedTransaction_StorageProof:
 		sp := msg.GetStorageProof()
 		if len(sp.ProverAddresses) == 0 {
@@ -1323,6 +1325,11 @@ func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOv
 			s.logger.Error("Invalid block: invalid attestation tx", zap.Error(err))
 			return false, nil
 		}
+	case *v1.SignedTransaction_ValidatorRegistration:
+		// Proposals are not re-validated on replay, so blocks that already
+		// carry legacy registrations still apply; new ones never get in.
+		s.logger.Error("Invalid block: legacy validator registration tx")
+		return false, nil
 	case *v1.SignedTransaction_ValidatorDeregistration:
 		if err := s.isValidDeregisterMisbehavingNodeTx(signedTx, misbehavior); err != nil {
 			s.logger.Error("Invalid block: invalid deregister node tx", zap.Error(err))
