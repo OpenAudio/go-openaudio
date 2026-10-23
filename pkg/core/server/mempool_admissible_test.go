@@ -26,6 +26,19 @@ func TestMempoolRejectsManageEntityMigration(t *testing.T) {
 	}
 }
 
+// The legacy registration message is retired, so the mempool must refuse it
+// from every ingress.
+func TestMempoolRejectsLegacyValidatorRegistration(t *testing.T) {
+	tx := &v1.SignedTransaction{
+		Transaction: &v1.SignedTransaction_ValidatorRegistration{
+			ValidatorRegistration: &v1.ValidatorRegistrationLegacy{Endpoint: "https://node.example.com"},
+		},
+	}
+	if err := mempoolAdmissible(tx); err == nil {
+		t.Fatal("expected the mempool to reject a legacy validator registration, got nil")
+	}
+}
+
 // Ordinary transactions (and the v2 path, which carries no v1 payload) must
 // stay admissible.
 func TestMempoolAdmitsOrdinaryTransactions(t *testing.T) {

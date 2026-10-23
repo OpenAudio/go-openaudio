@@ -63,6 +63,15 @@ type UpgradeSchedule struct {
 	// claim by naming it first. Schedule strict as soon as the flusher has
 	// drained; never before, or it stalls.
 	ContentAuthStrictHeight int64
+
+	// LegacyRegistrationClosedHeight makes FinalizeBlock ignore legacy
+	// validator registrations: from this height one fails without writing a
+	// registered node or emitting a validator update. Live nodes register
+	// through attestations, and the mempool and proposal stages refuse
+	// legacy registrations on every network. Blocks before this height
+	// replay as they were applied, since their tx results are committed in
+	// the next block's header.
+	LegacyRegistrationClosedHeight int64
 }
 
 // Rules is the resolved rule set for a single height: a flat description of
@@ -72,6 +81,8 @@ type Rules struct {
 	ContentAuthEnforced bool
 	// ContentAuthStrict only means anything with ContentAuthEnforced.
 	ContentAuthStrict bool
+	// LegacyRegistrationClosed makes legacy validator registrations fail.
+	LegacyRegistrationClosed bool
 }
 
 // RulesetAt resolves the rules governing the given block height. A nil
@@ -84,6 +95,8 @@ func (u *UpgradeSchedule) RulesetAt(height int64) Rules {
 		AuthEnforced:        activeAt(u.AuthEnforcementHeight, height),
 		ContentAuthEnforced: activeAt(u.ContentAuthEnforcementHeight, height),
 		ContentAuthStrict:   activeAt(u.ContentAuthStrictHeight, height),
+
+		LegacyRegistrationClosed: activeAt(u.LegacyRegistrationClosedHeight, height),
 	}
 }
 
@@ -99,22 +112,28 @@ func activeAt(activation, height int64) bool {
 var upgradeSchedules = map[string]*UpgradeSchedule{
 	// dev
 	"openaudio-devnet": {
-		AuthEnforcementHeight:        1,
-		ContentAuthEnforcementHeight: 1,
-		ContentAuthStrictHeight:      1,
+		AuthEnforcementHeight:          1,
+		ContentAuthEnforcementHeight:   1,
+		ContentAuthStrictHeight:        1,
+		LegacyRegistrationClosedHeight: 1,
 	},
 	// sandbox
 	"audius-devnet": {
-		AuthEnforcementHeight:        1,
-		ContentAuthEnforcementHeight: 1,
-		ContentAuthStrictHeight:      1,
+		AuthEnforcementHeight:          1,
+		ContentAuthEnforcementHeight:   1,
+		ContentAuthStrictHeight:        1,
+		LegacyRegistrationClosedHeight: 1,
 	},
 	// stage
 	"audius-testnet-alpha": {},
-	// prod, audius-mainnet-alpha-beta: unscheduled, and must stay so. Its
-	// tracks and grants predate the auth projections, so enforcing there
-	// would make existing entities unwritable.
-	"audius-mainnet-alpha-beta": {},
+	// prod, audius-mainnet-alpha-beta: auth is unscheduled, and must stay
+	// so. Its tracks and grants predate the auth projections, so enforcing
+	// there would make existing entities unwritable. Legacy registrations
+	// close at the first block no validator had applied when the release
+	// shipped.
+	"audius-mainnet-alpha-beta": {
+		LegacyRegistrationClosedHeight: 35005210,
+	},
 	// prod, audius-mainnet-beta: the genesis rollover. genesis-writer replays
 	// the whole history as migration transactions, and the replay projects
 	// auth state and a cid claim for every migrated track, so both
@@ -126,8 +145,9 @@ var upgradeSchedules = map[string]*UpgradeSchedule{
 	// and stalls on the first refused row. Schedule strict in a follow-up
 	// release once the flusher has drained.
 	"audius-mainnet-beta": {
-		AuthEnforcementHeight:        1,
-		ContentAuthEnforcementHeight: 1,
+		AuthEnforcementHeight:          1,
+		ContentAuthEnforcementHeight:   1,
+		LegacyRegistrationClosedHeight: 1,
 	},
 }
 

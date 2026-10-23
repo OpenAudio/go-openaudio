@@ -71,7 +71,6 @@ const (
 		"4868de2a01f29367796063cd87ed8d93b9866d84@val010.open-audio-validator.com:26656," +
 		"4a1e3fd9a5a1c982b0c7372abb80305b5b4cceee@audius-creator-11.theblueprint.xyz:26656," +
 		"51fc74a91a1daef3834e3028e3592d03633c44ed@audius-creator-15.theblueprint.xyz:26656," +
-		"56049970fbad44d540b8bef6118800433d269049@audius-content-12.figment.io:26656," +
 		"568224b2a1957bf45d9ce6835b9bbf346d0e7424@audius-creator-14.theblueprint.xyz:26656," +
 		"59f72f7f31155f850181fea0c525073c74b93741@audius-content-3.figment.io:26656," +
 		"5cba61b158b3b23705d859ddc98150a1ccb79b1d@cn1.shakespearetech.com:26656," +

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"testing"
 	"time"
@@ -96,6 +97,136 @@ func TestFinalizeBlockUnjailsMatchingCometRegistration(t *testing.T) {
 	require.False(t, node.Jailed)
 	require.Len(t, resp.ValidatorUpdates, 1)
 	requireValidatorUpdatesHaveAppRows(t, f, resp.ValidatorUpdates)
+}
+
+// legacy registration with an endpoint and comet address but no pub_key or power
+const legacyRegistrationWithoutPubKeyTx = "0a820162613339333465633462643935626434333064346437376136333462343664653565343731643732386466343465663366643532663131343661313438323735303733663761636264343362656638383137333865663762653637303532373637323662346537653438333365396436303563653133303039303463643162643030ca3e5d0a16687474703a2f2f3130372e3138312e3235322e3231341228424536443531373346343043374536393042413942433946383639363835424639373532314242431a083335303035313839220c636f6e74656e742d6e6f64652a0130"
+
+func TestFinalizeBlockSkipsValidatorUpdateForLegacyRegistrationWithoutPubKey(t *testing.T) {
+	f := newRegistrationConsensusFixture(t)
+
+	txBytes, err := hex.DecodeString(legacyRegistrationWithoutPubKeyTx)
+	require.NoError(t, err)
+	var tx v1.SignedTransaction
+	require.NoError(t, proto.Unmarshal(txBytes, &tx))
+	reg := tx.GetValidatorRegistration()
+	require.NotNil(t, reg)
+	require.Empty(t, reg.GetPubKey())
+
+	var resp *abcitypes.FinalizeBlockResponse
+	require.NotPanics(t, func() {
+		resp, err = f.server.FinalizeBlock(f.ctx, &abcitypes.FinalizeBlockRequest{
+			Height: f.blockHeight,
+			Hash:   []byte{0x01},
+			Time:   time.Unix(1, 0).UTC(),
+			Txs:    [][]byte{txBytes},
+		})
+	})
+	require.NoError(t, err)
+	require.Len(t, resp.TxResults, 1)
+	require.Equal(t, abcitypes.CodeTypeOK, resp.TxResults[0].Code)
+	require.Empty(t, resp.ValidatorUpdates)
+
+	// the registered node row is what made the validator update path reach the pubkey
+	_, err = f.server.getDb().GetRegisteredNodeByCometAddress(f.ctx, reg.GetCometAddress())
+	require.NoError(t, err)
+}
+
+func TestFinalizeBlockIgnoresLegacyRegistrationOnceClosed(t *testing.T) {
+	f := newRegistrationConsensusFixture(t)
+	f.server.config.Upgrades = &config.UpgradeSchedule{LegacyRegistrationClosedHeight: f.blockHeight}
+
+	txBytes, err := hex.DecodeString(legacyRegistrationWithoutPubKeyTx)
+	require.NoError(t, err)
+	var tx v1.SignedTransaction
+	require.NoError(t, proto.Unmarshal(txBytes, &tx))
+
+	resp, err := f.server.FinalizeBlock(f.ctx, &abcitypes.FinalizeBlockRequest{
+		Height: f.blockHeight,
+		Hash:   []byte{0x01},
+		Time:   time.Unix(1, 0).UTC(),
+		Txs:    [][]byte{txBytes},
+	})
+	require.NoError(t, err)
+	require.Len(t, resp.TxResults, 1)
+	require.NotEqual(t, abcitypes.CodeTypeOK, resp.TxResults[0].Code)
+	require.Empty(t, resp.ValidatorUpdates)
+
+	_, err = f.server.getDb().GetRegisteredNodeByCometAddress(f.ctx, tx.GetValidatorRegistration().GetCometAddress())
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+}
+
+// A closed legacy registration naming an existing validator's comet key must
+// not change that validator's power.
+func TestFinalizeBlockIgnoresLegacyRegistrationForExistingValidatorOnceClosed(t *testing.T) {
+	f := newRegistrationConsensusFixture(t)
+	f.server.config.Upgrades = &config.UpgradeSchedule{LegacyRegistrationClosedHeight: f.blockHeight}
+
+	cometKey := ed25519.GenPrivKey()
+	cometPubKey := cometKey.PubKey().(ed25519.PubKey)
+	require.NoError(t, f.q.InsertRegisteredNode(f.ctx, db.InsertRegisteredNodeParams{
+		PubKey:       "existing-pubkey",
+		Endpoint:     "https://existing-validator.example.com",
+		EthAddress:   "0x0000000000000000000000000000000000000001",
+		CometAddress: cometPubKey.Address().String(),
+		CometPubKey:  base64.StdEncoding.EncodeToString(cometPubKey.Bytes()),
+		EthBlock:     "100",
+		NodeType:     "validator",
+		SpID:         "999",
+	}))
+
+	reg := &v1.ValidatorRegistrationLegacy{
+		Endpoint:     "https://existing-validator.example.com",
+		CometAddress: cometPubKey.Address().String(),
+		EthBlock:     "100",
+		NodeType:     "validator",
+		SpId:         "999",
+		PubKey:       cometPubKey.Bytes(),
+		Power:        100000,
+	}
+	regBytes, err := proto.Marshal(reg)
+	require.NoError(t, err)
+	sig, err := common.EthSign(f.delegateKey, regBytes)
+	require.NoError(t, err)
+
+	resp := f.finalizeBlock(t, &v1.SignedTransaction{
+		Signature:   sig,
+		Transaction: &v1.SignedTransaction_ValidatorRegistration{ValidatorRegistration: reg},
+	})
+	require.Len(t, resp.TxResults, 1)
+	require.NotEqual(t, abcitypes.CodeTypeOK, resp.TxResults[0].Code)
+	require.Empty(t, resp.ValidatorUpdates)
+
+	_, err = f.server.getDb().GetRegisteredNodeByEthAddress(f.ctx, f.delegateWallet)
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+}
+
+func TestProposalRejectsLegacyRegistration(t *testing.T) {
+	f := newRegistrationConsensusFixture(t)
+
+	cometKey := ed25519.GenPrivKey()
+	reg := &v1.ValidatorRegistrationLegacy{
+		Endpoint:     "https://new-validator.example.com",
+		CometAddress: cometKey.PubKey().Address().String(),
+		EthBlock:     "200",
+		NodeType:     "validator",
+		SpId:         "999",
+		PubKey:       cometKey.PubKey().Bytes(),
+		Power:        10,
+	}
+	regBytes, err := proto.Marshal(reg)
+	require.NoError(t, err)
+	sig, err := common.EthSign(f.delegateKey, regBytes)
+	require.NoError(t, err)
+	txBytes, err := proto.Marshal(&v1.SignedTransaction{
+		Signature:   sig,
+		Transaction: &v1.SignedTransaction_ValidatorRegistration{ValidatorRegistration: reg},
+	})
+	require.NoError(t, err)
+
+	valid, err := f.server.validateBlockTxs(f.ctx, time.Unix(1, 0).UTC(), f.blockHeight, nil, [][]byte{txBytes})
+	require.NoError(t, err)
+	require.False(t, valid)
 }
 
 type registrationConsensusFixture struct {
