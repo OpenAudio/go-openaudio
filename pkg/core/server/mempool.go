@@ -47,6 +47,11 @@ func mempoolAdmissible(tx *v1.SignedTransaction) error {
 		// choosing.
 		return errors.New("manage entity migration transactions cannot be submitted")
 	}
+	if tx.GetValidatorRegistration() != nil {
+		// The legacy registration message is retired; nodes register
+		// through attestations.
+		return errors.New("legacy validator registrations cannot be submitted")
+	}
 	return nil
 }
 

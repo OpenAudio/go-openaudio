@@ -58,6 +58,9 @@ func (s *Server) isValidRegisterNodeAttestation(ctx context.Context, tx *v1.Sign
 		return fmt.Errorf("public Key missing from %s registration tx", vr.GetEndpoint())
 	}
 	vrPubKey := ed25519.PubKey(vr.GetPubKey())
+	if len(vrPubKey) != ed25519.PubKeySize {
+		return fmt.Errorf("incorrect pubkey size %d, must by %d", len(vrPubKey), ed25519.PubKeySize)
+	}
 	if vrPubKey.Address().String() != vr.GetCometAddress() {
 		return fmt.Errorf("address does not match public key: %s %s", vrPubKey.Address(), vr.GetCometAddress())
 	}
@@ -225,6 +228,9 @@ func (s *Server) isValidDeregisterMisbehavingNodeTx(tx *v1.SignedTransaction, mi
 		return fmt.Errorf("public Key missing from deregistration tx: %v", tx)
 	}
 	vdPubKey := ed25519.PubKey(vd.GetPubKey())
+	if len(vdPubKey) != ed25519.PubKeySize {
+		return fmt.Errorf("incorrect pubkey size %d, must by %d", len(vdPubKey), ed25519.PubKeySize)
+	}
 	if vdPubKey.Address().String() != addr {
 		return fmt.Errorf("address does not match public key: %s %s", vdPubKey.Address(), addr)
 	}
