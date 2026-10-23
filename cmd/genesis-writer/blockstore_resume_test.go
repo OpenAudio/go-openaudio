@@ -25,7 +25,11 @@ import (
 // The resulting failure is indistinguishable from data loss: "commit not found"
 // against a blockstore that is completely intact. That is what it looked like
 // when an interrupted five-hour run refused to resume.
-func TestSeenCommitResolvesAtTheTailAndBlockCommitDoesNot(t *testing.T) {
+// saveTailBlock writes a single block at height 1 with a seen commit, the
+// state resume finds at the end of a run, and returns the store, the block and
+// its parts.
+func saveTailBlock(t *testing.T) (*cmtstore.BlockStore, *cmttypes.Block, *cmttypes.PartSet) {
+	t.Helper()
 	db, err := dbm.NewDB("blockstore", dbm.MemDBBackend, t.TempDir())
 	if err != nil {
 		t.Fatalf("open blockstore: %v", err)
@@ -66,6 +70,38 @@ func TestSeenCommitResolvesAtTheTailAndBlockCommitDoesNot(t *testing.T) {
 			Signature:        bytes.Repeat([]byte{2}, 64),
 		}},
 	})
+	return store, block, parts
+}
+
+// A resume that writes no new blocks -- retrying a failed dump, where every
+// step is already checkpointed -- never reaches flushBlock, so the tail's time
+// has to come from the blockstore. Without it writeCMTState rewrote state.db
+// with a zero LastBlockTime.
+func TestResumeTailRestoresTheLastBlock(t *testing.T) {
+	store, block, parts := saveTailBlock(t)
+
+	tail, err := resumeTail(store, store.Height())
+	if err != nil {
+		t.Fatalf("resumeTail: %v", err)
+	}
+	if !tail.time.Equal(block.Time) {
+		t.Errorf("time = %v, want the tail block's header time %v", tail.time, block.Time)
+	}
+	want := cmttypes.BlockID{Hash: block.Hash(), PartSetHeader: parts.Header()}
+	if !tail.blockID.Equals(want) {
+		t.Errorf("blockID = %v, want %v", tail.blockID, want)
+	}
+	if tail.commit == nil || tail.commit.Height != block.Height {
+		t.Errorf("commit = %v, want the seen commit for height %d", tail.commit, block.Height)
+	}
+
+	if _, err := resumeTail(store, store.Height()+1); err == nil {
+		t.Error("resumeTail past the tail returned no error")
+	}
+}
+
+func TestSeenCommitResolvesAtTheTailAndBlockCommitDoesNot(t *testing.T) {
+	store, _, _ := saveTailBlock(t)
 
 	tail := store.Height()
 	if tail != 1 {

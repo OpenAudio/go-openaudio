@@ -82,7 +82,7 @@ cleanup the migration unblocks, and must wait for step 15.
 | | |
 |---|---|
 | [A. Source snapshot and writer inputs](#a-source-snapshot-and-writer-inputs) | step 1 |
-| [B. Sealing the artifact](#b-sealing-the-artifact) | step 1 |
+| [B. The artifact: `chain.dump` and `MANIFEST.json`](#b-the-artifact-chaindump-and-manifestjson) | steps 1, 4 |
 | [C. Verifying: replay, parity, calibration](#c-verifying-replay-parity-calibration) | step 1 |
 | [D. Expected parity divergences](#d-expected-parity-divergences) | step 1 |
 | [E. Node identity and the peer lists](#e-node-identity-and-the-peer-lists) | steps 3, 4 |
@@ -114,9 +114,12 @@ cleanup the migration unblocks, and must wait for step 15.
 1. Restore a production snapshot → [Appendix A](#a-source-snapshot-and-writer-inputs).
 2. Run `genesis-writer` with `--priv-validator-key-file` pointing at the
    bootstrap validator key. Inputs and preconditions → [Appendix A](#a-source-snapshot-and-writer-inputs).
-3. **Seal the artifact before anything connects to it** → [Appendix B](#b-sealing-the-artifact).
-4. Verify: replay into a scratch ETL database, then run parity against the
-   source snapshot → [Appendix C](#c-verifying-replay-parity-calibration).
+3. The run ends by writing `<data-dir>/chain.dump` and `<data-dir>/MANIFEST.json`.
+   **Those are the artifact** — serve and ship from them, never from the
+   writer's live database → [Appendix B](#b-the-artifact-chaindump-and-manifestjson).
+4. Verify: `pg_restore` the dump into a scratch database, serve it from a node,
+   replay into a scratch ETL database, then run parity against the source
+   snapshot → [Appendix C](#c-verifying-replay-parity-calibration).
 5. Judge the parity output against the known divergences → [Appendix D](#d-expected-parity-divergences).
 
 ### 2. Register the second state-sync RPC
@@ -161,16 +164,43 @@ so nothing else needs flipping. Coverage of the seeding is verified in
 Same delegate key as `audius.rickyrombo.com`, different chain directory and a
 fresh database.
 
-1. Preseed from the writer output: the core files and the database.
-   **Exclude `node_key.json`** → [Appendix E](#e-node-identity-and-the-peer-lists).
-2. Point its storage at the existing node's, so both hold all blobs.
-3. Environment:
+1. Preseed the core files: copy `core/<chain-id>/` from the writer output,
+   **minus every path in `MANIFEST.json`'s `exclude_from_bootstrap`** —
+   `node_key.json`, `priv_validator_key.json`, `addrbook.json`,
+   `priv_validator_state.json` → [Appendix E](#e-node-identity-and-the-peer-lists).
+   Check `sha256sum config/genesis.json` against the manifest's `genesis_sha256`.
+2. Preseed the database, **before the node's first start**:
+   1. Copy `chain.dump/` to the host and create a new database on the node's
+      Postgres. Restore with the node's bundled `pg_restore` (Postgres 15);
+      the manifest's `dump.restore_min_pg_major` is the oldest that reads it.
+
+      ```
+      createdb -U postgres openaudio_beta
+      pg_restore -U postgres -d openaudio_beta --no-owner --no-privileges \
+        --jobs 8 --exit-on-error chain.dump
+      ```
+   2. Restore the mediorum tables from the old node's database into the same
+      database: `uploads`, `audio_previews`, `qm_audio_analyses`,
+      `blob_presence`, `blob_presence_state`. The chain dump holds none of
+      them, and without them the node regenerates previews and analyses and
+      re-walks the bucket.
+
+      ```
+      pg_dump -U postgres -d <old-db> -Fc -f mediorum.dump \
+        -t uploads -t audio_previews -t qm_audio_analyses \
+        -t blob_presence -t blob_presence_state
+      pg_restore -U postgres -d openaudio_beta --no-owner --no-privileges mediorum.dump
+      ```
+   3. Point the node at it: `POSTGRES_DB=openaudio_beta` (or a full
+      `OPENAUDIO_DB_URL`).
+3. Point its storage at the existing node's, so both hold all blobs.
+4. Environment:
    - `OPENAUDIO_ARCHIVE=true`
    - `OPENAUDIO_STATE_SYNC_SERVE_SNAPSHOTS=true`
    - `OPENAUDIO_STATE_SYNC_ENABLE=false` — it is the source, not a consumer
    - `OPENAUDIO_PERSISTENT_PEERS=` — empty; the second node does not exist yet
    - `BlockInterval=20000`, `Keep=2` → [Appendix F](#f-snapshot-interval-and-retention)
-4. Confirm ≥80 GiB free, or snapshots silently skip.
+5. Confirm ≥80 GiB free, or snapshots silently skip.
 
 ### 5. Route plays through old-chain hosts
 
@@ -188,17 +218,17 @@ Why this is necessary → [Appendix G](#g-why-plays-need-routing).
 ### 7. Stand up the second snapshot RPC
 
 `v.audius.rickyrombo.com`, same artifacts and environment as step 4, except its
-own delegate wallet — and exclude `node_key.json`, `priv_validator_key.json`,
-and `priv_validator_state.json`.
+own delegate wallet. The same `exclude_from_bootstrap` paths stay behind; skip
+the mediorum restore, since storage is off here.
 
 1. Disable storage: no mediorum churn, and storage proofs are irrelevant for it.
 2. Confirm ≥80 GiB free.
 
 ### 8. Confirm blocks
 
-The node should produce the block after the writer's end height. Take that
-height from the writer's completion output or the run's `BUILT_FROM.txt` — **do
-not hardcode it here**, every run ends somewhere different.
+The node should produce the block after the writer's end height —
+`first_live_height` in the run's `MANIFEST.json` (`end_height` + 1). **Do not
+hardcode it here**, every run ends somewhere different.
 
 If it does not, the validator key does not match genesis. That is the dead-chain
 failure mode and it looks like "waiting for comet to catch up" at height 0.
@@ -254,8 +284,12 @@ Requires [api#1018](https://github.com/AudiusProject/api/pull/1018) merged first
 
 1. `newChainFlushEnabled=true`
 2. `NewChainURL` → bootstrap
-3. `NewChainFlushFromBlock` → the last block of the snapshot the genesis was
-   built from
+3. `NewChainFlushFromBlock` → `new_chain_flush_from_block` in `MANIFEST.json`:
+   the source snapshot's last indexed old-chain block **plus one**
+   (`source_last_indexed_block` + 1). The flusher deletes rows with
+   `confirmed_block < NewChainFlushFromBlock` and replays the rest, so setting
+   it to the snapshot's own last block replays that block onto the new chain a
+   second time.
 
 Confirm the flusher keeps up with the relay's write rate before continuing; it
 is serial, and step 12 depends on it draining.
@@ -376,16 +410,64 @@ The validator set is hashed into every block header, so the key cannot be swappe
 afterwards — a different key means rebuilding the chain. Whoever runs the writer
 must hold the bootstrap's delegate key at write time.
 
-## B. Sealing the artifact
+## B. The artifact: `chain.dump` and `MANIFEST.json`
 
-**Seal the artifact before pointing anything at it.** The verification node,
-the ETL, and every other service take the chain DB as `OPENAUDIO_DB_URL`, and
-any of them can destroy it. A node whose binary does not embed *this*
-artifact's genesis does not fail -- it takes its "generate a new genesis" path
-and runs the core migrations **down**, dropping every table the writer just
-filled. `OPENAUDIO_ENV=dev` loads the embedded `dev.json`, so a binary built
-before the genesis was copied in looks completely normal until it wipes the
-write. This has happened once already, on 2026-08-25.
+A successful run leaves:
+
+```
+<data-dir>/
+  core/<chain-id>/   CometBFT home: genesis, blockstore, state
+  chain.dump/        pg_dump --format=directory of the chain database
+  MANIFEST.json      chain_id, end_height, first_live_height,
+                     source_last_indexed_block, new_chain_flush_from_block,
+                     genesis_sha256, genesis_validator_address,
+                     dump.{pg_dump_version, server_major, restore_min_pg_major},
+                     writer_commit, exclude_from_bootstrap
+  postgres/          the writer's managed cluster (only without --dst-dsn)
+```
+
+`MANIFEST.json` replaces the hand-written `BUILT_FROM.txt`: read heights, hashes
+and the flush-from block from it instead of from log lines.
+
+**Why a dump, not the live database.** The verification node, the ETL, and every
+other service take the chain DB as `OPENAUDIO_DB_URL`, and any of them can
+destroy it. A node whose binary does not embed *this* artifact's genesis does
+not fail -- it takes its "generate a new genesis" path and runs the core
+migrations **down**, dropping every table the writer just filled.
+`OPENAUDIO_ENV=dev` loads the embedded `dev.json`, so a binary built before the
+genesis was copied in looks completely normal until it wipes the write. This
+happened on 2026-08-25 and cost a 3h36m write. The writer now dumps before it
+exits, so the dump predates anything else connecting, and every consumer
+restores its own copy:
+
+```
+createdb <name>
+pg_restore -d <name> --no-owner --no-privileges --jobs 8 --exit-on-error <data-dir>/chain.dump
+```
+
+A wiped copy costs a re-restore, not a re-run. `--no-dump` skips the dump; the
+manifest is still written with `"dump": null`.
+
+**Version pinning.** `pg_restore` cannot read an archive from a newer
+`pg_dump`, and `pg_dump` cannot dump a newer server, so server ≤ `pg_dump` ≤
+node. The node image bundles Postgres 15. `--target-pg-major` (default 15)
+therefore:
+
+- pins the managed cluster to exactly that major, rather than whatever is
+  newest on the machine (a Homebrew `postgresql@15` on macOS);
+- refuses a `--dst-dsn` server newer than it before writing anything
+  (`--allow-newer-postgres` overrides, loudly, for output you will move some
+  other way);
+- picks a `pg_dump` in range, and fails up front if there is none.
+
+The 2026-08-25 artifact predates this: it sits in a PG17 cluster on macOS, so
+no PG15 tool can dump it and no PG15 `pg_restore` can read a PG17 dump. Moving it
+took a manual `pg_dump` → `rsync` → `pg_restore`; that is still the procedure
+for that artifact.
+
+**Sealing is now optional.** If you serve from the writer's live database
+anyway — a `--no-dump` run, or the 2026-08-25 artifact — seal it first so
+nothing can connect to the original:
 
 ```sql
 ALTER DATABASE <artifact> WITH ALLOW_CONNECTIONS false;
@@ -393,16 +475,17 @@ CREATE DATABASE <artifact>_serve TEMPLATE <artifact>;
 ```
 
 A sealed database still works as a `TEMPLATE` -- that is how `template0`
-works -- so sealing first leaves no window where it is reachable, and the copy
-is file-level (minutes, not a re-run). Point the node, the replay, and parity
-at `<artifact>_serve`. Verify the artifact **after** the services are up: a
-count taken before you start a node certifies a state the node may then change.
+works -- and the copy is file-level (minutes, not a re-run).
+
+Either way, verify **after** the services are up: a count taken before you
+start a node certifies a state the node may then change.
 
 ## C. Verifying: replay, parity, calibration
 
 **Running the verification.** Serve the artifact from a node, replay it into a
-scratch ETL database, then compare that against the source snapshot. Point the
-replay at the **serve copy**, never the sealed original, and point `--db` at an
+scratch ETL database, then compare that against the source snapshot. Serve
+from a database **restored from `chain.dump`** (or the serve copy of a sealed
+database, [Appendix B](#b-the-artifact-chaindump-and-manifestjson)), and point `--db` at an
 ETL database, never the chain database -- the replay creates ETL schema and
 drops serving indexes in whatever it is given.
 
@@ -504,6 +587,21 @@ one left there belongs to whichever node last ran against that directory — on 
 2026-08-25 artifact, the verification node — and seeding it gives the bootstrap a
 P2P identity unrelated to its delegate key and unrelated to the id in
 `ProdPersistentPeers`. Delete it and let the node derive its own.
+
+The same holds for every per-node file a CometBFT home accumulates. The writer
+lists them in `MANIFEST.json` under `exclude_from_bootstrap`, with whether each
+existed when it finished:
+
+| Path under `core/<chain-id>/` | Why it stays behind |
+|---|---|
+| `config/node_key.json` | P2P identity of whichever node last ran there |
+| `config/priv_validator_key.json` | the node derives it from `OPENAUDIO_DELEGATE_PRIVATE_KEY`; it must match `genesis_validator_address` ([J §3](#3-the-two-keys--they-are-different-and-only-one-is-ephemeral)) |
+| `config/addrbook.json` | peer book of whichever node last ran there |
+| `data/priv_validator_state.json` | double-sign guard of whichever node last signed there |
+
+Anything that ran against the output after the writer (a verification node)
+can add files the manifest marks absent, so exclude every listed path, not just
+the ones marked present.
 
 `v.audius.rickyrombo.com` cannot be listed until it exists and its delegate key
 is known. Until then the second node reaches the network by dialling the first,
