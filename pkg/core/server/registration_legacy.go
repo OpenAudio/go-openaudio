@@ -15,6 +15,12 @@ import (
 
 // persists the register node request should it pass validation
 func (s *Server) finalizeLegacyRegisterNode(ctx context.Context, tx *v1.SignedTransaction, blockHeight int64) (*v1.ValidatorRegistrationLegacy, error) {
+	// Returning an error also keeps FinalizeBlock from emitting a validator
+	// update for the registration.
+	if s.config.Upgrades.RulesetAt(blockHeight).LegacyRegistrationClosed {
+		return nil, errors.New("legacy validator registrations are closed")
+	}
+
 	qtx := s.getDb()
 
 	vr := tx.GetValidatorRegistration()
