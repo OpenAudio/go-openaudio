@@ -456,6 +456,50 @@ func (w *Writer) stepNames() []string {
 	return names
 }
 
+// blockstoreTail is the last written block's state that a resume restores.
+type blockstoreTail struct {
+	blockID cmttypes.BlockID
+	commit  *cmttypes.Commit
+	time    time.Time
+}
+
+// resumeTail reads the last written block back out of the blockstore: its
+// BlockID, its commit, and its header time, which are exactly the values a
+// continuous run would hold after writing it.
+func resumeTail(store *cmtstore.BlockStore, height int64) (blockstoreTail, error) {
+	lastBlock, _ := store.LoadBlock(height)
+	if lastBlock == nil {
+		return blockstoreTail{}, fmt.Errorf("load resume block %d from blockstore: not found", height)
+	}
+	blockParts, err := lastBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
+	if err != nil {
+		return blockstoreTail{}, fmt.Errorf("make part set for resume block %d: %w", height, err)
+	}
+	// LoadSeenCommit, not LoadBlockCommit. SaveBlock stores the commit it is
+	// handed under the SEEN-commit key for that height, and separately stores
+	// block.LastCommit under the commit key for height-1. So
+	// LoadBlockCommit(h) only returns a value once block h+1 has been saved --
+	// which is never true for the last block written.
+	//
+	// Resume always lands on the last block, so this could only ever fail,
+	// reporting a missing commit for a blockstore that is perfectly intact.
+	// The error read like data loss and sent me looking for a truncated write
+	// that had not happened.
+	//
+	// The seen commit is also what the non-resume path assigns to w.lastCommit
+	// after each block, so this restores exactly the value a continuous run
+	// would have held at that point.
+	commit := store.LoadSeenCommit(height)
+	if commit == nil {
+		return blockstoreTail{}, fmt.Errorf("load resume seen commit %d from blockstore: not found", height)
+	}
+	return blockstoreTail{
+		blockID: cmttypes.BlockID{Hash: lastBlock.Hash(), PartSetHeader: blockParts.Header()},
+		commit:  commit,
+		time:    lastBlock.Time,
+	}, nil
+}
+
 func (w *Writer) Run(ctx context.Context) error {
 	start := time.Now()
 	w.logger.Info("starting genesis write")
@@ -509,38 +553,18 @@ func (w *Writer) Run(ctx context.Context) error {
 			if w.blockStore == nil {
 				return fmt.Errorf("cannot resume without blockstore (--cmt-home required)")
 			}
-			lastBlock, _ := w.blockStore.LoadBlock(maxHeight)
-			if lastBlock == nil {
-				return fmt.Errorf("load resume block %d from blockstore: not found", maxHeight)
-			}
-			blockParts, err := lastBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
+			tail, err := resumeTail(w.blockStore, maxHeight)
 			if err != nil {
-				return fmt.Errorf("make part set for resume block %d: %w", maxHeight, err)
+				return err
 			}
-			w.prevBlockID = cmttypes.BlockID{
-				Hash:          lastBlock.Hash(),
-				PartSetHeader: blockParts.Header(),
-			}
-			// LoadSeenCommit, not LoadBlockCommit. SaveBlock stores the commit
-			// it is handed under the SEEN-commit key for that height, and
-			// separately stores block.LastCommit under the commit key for
-			// height-1. So LoadBlockCommit(h) only returns a value once block
-			// h+1 has been saved -- which is never true for the last block
-			// written.
-			//
-			// Resume always lands on the last block, so this could only ever
-			// fail, reporting a missing commit for a blockstore that is
-			// perfectly intact. The error read like data loss and sent me
-			// looking for a truncated write that had not happened.
-			//
-			// The seen commit is also what the non-resume path assigns to
-			// w.lastCommit after each block, so this restores exactly the value
-			// a continuous run would have held at that point.
-			lastCommit := w.blockStore.LoadSeenCommit(maxHeight)
-			if lastCommit == nil {
-				return fmt.Errorf("load resume seen commit %d from blockstore: not found", maxHeight)
-			}
-			w.lastCommit = lastCommit
+			w.prevBlockID = tail.blockID
+			w.lastCommit = tail.commit
+			// A resume that writes no new blocks (every step already done, e.g.
+			// retrying a failed dump) never reaches flushBlock, which is what
+			// sets finalTime. writeCMTState still runs and stores it as the
+			// state's LastBlockTime, so restore it here or state.db is rewritten
+			// with the zero time.
+			w.finalTime = tail.time
 
 			w.logger.Info("resuming from height", zap.Int64("height", w.height))
 		}
@@ -718,7 +742,12 @@ func (w *Writer) Run(ctx context.Context) error {
 	// runs before this process exits so nothing else has connected first.
 	if w.cfg.ArtifactDir != "" && w.cfg.CMTHome != "" && w.finalHeight > 0 {
 		if err := w.emitArtifact(ctx); err != nil {
-			return fmt.Errorf("emit artifact: %w", err)
+			// Everything before this point is checkpointed, so a failed dump
+			// does not cost the write. Say so: the bare error reads like the
+			// whole run failed.
+			return fmt.Errorf("emit artifact: %w\n\nThe chain write is complete and intact; only the dump or manifest failed. "+
+				"Fix the cause and re-run the same command with --resume: every step is skipped, and it "+
+				"redoes only the CometBFT state, the index check, the dump and %s", err, manifestFileName)
 		}
 	}
 

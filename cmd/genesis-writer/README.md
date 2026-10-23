@@ -186,6 +186,16 @@ event subscriptions and 63 comments with it. The cost is that each step ends
 its block early, so blocks no longer pack to exactly
 `--max-txs-per-block`.
 
+#### If the dump fails
+
+The dump and manifest run after every step is checkpointed, so a failure
+there (`pg_dump` missing or killed, disk full) does not cost the write. Fix
+the cause and re-run the same command with `--resume`. Every step is skipped;
+the run rewrites `state.db` and `genesis.json` from the database and
+blockstore (the same values as before), finds the indexes already built, and
+redoes only `chain.dump` and `MANIFEST.json`. A half-written
+`chain.dump.partial` from the failed attempt is removed first.
+
 ## Indexer integration
 
 Indexers that consume the Core chain must handle `ManageEntityLegacyMigration`
