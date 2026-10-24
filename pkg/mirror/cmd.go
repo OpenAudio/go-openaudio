@@ -39,6 +39,13 @@ one transaction instead, restart with -skip-tx <hash> (the hash is in the halt
 reason). The mirror skips only the transactions named, and lists each on
 /status as it passes it.
 
+With -attest-key-file, a track refused because another user already holds a
+claim on its audio is answered instead of halted on, when the track's own
+upload (looked up on -upload-source) holds that same original file: the
+mirror attests the upload's cids for the track's user, signed with that
+registered node's key, and retries the track. Each attestation is listed on
+/status.
+
 Flags:
 `
 
@@ -61,6 +68,8 @@ func Main(args []string) int {
 	startupWait := fs.Int64("startup-wait-blocks", 12, "target blocks to wait on startup so a previous run's transactions settle")
 	poll := fs.Duration("poll-interval", time.Second, "wait between rounds when there is nothing to do")
 	skipTx := fs.String("skip-tx", "", "comma-separated hashes of transactions to pass over, after investigating a halt; nothing else is ever skipped")
+	attestKeyFile := fs.String("attest-key-file", "", "file holding a registered node's hex private key; enables attesting a refused track's own upload")
+	uploadSource := fs.String("upload-source", "", "storage node whose GET /uploads/<id> vouches for a track's upload; defaults to -source")
 	dryRun := fs.Int64("dry-run-blocks", 0, "read this many source blocks from -start-height, report what would be mirrored, submit nothing, and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -87,6 +96,21 @@ func Main(args []string) int {
 		return 2
 	}
 
+	var attester *Attester
+	if *attestKeyFile != "" {
+		key, err := LoadAttestKey(*attestKeyFile)
+		if err != nil {
+			logger.Error("attest key", zap.Error(err))
+			return 2
+		}
+		uploads := *uploadSource
+		if uploads == "" {
+			uploads = *source
+		}
+		attester = NewAttester(key, NewHTTPUploads(uploads, httpClient))
+		logger.Info("attesting refused tracks' own uploads", zap.String("as", attester.Address()), zap.String("upload_source", uploads))
+	}
+
 	m := New(Config{
 		SourceChainID:       *sourceChain,
 		TargetChainID:       *targetChain,
@@ -96,6 +120,7 @@ func Main(args []string) int {
 		StartupWaitBlocks:   *startupWait,
 		PollInterval:        *poll,
 		SkipTx:              splitList(*skipTx),
+		Attester:            attester,
 	}, NewCometSource(*source, httpClient), target, FileCursor{Path: *stateFile}, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

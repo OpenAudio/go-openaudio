@@ -64,6 +64,11 @@
 // looked at it, they can restart with that one transaction's hash in SkipTx;
 // the mirror then passes over exactly that transaction, logs it, and counts it
 // on /status. Nothing else is ever skipped.
+//
+// One refusal is answered rather than halted on, when an Attester is
+// configured: a track whose audio someone else already holds a claim for, but
+// whose own upload holds that same file. The new chain needs a node to attest
+// the upload before the track; the mirror does that and retries. See attest.go.
 package mirror
 
 import (
@@ -172,7 +177,10 @@ type Config struct {
 	StartupWaitBlocks int64
 	// SkipTx names transactions, by hash, that an operator has looked at and
 	// decided not to mirror. Each is passed over when the mirror reaches it.
-	SkipTx       []string
+	SkipTx []string
+	// Attester, when set, answers content-auth refusals by attesting the
+	// track's own upload. Nil leaves every refusal a halt.
+	Attester     *Attester
 	PollInterval time.Duration
 	// CursorSaveInterval throttles cursor writes while the mirror is busy.
 	CursorSaveInterval time.Duration
@@ -203,6 +211,14 @@ type entry struct {
 	done        bool
 	submittedAt int64
 	resubmitted bool
+	// attestation is what the mirror submitted to answer a content-auth
+	// refusal of this transaction, and attestedAt the target height it was
+	// submitted at. attested means it committed, so a further refusal is
+	// final.
+	attestation     *corev1.SignedTransaction
+	attestationHash string
+	attestedAt      int64
+	attested        bool
 }
 
 type Mirror struct {
@@ -263,18 +279,29 @@ type Status struct {
 	LastSplit   *SplitInfo `json:"last_split,omitempty"`
 	// Skipped lists the operator-skipped transactions the mirror has passed
 	// over in this run.
-	Skipped    []SkippedTx `json:"skipped,omitempty"`
-	Halted     bool        `json:"halted"`
-	HaltReason string      `json:"halt_reason,omitempty"`
-	HaltHint   string      `json:"halt_hint,omitempty"`
-	LastError  string      `json:"last_error,omitempty"`
-	UpdatedAt  time.Time   `json:"updated_at"`
+	Skipped []SkippedTx `json:"skipped,omitempty"`
+	// Attested lists the attestations the mirror made in this run.
+	Attested   []AttestedTx `json:"attested,omitempty"`
+	Halted     bool         `json:"halted"`
+	HaltReason string       `json:"halt_reason,omitempty"`
+	HaltHint   string       `json:"halt_hint,omitempty"`
+	LastError  string       `json:"last_error,omitempty"`
+	UpdatedAt  time.Time    `json:"updated_at"`
 }
 
 // SkippedTx is a transaction passed over because an operator named it.
 type SkippedTx struct {
 	Pos  Position `json:"pos"`
 	Hash string   `json:"hash"`
+}
+
+// AttestedTx is a transaction the mirror attested a track's upload for.
+type AttestedTx struct {
+	Pos             Position `json:"pos"`
+	Hash            string   `json:"hash"`
+	AttestationHash string   `json:"attestation_hash"`
+	UserID          int64    `json:"user_id"`
+	Cids            []string `json:"cids"`
 }
 
 // SplitInfo names a source block that landed in more than one target block.
@@ -465,12 +492,23 @@ func (m *Mirror) settle(ctx context.Context) (bool, error) {
 	// state everything before it produced.
 	if m.draining && len(m.inflight) == 0 {
 		e := m.retry
+		if e.attestation != nil && !e.attested {
+			ok, err := m.awaitAttestation(ctx, e)
+			if err != nil || !ok {
+				return progressed, err
+			}
+		}
 		m.draining, m.retry = false, nil
 		// Everything before the refused tx is settled; it is the next thing
 		// the cursor waits on, and where a halt leaves it.
 		m.settled = e.pos
 		m.logger.Info("in-flight transactions committed, retrying refused tx", zap.Stringer("pos", e.pos), zap.String("tx", e.hash))
 		if err := m.submit(ctx, e); err != nil {
+			var halt *HaltError
+			if !errors.As(err, &halt) {
+				// Transient: park it again rather than lose it.
+				m.draining, m.retry = true, e
+			}
 			return progressed, err
 		}
 		progressed = true
@@ -633,10 +671,76 @@ func (m *Mirror) submit(ctx context.Context, e *entry) error {
 			m.draining, m.retry = true, e
 			return nil
 		}
+		if m.cfg.Attester != nil && !e.attested && isUnclaimedCidRefusal(err) {
+			return m.startAttestation(ctx, e, err)
+		}
 		return &HaltError{Pos: e.pos, Hash: e.hash, Reason: "refused by target", Err: err}
 	default:
 		return fmt.Errorf("forward %s: %w", e.hash, err)
 	}
+}
+
+// startAttestation answers a content-auth refusal of e: it submits an
+// attestation for e's own upload and parks e, the way a dependency refusal
+// is parked, until the attestation commits. settle then retries e once.
+func (m *Mirror) startAttestation(ctx context.Context, e *entry, refusal error) error {
+	att, err := m.cfg.Attester.attestationFor(ctx, e.tx)
+	var na errNotAttestable
+	if errors.As(err, &na) {
+		return &HaltError{Pos: e.pos, Hash: e.hash, Reason: "refused by target, " + na.Error(), Err: refusal}
+	}
+	if err != nil {
+		return fmt.Errorf("attest %s: %w", e.hash, err)
+	}
+	attHash, err := txHash(att)
+	if err != nil {
+		return &HaltError{Pos: e.pos, Hash: e.hash, Reason: "cannot marshal attestation", Err: err}
+	}
+	e.attestation, e.attestationHash = att, attHash
+
+	// A previous run may have got this far; the signature is deterministic,
+	// so its attestation has this same hash.
+	_, ok, err := m.target.Committed(ctx, attHash)
+	if err != nil {
+		return fmt.Errorf("check attestation %s: %w", attHash, err)
+	}
+	if !ok {
+		if err := m.target.Forward(ctx, att); err != nil {
+			if kind := classifyForwardErr(err); kind == ErrRefused || kind == ErrFatal {
+				return &HaltError{Pos: e.pos, Hash: e.hash, Reason: "attestation refused by target", Err: err}
+			}
+			return fmt.Errorf("forward attestation %s: %w", attHash, err)
+		}
+		m.logger.Info("track's audio claimed by another user, attesting its own upload",
+			zap.Stringer("pos", e.pos), zap.String("tx", e.hash), zap.String("attestation", attHash),
+			zap.Int64("user_id", att.GetContentAttestation().GetUserId()), zap.Strings("cids", att.GetContentAttestation().GetCids()))
+	}
+	e.attestedAt = m.targetHeight
+	m.draining, m.retry = true, e
+	return nil
+}
+
+// awaitAttestation reports whether the attestation parked e is waiting on has
+// committed, and halts if it does not commit in time.
+func (m *Mirror) awaitAttestation(ctx context.Context, e *entry) (bool, error) {
+	_, ok, err := m.target.Committed(ctx, e.attestationHash)
+	if err != nil {
+		return false, fmt.Errorf("check attestation %s: %w", e.attestationHash, err)
+	}
+	if !ok {
+		if m.targetHeight > e.attestedAt+m.cfg.CommitTimeoutBlocks {
+			return false, &HaltError{Pos: e.pos, Hash: e.hash, Reason: "attestation not committed",
+				Err: fmt.Errorf("attestation %s submitted at target height %d, now %d", e.attestationHash, e.attestedAt, m.targetHeight)}
+		}
+		return false, nil
+	}
+	e.attested = true
+	ca := e.attestation.GetContentAttestation()
+	m.updateStatus(func(s *Status) {
+		s.Attested = append(s.Attested, AttestedTx{Pos: e.pos, Hash: e.hash, AttestationHash: e.attestationHash,
+			UserID: ca.GetUserId(), Cids: ca.GetCids()})
+	})
+	return true, nil
 }
 
 // noteCommit records the target height a source block's transaction landed at.
