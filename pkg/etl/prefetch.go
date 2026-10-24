@@ -92,6 +92,7 @@ func (p *prefetcher) runInto(ctx context.Context, startHeight int64, out chan<- 
 
 			resp, err := p.core.GetBlocks(ctx, connect.NewRequest(&corev1.GetBlocksRequest{
 				Height: heights,
+				Canon:  true,
 			}))
 			if err != nil {
 				// Detect permanent failures and disable batching for the rest of the run.
@@ -140,6 +141,7 @@ func (p *prefetcher) runInto(ctx context.Context, startHeight int64, out chan<- 
 		// Single-block fetch.
 		resp, err := p.core.GetBlock(ctx, connect.NewRequest(&corev1.GetBlockRequest{
 			Height: height,
+			Canon:  true,
 		}))
 		if err != nil {
 			backoff = increaseBackoff(backoff)

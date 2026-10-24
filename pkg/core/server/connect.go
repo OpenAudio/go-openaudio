@@ -339,7 +339,7 @@ func (c *CoreService) GetBlock(ctx context.Context, req *connect.Request[v1.GetB
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// fallback to rpc for now, remove after mainnet-alpha
-			return c.getBlockRpcFallback(ctx, req.Msg.Height)
+			return c.getBlockRpcFallback(ctx, req.Msg.Height, req.Msg.Canon)
 		}
 		core.logger.Error("error getting block", zap.Error(err))
 		return nil, err
@@ -368,12 +368,17 @@ func (c *CoreService) GetBlock(ctx context.Context, req *connect.Request[v1.GetB
 		txResponses = append(txResponses, res)
 	}
 
+	if !req.Msg.Canon {
+		// sorts transactions by entity manager priority, not how they ended up in the block
+		txResponses = sortTransactionResponse(txResponses)
+	}
+
 	res := &v1.Block{
 		Hash:         block.Hash,
 		ChainId:      core.config.GenesisFile.ChainID,
 		Proposer:     block.Proposer,
 		Height:       block.Height,
-		Transactions: sortTransactionResponse(txResponses),
+		Transactions: txResponses,
 		Timestamp:    timestamppb.New(block.CreatedAt.Time),
 	}
 
@@ -408,6 +413,20 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 		return nil, fmt.Errorf("error getting blocks with transactions: %v", err)
 	}
 
+	blockMap, err := blocksFromRows(rows, core.config.GenesisFile.ChainID, req.Msg.Canon)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(&v1.GetBlocksResponse{
+		Blocks:        blockMap,
+		CurrentHeight: currentHeight,
+	}), nil
+}
+
+// blocksFromRows groups GetBlocksWithTransactions rows into blocks keyed by
+// height. Rows arrive in block index order; canon keeps that order.
+func blocksFromRows(rows []db.GetBlocksWithTransactionsRow, chainID string, canon bool) (map[int64]*v1.Block, error) {
 	// Group results by block height
 	blockMap := make(map[int64]*v1.Block)
 
@@ -416,7 +435,7 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 		if _, exists := blockMap[row.Height]; !exists {
 			blockMap[row.Height] = &v1.Block{
 				Hash:         row.BlockHash,
-				ChainId:      core.config.GenesisFile.ChainID,
+				ChainId:      chainID,
 				Proposer:     row.Proposer,
 				Height:       row.Height,
 				Transactions: []*v1.Transaction{},
@@ -427,7 +446,7 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 		// Add transaction if it exists (pgtype.Text.Valid checks for NULL)
 		if row.TxHash.Valid && len(row.Transaction) > 0 {
 			var transaction v1.SignedTransaction
-			err = proto.Unmarshal(row.Transaction, &transaction)
+			err := proto.Unmarshal(row.Transaction, &transaction)
 			if err != nil {
 				return nil, fmt.Errorf("error unmarshaling transaction: %v", err)
 			}
@@ -435,7 +454,7 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 			txResponse := &v1.Transaction{
 				Hash:        row.TxHash.String,
 				BlockHash:   row.BlockHash,
-				ChainId:     core.config.GenesisFile.ChainID,
+				ChainId:     chainID,
 				Height:      row.Height,
 				Timestamp:   timestamppb.New(row.BlockCreatedAt.Time),
 				Transaction: &transaction,
@@ -445,15 +464,14 @@ func (c *CoreService) GetBlocks(ctx context.Context, req *connect.Request[v1.Get
 		}
 	}
 
-	// Sort transactions within each block
-	for _, block := range blockMap {
-		block.Transactions = sortTransactionResponse(block.Transactions)
+	if !canon {
+		// sorts transactions by entity manager priority, not how they ended up in the block
+		for _, block := range blockMap {
+			block.Transactions = sortTransactionResponse(block.Transactions)
+		}
 	}
 
-	return connect.NewResponse(&v1.GetBlocksResponse{
-		Blocks:        blockMap,
-		CurrentHeight: currentHeight,
-	}), nil
+	return blockMap, nil
 }
 
 // GetDeregistrationAttestation implements v1connect.CoreServiceHandler.
@@ -869,7 +887,7 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 }
 
 // Utilities
-func (c *CoreService) getBlockRpcFallback(ctx context.Context, height int64) (*connect.Response[v1.GetBlockResponse], error) {
+func (c *CoreService) getBlockRpcFallback(ctx context.Context, height int64, canon bool) (*connect.Response[v1.GetBlockResponse], error) {
 	if c.core.rpc == nil {
 		return nil, errors.New("rpc not available")
 	}
@@ -907,7 +925,9 @@ func (c *CoreService) getBlockRpcFallback(ctx context.Context, height int64) (*c
 		})
 	}
 
-	txs = sortTransactionResponse(txs)
+	if !canon {
+		txs = sortTransactionResponse(txs)
+	}
 
 	res := &v1.GetBlockResponse{
 		Block: &v1.Block{
