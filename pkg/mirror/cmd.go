@@ -34,7 +34,10 @@ commits before the next block is read. GET /status reports any source block
 whose transactions were split across more than one target block.
 
 On a refused write the mirror halts and keeps serving its status. Investigate,
-then restart the container to retry from the saved cursor.
+then restart the container to retry from the saved cursor. To pass over that
+one transaction instead, restart with -skip-tx <hash> (the hash is in the halt
+reason). The mirror skips only the transactions named, and lists each on
+/status as it passes it.
 
 Flags:
 `
@@ -57,6 +60,7 @@ func Main(args []string) int {
 	commitTimeout := fs.Int64("commit-timeout-blocks", 12, "target blocks to wait for a commit before resubmitting once")
 	startupWait := fs.Int64("startup-wait-blocks", 12, "target blocks to wait on startup so a previous run's transactions settle")
 	poll := fs.Duration("poll-interval", time.Second, "wait between rounds when there is nothing to do")
+	skipTx := fs.String("skip-tx", "", "comma-separated hashes of transactions to pass over, after investigating a halt; nothing else is ever skipped")
 	dryRun := fs.Int64("dry-run-blocks", 0, "read this many source blocks from -start-height, report what would be mirrored, submit nothing, and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -91,6 +95,7 @@ func Main(args []string) int {
 		CommitTimeoutBlocks: *commitTimeout,
 		StartupWaitBlocks:   *startupWait,
 		PollInterval:        *poll,
+		SkipTx:              splitList(*skipTx),
 	}, NewCometSource(*source, httpClient), target, FileCursor{Path: *stateFile}, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -129,6 +134,9 @@ func Main(args []string) int {
 	if err := m.Init(ctx); err != nil {
 		logger.Error("mirror init failed", zap.Error(err))
 		return 1
+	}
+	if skips := splitList(*skipTx); len(skips) > 0 {
+		logger.Warn("operator-requested skips configured", zap.Strings("skip_tx", skips))
 	}
 	logger.Info("mirror starting",
 		zap.String("source", *source), zap.Strings("targets", splitList(*targets)),
