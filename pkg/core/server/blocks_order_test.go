@@ -59,10 +59,10 @@ func txSignatures(txs []*v1.Transaction) []string {
 	return sigs
 }
 
-// A block whose executed order is not the display order: an Update before
+// A block whose executed order is not the priority order: an Update before
 // the Create of a different entity, plays between them whose signatures the
-// display sort would swap, and a Delete before a Create of the same entity.
-func outOfDisplayOrderBlock() []*v1.SignedTransaction {
+// priority sort would swap, and a Delete before a Create of the same entity.
+func outOfPriorityOrderBlock() []*v1.SignedTransaction {
 	return []*v1.SignedTransaction{
 		manageEntityTx("Update", "User", 2, "update-user-2"),
 		playTx("play-b"),
@@ -74,7 +74,7 @@ func outOfDisplayOrderBlock() []*v1.SignedTransaction {
 }
 
 func TestBlocksFromRowsCanonKeepsIndexOrder(t *testing.T) {
-	txs := outOfDisplayOrderBlock()
+	txs := outOfPriorityOrderBlock()
 	want := make([]string, len(txs))
 	for i, tx := range txs {
 		want[i] = tx.GetSignature()
@@ -103,10 +103,10 @@ func TestBlocksFromRowsCanonKeepsIndexOrder(t *testing.T) {
 	}
 }
 
-// Without canon, the display sort reorders the same block. This guards the
+// Without canon, the priority sort reorders the same block. This guards the
 // canon test above from passing on a fixture the sort happens to leave alone.
-func TestBlocksFromRowsDisplayOrderDiffers(t *testing.T) {
-	txs := outOfDisplayOrderBlock()
+func TestBlocksFromRowsPriorityOrderDiffers(t *testing.T) {
+	txs := outOfPriorityOrderBlock()
 	want := make([]string, len(txs))
 	for i, tx := range txs {
 		want[i] = tx.GetSignature()
@@ -118,12 +118,12 @@ func TestBlocksFromRowsDisplayOrderDiffers(t *testing.T) {
 	}
 	got := txSignatures(blocks[10].Transactions)
 	if slices.Equal(got, want) {
-		t.Fatalf("display sort left index order %v unchanged", got)
+		t.Fatalf("priority sort left index order %v unchanged", got)
 	}
 	if got[0] != "create-user-3" && got[0] != "create-track-7" {
-		t.Fatalf("display sort should put a Create first, got %v", got)
+		t.Fatalf("priority sort should put a Create first, got %v", got)
 	}
 	if slices.Index(got, "play-a") > slices.Index(got, "play-b") {
-		t.Fatalf("display sort should reorder the plays by signature hash, got %v", got)
+		t.Fatalf("priority sort should reorder the plays by signature hash, got %v", got)
 	}
 }

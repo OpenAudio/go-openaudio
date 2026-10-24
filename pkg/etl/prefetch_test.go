@@ -15,9 +15,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// indexOrderTxs is a block's transactions in the order the chain executed
-// them: an Update before the Create of a different entity, and plays with
-// differing signatures. The prefetcher must hand them on unchanged.
+// indexOrderTxs is a block's transactions in the order core returns them: an
+// Update before the Create of a different entity, and plays with differing
+// signatures. The prefetcher must hand them on unchanged.
 func indexOrderTxs(height int64) []*corev1.Transaction {
 	me := func(action string, entityID int64, sig string) *corev1.Transaction {
 		return &corev1.Transaction{Height: height, Transaction: &corev1.SignedTransaction{
@@ -50,16 +50,17 @@ func signatures(txs []*corev1.Transaction) []string {
 }
 
 // startBlocksServer serves GetBlocks and GetBlock for heights below head,
-// recording whether every request asked for canonical order.
-func startBlocksServer(t *testing.T, head int64, allCanon *atomic.Bool) corev1connect.CoreServiceClient {
+// recording whether any request asked for canonical order and whether any did not.
+func startBlocksServer(t *testing.T, head int64, sawCanon, sawSorted *atomic.Bool) corev1connect.CoreServiceClient {
 	t.Helper()
-	allCanon.Store(true)
 	mux := http.NewServeMux()
 	mux.Handle(corev1connect.CoreServiceGetBlocksProcedure, connect.NewUnaryHandler(
 		corev1connect.CoreServiceGetBlocksProcedure,
 		func(ctx context.Context, req *connect.Request[corev1.GetBlocksRequest]) (*connect.Response[corev1.GetBlocksResponse], error) {
-			if !req.Msg.Canon {
-				allCanon.Store(false)
+			if req.Msg.Canon {
+				sawCanon.Store(true)
+			} else {
+				sawSorted.Store(true)
 			}
 			blocks := map[int64]*corev1.Block{}
 			for _, h := range req.Msg.Height {
@@ -73,8 +74,10 @@ func startBlocksServer(t *testing.T, head int64, allCanon *atomic.Bool) corev1co
 	mux.Handle(corev1connect.CoreServiceGetBlockProcedure, connect.NewUnaryHandler(
 		corev1connect.CoreServiceGetBlockProcedure,
 		func(ctx context.Context, req *connect.Request[corev1.GetBlockRequest]) (*connect.Response[corev1.GetBlockResponse], error) {
-			if !req.Msg.Canon {
-				allCanon.Store(false)
+			if req.Msg.Canon {
+				sawCanon.Store(true)
+			} else {
+				sawSorted.Store(true)
 			}
 			h := req.Msg.Height
 			if h >= head {
@@ -91,44 +94,55 @@ func startBlocksServer(t *testing.T, head int64, allCanon *atomic.Bool) corev1co
 	return corev1connect.NewCoreServiceClient(srv.Client(), srv.URL)
 }
 
-// TestPrefetcherRequestsCanonicalOrder verifies the polling path asks core for
-// transactions in chain order and delivers them in that order, for both the
-// batched GetBlocks fetch and the single-block GetBlock fallback.
-func TestPrefetcherRequestsCanonicalOrder(t *testing.T) {
-	for _, batch := range []bool{true, false} {
-		name := "GetBlock"
-		if batch {
-			name = "GetBlocks"
-		}
-		t.Run(name, func(t *testing.T) {
-			var allCanon atomic.Bool
-			client := startBlocksServer(t, 4, &allCanon)
-			p := newPrefetcher(client, zap.NewNop())
-			p.batchEnabled = batch
+// TestPrefetcherTxOrder verifies the polling path requests canonical order
+// only when configured to, for both the batched GetBlocks fetch and the
+// single-block GetBlock fallback, and delivers each block's transactions in
+// the order core returned them.
+func TestPrefetcherTxOrder(t *testing.T) {
+	for _, canon := range []bool{true, false} {
+		for _, batch := range []bool{true, false} {
+			name := "sorted"
+			if canon {
+				name = "canon"
+			}
+			if batch {
+				name += "/GetBlocks"
+			} else {
+				name += "/GetBlock"
+			}
+			t.Run(name, func(t *testing.T) {
+				var sawCanon, sawSorted atomic.Bool
+				client := startBlocksServer(t, 4, &sawCanon, &sawSorted)
+				p := newPrefetcher(client, zap.NewNop(), canon)
+				p.batchEnabled = batch
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			go p.run(ctx, 1)
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				go p.run(ctx, 1)
 
-			want := signatures(indexOrderTxs(0))
-			timeout := time.After(5 * time.Second)
-			for h := int64(1); h < 4; h++ {
-				select {
-				case pb := <-p.C():
-					if pb.Block.Height != h {
-						t.Fatalf("got height %d, want %d", pb.Block.Height, h)
+				want := signatures(indexOrderTxs(0))
+				timeout := time.After(5 * time.Second)
+				for h := int64(1); h < 4; h++ {
+					select {
+					case pb := <-p.C():
+						if pb.Block.Height != h {
+							t.Fatalf("got height %d, want %d", pb.Block.Height, h)
+						}
+						if got := signatures(pb.Block.Transactions); !slices.Equal(got, want) {
+							t.Fatalf("block %d order = %v, want %v", h, got, want)
+						}
+					case <-timeout:
+						t.Fatalf("timed out waiting for block %d", h)
 					}
-					if got := signatures(pb.Block.Transactions); !slices.Equal(got, want) {
-						t.Fatalf("block %d order = %v, want %v", h, got, want)
-					}
-				case <-timeout:
-					t.Fatalf("timed out waiting for block %d", h)
 				}
-			}
-			cancel()
-			if !allCanon.Load() {
-				t.Fatal("prefetcher requested blocks without canonical order")
-			}
-		})
+				cancel()
+				if canon && sawSorted.Load() {
+					t.Fatal("canon prefetcher requested blocks without canonical order")
+				}
+				if !canon && sawCanon.Load() {
+					t.Fatal("default prefetcher requested canonical order")
+				}
+			})
+		}
 	}
 }

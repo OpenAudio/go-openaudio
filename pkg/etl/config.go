@@ -17,6 +17,12 @@ type Config struct {
 	// SetBlockStreamClient; falls back to polling if unset or unsupported.
 	BlockStreamEnabled bool
 
+	// CanonicalTxOrder makes the polling block reader request each block's
+	// transactions in the order the chain executed them. When false (default),
+	// core returns them in its priority order: ManageEntity first, Creates
+	// before other actions. The StreamBlocks source always reads chain order.
+	CanonicalTxOrder bool
+
 	// DataTypes controls which entity types the entity manager will index.
 	// If nil (default), all entity types are enabled.
 	// If non-nil (even if empty), only listed types are enabled.

@@ -600,7 +600,8 @@ type GetBlockRequest struct {
 
 	Height int64 `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
 	// When true, transactions are returned in the order the chain executed them.
-	// When false (default), they are re-sorted for display.
+	// When false (default), they are re-sorted by priority: ManageEntity first,
+	// Creates before other actions.
 	Canon bool `protobuf:"varint,2,opt,name=canon,proto3" json:"canon,omitempty"`
 }
 
@@ -712,7 +713,8 @@ type GetBlocksRequest struct {
 
 	Height []int64 `protobuf:"varint,1,rep,packed,name=height,proto3" json:"height,omitempty"`
 	// When true, transactions are returned in the order the chain executed them.
-	// When false (default), they are re-sorted for display.
+	// When false (default), they are re-sorted by priority: ManageEntity first,
+	// Creates before other actions.
 	Canon bool `protobuf:"varint,2,opt,name=canon,proto3" json:"canon,omitempty"`
 }
 

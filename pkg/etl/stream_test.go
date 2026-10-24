@@ -47,7 +47,7 @@ func TestStreamSource_ForwardsAndResumes(t *testing.T) {
 	}
 
 	client := startStreamBlocksServer(t, handler)
-	s := newStreamSource(client, zap.NewNop())
+	s := newStreamSource(client, zap.NewNop(), false)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -93,7 +93,7 @@ func TestStreamSource_FallsBackToPolling(t *testing.T) {
 		return connect.NewError(connect.CodeUnimplemented, nil)
 	}
 	client := startStreamBlocksServer(t, handler)
-	s := newStreamSource(client, zap.NewNop())
+	s := newStreamSource(client, zap.NewNop(), false)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
