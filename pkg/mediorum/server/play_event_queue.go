@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	v1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -141,6 +142,10 @@ func (ss *MediorumServer) processPlayRecordBatch(ctx context.Context) error {
 	// construct proto listen signedTx alongside signature of plays signedTx
 	signedTx := &v1.SignedTransaction{
 		Signature: signedPlaysEvent,
+		// Core refuses a tx whose hash is already committed. Anonymous plays
+		// carry the node's wallet and a second-precision timestamp, so two
+		// single-play batches can otherwise be byte-identical.
+		RequestId: uuid.NewString(),
 		Transaction: &v1.SignedTransaction_Plays{
 			Plays: playsTx,
 		},
