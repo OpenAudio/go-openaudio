@@ -272,9 +272,14 @@ func (ss *MediorumServer) serveBlob(c echo.Context) error {
 						"error": "blob storage streaming is enabled but presigned URL generation failed",
 					})
 				}
-				blob.Close()
-				blob = nil // prevent double-close in defer
-				return c.Redirect(http.StatusTemporaryRedirect, signedURL)
+				// A cross-origin request needs the backend to send CORS
+				// headers. If it does not, serve the bytes from here.
+				if c.Request().Header.Get(echo.HeaderOrigin) == "" ||
+					ss.blobCORS.allows(ctx, foundIn, signedURL) {
+					blob.Close()
+					blob = nil // prevent double-close in defer
+					return c.Redirect(http.StatusTemporaryRedirect, signedURL)
+				}
 			}
 		}
 
