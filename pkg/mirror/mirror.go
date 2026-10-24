@@ -721,9 +721,18 @@ func (m *Mirror) startAttestation(ctx context.Context, e *entry, refusal error) 
 }
 
 // awaitAttestation reports whether the attestation parked e is waiting on has
-// committed, and halts if it does not commit in time.
+// committed everywhere, and halts if it does not commit in time.
+//
+// Committed asks one node, but the retry goes to every target and each
+// validates it against its own state. A node that has not yet applied the
+// attestation's block refuses the track. Waiting for the next block closes
+// that: it cannot commit until more than two thirds of the voting power has
+// applied the one before.
 func (m *Mirror) awaitAttestation(ctx context.Context, e *entry) (bool, error) {
-	_, ok, err := m.target.Committed(ctx, e.attestationHash)
+	h, ok, err := m.target.Committed(ctx, e.attestationHash)
+	if ok && err == nil && m.targetHeight <= h {
+		return false, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("check attestation %s: %w", e.attestationHash, err)
 	}

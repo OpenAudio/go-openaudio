@@ -123,6 +123,8 @@ func TestAttestsATracksOwnUploadAndRetries(t *testing.T) {
 	require.ElementsMatch(t, []string{"orig", "transcoded"}, att.GetCids())
 	require.Equal(t, m.cfg.Attester.Address(), att.GetValidatorAddress())
 	require.Equal(t, []string{hashOf(t, track), hashOf(t, next)}, dst.order[1:])
+	require.GreaterOrEqual(t, dst.committed[hashOf(t, track)], dst.committed[dst.order[0]]+2,
+		"the track is retried only once a block beyond the attestation's has committed, so every validator has applied it")
 
 	st := m.Status()
 	require.Len(t, st.Attested, 1)
