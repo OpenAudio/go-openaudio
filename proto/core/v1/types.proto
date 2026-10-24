@@ -214,6 +214,10 @@ message GetNodeInfoResponse {
 
 message GetBlockRequest {
   int64 height = 1;
+  // When true, transactions are returned in the order the chain executed them.
+  // When false (default), they are re-sorted by priority: ManageEntity first,
+  // Creates before other actions.
+  bool canon = 2;
 }
 
 message GetBlockResponse {
@@ -223,6 +227,10 @@ message GetBlockResponse {
 
 message GetBlocksRequest {
   repeated int64 height = 1;
+  // When true, transactions are returned in the order the chain executed them.
+  // When false (default), they are re-sorted by priority: ManageEntity first,
+  // Creates before other actions.
+  bool canon = 2;
 }
 
 message GetBlocksResponse {
