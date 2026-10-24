@@ -22,11 +22,21 @@
 // flight to commit and retries once. Only a refusal with nothing in flight is
 // final.
 //
-// Old-chain block boundaries are not reproduced, and do not need to be.
-// Transactions are pipelined, so several old blocks' worth can land in one new
-// block. That is equivalent: a proposal takes the mempool in FIFO order, every
-// validator is fed the same order, and a proposal applies its transactions in
-// sequence against the effects of the earlier ones.
+// # Block by block
+//
+// Each old block's transactions are all committed before the next old block is
+// read, so no new block ever mixes transactions from two old blocks. That keeps
+// the old chain's grouping, and the grouping matters to an indexer: it re-sorts
+// a block's transactions before applying them, keys some rows on block number
+// or block time (announcements, seen-notifications, price history), and checks
+// some rules against block time. Packing several old blocks into one new block
+// would make a from-genesis indexer of the new chain diverge from what the old
+// chain's indexer produced.
+//
+// The reverse can still happen: an old block's transactions can be split across
+// two new blocks if a proposal starts partway through submitting them. The
+// mirror cannot prevent that, so it detects it and reports every split on
+// /status.
 //
 // # Timestamps
 //
@@ -57,6 +67,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -93,8 +104,9 @@ type Target interface {
 	Status(ctx context.Context) (chainID string, height int64, err error)
 	// Forward submits a transaction to the mempool of every target node.
 	Forward(ctx context.Context, tx *corev1.SignedTransaction) error
-	// Committed reports whether a transaction hash is in a committed block.
-	Committed(ctx context.Context, hash string) (bool, error)
+	// Committed reports whether a transaction hash is in a committed block,
+	// and the height of that block.
+	Committed(ctx context.Context, hash string) (height int64, ok bool, err error)
 }
 
 // CursorStore persists the cursor.
@@ -135,13 +147,6 @@ type Config struct {
 	StartHeight int64
 	// MaxInflight bounds transactions submitted but not yet committed.
 	MaxInflight int
-	// BlocksInFlight bounds how many source blocks may have transactions
-	// awaiting commit at once. 1 follows the source block by block: a block's
-	// transactions are all committed before the next block is read. Higher
-	// values pack several source blocks into each target block, which is only
-	// worth it to work through a backlog, since the target commits one block
-	// per ~0.75s however much is waiting. Order is the same either way.
-	BlocksInFlight int
 	// CommitTimeoutBlocks is how long a submitted transaction may stay
 	// uncommitted before it is resubmitted once. Core expires a forwarded
 	// transaction from its mempool 10 blocks after admission, so this must be
@@ -160,9 +165,6 @@ type Config struct {
 func (c *Config) setDefaults() {
 	if c.MaxInflight <= 0 {
 		c.MaxInflight = 500
-	}
-	if c.BlocksInFlight <= 0 {
-		c.BlocksInFlight = 1
 	}
 	if c.CommitTimeoutBlocks <= 0 {
 		c.CommitTimeoutBlocks = 12
@@ -210,6 +212,12 @@ type Mirror struct {
 	blockHeight int64
 	blockTxs    [][]byte
 
+	// splitTrack is the source block whose commits are being recorded, and
+	// splitHeights the target heights they landed at. More than one height
+	// means the block was split across target blocks.
+	splitTrack   int64
+	splitHeights map[int64]struct{}
+
 	// draining holds back new submissions after a refusal until everything in
 	// flight has committed; retry is the refused transaction.
 	draining bool
@@ -221,20 +229,30 @@ type Mirror struct {
 
 // Status is what the mirror reports about itself.
 type Status struct {
-	SourceChainID   string    `json:"source_chain_id"`
-	TargetChainID   string    `json:"target_chain_id"`
-	SourceTip       int64     `json:"source_tip"`
-	Cursor          Position  `json:"cursor"`
-	LagBlocks       int64     `json:"lag_blocks"`
-	Inflight        int       `json:"inflight"`
-	Draining        bool      `json:"draining"`
-	Submitted       int64     `json:"submitted"`
-	Committed       int64     `json:"committed"`
-	AlreadyOnTarget int64     `json:"already_on_target"`
-	Halted          bool      `json:"halted"`
-	HaltReason      string    `json:"halt_reason,omitempty"`
-	LastError       string    `json:"last_error,omitempty"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	SourceChainID   string   `json:"source_chain_id"`
+	TargetChainID   string   `json:"target_chain_id"`
+	SourceTip       int64    `json:"source_tip"`
+	Cursor          Position `json:"cursor"`
+	LagBlocks       int64    `json:"lag_blocks"`
+	Inflight        int      `json:"inflight"`
+	Draining        bool     `json:"draining"`
+	Submitted       int64    `json:"submitted"`
+	Committed       int64    `json:"committed"`
+	AlreadyOnTarget int64    `json:"already_on_target"`
+	// SplitBlocks counts source blocks whose transactions landed in more than
+	// one target block; LastSplit is the most recent.
+	SplitBlocks int64      `json:"split_blocks"`
+	LastSplit   *SplitInfo `json:"last_split,omitempty"`
+	Halted      bool       `json:"halted"`
+	HaltReason  string     `json:"halt_reason,omitempty"`
+	LastError   string     `json:"last_error,omitempty"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+// SplitInfo names a source block that landed in more than one target block.
+type SplitInfo struct {
+	SourceHeight  int64   `json:"source_height"`
+	TargetHeights []int64 `json:"target_heights"`
 }
 
 func New(cfg Config, source Source, target Target, cursor CursorStore, logger *zap.Logger) *Mirror {
@@ -391,12 +409,13 @@ func (m *Mirror) settle(ctx context.Context) (bool, error) {
 	for len(m.inflight) > 0 {
 		e := m.inflight[0]
 		if !e.done {
-			ok, err := m.target.Committed(ctx, e.hash)
+			h, ok, err := m.target.Committed(ctx, e.hash)
 			if err != nil {
 				return progressed, fmt.Errorf("check %s: %w", e.hash, err)
 			}
 			if ok {
 				e.done = true
+				m.noteCommit(e.pos.Height, h)
 				m.updateStatus(func(s *Status) { s.Committed++ })
 			} else {
 				return progressed, m.checkTimeout(ctx, e)
@@ -497,12 +516,12 @@ func (m *Mirror) fillOne(ctx context.Context) (bool, error) {
 	}
 
 	if pos.Index >= len(m.blockTxs) {
-		// End of the block. Wait here while the allowance of blocks in flight
-		// is used up; an empty block, or the tail after its last transaction,
-		// moves the cursor straight on if nothing is in flight.
-		if m.pendingBlocks() >= m.cfg.BlocksInFlight {
+		// End of the block. The next block is not read until everything from
+		// this one has committed, so no target block mixes two source blocks.
+		if m.pendingCount() > 0 {
 			return false, nil
 		}
+		m.finishSplitCheck()
 		m.next = Position{Height: pos.Height + 1}
 		if len(m.inflight) == 0 {
 			m.settled = m.next
@@ -527,13 +546,14 @@ func (m *Mirror) fillOne(ctx context.Context) (bool, error) {
 	}
 	e.hash = common.ToTxHashFromBytes(b)
 
-	ok, err := m.target.Committed(ctx, e.hash)
+	h, ok, err := m.target.Committed(ctx, e.hash)
 	if err != nil {
 		m.next = pos
 		return false, fmt.Errorf("check %s: %w", e.hash, err)
 	}
 	if ok {
 		e.done = true
+		m.noteCommit(pos.Height, h)
 		m.inflight = append(m.inflight, e)
 		m.updateStatus(func(s *Status) { s.AlreadyOnTarget++ })
 		return true, nil
@@ -575,16 +595,30 @@ func (m *Mirror) submit(ctx context.Context, e *entry) error {
 	}
 }
 
-// pendingBlocks counts the source blocks with transactions awaiting commit.
-// inflight is in source order, so each new height starts a new block.
-func (m *Mirror) pendingBlocks() int {
-	n, last := 0, int64(-1)
-	for _, e := range m.inflight {
-		if !e.done && e.pos.Height != last {
-			n, last = n+1, e.pos.Height
-		}
+// noteCommit records the target height a source block's transaction landed at.
+func (m *Mirror) noteCommit(sourceHeight, targetHeight int64) {
+	if sourceHeight != m.splitTrack {
+		m.finishSplitCheck()
+		m.splitTrack, m.splitHeights = sourceHeight, map[int64]struct{}{}
 	}
-	return n
+	m.splitHeights[targetHeight] = struct{}{}
+}
+
+// finishSplitCheck reports the tracked source block if its transactions landed
+// in more than one target block. It runs once the block is fully committed.
+func (m *Mirror) finishSplitCheck() {
+	if len(m.splitHeights) > 1 {
+		heights := make([]int64, 0, len(m.splitHeights))
+		for h := range m.splitHeights {
+			heights = append(heights, h)
+		}
+		slices.Sort(heights)
+		split := &SplitInfo{SourceHeight: m.splitTrack, TargetHeights: heights}
+		m.logger.Warn("source block split across target blocks",
+			zap.Int64("source_height", split.SourceHeight), zap.Int64s("target_heights", heights))
+		m.updateStatus(func(s *Status) { s.SplitBlocks++; s.LastSplit = split })
+	}
+	m.splitTrack, m.splitHeights = 0, nil
 }
 
 func (m *Mirror) pendingCount() int {
@@ -681,7 +715,7 @@ func DryRun(ctx context.Context, source Source, target Target, sourceChainID str
 				r.HashMismatches = append(r.HashMismatches, fmt.Sprintf("block %d: source %s re-marshals to %s", h, src, hash))
 			}
 			if target != nil {
-				on, err := target.Committed(ctx, hash)
+				_, on, err := target.Committed(ctx, hash)
 				if err != nil {
 					return r, fmt.Errorf("check %s: %w", hash, err)
 				}

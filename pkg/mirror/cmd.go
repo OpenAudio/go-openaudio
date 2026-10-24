@@ -29,6 +29,10 @@ in block order, exactly once. Run it in its own container next to a node:
 The source must serve /core/crpc (a state sync RPC node). List every new-chain
 validator as a target: each gets every transaction, in the same order.
 
+The mirror follows the source block by block: every transaction from one block
+commits before the next block is read. GET /status reports any source block
+whose transactions were split across more than one target block.
+
 On a refused write the mirror halts and keeps serving its status. Investigate,
 then restart the container to retry from the saved cursor.
 
@@ -50,7 +54,6 @@ func Main(args []string) int {
 	stateFile := fs.String("state-file", "/data/mirror/cursor.json", "where the cursor is saved")
 	statusAddr := fs.String("status-addr", ":8091", "address for the GET /status endpoint; empty disables it")
 	maxInflight := fs.Int("max-inflight", 500, "transactions submitted but not yet committed")
-	blocksInFlight := fs.Int("blocks-in-flight", 1, "source blocks that may await commit at once; 1 follows the source block by block, higher packs several into each target block to work through a backlog")
 	commitTimeout := fs.Int64("commit-timeout-blocks", 12, "target blocks to wait for a commit before resubmitting once")
 	startupWait := fs.Int64("startup-wait-blocks", 12, "target blocks to wait on startup so a previous run's transactions settle")
 	poll := fs.Duration("poll-interval", time.Second, "wait between rounds when there is nothing to do")
@@ -85,7 +88,6 @@ func Main(args []string) int {
 		TargetChainID:       *targetChain,
 		StartHeight:         *startHeight,
 		MaxInflight:         *maxInflight,
-		BlocksInFlight:      *blocksInFlight,
 		CommitTimeoutBlocks: *commitTimeout,
 		StartupWaitBlocks:   *startupWait,
 		PollInterval:        *poll,

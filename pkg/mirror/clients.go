@@ -174,17 +174,17 @@ func (t *ConnectTarget) Forward(ctx context.Context, tx *corev1.SignedTransactio
 	return nil
 }
 
-func (t *ConnectTarget) Committed(ctx context.Context, hash string) (bool, error) {
-	_, err := t.primary.GetTransaction(ctx, connect.NewRequest(&corev1.GetTransactionRequest{TxHash: hash}))
+func (t *ConnectTarget) Committed(ctx context.Context, hash string) (int64, bool, error) {
+	res, err := t.primary.GetTransaction(ctx, connect.NewRequest(&corev1.GetTransactionRequest{TxHash: hash}))
 	if err == nil {
-		return true, nil
+		return res.Msg.GetTransaction().GetHeight(), true, nil
 	}
 	// Core returns its database error verbatim for an unknown hash rather
 	// than a NotFound code.
 	if connect.CodeOf(err) == connect.CodeNotFound || strings.Contains(err.Error(), "no rows in result set") {
-		return false, nil
+		return 0, false, nil
 	}
-	return false, err
+	return 0, false, err
 }
 
 // classifyForwardErr sorts a ForwardTransaction failure:

@@ -85,13 +85,17 @@ type fakeTarget struct {
 	// dropped transactions are admitted but never make it into a block.
 	dropped  map[string]bool
 	forwards map[string]int
+	// firstForward is the height at which each hash was first submitted.
+	firstForward map[string]int64
+	// perBlock caps how many transactions one block takes; 0 is unlimited.
+	perBlock int
 }
 
 func newFakeTarget() *fakeTarget {
 	return &fakeTarget{
 		chainID: dstChain, height: 100,
 		txs: map[string]*corev1.SignedTransaction{}, committed: map[string]int64{},
-		dropped: map[string]bool{}, forwards: map[string]int{},
+		dropped: map[string]bool{}, forwards: map[string]int{}, firstForward: map[string]int64{},
 	}
 }
 
@@ -101,6 +105,9 @@ func (t *fakeTarget) Forward(_ context.Context, tx *corev1.SignedTransaction) er
 	b, _ := proto.Marshal(tx)
 	h := common.ToTxHashFromBytes(b)
 	t.forwards[h]++
+	if _, ok := t.firstForward[h]; !ok {
+		t.firstForward[h] = t.height
+	}
 	if t.refuse != nil {
 		if err := t.refuse(tx, t.committed); err != nil {
 			return err
@@ -119,21 +126,28 @@ func (t *fakeTarget) Forward(_ context.Context, tx *corev1.SignedTransaction) er
 	return nil
 }
 
-func (t *fakeTarget) Committed(_ context.Context, hash string) (bool, error) {
-	_, ok := t.committed[hash]
-	return ok, nil
+func (t *fakeTarget) Committed(_ context.Context, hash string) (int64, bool, error) {
+	h, ok := t.committed[hash]
+	return h, ok, nil
 }
 
 func (t *fakeTarget) Tick() {
 	t.height++
+	var left []string
+	taken := 0
 	for _, h := range t.mempool {
 		if t.dropped[h] {
 			continue
 		}
+		if t.perBlock > 0 && taken == t.perBlock {
+			left = append(left, h)
+			continue
+		}
 		t.committed[h] = t.height
 		t.order = append(t.order, h)
+		taken++
 	}
-	t.mempool = nil
+	t.mempool = left
 }
 
 type memCursor struct {
@@ -196,6 +210,48 @@ func TestMirrorsManageEntityAndPlaysInBlockOrder(t *testing.T) {
 	st := m.Status()
 	require.EqualValues(t, 4, st.Submitted)
 	require.EqualValues(t, 4, st.Committed)
+	require.Zero(t, st.SplitBlocks)
+}
+
+// A block's transactions must all commit before the next block is read, so no
+// target block mixes two source blocks. An indexer keys some rows on block
+// number and block time, and re-sorts within a block, so mixing would change
+// what it produces.
+func TestFollowsTheSourceBlockByBlock(t *testing.T) {
+	a, b, c := manageEntity(1, "Create"), plays(1), manageEntity(2, "Create")
+	src := &fakeSource{chainID: srcChain, tip: 11, blocks: map[int64][][]byte{
+		10: {raw(t, a), raw(t, b)},
+		11: {raw(t, c)},
+	}}
+	dst := newFakeTarget()
+	m := newMirror(t, src, dst, &memCursor{}, 10)
+	require.NoError(t, drive(t, m, src, dst))
+
+	lastOfBlock10 := max(dst.committed[hashOf(t, a)], dst.committed[hashOf(t, b)])
+	require.Greater(t, dst.firstForward[hashOf(t, c)], lastOfBlock10-1,
+		"block 11 was submitted before block 10 had committed")
+	require.NotEqual(t, dst.committed[hashOf(t, a)], dst.committed[hashOf(t, c)], "blocks 10 and 11 share a target block")
+	require.Zero(t, m.Status().SplitBlocks)
+}
+
+// The mirror cannot stop a proposal from starting partway through a block's
+// submissions, so it reports the split instead.
+func TestReportsASourceBlockSplitAcrossTargetBlocks(t *testing.T) {
+	a, b, c := manageEntity(1, "Create"), plays(1), manageEntity(2, "Create")
+	src := &fakeSource{chainID: srcChain, tip: 11, blocks: map[int64][][]byte{
+		10: {raw(t, a), raw(t, b)},
+		11: {raw(t, c)},
+	}}
+	dst := newFakeTarget()
+	dst.perBlock = 1 // forces block 10's two transactions into two target blocks
+	m := newMirror(t, src, dst, &memCursor{}, 10)
+	require.NoError(t, drive(t, m, src, dst))
+
+	st := m.Status()
+	require.EqualValues(t, 1, st.SplitBlocks, "only block 10 was split")
+	require.NotNil(t, st.LastSplit)
+	require.EqualValues(t, 10, st.LastSplit.SourceHeight)
+	require.Equal(t, []int64{dst.committed[hashOf(t, a)], dst.committed[hashOf(t, b)]}, st.LastSplit.TargetHeights)
 }
 
 // A restart re-reads from the saved cursor. Anything already committed in that
