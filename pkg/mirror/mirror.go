@@ -58,9 +58,12 @@
 //
 // # Halting
 //
-// A refused write is never skipped. It may matter, and continuing past it would
-// replay later writes on top of a state the old chain never had. The mirror
-// stops, reports why, and waits for an operator.
+// A refused write is never skipped automatically. It may matter, and continuing
+// past it would replay later writes on top of a state the old chain never had.
+// The mirror stops, reports why, and waits for an operator. Once they have
+// looked at it, they can restart with that one transaction's hash in SkipTx;
+// the mirror then passes over exactly that transaction, logs it, and counts it
+// on /status. Nothing else is ever skipped.
 package mirror
 
 import (
@@ -68,6 +71,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -138,6 +142,15 @@ func (e *HaltError) Error() string {
 	return fmt.Sprintf("mirror halted at %s (tx %s): %s: %v", e.Pos, e.Hash, e.Reason, e.Err)
 }
 
+// Hint tells the operator how to continue past this halt, when skipping is an
+// option at all: a halt that names no transaction (wrong chain, say) is not.
+func (e *HaltError) Hint() string {
+	if e.Hash == "" {
+		return ""
+	}
+	return fmt.Sprintf("investigate, then restart with -skip-tx %s to pass over this one transaction", e.Hash)
+}
+
 func (e *HaltError) Unwrap() error { return e.Err }
 
 type Config struct {
@@ -157,7 +170,10 @@ type Config struct {
 	// committed or expired by then, so the committed check is reliable and
 	// nothing is submitted twice.
 	StartupWaitBlocks int64
-	PollInterval      time.Duration
+	// SkipTx names transactions, by hash, that an operator has looked at and
+	// decided not to mirror. Each is passed over when the mirror reaches it.
+	SkipTx       []string
+	PollInterval time.Duration
 	// CursorSaveInterval throttles cursor writes while the mirror is busy.
 	CursorSaveInterval time.Duration
 }
@@ -218,6 +234,8 @@ type Mirror struct {
 	splitTrack   int64
 	splitHeights map[int64]struct{}
 
+	skip map[string]struct{}
+
 	// draining holds back new submissions after a refusal until everything in
 	// flight has committed; retry is the refused transaction.
 	draining bool
@@ -243,10 +261,20 @@ type Status struct {
 	// one target block; LastSplit is the most recent.
 	SplitBlocks int64      `json:"split_blocks"`
 	LastSplit   *SplitInfo `json:"last_split,omitempty"`
-	Halted      bool       `json:"halted"`
-	HaltReason  string     `json:"halt_reason,omitempty"`
-	LastError   string     `json:"last_error,omitempty"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	// Skipped lists the operator-skipped transactions the mirror has passed
+	// over in this run.
+	Skipped    []SkippedTx `json:"skipped,omitempty"`
+	Halted     bool        `json:"halted"`
+	HaltReason string      `json:"halt_reason,omitempty"`
+	HaltHint   string      `json:"halt_hint,omitempty"`
+	LastError  string      `json:"last_error,omitempty"`
+	UpdatedAt  time.Time   `json:"updated_at"`
+}
+
+// SkippedTx is a transaction passed over because an operator named it.
+type SkippedTx struct {
+	Pos  Position `json:"pos"`
+	Hash string   `json:"hash"`
 }
 
 // SplitInfo names a source block that landed in more than one target block.
@@ -257,7 +285,12 @@ type SplitInfo struct {
 
 func New(cfg Config, source Source, target Target, cursor CursorStore, logger *zap.Logger) *Mirror {
 	cfg.setDefaults()
+	skip := make(map[string]struct{}, len(cfg.SkipTx))
+	for _, h := range cfg.SkipTx {
+		skip[strings.ToUpper(strings.TrimSpace(h))] = struct{}{}
+	}
 	return &Mirror{
+		skip:   skip,
 		cfg:    cfg,
 		source: source,
 		target: target,
@@ -344,8 +377,10 @@ func (m *Mirror) Run(ctx context.Context) error {
 			if errors.As(err, &halt) {
 				m.saveCursor(true)
 				m.logger.Error("mirror halted", zap.Stringer("pos", halt.Pos), zap.String("tx", halt.Hash),
-					zap.String("reason", halt.Reason), zap.Error(halt.Err))
-				m.updateStatus(func(s *Status) { s.Halted, s.HaltReason = true, halt.Error() })
+					zap.String("reason", halt.Reason), zap.Error(halt.Err), zap.String("next_step", halt.Hint()))
+				m.updateStatus(func(s *Status) {
+					s.Halted, s.HaltReason, s.HaltHint = true, halt.Error(), halt.Hint()
+				})
 				return err
 			}
 			m.logger.Warn("mirror step failed, retrying", zap.Error(err))
@@ -546,6 +581,15 @@ func (m *Mirror) fillOne(ctx context.Context) (bool, error) {
 	}
 	e.hash = common.ToTxHashFromBytes(b)
 
+	if _, skip := m.skip[e.hash]; skip {
+		m.logger.Warn("skipping tx by operator request", zap.Stringer("pos", pos), zap.String("tx", e.hash),
+			zap.String("type", txKind(tx)))
+		e.done = true
+		m.inflight = append(m.inflight, e)
+		m.updateStatus(func(s *Status) { s.Skipped = append(s.Skipped, SkippedTx{Pos: pos, Hash: e.hash}) })
+		return true, nil
+	}
+
 	h, ok, err := m.target.Committed(ctx, e.hash)
 	if err != nil {
 		m.next = pos
@@ -743,6 +787,13 @@ func decodeMirrored(raw []byte) (*corev1.SignedTransaction, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func txKind(tx *corev1.SignedTransaction) string {
+	if me := tx.GetManageEntity(); me != nil {
+		return me.GetEntityType() + " " + me.GetAction()
+	}
+	return "Plays"
 }
 
 func sleep(ctx context.Context, d time.Duration) {

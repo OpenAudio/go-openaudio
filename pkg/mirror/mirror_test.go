@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -393,4 +394,53 @@ func TestDryRunCountsAndChecksRoundTrip(t *testing.T) {
 	require.EqualValues(t, 1, r.OnTarget)
 	require.Empty(t, r.HashMismatches)
 	require.Empty(t, dst.forwards, "a dry run submits nothing")
+}
+
+// The operator's way past a halt: restart naming the refused transaction. The
+// mirror passes over exactly that one, and keeps halting on anything else.
+func TestOperatorSkipPassesOverOnlyTheNamedTx(t *testing.T) {
+	good, bad, after, alsoBad := manageEntity(1, "Create"), manageEntity(2, "Create"), manageEntity(3, "Create"), manageEntity(4, "Create")
+	src := &fakeSource{chainID: srcChain, tip: 12, blocks: map[int64][][]byte{
+		10: {raw(t, good)},
+		11: {raw(t, bad), raw(t, after)},
+		12: {raw(t, alsoBad)},
+	}}
+	dst := newFakeTarget()
+	dst.refuse = func(tx *corev1.SignedTransaction, _ map[string]int64) error {
+		if id := tx.GetManageEntity().GetEntityId(); id == 2 || id == 4 {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("not authorized"))
+		}
+		return nil
+	}
+	cur := &memCursor{}
+
+	m := newMirror(t, src, dst, cur, 10)
+	err := drive(t, m, src, dst)
+	var halt *HaltError
+	require.ErrorAs(t, err, &halt)
+	require.Equal(t, hashOf(t, bad), halt.Hash)
+	require.Contains(t, halt.Hint(), "-skip-tx "+halt.Hash, "the hint names the exact flag to pass")
+
+	// Restart naming it, in lower case as an operator might paste it.
+	m2 := New(Config{
+		SourceChainID: srcChain, TargetChainID: dstChain, StartHeight: 10,
+		MaxInflight: 50, CommitTimeoutBlocks: 3, SkipTx: []string{strings.ToLower(halt.Hash)},
+	}, src, dst, cur, zap.NewNop())
+	m2.cfg.CursorSaveInterval = -1
+	require.NoError(t, m2.Init(context.Background()))
+
+	err = drive(t, m2, src, dst)
+	var halt2 *HaltError
+	require.ErrorAs(t, err, &halt2, "a refusal not named in -skip-tx still halts")
+	require.Equal(t, hashOf(t, alsoBad), halt2.Hash)
+
+	require.Equal(t, 1, dst.forwards[hashOf(t, bad)], "the skipped tx is not sent again")
+	require.Equal(t, []string{hashOf(t, good), hashOf(t, after)}, dst.order)
+	st := m2.Status()
+	require.Equal(t, []SkippedTx{{Pos: Position{Height: 11, Index: 0}, Hash: hashOf(t, bad)}}, st.Skipped)
+	require.Equal(t, Position{Height: 12, Index: 0}, cur.pos, "stopped at the next refusal")
+}
+
+func TestHaltWithoutATransactionHasNoSkipHint(t *testing.T) {
+	require.Empty(t, (&HaltError{Pos: Position{Height: 5}, Reason: "source block from the wrong chain"}).Hint())
 }
