@@ -107,7 +107,7 @@ cleanup the migration unblocks, and must wait for step 15.
 | [#577](https://github.com/OpenAudio/go-openaudio/pull/577) | the mirror halts at the first post-snapshot track create, whose cids nobody attested (step 11) |
 | [#605](https://github.com/OpenAudio/go-openaudio/pull/605), [#608](https://github.com/OpenAudio/go-openaudio/pull/608) | there is no mirror, and no way to pass over a refused write after investigating it (step 11) |
 | [#610](https://github.com/OpenAudio/go-openaudio/pull/610) | the mirror halts on every post-snapshot track whose audio another account already claims, e.g. re-uploads of the same file (step 11) |
-| [#553](https://github.com/OpenAudio/go-openaudio/pull/553) | **not merged** — it is the binary for steps 4–10; run the image CI builds from it |
+| [#553](https://github.com/OpenAudio/go-openaudio/pull/553) | **not merged** — it is the binary for steps 4–10; run `openaudio/go-openaudio:mainnet-beta`, which points at the image CI builds from it |
 
 ---
 # 2. Rollout steps
@@ -138,8 +138,20 @@ The new network needs two state-sync RPCs, and `creatornode.audius.co` and
 ### 3. Build the new-network binary
 
 **Do not merge.** Merging and shipping as `stable` *is* the migration. [#553](https://github.com/OpenAudio/go-openaudio/pull/553) is
-this branch; use the image CI publishes from it, tagged by commit sha
-(`openaudio/go-openaudio:<sha>`, multi-arch).
+this branch. Nodes run **`openaudio/go-openaudio:mainnet-beta`**, which points
+at the image CI publishes from it:
+
+- CI tags a PR's image with the SHA of GitHub's **merge ref**
+  (`refs/pull/553/merge`), not the branch head. Find it in the CI run's
+  `merge-manifests` job log.
+- Retag by hand after every #553 rebuild you want nodes on:
+  `docker buildx imagetools create -t openaudio/go-openaudio:mainnet-beta openaudio/go-openaudio:<merge-sha>`.
+  Then check the digest matches what the bootstrap runs
+  (`docker inspect validator` on the host). Never point `:edge` or `:stable`
+  at it. CI only moves `:edge` on pushes to `main`, and `:stable` only from
+  `v*` release tags, so a #553 build can't reach either by itself.
+- The build reports version `2.0.0` (`pkg/version/.version.json`, set on the
+  branch only) → step 15 for what that means at merge.
 
 1. `pkg/core/config/genesis/prod.json` ← the new genesis file.
 2. `ProdPersistentPeers` ← the bootstrap nodes → [Appendix E](#e-node-identity-and-the-peer-lists).
@@ -247,7 +259,7 @@ the first interval boundary the catch-up path yields nothing.
 
 ### 10. Migrate the fleet
 
-Operators set an explicit image tag.
+Operators set the image tag to `:mainnet-beta` (step 3).
 
 1. Friendlies with small fleets first.
 2. **At most 10 at a time**, then wait for them to be jailed on the old chain
@@ -343,10 +355,14 @@ writes onto a state the old chain never had. Investigate each one, then:
   has the claim, and retries. This is what a new-chain storage node does on
   upload, so it grants nothing a live upload would not. Spam re-uploads go
   through too, which matches the old indexer.
-- **A write the old indexer also rejected**, e.g. a client reusing a track id
-  (`Track N already exists`). Confirm the live API shows the entity as the
-  *earlier* write left it. Then restart with `-skip-tx <hash>` and record it.
-  The old chain committed it, but nothing indexed it.
+- **A write the old indexer also rejected.** Confirm the live API shows the
+  state the *earlier* write left, then restart with `-skip-tx <hash>` and
+  record it. The old chain committed it, but nothing indexed it. Seen so far:
+  - a client reusing a track id (`Track N already exists`): the API shows
+    that id as the first track, and the second doesn't exist;
+  - a new account taking a handle someone else holds (`handle "x" already
+    exists`; handles are case-insensitive): the API has no such user id and
+    nothing for its wallet.
 - **Anything else** stays halted until someone decides.
 
 Keep a log of every skip: hash, user, and the evidence. Old-chain duplicate
@@ -416,6 +432,17 @@ side loses or duplicates them → [Appendix G](#g-why-plays-need-routing).
 
 **Irreversible.** This retires the old-chain rollback anchors. Everything
 remaining moves, including the old network's snapshot RPCs.
+
+This is where #553 finally merges, and its release becomes `:stable`.
+
+1. Squash-merge #553. In the squash title, remove "— *DO NOT MERGE*" but keep
+   the `!` (`build(core)!: ...`).
+2. Release-please then opens "chore: release 2.0.0". It takes the current
+   version from `.release-please-manifest.json` (`1.x`), not from
+   `.version.json` (already `2.0.0` on the branch), and the `!` makes the next
+   version a major one. **Don't hand-edit the manifest to 2.0.0 first**: the
+   `!` would then make it 3.0.0.
+3. Merging the release PR tags `v2.0.0`, which moves `:stable`.
 
 Past this point the old chain has fewer than 30 active validators, jailing has
 stopped, and it will halt — by design → [Appendix H](#h-fleet-migration-arithmetic).
@@ -1142,7 +1169,7 @@ missed every write that does not pass through `/relay`, such as the v1 write
 endpoints (`sendTransactionWithSigner`), DDEX, and direct submissions, and it
 never carried plays. The mirror (step 11) replaced it by reading the old
 chain's blocks, which capture every source by construction, and the API's
-queue and flusher are being removed.
+queue and flusher are removed by [api#1063](https://github.com/AudiusProject/api/pull/1063).
 
 The write cutover is therefore a single switch: once the mirror is at the tip,
 point the API's writes at the new chain (step 14). Nothing before that touches
