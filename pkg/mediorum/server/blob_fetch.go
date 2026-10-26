@@ -29,6 +29,10 @@ const blobFetchChunkAttempts = 3
 // A var only so tests can shrink it; nothing reassigns it at runtime.
 var blobFetchChunkSize int64 = 256 << 20
 
+// errPulledBlobSizeMismatch means the bytes received differ from the size the
+// peer reported. For a Qm cid this is the only integrity check there is.
+var errPulledBlobSizeMismatch = errors.New("pulled blob size mismatch")
+
 // chunkedBlobReader streams a blob from a peer as a series of ranged requests.
 //
 // It reads like any other body, so callers that io.Copy it into a bucket or a
@@ -123,8 +127,9 @@ func (r *chunkedBlobReader) start() error {
 	case http.StatusOK:
 		// Range ignored: an older peer on c.Stream, or a body small enough that
 		// the server chose not to partial it. Either way there is nothing to
-		// chunk.
+		// chunk. total is -1 when the peer streams without a Content-Length.
 		r.singleStream = true
+		r.total = resp.ContentLength
 		r.cur = resp.Body
 		return nil
 
@@ -213,6 +218,10 @@ func (r *chunkedBlobReader) Read(p []byte) (int, error) {
 		r.cur.Close()
 		r.cur = nil
 		if r.singleStream || r.offset >= r.total {
+			if r.total >= 0 && r.offset != r.total {
+				return 0, fmt.Errorf("%w: got %d of %d bytes cid: %s host: %s",
+					errPulledBlobSizeMismatch, r.offset, r.total, r.cid, r.host)
+			}
 			return 0, io.EOF
 		}
 		if err := r.nextChunk(); err != nil {
