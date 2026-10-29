@@ -156,6 +156,9 @@ services:
       uptimeDataDir: /data/bolt
       stateSyncServeSnapshots: "true"
       stateSyncBlockInterval: "20"
+      # openaudio-2 picks a snapshot when it starts and fetches it seconds
+      # later; keep enough that it isn't pruned in between.
+      stateSyncKeep: "20"
       stateSyncEnable: "false"
       externalAddress: "openaudio-1:26656"
     extra_hosts:
