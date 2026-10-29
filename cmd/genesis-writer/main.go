@@ -36,6 +36,7 @@ func main() {
 		Usage: "Write historical Audius state directly into Core chain PostgreSQL tables",
 		Commands: []*cli.Command{
 			writeCmd(),
+			verifyAuthCmd(),
 		},
 	}
 	if err := app.Run(os.Args); err != nil {

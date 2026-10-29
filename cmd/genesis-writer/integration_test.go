@@ -191,6 +191,18 @@ func TestGenesisWriter(t *testing.T) {
 	assert.Greater(t, authEntities, int64(0), "core_auth_entities should be populated")
 	t.Logf("core auth state: %d users, %d entities", authUsers, authEntities)
 
+	// Every core_auth_* row must match what the source says, column by column
+	// (verify_auth.go): grant approval and revocation, app deletion, owners.
+	authParity, err := verifyAuthState(ctx, srcPool, dstPool, w.signerAddr)
+	require.NoError(t, err, "verify auth state")
+	for _, r := range authParity {
+		if !r.clean() {
+			var b strings.Builder
+			printAuthParity(&b, authParity)
+			t.Fatalf("auth state differs from the source:\n%s", b.String())
+		}
+	}
+
 	// state.db and blockstore.db are directories (PebbleDB), not plain files.
 	require.DirExists(t, filepath.Join(cmtHome, "data", "state.db"))
 	require.DirExists(t, filepath.Join(cmtHome, "data", "blockstore.db"))
