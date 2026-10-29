@@ -26,6 +26,7 @@ import (
 	genesisPkg "github.com/OpenAudio/go-openaudio/pkg/core/config/genesis"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
+	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
@@ -79,7 +80,7 @@ func TestGenesisWriter(t *testing.T) {
 	// workDir is the unified work directory for this test run:
 	//   gw-src-pg-data/    – postgres bind-mount for src-db
 	//   gw-core-pg-data/   – postgres bind-mount for core-db
-	//   audius-mainnet-v2/ – CometBFT home written by genesis-writer
+	//   <chain id>/        – CometBFT home written by genesis-writer
 	//
 	// t.TempDir registers its cleanup before our teardownAll cleanup, so
 	// teardownAll (stopping containers) runs first and the directory is removed
@@ -115,9 +116,11 @@ func TestGenesisWriter(t *testing.T) {
 
 	// ---- 2. Set up CometBFT home directory -----------------------------------
 	// Genesis-writer writes state.db + blockstore.db into cmtHome.
-	// openaudio-1 mounts workDir as /data/core so that
-	// /data/core/audius-mainnet-v2/ is the CometBFT root dir.
-	cmtHome := filepath.Join(workDir, "audius-mainnet-v2")
+	// openaudio-1 mounts workDir as /data/core, and a node's CometBFT root dir
+	// is <root>/<chain id>, so cmtHome is /data/core/<chain id> to the node.
+	genDoc, err := genesisPkg.Read("dev")
+	require.NoError(t, err, "read dev genesis")
+	cmtHome := filepath.Join(workDir, genDoc.ChainID)
 	require.NoError(t, os.MkdirAll(filepath.Join(cmtHome, "config"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(cmtHome, "data"), 0o755))
 
@@ -134,8 +137,16 @@ func TestGenesisWriter(t *testing.T) {
 	t.Logf("validator address: %s", pv.GetAddress())
 
 	// Write the genesis.json that genesis-writer needs for state.db construction.
-	genDoc, err := genesisPkg.Read("dev")
-	require.NoError(t, err, "read dev genesis")
+	// The writer signs every block with one key, so the genesis must list only
+	// this validator; the dev genesis also lists node2.
+	var genVals []cmttypes.GenesisValidator
+	for _, v := range genDoc.Validators {
+		if v.Address.String() == pv.GetAddress().String() {
+			genVals = append(genVals, v)
+		}
+	}
+	require.Len(t, genVals, 1, "dev genesis should list the test validator")
+	genDoc.Validators = genVals
 	genesisFile := filepath.Join(cmtHome, "config", "genesis.json")
 	require.NoError(t, genDoc.SaveAs(genesisFile), "save genesis.json")
 
@@ -161,6 +172,9 @@ func TestGenesisWriter(t *testing.T) {
 		MaxTxsPerBlock:       500,
 		BatchSize:            100,
 		RunMigrations:        true,
+		// Rewards are read from an old chain's database, which this harness
+		// doesn't run; entities_reward_test.go covers them.
+		SkipRewards: true,
 	}
 
 	w, err := NewWriter(cfg, logger)
@@ -238,12 +252,16 @@ func TestGenesisWriter(t *testing.T) {
 	t.Log("consensus confirmed: chain is advancing")
 
 	// ---- 7. Wait for openaudio-1 to produce a snapshot -----------------------
+	// openaudio-2 trusts the block 10 below openaudio-1's latest snapshot. The
+	// first live block, genesisHeight+1, takes its BFT time from the migration's
+	// last commit, which is long outside the light client's trusting period, so
+	// wait for a snapshot whose trust height is past it.
 	t.Log("waiting for openaudio-1 to create a snapshot...")
-	waitForSnapshot(t, ctx, chainClient)
+	waitForSnapshot(t, ctx, chainClient, genesisHeight+2+10)
 
 	// ---- 8. State sync openaudio-2 from openaudio-1 --------------------------
 	// Read openaudio-1's node key so we can configure persistent peers.
-	nodeKeyFile := filepath.Join(workDir, "audius-mainnet-v2", "config", "node_key.json")
+	nodeKeyFile := filepath.Join(cmtHome, "config", "node_key.json")
 	nodeKey, err := p2p.LoadNodeKey(nodeKeyFile)
 	require.NoError(t, err, "load openaudio-1 node key")
 	persistentPeers := fmt.Sprintf("%s@openaudio-1:26656", nodeKey.ID())
@@ -328,13 +346,14 @@ func startBaseServices(t *testing.T, composeFile string, env []string) {
 	// Remove any remnants of a previous test run with the same project name.
 	teardownAll(composeFile, env)
 
-	cmd := exec.Command("docker", "compose", "-p", testComposeProject,
-		"-f", composeFile, "up", "-d", "--wait",
-		"src-db", "core-db", "core-db-2", "eth-ganache", "ingress")
+	args := []string{"compose", "-p", testComposeProject, "-f", composeFile}
+	cmd := exec.Command("docker", append(args, "up", "-d", "--wait",
+		"src-db", "core-db", "core-db-2", "eth-ganache", "ingress")...)
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("docker compose up output:\n%s", string(out))
+		logServices(t, args, env, "src-db", "core-db", "core-db-2", "eth-ganache", "ingress")
 		require.NoError(t, err, "start base services")
 	}
 }
@@ -347,15 +366,25 @@ func startServiceWithProfile(t *testing.T, composeFile string, env []string, pro
 	for _, p := range profiles {
 		args = append(args, "--profile", p)
 	}
-	args = append(args, "up", "-d", "--wait")
-	args = append(args, services...)
-	cmd := exec.Command("docker", args...)
+	cmd := exec.Command("docker", append(append(args, "up", "-d", "--wait"), services...)...)
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("docker compose up output:\n%s", string(out))
+		logServices(t, args, env, services...)
 		require.NoError(t, err, "docker compose up -d %s", strings.Join(services, " "))
 	}
+}
+
+// logServices logs the tail of each service's container output, since a
+// container that exits during startup is gone once the test tears down.
+func logServices(t *testing.T, composeArgs []string, env []string, services ...string) {
+	t.Helper()
+	args := append(append([]string{}, composeArgs...), "logs", "--no-color", "--tail", "200")
+	cmd := exec.Command("docker", append(args, services...)...)
+	cmd.Env = env
+	out, _ := cmd.CombinedOutput()
+	t.Logf("docker compose logs:\n%s", string(out))
 }
 
 // startService runs docker compose up -d --wait for the named services (chain profile).
@@ -429,8 +458,9 @@ func waitForStateSyncData(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
 	}
 }
 
-// waitForSnapshot polls openaudio-1 until at least one snapshot is available.
-func waitForSnapshot(t *testing.T, ctx context.Context, client corev1connect.CoreServiceClient) {
+// waitForSnapshot polls openaudio-1 until a snapshot at or above minHeight is
+// available.
+func waitForSnapshot(t *testing.T, ctx context.Context, client corev1connect.CoreServiceClient, minHeight int64) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Minute)
 	for {
@@ -438,8 +468,10 @@ func waitForSnapshot(t *testing.T, ctx context.Context, client corev1connect.Cor
 			t.Fatal("timed out waiting for snapshot to be created")
 		}
 		resp, err := client.GetStoredSnapshots(ctx, connect.NewRequest(&corev1.GetStoredSnapshotsRequest{}))
-		if err == nil && len(resp.Msg.Snapshots) > 0 {
-			snap := resp.Msg.Snapshots[0]
+		// State sync trusts relative to the last snapshot listed.
+		if err == nil && len(resp.Msg.Snapshots) > 0 &&
+			resp.Msg.Snapshots[len(resp.Msg.Snapshots)-1].Height >= minHeight {
+			snap := resp.Msg.Snapshots[len(resp.Msg.Snapshots)-1]
 			t.Logf("snapshot available: height=%d, chunks=%d", snap.Height, snap.ChunkCount)
 			return
 		}
