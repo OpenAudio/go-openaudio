@@ -38,11 +38,15 @@ power departed-but-unjailed, the old chain halts — and a halted chain cannot
 process the jailing transactions that would revive it. So nodes move ~10 at a
 time, and the old chain is deliberately abandoned only at the end.
 
-**Only some writes carry across.** The relay queues `ManageEntityLegacy`
-transactions and flushes them to the new chain. Plays do not go through the
-relay — they are recorded by whichever node serves the audio — so while the
-fleet is split, plays land on whichever chain their serving node is on. Step 5
-routes them to nodes that stay put until the indexer moves.
+**Writes keep landing on the old chain until the end.** The relay, the API's
+own write endpoints, DDEX, and every node recording plays all write to the old
+chain while the fleet moves. The mirror (`openaudio mirror`, step 11) reads the
+old chain's blocks and replays every `ManageEntity` and play transaction onto
+the new chain, in block order, exactly once. So the new chain stays a complete
+copy without touching any write path. Plays recorded *natively* on the new
+chain, by migrated nodes serving audio, are the exception: nothing indexes
+them until the indexer moves, so step 5 routes plays to nodes that stay put
+until then.
 
 **The indexer can only read one chain.** It has to stop on the old chain at a
 known height and resume on the new one at a known height, with nothing lost or
@@ -69,7 +73,7 @@ cleanup the migration unblocks, and must wait for step 15.
 | | [8. Confirm blocks](#8-confirm-blocks) | |
 | | [9. Confirm snapshots](#9-confirm-snapshots) | |
 | **C** | [10. Migrate the fleet](#10-migrate-the-fleet) | ≤10 per cycle |
-| | [11. Enable flushing](#11-enable-flushing) | |
+| | [11. Start the mirror](#11-start-the-mirror) | |
 | | [12. Switch the indexer](#12-switch-the-indexer) | |
 | | [13. Revert play routing](#13-revert-play-routing) | |
 | | [14. Stop relaying to the old chain](#14-stop-relaying-to-the-old-chain) | **irreversible** |
@@ -96,13 +100,14 @@ cleanup the migration unblocks, and must wait for step 15.
 
 | PR | Without it |
 |---|---|
-| [api#1018](https://github.com/AudiusProject/api/pull/1018) | the first flush deletes rows off a chain that gets regenerated |
 | [api#1028](https://github.com/AudiusProject/api/pull/1028) | step 12 cannot be executed at all |
 | [api#1029](https://github.com/AudiusProject/api/pull/1029) | plays split across both chains for the whole migration |
 | [#551](https://github.com/OpenAudio/go-openaudio/pull/551) | every node that state syncs loses its mediorum tables |
 | [#572](https://github.com/OpenAudio/go-openaudio/pull/572) | the new chain runs with no upgrade schedule — no signer enforcement, no track-cid authorization, and mediorum never attests; #553 must be rebased onto it before the step 3 build |
-| [#577](https://github.com/OpenAudio/go-openaudio/pull/577) | the flusher stalls at the first post-snapshot track create, whose cids nobody attested (step 11) |
-| [#553](https://github.com/OpenAudio/go-openaudio/pull/553) | **not merged** — it is the binary for steps 4–10; run the image CI builds from it |
+| [#577](https://github.com/OpenAudio/go-openaudio/pull/577) | the mirror halts at the first post-snapshot track create, whose cids nobody attested (step 11) |
+| [#605](https://github.com/OpenAudio/go-openaudio/pull/605), [#608](https://github.com/OpenAudio/go-openaudio/pull/608) | there is no mirror, and no way to pass over a refused write after investigating it (step 11) |
+| [#610](https://github.com/OpenAudio/go-openaudio/pull/610) | the mirror halts on every post-snapshot track whose audio another account already claims, e.g. re-uploads of the same file (step 11) |
+| [#553](https://github.com/OpenAudio/go-openaudio/pull/553) | **not merged** — it is the binary for steps 4–10; run `openaudio/go-openaudio:mainnet-beta`, which points at the image CI builds from it |
 
 ---
 # 2. Rollout steps
@@ -133,8 +138,20 @@ The new network needs two state-sync RPCs, and `creatornode.audius.co` and
 ### 3. Build the new-network binary
 
 **Do not merge.** Merging and shipping as `stable` *is* the migration. [#553](https://github.com/OpenAudio/go-openaudio/pull/553) is
-this branch; use the image CI publishes from it, tagged by commit sha
-(`openaudio/go-openaudio:<sha>`, multi-arch).
+this branch. Nodes run **`openaudio/go-openaudio:mainnet-beta`**, which points
+at the image CI publishes from it:
+
+- CI tags a PR's image with the SHA of GitHub's **merge ref**
+  (`refs/pull/553/merge`), not the branch head. Find it in the CI run's
+  `merge-manifests` job log.
+- Retag by hand after every #553 rebuild you want nodes on:
+  `docker buildx imagetools create -t openaudio/go-openaudio:mainnet-beta openaudio/go-openaudio:<merge-sha>`.
+  Then check the digest matches what the bootstrap runs
+  (`docker inspect validator` on the host). Never point `:edge` or `:stable`
+  at it. CI only moves `:edge` on pushes to `main`, and `:stable` only from
+  `v*` release tags, so a #553 build can't reach either by itself.
+- The build reports version `2.0.0` (`pkg/version/.version.json`, set on the
+  branch only) → step 15 for what that means at merge.
 
 1. `pkg/core/config/genesis/prod.json` ← the new genesis file.
 2. `ProdPersistentPeers` ← the bootstrap nodes → [Appendix E](#e-node-identity-and-the-peer-lists).
@@ -242,7 +259,7 @@ the first interval boundary the catch-up path yields nothing.
 
 ### 10. Migrate the fleet
 
-Operators set an explicit image tag.
+Operators set the image tag to `:mainnet-beta` (step 3).
 
 1. Friendlies with small fleets first.
 2. **At most 10 at a time**, then wait for them to be jailed on the old chain
@@ -278,75 +295,161 @@ by proposers whose image predates the schedule entry (they log `invalid tx made
 it into prepare`). That is image skew across the fleet: check which sha the
 proposing nodes run.
 
-### 11. Enable flushing
+### 11. Start the mirror
 
-Requires [api#1018](https://github.com/AudiusProject/api/pull/1018) merged first.
+Requires [#605](https://github.com/OpenAudio/go-openaudio/pull/605), [#608](https://github.com/OpenAudio/go-openaudio/pull/608) and [#610](https://github.com/OpenAudio/go-openaudio/pull/610) in the mirror's image. The
+mirror is a subcommand of the `openaudio` binary. Run it in its own container
+beside a new-chain node, not inside one:
 
-1. `newChainFlushEnabled=true`
-2. `NewChainURL` → bootstrap
-3. `NewChainFlushFromBlock` → `new_chain_flush_from_block` in `MANIFEST.json`:
-   the source snapshot's last indexed old-chain block **plus one**
-   (`source_last_indexed_block` + 1). The flusher deletes rows with
-   `confirmed_block < NewChainFlushFromBlock` and replays the rest, so setting
-   it to the snapshot's own last block replays that block onto the new chain a
-   second time.
+```bash
+docker run -d --name mirror -v /path/to/mirror:/data/mirror \
+  -v /path/to/attest.key:/data/attest.key:ro <image> mirror \
+  -source https://creatornode.audius.co \
+  -target https://audius.rickyrombo.com,https://v.audius.rickyrombo.com \
+  -start-height <new_chain_flush_from_block from MANIFEST.json> \
+  -attest-key-file /data/attest.key
+```
 
-Confirm the flusher keeps up with the relay's write rate before continuing; it
-is serial, and step 12 depends on it draining.
+- **`-source`** is an old-chain node that serves `/core/crpc`, i.e. a state-sync
+  RPC. The mirror reads blocks through CometBFT's `block` call because core's
+  `GetBlock` re-sorts transactions.
+- **`-target`** lists **every** new-chain validator. Each gets every
+  transaction in the same order, so no proposer sees them out of order.
+- **`-start-height`** is `new_chain_flush_from_block` in `MANIFEST.json`:
+  `source_last_indexed_block` + 1, the first old-chain block the snapshot does
+  not contain. (The field keeps its flusher-era name.) It is used only on the
+  first run; after that the cursor in `/data/mirror/cursor.json` decides.
+- **`-attest-key-file`** holds a registered node's delegate key, hex, mode
+  `600`. See "Refused writes" below. Never pass the key itself as a flag.
 
-**Why the flusher does not stall on content auth.** It resubmits queued
-`ManageEntity` transactions through `ForwardTransaction`, which validates them
-like any live write, and it does not advance past a row the chain refuses. A
-track created on the old chain after the snapshot names cids nobody attested —
-old-chain mediorum never does, and the replay only seeded the snapshot's
-tracks. [#577](https://github.com/OpenAudio/go-openaudio/pull/577) makes the first assertion of an unclaimed cid take
-the claim, so each flushed create claims its own cids as it lands and a later
-decoy naming them is refused. Without #577 in the bootstrap build the queue
-stalls at the first such row and step 12 is unreachable.
+What it does: it follows the old chain **block by block**, and every
+transaction from one old block commits before the next is read. A from-genesis
+indexer of the new chain then sees the old chain's grouping: the ETL re-sorts
+within a block and keys some rows on block number or time. It mirrors only
+`ManageEntity` and plays; everything else on the old chain is per-node. It
+advances its cursor only past committed transactions, and checks whether each
+hash is already committed before sending it, so plays are never sent twice
+across restarts.
+
+**Watch `GET :8091/status`.**
+- `cursor`: the next old-chain position. Everything before it is on the new
+  chain.
+- `halted`, `halt_reason`, `halt_hint`.
+- `split_blocks`: old blocks whose transactions landed in more than one new
+  block. Rare and benign: a proposal started part-way through a submission.
+- `attested`, `skipped`.
+- `lag_blocks` is only as fresh as the mirror's last read of the old chain's
+  tip. While catching up, compare `cursor` with the source's own height.
+
+**Refused writes halt the mirror, by design.** A write the old chain accepted
+and the new one refuses may matter, and carrying on past it would replay later
+writes onto a state the old chain never had. Investigate each one, then:
+
+- **Track audio claimed by another account** (`orig_file_cid ... was not
+  uploaded for user N`). An upload made to the old chain after the snapshot was
+  attested by no node, so a re-upload of a file someone else already claims is
+  refused. With `-attest-key-file` the mirror handles this itself. It looks up
+  the track's own upload (`GET /uploads/<audio_upload_id>` on the source), and
+  if that upload holds the same `orig_file_cid` it attests the upload's cids
+  for the track's user. Then it waits for the next block, so every validator
+  has the claim, and retries. This is what a new-chain storage node does on
+  upload, so it grants nothing a live upload would not. Spam re-uploads go
+  through too, which matches the old indexer.
+- **A write the old indexer also rejected.** Confirm the live API shows the
+  state the *earlier* write left, then restart with `-skip-tx <hash>` and
+  record it. The old chain committed it, but nothing indexed it. Seen so far:
+  - a client reusing a track id (`Track N already exists`): the API shows
+    that id as the first track, and the second doesn't exist;
+  - a new account taking a handle someone else holds (`handle "x" already
+    exists`; handles are case-insensitive): the API has no such user id and
+    nothing for its wallet.
+- **Anything else** stays halted until someone decides.
+
+Keep a log of every skip: hash, user, and the evidence. Old-chain duplicate
+commits (gossip re-admission) need nothing: the mirror sends each hash once.
+
+**Throughput.** Catching up runs at about 2.3–2.4 old blocks/s against the old
+chain's ~0.75, so the backlog shrinks by about 1.6 blocks/s. A week-old
+snapshot (~400k blocks) takes roughly 2.5–3 days to reach the tip. Start the
+mirror as soon as the bootstrap pair is up (step 8), long before the indexer
+switch needs it at the tip.
+
+`ContentAuthStrictHeight` must stay unset while the mirror runs. Mirrored
+track creates that name unclaimed cids rely on the first assertion taking the
+claim ([#577](https://github.com/OpenAudio/go-openaudio/pull/577)).
 
 ### 12. Switch the indexer
 
 After the switch, confirm that the decoy create from step 10's check 2 never
 appears in the ETL.
 
-Requires [api#1028](https://github.com/AudiusProject/api/pull/1028) merged first — it provides `etlStartingBlockHeight`,
-`etlEndingBlockHeight` and `newChainFlushToBlock`.
+Requires [api#1028](https://github.com/AudiusProject/api/pull/1028) — it provides `etlStartingBlockHeight` and
+`etlEndingBlockHeight`.
 
-1. Pick a height `L` **in the future**. Set it as the flusher's ceiling and the
-   old indexer's stop height, and confirm both took effect while the chain is
-   still below `L`.
-2. Let the old indexer stop at `L`.
-3. Drain pending rows at or below `L` to zero, and confirm it **stays** zero
-   across a settle window.
-4. Record `H` — the new chain's current height.
-5. Start the new indexer at `H + 1`.
-6. Remove the flush ceiling.
-7. **Clear both indexer bounds.** They are one-shot and nothing consumes them.
+The switch is a zero-downtime handover. The API keeps serving from its database
+throughout, and nothing is indexed twice or skipped.
+
+1. **Get the mirror to the tip.** Not halted, and its cursor within a block or
+   two of the old chain's height. Switch early in the fleet migration: plays
+   recorded natively on the new chain before the switch are never indexed.
+2. **Pick `X` a little ahead of the old indexer**, far enough that the config
+   rollout lands first, and set `etlEndingBlockHeight=X`. Confirm it took
+   effect while the indexer is still below `X`.
+3. **Once the old indexer has stopped at `X` and the mirror's `cursor` is past
+   `X`, find `H` from the chain, not the clock.** Take the last mirrored
+   transaction at or below old block `X` (`ManageEntity` or plays; walk back
+   from `X` if `X` itself has none), and look up its hash on the new chain
+   (`GetTransaction`). `H` is the new block it landed in. There is no race:
+   the mirror does not read old block `X + 1` until everything from `X` has
+   committed, so nothing from after `X` can be at or below `H`.
+4. **Start the new indexer at `H + 1`** (`etlStartingBlockHeight`).
+5. **Clear both indexer bounds.** They are one-shot and nothing consumes them.
+6. Leave the mirror running. Old writes above `X`, from un-migrated nodes and
+   the relay until step 14, land above `H` and are indexed from the new chain.
 
 Boundary reasoning → [Appendix I](#i-the-indexer-boundary).
 
 ### 13. Revert play routing
 
-Clear `playRoutingHosts`. Do this **immediately after step 12, or just before
-it** — ideally at `L`.
-
-Either side loses a small number of plays and neither duplicates them; after is
-preferable because the window is bounded by the drain → [Appendix G](#g-why-plays-need-routing).
+Clear `playRoutingHosts` any time **after** step 12. Plays recorded on the old
+chain from then on reach the new chain through the mirror and are indexed
+above `H`, and plays recorded on migrated nodes are indexed natively. Neither
+side loses or duplicates them → [Appendix G](#g-why-plays-need-routing).
 
 ### 14. Stop relaying to the old chain
 
 **Irreversible.** After this the old chain is missing writes.
 
-1. Roll out the change making the new chain the primary relay path and removing
-   the queue infrastructure.
+1. Switch writes only **while the mirror is at the tip and not halted**.
+   Otherwise a user's create can still be waiting in the mirror while their
+   next update goes straight to the new chain and is refused.
+2. Roll out the change that makes the new chain the API's write target, for
+   the relay and the v1 write endpoints alike.
+3. Keep the mirror running. Un-migrated nodes still record plays on the old
+   chain, and the mirror carries them over.
 
 ### 15. Roll the fleet to `:stable`
 
 **Irreversible.** This retires the old-chain rollback anchors. Everything
 remaining moves, including the old network's snapshot RPCs.
 
+This is where #553 finally merges, and its release becomes `:stable`.
+
+1. Squash-merge #553. In the squash title, remove "— *DO NOT MERGE*" but keep
+   the `!` (`build(core)!: ...`).
+2. Release-please then opens "chore: release 2.0.0". It takes the current
+   version from `.release-please-manifest.json` (`1.x`), not from
+   `.version.json` (already `2.0.0` on the branch), and the `!` makes the next
+   version a major one. **Don't hand-edit the manifest to 2.0.0 first**: the
+   `!` would then make it 3.0.0.
+3. Merging the release PR tags `v2.0.0`, which moves `:stable`.
+
 Past this point the old chain has fewer than 30 active validators, jailing has
 stopped, and it will halt — by design → [Appendix H](#h-fleet-migration-arithmetic).
+
+Once the old chain stops producing blocks, the mirror finds nothing new. Check
+that its cursor has reached the old chain's last block, then stop it and keep
+its cursor and skip log with the migration records.
 
 ### 16. Retire the temporary RPC
 
@@ -427,7 +530,8 @@ A successful run leaves:
 ```
 
 `MANIFEST.json` replaces the hand-written `BUILT_FROM.txt`: read heights, hashes
-and the flush-from block from it instead of from log lines.
+and the mirror's start height (`new_chain_flush_from_block`) from it instead
+of from log lines.
 
 **Why a dump, not the live database.** The verification node, the ETL, and every
 other service take the chain DB as `OPENAUDIO_DB_URL`, and any of them can
@@ -635,12 +739,13 @@ the allowlist is ~46 GB on the migrated chain, nearly all of it
 
 ## G. Why plays need routing
 
-Plays are recorded by whichever node **serves the audio** -- `logTrackListen`
-runs at the top of mediorum's `serveBlob`, before it 307s to storage -- and
-they never pass through the relay, so `new_chain_queue` does not carry them.
-A migrated node therefore writes its plays to the new chain while the indexer
-is still reading the old one, and nobody indexes them. Over a multi-day fleet
-migration that is a large fraction of all plays.
+Plays are recorded by whichever node **serves the audio**. `logTrackListen`
+runs at the top of mediorum's `serveBlob`, before it 307s to storage. A
+migrated node therefore writes its plays to the new chain while the indexer is
+still reading the old one. The mirror carries old-chain plays forward, but
+nothing carries new-chain plays back, so plays recorded natively on the new
+chain before the indexer switch (below `H`) are never indexed. Over a multi-day
+fleet migration that would be a large fraction of all plays.
 
 Point the routing at nodes that stay on the old chain. `creatornode.audius.co`
 and `v.monophonic.digital` are the natural choice: store-all, and held back as
@@ -650,14 +755,11 @@ per play. The original hosts stay behind them as fallbacks, because a freshly
 uploaded track may not have replicated to a store-all node yet and must still
 stream.
 
-At step 13, reverting either side of `L` loses a small number of plays and
-neither duplicates them. Reverting **after** `L` leaves plays going to the old
-chain, which the indexer has stopped reading; reverting **before** puts them on
-the new chain below `H`, which the new indexer skips. Plays have no unique key —
-880,386 duplicate groups on `(user_id, track_id, played_at)` in 28.3M real rows —
-so there is no dedupe path that would make this duplication instead of loss.
-Prefer *after*, because the window is then bounded by the drain between `L` and
-recording `H`.
+After the switch the routing no longer matters. Old-chain plays reach the new
+chain through the mirror above `H`, and new-chain plays are indexed where they
+land, so step 13 can revert it at leisure. What remains before the switch is
+the fallback traffic, which keeps the number of native new-chain plays below
+`H` small, and the reason to switch the indexer early in the fleet migration.
 
 ## H. Fleet migration arithmetic
 
@@ -686,30 +788,35 @@ inside this step.
 
 ## I. The indexer boundary
 
-The old indexer covers everything at or below `L`; the new one covers everything
-above `H`; and the ceiling guarantees nothing above `L` reached the new chain
-below `H`. No pause, and no dependence on the two switches happening at the same
-instant.
+The old indexer covers old blocks up to `X`. The mirror puts old blocks after
+`X` on the new chain above `H`, and the new indexer covers everything above
+`H`. Each write is indexed exactly once.
 
-`L` must be in the future. Choosing one at or below the current tip races the
-config rollout: the indexer sails past it, and those blocks get indexed from the
-old chain *and* flushed to the new one.
+That rests on the mirror's block-by-block rule. It does not read old block
+`X + 1` until every transaction from `X` has committed, so the last of `X`'s
+transactions lands in a strictly earlier new block than the first of
+`X + 1`'s. Defining `H` as the new block holding the last mirrored transaction
+at or below `X` therefore splits the two exactly. That is why step 12 derives
+`H` from a transaction hash after the fact, instead of reading the new chain's
+height at some moment: a height read while the mirror runs is either early
+(writes from `X` land above `H` and are indexed twice) or late (writes from
+`X + 1` land at or below `H` and are never indexed).
 
-The filter is a *filter*, not a halt: skip rows above `L`, keep draining those
-below. Enqueue is dispatched asynchronously, so `confirmed_block` is only
-roughly ordered by `id`, and stopping at the first row above `L` would strand
-one below it. `L` is inclusive -- the block is committed before the indexer
-stops -- so the ceiling is `confirmed_block <= L`.
+If a block is ever split (`split_blocks` on `/status`), that is fine: it
+spreads one old block over several new ones, but never mixes two old blocks
+in one new block, and `H` is the last of them.
 
-"Finished flushing" means pending rows at or below `L` reach zero **and stay
-zero** across a settle window. The enqueue is fire-and-forget
-(`go app.enqueueForNewChain(...)`), so a straggler can appear after the queue
-first reads empty.
+Duplicates, if they happen anyway, are mostly harmless. A repeated
+`ManageEntity` create is rejected as "already exists", and updates replayed in
+order end in the same state. Plays have no unique key and count twice.
+
+`X` must be in the future when it is set. Choosing one at or below the current
+tip races the config rollout: the indexer sails past it.
 
 Both indexer bounds are one-shot and nothing consumes them — the ETL re-reads
 them on every startup. A start height left set makes each restart re-index from
 it, and `etl_plays` has no unique key, so plays duplicate rather than upsert. An
-end height left set stops the indexer at `L` forever. Both log at warn while in
+end height left set stops the indexer at `X` forever. Both log at warn while in
 effect.
 
 ## J. Deeper reference
@@ -1064,46 +1171,17 @@ turning on early is `ARCHIVE`, and only if disk headroom is comfortable.
 
 ### 8. Relay / write cutover
 
-Three independent switches in the api repo (`config/config.go:84-95`), and the
-independence is the point:
+The API used to copy writes to the new chain itself: the relay enqueued each
+confirmed transaction into `new_chain_queue` and a flusher forwarded it. That
+missed every write that does not pass through `/relay`, such as the v1 write
+endpoints (`sendTransactionWithSigner`), DDEX, and direct submissions, and it
+never carried plays. The mirror (step 11) replaced it by reading the old
+chain's blocks, which capture every source by construction, and the API's
+queue and flusher are removed by [api#1063](https://github.com/AudiusProject/api/pull/1063).
 
-| Flag | Effect |
-|---|---|
-| `newChainQueueEnabled` | relay inserts each confirmed tx into `new_chain_queue` (`api/relay.go:292`) |
-| `newChainFlushEnabled` | starts the flusher goroutine that forwards queued rows to the new chain |
-| `newChainFlushFromBlock` | deletes queued rows with `confirmed_block` below it, trimming what the backfill already covers |
-
-The enqueue happens **inside the success branch, after the old chain confirms**,
-and is fire-and-forget so a queue failure never fails the client's relay. The
-queue is therefore strictly a mirror of what the old chain already accepted.
-
-1. **Enable queueing early.** Costs one table insert per relayed write and
-   touches the new chain not at all. Safe well before rollout.
-2. **Enable flushing once the bootstrap node is healthy.** Late-joining nodes
-   pick these writes up via snapshot or block sync.
-3. **Stop writing to the old chain last.** See §9 — this, not the flush, is the
-   irreversible step.
-
-#### Use a cursor, not delete-on-success
-
-`flushRow` currently deletes each row after a successful forward
-(`api/new_chain_flusher.go:194`). For this migration that is the wrong
-semantics, because **the chain will be regenerated** with the real validator key
-(§3). Any write already flushed and deleted survives only on the chain that gets
-discarded.
-
-[api#1018](https://github.com/AudiusProject/api/pull/1018) does this — it marks rows `flushed_at` instead of
-deleting them, covering all three delete paths (forwarded, backfill-trimmed, and
-corrupt), and adds a partial index so retained rows stay out of the hot path. It
-is open and needs to land **before** flushing is first enabled, since queueing is
-already on in production.
-
-Replacing the delete with a `last_flushed_id` cursor makes the queue a durable
-log: after regenerating, set `newChainFlushFromBlock` to the new backfill's end
-and re-drive the remainder. That composes with the trimming logic that already
-exists, and it is only possible if the rows were never deleted. Replay is
-idempotent — the same signed transactions are rejected as duplicates by a chain
-that has them and accepted cleanly by a rebuilt one.
+The write cutover is therefore a single switch: once the mirror is at the tip,
+point the API's writes at the new chain (step 14). Nothing before that touches
+the API's write path.
 
 ### 9. Rollback
 
@@ -1161,22 +1239,18 @@ so confirm it is actually on for the held-back nodes; and `Keep = 2` snapshots
 at a 100,000-block interval on a ~1s chain is roughly a two-day rollback window,
 beyond which recovery is a full re-sync regardless.
 
-**Dual-writing does not compromise rollback.** Every queued transaction was
-confirmed on the old chain before being enqueued, so the old chain stays
-complete no matter how much has been flushed. Queueing and flushing are both
-reversible.
+**Mirroring does not compromise rollback.** The mirror only reads the old
+chain, so the old chain stays complete no matter how far it has got. Stopping
+it is always reversible: it resumes from its cursor.
 
-The point of no return is when the relay **stops writing to the old chain**.
+The point of no return is when the API **stops writing to the old chain**.
 From then on the old chain is missing data and rolling back loses it. That is
-the step to announce and gate — not the flush.
+the step to announce and gate — not the mirror.
 
 ### 10. Open questions
 
 - One ephemeral bootstrap validator rotated out later, or several real ones in
   genesis? The former needs no writer change (§4).
-- Does the flusher move to a cursor before or after the genesis regeneration?
-  Before is safer — writes flushed against the discarded chain are otherwise
-  unrecoverable.
 - Who runs the production genesis, on what hardware, and does the writer machine
   holding the validator key raise a custody concern worth designing around?
 - Does anything besides the delist tables count as operator state that the
@@ -1219,22 +1293,19 @@ The mechanism exists upstream and takes precedence over the resume
 
 So the change is small — expose a start height in `api/config` and pass it to
 `SetStartingBlockHeight` — but it must land before the cutover. [api#1028](https://github.com/AudiusProject/api/pull/1028) does
-this, along with the matching end height and the flusher ceiling. Note that both
+this, along with the matching end height. Note that both
 bounds are one-shot: nothing consumes them, so they must be cleared afterwards
 or every restart re-indexes from the start height and duplicates plays.
 
-#### Why draining the queue first matters
+#### Why the handover point matters
 
-Skipping to the new chain's tip is safe for everything *below* that point: those
-blocks are either the migration backfill or writes that were relayed to the old
-chain, indexed from it, and later flushed. All of it is already in the API's
-database.
+Skipping to the new chain's height `H` is safe for everything *below* it:
+those blocks are either the migration backfill or old-chain writes the mirror
+had already replayed, all of which the old indexer indexed.
 
-The hazard is above the switch point. A write still sitting in
-`new_chain_queue` at the moment of the switch gets forwarded afterwards, lands
-above the tip the indexer started from, and is indexed a **second** time — the
-first having come from the old chain. Entity handlers are largely upserts and
-survive that, but `InsertPlay` (`etl/db/writes.sql.go:110`) is a bare
-`insert ... values` with no `ON CONFLICT`, so plays duplicate.
-
-Draining the queue before switching removes the overlap entirely.
+The hazard is the overlap. A write mirrored after `H` was read is indexed
+again from the new chain if the old indexer had already indexed it. Entity
+handlers are largely upserts and survive that, but `InsertPlay`
+(`etl/db/writes.sql.go:110`) is a bare `insert ... values` with no
+`ON CONFLICT`, so plays duplicate. Deriving `H` from the last mirrored
+transaction at or below `X` leaves no overlap → [Appendix I](#i-the-indexer-boundary).
