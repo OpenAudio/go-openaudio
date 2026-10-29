@@ -95,6 +95,9 @@ func (s *MediorumServer) streamTrackGRPC(ctx context.Context, req *v1storage.Str
 		}
 
 		ip := common.GetClientIP(ctx)
+		if !s.playDedupe.allow(ip, reqSig.Data.TrackId, playDedupeDefaultWindow, time.Now()) {
+			return
+		}
 		geoData, err := s.getGeoFromIP(ip)
 		if err != nil {
 			s.logger.Error("core plays bad ip", zap.Error(err))
