@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.14.0](https://github.com/OpenAudio/go-openaudio/compare/v1.13.0...v1.14.0) (2026-10-29)
+
+
+### Features
+
+* **etl:** optionally read a block's transactions in chain order ([#606](https://github.com/OpenAudio/go-openaudio/issues/606)) ([6874b2c](https://github.com/OpenAudio/go-openaudio/commit/6874b2c6321a947fea690a27799bf40c529396c9))
+* **mirror:** attest a refused track's own upload and retry ([#610](https://github.com/OpenAudio/go-openaudio/issues/610)) ([27d57b6](https://github.com/OpenAudio/go-openaudio/commit/27d57b6a2bb8e17688c17bbbdc8a9e640b05ed01))
+* **mirror:** let an operator pass over a refused transaction they have investigated ([#608](https://github.com/OpenAudio/go-openaudio/issues/608)) ([ef19768](https://github.com/OpenAudio/go-openaudio/commit/ef197682875b810b1ae8f8bce9c8533909890ba8))
+* **mirror:** replay the old chain's writes and plays onto the new chain ([#605](https://github.com/OpenAudio/go-openaudio/issues/605)) ([a126316](https://github.com/OpenAudio/go-openaudio/commit/a12631654ce4dc15a81c3cb960c51ef4f47f4686))
+
+
+### Bug Fixes
+
+* **core:** keep migrated grants' approval and revocation in auth state ([#615](https://github.com/OpenAudio/go-openaudio/issues/615)) ([19f139f](https://github.com/OpenAudio/go-openaudio/commit/19f139f4e816f93f20c1f5b9ce1aab9c9092976c))
+* **etl:** only let a comment's owner edit it ([#613](https://github.com/OpenAudio/go-openaudio/issues/613)) ([12b90a3](https://github.com/OpenAudio/go-openaudio/commit/12b90a382498c94a1723fa6eacc848d7692a73b4))
+* **etl:** validate the signer on comment and track mute ([#614](https://github.com/OpenAudio/go-openaudio/issues/614)) ([6a05d90](https://github.com/OpenAudio/go-openaudio/commit/6a05d909cc6f5c288c6b2503be6354db2ce68daf))
+
 ## [1.13.0](https://github.com/OpenAudio/go-openaudio/compare/v1.12.1...v1.13.0) (2026-10-23)
 
 
