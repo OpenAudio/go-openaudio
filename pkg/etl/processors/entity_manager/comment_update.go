@@ -14,6 +14,15 @@ func (h *commentUpdateHandler) Handle(ctx context.Context, params *Params) error
 		return err
 	}
 
+	// Signer must be comment owner
+	commentOwner, err := getCommentOwner(ctx, params.DBTX, params.EntityID)
+	if err != nil {
+		return err
+	}
+	if params.UserID != commentOwner {
+		return NewValidationError("only comment owner can update comment %d", params.EntityID)
+	}
+
 	body := params.MetadataString("body")
 
 	// video_url is set on create but was dropped on edit, silently removing an
@@ -27,7 +36,7 @@ func (h *commentUpdateHandler) Handle(ctx context.Context, params *Params) error
 		videoURL = &v
 	}
 
-	_, err := params.DBTX.Exec(ctx, `
+	_, err = params.DBTX.Exec(ctx, `
 		UPDATE comments SET
 			text = $1, is_edited = true,
 			video_url = COALESCE($6::varchar, video_url),
