@@ -501,14 +501,22 @@ cd pkg/etl && go run ./parity \
   --prod-db postgres://.../<source snapshot>
 ```
 
-**Claim coverage.** Parity compares the ETL to the source and never reads
-`core_auth_cids`, so check the seeding separately, against the serve copy:
-the count of current, non-deleted tracks whose `track_cid`, `orig_file_cid`
-or `preview_cid` has no `(cid, owner_id)` row in `core_auth_cids`, and the
-count of track owners with no `core_auth_users` row. Both must be 0 (they were
-on the 2026-08-25 artifact). The projection skips rows it cannot attribute
-rather than failing, so a partial seed replays clean and only shows up as
-unwritable tracks once enforcement is live.
+**Consensus auth state.** Parity compares the ETL to the source and never reads
+the `core_auth_*` tables, which the writer projects through a separate code
+path. Check them against the same snapshot, on the serve copy:
+
+```
+go run ./cmd/genesis-writer verify-auth \
+  --src-dsn postgres://.../<source snapshot> \
+  --dst-dsn postgres://.../<serve copy>
+```
+
+It compares every row, column by column: users (wallet, handle,
+deactivation), grants (approval, revocation), developer apps (owner,
+deletion), track and playlist ownership and deletion, and the seeded cid
+claims. It must print `ok` for every table. The projection skips rows it cannot
+attribute rather than failing, so a partial or wrong seed replays clean and only
+shows up once enforcement is live.
 
 `replay.sh run` is idempotent and resumes, so a failure part-way can just be
 re-run. It ends by restoring settings, recreating the serving indexes it

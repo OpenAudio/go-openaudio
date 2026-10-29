@@ -161,11 +161,14 @@ func (t authTx) metaInt64(key string) (int64, bool) {
 	return 0, false
 }
 
+func (t authTx) metaBool(key string) (bool, bool) {
+	b, ok := t.meta[key].(bool)
+	return b, ok
+}
+
 func (t authTx) metaBoolOr(key string, def bool) bool {
-	if v, ok := t.meta[key]; ok {
-		if b, ok := v.(bool); ok {
-			return b
-		}
+	if b, ok := t.metaBool(key); ok {
+		return b
 	}
 	return def
 }
@@ -497,6 +500,9 @@ func projectGrantCreate(ctx context.Context, st authStore, tx authTx) error {
 		return err
 	}
 	isApp := appOk && !app.Deleted
+	if tx.Migration {
+		return projectMigratedGrantCreate(ctx, st, tx, grantee, isApp)
+	}
 	isUser, err := st.WalletExists(ctx, grantee)
 	if err != nil {
 		return err
@@ -519,6 +525,23 @@ func projectGrantCreate(ctx context.Context, st authStore, tx authTx) error {
 		approved = &t
 	}
 	return st.UpsertGrant(ctx, grantee, tx.UserID, approved, false)
+}
+
+// projectMigratedGrantCreate mirrors the ETL's migratedGrantCreateHandler: the
+// source row is the grant's final state, so is_revoked is taken as given and
+// is_approved wins when present — including false, which a rejected grant
+// records alongside is_revoked = true. An absent is_approved derives from the
+// grantee the way a live create does. The grantee and active-grant checks are
+// a live create's and are not applied to a recorded grant.
+func projectMigratedGrantCreate(ctx context.Context, st authStore, tx authTx, grantee string, isApp bool) error {
+	var approved *bool
+	if v, ok := tx.metaBool("is_approved"); ok {
+		approved = &v
+	} else if isApp {
+		t := true
+		approved = &t
+	}
+	return st.UpsertGrant(ctx, grantee, tx.UserID, approved, tx.metaBoolOr("is_revoked", false))
 }
 
 func projectGrantDelete(ctx context.Context, st authStore, tx authTx) error {
@@ -609,7 +632,15 @@ func projectAppCreate(ctx context.Context, st authStore, tx authTx) error {
 	if walletUsed {
 		return authValidationErrorf("address %s is already a user wallet", address)
 	}
-	return st.UpsertApp(ctx, address, tx.UserID)
+	if err := st.UpsertApp(ctx, address, tx.UserID); err != nil {
+		return err
+	}
+	// A migrated app carries its deletion on the create, as the ETL's
+	// migration handler indexes it.
+	if tx.Migration && tx.metaBoolOr("is_delete", false) {
+		return st.SetAppDeleted(ctx, address)
+	}
+	return nil
 }
 
 func projectAppDelete(ctx context.Context, st authStore, tx authTx) error {
