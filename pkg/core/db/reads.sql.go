@@ -796,6 +796,33 @@ func (q *Queries) GetBlocksWithTransactions(ctx context.Context, dollar_1 []int6
 	return items, nil
 }
 
+const getCommittedTxHashes = `-- name: GetCommittedTxHashes :many
+select tx_hash
+from core_transactions
+where lower(tx_hash) = any($1::text[])
+`
+
+// tx_hashes must be lowercase so the lookup can use the lower(tx_hash) index.
+func (q *Queries) GetCommittedTxHashes(ctx context.Context, txHashes []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, getCommittedTxHashes, txHashes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var tx_hash string
+		if err := rows.Scan(&tx_hash); err != nil {
+			return nil, err
+		}
+		items = append(items, tx_hash)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getCoreUpload = `-- name: GetCoreUpload :one
 select id, uploader_address, cid, transcoded_cid, upid, upload_signature, validator_address, validator_signature, tx_hash, block_height from core_uploads where cid = $1 OR transcoded_cid = $1
 `

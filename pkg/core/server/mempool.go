@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/api/core/v1beta1"
 	"github.com/OpenAudio/go-openaudio/pkg/core/config"
 	"github.com/OpenAudio/go-openaudio/pkg/core/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -25,6 +27,10 @@ import (
 
 var (
 	ErrFullMempool = errors.New("mempool full")
+	// ErrTxAlreadyCommitted means the transaction is already in a block.
+	// Callers treat it as success: a peer's forward is a no-op and a client
+	// resubmission gets the existing receipt.
+	ErrTxAlreadyCommitted = errors.New("transaction already committed")
 )
 
 // mempoolAdmissible rejects transaction types that must never enter the
@@ -168,12 +174,58 @@ func (m *Mempool) MempoolSize() (int, int) {
 	return len(m.txMap), m.deque.Len()
 }
 
-func (s *Server) addMempoolTransaction(key string, tx *MempoolTransaction, broadcast bool) error {
+// isCommittedTx reports whether a transaction with this hash is already in a
+// block.
+func (s *Server) isCommittedTx(ctx context.Context, key string) (bool, error) {
+	if _, err := s.db.GetTx(ctx, key); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// committedTxHashes returns which of the given tx hashes are already in a
+// block, keyed by the hash as passed in.
+func (s *Server) committedTxHashes(ctx context.Context, keys []string) (map[string]struct{}, error) {
+	committed := map[string]struct{}{}
+	if len(keys) == 0 {
+		return committed, nil
+	}
+	byLower := make(map[string]string, len(keys))
+	lowered := make([]string, 0, len(keys))
+	for _, k := range keys {
+		l := strings.ToLower(k)
+		byLower[l] = k
+		lowered = append(lowered, l)
+	}
+	hashes, err := s.db.GetCommittedTxHashes(ctx, lowered)
+	if err != nil {
+		return nil, err
+	}
+	for _, h := range hashes {
+		if k, ok := byLower[strings.ToLower(h)]; ok {
+			committed[k] = struct{}{}
+		}
+	}
+	return committed, nil
+}
+
+func (s *Server) addMempoolTransaction(ctx context.Context, key string, tx *MempoolTransaction, broadcast bool) error {
 	if err := mempoolAdmissible(tx.Tx); err != nil {
 		return err
 	}
 
-	// TODO: check db if tx already exists
+	// Peers gossip each admitted tx asynchronously, so a forward can arrive
+	// after the tx has committed; admitting it would get it proposed again.
+	committed, err := s.isCommittedTx(ctx, key)
+	if err != nil {
+		return fmt.Errorf("could not check for committed tx: %w", err)
+	}
+	if committed {
+		return ErrTxAlreadyCommitted
+	}
 
 	// broadcast to peers before adding to our own mempool
 	if broadcast {
