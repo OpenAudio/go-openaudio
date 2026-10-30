@@ -57,9 +57,10 @@ type ArtifactManifest struct {
 	// effects the migration carries.
 	SourceChainID          string `json:"source_chain_id"`
 	SourceLastIndexedBlock int64  `json:"source_last_indexed_block"`
-	// NewChainFlushFromBlock is the value for the API's flusher. It deletes
-	// rows with confirmed_block < this value, so it must be one past the
-	// snapshot's last block or that block is replayed onto the new chain twice.
+	// NewChainFlushFromBlock is the mirror's -start-height: the first
+	// old-chain block the snapshot does not contain. It must be one past the
+	// snapshot's last block or that block is replayed onto the new chain
+	// twice. The name predates the mirror, which replaced the API's flusher.
 	NewChainFlushFromBlock int64 `json:"new_chain_flush_from_block"`
 
 	GenesisSHA256           string `json:"genesis_sha256"`
