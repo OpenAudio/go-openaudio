@@ -56,3 +56,32 @@ func TestCommentUpdate_RejectsNonexistent(t *testing.T) {
 	params := buildParams(t, pool, EntityTypeComment, ActionUpdate, uid, int64(CommentIDOffset+999), "0xCommenter", meta)
 	mustReject(t, CommentUpdate(), params, "does not exist")
 }
+
+func TestCommentUpdate_RejectsNonOwner(t *testing.T) {
+	pool := setupTestDB(t)
+	owner := int64(UserIDOffset + 1)
+	other := int64(UserIDOffset + 2)
+	trackID := int64(TrackIDOffset + 1)
+	commentID := int64(CommentIDOffset + 21)
+	seedUser(t, pool, owner, "0xcommenter", "commenter")
+	seedUser(t, pool, other, "0xother", "other")
+	seedTrack(t, pool, trackID, owner)
+
+	createMeta := fmt.Sprintf(`{"body":"Original","entity_id":%d,"entity_type":"Track","track_timestamp_s":0}`, trackID)
+	mustHandle(t, CommentCreate(), buildParams(t, pool, EntityTypeComment, ActionCreate, owner, commentID, "0xCommenter", createMeta))
+
+	updateMeta := fmt.Sprintf(`{"body":"Changed","entity_id":%d,"entity_type":"Track","track_timestamp_s":0}`, trackID)
+	params := buildParams(t, pool, EntityTypeComment, ActionUpdate, other, commentID, "0xOther", updateMeta)
+	mustReject(t, CommentUpdate(), params, "only comment owner")
+
+	var text string
+	var isEdited bool
+	err := pool.QueryRow(context.Background(),
+		"SELECT text, is_edited FROM comments WHERE comment_id = $1", commentID).Scan(&text, &isEdited)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if text != "Original" || isEdited {
+		t.Errorf("text = %q, is_edited = %v; want unchanged", text, isEdited)
+	}
+}

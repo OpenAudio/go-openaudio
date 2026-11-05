@@ -29,14 +29,17 @@ type streamSource struct {
 	logger *zap.Logger
 	ch     chan prefetchedBlock
 	bufSz  int
+	// pollCanon is the polling fallback's transaction order (Config.CanonicalTxOrder).
+	pollCanon bool
 }
 
-func newStreamSource(client corev1connect.CoreServiceClient, logger *zap.Logger) *streamSource {
+func newStreamSource(client corev1connect.CoreServiceClient, logger *zap.Logger, pollCanon bool) *streamSource {
 	return &streamSource{
-		client: client,
-		logger: logger,
-		ch:     make(chan prefetchedBlock, defaultPrefetchBuffer),
-		bufSz:  defaultPrefetchBuffer,
+		client:    client,
+		logger:    logger,
+		ch:        make(chan prefetchedBlock, defaultPrefetchBuffer),
+		bufSz:     defaultPrefetchBuffer,
+		pollCanon: pollCanon,
 	}
 }
 
@@ -121,6 +124,6 @@ func (s *streamSource) fellBackToPolling(ctx context.Context, err error, height 
 	}
 	s.logger.Warn("StreamBlocks not supported by endpoint, falling back to polling",
 		zap.Int64("resume_height", height), zap.Error(err))
-	newPrefetcher(s.client, s.logger).runInto(ctx, height, s.ch)
+	newPrefetcher(s.client, s.logger, s.pollCanon).runInto(ctx, height, s.ch)
 	return true
 }

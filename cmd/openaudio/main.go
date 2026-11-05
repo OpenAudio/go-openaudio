@@ -43,6 +43,7 @@ import (
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server"
 	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
+	"github.com/OpenAudio/go-openaudio/pkg/mirror"
 	"github.com/OpenAudio/go-openaudio/pkg/pos"
 	"github.com/OpenAudio/go-openaudio/pkg/system"
 	"github.com/OpenAudio/go-openaudio/pkg/uptime"
@@ -103,6 +104,12 @@ type serverConfig struct {
 }
 
 func main() {
+	// Subcommands run instead of the node, in their own container. See
+	// entrypoint.sh, which dispatches them before any node setup.
+	if len(os.Args) > 1 && os.Args[1] == "mirror" {
+		os.Exit(mirror.Main(os.Args[2:]))
+	}
+
 	startTime = time.Now().UTC()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

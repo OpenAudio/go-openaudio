@@ -27,6 +27,10 @@ func (h *commentUnmuteHandler) Handle(ctx context.Context, params *Params) error
 }
 
 func upsertCommentNotificationSetting(ctx context.Context, params *Params, isMuted bool) error {
+	if err := ValidateSigner(ctx, params); err != nil {
+		return err
+	}
+
 	_, err := params.DBTX.Exec(ctx, `
 		INSERT INTO comment_notification_settings (
 			user_id, entity_id, entity_type, is_muted,

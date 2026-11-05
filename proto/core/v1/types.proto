@@ -214,6 +214,10 @@ message GetNodeInfoResponse {
 
 message GetBlockRequest {
   int64 height = 1;
+  // When true, transactions are returned in the order the chain executed them.
+  // When false (default), they are re-sorted by priority: ManageEntity first,
+  // Creates before other actions.
+  bool canon = 2;
 }
 
 message GetBlockResponse {
@@ -223,6 +227,10 @@ message GetBlockResponse {
 
 message GetBlocksRequest {
   repeated int64 height = 1;
+  // When true, transactions are returned in the order the chain executed them.
+  // When false (default), they are re-sorted by priority: ManageEntity first,
+  // Creates before other actions.
+  bool canon = 2;
 }
 
 message GetBlocksResponse {
@@ -251,6 +259,11 @@ message SendTransactionResponse {
 message ForwardTransactionRequest {
   SignedTransaction transaction = 1;
   core.v1beta1.Transaction transactionv2 = 2;
+  // Chain the forwarding node is on. Transactions carry no chain of their
+  // own, so without this a node on one chain can feed another chain's
+  // mempool. Receivers refuse a mismatch, and on chains that require it
+  // (config.ForwardChainIDRequired) also refuse an empty value.
+  string chain_id = 3;
 }
 
 message ForwardTransactionResponse {}

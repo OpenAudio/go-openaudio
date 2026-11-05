@@ -348,6 +348,123 @@ func TestProjectUserToUserGrant(t *testing.T) {
 	}
 }
 
+func migratedGrantTx(userID int64, signer string, meta map[string]any) authTx {
+	return authTx{
+		UserID: userID, EntityType: "Grant", Action: "Create", Signer: signer,
+		Migration: true, meta: meta,
+	}
+}
+
+// A migrated grant keeps the approval and revocation its source row records,
+// matching the ETL's migratedGrantCreateHandler.
+func TestProjectMigratedGrantState(t *testing.T) {
+	setup := func(t *testing.T) *memAuthStore {
+		st := newMemAuthStore()
+		mustProject(t, st, userCreateTx(1, "0xw1", "alice"))
+		mustProject(t, st, userCreateTx(2, "0xw2", "bob"))
+		return st
+	}
+
+	t.Run("approved user grant lets the manager sign", func(t *testing.T) {
+		st := setup(t)
+		mustProject(t, st, migratedGrantTx(1, "0xw1", map[string]any{
+			"grantee_address": "0xW2", "is_approved": true, "is_revoked": false,
+		}))
+		if err := validateAuthSigner(context.Background(), st, 1, "0xw2"); err != nil {
+			t.Fatalf("approved migrated grant should let the manager sign: %v", err)
+		}
+	})
+
+	t.Run("revoked grant does not let the manager sign", func(t *testing.T) {
+		st := setup(t)
+		mustProject(t, st, migratedGrantTx(1, "0xw1", map[string]any{
+			"grantee_address": "0xw2", "is_approved": true, "is_revoked": true,
+		}))
+		if err := validateAuthSigner(context.Background(), st, 1, "0xw2"); err == nil {
+			t.Fatal("revoked migrated grant must not let the manager sign")
+		}
+	})
+
+	t.Run("absent is_approved keeps the default", func(t *testing.T) {
+		st := setup(t)
+		mustProject(t, st, authTx{
+			UserID: 1, EntityType: "DeveloperApp", Action: "Create", Signer: "0xw1",
+			meta: map[string]any{"address": "0xapp"},
+		})
+		mustProject(t, st, migratedGrantTx(1, "0xw1", map[string]any{
+			"grantee_address": "0xw2", "is_revoked": false,
+		}))
+		mustProject(t, st, migratedGrantTx(1, "0xw1", map[string]any{
+			"grantee_address": "0xapp", "is_revoked": false,
+		}))
+		if g := st.grants[memGrantKey{"0xw2", 1}]; g.Approved != nil || g.Revoked {
+			t.Fatalf("user grant without is_approved should stay pending: %+v", g)
+		}
+		if g := st.grants[memGrantKey{"0xapp", 1}]; g.Approved == nil || !*g.Approved {
+			t.Fatalf("app grant without is_approved should be approved: %+v", g)
+		}
+	})
+
+	t.Run("rejected grant stays unapproved and revoked", func(t *testing.T) {
+		st := setup(t)
+		mustProject(t, st, migratedGrantTx(1, "0xw1", map[string]any{
+			"grantee_address": "0xw2", "is_approved": false, "is_revoked": true,
+		}))
+		if g := st.grants[memGrantKey{"0xw2", 1}]; g.Approved == nil || *g.Approved || !g.Revoked {
+			t.Fatalf("rejected migrated grant should stay unapproved and revoked: %+v", g)
+		}
+	})
+
+	t.Run("grantee need not resolve", func(t *testing.T) {
+		// The source records the grant; whether its grantee still resolves
+		// is a live create's check.
+		st := setup(t)
+		mustProject(t, st, migratedGrantTx(1, "0xw1", map[string]any{
+			"grantee_address": "0xgone", "is_approved": true, "is_revoked": false,
+		}))
+		if _, ok := st.grants[memGrantKey{"0xgone", 1}]; !ok {
+			t.Fatal("migrated grant to an unknown grantee should still be recorded")
+		}
+	})
+
+	t.Run("live creates ignore the metadata", func(t *testing.T) {
+		st := setup(t)
+		mustProject(t, st, authTx{
+			UserID: 1, EntityType: "Grant", Action: "Create", Signer: "0xw1",
+			meta: map[string]any{"grantee_address": "0xw2", "is_approved": true, "is_revoked": true},
+		})
+		if g := st.grants[memGrantKey{"0xw2", 1}]; g.Approved != nil || g.Revoked {
+			t.Fatalf("live grant create must start pending: %+v", g)
+		}
+		mustSkip(t, st, authTx{
+			UserID: 1, EntityType: "Grant", Action: "Create", Signer: "0xw1",
+			meta: map[string]any{"grantee_address": "0xgone"},
+		}, "not a developer app or user wallet")
+	})
+}
+
+// A migrated developer app keeps the deletion its source row records.
+func TestProjectMigratedAppDeletion(t *testing.T) {
+	appTx := func(address string, migration bool) authTx {
+		return authTx{
+			UserID: 1, EntityType: "DeveloperApp", Action: "Create", Signer: "0xw1",
+			Migration: migration, meta: map[string]any{"address": address, "is_delete": true},
+		}
+	}
+	st := newMemAuthStore()
+	mustProject(t, st, userCreateTx(1, "0xw1", "alice"))
+
+	mustProject(t, st, appTx("0xmigrated", true))
+	mustProject(t, st, appTx("0xlive", false))
+
+	if a := st.apps["0xmigrated"]; !a.Deleted {
+		t.Fatalf("migrated app should keep its deletion: %+v", a)
+	}
+	if a := st.apps["0xlive"]; a.Deleted {
+		t.Fatalf("live app create must ignore is_delete: %+v", a)
+	}
+}
+
 func TestProjectEntityOwnership(t *testing.T) {
 	st := newMemAuthStore()
 

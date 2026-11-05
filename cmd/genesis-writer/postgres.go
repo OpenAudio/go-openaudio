@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,32 +67,27 @@ type managedPostgres struct {
 	started bool
 }
 
-// findPgBinDir searches common locations for the pg_ctl binary directory.
-func findPgBinDir() (string, error) {
-	candidates := []string{
-		// macOS Homebrew
-		"/opt/homebrew/opt/postgresql@17/bin",
-		"/opt/homebrew/opt/postgresql@16/bin",
-		"/opt/homebrew/opt/postgresql@15/bin",
-		"/usr/local/opt/postgresql@17/bin",
-		"/usr/local/opt/postgresql@16/bin",
-		"/usr/local/opt/postgresql@15/bin",
-		// Linux
-		"/usr/lib/postgresql/17/bin",
-		"/usr/lib/postgresql/16/bin",
-		"/usr/lib/postgresql/15/bin",
-		"/usr/bin",
-	}
-	for _, dir := range candidates {
+// findPgBinDir finds the server binaries for exactly one Postgres major.
+//
+// The managed cluster's major is pinned rather than "newest installed" because
+// the database leaves this machine as a pg_dump archive restored on a node, and
+// the node's pg_restore cannot read an archive from a newer pg_dump (see
+// nodePostgresMajor). Picking up a Homebrew postgresql@17 because it happened
+// to be installed is how the 2026-08-25 artifact ended up unmovable.
+func findPgBinDir(major int) (string, error) {
+	for _, dir := range pgBinCandidates(major) {
 		if _, err := os.Stat(filepath.Join(dir, "pg_ctl")); err == nil {
 			return dir, nil
 		}
 	}
-	// Fall back to PATH
+	// Fall back to PATH, but only if it is the right major.
 	if path, err := exec.LookPath("pg_ctl"); err == nil {
-		return filepath.Dir(path), nil
+		if _, m, err := probePgTool(path); err == nil && m == major {
+			return filepath.Dir(path), nil
+		}
 	}
-	return "", fmt.Errorf("could not find pg_ctl; install PostgreSQL or set --dst-dsn")
+	return "", fmt.Errorf("could not find PostgreSQL %d server binaries (pg_ctl); install them "+
+		"(e.g. `brew install postgresql@%d`), change --target-pg-major, or set --dst-dsn", major, major)
 }
 
 // startManagedPostgres ensures a local PostgreSQL instance is running with its
@@ -100,8 +96,8 @@ func findPgBinDir() (string, error) {
 //   - Fresh run: initdb → start → create database
 //   - Resume (stopped): start existing cluster → verify database exists
 //   - Resume (already running): verify database exists
-func startManagedPostgres(dataDir string, logger *zap.Logger) (*managedPostgres, string, error) {
-	binDir, err := findPgBinDir()
+func startManagedPostgres(dataDir string, major int, logger *zap.Logger) (*managedPostgres, string, error) {
+	binDir, err := findPgBinDir(major)
 	if err != nil {
 		return nil, "", err
 	}
@@ -112,6 +108,14 @@ func startManagedPostgres(dataDir string, logger *zap.Logger) (*managedPostgres,
 		port:    pgPort,
 		binDir:  binDir,
 		logger:  logger,
+	}
+
+	// A cluster from an earlier run must be the same major: postgres cannot
+	// start a data directory from another major, and a resume would otherwise
+	// fail with a less helpful error from pg_ctl.
+	if v, ok := pg.clusterMajor(); ok && v != major {
+		return nil, "", fmt.Errorf("existing cluster at %s is postgres %d but --target-pg-major is %d; "+
+			"use a fresh --data-dir or pass --target-pg-major=%d", pgDataDir, v, major, v)
 	}
 
 	if pg.isRunning() {
@@ -161,6 +165,16 @@ func (pg *managedPostgres) pgCtl(args ...string) *exec.Cmd {
 func (pg *managedPostgres) isInitialized() bool {
 	_, err := os.Stat(filepath.Join(pg.dataDir, "PG_VERSION"))
 	return err == nil
+}
+
+// clusterMajor reads PG_VERSION from an initialized data directory.
+func (pg *managedPostgres) clusterMajor() (int, bool) {
+	b, err := os.ReadFile(filepath.Join(pg.dataDir, "PG_VERSION"))
+	if err != nil {
+		return 0, false
+	}
+	v, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	return v, err == nil
 }
 
 func (pg *managedPostgres) isRunning() bool {

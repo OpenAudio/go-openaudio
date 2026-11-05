@@ -6,6 +6,11 @@ if [ "$1" = "rollback" ]; then
     exec /bin/rollback-entrypoint.sh "$@"
 fi
 
+# The mirror needs no postgres or node setup: it only talks to two chains.
+if [ "$1" = "mirror" ]; then
+    exec /bin/openaudio "$@"
+fi
+
 NETWORK="${NETWORK:-prod}"
 ENV_FILE="/env/${NETWORK}.env"
 

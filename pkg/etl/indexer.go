@@ -323,10 +323,10 @@ func (e *Indexer) indexBlocks() error {
 
 	var src blockSource
 	if e.config.BlockStreamEnabled && e.streamClient != nil {
-		src = newStreamSource(e.streamClient, e.logger)
+		src = newStreamSource(e.streamClient, e.logger, e.config.CanonicalTxOrder)
 		e.logger.Info("block source: gRPC stream", zap.Int64("start_height", startHeight))
 	} else {
-		src = newPrefetcher(e.core, e.logger)
+		src = newPrefetcher(e.core, e.logger, e.config.CanonicalTxOrder)
 		e.logger.Info("block source: polling prefetcher", zap.Int64("start_height", startHeight), zap.Int("buffer_size", defaultPrefetchBuffer))
 	}
 	go src.run(ctx, startHeight)

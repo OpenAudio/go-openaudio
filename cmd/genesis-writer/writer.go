@@ -69,6 +69,20 @@ type WriterConfig struct {
 	RunMigrations bool
 	// Resume picks up from the last completed step if a previous run was interrupted.
 	Resume bool
+
+	// ArtifactDir is the data dir that receives MANIFEST.json and, when Dump
+	// is set, chain.dump. Empty skips both (tests that only inspect the DB).
+	ArtifactDir string
+	// Dump archives the chain database to <ArtifactDir>/chain.dump.
+	Dump bool
+	// DumpJobs is pg_dump --jobs; <= 0 picks a default.
+	DumpJobs int
+	// Postgres is the destination server's version and the pg_dump resolved
+	// for it, checked before the write starts.
+	Postgres *pgTarget
+	// SourceChainID is the old chain whose core_indexed_blocks bound the
+	// source snapshot.
+	SourceChainID string
 }
 
 // Writer reads Audius DP entities, signs them, and writes real CometBFT blocks
@@ -87,6 +101,10 @@ type Writer struct {
 	// declined. Expected to be zero — a skip is a defect, see
 	// projectBlockAuthState — and reported at the end of Run.
 	authProjectionSkips int
+
+	// sourceLastIndexedBlock is the last old-chain block in the source
+	// snapshot, read at the start of Run for the manifest.
+	sourceLastIndexedBlock int64
 
 	// current block being assembled
 	height    int64
@@ -438,6 +456,50 @@ func (w *Writer) stepNames() []string {
 	return names
 }
 
+// blockstoreTail is the last written block's state that a resume restores.
+type blockstoreTail struct {
+	blockID cmttypes.BlockID
+	commit  *cmttypes.Commit
+	time    time.Time
+}
+
+// resumeTail reads the last written block back out of the blockstore: its
+// BlockID, its commit, and its header time, which are exactly the values a
+// continuous run would hold after writing it.
+func resumeTail(store *cmtstore.BlockStore, height int64) (blockstoreTail, error) {
+	lastBlock, _ := store.LoadBlock(height)
+	if lastBlock == nil {
+		return blockstoreTail{}, fmt.Errorf("load resume block %d from blockstore: not found", height)
+	}
+	blockParts, err := lastBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
+	if err != nil {
+		return blockstoreTail{}, fmt.Errorf("make part set for resume block %d: %w", height, err)
+	}
+	// LoadSeenCommit, not LoadBlockCommit. SaveBlock stores the commit it is
+	// handed under the SEEN-commit key for that height, and separately stores
+	// block.LastCommit under the commit key for height-1. So
+	// LoadBlockCommit(h) only returns a value once block h+1 has been saved --
+	// which is never true for the last block written.
+	//
+	// Resume always lands on the last block, so this could only ever fail,
+	// reporting a missing commit for a blockstore that is perfectly intact.
+	// The error read like data loss and sent me looking for a truncated write
+	// that had not happened.
+	//
+	// The seen commit is also what the non-resume path assigns to w.lastCommit
+	// after each block, so this restores exactly the value a continuous run
+	// would have held at that point.
+	commit := store.LoadSeenCommit(height)
+	if commit == nil {
+		return blockstoreTail{}, fmt.Errorf("load resume seen commit %d from blockstore: not found", height)
+	}
+	return blockstoreTail{
+		blockID: cmttypes.BlockID{Hash: lastBlock.Hash(), PartSetHeader: blockParts.Header()},
+		commit:  commit,
+		time:    lastBlock.Time,
+	}, nil
+}
+
 func (w *Writer) Run(ctx context.Context) error {
 	start := time.Now()
 	w.logger.Info("starting genesis write")
@@ -449,6 +511,19 @@ func (w *Writer) Run(ctx context.Context) error {
 			completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`); err != nil {
 		return fmt.Errorf("create progress table: %w", err)
+	}
+
+	// Read the manifest's source bound up front: a source without it should
+	// fail now, not after the write.
+	if w.cfg.ArtifactDir != "" {
+		h, err := querySourceLastIndexedBlock(ctx, w.srcDB, w.cfg.SourceChainID)
+		if err != nil {
+			return fmt.Errorf("source snapshot bound: %w", err)
+		}
+		w.sourceLastIndexedBlock = h
+		w.logger.Info("source snapshot bound",
+			zap.String("source_chain_id", w.cfg.SourceChainID),
+			zap.Int64("last_indexed_block", h))
 	}
 
 	// If resuming, load the last known chain state from the database.
@@ -478,38 +553,18 @@ func (w *Writer) Run(ctx context.Context) error {
 			if w.blockStore == nil {
 				return fmt.Errorf("cannot resume without blockstore (--cmt-home required)")
 			}
-			lastBlock, _ := w.blockStore.LoadBlock(maxHeight)
-			if lastBlock == nil {
-				return fmt.Errorf("load resume block %d from blockstore: not found", maxHeight)
-			}
-			blockParts, err := lastBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
+			tail, err := resumeTail(w.blockStore, maxHeight)
 			if err != nil {
-				return fmt.Errorf("make part set for resume block %d: %w", maxHeight, err)
+				return err
 			}
-			w.prevBlockID = cmttypes.BlockID{
-				Hash:          lastBlock.Hash(),
-				PartSetHeader: blockParts.Header(),
-			}
-			// LoadSeenCommit, not LoadBlockCommit. SaveBlock stores the commit
-			// it is handed under the SEEN-commit key for that height, and
-			// separately stores block.LastCommit under the commit key for
-			// height-1. So LoadBlockCommit(h) only returns a value once block
-			// h+1 has been saved -- which is never true for the last block
-			// written.
-			//
-			// Resume always lands on the last block, so this could only ever
-			// fail, reporting a missing commit for a blockstore that is
-			// perfectly intact. The error read like data loss and sent me
-			// looking for a truncated write that had not happened.
-			//
-			// The seen commit is also what the non-resume path assigns to
-			// w.lastCommit after each block, so this restores exactly the value
-			// a continuous run would have held at that point.
-			lastCommit := w.blockStore.LoadSeenCommit(maxHeight)
-			if lastCommit == nil {
-				return fmt.Errorf("load resume seen commit %d from blockstore: not found", maxHeight)
-			}
-			w.lastCommit = lastCommit
+			w.prevBlockID = tail.blockID
+			w.lastCommit = tail.commit
+			// A resume that writes no new blocks (every step already done, e.g.
+			// retrying a failed dump) never reaches flushBlock, which is what
+			// sets finalTime. writeCMTState still runs and stores it as the
+			// state's LastBlockTime, so restore it here or state.db is rewritten
+			// with the zero time.
+			w.finalTime = tail.time
 
 			w.logger.Info("resuming from height", zap.Int64("height", w.height))
 		}
@@ -683,24 +738,38 @@ func (w *Writer) Run(ctx context.Context) error {
 		return fmt.Errorf("create indexes: %w", err)
 	}
 
+	// Dump and manifest last: the dump must carry the rebuilt indexes, and it
+	// runs before this process exits so nothing else has connected first.
+	if w.cfg.ArtifactDir != "" && w.cfg.CMTHome != "" && w.finalHeight > 0 {
+		if err := w.emitArtifact(ctx); err != nil {
+			// Everything before this point is checkpointed, so a failed dump
+			// does not cost the write. Say so: the bare error reads like the
+			// whole run failed.
+			return fmt.Errorf("emit artifact: %w\n\nThe chain write is complete and intact; only the dump or manifest failed. "+
+				"Fix the cause and re-run the same command with --resume: every step is skipped, and it "+
+				"redoes only the CometBFT state, the index check, the dump and %s", err, manifestFileName)
+		}
+	}
+
 	// Print next-steps instructions.
 	if w.cfg.CMTHome != "" && w.finalHeight > 0 {
 		genesisPath := filepath.Join(w.cfg.CMTHome, "config", "genesis.json")
+		next := fmt.Sprintf("%d", w.finalHeight+1)
 		w.logger.Info("genesis write finished — next steps:\n\n" +
 			"  1. Copy the genesis file into the source tree and rebuild:\n" +
 			"       cp " + genesisPath + " pkg/core/config/genesis/prod.json\n" +
 			"     Then add it to pkg/core/config/genesis/genesis.go and rebuild the binary.\n\n" +
-			"  2. Start the bootstrap node with the genesis-writer output as the data dir.\n" +
-			"     In docker-compose.yml, mount it to /data:\n" +
-			"       volumes:\n" +
-			"         - " + filepath.Dir(w.cfg.CMTHome) + ":/data\n" +
-			"     The node will pick up at height " + fmt.Sprintf("%d", w.finalHeight+1) + " and begin live consensus.\n\n" +
+			"  2. Seed the bootstrap node (ROLLOUT.md step 4):\n" +
+			"       - copy " + w.cfg.CMTHome + " except the files MANIFEST.json lists\n" +
+			"         under exclude_from_bootstrap\n" +
+			"       - pg_restore " + chainDumpDirName + " into a new database on the node\n" +
+			"     The node will pick up at height " + next + " and begin live consensus.\n\n" +
 			"  3. Once the bootstrap node is running, other nodes can state-sync from it:\n" +
 			"       [statesync]\n" +
 			"       enable = true\n" +
 			"       rpc_servers = \"<bootstrap-rpc>:26657,<bootstrap-rpc>:26657\"\n" +
-			"       trust_height = " + fmt.Sprintf("%d", w.finalHeight+1) + "\n" +
-			"       trust_hash = \"<block hash at height " + fmt.Sprintf("%d", w.finalHeight+1) + ">\"\n")
+			"       trust_height = " + next + "\n" +
+			"       trust_hash = \"<block hash at height " + next + ">\"\n")
 	}
 
 	return nil
