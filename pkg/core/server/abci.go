@@ -403,6 +403,13 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 			s.logger.Error("tx made it into prepare but couldn't be marshalled", zap.Error(err))
 			continue
 		}
+		if err := s.validateProposerPolicy(ctx, tx.Tx); err != nil {
+			s.logger.Warn("proposer declined tx",
+				zap.String("tx", common.ToTxHashFromBytes(txBytes)),
+				zap.String("type", txTypeName(tx.Tx)),
+				zap.Error(err))
+			continue
+		}
 		valid, err := s.validateBlockTx(ctx, rules, authOverlay, proposal.Time, proposal.Height, proposal.Misbehavior, txBytes)
 		if err != nil {
 			s.logger.Error("tx made it into prepare but couldn't be validated", zap.Error(err))
@@ -469,6 +476,13 @@ func capProposalTxs(logger *zap.Logger, txs [][]byte, maxTxBytes int64) [][]byte
 		capped = append(capped, tx)
 	}
 	return capped
+}
+
+func (s *Server) validateProposerPolicy(ctx context.Context, tx *v1.SignedTransaction) error {
+	if tx.GetPlays() != nil {
+		return s.isValidPlayTransaction(ctx, tx)
+	}
+	return nil
 }
 
 func (s *Server) ProcessProposal(ctx context.Context, proposal *abcitypes.ProcessProposalRequest) (*abcitypes.ProcessProposalResponse, error) {
@@ -1302,15 +1316,6 @@ func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOv
 
 	switch signedTx.Transaction.(type) {
 	case *v1.SignedTransaction_Plays:
-		if rules.PlayAuthEnforced {
-			if err := s.isValidPlayTransaction(ctx, signedTx); err != nil {
-				if !authRejected(err) {
-					return false, err
-				}
-				s.logger.Error("Invalid block: invalid play tx", zap.Error(err))
-				return false, nil
-			}
-		}
 	case *v1.SignedTransaction_ManageEntity:
 		if rules.AuthEnforced {
 			if err := s.validateManageEntityAuth(ctx, rules, authOverlay, signedTx.GetManageEntity()); err != nil {
