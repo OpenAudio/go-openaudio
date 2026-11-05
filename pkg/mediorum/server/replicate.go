@@ -135,6 +135,31 @@ func (ss *MediorumServer) replicateFile(ctx context.Context, fileName string, fi
 	return success, nil
 }
 
+// copyToBucket writes r to key and commits it only if the whole copy succeeded.
+// gocloud's Writer.Close commits whatever has been written so far, on every
+// driver; the only way to abort is to cancel the context the writer was opened
+// with. Closing after a failed copy would store a truncated blob under the key.
+func copyToBucket(ctx context.Context, bucket *blob.Bucket, key string, r io.Reader) (int64, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	w, err := bucket.NewWriter(ctx, key, nil)
+	if err != nil {
+		return 0, err
+	}
+	n, err := io.Copy(w, r)
+	if err != nil {
+		cancel()
+		// Releases the temp file or multipart upload; the write is discarded.
+		_ = w.Close()
+		return 0, err
+	}
+	if err := w.Close(); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // replicateToMyBucket writes the blob to the bucket selected by bucketForCID.
 // placementHosts MUST be passed when the caller has placement context (repair,
 // upload replication path) so writes go to the same bucket reads expect.
@@ -145,24 +170,11 @@ func (ss *MediorumServer) replicateToMyBucket(ctx context.Context, fileName stri
 	key := cidutil.ShardCID(fileName)
 	bucket := ss.bucketForCID(fileName, placementHosts)
 
-	w, err := bucket.NewWriter(ctx, key, nil)
-	if err != nil {
-		return err
-	}
-
-	n, err := io.Copy(w, file)
-	if err != nil {
-		// Best-effort close so we don't leak temp files / abandon multipart
-		// uploads. The copy error is what matters; ignore close error here.
-		_ = w.Close()
-		return err
-	}
-
-	// Close is the commit step for many blob drivers (S3, GCS multipart).
-	// Only record the blob as locally present after a successful close,
-	// so repair's knownPresent fast-path doesn't think we have a blob whose
+	// Only record the blob as locally present after the write committed, so
+	// repair's knownPresent fast-path doesn't think we have a blob whose
 	// upload never actually finalized.
-	if err := w.Close(); err != nil {
+	n, err := copyToBucket(ctx, bucket, key, file)
+	if err != nil {
 		return err
 	}
 
@@ -237,18 +249,8 @@ func (ss *MediorumServer) relocateBetweenBuckets(ctx context.Context, key string
 	}
 	defer r.Close()
 
-	w, err := dst.NewWriter(ctx, key, nil)
+	n, err := copyToBucket(ctx, dst, key, r)
 	if err != nil {
-		return 0, err
-	}
-	n, err := io.Copy(w, r)
-	if err != nil {
-		// Best-effort close so we do not leak a temp file / abandoned
-		// multipart upload. The copy error is the one that matters.
-		_ = w.Close()
-		return 0, err
-	}
-	if err := w.Close(); err != nil {
 		return 0, err
 	}
 
@@ -602,6 +604,18 @@ func (ss *MediorumServer) openBlobFromHost(ctx context.Context, host, cid string
 	}
 	if err := r.start(); err != nil {
 		return nil, err
+	}
+
+	// A Qm cid can't be hash-checked, so the byte count is the only guard
+	// against storing a truncated copy. When the peer streams without saying
+	// how long the body is, ask it for the blob's size first.
+	if r.total < 0 && cidutil.IsLegacyCID(cid) {
+		attr, err := ss.hostGetBlobInfo(host, cid)
+		if err != nil {
+			r.Close()
+			return nil, fmt.Errorf("pull blob: size unknown for legacy cid %s host: %s: %w", cid, host, err)
+		}
+		r.total = attr.Size
 	}
 	return r, nil
 }
