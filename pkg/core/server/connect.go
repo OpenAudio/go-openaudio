@@ -535,7 +535,7 @@ func (c *CoreService) GetDeregistrationAttestation(ctx context.Context, req *con
 
 	core.logger.Info("Attesting to deregister a validator because it is down", zap.String("validatorAddress", dereg.CometAddress))
 
-	deregBytes, err := proto.Marshal(dereg)
+	deregBytes, err := core.validatorAttestationBytes(dereg, core.cache.currentHeight.Load()+1)
 	if err != nil {
 		core.logger.Error("could not marshal deregistration", zap.Error(err))
 		return nil, err
@@ -567,6 +567,9 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 	reg := req.Msg.Registration
 	if reg == nil {
 		return nil, errors.New("empty registration attestation")
+	}
+	if err := validateValidatorRegistration(reg); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
 	if reg.Deadline < core.cache.currentHeight.Load() || reg.Deadline > core.cache.currentHeight.Load()+maxRegistrationAttestationValidity {
@@ -600,7 +603,7 @@ func (c *CoreService) GetRegistrationAttestation(ctx context.Context, req *conne
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("node is temporarily blacklisted"))
 	}
 
-	regBytes, err := proto.Marshal(reg)
+	regBytes, err := core.validatorAttestationBytes(reg, core.cache.currentHeight.Load()+1)
 	if err != nil {
 		core.logger.Error("could not marshal registration", zap.Error(err))
 		return nil, err
@@ -2010,7 +2013,7 @@ func (c *CoreService) GetSlashAttestations(ctx context.Context, req *connect.Req
 		return nil, err
 	}
 
-	attestations, err := core.gatherSlashAttestations(ctx, req.Msg.Request.Data)
+	attestations, err := core.gatherSlashAttestations(ctx, req.Msg.GetRequest().GetData())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

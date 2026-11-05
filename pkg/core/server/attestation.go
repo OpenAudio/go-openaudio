@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"maps"
@@ -21,7 +22,21 @@ func (s *Server) isValidAttestation(ctx context.Context, tx *v1.SignedTransactio
 		return errors.New("empty attestation tx")
 	}
 
-	bodyBytes, err := getAttestationBodyBytes(att)
+	var body proto.Message
+	switch t := att.Body.(type) {
+	case *v1.Attestation_ValidatorRegistration:
+		body = t.ValidatorRegistration
+	case *v1.Attestation_ValidatorDeregistration:
+		body = t.ValidatorDeregistration
+	default:
+		return fmt.Errorf("unhandled attestation body: %T", t)
+	}
+	if s.config.Upgrades.RulesetAt(blockHeight).AttestationDomainEnforced {
+		if err := s.boundAttestationSignatures(att); err != nil {
+			return err
+		}
+	}
+	bodyBytes, err := s.validatorAttestationBytes(body, blockHeight)
 	if err != nil {
 		return fmt.Errorf("could not marshal attestation body into bytes: %v", err)
 	}
@@ -55,15 +70,58 @@ func (s *Server) finalizeAttestation(ctx context.Context, tx *v1.SignedTransacti
 	}
 }
 
-func getAttestationBodyBytes(att *v1.Attestation) ([]byte, error) {
+// boundAttestationSignatures rejects an attestation carrying more signatures
+// than there are eligible attestor slots. recoverSigners starts a goroutine
+// per signature, so this bounds the work an untrusted submission can trigger
+// before its signers are known. Block validity may only apply the bound once
+// the domain upgrade activates; mempool admission is local policy and applies
+// it everywhere, which is where untrusted submissions actually arrive.
+func (s *Server) boundAttestationSignatures(att *v1.Attestation) error {
+	var slots int
 	switch t := att.Body.(type) {
 	case *v1.Attestation_ValidatorRegistration:
-		return proto.Marshal(att.GetValidatorRegistration())
+		slots = s.config.AttRegistrationRSize
 	case *v1.Attestation_ValidatorDeregistration:
-		return proto.Marshal(att.GetValidatorDeregistration())
+		slots = s.config.AttDeregistrationRSize
 	default:
-		return nil, fmt.Errorf("unhandled attestation: %v %T", att, t)
+		return fmt.Errorf("unhandled attestation body: %T", t)
 	}
+	if len(att.Signatures) > slots {
+		return errors.New("more signatures than eligible attestor slots")
+	}
+	return nil
+}
+
+// domainSeparatedAttestationBytes binds the signature to the protocol,
+// version, chain and protobuf type. The leading zero is not a valid protobuf
+// field tag, so this payload cannot also be a legacy raw protobuf message.
+func domainSeparatedAttestationBytes(chainID string, body proto.Message) ([]byte, error) {
+	if body == nil || !body.ProtoReflect().IsValid() {
+		return nil, errors.New("empty attestation body")
+	}
+	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	data := []byte("\x00openaudio/attestation/v1\x00")
+	data = binary.BigEndian.AppendUint64(data, uint64(len(chainID)))
+	data = append(data, chainID...)
+	data = append(data, string(body.ProtoReflect().Descriptor().FullName())...)
+	data = append(data, 0)
+	return append(data, payload...), nil
+}
+
+// RPC signers use the next block's rules; consensus uses the block being
+// validated/replayed. Never fall back to legacy signatures after activation.
+func (s *Server) validatorAttestationBytes(body proto.Message, blockHeight int64) ([]byte, error) {
+	if !s.config.Upgrades.RulesetAt(blockHeight).AttestationDomainEnforced {
+		return proto.Marshal(body)
+	}
+	chainID := s.config.ChainID()
+	if chainID == "" {
+		return nil, errors.New("missing attestation chain ID")
+	}
+	return domainSeparatedAttestationBytes(chainID, body)
 }
 
 func recoverSigners(signatures []string, data []byte) ([]string, error) {
