@@ -75,11 +75,11 @@ func signPlaysForTest(t *testing.T, plays *v1.TrackPlays, key *ecdsa.PrivateKey)
 	}
 }
 
-func playBlockValid(t *testing.T, s *Server, rules config.Rules, stx *v1.SignedTransaction) (bool, error) {
+func playBlockValid(t *testing.T, s *Server, stx *v1.SignedTransaction) (bool, error) {
 	t.Helper()
 	txBytes, err := proto.Marshal(stx)
 	require.NoError(t, err)
-	return s.validateBlockTx(context.Background(), rules, newOverlayAuthStore(newMemAuthStore()), time.Time{}, 100, nil, txBytes)
+	return s.validateBlockTx(context.Background(), config.Rules{}, newOverlayAuthStore(newMemAuthStore()), time.Time{}, 100, nil, txBytes)
 }
 
 func TestIsValidPlayTransaction(t *testing.T) {
@@ -114,37 +114,33 @@ func TestIsValidPlayTransaction(t *testing.T) {
 			require.Error(t, err)
 			require.True(t, authRejected(err), "want a deterministic rejection, got %v", err)
 
-			require.Error(t, f.s.validateV1Transaction(ctx, 100, stx), "mempool must refuse regardless of activation height")
+			require.Error(t, f.s.validateV1Transaction(ctx, 100, stx), "mempool must refuse")
+			require.Error(t, f.s.validateProposerPolicy(ctx, stx), "proposer must not include")
 
-			valid, err := playBlockValid(t, f.s, config.Rules{PlayAuthEnforced: true}, stx)
+			valid, err := playBlockValid(t, f.s, stx)
 			require.NoError(t, err)
-			require.False(t, valid, "proposal must be rejected once play auth is enforced")
-
-			valid, err = playBlockValid(t, f.s, config.Rules{}, stx)
-			require.NoError(t, err)
-			require.True(t, valid, "proposal must stay valid before the activation height")
+			require.True(t, valid, "block validity must not change")
 		})
 	}
 }
 
-func TestPlayBlockValidityAcceptsSignedPlays(t *testing.T) {
+func TestProposerPolicyAcceptsSignedPlays(t *testing.T) {
 	f := newPlayTestFixture(t)
-	valid, err := playBlockValid(t, f.s, config.Rules{PlayAuthEnforced: true}, signPlaysForTest(t, testPlays(3), f.node))
-	require.NoError(t, err)
-	require.True(t, valid)
+	require.NoError(t, f.s.validateProposerPolicy(context.Background(), signPlaysForTest(t, testPlays(3), f.node)))
+	require.NoError(t, f.s.validateProposerPolicy(context.Background(), &v1.SignedTransaction{
+		Transaction: &v1.SignedTransaction_ManageEntity{ManageEntity: &v1.ManageEntityLegacy{}},
+	}))
+	require.NoError(t, f.s.validateProposerPolicy(context.Background(), nil))
 }
 
-func TestPlayBlockValiditySurfacesStoreErrors(t *testing.T) {
+func TestProposerPolicyDeclinesOnStoreErrors(t *testing.T) {
 	f := newPlayTestFixture(t)
 	closed, err := pgxpool.New(context.Background(), os.Getenv("TEST_DB_URL"))
 	require.NoError(t, err)
 	closed.Close()
 	f.s.db = db.New(closed)
 
-	stx := signPlaysForTest(t, testPlays(1), f.node)
-	valid, err := playBlockValid(t, f.s, config.Rules{PlayAuthEnforced: true}, stx)
-	require.Error(t, err, "a store failure must report unknown, not vote the proposal invalid")
-	require.False(t, valid)
+	require.Error(t, f.s.validateProposerPolicy(context.Background(), signPlaysForTest(t, testPlays(1), f.node)))
 }
 
 func TestPlayCheckTxShape(t *testing.T) {
