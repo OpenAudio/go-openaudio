@@ -334,6 +334,21 @@ func (m *Mirror) Status() Status {
 	return m.status
 }
 
+// LiveStatus is Status with the source tip read now. The mirror itself only
+// asks for the tip once its cursor passes the last one it saw, so between
+// those reads Status undercounts the lag by however far the source has moved.
+// If the source does not answer, the snapshot is returned as it is.
+func (m *Mirror) LiveStatus(ctx context.Context) Status {
+	st := m.Status()
+	tip, err := m.source.Tip(ctx)
+	if err != nil || tip <= st.SourceTip {
+		return st
+	}
+	st.SourceTip = tip
+	st.LagBlocks = max(tip-st.Cursor.Height+1, 0)
+	return st
+}
+
 func (m *Mirror) updateStatus(f func(*Status)) {
 	m.statusMu.Lock()
 	defer m.statusMu.Unlock()

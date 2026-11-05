@@ -61,10 +61,11 @@ type fakeSource struct {
 	chainID string
 	blocks  map[int64][][]byte
 	tip     int64
+	tipErr  error
 }
 
 func (s *fakeSource) ChainID(context.Context) (string, error) { return s.chainID, nil }
-func (s *fakeSource) Tip(context.Context) (int64, error)      { return s.tip, nil }
+func (s *fakeSource) Tip(context.Context) (int64, error)      { return s.tip, s.tipErr }
 func (s *fakeSource) Block(_ context.Context, h int64) (string, [][]byte, error) {
 	if h > s.tip {
 		return "", nil, fmt.Errorf("block %d beyond tip", h)
@@ -443,4 +444,24 @@ func TestOperatorSkipPassesOverOnlyTheNamedTx(t *testing.T) {
 
 func TestHaltWithoutATransactionHasNoSkipHint(t *testing.T) {
 	require.Empty(t, (&HaltError{Pos: Position{Height: 5}, Reason: "source block from the wrong chain"}).Hint())
+}
+
+// The mirror reads the tip only when its cursor passes the last one, so a
+// caught-up snapshot says zero lag while the source keeps moving. LiveStatus
+// reads the tip itself.
+func TestLiveStatusReadsTheSourceTip(t *testing.T) {
+	src := &fakeSource{chainID: srcChain, tip: 11, blocks: map[int64][][]byte{10: {}, 11: {}}}
+	dst := newFakeTarget()
+	m := newMirror(t, src, dst, &memCursor{}, 10)
+	require.NoError(t, drive(t, m, src, dst))
+	require.Zero(t, m.Status().LagBlocks)
+
+	src.tip = 50
+	require.Zero(t, m.Status().LagBlocks, "the snapshot still has the old tip")
+	st := m.LiveStatus(context.Background())
+	require.EqualValues(t, 50, st.SourceTip)
+	require.EqualValues(t, 39, st.LagBlocks, "blocks 12 through 50")
+
+	src.tipErr = errors.New("source down")
+	require.Equal(t, m.Status(), m.LiveStatus(context.Background()), "falls back to the snapshot")
 }
