@@ -1206,6 +1206,10 @@ func validateSignedTransactionForCheckTx(msg *v1.SignedTransaction) error {
 		return fmt.Errorf("manage entity migration transactions cannot be submitted")
 	case *v1.SignedTransaction_ValidatorRegistration:
 		return fmt.Errorf("legacy validator registrations cannot be submitted")
+	case *v1.SignedTransaction_Plays:
+		if err := validatePlayTransactionShape(msg); err != nil {
+			return err
+		}
 	case *v1.SignedTransaction_StorageProof:
 		sp := msg.GetStorageProof()
 		if len(sp.ProverAddresses) == 0 {
@@ -1298,6 +1302,15 @@ func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOv
 
 	switch signedTx.Transaction.(type) {
 	case *v1.SignedTransaction_Plays:
+		if rules.PlayAuthEnforced {
+			if err := s.isValidPlayTransaction(ctx, signedTx); err != nil {
+				if !authRejected(err) {
+					return false, err
+				}
+				s.logger.Error("Invalid block: invalid play tx", zap.Error(err))
+				return false, nil
+			}
+		}
 	case *v1.SignedTransaction_ManageEntity:
 		if rules.AuthEnforced {
 			if err := s.validateManageEntityAuth(ctx, rules, authOverlay, signedTx.GetManageEntity()); err != nil {
@@ -1405,6 +1418,8 @@ func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOv
 
 func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64, signedTx *v1.SignedTransaction) error {
 	switch signedTx.Transaction.(type) {
+	case *v1.SignedTransaction_Plays:
+		return s.isValidPlayTransaction(ctx, signedTx)
 	case *v1.SignedTransaction_ManageEntity:
 		// The mempool admits transactions for the next block, so resolve the
 		// ruleset one height ahead.

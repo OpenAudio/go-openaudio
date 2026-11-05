@@ -72,6 +72,12 @@ type UpgradeSchedule struct {
 	// replay as they were applied, since their tx results are committed in
 	// the next block's header.
 	LegacyRegistrationClosedHeight int64
+
+	// PlayAuthEnforcementHeight makes proposal validation refuse TrackPlays
+	// transactions that the mempool refuses: an envelope not signed by a
+	// registered node, more than MaxPlaysPerTransaction plays, or a play
+	// without a signature.
+	PlayAuthEnforcementHeight int64
 }
 
 // Rules is the resolved rule set for a single height: a flat description of
@@ -83,6 +89,7 @@ type Rules struct {
 	ContentAuthStrict bool
 	// LegacyRegistrationClosed makes legacy validator registrations fail.
 	LegacyRegistrationClosed bool
+	PlayAuthEnforced         bool
 }
 
 // RulesetAt resolves the rules governing the given block height. A nil
@@ -97,6 +104,7 @@ func (u *UpgradeSchedule) RulesetAt(height int64) Rules {
 		ContentAuthStrict:   activeAt(u.ContentAuthStrictHeight, height),
 
 		LegacyRegistrationClosed: activeAt(u.LegacyRegistrationClosedHeight, height),
+		PlayAuthEnforced:         activeAt(u.PlayAuthEnforcementHeight, height),
 	}
 }
 
@@ -116,6 +124,7 @@ var upgradeSchedules = map[string]*UpgradeSchedule{
 		ContentAuthEnforcementHeight:   1,
 		ContentAuthStrictHeight:        1,
 		LegacyRegistrationClosedHeight: 1,
+		PlayAuthEnforcementHeight:      1,
 	},
 	// sandbox
 	"audius-devnet": {
@@ -123,6 +132,7 @@ var upgradeSchedules = map[string]*UpgradeSchedule{
 		ContentAuthEnforcementHeight:   1,
 		ContentAuthStrictHeight:        1,
 		LegacyRegistrationClosedHeight: 1,
+		PlayAuthEnforcementHeight:      1,
 	},
 	// stage
 	"audius-testnet-alpha": {},

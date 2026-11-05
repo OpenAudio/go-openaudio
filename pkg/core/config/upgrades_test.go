@@ -74,6 +74,9 @@ func TestScheduleForChainID(t *testing.T) {
 		if !r.LegacyRegistrationClosed {
 			t.Fatalf("%s: legacy registrations should be closed from height 1", chainID)
 		}
+		if !r.PlayAuthEnforced {
+			t.Fatalf("%s: play auth should be enforced from height 1", chainID)
+		}
 	}
 	if r := ScheduleForChainID("audius-mainnet-beta").RulesetAt(1); !r.AuthEnforced || !r.ContentAuthEnforced {
 		t.Fatalf("audius-mainnet-beta: both enforcements should be active from height 1, got %+v", r)
@@ -90,6 +93,11 @@ func TestScheduleForChainID(t *testing.T) {
 	}
 	if r := alphaBeta.RulesetAt(35005210); r != (Rules{LegacyRegistrationClosed: true}) {
 		t.Fatalf("audius-mainnet-alpha-beta: only legacy registrations should close, got %+v", r)
+	}
+	for _, chainID := range []string{"audius-mainnet-alpha-beta", "audius-mainnet-beta"} {
+		if ScheduleForChainID(chainID).RulesetAt(1 << 40).PlayAuthEnforced {
+			t.Fatalf("%s: play auth must stay unscheduled until validators agree on a height", chainID)
+		}
 	}
 	for _, chainID := range []string{"audius-testnet-alpha", "some-future-chain"} {
 		if ScheduleForChainID(chainID).RulesetAt(1<<40) != (Rules{}) {
