@@ -149,6 +149,13 @@ var upgradeSchedules = map[string]*UpgradeSchedule{
 	// flusher replays post-snapshot track writes naming cids nobody attested,
 	// and stalls on the first refused row. Schedule strict in a follow-up
 	// release once the flusher has drained.
+	//
+	// AttestationDomainHeight is deliberately unset too, and height 1 is wrong
+	// for it however new the chain looks: validators on this chain are not all
+	// on the same release, and a binary that predates the entry signs and
+	// recovers attestations over the legacy payload. Activating at 1 would
+	// split the vote on the first attestation tx. Schedule a height once the
+	// whole set runs a release that knows the entry.
 	"audius-mainnet-beta": {
 		AuthEnforcementHeight:          1,
 		ContentAuthEnforcementHeight:   1,

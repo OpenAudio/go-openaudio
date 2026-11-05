@@ -23,21 +23,18 @@ func (s *Server) isValidAttestation(ctx context.Context, tx *v1.SignedTransactio
 	}
 
 	var body proto.Message
-	var rendezvousSize int
 	switch t := att.Body.(type) {
 	case *v1.Attestation_ValidatorRegistration:
 		body = t.ValidatorRegistration
-		rendezvousSize = s.config.AttRegistrationRSize
 	case *v1.Attestation_ValidatorDeregistration:
 		body = t.ValidatorDeregistration
-		rendezvousSize = s.config.AttDeregistrationRSize
 	default:
 		return fmt.Errorf("unhandled attestation body: %T", t)
 	}
-	// Recover at most one signature per possible attestor. This bounds the
-	// work an untrusted submission can trigger before its signers are known.
-	if s.config.Upgrades.RulesetAt(blockHeight).AttestationDomainEnforced && len(att.Signatures) > rendezvousSize {
-		return errors.New("more signatures than eligible attestor slots")
+	if s.config.Upgrades.RulesetAt(blockHeight).AttestationDomainEnforced {
+		if err := s.boundAttestationSignatures(att); err != nil {
+			return err
+		}
 	}
 	bodyBytes, err := s.validatorAttestationBytes(body, blockHeight)
 	if err != nil {
@@ -73,6 +70,28 @@ func (s *Server) finalizeAttestation(ctx context.Context, tx *v1.SignedTransacti
 	}
 }
 
+// boundAttestationSignatures rejects an attestation carrying more signatures
+// than there are eligible attestor slots. recoverSigners starts a goroutine
+// per signature, so this bounds the work an untrusted submission can trigger
+// before its signers are known. Block validity may only apply the bound once
+// the domain upgrade activates; mempool admission is local policy and applies
+// it everywhere, which is where untrusted submissions actually arrive.
+func (s *Server) boundAttestationSignatures(att *v1.Attestation) error {
+	var slots int
+	switch t := att.Body.(type) {
+	case *v1.Attestation_ValidatorRegistration:
+		slots = s.config.AttRegistrationRSize
+	case *v1.Attestation_ValidatorDeregistration:
+		slots = s.config.AttDeregistrationRSize
+	default:
+		return fmt.Errorf("unhandled attestation body: %T", t)
+	}
+	if len(att.Signatures) > slots {
+		return errors.New("more signatures than eligible attestor slots")
+	}
+	return nil
+}
+
 // domainSeparatedAttestationBytes binds the signature to the protocol,
 // version, chain and protobuf type. The leading zero is not a valid protobuf
 // field tag, so this payload cannot also be a legacy raw protobuf message.
@@ -98,10 +117,11 @@ func (s *Server) validatorAttestationBytes(body proto.Message, blockHeight int64
 	if !s.config.Upgrades.RulesetAt(blockHeight).AttestationDomainEnforced {
 		return proto.Marshal(body)
 	}
-	if s.config.GenesisFile == nil || s.config.GenesisFile.ChainID == "" {
+	chainID := s.config.ChainID()
+	if chainID == "" {
 		return nil, errors.New("missing attestation chain ID")
 	}
-	return domainSeparatedAttestationBytes(s.config.GenesisFile.ChainID, body)
+	return domainSeparatedAttestationBytes(chainID, body)
 }
 
 func recoverSigners(signatures []string, data []byte) ([]string, error) {

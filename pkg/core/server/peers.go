@@ -292,7 +292,9 @@ func (s *Server) refreshConnectRPCPeers(ctx context.Context, _ *zap.Logger) erro
 			endpoint = "https://" + endpoint
 		}
 		if err := validateValidatorEndpoint(endpoint); err != nil {
-			s.logger.Error("skipping invalid validator peer endpoint", zap.String("eth_address", ethAddress), zap.Error(err))
+			// Warn, not Error: a malformed registration stays malformed, and
+			// this runs on every refresh.
+			s.logger.Warn("skipping invalid validator peer endpoint", zap.String("eth_address", ethAddress), zap.Error(err))
 			continue
 		}
 		oap := sdk.NewOpenAudioSDK(endpoint)

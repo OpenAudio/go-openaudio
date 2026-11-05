@@ -282,7 +282,7 @@ func newRegistrationConsensusFixture(t *testing.T) *registrationConsensusFixture
 		ValidatorVotingPower: 10,
 		AttRegistrationRSize: 3,
 		AttRegistrationMin:   3,
-		GenesisFile:          &cometbfttypes.GenesisDoc{ChainID: "test"},
+		GenesisFile:          &cometbfttypes.GenesisDoc{ChainID: testChainID},
 	}
 	server := &Server{
 		pool:      pool,

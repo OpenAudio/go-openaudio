@@ -1424,6 +1424,16 @@ func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOv
 func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64, signedTx *v1.SignedTransaction) error {
 	switch signedTx.Transaction.(type) {
 	case *v1.SignedTransaction_Attestation:
+		att := signedTx.GetAttestation()
+		if att == nil {
+			return errors.New("empty attestation tx")
+		}
+		// Admission is local policy, so the signature bound applies before the
+		// domain upgrade activates. Full validation cannot: it would refuse
+		// transactions a peer predating the gate admits.
+		if err := s.boundAttestationSignatures(att); err != nil {
+			return err
+		}
 		if s.config.Upgrades.RulesetAt(currentHeight + 1).AttestationDomainEnforced {
 			return s.isValidAttestation(ctx, signedTx, currentHeight+1)
 		}

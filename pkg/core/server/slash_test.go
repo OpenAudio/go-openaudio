@@ -16,6 +16,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// testChainID is the chain every fixture in this package signs under.
+const testChainID = "test"
+
 // The exact dual-parse body from the local-devnet report. Fields 6-9 carry
 // the Comet key, voting power and deadline through SlashRecommendation as
 // unknown fields; fields 2-3 parse as both timestamps and control characters.
@@ -52,7 +55,7 @@ func TestSlashRegistrationReproBytes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, crypto.PubkeyToAddress(key.PublicKey).Hex(), signer)
 
-	sig, err := SignSlashRecommendation(key, &slash)
+	sig, err := SignSlashRecommendation(key, testChainID, &slash)
 	require.ErrorContains(t, err, "unknown fields")
 	require.Empty(t, sig)
 	// Rejection must happen before touching Ethereum or the database.
@@ -83,7 +86,7 @@ func TestSlashRecommendationValidation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			slash := validSlashRecommendation()
 			mutate(slash)
-			sig, err := SignSlashRecommendation(key, slash)
+			sig, err := SignSlashRecommendation(key, testChainID, slash)
 			require.Error(t, err)
 			require.Empty(t, sig)
 			_, err = (&Server{}).getSlashAttestation(context.Background(), slash)
@@ -92,9 +95,9 @@ func TestSlashRecommendationValidation(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
-	_, err = SignSlashRecommendation(key, nil)
+	_, err = SignSlashRecommendation(key, testChainID, nil)
 	require.Error(t, err)
-	_, err = SignSlashRecommendation(nil, validSlashRecommendation())
+	_, err = SignSlashRecommendation(nil, testChainID, validSlashRecommendation())
 	require.Error(t, err)
 	core := &CoreService{core: &Server{}}
 	_, err = core.GetSlashAttestations(context.Background(), connect.NewRequest(&v1.GetSlashAttestationsRequest{}))
@@ -105,9 +108,9 @@ func TestSlashSignatureDomain(t *testing.T) {
 	key, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	slash := validSlashRecommendation()
-	sig, err := SignSlashRecommendation(key, slash)
+	sig, err := SignSlashRecommendation(key, testChainID, slash)
 	require.NoError(t, err)
-	payload, err := SlashRecommendationSignBytes(slash)
+	payload, err := SlashRecommendationSignBytes(testChainID, slash)
 	require.NoError(t, err)
 	_, recovered, err := common.EthRecover(sig, payload)
 	require.NoError(t, err)
@@ -120,8 +123,24 @@ func TestSlashSignatureDomain(t *testing.T) {
 	require.NotEqual(t, address, recovered)
 	require.Error(t, proto.Unmarshal(payload, &v1.ValidatorRegistration{}))
 
+	// A proof gathered on one network must not be evidence on another, and an
+	// unknown chain must refuse to sign rather than fall back to no domain.
+	other, err := SlashRecommendationSignBytes("other-chain", slash)
+	require.NoError(t, err)
+	require.NotEqual(t, payload, other)
+	_, recovered, err = common.EthRecover(sig, other)
+	require.NoError(t, err)
+	require.NotEqual(t, address, recovered)
+	_, err = SlashRecommendationSignBytes("", slash)
+	require.ErrorContains(t, err, "chain ID")
+	_, err = SignSlashRecommendation(key, "", slash)
+	require.ErrorContains(t, err, "chain ID")
+	// Rejection must happen before the fan-out to peers.
+	_, err = (&Server{}).gatherSlashAttestations(context.Background(), slash)
+	require.ErrorContains(t, err, "chain ID")
+
 	slash.Amount++
-	changed, err := SlashRecommendationSignBytes(slash)
+	changed, err := SlashRecommendationSignBytes(testChainID, slash)
 	require.NoError(t, err)
 	_, recovered, err = common.EthRecover(sig, changed)
 	require.NoError(t, err)
@@ -182,7 +201,7 @@ func FuzzSlashRecommendationSignBytes(f *testing.F) {
 		if proto.Unmarshal(raw, &slash) != nil {
 			return
 		}
-		payload, err := SlashRecommendationSignBytes(&slash)
+		payload, err := SlashRecommendationSignBytes(testChainID, &slash)
 		if err != nil {
 			return
 		}
@@ -190,7 +209,7 @@ func FuzzSlashRecommendationSignBytes(f *testing.F) {
 		require.Empty(t, slash.Start.ProtoReflect().GetUnknown())
 		require.Empty(t, slash.End.ProtoReflect().GetUnknown())
 		require.Error(t, proto.Unmarshal(payload, &v1.ValidatorRegistration{}))
-		again, err := SlashRecommendationSignBytes(&slash)
+		again, err := SlashRecommendationSignBytes(testChainID, &slash)
 		require.NoError(t, err)
 		require.Equal(t, payload, again)
 	})

@@ -167,6 +167,16 @@ func (c *Config) IsDev() bool {
 	return c.Environment == "dev"
 }
 
+// ChainID is the genesis chain ID, or "" before a genesis file is loaded.
+// Signing payloads bind to it, so callers must refuse to sign when it is
+// empty rather than fall back to an unbound domain.
+func (c *Config) ChainID() string {
+	if c == nil || c.GenesisFile == nil {
+		return ""
+	}
+	return c.GenesisFile.ChainID
+}
+
 type StateSyncConfig struct {
 	// will periodically save pg_dumps to disk and serve them to other nodes
 	ServeSnapshots bool

@@ -97,7 +97,7 @@ func (s *Server) getSlashAttestation(ctx context.Context, slash *v1.SlashRecomme
 		return signature, err
 	}
 
-	signature, err = SignSlashRecommendation(s.config.EthereumKey, slash)
+	signature, err = SignSlashRecommendation(s.config.EthereumKey, s.config.ChainID(), slash)
 	if err != nil {
 		s.logger.Error("could not sign slash recommendation", zap.Error(err))
 		return signature, err
@@ -105,12 +105,12 @@ func (s *Server) getSlashAttestation(ctx context.Context, slash *v1.SlashRecomme
 	return signature, nil
 }
 
-func SignSlashRecommendation(ethKey *ecdsa.PrivateKey, slash *v1.SlashRecommendation) (string, error) {
+func SignSlashRecommendation(ethKey *ecdsa.PrivateKey, chainID string, slash *v1.SlashRecommendation) (string, error) {
 	var signature string
 	if ethKey == nil {
 		return signature, errors.New("empty eth key")
 	}
-	slashBytes, err := SlashRecommendationSignBytes(slash)
+	slashBytes, err := SlashRecommendationSignBytes(chainID, slash)
 	if err != nil {
 		return signature, fmt.Errorf("could not marshal slash recommendation: %v", err)
 	}
@@ -121,14 +121,20 @@ func SignSlashRecommendation(ethKey *ecdsa.PrivateKey, slash *v1.SlashRecommenda
 	return signature, nil
 }
 
-// SlashRecommendationSignBytes is the versioned, type-bound payload for
-// off-chain slash proofs. Consumers must recover signatures over these bytes,
-// never over raw proto.Marshal(slash). No consensus rule uses slash proofs.
-func SlashRecommendationSignBytes(slash *v1.SlashRecommendation) ([]byte, error) {
+// SlashRecommendationSignBytes is the versioned, type-bound, chain-bound
+// payload for off-chain slash proofs. Consumers must recover signatures over
+// these bytes, never over raw proto.Marshal(slash). No consensus rule uses
+// slash proofs, so this is not gated on an upgrade height; the chain ID is
+// what keeps a proof signed on devnet or stage from being presented as
+// evidence against the same wallet on mainnet.
+func SlashRecommendationSignBytes(chainID string, slash *v1.SlashRecommendation) ([]byte, error) {
 	if err := validateSlashRecommendation(slash); err != nil {
 		return nil, err
 	}
-	return domainSeparatedAttestationBytes("", slash)
+	if chainID == "" {
+		return nil, errors.New("missing slash chain ID")
+	}
+	return domainSeparatedAttestationBytes(chainID, slash)
 }
 
 func validateSlashRecommendation(slash *v1.SlashRecommendation) error {
@@ -199,7 +205,7 @@ func CalculateSlashRecommendation(startTime, endTime time.Time, totalEndpoints, 
 }
 
 func (s *Server) gatherSlashAttestations(ctx context.Context, slash *v1.SlashRecommendation) (map[string]string, error) {
-	payload, err := SlashRecommendationSignBytes(slash)
+	payload, err := SlashRecommendationSignBytes(s.config.ChainID(), slash)
 	if err != nil {
 		return nil, err
 	}

@@ -113,7 +113,7 @@ func (p slashProofPeer) GetSlashAttestation(context.Context, *connect.Request[v1
 func TestGatherSlashAttestationsDuringUpgrade(t *testing.T) {
 	f := newRegistrationConsensusFixture(t)
 	slash := validSlashRecommendation()
-	versioned, err := SlashRecommendationSignBytes(slash)
+	versioned, err := SlashRecommendationSignBytes(testChainID, slash)
 	require.NoError(t, err)
 	raw, err := proto.Marshal(slash)
 	require.NoError(t, err)
@@ -185,6 +185,24 @@ func TestMalformedRegistrationRejected(t *testing.T) {
 			require.Error(t, f.server.isValidAttestation(f.ctx, tx, f.blockHeight))
 		})
 	}
+}
+
+func TestMempoolBoundsAttestationSignaturesBeforeActivation(t *testing.T) {
+	f := newRegistrationConsensusFixture(t)
+	f.server.config.Upgrades.AttestationDomainHeight = 0
+	tx := f.makeRegistration(t, ed25519.GenPrivKey())
+	require.NoError(t, f.server.validateV1Transaction(f.ctx, f.blockHeight, tx))
+
+	att := tx.GetAttestation()
+	for len(att.Signatures) <= f.server.config.AttRegistrationRSize {
+		att.Signatures = append(att.Signatures, "malformed")
+	}
+	// recoverSigners starts a goroutine per signature, so admission bounds the
+	// count on every chain, including those with no activation height yet.
+	require.ErrorContains(t, f.server.validateV1Transaction(f.ctx, f.blockHeight, tx), "more signatures")
+
+	empty := &v1.SignedTransaction{Transaction: &v1.SignedTransaction_Attestation{}}
+	require.Error(t, f.server.validateV1Transaction(f.ctx, f.blockHeight, empty))
 }
 
 func TestRefreshPeersSkipsMalformedRegisteredEndpoint(t *testing.T) {

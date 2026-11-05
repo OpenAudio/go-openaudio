@@ -211,7 +211,7 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 	}
 	var signature string
 	if eligibleSlas > 0 {
-		signature, err = server.SignSlashRecommendation(cs.config.EthereumKey, slashRecommendation)
+		signature, err = server.SignSlashRecommendation(cs.config.EthereumKey, cs.config.ChainID(), slashRecommendation)
 		if err != nil {
 			cs.logger.Error("Failed to sign active adjudication data", zap.Error(err))
 		}
