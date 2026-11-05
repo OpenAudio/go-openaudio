@@ -240,14 +240,14 @@ func (s *Server) refreshPeerData(ctx context.Context, _ *zap.Logger) error {
 
 		existing, exists := s.peerStatus.Get(addr)
 		peer := &v1.GetStatusResponse_PeerInfo_Peer{
-			Endpoint:         validator.Endpoint,
-			CometAddress:     validator.CometAddress,
-			EthAddress:       validator.EthAddress,
-			NodeType:         validator.NodeType,
-			Jailed:           validator.Jailed,
+			Endpoint:          validator.Endpoint,
+			CometAddress:      validator.CometAddress,
+			EthAddress:        validator.EthAddress,
+			NodeType:          validator.NodeType,
+			Jailed:            validator.Jailed,
 			ConnectrpcClient:  exists && existing.ConnectrpcClient,
 			ConnectrpcHealthy: exists && existing.ConnectrpcHealthy,
-			CometrpcClient:   exists && existing.CometrpcClient,
+			CometrpcClient:    exists && existing.CometrpcClient,
 			P2PConnected:      exists && existing.P2PConnected,
 		}
 		s.peerStatus.Set(addr, peer)
@@ -288,6 +288,13 @@ func (s *Server) refreshConnectRPCPeers(ctx context.Context, _ *zap.Logger) erro
 		}
 
 		endpoint := validator.Endpoint
+		if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+			endpoint = "https://" + endpoint
+		}
+		if err := validateValidatorEndpoint(endpoint); err != nil {
+			s.logger.Error("skipping invalid validator peer endpoint", zap.String("eth_address", ethAddress), zap.Error(err))
+			continue
+		}
 		oap := sdk.NewOpenAudioSDK(endpoint)
 		connectRPC := oap.Core
 		s.connectRPCPeers.Set(ethAddress, connectRPC)

@@ -278,6 +278,7 @@ func newRegistrationConsensusFixture(t *testing.T) *registrationConsensusFixture
 	delegateKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	cfg := &config.Config{
+		Upgrades:             &config.UpgradeSchedule{AttestationDomainHeight: 1},
 		ValidatorVotingPower: 10,
 		AttRegistrationRSize: 3,
 		AttRegistrationMin:   3,
@@ -323,8 +324,13 @@ func (f *registrationConsensusFixture) makeRegistration(t *testing.T, cometKey e
 		Power:          10,
 		Deadline:       f.blockHeight + 10,
 	}
-	bodyBytes, err := proto.Marshal(reg)
+	bodyBytes, err := f.server.validatorAttestationBytes(reg, f.blockHeight)
 	require.NoError(t, err)
+	return f.signRegistration(t, reg, bodyBytes)
+}
+
+func (f *registrationConsensusFixture) signRegistration(t *testing.T, reg *v1.ValidatorRegistration, bodyBytes []byte) *v1.SignedTransaction {
+	t.Helper()
 	signatures := make([]string, 0, len(f.attestorSigners))
 	for _, sign := range f.attestorSigners {
 		signatures = append(signatures, sign(bodyBytes))

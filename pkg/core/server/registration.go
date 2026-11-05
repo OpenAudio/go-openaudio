@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +30,11 @@ func (s *Server) isValidRegisterNodeAttestation(ctx context.Context, tx *v1.Sign
 	vr := tx.GetAttestation().GetValidatorRegistration()
 	if vr == nil {
 		return fmt.Errorf("unknown tx fell into isValidRegisterNodeAttestation: %v", tx)
+	}
+	if s.config.Upgrades.RulesetAt(blockHeight).AttestationDomainEnforced {
+		if err := validateValidatorRegistration(vr); err != nil {
+			return err
+		}
 	}
 
 	// validate address from tx signature
@@ -87,6 +93,38 @@ func (s *Server) isValidRegisterNodeAttestation(ctx context.Context, tx *v1.Sign
 		return fmt.Errorf("not enough attestations provided to register validator at '%s'", vr.GetEndpoint())
 	}
 
+	return nil
+}
+
+func validateValidatorEndpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid validator endpoint: %w", err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("invalid validator endpoint %q", endpoint)
+	}
+	return nil
+}
+
+func validateValidatorRegistration(vr *v1.ValidatorRegistration) error {
+	if err := validateValidatorEndpoint(vr.GetEndpoint()); err != nil {
+		return err
+	}
+	switch vr.GetNodeType() {
+	case "validator", "content-node", "discovery-node":
+	default:
+		return fmt.Errorf("invalid validator node type %q", vr.GetNodeType())
+	}
+	if id, err := strconv.ParseInt(vr.GetSpId(), 10, 64); err != nil || id <= 0 {
+		return fmt.Errorf("invalid validator service provider ID %q", vr.GetSpId())
+	}
+	if vr.GetEthBlock() <= 0 {
+		return errors.New("validator ethereum block must be positive")
+	}
+	if len(vr.GetPubKey()) != ed25519.PubKeySize {
+		return fmt.Errorf("incorrect pubkey size %d, must be %d", len(vr.GetPubKey()), ed25519.PubKeySize)
+	}
 	return nil
 }
 

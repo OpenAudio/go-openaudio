@@ -1423,6 +1423,11 @@ func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOv
 
 func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64, signedTx *v1.SignedTransaction) error {
 	switch signedTx.Transaction.(type) {
+	case *v1.SignedTransaction_Attestation:
+		if s.config.Upgrades.RulesetAt(currentHeight + 1).AttestationDomainEnforced {
+			return s.isValidAttestation(ctx, signedTx, currentHeight+1)
+		}
+		return nil
 	case *v1.SignedTransaction_Plays:
 		return s.isValidPlayTransaction(ctx, signedTx)
 	case *v1.SignedTransaction_ManageEntity:

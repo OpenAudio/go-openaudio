@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"maps"
@@ -21,7 +22,24 @@ func (s *Server) isValidAttestation(ctx context.Context, tx *v1.SignedTransactio
 		return errors.New("empty attestation tx")
 	}
 
-	bodyBytes, err := getAttestationBodyBytes(att)
+	var body proto.Message
+	var rendezvousSize int
+	switch t := att.Body.(type) {
+	case *v1.Attestation_ValidatorRegistration:
+		body = t.ValidatorRegistration
+		rendezvousSize = s.config.AttRegistrationRSize
+	case *v1.Attestation_ValidatorDeregistration:
+		body = t.ValidatorDeregistration
+		rendezvousSize = s.config.AttDeregistrationRSize
+	default:
+		return fmt.Errorf("unhandled attestation body: %T", t)
+	}
+	// Recover at most one signature per possible attestor. This bounds the
+	// work an untrusted submission can trigger before its signers are known.
+	if s.config.Upgrades.RulesetAt(blockHeight).AttestationDomainEnforced && len(att.Signatures) > rendezvousSize {
+		return errors.New("more signatures than eligible attestor slots")
+	}
+	bodyBytes, err := s.validatorAttestationBytes(body, blockHeight)
 	if err != nil {
 		return fmt.Errorf("could not marshal attestation body into bytes: %v", err)
 	}
@@ -55,15 +73,35 @@ func (s *Server) finalizeAttestation(ctx context.Context, tx *v1.SignedTransacti
 	}
 }
 
-func getAttestationBodyBytes(att *v1.Attestation) ([]byte, error) {
-	switch t := att.Body.(type) {
-	case *v1.Attestation_ValidatorRegistration:
-		return proto.Marshal(att.GetValidatorRegistration())
-	case *v1.Attestation_ValidatorDeregistration:
-		return proto.Marshal(att.GetValidatorDeregistration())
-	default:
-		return nil, fmt.Errorf("unhandled attestation: %v %T", att, t)
+// domainSeparatedAttestationBytes binds the signature to the protocol,
+// version, chain and protobuf type. The leading zero is not a valid protobuf
+// field tag, so this payload cannot also be a legacy raw protobuf message.
+func domainSeparatedAttestationBytes(chainID string, body proto.Message) ([]byte, error) {
+	if body == nil || !body.ProtoReflect().IsValid() {
+		return nil, errors.New("empty attestation body")
 	}
+	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	data := []byte("\x00openaudio/attestation/v1\x00")
+	data = binary.BigEndian.AppendUint64(data, uint64(len(chainID)))
+	data = append(data, chainID...)
+	data = append(data, string(body.ProtoReflect().Descriptor().FullName())...)
+	data = append(data, 0)
+	return append(data, payload...), nil
+}
+
+// RPC signers use the next block's rules; consensus uses the block being
+// validated/replayed. Never fall back to legacy signatures after activation.
+func (s *Server) validatorAttestationBytes(body proto.Message, blockHeight int64) ([]byte, error) {
+	if !s.config.Upgrades.RulesetAt(blockHeight).AttestationDomainEnforced {
+		return proto.Marshal(body)
+	}
+	if s.config.GenesisFile == nil || s.config.GenesisFile.ChainID == "" {
+		return nil, errors.New("missing attestation chain ID")
+	}
+	return domainSeparatedAttestationBytes(s.config.GenesisFile.ChainID, body)
 }
 
 func recoverSigners(signatures []string, data []byte) ([]string, error) {
