@@ -224,6 +224,12 @@ func (e *Indexer) Run() error {
 		})
 	}
 
+	if e.config.VerifyPlaySigners {
+		if err := e.doValidatorSync(ctx); err != nil {
+			e.logger.Warn("validator sync before indexing failed", zap.Error(err))
+		}
+	}
+
 	g.Go(func() error {
 		// a bounded run returns nil, and an errgroup only cancels on error, so
 		// without this the unconditional helpers would keep the group alive
@@ -363,6 +369,7 @@ func (e *Indexer) indexBlocks() error {
 				zap.Int("em_txs", res.emTxCount),
 				zap.Int("em_rejected", res.emRejectCount),
 				zap.Int("em_unrouted", res.emUnroutedCount),
+				zap.Int("plays_rejected", res.playsRejectCount),
 				zap.Duration("block_time", res.blockElapsed),
 				zap.Float64("blocks_per_sec", blocksPerSec),
 				zap.Float64("txs_per_sec", txsPerSec),
@@ -389,6 +396,8 @@ func (e *Indexer) indexBlocks() error {
 type blockResult struct {
 	emTxCount     int
 	emRejectCount int
+	// Plays transactions not signed by a known validator node.
+	playsRejectCount int
 	// Transactions whose (entity_type, action) matched no handler. Tolerated
 	// during live indexing for forward compatibility, so they are counted
 	// apart from rejections rather than folded into them.
@@ -640,6 +649,24 @@ func (e *Indexer) processOneTx(
 
 	switch signedTx := t.Transaction.Transaction.(type) {
 	case *corev1.SignedTransaction_Plays:
+		reason, err := e.playsRejection(ctx, t.Transaction, block.Height, q.IsKnownNodeAddress)
+		if err != nil {
+			e.logger.Error("error verifying plays signer",
+				zap.String("hash", t.Hash), zap.Error(err))
+			scope.Rollback(ctx)
+			return false
+		}
+		if reason != "" {
+			res.playsRejectCount++
+			insertTxParams.TxType = TxTypePlay
+			e.logger.Warn("plays rejected",
+				zap.String("hash", t.Hash),
+				zap.Int64("block", block.Height),
+				zap.Int("play_count", len(signedTx.Plays.GetPlays())),
+				zap.String("reason", reason),
+			)
+			break
+		}
 		pr, err := processors.Play().Process(ctx, t.Transaction, txCtx, q)
 		if err != nil {
 			e.logger.Error("error processing plays",

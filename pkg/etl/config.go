@@ -1,7 +1,9 @@
 package etl
 
 import (
+	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -28,6 +30,17 @@ type Config struct {
 	// If non-nil (even if empty), only listed types are enabled.
 	// Populated from OPENAUDIO_ETL_ENTITY_MANAGER_DATA_TYPES env var (comma-separated).
 	DataTypes *[]string
+
+	// VerifyPlaySigners drops Plays transactions whose envelope signature does
+	// not recover to a known validator node: no etl_plays rows are written and
+	// no plays hooks fire. The transaction itself is still recorded.
+	VerifyPlaySigners bool
+
+	// GenesisMigrationEndHeight is the last block written by genesis-writer
+	// (genesis_migration_end_height in the chain's genesis app_state). Plays at
+	// or below it are exempt from VerifyPlaySigners. Zero means the chain has
+	// no genesis-migration range.
+	GenesisMigrationEndHeight int64
 }
 
 // DefaultConfig returns config with all optional components enabled.
@@ -37,6 +50,7 @@ func DefaultConfig() Config {
 		EnablePgNotifyListener:        true,
 		EnableScheduledReleases:       true,
 		DataTypes:                     nil,
+		VerifyPlaySigners:             true,
 	}
 }
 
@@ -94,6 +108,24 @@ func (c *Config) ReadBackgroundJobsEnv() {
 	if disabled("OPENAUDIO_ETL_PG_NOTIFY_ENABLED") {
 		c.DisablePgNotifyListener()
 	}
+}
+
+// ReadPlaySignerEnv applies the play signer settings:
+//
+//	OPENAUDIO_ETL_VERIFY_PLAY_SIGNERS            "false" disables the check
+//	OPENAUDIO_ETL_GENESIS_MIGRATION_END_HEIGHT   sets GenesisMigrationEndHeight
+func (c *Config) ReadPlaySignerEnv() error {
+	if v, ok := os.LookupEnv("OPENAUDIO_ETL_VERIFY_PLAY_SIGNERS"); ok && strings.EqualFold(strings.TrimSpace(v), "false") {
+		c.VerifyPlaySigners = false
+	}
+	if v, ok := os.LookupEnv("OPENAUDIO_ETL_GENESIS_MIGRATION_END_HEIGHT"); ok && strings.TrimSpace(v) != "" {
+		h, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		if err != nil || h < 0 {
+			return fmt.Errorf("OPENAUDIO_ETL_GENESIS_MIGRATION_END_HEIGHT: invalid height %q", v)
+		}
+		c.GenesisMigrationEndHeight = h
+	}
+	return nil
 }
 
 // IsDataTypeEnabled returns true if the given entity type should be indexed.

@@ -1606,6 +1606,21 @@ func (q *Queries) InsertFailedStorageProof(ctx context.Context, arg InsertFailed
 	return err
 }
 
+const isKnownNodeAddress = `-- name: IsKnownNodeAddress :one
+select exists(
+  select 1 from etl_validators where lower(address) = lower($1::text)
+  union all
+  select 1 from etl_validator_registrations where lower(address) = lower($1::text)
+)
+`
+
+func (q *Queries) IsKnownNodeAddress(ctx context.Context, address string) (bool, error) {
+	row := q.db.QueryRow(ctx, isKnownNodeAddress, address)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const updateStorageProofStatus = `-- name: UpdateStorageProofStatus :exec
 update etl_storage_proofs
 set status = $1, proof = $2

@@ -282,3 +282,10 @@ LEFT JOIN etl_sla_node_reports snr ON sr.id = snr.sla_rollup_id
 WHERE sr.id = ANY($1::int[])
 GROUP BY sr.id
 ORDER BY sr.id;
+
+-- name: IsKnownNodeAddress :one
+select exists(
+  select 1 from etl_validators where lower(address) = lower(@address::text)
+  union all
+  select 1 from etl_validator_registrations where lower(address) = lower(@address::text)
+);
