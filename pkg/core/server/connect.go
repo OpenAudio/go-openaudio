@@ -310,7 +310,11 @@ func (c *CoreService) ForwardTransaction(ctx context.Context, req *connect.Reque
 		return nil, fmt.Errorf("no transaction provided")
 	}
 
-	err = core.addMempoolTransaction(mempoolKey, mempoolTx, false)
+	err = core.addMempoolTransaction(ctx, mempoolKey, mempoolTx, false)
+	if errors.Is(err, ErrTxAlreadyCommitted) {
+		// expected during gossip: the forward lost the race with the block
+		return connect.NewResponse(&v1.ForwardTransactionResponse{}), nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("could not add tx to mempool %v", err)
 	}
@@ -770,7 +774,11 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 
 	// add transaction to mempool with broadcast set to true
 	if mempoolTx != nil {
-		err = core.addMempoolTransaction(txhash, mempoolTx, true)
+		err = core.addMempoolTransaction(ctx, txhash, mempoolTx, true)
+		if errors.Is(err, ErrTxAlreadyCommitted) {
+			// a client retrying a tx that already landed gets its receipt
+			return core.sendTransactionResponse(ctx, txhash, req.Msg)
+		}
 		if err != nil {
 			core.logger.Error("tx could not be included in mempool", zap.String("tx", txhash), zap.Error(err))
 			return nil, fmt.Errorf("could not add tx to mempool %v", err)
@@ -779,111 +787,117 @@ func (c *CoreService) SendTransaction(ctx context.Context, req *connect.Request[
 
 	select {
 	case <-txHashCh:
-		tx, err := core.db.GetTx(ctx, txhash)
-		if err != nil {
-			return nil, err
-		}
-
-		block, err := core.db.GetBlock(ctx, tx.BlockID)
-		if err != nil {
-			return nil, err
-		}
-
-		// only build receipt for v2 transactions
-		var receipt *v1beta1.TransactionReceipt
-		if req.Msg.Transactionv2 != nil {
-			receipt = &v1beta1.TransactionReceipt{
-				EnvelopeInfo: &v1beta1.EnvelopeReceiptInfo{
-					ChainId:      core.config.GenesisFile.ChainID,
-					Expiration:   req.Msg.Transactionv2.Envelope.Header.Expiration,
-					Nonce:        req.Msg.Transactionv2.Envelope.Header.Nonce,
-					MessageCount: int32(len(req.Msg.Transactionv2.Envelope.Messages)),
-				},
-				TxHash:          txhash,
-				Height:          block.Height,
-				Timestamp:       block.CreatedAt.Time.Unix(),
-				Sender:          "", // TODO: get sender from transaction signature
-				Responder:       core.config.ProposerAddress,
-				Proposer:        block.Proposer,
-				MessageReceipts: make([]*v1beta1.MessageReceipt, len(req.Msg.Transactionv2.Envelope.Messages)),
-			}
-			// get all receipts by tx hash and use index to map to the correct message
-
-			// get ERNs, MEADs, and PIES by tx hash and use index to map to the correct message
-			ernReceipts, err := core.db.GetERNReceipts(ctx, txhash)
-			if err != nil {
-				core.logger.Error("error getting ERN receipts", zap.Error(err))
-			} else {
-				for _, ernReceipt := range ernReceipts {
-					ernAck := &ddexv1beta1.NewReleaseMessageAck{}
-					err = proto.Unmarshal(ernReceipt.RawAcknowledgment, ernAck)
-					if err != nil {
-						core.logger.Error("error unmarshalling ERN receipt", zap.Error(err))
-					}
-					receipt.MessageReceipts[ernReceipt.Index] = &v1beta1.MessageReceipt{
-						MessageIndex: int32(ernReceipt.Index),
-						Result: &v1beta1.MessageReceipt_ErnAck{
-							ErnAck: ernAck,
-						},
-					}
-				}
-			}
-
-			meadReceipts, err := core.db.GetMEADReceipts(ctx, txhash)
-			if err != nil {
-				core.logger.Error("error getting MEAD receipts", zap.Error(err))
-			} else {
-				for _, meadReceipt := range meadReceipts {
-					meadAck := &ddexv1beta1.MeadMessageAck{}
-					err = proto.Unmarshal(meadReceipt.RawAcknowledgment, meadAck)
-					if err != nil {
-						core.logger.Error("error unmarshalling MEAD receipt", zap.Error(err))
-					}
-					receipt.MessageReceipts[meadReceipt.Index] = &v1beta1.MessageReceipt{
-						MessageIndex: int32(meadReceipt.Index),
-						Result: &v1beta1.MessageReceipt_MeadAck{
-							MeadAck: meadAck,
-						},
-					}
-				}
-			}
-
-			pieReceipts, err := core.db.GetPIEReceipts(ctx, txhash)
-			if err != nil {
-				core.logger.Error("error getting PIE receipts", zap.Error(err))
-			} else {
-				for _, pieReceipt := range pieReceipts {
-					pieAck := &ddexv1beta1.PieMessageAck{}
-					err = proto.Unmarshal(pieReceipt.RawAcknowledgment, pieAck)
-					if err != nil {
-						core.logger.Error("error unmarshalling PIE receipt", zap.Error(err))
-					}
-					receipt.MessageReceipts[pieReceipt.Index] = &v1beta1.MessageReceipt{
-						MessageIndex: int32(pieReceipt.Index),
-						Result: &v1beta1.MessageReceipt_PieAck{
-							PieAck: pieAck,
-						},
-					}
-				}
-			}
-		}
-
-		return connect.NewResponse(&v1.SendTransactionResponse{
-			Transaction: &v1.Transaction{
-				Hash:          txhash,
-				BlockHash:     block.Hash,
-				ChainId:       core.config.GenesisFile.ChainID,
-				Height:        block.Height,
-				Timestamp:     timestamppb.New(block.CreatedAt.Time),
-				Transaction:   req.Msg.Transaction,
-				Transactionv2: req.Msg.Transactionv2,
-			},
-			TransactionReceipt: receipt,
-		}), nil
+		return core.sendTransactionResponse(ctx, txhash, req.Msg)
 	case <-time.After(30 * time.Second):
 		core.logger.Error("tx timeout waiting to be included", zap.String("tx", txhash))
 		return nil, errors.New("tx waiting timeout")
 	}
+}
+
+// sendTransactionResponse builds the SendTransaction response for a committed
+// transaction.
+func (s *Server) sendTransactionResponse(ctx context.Context, txhash string, req *v1.SendTransactionRequest) (*connect.Response[v1.SendTransactionResponse], error) {
+	tx, err := s.db.GetTx(ctx, txhash)
+	if err != nil {
+		return nil, err
+	}
+
+	block, err := s.db.GetBlock(ctx, tx.BlockID)
+	if err != nil {
+		return nil, err
+	}
+
+	// only build receipt for v2 transactions
+	var receipt *v1beta1.TransactionReceipt
+	if req.Transactionv2 != nil {
+		receipt = &v1beta1.TransactionReceipt{
+			EnvelopeInfo: &v1beta1.EnvelopeReceiptInfo{
+				ChainId:      s.config.GenesisFile.ChainID,
+				Expiration:   req.Transactionv2.Envelope.Header.Expiration,
+				Nonce:        req.Transactionv2.Envelope.Header.Nonce,
+				MessageCount: int32(len(req.Transactionv2.Envelope.Messages)),
+			},
+			TxHash:          txhash,
+			Height:          block.Height,
+			Timestamp:       block.CreatedAt.Time.Unix(),
+			Sender:          "", // TODO: get sender from transaction signature
+			Responder:       s.config.ProposerAddress,
+			Proposer:        block.Proposer,
+			MessageReceipts: make([]*v1beta1.MessageReceipt, len(req.Transactionv2.Envelope.Messages)),
+		}
+		// get all receipts by tx hash and use index to map to the correct message
+
+		// get ERNs, MEADs, and PIES by tx hash and use index to map to the correct message
+		ernReceipts, err := s.db.GetERNReceipts(ctx, txhash)
+		if err != nil {
+			s.logger.Error("error getting ERN receipts", zap.Error(err))
+		} else {
+			for _, ernReceipt := range ernReceipts {
+				ernAck := &ddexv1beta1.NewReleaseMessageAck{}
+				err = proto.Unmarshal(ernReceipt.RawAcknowledgment, ernAck)
+				if err != nil {
+					s.logger.Error("error unmarshalling ERN receipt", zap.Error(err))
+				}
+				receipt.MessageReceipts[ernReceipt.Index] = &v1beta1.MessageReceipt{
+					MessageIndex: int32(ernReceipt.Index),
+					Result: &v1beta1.MessageReceipt_ErnAck{
+						ErnAck: ernAck,
+					},
+				}
+			}
+		}
+
+		meadReceipts, err := s.db.GetMEADReceipts(ctx, txhash)
+		if err != nil {
+			s.logger.Error("error getting MEAD receipts", zap.Error(err))
+		} else {
+			for _, meadReceipt := range meadReceipts {
+				meadAck := &ddexv1beta1.MeadMessageAck{}
+				err = proto.Unmarshal(meadReceipt.RawAcknowledgment, meadAck)
+				if err != nil {
+					s.logger.Error("error unmarshalling MEAD receipt", zap.Error(err))
+				}
+				receipt.MessageReceipts[meadReceipt.Index] = &v1beta1.MessageReceipt{
+					MessageIndex: int32(meadReceipt.Index),
+					Result: &v1beta1.MessageReceipt_MeadAck{
+						MeadAck: meadAck,
+					},
+				}
+			}
+		}
+
+		pieReceipts, err := s.db.GetPIEReceipts(ctx, txhash)
+		if err != nil {
+			s.logger.Error("error getting PIE receipts", zap.Error(err))
+		} else {
+			for _, pieReceipt := range pieReceipts {
+				pieAck := &ddexv1beta1.PieMessageAck{}
+				err = proto.Unmarshal(pieReceipt.RawAcknowledgment, pieAck)
+				if err != nil {
+					s.logger.Error("error unmarshalling PIE receipt", zap.Error(err))
+				}
+				receipt.MessageReceipts[pieReceipt.Index] = &v1beta1.MessageReceipt{
+					MessageIndex: int32(pieReceipt.Index),
+					Result: &v1beta1.MessageReceipt_PieAck{
+						PieAck: pieAck,
+					},
+				}
+			}
+		}
+	}
+
+	return connect.NewResponse(&v1.SendTransactionResponse{
+		Transaction: &v1.Transaction{
+			Hash:          txhash,
+			BlockHash:     block.Hash,
+			ChainId:       s.config.GenesisFile.ChainID,
+			Height:        block.Height,
+			Timestamp:     timestamppb.New(block.CreatedAt.Time),
+			Transaction:   req.Transaction,
+			Transactionv2: req.Transactionv2,
+		},
+		TransactionReceipt: receipt,
+	}), nil
 }
 
 // Utilities

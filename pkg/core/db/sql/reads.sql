@@ -4,6 +4,12 @@ from core_transactions
 where lower(tx_hash) = lower($1)
 limit 1;
 
+-- name: GetCommittedTxHashes :many
+-- tx_hashes must be lowercase so the lookup can use the lower(tx_hash) index.
+select tx_hash
+from core_transactions
+where lower(tx_hash) = any(@tx_hashes::text[]);
+
 -- name: TotalTxResults :one
 select count(tx_hash)
 from core_transactions;

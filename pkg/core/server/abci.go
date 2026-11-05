@@ -389,8 +389,13 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 	rules := s.config.Upgrades.RulesetAt(proposal.Height)
 	authOverlay := s.newProposalAuthOverlay()
 
-	// Sequential on purpose: authOverlay carries each accepted tx's auth
-	// effects forward so later txs in this proposal can depend on them.
+	type batchTx struct {
+		tx    *MempoolTransaction
+		bytes []byte
+		hash  string
+	}
+	batchTxs := make([]batchTx, 0, len(txMemBatch))
+	batchHashes := make([]string, 0, len(txMemBatch))
 	for _, tx := range txMemBatch {
 		var txBytes []byte
 		var err error
@@ -403,6 +408,34 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 			s.logger.Error("tx made it into prepare but couldn't be marshalled", zap.Error(err))
 			continue
 		}
+		txHash := common.ToTxHashFromBytes(txBytes)
+		batchTxs = append(batchTxs, batchTx{tx: tx, bytes: txBytes, hash: txHash})
+		batchHashes = append(batchHashes, txHash)
+	}
+
+	// The mempool refuses committed txs on admission, but one can still be
+	// admitted between a block's db commit and Commit's RemoveBatch.
+	committed, err := s.committedTxHashes(ctx, batchHashes)
+	if err != nil {
+		s.logger.Error("could not check proposal txs for already committed txs", zap.Error(err))
+		committed = map[string]struct{}{}
+	}
+	if len(committed) > 0 {
+		dropped := make([]string, 0, len(committed))
+		for h := range committed {
+			dropped = append(dropped, h)
+		}
+		s.logger.Info("dropping already committed txs from proposal", zap.Strings("txs", dropped))
+		s.mempl.RemoveBatch(dropped)
+	}
+
+	// Sequential on purpose: authOverlay carries each accepted tx's auth
+	// effects forward so later txs in this proposal can depend on them.
+	for _, btx := range batchTxs {
+		if _, ok := committed[btx.hash]; ok {
+			continue
+		}
+		tx, txBytes := btx.tx, btx.bytes
 		valid, err := s.validateBlockTx(ctx, rules, authOverlay, proposal.Time, proposal.Height, proposal.Misbehavior, txBytes)
 		if err != nil {
 			s.logger.Error("tx made it into prepare but couldn't be validated", zap.Error(err))
@@ -416,7 +449,7 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 				msg = tx.Tx
 			}
 			s.logger.Error("invalid tx made it into prepare",
-				zap.String("tx", common.ToTxHashFromBytes(txBytes)),
+				zap.String("tx", btx.hash),
 				zap.String("type", txTypeName(tx.Tx)),
 				zap.Int("size_bytes", len(txBytes)),
 				zap.String("payload_preview", txPayloadPreview(msg)))
