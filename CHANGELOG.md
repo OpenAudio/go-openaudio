@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.1](https://github.com/OpenAudio/go-openaudio/compare/v1.14.0...v1.14.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **core:** prevent slash attestation replay ([#622](https://github.com/OpenAudio/go-openaudio/issues/622)) ([a5eb950](https://github.com/OpenAudio/go-openaudio/commit/a5eb950885f263471b0ac6a9570fb041b182a8fc))
+
 ## [1.14.0](https://github.com/OpenAudio/go-openaudio/compare/v1.13.0...v1.14.0) (2026-11-05)
 
 
