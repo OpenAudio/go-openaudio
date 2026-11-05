@@ -465,13 +465,16 @@ func (ss *MediorumServer) logTrackListen(c echo.Context) {
 		return
 	}
 
+	trackID := fmt.Sprint(sig.Data.TrackId)
+	if !ss.shouldCountPlay(c, trackID) {
+		return
+	}
+
 	geoData, err := ss.getGeoFromIP(c.RealIP())
 	if err != nil {
 		ss.logger.Error("core plays bad ip", zap.Error(err))
 		return
 	}
-
-	trackID := fmt.Sprint(sig.Data.TrackId)
 
 	ss.playEventQueue.pushPlayEvent(&PlayEvent{
 		UserID:           userId,
