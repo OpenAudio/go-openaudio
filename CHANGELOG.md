@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.14.0](https://github.com/OpenAudio/go-openaudio/compare/v1.13.0...v1.14.0) (2026-11-05)
+
+
+### Features
+
+* **etl:** optionally read a block's transactions in chain order ([#606](https://github.com/OpenAudio/go-openaudio/issues/606)) ([6874b2c](https://github.com/OpenAudio/go-openaudio/commit/6874b2c6321a947fea690a27799bf40c529396c9))
+* **mirror:** attest a refused track's own upload and retry ([#610](https://github.com/OpenAudio/go-openaudio/issues/610)) ([27d57b6](https://github.com/OpenAudio/go-openaudio/commit/27d57b6a2bb8e17688c17bbbdc8a9e640b05ed01))
+* **mirror:** let an operator pass over a refused transaction they have investigated ([#608](https://github.com/OpenAudio/go-openaudio/issues/608)) ([ef19768](https://github.com/OpenAudio/go-openaudio/commit/ef197682875b810b1ae8f8bce9c8533909890ba8))
+* **mirror:** replay the old chain's writes and plays onto the new chain ([#605](https://github.com/OpenAudio/go-openaudio/issues/605)) ([a126316](https://github.com/OpenAudio/go-openaudio/commit/a12631654ce4dc15a81c3cb960c51ef4f47f4686))
+
+
+### Bug Fixes
+
+* **core:** enforce play tx checks in proposers instead of consensus ([#621](https://github.com/OpenAudio/go-openaudio/issues/621)) ([ac581c9](https://github.com/OpenAudio/go-openaudio/commit/ac581c9dc9ae9cb08bb4eacbc5acfa3fbe38f6ff))
+* **core:** keep migrated grants' approval and revocation in auth state ([#615](https://github.com/OpenAudio/go-openaudio/issues/615)) ([19f139f](https://github.com/OpenAudio/go-openaudio/commit/19f139f4e816f93f20c1f5b9ce1aab9c9092976c))
+* **core:** validate play tx signer and size ([#620](https://github.com/OpenAudio/go-openaudio/issues/620)) ([54adb5c](https://github.com/OpenAudio/go-openaudio/commit/54adb5c69f9dd70ca11e7fe5b34c886d515d584a))
+* **etl:** only let a comment's owner edit it ([#613](https://github.com/OpenAudio/go-openaudio/issues/613)) ([12b90a3](https://github.com/OpenAudio/go-openaudio/commit/12b90a382498c94a1723fa6eacc848d7692a73b4))
+* **etl:** validate the signer on comment and track mute ([#614](https://github.com/OpenAudio/go-openaudio/issues/614)) ([6a05d90](https://github.com/OpenAudio/go-openaudio/commit/6a05d909cc6f5c288c6b2503be6354db2ce68daf))
+* **mirror:** read the source tip when /status is requested ([#618](https://github.com/OpenAudio/go-openaudio/issues/618)) ([ed29eef](https://github.com/OpenAudio/go-openaudio/commit/ed29eef1142b9f69debe53df2e7b2172d61de19e))
+
+
+### Performance Improvements
+
+* **mirror:** forward to validators in parallel ([#617](https://github.com/OpenAudio/go-openaudio/issues/617)) ([2088607](https://github.com/OpenAudio/go-openaudio/commit/208860791488894c8ba818b01f378179c465d6d3))
+
 ## [1.13.0](https://github.com/OpenAudio/go-openaudio/compare/v1.12.1...v1.13.0) (2026-10-23)
 
 
