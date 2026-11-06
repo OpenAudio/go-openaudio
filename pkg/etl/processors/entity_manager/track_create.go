@@ -3,6 +3,7 @@ package entity_manager
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 type trackCreateHandler struct{}
@@ -134,6 +135,11 @@ func insertTrackAndRouteWithState(ctx context.Context, params *Params, state tra
 	coverOriginalArtist := params.MetadataString("cover_original_artist")
 	commentsDisabled := params.MetadataBoolOr("comments_disabled", false)
 	noAIUse := params.MetadataBoolOr("no_ai_use", false)
+	var feedbackRequestedAt *time.Time
+	if params.MetadataBoolOr("feedback_requested", false) {
+		t := params.BlockTime
+		feedbackRequestedAt = &t
+	}
 
 	var previewStartSeconds *float64
 	if v, ok := params.MetadataFloat64("preview_start_seconds"); ok {
@@ -203,7 +209,7 @@ func insertTrackAndRouteWithState(ctx context.Context, params *Params, state tra
 			orig_filename,
 			artists, resource_contributors, indirect_resource_contributors,
 			rights_controller, copyright_line, producer_copyright_line,
-			parental_warning_type, is_original_available
+			parental_warning_type, is_original_available, feedback_requested_at
 		) VALUES (
 			$1, $2, true, $48, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
@@ -217,7 +223,7 @@ func insertTrackAndRouteWithState(ctx context.Context, params *Params, state tra
 			$47,
 			$49, $50, $51,
 			$52, $53, $54,
-			$55, $56
+			$55, $56, $57
 		)
 	`,
 		params.EntityID,
@@ -276,6 +282,7 @@ func insertTrackAndRouteWithState(ctx context.Context, params *Params, state tra
 		ddexJSON("producer_copyright_line"),
 		nullString(params.MetadataString("parental_warning_type")),
 		isOriginalAvailable,
+		feedbackRequestedAt,
 	)
 	if err != nil {
 		return err
