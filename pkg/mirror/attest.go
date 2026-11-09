@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
@@ -37,6 +39,12 @@ import (
 // attestation to commit, and retry the track once. Anything short of that
 // match still halts.
 //
+// Replacing a track's audio uploads a new file and updates the track to name
+// it, but the update keeps the audio_upload_id of the track's first upload.
+// When the named upload holds a different file, the mirror looks for the
+// upload that does: one made later for the same user, holding the original the
+// track names and the transcode it names.
+//
 // The upload's user is an assertion made at upload time, exactly as it is
 // for a storage node's own attestation, so this grants nothing a live upload
 // to the new chain would not have.
@@ -47,12 +55,19 @@ type UploadRecord struct {
 	OrigFileCID string            `json:"orig_file_cid"`
 	Results     map[string]string `json:"results"`
 	UserID      sql.NullInt64     `json:"user_id"`
+	CreatedAt   time.Time         `json:"created_at"`
 }
 
-// UploadSource looks up an upload by id on the old chain's storage.
+// UploadSource looks up uploads on the old chain's storage.
 type UploadSource interface {
 	Upload(ctx context.Context, id string) (*UploadRecord, error)
+	// UploadsAfter lists uploads created after a time, oldest first, a page
+	// at a time.
+	UploadsAfter(ctx context.Context, after time.Time) ([]UploadRecord, error)
 }
+
+// maxReplacementPages bounds the search for a replaced track's upload.
+const maxReplacementPages = 25
 
 // errUploadNotFound is a definite answer that the upload does not exist, as
 // opposed to a failed lookup that is worth retrying.
@@ -124,7 +139,14 @@ func (a *Attester) attestationFor(ctx context.Context, tx *corev1.SignedTransact
 		return nil, fmt.Errorf("look up upload %s: %w", uploadID, err)
 	}
 	if up.OrigFileCID != orig {
-		return nil, errNotAttestable{fmt.Sprintf("upload %s holds orig_file_cid %q, track names %q", uploadID, up.OrigFileCID, orig)}
+		replaced, err := a.replacementUpload(ctx, up, me.GetUserId(), meta)
+		if err != nil {
+			return nil, err
+		}
+		if replaced == nil {
+			return nil, errNotAttestable{fmt.Sprintf("upload %s holds orig_file_cid %q, track names %q, and no later upload for user %d holds it", uploadID, up.OrigFileCID, orig, me.GetUserId())}
+		}
+		up = replaced
 	}
 	// A storage node attests for the upload's user. Attesting for anyone else
 	// would claim what that node never would.
@@ -156,6 +178,33 @@ func (a *Attester) attestationFor(ctx context.Context, tx *corev1.SignedTransact
 		return nil, fmt.Errorf("sign attestation: %w", err)
 	}
 	return &corev1.SignedTransaction{Transaction: &corev1.SignedTransaction_ContentAttestation{ContentAttestation: ca}}, nil
+}
+
+// replacementUpload finds the upload a replaced track's audio came from: made
+// after the track's named upload, for the track's user, holding the original
+// file the track names and, if it names one, its transcode. It returns nil
+// when there is none within maxReplacementPages.
+func (a *Attester) replacementUpload(ctx context.Context, named *UploadRecord, user int64, meta map[string]any) (*UploadRecord, error) {
+	orig, transcoded := metaString(meta, "orig_file_cid"), metaString(meta, "track_cid")
+	after := named.CreatedAt
+	for range maxReplacementPages {
+		page, err := a.uploads.UploadsAfter(ctx, after)
+		if err != nil {
+			return nil, fmt.Errorf("list uploads after %s: %w", after.Format(time.RFC3339Nano), err)
+		}
+		for i := range page {
+			up := &page[i]
+			if up.UserID.Valid && up.UserID.Int64 == user && up.OrigFileCID == orig &&
+				(transcoded == "" || slices.Contains(slices.Collect(maps.Values(up.Results)), transcoded)) {
+				return up, nil
+			}
+		}
+		if len(page) == 0 || !page[len(page)-1].CreatedAt.After(after) {
+			return nil, nil
+		}
+		after = page[len(page)-1].CreatedAt
+	}
+	return nil, nil
 }
 
 // parseMetadata unwraps a ManageEntity's {"cid": ..., "data": {...}}
@@ -216,6 +265,32 @@ func (u *HTTPUploads) Upload(ctx context.Context, id string) (*UploadRecord, err
 		return nil, fmt.Errorf("asked for upload %s, got %q", id, up.ID)
 	}
 	return &up, nil
+}
+
+func (u *HTTPUploads) UploadsAfter(ctx context.Context, after time.Time) ([]UploadRecord, error) {
+	q := url.Values{"after": {after.UTC().Format(time.RFC3339Nano)}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.base+"/uploads?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "openaudio-mirror")
+	resp, err := u.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET /uploads: %s: %s", resp.Status, truncate(body))
+	}
+	var ups []UploadRecord
+	if err := json.Unmarshal(body, &ups); err != nil {
+		return nil, fmt.Errorf("GET /uploads: decode: %w", err)
+	}
+	return ups, nil
 }
 
 // txHash is the hash the target commits tx under.
