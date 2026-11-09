@@ -1259,120 +1259,15 @@ func (c *CoreService) GetStatus(ctx context.Context, _ *connect.Request[v1.GetSt
 	return connect.NewResponse(res), nil
 }
 
-// GetRewardAttestation implements v1connect.CoreServiceHandler.
-//
-// Restored from the temporary kill-switch (#215) now that the rotation
-// primitive is in place. The authority check uses dbReward.ClaimAuthorities,
-// which is sourced from coalesce(p.authorities, '{}') via the LEFT JOIN
-// on core_reward_pools — i.e., it reflects the current pool membership
-// for the reward's RM, not the stale row-frozen list. So rotating an
-// authority out via SetRewardPoolAuthorities immediately revokes their
-// ability to authenticate claim attestations.
+// GetRewardAttestation is temporarily disabled for incident containment.
+// The legacy signed payload does not bind the reward-manager account or
+// distinguish validator and oracle roles. Do not re-enable this endpoint
+// until the signing and on-chain verification formats are safely migrated.
 func (c *CoreService) GetRewardAttestation(ctx context.Context, req *connect.Request[v1.GetRewardAttestationRequest]) (*connect.Response[v1.GetRewardAttestationResponse], error) {
-	core, err := c.ready()
-	if err != nil {
+	if _, err := c.ready(); err != nil {
 		return nil, err
 	}
-
-	// Trim user-supplied addresses up front. RewardClaim.Compile
-	// hex-decodes ethRecipientAddress / claimAuthority and surfaces
-	// surrounding whitespace as a confusing "failed to decode" error
-	// deeper in the flow; trimming here lets the same input return
-	// InvalidArgument at the boundary instead.
-	ethRecipientAddress := strings.TrimSpace(req.Msg.EthRecipientAddress)
-	if ethRecipientAddress == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("eth_recipient_address is required"))
-	}
-	rewardAddress := strings.TrimSpace(req.Msg.RewardAddress)
-	if rewardAddress == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward_address is required"))
-	}
-	specifier := req.Msg.Specifier
-	if specifier == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("specifier is required"))
-	}
-	if len(specifier) > 256 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("specifier too long"))
-	}
-	claimAuthority := strings.TrimSpace(req.Msg.ClaimAuthority)
-	if claimAuthority == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("claim_authority is required"))
-	}
-	signature := req.Msg.Signature
-	if signature == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("signature is required"))
-	}
-	amount := req.Msg.Amount
-	if amount == 0 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount is required"))
-	}
-	rewardId := req.Msg.RewardId
-	if rewardId == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reward_id is required"))
-	}
-	if req.Msg.AmountDecimals > 18 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("amount_decimals too large; max 18"))
-	}
-
-	dbReward, err := core.db.GetReward(ctx, rewardAddress)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("programmatic reward not found"))
-		}
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to load reward: %w", err))
-	}
-
-	// dbReward.ClaimAuthorities is fed by the pool's current authorities
-	// via the LEFT JOIN aliasing in GetReward. Building a Reward from it
-	// gives us pool-gated authentication for free.
-	claimAuthorities := make([]rewards.ClaimAuthority, len(dbReward.ClaimAuthorities))
-	for i, ca := range dbReward.ClaimAuthorities {
-		claimAuthorities[i] = rewards.ClaimAuthority{Address: ca}
-	}
-	reward := rewards.Reward{
-		ClaimAuthorities: claimAuthorities,
-		Amount:           uint64(dbReward.Amount),
-		RewardId:         dbReward.RewardID,
-		Name:             dbReward.Name,
-	}
-
-	// RewardAddress is intentionally NOT set here, even though the proto
-	// field exists and RewardClaim.Compile supports a 3-piece
-	// RewardAddress:RewardID:Specifier disbursement_id form. The bytes
-	// produced by Compile are exactly what the Solana reward manager
-	// program reconstructs and verifies during evaluate_attestations,
-	// and that program expects the 2-piece RewardID:Specifier form.
-	// Adding RewardAddress here would break on-chain signature
-	// verification, not just change the validator-side signing contract.
-	// Cross-reward replay protection therefore relies on Specifier being
-	// disbursement-unique (per recipient + per event), which is the
-	// existing contract — not on the address binding.
-	claim := rewards.RewardClaim{
-		RecipientEthAddress: ethRecipientAddress,
-		Amount:              amount,
-		RewardID:            req.Msg.RewardId,
-		Specifier:           specifier,
-		ClaimAuthority:      claimAuthority,
-		Decimals:            req.Msg.AmountDecimals,
-	}
-
-	attester := rewards.NewRewardAttester(core.config.EthereumKey, []rewards.Reward{reward})
-
-	if err := attester.Validate(claim); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("claim validation failed: %w", err))
-	}
-	if err := attester.Authenticate(claim, signature); err != nil {
-		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("authentication failed: %w", err))
-	}
-	_, attestation, err := attester.Attest(claim)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("attestation generation failed: %w", err))
-	}
-
-	return connect.NewResponse(&v1.GetRewardAttestationResponse{
-		Owner:       attester.EthereumAddress,
-		Attestation: attestation,
-	}), nil
+	return nil, connect.NewError(connect.CodeUnavailable, errors.New("programmable reward attestations are temporarily disabled"))
 }
 
 // GetRewards implements v1connect.CoreServiceHandler.
