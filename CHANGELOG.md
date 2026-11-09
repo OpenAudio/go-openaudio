@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.2](https://github.com/OpenAudio/go-openaudio/compare/v1.14.1...v1.14.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **core:** disable programmable reward attestations ([#627](https://github.com/OpenAudio/go-openaudio/issues/627)) ([8526237](https://github.com/OpenAudio/go-openaudio/commit/8526237ac5bcba03662ee93238213eece5232fa9))
+
 ## [1.14.1](https://github.com/OpenAudio/go-openaudio/compare/v1.14.0...v1.14.1) (2026-11-05)
 
 
