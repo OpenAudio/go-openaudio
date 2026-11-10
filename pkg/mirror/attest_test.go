@@ -238,6 +238,62 @@ func TestDoesNotAttestAReplacementTheUserDidNotUpload(t *testing.T) {
 	require.Empty(t, dst.order)
 }
 
+// A track written through the SDK often names no upload. The upload behind it
+// is the one made for its user shortly before its block, holding its audio.
+func TestAttestsAnUnnamedUploadFromBeforeTheBlock(t *testing.T) {
+	block := time.Date(2026, 11, 7, 9, 49, 21, 0, time.UTC)
+	mine := sql.NullInt64{Int64: 42, Valid: true}
+	uploads := &fakeUploads{listed: []UploadRecord{
+		{ID: "too-early", OrigFileCID: "orig", Results: map[string]string{"320": "tc"}, UserID: mine, CreatedAt: block.Add(-2 * time.Hour)},
+		{ID: "theirs", OrigFileCID: "orig", Results: map[string]string{"320": "tc"}, UserID: sql.NullInt64{Int64: 7, Valid: true}, CreatedAt: block.Add(-2 * time.Minute)},
+		{ID: "up1", OrigFileCID: "orig", Results: map[string]string{"320": "tc"}, UserID: mine, CreatedAt: block.Add(-22 * time.Second)},
+	}}
+	track := trackWrite(42, 1, "", "orig", "tc")
+	src := &fakeSource{chainID: srcChain, tip: 10, blocks: map[int64][][]byte{10: {raw(t, track)}}, times: map[int64]time.Time{10: block}}
+	dst := claimsTarget(t, map[string]int64{"orig": 7, "tc": 7})
+	m := newMirror(t, src, dst, &memCursor{}, 10)
+	m.cfg.Attester = newAttester(t, uploads)
+
+	require.NoError(t, drive(t, m, src, dst))
+	require.Len(t, dst.order, 2)
+	att := dst.txs[dst.order[0]].GetContentAttestation()
+	require.NotNil(t, att)
+	require.Equal(t, int64(42), att.GetUserId())
+	require.ElementsMatch(t, []string{"orig", "tc"}, att.GetCids())
+	require.Equal(t, hashOf(t, track), dst.order[1])
+}
+
+// For a track naming no upload, only an upload for its user from the hour
+// before its block counts, and without the block's time nothing does.
+func TestDoesNotAttestAnUnnamedUploadOutsideTheWindow(t *testing.T) {
+	block := time.Date(2026, 11, 7, 9, 49, 21, 0, time.UTC)
+	mine := sql.NullInt64{Int64: 42, Valid: true}
+	for name, tc := range map[string]struct {
+		at     time.Time
+		reason string
+	}{
+		"uploads outside the hour": {block, "no upload for user 42 in the hour before it"},
+		"no block time":            {time.Time{}, "track names no audio_upload_id"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			uploads := &fakeUploads{listed: []UploadRecord{
+				{ID: "too-early", OrigFileCID: "orig", Results: map[string]string{"320": "tc"}, UserID: mine, CreatedAt: block.Add(-2 * time.Hour)},
+				{ID: "after", OrigFileCID: "orig", Results: map[string]string{"320": "tc"}, UserID: mine, CreatedAt: block.Add(5 * time.Minute)},
+			}}
+			track := trackWrite(42, 1, "", "orig", "tc")
+			src := &fakeSource{chainID: srcChain, tip: 10, blocks: map[int64][][]byte{10: {raw(t, track)}}, times: map[int64]time.Time{10: tc.at}}
+			dst := claimsTarget(t, map[string]int64{"orig": 7})
+			m := newMirror(t, src, dst, &memCursor{}, 10)
+			m.cfg.Attester = newAttester(t, uploads)
+
+			var halt *HaltError
+			require.ErrorAs(t, drive(t, m, src, dst), &halt)
+			require.Contains(t, halt.Reason, tc.reason)
+			require.Empty(t, dst.order)
+		})
+	}
+}
+
 // Without an attester the refusal is a halt, as before.
 func TestContentAuthRefusalHaltsWithoutAnAttester(t *testing.T) {
 	track := trackWrite(42, 1, "up1", "orig", "")
@@ -278,9 +334,9 @@ func TestAttestationIsDeterministicAcrossRuns(t *testing.T) {
 	uploads := &fakeUploads{uploads: map[string]*UploadRecord{"up1": {ID: "up1", OrigFileCID: "orig"}}}
 	a := newAttester(t, uploads)
 	track := trackWrite(42, 1, "up1", "orig", "")
-	first, err := a.attestationFor(context.Background(), track)
+	first, err := a.attestationFor(context.Background(), track, time.Time{})
 	require.NoError(t, err)
-	second, err := a.attestationFor(context.Background(), track)
+	second, err := a.attestationFor(context.Background(), track, time.Time{})
 	require.NoError(t, err)
 	h1, _ := txHash(first)
 	h2, _ := txHash(second)

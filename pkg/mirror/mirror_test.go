@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
@@ -62,6 +63,12 @@ type fakeSource struct {
 	blocks  map[int64][][]byte
 	tip     int64
 	tipErr  error
+	// times are the block times BlockTime reports; a missing one is zero.
+	times map[int64]time.Time
+}
+
+func (s *fakeSource) BlockTime(_ context.Context, h int64) (time.Time, error) {
+	return s.times[h], nil
 }
 
 func (s *fakeSource) ChainID(context.Context) (string, error) { return s.chainID, nil }
