@@ -59,9 +59,11 @@ func TestRulesetAtNilSchedule(t *testing.T) {
 // activates both enforcements and closes legacy registrations at height 1
 // but leaves the first-assertion window open until a follow-up release
 // schedules strict; audius-mainnet-alpha-beta closes legacy registrations and
-// nothing else; other persistent networks activate nothing until an explicit
-// height is scheduled; unknown chain IDs must never inherit another
-// network's activations.
+// activates nothing else around that height (its attestation domain
+// activation is scheduled much later, and is covered on its own); other
+// persistent networks activate nothing until an explicit height is
+// scheduled; unknown chain IDs must never inherit another network's
+// activations.
 func TestScheduleForChainID(t *testing.T) {
 	for _, chainID := range []string{"openaudio-devnet", "audius-devnet"} {
 		r := ScheduleForChainID(chainID).RulesetAt(1)
@@ -122,9 +124,45 @@ func TestAttestationDomainActivation(t *testing.T) {
 	if u.RulesetAt(1 << 40).AttestationDomainEnforced {
 		t.Fatal("zero must leave attestation domain activation unscheduled")
 	}
-	for _, chainID := range []string{"audius-testnet-alpha", "audius-mainnet-alpha-beta", "audius-mainnet-beta"} {
+	// Stage and the rollover chain still have no activation: each needs its
+	// own coordinated height once its validator set runs a release that
+	// carries one.
+	for _, chainID := range []string{"audius-testnet-alpha", "audius-mainnet-beta"} {
 		if ScheduleForChainID(chainID).RulesetAt(1 << 40).AttestationDomainEnforced {
 			t.Fatalf("%s needs a coordinated future activation, not a retroactive rule change", chainID)
 		}
+	}
+}
+
+// alphaBetaTipWhenDomainScheduled is the live chain tip observed when the
+// activation height below it was chosen (2026-11-05). It only ever moves
+// forward, so an activation at or under it would be retroactive: nodes
+// replaying history would apply the domain rule to blocks produced without
+// it and diverge on apphash. Raising the activation is always safe; lowering
+// it past this line is not.
+const alphaBetaTipWhenDomainScheduled = 35915033
+
+// The prod activation must stay strictly ahead of the tip it was measured
+// against, and must not disturb the rule that was already live before it.
+func TestAlphaBetaAttestationDomainIsNotRetroactive(t *testing.T) {
+	u := ScheduleForChainID("audius-mainnet-alpha-beta")
+	if u.AttestationDomainHeight == 0 {
+		t.Fatal("audius-mainnet-alpha-beta: attestation domain activation is unscheduled")
+	}
+	if u.AttestationDomainHeight <= alphaBetaTipWhenDomainScheduled {
+		t.Fatalf("activation %d is at or behind the tip it was chosen against (%d): retroactive",
+			u.AttestationDomainHeight, alphaBetaTipWhenDomainScheduled)
+	}
+	// Closing legacy registrations happened long before, and must not be
+	// dragged forward or re-opened by scheduling this.
+	if r := u.RulesetAt(u.AttestationDomainHeight - 1); r.AttestationDomainEnforced || !r.LegacyRegistrationClosed {
+		t.Fatalf("one block before activation: %+v", r)
+	}
+	if r := u.RulesetAt(u.AttestationDomainHeight); !r.AttestationDomainEnforced || !r.LegacyRegistrationClosed {
+		t.Fatalf("at activation: %+v", r)
+	}
+	// Nothing else on this chain may come along for the ride.
+	if r := u.RulesetAt(1 << 40); r.AuthEnforced || r.ContentAuthEnforced || r.ContentAuthStrict {
+		t.Fatalf("auth enforcement must stay unscheduled on audius-mainnet-alpha-beta: %+v", r)
 	}
 }
