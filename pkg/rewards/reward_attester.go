@@ -4,7 +4,9 @@ import (
 	"crypto/ecdsa"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -60,7 +62,11 @@ func (rs *RewardAttester) Validate(claim RewardClaim) error {
 		return fmt.Errorf("amount %d exceeds reward amount %d", claim.Amount, reward.Amount)
 	}
 
-	// TODO: Check oracle is registered, maybe validate lengths of inputs?
+	if claim.RewardID == "tt" || claim.RewardID == "tut" {
+		if err := validateTrendingClaim(claim); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -121,4 +127,35 @@ func validClaimAuthority(claimAuthorities []ClaimAuthority, address string) bool
 		}
 	}
 	return false
+}
+
+// validateTrendingClaim accepts the canonical week:rank identifiers produced by
+// the weekly trending job. It does not change the signed message format.
+func validateTrendingClaim(claim RewardClaim) error {
+	parts := strings.Split(claim.Specifier, ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid trending specifier")
+	}
+	week, err := time.Parse("2006-01-02", parts[0])
+	if err != nil || week.Format("2006-01-02") != parts[0] {
+		return fmt.Errorf("invalid trending week")
+	}
+	rank, err := strconv.Atoi(parts[1])
+	if err != nil || rank < 1 || rank > 10 || strconv.Itoa(rank) != parts[1] {
+		return fmt.Errorf("invalid trending rank")
+	}
+	expected := uint64(100)
+	if rank <= 5 {
+		expected = 1000
+	}
+	if claim.Amount != expected {
+		return fmt.Errorf("invalid trending amount for rank %d", rank)
+	}
+	for _, address := range []string{claim.RecipientEthAddress, claim.ClaimAuthority} {
+		raw, err := hex.DecodeString(strings.TrimPrefix(address, "0x"))
+		if err != nil || len(raw) != 20 {
+			return fmt.Errorf("invalid trending Ethereum address")
+		}
+	}
+	return nil
 }
