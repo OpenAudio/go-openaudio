@@ -403,6 +403,13 @@ func (s *Server) PrepareProposal(ctx context.Context, proposal *abcitypes.Prepar
 			s.logger.Error("tx made it into prepare but couldn't be marshalled", zap.Error(err))
 			continue
 		}
+		if err := s.validateProposerPolicy(ctx, tx.Tx); err != nil {
+			s.logger.Warn("proposer declined tx",
+				zap.String("tx", common.ToTxHashFromBytes(txBytes)),
+				zap.String("type", txTypeName(tx.Tx)),
+				zap.Error(err))
+			continue
+		}
 		valid, err := s.validateBlockTx(ctx, rules, authOverlay, proposal.Time, proposal.Height, proposal.Misbehavior, txBytes)
 		if err != nil {
 			s.logger.Error("tx made it into prepare but couldn't be validated", zap.Error(err))
@@ -469,6 +476,13 @@ func capProposalTxs(logger *zap.Logger, txs [][]byte, maxTxBytes int64) [][]byte
 		capped = append(capped, tx)
 	}
 	return capped
+}
+
+func (s *Server) validateProposerPolicy(ctx context.Context, tx *v1.SignedTransaction) error {
+	if tx.GetPlays() != nil {
+		return s.isValidPlayTransaction(ctx, tx)
+	}
+	return nil
 }
 
 func (s *Server) ProcessProposal(ctx context.Context, proposal *abcitypes.ProcessProposalRequest) (*abcitypes.ProcessProposalResponse, error) {
@@ -1206,6 +1220,10 @@ func validateSignedTransactionForCheckTx(msg *v1.SignedTransaction) error {
 		return fmt.Errorf("manage entity migration transactions cannot be submitted")
 	case *v1.SignedTransaction_ValidatorRegistration:
 		return fmt.Errorf("legacy validator registrations cannot be submitted")
+	case *v1.SignedTransaction_Plays:
+		if err := validatePlayTransactionShape(msg); err != nil {
+			return err
+		}
 	case *v1.SignedTransaction_StorageProof:
 		sp := msg.GetStorageProof()
 		if len(sp.ProverAddresses) == 0 {
@@ -1405,6 +1423,23 @@ func (s *Server) validateBlockTx(ctx context.Context, rules config.Rules, authOv
 
 func (s *Server) validateV1Transaction(ctx context.Context, currentHeight int64, signedTx *v1.SignedTransaction) error {
 	switch signedTx.Transaction.(type) {
+	case *v1.SignedTransaction_Attestation:
+		att := signedTx.GetAttestation()
+		if att == nil {
+			return errors.New("empty attestation tx")
+		}
+		// Admission is local policy, so the signature bound applies before the
+		// domain upgrade activates. Full validation cannot: it would refuse
+		// transactions a peer predating the gate admits.
+		if err := s.boundAttestationSignatures(att); err != nil {
+			return err
+		}
+		if s.config.Upgrades.RulesetAt(currentHeight + 1).AttestationDomainEnforced {
+			return s.isValidAttestation(ctx, signedTx, currentHeight+1)
+		}
+		return nil
+	case *v1.SignedTransaction_Plays:
+		return s.isValidPlayTransaction(ctx, signedTx)
 	case *v1.SignedTransaction_ManageEntity:
 		// The mempool admits transactions for the next block, so resolve the
 		// ruleset one height ahead.

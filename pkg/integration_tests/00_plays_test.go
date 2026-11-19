@@ -9,6 +9,8 @@ import (
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
 	"github.com/OpenAudio/go-openaudio/pkg/integration_tests/utils"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/google/uuid"
 	protob "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -48,11 +50,22 @@ func TestSubmitAndReadPlayThroughGRPC(t *testing.T) {
 		},
 	}
 
+	nodeKey, err := crypto.HexToECDSA("d09ba371c359f10f22ccda12fd26c598c7921bda3220c9942174562bc6a36fe8")
+	if err != nil {
+		t.Fatalf("Failed to load node key: %v", err)
+	}
+	plays := &corev1.TrackPlays{
+		Plays: listens,
+	}
+	sig, err := signature.SignCoreBytes(plays, nodeKey)
+	if err != nil {
+		t.Fatalf("Failed to sign plays: %v", err)
+	}
+
 	playEvent := &corev1.SignedTransaction{
+		Signature: sig,
 		Transaction: &corev1.SignedTransaction_Plays{
-			Plays: &corev1.TrackPlays{
-				Plays: listens,
-			},
+			Plays: plays,
 		},
 	}
 

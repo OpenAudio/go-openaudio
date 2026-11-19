@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -161,12 +162,27 @@ func (t *ConnectTarget) Status(ctx context.Context) (string, int64, error) {
 	return ci.GetChainId(), ci.GetCurrentHeight(), nil
 }
 
+// Forward sends tx to every validator at once and waits for all of them, so a
+// transaction costs one round trip to the slowest node rather than the sum of
+// them; a proposal that lands mid-forward would otherwise split a source block
+// across target blocks. Each node still sees transactions in the mirror's
+// order, because the next Forward starts only after this one returns. The
+// error reported is the first one in node order, as before.
 func (t *ConnectTarget) Forward(ctx context.Context, tx *corev1.SignedTransaction) error {
-	for _, n := range t.nodes {
-		_, err := n.ForwardTransaction(ctx, connect.NewRequest(&corev1.ForwardTransactionRequest{
-			Transaction: tx,
-			ChainId:     t.chainID,
-		}))
+	errs := make([]error, len(t.nodes))
+	var wg sync.WaitGroup
+	for i, n := range t.nodes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = n.ForwardTransaction(ctx, connect.NewRequest(&corev1.ForwardTransactionRequest{
+				Transaction: tx,
+				ChainId:     t.chainID,
+			}))
+		}()
+	}
+	wg.Wait()
+	for _, err := range errs {
 		if err != nil {
 			return err
 		}

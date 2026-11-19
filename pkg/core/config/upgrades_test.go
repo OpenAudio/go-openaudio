@@ -112,3 +112,19 @@ func TestContentAuthNeverPrecedesAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestAttestationDomainActivation(t *testing.T) {
+	u := &UpgradeSchedule{AttestationDomainHeight: 100}
+	if u.RulesetAt(99).AttestationDomainEnforced || !u.RulesetAt(100).AttestationDomainEnforced || !u.RulesetAt(101).AttestationDomainEnforced {
+		t.Fatal("attestation domain rule must activate exactly at the scheduled height")
+	}
+	u.AttestationDomainHeight = 0
+	if u.RulesetAt(1 << 40).AttestationDomainEnforced {
+		t.Fatal("zero must leave attestation domain activation unscheduled")
+	}
+	for _, chainID := range []string{"audius-testnet-alpha", "audius-mainnet-alpha-beta", "audius-mainnet-beta"} {
+		if ScheduleForChainID(chainID).RulesetAt(1 << 40).AttestationDomainEnforced {
+			t.Fatalf("%s needs a coordinated future activation, not a retroactive rule change", chainID)
+		}
+	}
+}

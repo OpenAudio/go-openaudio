@@ -65,6 +65,7 @@ type trackRow struct {
 	CoverOriginalSongTitle *string
 	CoverOriginalArtist    *string
 	NoAIUse                bool
+	FeedbackRequestedAt    pgtype.Timestamp
 	TrackSegments          []byte
 	CreatedAt              time.Time
 }
@@ -91,7 +92,7 @@ func loadCurrentTrackRow(ctx context.Context, dbtx db.DBTX, trackID int64) (*tra
 			cover_original_song_title, cover_original_artist, no_ai_use, track_segments, created_at,
 			artists, resource_contributors, indirect_resource_contributors,
 			rights_controller, copyright_line, producer_copyright_line,
-			parental_warning_type, is_original_available
+			parental_warning_type, is_original_available, feedback_requested_at
 		FROM tracks WHERE track_id = $1 AND is_current = true AND is_delete = false LIMIT 1
 	`, trackID).Scan(
 		&r.TrackID, &r.OwnerID, &title, &genre, &mood, &tags, &desc,
@@ -104,7 +105,7 @@ func loadCurrentTrackRow(ctx context.Context, dbtx db.DBTX, trackID int64) (*tra
 		&coverOrigSong, &coverOrigArtist, &r.NoAIUse, &segments, &r.CreatedAt,
 		&artists, &resContrib, &indirectContrib,
 		&rightsCtrl, &copyright, &prodCopyright,
-		&parentalWarning, &r.IsOriginalAvailable,
+		&parentalWarning, &r.IsOriginalAvailable, &r.FeedbackRequestedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Track was soft-deleted between validation and now (validateTrackUpdate
@@ -276,6 +277,15 @@ func mergeTrackFromMetadata(p *Params, base *trackRow) *trackRow {
 	if v, ok := p.MetadataBool("no_ai_use"); ok {
 		out.NoAIUse = v
 	}
+	// Keep the original request time while the flag stays on, so the
+	// feedback list sorts by when the artist asked.
+	if v, ok := p.MetadataBool("feedback_requested"); ok {
+		if !v {
+			out.FeedbackRequestedAt = pgtype.Timestamp{}
+		} else if !out.FeedbackRequestedAt.Valid {
+			out.FeedbackRequestedAt = pgtype.Timestamp{Time: p.BlockTime, Valid: true}
+		}
+	}
 
 	// bpm semantics mirror apps' track.py: explicit null clears; a nonzero
 	// number sets; zero or a non-numeric value is ignored (existing kept).
@@ -405,7 +415,8 @@ func updateTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 			updated_at = $42, txhash = $43, blocknumber = $44,
 			artists = $46, resource_contributors = $47, indirect_resource_contributors = $48,
 			rights_controller = $49, copyright_line = $50, producer_copyright_line = $51,
-			parental_warning_type = $52, is_original_available = $53
+			parental_warning_type = $52, is_original_available = $53,
+			feedback_requested_at = $54
 		WHERE track_id = $1 AND is_current = true
 	`,
 		r.TrackID,
@@ -461,6 +472,7 @@ func updateTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 		r.ProducerCopyrightLine,
 		strPtrVal(r.ParentalWarningType),
 		r.IsOriginalAvailable,
+		r.FeedbackRequestedAt,
 	)
 	return err
 }
@@ -479,7 +491,7 @@ func insertTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 			track_segments, created_at, updated_at, txhash, blocknumber, orig_filename,
 			artists, resource_contributors, indirect_resource_contributors,
 			rights_controller, copyright_line, producer_copyright_line,
-			parental_warning_type, is_original_available
+			parental_warning_type, is_original_available, feedback_requested_at
 		) VALUES (
 			$1, $2, true, false, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
@@ -490,7 +502,7 @@ func insertTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 			$34, $35, $36, $37, $38, $39,
 			$40, $41, $42,
 			$43, $44, $45, $46, $47, $48,
-			$49, $50, $51, $52, $53, $54, $55, $56
+			$49, $50, $51, $52, $53, $54, $55, $56, $57
 		)
 	`,
 		r.TrackID,
@@ -549,6 +561,7 @@ func insertTrackRow(ctx context.Context, dbtx db.DBTX, r *trackRow, blockTime ti
 		r.ProducerCopyrightLine,
 		strPtrVal(r.ParentalWarningType),
 		r.IsOriginalAvailable,
+		r.FeedbackRequestedAt,
 	)
 	return err
 }

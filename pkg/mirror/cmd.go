@@ -184,8 +184,10 @@ func Main(args []string) int {
 
 func statusHandler(m *Mirror) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /status", func(w http.ResponseWriter, _ *http.Request) {
-		st := m.Status()
+	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		st := m.LiveStatus(ctx)
 		w.Header().Set("Content-Type", "application/json")
 		if st.Halted {
 			w.WriteHeader(http.StatusServiceUnavailable)

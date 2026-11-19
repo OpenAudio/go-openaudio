@@ -25,6 +25,7 @@ package config
 // names an upgrade and holds the first height at which it is active (0 =
 // never).
 type UpgradeSchedule struct {
+	AttestationDomainHeight int64
 	// AuthEnforcementHeight activates authorization enforcement for
 	// ManageEntity transactions: the signer must match the EIP-712 recovery
 	// and be authorized (own wallet or active approved grant) against the
@@ -77,8 +78,9 @@ type UpgradeSchedule struct {
 // Rules is the resolved rule set for a single height: a flat description of
 // active behaviors with no heights in sight.
 type Rules struct {
-	AuthEnforced        bool
-	ContentAuthEnforced bool
+	AttestationDomainEnforced bool
+	AuthEnforced              bool
+	ContentAuthEnforced       bool
 	// ContentAuthStrict only means anything with ContentAuthEnforced.
 	ContentAuthStrict bool
 	// LegacyRegistrationClosed makes legacy validator registrations fail.
@@ -92,9 +94,10 @@ func (u *UpgradeSchedule) RulesetAt(height int64) Rules {
 		return Rules{}
 	}
 	return Rules{
-		AuthEnforced:        activeAt(u.AuthEnforcementHeight, height),
-		ContentAuthEnforced: activeAt(u.ContentAuthEnforcementHeight, height),
-		ContentAuthStrict:   activeAt(u.ContentAuthStrictHeight, height),
+		AttestationDomainEnforced: activeAt(u.AttestationDomainHeight, height),
+		AuthEnforced:              activeAt(u.AuthEnforcementHeight, height),
+		ContentAuthEnforced:       activeAt(u.ContentAuthEnforcementHeight, height),
+		ContentAuthStrict:         activeAt(u.ContentAuthStrictHeight, height),
 
 		LegacyRegistrationClosed: activeAt(u.LegacyRegistrationClosedHeight, height),
 	}
@@ -112,6 +115,7 @@ func activeAt(activation, height int64) bool {
 var upgradeSchedules = map[string]*UpgradeSchedule{
 	// dev
 	"openaudio-devnet": {
+		AttestationDomainHeight:        1,
 		AuthEnforcementHeight:          1,
 		ContentAuthEnforcementHeight:   1,
 		ContentAuthStrictHeight:        1,
@@ -119,6 +123,7 @@ var upgradeSchedules = map[string]*UpgradeSchedule{
 	},
 	// sandbox
 	"audius-devnet": {
+		AttestationDomainHeight:        1,
 		AuthEnforcementHeight:          1,
 		ContentAuthEnforcementHeight:   1,
 		ContentAuthStrictHeight:        1,
@@ -144,6 +149,13 @@ var upgradeSchedules = map[string]*UpgradeSchedule{
 	// flusher replays post-snapshot track writes naming cids nobody attested,
 	// and stalls on the first refused row. Schedule strict in a follow-up
 	// release once the flusher has drained.
+	//
+	// AttestationDomainHeight is deliberately unset too, and height 1 is wrong
+	// for it however new the chain looks: validators on this chain are not all
+	// on the same release, and a binary that predates the entry signs and
+	// recovers attestations over the legacy payload. Activating at 1 would
+	// split the vote on the first attestation tx. Schedule a height once the
+	// whole set runs a release that knows the entry.
 	"audius-mainnet-beta": {
 		AuthEnforcementHeight:          1,
 		ContentAuthEnforcementHeight:   1,

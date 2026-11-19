@@ -90,8 +90,8 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 			history, err := cs.db.GetValidatorHistoryForID(
 				ctx,
 				db.GetValidatorHistoryForIDParams{
-					ep.Id,
-					ep.ServiceType,
+					SpID:        ep.Id,
+					ServiceType: ep.ServiceType,
 				},
 			)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -168,7 +168,8 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		}
 	}
 
-	slashAmount := server.CalculateSlashRecommendation(startTime, endTime, len(endpoints), totalSlas, totalDeadSlas)
+	eligibleSlas := totalMetSlas + totalPartialSlas + totalDeadSlas
+	slashAmount := server.CalculateSlashRecommendation(startTime, endTime, len(endpoints), eligibleSlas, totalDeadSlas)
 
 	stakingResp, err := cs.eth.GetStakingMetadataForServiceProvider(
 		ctx,
@@ -208,10 +209,12 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 		MissedSLAs: int32(totalDeadSlas),
 		Amount:     slashAmount,
 	}
-	signature, err := server.SignSlashRecommendation(cs.config.EthereumKey, slashRecommendation)
-	if err != nil {
-		// log but don't fail to render
-		cs.logger.Error("Failed to sign active adjudication data")
+	var signature string
+	if eligibleSlas > 0 {
+		signature, err = server.SignSlashRecommendation(cs.config.EthereumKey, cs.config.ChainID(), slashRecommendation)
+		if err != nil {
+			cs.logger.Error("Failed to sign active adjudication data", zap.Error(err))
+		}
 	}
 
 	slashAttestors := make(map[string]string, cs.config.AttRegistrationRSize)
@@ -225,10 +228,11 @@ func (cs *Console) adjudicateFragment(c echo.Context) error {
 			}),
 		)
 		if err != nil {
-			cs.logger.Error("Failed to get slash attestations")
-		}
-		for _, attestation := range resp.Msg.Attestations {
-			slashAttestors[attestation.Endpoint] = attestation.Signature
+			cs.logger.Error("Failed to get slash attestations", zap.Error(err))
+		} else {
+			for _, attestation := range resp.Msg.Attestations {
+				slashAttestors[attestation.Endpoint] = attestation.Signature
+			}
 		}
 	}
 
