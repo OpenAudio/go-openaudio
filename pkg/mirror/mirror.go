@@ -107,6 +107,13 @@ type Source interface {
 	Block(ctx context.Context, height int64) (chainID string, txs [][]byte, err error)
 }
 
+// BlockTimes is implemented by a Source that can say when a block was made.
+// The attester uses it to search for the upload behind a track that names
+// none.
+type BlockTimes interface {
+	BlockTime(ctx context.Context, height int64) (time.Time, error)
+}
+
 // Target is the new chain.
 type Target interface {
 	// Status returns the target's chain ID and current height.
@@ -699,7 +706,14 @@ func (m *Mirror) submit(ctx context.Context, e *entry) error {
 // attestation for e's own upload and parks e, the way a dependency refusal
 // is parked, until the attestation commits. settle then retries e once.
 func (m *Mirror) startAttestation(ctx context.Context, e *entry, refusal error) error {
-	att, err := m.cfg.Attester.attestationFor(ctx, e.tx)
+	var at time.Time
+	if bt, ok := m.source.(BlockTimes); ok {
+		var err error
+		if at, err = bt.BlockTime(ctx, e.pos.Height); err != nil {
+			return fmt.Errorf("time of block %d: %w", e.pos.Height, err)
+		}
+	}
+	att, err := m.cfg.Attester.attestationFor(ctx, e.tx, at)
 	var na errNotAttestable
 	if errors.As(err, &na) {
 		return &HaltError{Pos: e.pos, Hash: e.hash, Reason: "refused by target, " + na.Error(), Err: refusal}

@@ -49,8 +49,9 @@ type cometStatus struct {
 type cometBlock struct {
 	Block struct {
 		Header struct {
-			ChainID string `json:"chain_id"`
-			Height  string `json:"height"`
+			ChainID string    `json:"chain_id"`
+			Height  string    `json:"height"`
+			Time    time.Time `json:"time"`
 		} `json:"header"`
 		Data struct {
 			Txs []string `json:"txs"`
@@ -124,6 +125,17 @@ func (s *CometSource) Block(ctx context.Context, height int64) (string, [][]byte
 		txs = append(txs, raw)
 	}
 	return b.Block.Header.ChainID, txs, nil
+}
+
+func (s *CometSource) BlockTime(ctx context.Context, height int64) (time.Time, error) {
+	var b cometBlock
+	if err := s.call(ctx, "/block?height="+strconv.FormatInt(height, 10), &b); err != nil {
+		return time.Time{}, err
+	}
+	if got := b.Block.Header.Height; got != strconv.FormatInt(height, 10) {
+		return time.Time{}, fmt.Errorf("asked for block %d, got %q", height, got)
+	}
+	return b.Block.Header.Time, nil
 }
 
 // ConnectTarget submits to the new chain's validators over ConnectRPC.
