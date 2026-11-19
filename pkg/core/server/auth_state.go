@@ -391,6 +391,9 @@ func projectUserCreate(ctx context.Context, st authStore, tx authTx) error {
 	// idempotency check, because the source data is the authority on wallet
 	// and handle collisions. Live creates mirror the ETL's uniqueness rules.
 	if !tx.Migration {
+		if err := validateLiveUserMetadata(tx); err != nil {
+			return err
+		}
 		used, err := st.WalletExists(ctx, wallet)
 		if err != nil {
 			return err
@@ -419,6 +422,11 @@ func projectUserCreate(ctx context.Context, st authStore, tx authTx) error {
 }
 
 func projectUserUpdate(ctx context.Context, st authStore, tx authTx) error {
+	if !tx.Migration {
+		if err := validateLiveUserMetadata(tx); err != nil {
+			return err
+		}
+	}
 	if err := validateAuthSigner(ctx, st, tx.UserID, tx.Signer); err != nil {
 		return err
 	}
