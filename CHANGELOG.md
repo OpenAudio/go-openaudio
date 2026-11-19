@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.15.0](https://github.com/OpenAudio/go-openaudio/compare/v1.14.2...v1.15.0) (2026-11-19)
+
+
+### Features
+
+* **etl:** index tracks.feedback_requested_at ([#625](https://github.com/OpenAudio/go-openaudio/issues/625)) ([17aab31](https://github.com/OpenAudio/go-openaudio/commit/17aab31f4cae32b11030e5b2e030d3686accc5d4))
+
+
+### Bug Fixes
+
+* **core:** refuse user creates and updates the indexer refuses ([#632](https://github.com/OpenAudio/go-openaudio/issues/632)) ([fe28ef4](https://github.com/OpenAudio/go-openaudio/commit/fe28ef4271fb0dab39e43f9a7e4f6a560fd1827f))
+
 ## [1.14.2](https://github.com/OpenAudio/go-openaudio/compare/v1.14.1...v1.14.2) (2026-11-09)
 
 
