@@ -286,6 +286,9 @@ type MediorumServer struct {
 	geoIPdbReady chan struct{}
 
 	playEventQueue *PlayEventQueue
+	// playDedupe drops repeat plays of a track from one IP. Zero value is
+	// ready to use.
+	playDedupe playDedupe
 
 	metrics *storageMetrics
 }
