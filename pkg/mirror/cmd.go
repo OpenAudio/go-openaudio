@@ -2,6 +2,7 @@ package mirror
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -46,6 +47,11 @@ mirror attests the upload's cids for the track's user, signed with that
 registered node's key, and retries the track. Each attestation is listed on
 /status.
 
+With -resign-plays, each Plays envelope is re-signed with that same key before
+it is forwarded. The target admits plays only from its own registered nodes,
+and most old-chain plays were recorded by nodes not yet registered there. The
+plays themselves are unchanged; the forwarded tx gets a new hash.
+
 Flags:
 `
 
@@ -69,6 +75,7 @@ func Main(args []string) int {
 	poll := fs.Duration("poll-interval", time.Second, "wait between rounds when there is nothing to do")
 	skipTx := fs.String("skip-tx", "", "comma-separated hashes of transactions to pass over, after investigating a halt; nothing else is ever skipped")
 	attestKeyFile := fs.String("attest-key-file", "", "file holding a registered node's hex private key; enables attesting a refused track's own upload")
+	resignPlays := fs.Bool("resign-plays", false, "re-sign each Plays envelope with the -attest-key-file key, so plays recorded by nodes the target has not registered are admitted")
 	uploadSource := fs.String("upload-source", "", "storage node whose GET /uploads/<id> vouches for a track's upload; defaults to -source")
 	dryRun := fs.Int64("dry-run-blocks", 0, "read this many source blocks from -start-height, report what would be mirrored, submit nothing, and exit")
 	if err := fs.Parse(args); err != nil {
@@ -96,12 +103,20 @@ func Main(args []string) int {
 		return 2
 	}
 
+	if *resignPlays && *attestKeyFile == "" {
+		logger.Error("-resign-plays needs -attest-key-file")
+		return 2
+	}
 	var attester *Attester
+	var playSigner *ecdsa.PrivateKey
 	if *attestKeyFile != "" {
 		key, err := LoadAttestKey(*attestKeyFile)
 		if err != nil {
 			logger.Error("attest key", zap.Error(err))
 			return 2
+		}
+		if *resignPlays {
+			playSigner = key
 		}
 		uploads := *uploadSource
 		if uploads == "" {
@@ -121,6 +136,7 @@ func Main(args []string) int {
 		PollInterval:        *poll,
 		SkipTx:              splitList(*skipTx),
 		Attester:            attester,
+		PlaySigner:          playSigner,
 	}, NewCometSource(*source, httpClient), target, FileCursor{Path: *stateFile}, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
