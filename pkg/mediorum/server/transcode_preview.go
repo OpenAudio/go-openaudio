@@ -80,8 +80,8 @@ func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash str
 	destPath := strings.TrimSuffix(srcPath, "_320.mp3") + "_320_preview.mp3"
 
 	// generate preview
-	cmd := exec.Command("ffmpeg",
-		"-y",
+	args := append([]string{"-y"}, ffmpegAudioInputArgs()...)
+	cmd := exec.Command("ffmpeg", append(args,
 		"-i", srcPath,
 		"-ss", previewStartSeconds, // set preview start time
 		"-t", audioPreviewDuration, // set preview duration
@@ -89,7 +89,7 @@ func (ss *MediorumServer) generateAudioPreview(ctx context.Context, fileHash str
 		"-ar", "48000", // set sample rate to 48000 Hz
 		"-f", "mp3", // force output to mp3
 		"-vn", // no video
-		destPath)
+		destPath)...)
 
 	if err := cmd.Run(); err != nil {
 		return nil, err

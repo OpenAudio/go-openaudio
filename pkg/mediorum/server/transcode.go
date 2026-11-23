@@ -309,8 +309,19 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 	destPath := srcPath + "_320.mp3"
 	defer os.Remove(destPath)
 
-	cmd := exec.Command("ffmpeg",
-		"-y",
+	// Probe the bytes we are about to transcode rather than trusting the
+	// upload row: the row may have been written by another node, before
+	// uploads were format-checked.
+	probe, err := ffprobe(srcPath)
+	if err != nil {
+		return onError(err, upload.Status, "ffprobe")
+	}
+	if err := checkAudioFormat(probe); err != nil {
+		return onError(err, upload.Status, "checkAudioFormat")
+	}
+
+	args := append([]string{"-y"}, ffmpegAudioInputArgs()...)
+	cmd := exec.Command("ffmpeg", append(args,
 		"-i", srcPath,
 		"-b:a", "320k", // set bitrate to 320k
 		"-ar", "48000", // set sample rate to 48000 Hz
@@ -321,10 +332,9 @@ func (ss *MediorumServer) transcodeFullAudio(ctx context.Context, upload *Upload
 		"-vn",           // no video
 		"-threads", "2", // limit to 2 threads per worker to avoid CPU spikes
 		"-progress", "pipe:2",
-		destPath)
+		destPath)...)
 
-	err := ss.transcodeAudio(ctx, upload, destPath, cmd, logger, onError)
-	if err != nil {
+	if err := ss.transcodeAudio(ctx, upload, destPath, cmd, logger, onError); err != nil {
 		return err
 	}
 
