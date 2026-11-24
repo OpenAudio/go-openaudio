@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
@@ -31,8 +32,20 @@ func trackWrite(user, id int64, uploadID, orig, transcoded string) *corev1.Signe
 
 type fakeUploads struct {
 	uploads map[string]*UploadRecord
-	fail    int // transient failures to return before answering
-	calls   int
+	// listed is what UploadsAfter serves, oldest first, two to a page.
+	listed []UploadRecord
+	fail   int // transient failures to return before answering
+	calls  int
+}
+
+func (u *fakeUploads) UploadsAfter(_ context.Context, after time.Time) ([]UploadRecord, error) {
+	var page []UploadRecord
+	for _, up := range u.listed {
+		if up.CreatedAt.After(after) && len(page) < 2 {
+			page = append(page, up)
+		}
+	}
+	return page, nil
 }
 
 func (u *fakeUploads) Upload(_ context.Context, id string) (*UploadRecord, error) {
@@ -163,6 +176,124 @@ func TestDoesNotAttestWhatTheUploadDoesNotHold(t *testing.T) {
 	}
 }
 
+// trackUpdate is a track update naming audio, as an audio replacement sends it.
+func trackUpdate(user, id int64, uploadID, orig, transcoded string) *corev1.SignedTransaction {
+	tx := trackWrite(user, id, uploadID, orig, transcoded)
+	tx.GetManageEntity().Action = "Update"
+	return tx
+}
+
+// Replacing a track's audio keeps the track's first audio_upload_id. The
+// upload that holds the new file is a later one for the same user, and that
+// is the one the mirror attests.
+func TestAttestsAReplacedTracksNewUpload(t *testing.T) {
+	at := func(m int) time.Time { return time.Date(2026, 11, 7, 0, m, 0, 0, time.UTC) }
+	mine := sql.NullInt64{Int64: 42, Valid: true}
+	uploads := &fakeUploads{
+		uploads: map[string]*UploadRecord{"up1": {ID: "up1", OrigFileCID: "first", UserID: mine, CreatedAt: at(0)}},
+		listed: []UploadRecord{
+			{ID: "theirs", OrigFileCID: "new", Results: map[string]string{"320": "tc"}, UserID: sql.NullInt64{Int64: 7, Valid: true}, CreatedAt: at(1)},
+			{ID: "other-transcode", OrigFileCID: "new", Results: map[string]string{"320": "tc-other"}, UserID: mine, CreatedAt: at(2)},
+			{ID: "unrelated", OrigFileCID: "x", UserID: mine, CreatedAt: at(3)},
+			{ID: "up2", OrigFileCID: "new", Results: map[string]string{"320": "tc"}, UserID: mine, CreatedAt: at(4)},
+		},
+	}
+	track := trackUpdate(42, 1, "up1", "new", "tc")
+	src := &fakeSource{chainID: srcChain, tip: 10, blocks: map[int64][][]byte{10: {raw(t, track)}}}
+	dst := claimsTarget(t, map[string]int64{"new": 7, "tc": 7})
+	m := newMirror(t, src, dst, &memCursor{}, 10)
+	m.cfg.Attester = newAttester(t, uploads)
+
+	require.NoError(t, drive(t, m, src, dst))
+	require.Len(t, dst.order, 2)
+	att := dst.txs[dst.order[0]].GetContentAttestation()
+	require.NotNil(t, att)
+	require.Equal(t, int64(42), att.GetUserId())
+	require.ElementsMatch(t, []string{"new", "tc"}, att.GetCids())
+	require.Equal(t, hashOf(t, track), dst.order[1])
+}
+
+// A later upload of the file by someone else, or one that did not produce the
+// transcode the track names, does not vouch for it.
+func TestDoesNotAttestAReplacementTheUserDidNotUpload(t *testing.T) {
+	at := func(m int) time.Time { return time.Date(2026, 11, 7, 0, m, 0, 0, time.UTC) }
+	mine := sql.NullInt64{Int64: 42, Valid: true}
+	uploads := &fakeUploads{
+		uploads: map[string]*UploadRecord{"up1": {ID: "up1", OrigFileCID: "first", UserID: mine, CreatedAt: at(1)}},
+		listed: []UploadRecord{
+			{ID: "before", OrigFileCID: "new", Results: map[string]string{"320": "tc"}, UserID: mine, CreatedAt: at(0)},
+			{ID: "theirs", OrigFileCID: "new", Results: map[string]string{"320": "tc"}, UserID: sql.NullInt64{Int64: 7, Valid: true}, CreatedAt: at(2)},
+			{ID: "other-transcode", OrigFileCID: "new", Results: map[string]string{"320": "tc-other"}, UserID: mine, CreatedAt: at(3)},
+		},
+	}
+	track := trackUpdate(42, 1, "up1", "new", "tc")
+	src := &fakeSource{chainID: srcChain, tip: 10, blocks: map[int64][][]byte{10: {raw(t, track)}}}
+	dst := claimsTarget(t, map[string]int64{"new": 7})
+	m := newMirror(t, src, dst, &memCursor{}, 10)
+	m.cfg.Attester = newAttester(t, uploads)
+
+	var halt *HaltError
+	require.ErrorAs(t, drive(t, m, src, dst), &halt)
+	require.Contains(t, halt.Reason, "no later upload for user 42")
+	require.Empty(t, dst.order)
+}
+
+// A track written through the SDK often names no upload. The upload behind it
+// is the one made for its user shortly before its block, holding its audio.
+func TestAttestsAnUnnamedUploadFromBeforeTheBlock(t *testing.T) {
+	block := time.Date(2026, 11, 7, 9, 49, 21, 0, time.UTC)
+	mine := sql.NullInt64{Int64: 42, Valid: true}
+	uploads := &fakeUploads{listed: []UploadRecord{
+		{ID: "too-early", OrigFileCID: "orig", Results: map[string]string{"320": "tc"}, UserID: mine, CreatedAt: block.Add(-2 * time.Hour)},
+		{ID: "theirs", OrigFileCID: "orig", Results: map[string]string{"320": "tc"}, UserID: sql.NullInt64{Int64: 7, Valid: true}, CreatedAt: block.Add(-2 * time.Minute)},
+		{ID: "up1", OrigFileCID: "orig", Results: map[string]string{"320": "tc"}, UserID: mine, CreatedAt: block.Add(-22 * time.Second)},
+	}}
+	track := trackWrite(42, 1, "", "orig", "tc")
+	src := &fakeSource{chainID: srcChain, tip: 10, blocks: map[int64][][]byte{10: {raw(t, track)}}, times: map[int64]time.Time{10: block}}
+	dst := claimsTarget(t, map[string]int64{"orig": 7, "tc": 7})
+	m := newMirror(t, src, dst, &memCursor{}, 10)
+	m.cfg.Attester = newAttester(t, uploads)
+
+	require.NoError(t, drive(t, m, src, dst))
+	require.Len(t, dst.order, 2)
+	att := dst.txs[dst.order[0]].GetContentAttestation()
+	require.NotNil(t, att)
+	require.Equal(t, int64(42), att.GetUserId())
+	require.ElementsMatch(t, []string{"orig", "tc"}, att.GetCids())
+	require.Equal(t, hashOf(t, track), dst.order[1])
+}
+
+// For a track naming no upload, only an upload for its user from the hour
+// before its block counts, and without the block's time nothing does.
+func TestDoesNotAttestAnUnnamedUploadOutsideTheWindow(t *testing.T) {
+	block := time.Date(2026, 11, 7, 9, 49, 21, 0, time.UTC)
+	mine := sql.NullInt64{Int64: 42, Valid: true}
+	for name, tc := range map[string]struct {
+		at     time.Time
+		reason string
+	}{
+		"uploads outside the hour": {block, "no upload for user 42 in the hour before it"},
+		"no block time":            {time.Time{}, "track names no audio_upload_id"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			uploads := &fakeUploads{listed: []UploadRecord{
+				{ID: "too-early", OrigFileCID: "orig", Results: map[string]string{"320": "tc"}, UserID: mine, CreatedAt: block.Add(-2 * time.Hour)},
+				{ID: "after", OrigFileCID: "orig", Results: map[string]string{"320": "tc"}, UserID: mine, CreatedAt: block.Add(5 * time.Minute)},
+			}}
+			track := trackWrite(42, 1, "", "orig", "tc")
+			src := &fakeSource{chainID: srcChain, tip: 10, blocks: map[int64][][]byte{10: {raw(t, track)}}, times: map[int64]time.Time{10: tc.at}}
+			dst := claimsTarget(t, map[string]int64{"orig": 7})
+			m := newMirror(t, src, dst, &memCursor{}, 10)
+			m.cfg.Attester = newAttester(t, uploads)
+
+			var halt *HaltError
+			require.ErrorAs(t, drive(t, m, src, dst), &halt)
+			require.Contains(t, halt.Reason, tc.reason)
+			require.Empty(t, dst.order)
+		})
+	}
+}
+
 // Without an attester the refusal is a halt, as before.
 func TestContentAuthRefusalHaltsWithoutAnAttester(t *testing.T) {
 	track := trackWrite(42, 1, "up1", "orig", "")
@@ -203,9 +334,9 @@ func TestAttestationIsDeterministicAcrossRuns(t *testing.T) {
 	uploads := &fakeUploads{uploads: map[string]*UploadRecord{"up1": {ID: "up1", OrigFileCID: "orig"}}}
 	a := newAttester(t, uploads)
 	track := trackWrite(42, 1, "up1", "orig", "")
-	first, err := a.attestationFor(context.Background(), track)
+	first, err := a.attestationFor(context.Background(), track, time.Time{})
 	require.NoError(t, err)
-	second, err := a.attestationFor(context.Background(), track)
+	second, err := a.attestationFor(context.Background(), track, time.Time{})
 	require.NoError(t, err)
 	h1, _ := txHash(first)
 	h2, _ := txHash(second)
@@ -225,6 +356,9 @@ func TestAttestationIsDeterministicAcrossRuns(t *testing.T) {
 func TestHTTPUploads(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/uploads":
+			require.Equal(t, "2026-11-07T00:00:00Z", r.URL.Query().Get("after"))
+			_, _ = w.Write([]byte(`[{"id":"up2","orig_file_cid":"o","created_at":"2026-11-07T00:39:32Z"}]`))
 		case "/uploads/up1":
 			_, _ = w.Write([]byte(`{"id":"up1","orig_file_cid":"orig","results":{"320":"tc"},"user_id":{"Int64":42,"Valid":true}}`))
 		default:
@@ -242,4 +376,10 @@ func TestHTTPUploads(t *testing.T) {
 
 	_, err = u.Upload(context.Background(), "nope")
 	require.ErrorIs(t, err, errUploadNotFound)
+
+	ups, err := u.UploadsAfter(context.Background(), time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Len(t, ups, 1)
+	require.Equal(t, "up2", ups[0].ID)
+	require.Equal(t, time.Date(2026, 11, 7, 0, 39, 32, 0, time.UTC), ups[0].CreatedAt)
 }

@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
@@ -37,6 +39,17 @@ import (
 // attestation to commit, and retry the track once. Anything short of that
 // match still halts.
 //
+// A track written through the SDK or a developer app often names no
+// audio_upload_id at all. For those the mirror looks for an upload made for
+// the track's user in the hour before the track's block, holding the original
+// and transcode the track names.
+//
+// Replacing a track's audio uploads a new file and updates the track to name
+// it, but the update keeps the audio_upload_id of the track's first upload.
+// When the named upload holds a different file, the mirror looks for the
+// upload that does: one made later for the same user, holding the original the
+// track names and the transcode it names.
+//
 // The upload's user is an assertion made at upload time, exactly as it is
 // for a storage node's own attestation, so this grants nothing a live upload
 // to the new chain would not have.
@@ -47,12 +60,27 @@ type UploadRecord struct {
 	OrigFileCID string            `json:"orig_file_cid"`
 	Results     map[string]string `json:"results"`
 	UserID      sql.NullInt64     `json:"user_id"`
+	CreatedAt   time.Time         `json:"created_at"`
 }
 
-// UploadSource looks up an upload by id on the old chain's storage.
+// UploadSource looks up uploads on the old chain's storage.
 type UploadSource interface {
 	Upload(ctx context.Context, id string) (*UploadRecord, error)
+	// UploadsAfter lists uploads created after a time, oldest first, a page
+	// at a time.
+	UploadsAfter(ctx context.Context, after time.Time) ([]UploadRecord, error)
 }
+
+const (
+	// maxUploadPages bounds a search of the upload list.
+	maxUploadPages = 25
+	// unnamedUploadWindow is how long before its block a track naming no
+	// upload is searched for one.
+	unnamedUploadWindow = time.Hour
+	// uploadClockSlack allows for a storage node's clock running ahead of
+	// the chain's.
+	uploadClockSlack = time.Minute
+)
 
 // errUploadNotFound is a definite answer that the upload does not exist, as
 // opposed to a failed lookup that is worth retrying.
@@ -101,19 +129,35 @@ var trackAudioKeys = []string{"track_cid", "preview_cid", "orig_file_cid"}
 // attestationFor builds the signed attestation that lets tx's user name the
 // audio tx names. It returns errNotAttestable when tx's upload does not
 // vouch for that audio, and any other error when the lookup itself failed.
-func (a *Attester) attestationFor(ctx context.Context, tx *corev1.SignedTransaction) (*corev1.SignedTransaction, error) {
+// at is the time of tx's source block, zero if unknown.
+func (a *Attester) attestationFor(ctx context.Context, tx *corev1.SignedTransaction, at time.Time) (*corev1.SignedTransaction, error) {
 	me := tx.GetManageEntity()
 	if me == nil || me.GetEntityType() != "Track" {
 		return nil, errNotAttestable{"not a track write"}
 	}
 	meta := parseMetadata(me.GetMetadata())
-	uploadID := metaString(meta, "audio_upload_id")
-	if uploadID == "" {
-		return nil, errNotAttestable{"track names no audio_upload_id"}
-	}
 	orig := metaString(meta, "orig_file_cid")
 	if orig == "" {
 		return nil, errNotAttestable{"track names no orig_file_cid"}
+	}
+	var until time.Time
+	if !at.IsZero() {
+		until = at.Add(uploadClockSlack)
+	}
+
+	uploadID := metaString(meta, "audio_upload_id")
+	if uploadID == "" {
+		if at.IsZero() {
+			return nil, errNotAttestable{"track names no audio_upload_id"}
+		}
+		up, err := a.findUpload(ctx, me.GetUserId(), meta, at.Add(-unnamedUploadWindow), until)
+		if err != nil {
+			return nil, err
+		}
+		if up == nil {
+			return nil, errNotAttestable{fmt.Sprintf("track names no audio_upload_id, and no upload for user %d in the hour before it holds its audio", me.GetUserId())}
+		}
+		return a.attest(me.GetUserId(), meta, up)
 	}
 
 	up, err := a.uploads.Upload(ctx, uploadID)
@@ -124,12 +168,25 @@ func (a *Attester) attestationFor(ctx context.Context, tx *corev1.SignedTransact
 		return nil, fmt.Errorf("look up upload %s: %w", uploadID, err)
 	}
 	if up.OrigFileCID != orig {
-		return nil, errNotAttestable{fmt.Sprintf("upload %s holds orig_file_cid %q, track names %q", uploadID, up.OrigFileCID, orig)}
+		replaced, err := a.findUpload(ctx, me.GetUserId(), meta, up.CreatedAt, until)
+		if err != nil {
+			return nil, err
+		}
+		if replaced == nil {
+			return nil, errNotAttestable{fmt.Sprintf("upload %s holds orig_file_cid %q, track names %q, and no later upload for user %d holds it", uploadID, up.OrigFileCID, orig, me.GetUserId())}
+		}
+		up = replaced
 	}
+	return a.attest(me.GetUserId(), meta, up)
+}
+
+// attest signs an attestation of the cids up produced that the track names,
+// for the track's user.
+func (a *Attester) attest(user int64, meta map[string]any, up *UploadRecord) (*corev1.SignedTransaction, error) {
 	// A storage node attests for the upload's user. Attesting for anyone else
 	// would claim what that node never would.
-	if up.UserID.Valid && up.UserID.Int64 != 0 && up.UserID.Int64 != me.GetUserId() {
-		return nil, errNotAttestable{fmt.Sprintf("upload %s was made for user %d, track is by user %d", uploadID, up.UserID.Int64, me.GetUserId())}
+	if up.UserID.Valid && up.UserID.Int64 != 0 && up.UserID.Int64 != user {
+		return nil, errNotAttestable{fmt.Sprintf("upload %s was made for user %d, track is by user %d", up.ID, up.UserID.Int64, user)}
 	}
 
 	// Attest only the cids this upload produced: the original and whatever
@@ -145,7 +202,7 @@ func (a *Attester) attestationFor(ctx context.Context, tx *corev1.SignedTransact
 		}
 	}
 
-	ca := &corev1.ContentAttestation{UserId: me.GetUserId(), Cids: cids, ValidatorAddress: a.address}
+	ca := &corev1.ContentAttestation{UserId: user, Cids: cids, ValidatorAddress: a.address}
 	payload, err := coreServer.ContentAttestationBytes(ca)
 	if err != nil {
 		return nil, fmt.Errorf("marshal attestation: %w", err)
@@ -156,6 +213,34 @@ func (a *Attester) attestationFor(ctx context.Context, tx *corev1.SignedTransact
 		return nil, fmt.Errorf("sign attestation: %w", err)
 	}
 	return &corev1.SignedTransaction{Transaction: &corev1.SignedTransaction_ContentAttestation{ContentAttestation: ca}}, nil
+}
+
+// findUpload finds an upload made after after, and before until unless it is
+// zero, for user, holding the original file the track names and, if it names
+// one, its transcode. It returns nil when there is none within maxUploadPages.
+func (a *Attester) findUpload(ctx context.Context, user int64, meta map[string]any, after, until time.Time) (*UploadRecord, error) {
+	orig, transcoded := metaString(meta, "orig_file_cid"), metaString(meta, "track_cid")
+	for range maxUploadPages {
+		page, err := a.uploads.UploadsAfter(ctx, after)
+		if err != nil {
+			return nil, fmt.Errorf("list uploads after %s: %w", after.Format(time.RFC3339Nano), err)
+		}
+		for i := range page {
+			up := &page[i]
+			if !until.IsZero() && up.CreatedAt.After(until) {
+				return nil, nil
+			}
+			if up.UserID.Valid && up.UserID.Int64 == user && up.OrigFileCID == orig &&
+				(transcoded == "" || slices.Contains(slices.Collect(maps.Values(up.Results)), transcoded)) {
+				return up, nil
+			}
+		}
+		if len(page) == 0 || !page[len(page)-1].CreatedAt.After(after) {
+			return nil, nil
+		}
+		after = page[len(page)-1].CreatedAt
+	}
+	return nil, nil
 }
 
 // parseMetadata unwraps a ManageEntity's {"cid": ..., "data": {...}}
@@ -216,6 +301,32 @@ func (u *HTTPUploads) Upload(ctx context.Context, id string) (*UploadRecord, err
 		return nil, fmt.Errorf("asked for upload %s, got %q", id, up.ID)
 	}
 	return &up, nil
+}
+
+func (u *HTTPUploads) UploadsAfter(ctx context.Context, after time.Time) ([]UploadRecord, error) {
+	q := url.Values{"after": {after.UTC().Format(time.RFC3339Nano)}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.base+"/uploads?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "openaudio-mirror")
+	resp, err := u.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET /uploads: %s: %s", resp.Status, truncate(body))
+	}
+	var ups []UploadRecord
+	if err := json.Unmarshal(body, &ups); err != nil {
+		return nil, fmt.Errorf("GET /uploads: decode: %w", err)
+	}
+	return ups, nil
 }
 
 // txHash is the hash the target commits tx under.
