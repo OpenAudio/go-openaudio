@@ -349,7 +349,8 @@ func convertToWav(inputFile, outputFile string) error {
 	// - mono (1 channel)
 	// - 44.1 kHz sample rate
 	// - 120 seconds
-	cmd := exec.Command("ffmpeg", "-i", inputFile, "-ac", "1", "-ar", "44100", "-f", "wav", "-t", "120", outputFile)
+	args := append(ffmpegAudioInputArgs(), "-i", inputFile, "-ac", "1", "-ar", "44100", "-f", "wav", "-t", "120", outputFile)
+	cmd := exec.Command("ffmpeg", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to convert to WAV: %v, output: %s", err, string(output))
 	}

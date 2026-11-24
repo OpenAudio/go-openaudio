@@ -343,6 +343,13 @@ func (ss *MediorumServer) postUpload(c echo.Context) error {
 				return c.String(400, err.Error())
 			}
 
+			if isAudioTemplate(template) {
+				if err := checkAudioFormat(upload.FFProbe); err != nil {
+					upload.Error = err.Error()
+					return c.String(400, err.Error())
+				}
+			}
+
 			// ffprobe: restore orig filename
 			upload.FFProbe.Format.Filename = formFile.Filename
 

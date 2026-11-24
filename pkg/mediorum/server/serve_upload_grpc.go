@@ -149,6 +149,11 @@ func (ss *MediorumServer) processUploadedFile(ctx context.Context, upload *Uploa
 	if err != nil {
 		return ss.handleUploadError(upload, err, shouldCreate)
 	}
+	if isAudioTemplate(JobTemplate(upload.Template)) {
+		if err := checkAudioFormat(upload.FFProbe); err != nil {
+			return ss.handleUploadError(upload, err, shouldCreate)
+		}
+	}
 	// Restore original filename in ffprobe result
 	upload.FFProbe.Format.Filename = upload.OrigFileName
 
