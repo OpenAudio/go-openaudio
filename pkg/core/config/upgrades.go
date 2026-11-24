@@ -136,7 +136,24 @@ var upgradeSchedules = map[string]*UpgradeSchedule{
 	// there would make existing entities unwritable. Legacy registrations
 	// close at the first block no validator had applied when the release
 	// shipped.
+	//
+	// AttestationDomainHeight binds attestation signatures to their message
+	// type and chain. Every validator must already run a release carrying
+	// *this* height before the chain reaches it: a validator whose binary
+	// still resolves 0 here never enforces, so it recovers the legacy payload
+	// while its peers recover the domain-separated one, and the two disagree
+	// on whether an attestation tx is valid. That is an apphash split, not a
+	// degraded feature. Shipping the rule (v1.14.1) was not enough on its own
+	// — that release leaves this 0 — so the fleet has to adopt the release
+	// this entry lands in.
+	//
+	// The height is ~28 days past the tip when it was chosen (35915033 on
+	// 2026-11-05, ~72k blocks/day). That is lead time for adoption, not proof
+	// of it. Re-check it against the live tip before merging and raise it if
+	// the margin has shrunk: a height already behind the tip activates the
+	// rule retroactively, which breaks replay from genesis on every node.
 	"audius-mainnet-alpha-beta": {
+		AttestationDomainHeight:        37950000,
 		LegacyRegistrationClosedHeight: 35005210,
 	},
 	// prod, audius-mainnet-beta: the genesis rollover. genesis-writer replays
