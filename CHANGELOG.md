@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.15.0](https://github.com/OpenAudio/go-openaudio/compare/v1.14.2...v1.15.0) (2026-11-24)
+
+
+### Features
+
+* **etl:** index tracks.feedback_requested_at ([#625](https://github.com/OpenAudio/go-openaudio/issues/625)) ([17aab31](https://github.com/OpenAudio/go-openaudio/commit/17aab31f4cae32b11030e5b2e030d3686accc5d4))
+* **mirror:** re-sign play envelopes so the target admits them ([#634](https://github.com/OpenAudio/go-openaudio/issues/634)) ([232bce9](https://github.com/OpenAudio/go-openaudio/commit/232bce9ab9cc3d1717bf450e69e0dc1dcb38b6f2))
+
+
+### Bug Fixes
+
+* **core:** drop unresolvable prod persistent peer ([#636](https://github.com/OpenAudio/go-openaudio/issues/636)) ([fec22bc](https://github.com/OpenAudio/go-openaudio/commit/fec22bc7e702928a52a7e20633a09beeaa5408cf))
+* **core:** refuse user creates and updates the indexer refuses ([#632](https://github.com/OpenAudio/go-openaudio/issues/632)) ([fe28ef4](https://github.com/OpenAudio/go-openaudio/commit/fe28ef4271fb0dab39e43f9a7e4f6a560fd1827f))
+* **storage:** restrict transcode inputs to audio formats ([#635](https://github.com/OpenAudio/go-openaudio/issues/635)) ([aab444d](https://github.com/OpenAudio/go-openaudio/commit/aab444d4ed54af37510072b6e9fe758c967abc3f))
+
 ## [1.14.2](https://github.com/OpenAudio/go-openaudio/compare/v1.14.1...v1.14.2) (2026-11-09)
 
 
