@@ -73,6 +73,7 @@ package mirror
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"slices"
@@ -82,6 +83,7 @@ import (
 
 	corev1 "github.com/OpenAudio/go-openaudio/pkg/api/core/v1"
 	"github.com/OpenAudio/go-openaudio/pkg/common"
+	"github.com/OpenAudio/go-openaudio/pkg/mediorum/server/signature"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
@@ -180,7 +182,15 @@ type Config struct {
 	SkipTx []string
 	// Attester, when set, answers content-auth refusals by attesting the
 	// track's own upload. Nil leaves every refusal a halt.
-	Attester     *Attester
+	Attester *Attester
+	// PlaySigner, when set, re-signs each Plays envelope before forwarding.
+	// The target admits a Plays tx only when its envelope is signed by one of
+	// its own registered nodes, and most old-chain plays were recorded by
+	// nodes that are not registered there yet. The plays and their per-play
+	// signatures are forwarded unchanged; only the envelope signature, and so
+	// the tx hash, changes. Signing is deterministic, so a retry produces the
+	// same hash and the committed check still finds it.
+	PlaySigner   *ecdsa.PrivateKey
 	PollInterval time.Duration
 	// CursorSaveInterval throttles cursor writes while the mirror is busy.
 	CursorSaveInterval time.Duration
@@ -633,8 +643,22 @@ func (m *Mirror) fillOne(ctx context.Context) (bool, error) {
 		return false, &HaltError{Pos: pos, Reason: "cannot marshal source tx", Err: err}
 	}
 	e.hash = common.ToTxHashFromBytes(b)
+	sourceHash := e.hash
+	if m.cfg.PlaySigner != nil && tx.GetPlays() != nil {
+		if err := resignPlays(tx, m.cfg.PlaySigner); err != nil {
+			return false, &HaltError{Pos: pos, Hash: e.hash, Reason: "cannot re-sign plays", Err: err}
+		}
+		if b, err = proto.Marshal(tx); err != nil {
+			return false, &HaltError{Pos: pos, Reason: "cannot marshal re-signed plays", Err: err}
+		}
+		e.hash = common.ToTxHashFromBytes(b)
+	}
 
-	if _, skip := m.skip[e.hash]; skip {
+	_, skip := m.skip[e.hash]
+	if _, skipSource := m.skip[sourceHash]; skipSource {
+		skip = true
+	}
+	if skip {
 		m.logger.Warn("skipping tx by operator request", zap.Stringer("pos", pos), zap.String("tx", e.hash),
 			zap.String("type", txKind(tx)))
 		e.done = true
@@ -647,6 +671,14 @@ func (m *Mirror) fillOne(ctx context.Context) (bool, error) {
 	if err != nil {
 		m.next = pos
 		return false, fmt.Errorf("check %s: %w", e.hash, err)
+	}
+	if !ok && sourceHash != e.hash {
+		// Plays mirrored before re-signing was turned on committed under
+		// their source envelope; finding either means this one is done.
+		if h, ok, err = m.target.Committed(ctx, sourceHash); err != nil {
+			m.next = pos
+			return false, fmt.Errorf("check %s: %w", sourceHash, err)
+		}
 	}
 	if ok {
 		e.done = true
@@ -898,6 +930,17 @@ func DryRun(ctx context.Context, source Source, target Target, sourceChainID str
 		}
 	}
 	return r, nil
+}
+
+// resignPlays replaces a Plays envelope's signature with key's, signed the way
+// a storage node signs the plays it records.
+func resignPlays(tx *corev1.SignedTransaction, key *ecdsa.PrivateKey) error {
+	sig, err := signature.SignCoreBytes(tx.GetPlays(), key)
+	if err != nil {
+		return err
+	}
+	tx.Signature = sig
+	return nil
 }
 
 // decodeMirrored returns the transaction if it is one the mirror replays:
